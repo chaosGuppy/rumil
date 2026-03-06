@@ -121,6 +121,9 @@ def execute_move(move: Move, call: Call, db: DB, last_created_id: Optional[str] 
         db.save_page_flag("duplicate", call_id=call.id, page_id_a=pid_a, page_id_b=pid_b)
         print(f"  [flag] Duplicate reported: {p.get('page_id_a')} <-> {p.get('page_id_b')}")
 
+    elif mt == "PROPOSE_HYPOTHESIS":
+        return _propose_hypothesis(p, call, db)
+
     elif mt == "LOAD_PAGE":
         pass  # pre-phase move; handled before executor runs, safe to ignore here
 
@@ -237,6 +240,89 @@ def _supersede(payload: dict, call: Call, db: DB) -> None:
     new_id = _create_page(payload, call, db, old_page.page_type, old_page.layer)
     db.supersede_page(old_id, new_id)
     print(f"  [~] Superseded {old_id[:8]} -> {new_id[:8]}")
+
+
+def _propose_hypothesis(payload: dict, call: Call, db: DB) -> Optional[str]:
+    parent_id = db.resolve_page_id(payload.get("parent_question_id", ""))
+    if not parent_id:
+        print(f"  [executor] PROPOSE_HYPOTHESIS: parent_question_id not found: {payload.get('parent_question_id')}")
+        return None
+
+    hypothesis_text = payload.get("hypothesis", "").strip()
+    if not hypothesis_text:
+        print(f"  [executor] PROPOSE_HYPOTHESIS: missing hypothesis text")
+        return None
+
+    reasoning = payload.get("reasoning", "")
+    epistemic_status = float(payload.get("epistemic_status", 2.5))
+    direction_str = payload.get("direction", "neutral").lower()
+    strength = float(payload.get("strength", 2.5))
+
+    # 1. Create the claim (hypothesis in assertive form, visible as consideration on parent)
+    claim_content = hypothesis_text
+    if reasoning:
+        claim_content += f"\n\n{reasoning}"
+
+    claim = Page(
+        page_type=PageType.CLAIM,
+        layer=PageLayer.SQUIDGY,
+        workspace=Workspace.RESEARCH,
+        content=claim_content,
+        summary=hypothesis_text[:120],
+        epistemic_status=epistemic_status,
+        epistemic_type="hypothesis",
+        provenance_model=payload.get("provenance_model", "claude-opus-4-6"),
+        provenance_call_type=call.call_type.value,
+        provenance_call_id=call.id,
+        extra=json.dumps({"hypothesis": True}),
+    )
+    db.save_page(claim)
+    _write_page_file(claim)
+    print(f"  [+] hypothesis claim: {claim.summary[:70]} [{claim.id[:8]}]")
+
+    try:
+        direction = ConsiderationDirection(direction_str)
+    except ValueError:
+        direction = ConsiderationDirection.NEUTRAL
+
+    db.save_link(PageLink(
+        from_page_id=claim.id,
+        to_page_id=parent_id,
+        link_type=LinkType.CONSIDERATION,
+        direction=direction,
+        strength=strength,
+        reasoning=reasoning,
+    ))
+    print(f"  [~] Consideration link: {claim.id[:8]} -> {parent_id[:8]} ({direction_str})")
+
+    # 2. Create the hypothesis question (investigation vehicle)
+    q_text = f"What should we make of the hypothesis that {hypothesis_text}?"
+    question = Page(
+        page_type=PageType.QUESTION,
+        layer=PageLayer.SQUIDGY,
+        workspace=Workspace.RESEARCH,
+        content=q_text,
+        summary=q_text[:120],
+        epistemic_status=2.5,
+        epistemic_type="open question",
+        provenance_model=payload.get("provenance_model", "claude-opus-4-6"),
+        provenance_call_type=call.call_type.value,
+        provenance_call_id=call.id,
+        extra=json.dumps({"hypothesis": True, "status": "open"}),
+    )
+    db.save_page(question)
+    _write_page_file(question)
+    print(f"  [+] hypothesis question: {question.summary[:70]} [{question.id[:8]}]")
+
+    db.save_link(PageLink(
+        from_page_id=parent_id,
+        to_page_id=question.id,
+        link_type=LinkType.CHILD_QUESTION,
+        reasoning=f"Hypothesis: {hypothesis_text[:80]}",
+    ))
+    print(f"  [~] child_question link: {parent_id[:8]} -> {question.id[:8]}")
+
+    return question.id
 
 
 def execute_all_moves(parsed_output, call: Call, db: DB) -> list[str]:

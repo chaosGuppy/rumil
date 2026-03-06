@@ -51,7 +51,7 @@ Produce a **Judgement** linked to the question. Structure your judgement content
 </move>
 ```
 
-You may also produce sub-questions if important unknowns need further investigation, or new claims if the weighing process surfaces something worth recording.
+You may also produce sub-questions if important unknowns need further investigation, new claims if the weighing process surfaces something worth recording, or use `PROPOSE_HYPOTHESIS` if the weighing reveals a compelling candidate answer that the considerations collectively point toward but hasn't yet been registered as a hypothesis. Keep generative moves secondary — the judgement is the primary output.
 
 ## Quality Bar
 

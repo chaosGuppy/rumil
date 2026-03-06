@@ -57,33 +57,26 @@ For each consideration, create a Claim and link it to the question:
 
 ## Hypothesis Questions
 
-As well as considerations, you might want to register potential answers as hypothesis questions for further investigation. Hypotheses represent possible paradigm answers. In some cases a hypothesis question is worth creating because there is a decent chance that it is correct. In other cases, it is worth creating not because you think it's likely correct, but because engaging with it seriously might yield useful insights: clarifying why it fails, surfacing adjacent territory, or extracting the partial truth inside an otherwise wrong answer.
+When you have a compelling candidate answer or paradigm — not just a piece of evidence, but a specific view that, if true, would substantially shape the response to the question — use `PROPOSE_HYPOTHESIS`. This does two things in one step: records the hypothesis as a consideration on the parent question (so it's visible during assessment) and creates a linked hypothesis question (so it can receive focused investigation).
 
-Frame hypothesis questions as: **"What should we make of the hypothesis that X?"**
-
-In the question content, explain why you hope that investigation of this hypothesis might be helpful — is it mostly because you want a truth-assessment of the hypothesis, or mostly because you think understanding the dynamics around what X is getting right or wrong might be enlightening.
+In some cases a hypothesis is worth proposing because it's likely correct. In others, because engaging with it seriously might yield useful insights: clarifying why it fails, surfacing adjacent territory, or extracting the partial truth inside an otherwise wrong answer.
 
 ```
-<move type="CREATE_QUESTION">
+<move type="PROPOSE_HYPOTHESIS">
 {
-  "summary": "What should we make of the hypothesis that X?",
-  "content": "Full statement of the hypothesis and why investigating it seems productive.",
-  "epistemic_type": "hypothesis — speculative candidate answer",
-  "workspace": "research",
-  "hypothesis": true
-}
-</move>
-
-<move type="LINK_CHILD_QUESTION">
-{
-  "from_page_id": "PARENT_QUESTION_ID",
-  "to_page_id": "LAST_CREATED",
-  "reasoning": "Hypothesis worth exploring"
+  "parent_question_id": "FULL_UUID_OF_PARENT_QUESTION",
+  "hypothesis": "Specific assertive statement of the hypothesis (not a question).",
+  "reasoning": "Why this hypothesis is worth investigating — is it probably right, or will examining it be enlightening even if wrong?",
+  "direction": "supports|opposes|neutral",
+  "strength": 3.5,
+  "epistemic_status": 3.0
 }
 </move>
 ```
 
-Don't create a hypothesis question if the hypothesis is already well-represented in the existing consideration set, or if it's just a restatement of the question itself. One good hypothesis beats several thin ones.
+The `hypothesis` field becomes both the claim text and the basis for the question "What should we make of the hypothesis that...?". Keep it a crisp, assertive statement.
+
+Don't propose a hypothesis if the view is already well-represented in the existing consideration set, or if it's a restatement of the question itself. One good hypothesis beats several thin ones.
 
 ## Quality Bar
 

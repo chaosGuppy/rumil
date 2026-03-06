@@ -96,24 +96,19 @@ If the source raises an important question not yet in the workspace, create it:
 ### Hypothesis questions
 
 If the source proposes or strongly implies a candidate answer to a workspace question —
-even one you think is probably wrong — you may register it as a hypothesis question:
+even one you think is probably wrong — register it as a hypothesis using `PROPOSE_HYPOTHESIS`.
+This records the hypothesis as a consideration on the parent question and creates a linked
+hypothesis question for focused investigation in one step:
 
 ```
-<move type="CREATE_QUESTION">
+<move type="PROPOSE_HYPOTHESIS">
 {
-  "summary": "What should we make of the hypothesis that X?",
-  "content": "Full statement of the hypothesis as the source presents it, and why engaging with it seems productive.",
-  "epistemic_type": "hypothesis — speculative candidate answer",
-  "workspace": "research",
-  "hypothesis": true
-}
-</move>
-
-<move type="LINK_CHILD_QUESTION">
-{
-  "from_page_id": "PARENT_QUESTION_ID",
-  "to_page_id": "LAST_CREATED",
-  "reasoning": "Hypothesis surfaced by source"
+  "parent_question_id": "FULL_UUID_OF_PARENT_QUESTION",
+  "hypothesis": "Specific assertive statement of the hypothesis (not a question).",
+  "reasoning": "Why this hypothesis is worth investigating — is it probably right, or will examining it be enlightening even if wrong?",
+  "direction": "supports|opposes|neutral",
+  "strength": 3.5,
+  "epistemic_status": 3.0
 }
 </move>
 ```

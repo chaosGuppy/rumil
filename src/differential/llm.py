@@ -6,9 +6,10 @@ import time
 from pathlib import Path
 
 import anthropic
+from anthropic.types import MessageParam, TextBlock
 
-PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
-MODEL = "claude-opus-4-6"
+PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts"
+MODEL = "claude-haiku-4-5-20251001" if os.environ.get("DIFFERENTIAL_TEST_MODE") else "claude-opus-4-6"
 
 
 def _load_file(name: str) -> str:
@@ -45,7 +46,7 @@ def run_llm(
     user_message: str = "",
     max_tokens: int = 4096,
     max_retries: int = 4,
-    messages: list[dict] | None = None,
+    messages: list[MessageParam] | None = None,
 ) -> str:
     """Make a Claude API call. Returns the raw text response.
     Pass `messages` for multi-turn conversations, or `user_message` for single-turn.
@@ -58,7 +59,10 @@ def run_llm(
         )
 
     client = anthropic.Anthropic(api_key=api_key)
-    msg_list = messages if messages is not None else [{"role": "user", "content": user_message}]
+    msg_list: list[MessageParam] = (
+        messages if messages is not None
+        else [{"role": "user", "content": user_message}]
+    )
 
     for attempt in range(max_retries):
         try:
@@ -68,7 +72,9 @@ def run_llm(
                 system=system_prompt,
                 messages=msg_list,
             )
-            return message.content[0].text
+            block = message.content[0]
+            assert isinstance(block, TextBlock)
+            return block.text
         except Exception as e:
             status = getattr(e, "status_code", None)
             name = type(e).__name__.lower()
@@ -88,6 +94,8 @@ def run_llm(
             print(f"  [llm] API temporarily unavailable ({label}), "
                   f"retrying in {wait}s... (attempt {attempt + 1}/{max_retries})")
             time.sleep(wait)
+
+    raise RuntimeError("Unreachable: retry loop exhausted without raising")
 
 
 def run_call(

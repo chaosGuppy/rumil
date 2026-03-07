@@ -13,14 +13,15 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent / "src"))
+from dotenv import load_dotenv
+load_dotenv()
 
-from database import DB, init_db
-from models import Call, CallType, Page, PageLayer, PageLink, PageType, LinkType, Workspace
-from orchestrator import Orchestrator, ingest_until_done
-from chat import run_chat
-from mapper import generate_map
-from summary import generate_summary, save_summary
+from differential.database import DB, init_db
+from differential.models import Call, CallType, Page, PageLayer, PageLink, PageType, LinkType, Workspace
+from differential.orchestrator import Orchestrator, ingest_until_done
+from differential.chat import run_chat
+from differential.mapper import generate_map
+from differential.summary import generate_summary, save_summary
 
 DB_PATH = Path(__file__).parent / "db" / "workspace.db"
 PAGES_DIR = Path(__file__).parent / "pages"

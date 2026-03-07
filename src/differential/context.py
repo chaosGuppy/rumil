@@ -4,9 +4,9 @@ Build context text from workspace pages for injection into LLM prompts.
 import json
 from typing import Optional
 
-from database import DB
-from models import Page, PageLink, PageType, Workspace
-from workspace_map import build_workspace_map
+from differential.database import DB
+from differential.models import Page, PageLink, PageType, Workspace
+from differential.workspace_map import build_workspace_map
 
 
 def format_page(page: Page, db: Optional[DB] = None) -> str:
@@ -218,7 +218,7 @@ def build_prioritization_context(db: DB, scope_question_id: Optional[str] = None
                     q_summary = q.summary[:60] if q else qid[:8]
                     parts.append(f"  Ingested for: `{qid[:8]}` — {q_summary}")
             else:
-                parts.append(f"  Not yet ingested for any question")
+                parts.append("  Not yet ingested for any question")
         parts.append("")
 
     return "\n".join(parts)

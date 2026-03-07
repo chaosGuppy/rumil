@@ -7,13 +7,13 @@ import os
 import re
 from pathlib import Path
 
-from database import DB
-from llm import run_llm
-from models import Page, PageLayer, PageLink, PageType, LinkType, Workspace
-from orchestrator import Orchestrator
-from summary import build_research_tree
+from differential.database import DB
+from differential.llm import run_llm
+from differential.models import Page, PageLayer, PageLink, PageType, LinkType, Workspace
+from differential.orchestrator import Orchestrator
+from differential.summary import build_research_tree
 
-PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
+PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts"
 DEFAULT_INVESTIGATE_BUDGET = 3
 
 # True-colour ANSI: warm off-white for human, cool off-white for assistant
@@ -43,14 +43,15 @@ def ai(text: str) -> str:
 def dim(text: str) -> str:
     return f"{_DIM}{text}{_RESET}"
 
-HELP_TEXT = """
-Slash commands:
-  /add <question text>               Add a sub-question for later investigation
-  /investigate <question text>       Add and immediately investigate (default budget: 3)
-  /investigate <text> --budget N     Investigate with a specific budget
-  /help                              Show this message
-  exit / quit                        End the chat
-"""
+HELP_TEXT = (
+    "\n"
+    "Slash commands:\n"
+    "  /add <question text>               Add a sub-question for later investigation\n"
+    "  /investigate <question text>       Add and immediately investigate (default budget: 3)\n"
+    "  /investigate <text> --budget N     Investigate with a specific budget\n"
+    "  /help                              Show this message\n"
+    "  exit / quit                        End the chat\n"
+)
 
 
 def _load_chat_prompt() -> str:
@@ -162,8 +163,8 @@ def run_chat(question_id: str, db: DB) -> None:
 
     system_prompt = (
         f"{_load_chat_prompt()}\n\n"
-        f"---\n\n"
-        f"## Research Context\n\n"
+        "---\n\n"
+        "## Research Context\n\n"
         f"{research_tree}"
     )
 

@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from models import (
+from differential.models import (
     Call, CallStatus, CallType, ConsiderationDirection,
     LinkType, Page, PageLayer, PageLink, PageType, Workspace,
 )
@@ -237,6 +237,13 @@ class DB:
             return None
         conn.close()
         return None
+
+    def page_label(self, page_id: str) -> str:
+        """Return a human-readable label like '"Summary text" [short_id]'."""
+        page = self.get_page(page_id)
+        if page:
+            return f'"{page.summary[:60]}" [{page_id[:8]}]'
+        return f'[{page_id[:8]}]'
 
     def get_pages(
         self,

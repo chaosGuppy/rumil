@@ -1,0 +1,24 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[[ \"$CLAUDE_TOOL_INPUT_FILE_PATH\" != *.py ]] && exit 0; uv run ruff check --fix \"$CLAUDE_TOOL_INPUT_FILE_PATH\" && uv run ruff format \"$CLAUDE_TOOL_INPUT_FILE_PATH\""
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[[ \"$CLAUDE_TOOL_INPUT_FILE_PATH\" != *.py ]] && exit 0; uv run pyright \"$CLAUDE_TOOL_INPUT_FILE_PATH\""
+          }
+        ]
+      }
+    ]
+  }
+}

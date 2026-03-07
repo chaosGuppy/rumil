@@ -7,9 +7,9 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from calls import run_assess, run_ingest, run_prioritization, run_scout
-from database import DB
-from models import Call, CallStatus, CallType, Page, PageLayer, PageType, Workspace
+from differential.calls import run_assess, run_ingest, run_prioritization, run_scout
+from differential.database import DB
+from differential.models import Call, CallStatus, CallType, Page, PageLayer, PageType, Workspace
 
 
 DEFAULT_FRUIT_THRESHOLD = 4
@@ -81,7 +81,7 @@ def scout_until_done(
               f"remaining_fruit={remaining_fruit} (threshold={fruit_threshold})")
 
         if remaining_fruit <= fruit_threshold:
-            print(f"  [orchestrator] Fruit below threshold, stopping scout.")
+            print("  [orchestrator] Fruit below threshold, stopping scout.")
             break
 
     return rounds
@@ -119,7 +119,7 @@ def ingest_until_done(
               f"remaining_fruit={remaining_fruit} (threshold={fruit_threshold})")
 
         if remaining_fruit <= fruit_threshold:
-            print(f"  [orchestrator] Fruit below threshold, stopping ingest.")
+            print("  [orchestrator] Fruit below threshold, stopping ingest.")
             break
 
     return rounds
@@ -166,10 +166,10 @@ class Orchestrator:
         actual_budget = min(budget, remaining)
 
         if actual_budget <= 0:
-            print(f"{indent}[orchestrator] No budget remaining, skipping question {question_id[:8]}")
+            print(f"{indent}[orchestrator] No budget remaining, skipping {self.db.page_label(question_id)}")
             return
 
-        print(f"\n{indent}=== Investigating question {question_id[:8]} | budget={actual_budget} ===")
+        print(f"\n{indent}=== Investigating {self.db.page_label(question_id)} | budget={actual_budget} ===")
 
         # Run a prioritization call (free) to get a plan
         p_call = _make_call(
@@ -214,14 +214,15 @@ class Orchestrator:
             # Validate that the question ID actually exists
             if not self.db.get_page(d_question_id):
                 print(f"{indent}  [orchestrator] Skipping dispatch — question ID not found: {d_question_id[:8]}. "
-                      f"Falling back to scope question.")
+                      "Falling back to scope question.")
                 d_question_id = question_id
 
+            d_label = self.db.page_label(d_question_id)
             if d_type == "scout":
-                print(f"{indent}  -> Dispatch: scout on {d_question_id[:8]} "
+                print(f"{indent}  -> Dispatch: scout on {d_label} "
                       f"(fruit_threshold={d_fruit_threshold}, max_rounds={d_max_rounds}) — {d_reason}")
             else:
-                print(f"{indent}  -> Dispatch: {d_type} on {d_question_id[:8]} (budget={d_budget}) — {d_reason}")
+                print(f"{indent}  -> Dispatch: {d_type} on {d_label} (budget={d_budget}) — {d_reason}")
 
             if d_type == "scout":
                 spent = scout_until_done(
@@ -258,7 +259,7 @@ class Orchestrator:
         """Entry point. Investigate the root question with the full budget."""
         total, used = self.db.get_budget()
         print(f"\n{'='*60}")
-        print(f"Starting research on question {root_question_id[:8]}")
+        print(f"Starting research on {self.db.page_label(root_question_id)}")
         print(f"Total budget: {total} research calls")
         print(f"{'='*60}\n")
 

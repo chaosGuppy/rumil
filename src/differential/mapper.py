@@ -6,10 +6,10 @@ from datetime import datetime
 from html import escape
 from pathlib import Path
 
-from database import DB
-from models import Page, PageType
+from differential.database import DB
+from differential.models import Page, PageType
 
-PAGES_DIR = Path(__file__).parent.parent / "pages"
+PAGES_DIR = Path(__file__).parent.parent.parent / "pages"
 MAPS_DIR = PAGES_DIR / "maps"
 
 

@@ -7,8 +7,8 @@ Short IDs are the first 8 characters of each page UUID.
 import json
 from typing import Optional
 
-from database import DB
-from models import ConsiderationDirection, Page, PageType
+from differential.database import DB
+from differential.models import ConsiderationDirection, Page, PageType
 
 
 def _short_id(full_uuid: str) -> str:

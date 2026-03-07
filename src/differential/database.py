@@ -238,6 +238,13 @@ class DB:
         conn.close()
         return None
 
+    def page_label(self, page_id: str) -> str:
+        """Return a human-readable label like '"Summary text" [short_id]'."""
+        page = self.get_page(page_id)
+        if page:
+            return f'"{page.summary[:60]}" [{page_id[:8]}]'
+        return f'[{page_id[:8]}]'
+
     def get_pages(
         self,
         workspace: Optional[Workspace] = None,

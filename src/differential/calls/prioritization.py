@@ -18,15 +18,15 @@ def run_prioritization(
     Run a Prioritization call.
     Returns a summary dict including the list of dispatches.
     """
-    print(f"\n[PRIORITIZATION] {call.id[:8]} — scope {scope_question_id[:8]} — budget {budget}")
+    print(f"\n[PRIORITIZATION] {call.id[:8]} — {db.page_label(scope_question_id)} — budget {budget}")
 
     context_text = build_prioritization_context(db, scope_question_id=scope_question_id)
 
     task = (
         f"You have a budget of **{budget} research calls** to allocate on this question.\n\n"
         f"Scope question ID: `{scope_question_id}`\n\n"
-        f"Review the current state of the workspace above and decide how to spend the budget. "
-        f"Output your plan as a sequence of <dispatch> tags."
+        "Review the current state of the workspace above and decide how to spend the budget. "
+        "Output your plan as a sequence of <dispatch> tags."
     )
 
     raw = run_call(call_type="prioritization", task_description=task, context_text=context_text)

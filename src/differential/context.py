@@ -218,7 +218,7 @@ def build_prioritization_context(db: DB, scope_question_id: Optional[str] = None
                     q_summary = q.summary[:60] if q else qid[:8]
                     parts.append(f"  Ingested for: `{qid[:8]}` — {q_summary}")
             else:
-                parts.append(f"  Not yet ingested for any question")
+                parts.append("  Not yet ingested for any question")
         parts.append("")
 
     return "\n".join(parts)

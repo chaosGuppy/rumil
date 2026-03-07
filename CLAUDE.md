@@ -74,3 +74,4 @@ Each call ends with a closing review that produces `remaining_fruit` (0-10 scale
 - Always use absolute imports: `from differential.module import name` (no relative imports)
 - Use modern type syntax: `X | None` not `Optional[X]`, `list[str]` not `List[str]`, etc. No `from typing import Optional, List, Dict`.
 - Pages are immutable once written (squidgy layer); updates use SUPERSEDE_PAGE to create a new version pointing back to the old one
+- Multiline strings use parenthesized concatenation of single-quoted lines (`"line 1 " "line 2"`), not triple-quoted strings (`"""`). Only use `f""` on lines that actually contain `{placeholder}` expressions.

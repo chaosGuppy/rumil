@@ -22,19 +22,19 @@ def run_scout(
     Run a Scout call on a question.
     Returns (parsed_output, review_dict).
     """
-    print(f"\n[SCOUT] {call.id[:8]} — question {question_id[:8]}")
+    print(f"\n[SCOUT] {call.id[:8]} — {db.page_label(question_id)}")
 
     preloaded = _json.loads(call.context_page_ids or "[]")
     system_prompt = build_system_prompt("scout")
     context_text, short_id_map = build_call_context(question_id, db, extra_page_ids=preloaded)
 
     task = (
-        f"Scout for missing considerations on this question.\n\n"
+        "Scout for missing considerations on this question.\n\n"
         f"Question ID (use this when linking considerations): `{question_id}`"
     )
 
     phase1_user = build_user_message(context_text, PHASE1_TASK)
-    phase1_raw, short_load_ids = run_phase1(system_prompt, phase1_user)
+    phase1_raw, short_load_ids = run_phase1(system_prompt, phase1_user, short_id_map, db)
 
     full_load_ids = [short_id_map[s] for s in short_load_ids if s in short_id_map]
     valid_load_ids = [pid for pid in full_load_ids if db.get_page(pid)]
@@ -61,7 +61,7 @@ def run_scout(
         remaining_fruit = review.get("remaining_fruit", 5)
         print(f"  [review] remaining_fruit={remaining_fruit}, "
               f"confidence={review.get('confidence_in_output', '?')}")
-        print_page_ratings(review)
+        print_page_ratings(review, db)
 
     call.review_json = _json.dumps(review or {})
     complete_call(call, db, f"Scout complete. Created {len(created)} pages. Remaining fruit: {remaining_fruit}")

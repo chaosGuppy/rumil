@@ -112,9 +112,9 @@ def generate_summary(question_id: str, db: DB) -> str:
     system_prompt = _load_prompt_file("summarise.md")
     closing = _load_prompt_file("summarise-closing.md")
     user_message = (
-        f"Here is the full body of research on this question:\n\n"
+        "Here is the full body of research on this question:\n\n"
         f"{research_tree}\n\n"
-        f"---\n\n"
+        "---\n\n"
         f"{closing}"
     )
 

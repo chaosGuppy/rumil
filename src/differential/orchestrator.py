@@ -2,41 +2,18 @@
 Orchestrator: drives the research workflow using the prioritization system.
 Budget is tracked here; prioritization and review calls are free.
 """
-import uuid
-from datetime import datetime
+
 from typing import Optional
 
 from differential.calls import run_assess, run_ingest, run_prioritization, run_scout
 from differential.database import DB
-from differential.models import Call, CallStatus, CallType, Page, PageLayer, PageType, Workspace
+from differential.models import CallType, Page, Workspace
 
 
 DEFAULT_FRUIT_THRESHOLD = 4
 DEFAULT_MAX_ROUNDS = 5
 DEFAULT_INGEST_FRUIT_THRESHOLD = 5
 DEFAULT_INGEST_MAX_ROUNDS = 5
-
-
-def _make_call(
-    call_type: CallType,
-    db: DB,
-    scope_page_id: Optional[str] = None,
-    parent_call_id: Optional[str] = None,
-    budget_allocated: Optional[int] = None,
-    workspace: Workspace = Workspace.RESEARCH,
-    context_page_ids: list | None = None,
-) -> Call:
-    call = Call(
-        call_type=call_type,
-        workspace=workspace,
-        scope_page_id=scope_page_id,
-        parent_call_id=parent_call_id,
-        budget_allocated=budget_allocated,
-        status=CallStatus.PENDING,
-        context_page_ids=context_page_ids or [],
-    )
-    db.save_call(call)
-    return call
 
 
 def _consume_budget(db: DB, call_id: Optional[str] = None) -> bool:
@@ -66,8 +43,8 @@ def scout_until_done(
         if not _consume_budget(db):
             break
 
-        call = _make_call(
-            CallType.SCOUT, db,
+        call = db.create_call(
+            CallType.SCOUT,
             scope_page_id=question_id,
             parent_call_id=parent_call_id,
             context_page_ids=context_page_ids,
@@ -76,8 +53,10 @@ def scout_until_done(
         rounds += 1
 
         remaining_fruit = review.get("remaining_fruit", 5) if review else 5
-        print(f"  [orchestrator] Scout round {i+1}/{max_rounds}, "
-              f"remaining_fruit={remaining_fruit} (threshold={fruit_threshold})")
+        print(
+            f"  [orchestrator] Scout round {i + 1}/{max_rounds}, "
+            f"remaining_fruit={remaining_fruit} (threshold={fruit_threshold})"
+        )
 
         if remaining_fruit <= fruit_threshold:
             print("  [orchestrator] Fruit below threshold, stopping scout.")
@@ -105,8 +84,8 @@ def ingest_until_done(
         if not _consume_budget(db):
             break
 
-        call = _make_call(
-            CallType.INGEST, db,
+        call = db.create_call(
+            CallType.INGEST,
             scope_page_id=source_page.id,
             parent_call_id=parent_call_id,
         )
@@ -114,8 +93,10 @@ def ingest_until_done(
         rounds += 1
 
         remaining_fruit = review.get("remaining_fruit", 5) if review else 5
-        print(f"  [orchestrator] Ingest round {i+1}/{max_rounds}, "
-              f"remaining_fruit={remaining_fruit} (threshold={fruit_threshold})")
+        print(
+            f"  [orchestrator] Ingest round {i + 1}/{max_rounds}, "
+            f"remaining_fruit={remaining_fruit} (threshold={fruit_threshold})"
+        )
 
         if remaining_fruit <= fruit_threshold:
             print("  [orchestrator] Fruit below threshold, stopping ingest.")
@@ -134,8 +115,8 @@ def assess_question(
     if not _consume_budget(db):
         return False
 
-    call = _make_call(
-        CallType.ASSESS, db,
+    call = db.create_call(
+        CallType.ASSESS,
         scope_page_id=question_id,
         parent_call_id=parent_call_id,
         context_page_ids=context_page_ids,
@@ -165,14 +146,18 @@ class Orchestrator:
         actual_budget = min(budget, remaining)
 
         if actual_budget <= 0:
-            print(f"{indent}[orchestrator] No budget remaining, skipping {self.db.page_label(question_id)}")
+            print(
+                f"{indent}[orchestrator] No budget remaining, skipping {self.db.page_label(question_id)}"
+            )
             return
 
-        print(f"\n{indent}=== Investigating {self.db.page_label(question_id)} | budget={actual_budget} ===")
+        print(
+            f"\n{indent}=== Investigating {self.db.page_label(question_id)} | budget={actual_budget} ==="
+        )
 
         # Run a prioritization call (free) to get a plan
-        p_call = _make_call(
-            CallType.PRIORITIZATION, self.db,
+        p_call = self.db.create_call(
+            CallType.PRIORITIZATION,
             scope_page_id=question_id,
             parent_call_id=parent_call_id,
             budget_allocated=actual_budget,
@@ -190,7 +175,9 @@ class Orchestrator:
 
         if not dispatches:
             # Prioritization produced no plan — fall back to simple scout+assess
-            print(f"{indent}[orchestrator] No dispatches from prioritization, running default scout+assess")
+            print(
+                f"{indent}[orchestrator] No dispatches from prioritization, running default scout+assess"
+            )
             scout_until_done(question_id, self.db, parent_call_id=p_call.id)
             assess_question(question_id, self.db, parent_call_id=p_call.id)
             return
@@ -212,20 +199,27 @@ class Orchestrator:
 
             # Validate that the question ID actually exists
             if not self.db.get_page(d_question_id):
-                print(f"{indent}  [orchestrator] Skipping dispatch — question ID not found: {d_question_id[:8]}. "
-                      "Falling back to scope question.")
+                print(
+                    f"{indent}  [orchestrator] Skipping dispatch — question ID not found: {d_question_id[:8]}. "
+                    "Falling back to scope question."
+                )
                 d_question_id = question_id
 
             d_label = self.db.page_label(d_question_id)
             if d_type == CallType.SCOUT:
-                print(f"{indent}  -> Dispatch: scout on {d_label} "
-                      f"(fruit_threshold={d_fruit_threshold}, max_rounds={d_max_rounds}) — {d_reason}")
+                print(
+                    f"{indent}  -> Dispatch: scout on {d_label} "
+                    f"(fruit_threshold={d_fruit_threshold}, max_rounds={d_max_rounds}) — {d_reason}"
+                )
             else:
-                print(f"{indent}  -> Dispatch: {d_type} on {d_label} (budget={d_budget}) — {d_reason}")
+                print(
+                    f"{indent}  -> Dispatch: {d_type} on {d_label} (budget={d_budget}) — {d_reason}"
+                )
 
             if d_type is CallType.SCOUT:
                 spent = scout_until_done(
-                    d_question_id, self.db,
+                    d_question_id,
+                    self.db,
                     max_rounds=d_max_rounds,
                     fruit_threshold=d_fruit_threshold,
                     parent_call_id=p_call.id,
@@ -235,7 +229,8 @@ class Orchestrator:
 
             elif d_type is CallType.ASSESS:
                 ok = assess_question(
-                    d_question_id, self.db,
+                    d_question_id,
+                    self.db,
                     parent_call_id=p_call.id,
                     context_page_ids=d_context_ids,
                 )
@@ -254,10 +249,10 @@ class Orchestrator:
     def run(self, root_question_id: str) -> None:
         """Entry point. Investigate the root question with the full budget."""
         total, used = self.db.get_budget()
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"Starting research on {self.db.page_label(root_question_id)}")
         print(f"Total budget: {total} research calls")
-        print(f"{'='*60}\n")
+        print(f"{'=' * 60}\n")
 
         self.investigate_question(
             question_id=root_question_id,
@@ -265,6 +260,6 @@ class Orchestrator:
         )
 
         total, used = self.db.get_budget()
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"Research complete. Budget used: {used}/{total}")
-        print(f"{'='*60}\n")
+        print(f"{'=' * 60}\n")

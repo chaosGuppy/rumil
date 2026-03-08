@@ -1,4 +1,5 @@
 """Tests for dispatch type parsing and validation."""
+
 from differential.models import DISPATCHABLE_CALL_TYPES, CallType
 from differential.parser import Dispatch, parse_output
 
@@ -46,7 +47,7 @@ def test_dispatch_payload_accessible():
     raw = (
         '<dispatch type="scout">'
         '{"question_id": "abc123", "fruit_threshold": 3, "max_rounds": 8, "reason": "underexplored"}'
-        '</dispatch>'
+        "</dispatch>"
     )
     result = parse_output(raw)
     d = result.dispatches[0]

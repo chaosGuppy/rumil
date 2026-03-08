@@ -1,4 +1,5 @@
 """Prioritization call: plan budget allocation across questions."""
+
 from differential.calls.common import complete_call
 from differential.context import build_prioritization_context
 from differential.database import DB
@@ -18,7 +19,9 @@ def run_prioritization(
     Run a Prioritization call.
     Returns a summary dict including the list of dispatches.
     """
-    print(f"\n[PRIORITIZATION] {call.id[:8]} — {db.page_label(scope_question_id)} — budget {budget}")
+    print(
+        f"\n[PRIORITIZATION] {call.id[:8]} — {db.page_label(scope_question_id)} — budget {budget}"
+    )
 
     context_text = build_prioritization_context(db, scope_question_id=scope_question_id)
 
@@ -29,7 +32,9 @@ def run_prioritization(
         "Output your plan as a sequence of <dispatch> tags."
     )
 
-    raw = run_call(call_type="prioritization", task_description=task, context_text=context_text)
+    raw = run_call(
+        call_type="prioritization", task_description=task, context_text=context_text
+    )
 
     parsed = parse_output(raw)
     execute_all_moves(parsed, call, db)
@@ -39,5 +44,9 @@ def run_prioritization(
         "moves_created": len(parsed.moves),
     }
 
-    complete_call(call, db, f"Prioritization complete. Planned {len(parsed.dispatches)} dispatches.")
+    complete_call(
+        call,
+        db,
+        f"Prioritization complete. Planned {len(parsed.dispatches)} dispatches.",
+    )
     return summary

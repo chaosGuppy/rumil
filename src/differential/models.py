@@ -1,6 +1,7 @@
 """
 Data models for the research workspace.
 """
+
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -52,10 +53,10 @@ class CallStatus(str, Enum):
 
 
 class LinkType(str, Enum):
-    CONSIDERATION = "consideration"       # claim bears on a question
-    CHILD_QUESTION = "child_question"     # question decomposes into sub-question
-    SUPERSEDES = "supersedes"             # page replaces another
-    RELATED = "related"                   # general relation
+    CONSIDERATION = "consideration"  # claim bears on a question
+    CHILD_QUESTION = "child_question"  # question decomposes into sub-question
+    SUPERSEDES = "supersedes"  # page replaces another
+    RELATED = "related"  # general relation
 
 
 class MoveType(str, Enum):
@@ -88,8 +89,8 @@ class Page:
     content: str
     summary: str
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    epistemic_status: float = 2.5          # 0-5 subjective confidence
-    epistemic_type: str = ""               # description of uncertainty type
+    epistemic_status: float = 2.5  # 0-5 subjective confidence
+    epistemic_type: str = ""  # description of uncertainty type
     provenance_model: str = ""
     provenance_call_type: str = ""
     provenance_call_id: str = ""
@@ -109,7 +110,7 @@ class PageLink:
     link_type: LinkType
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     direction: Optional[ConsiderationDirection] = None  # for CONSIDERATION links
-    strength: float = 2.5                               # 0-5
+    strength: float = 2.5  # 0-5
     reasoning: str = ""
     created_at: datetime = field(default_factory=datetime.utcnow)
 
@@ -121,7 +122,7 @@ class Call:
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     status: CallStatus = CallStatus.PENDING
     parent_call_id: Optional[str] = None
-    scope_page_id: Optional[str] = None   # question/consideration this call is about
+    scope_page_id: Optional[str] = None  # question/consideration this call is about
     budget_allocated: Optional[int] = None
     budget_used: int = 0
     context_page_ids: list = field(default_factory=list)

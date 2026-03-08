@@ -4,6 +4,7 @@ Build a compact, LLM-readable workspace map for context injection.
 Returns a map text and a short_id → full_uuid lookup dict.
 Short IDs are the first 8 characters of each page UUID.
 """
+
 from typing import Optional
 
 from differential.database import DB
@@ -60,7 +61,9 @@ def _build_question_lines(
         c_sid = _short_id(claim.id)
         short_id_map[c_sid] = claim.id
         icon = _direction_icon(link.direction)
-        lines.append(f"{prefix}  [{icon} {link.strength:.1f}] `{c_sid}` — {claim.summary}")
+        lines.append(
+            f"{prefix}  [{icon} {link.strength:.1f}] `{c_sid}` — {claim.summary}"
+        )
 
     # Judgements
     for j in judgements:
@@ -99,7 +102,9 @@ def build_workspace_map(
         parts.append("### Questions")
         parts.append("")
         for q in root_questions:
-            lines = _build_question_lines(q, db, short_id_map, indent=0, collapse_depth=collapse_depth)
+            lines = _build_question_lines(
+                q, db, short_id_map, indent=0, collapse_depth=collapse_depth
+            )
             parts.extend(lines)
             parts.append("")
 

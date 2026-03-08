@@ -8,15 +8,17 @@ Modes:
 
 Set ANTHROPIC_API_KEY in your environment before running.
 """
+
 import argparse
 import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
 from differential.database import DB
-from differential.models import Call, CallType, Page, PageLayer, PageLink, PageType, LinkType, Workspace
+from differential.models import Page, PageLayer, PageLink, PageType, LinkType, Workspace
 from differential.orchestrator import Orchestrator, ingest_until_done
 from differential.chat import run_chat
 from differential.mapper import generate_map
@@ -43,8 +45,9 @@ def create_root_question(question_text: str, db: DB) -> str:
     return page.id
 
 
-def cmd_add_question(question_text: str, parent_id: str | None,
-                     budget: int | None, db: DB) -> None:
+def cmd_add_question(
+    question_text: str, parent_id: str | None, budget: int | None, db: DB
+) -> None:
     page = Page(
         page_type=PageType.QUESTION,
         layer=PageLayer.SQUIDGY,
@@ -63,7 +66,9 @@ def cmd_add_question(question_text: str, parent_id: str | None,
     if parent_id:
         parent = db.get_page(parent_id)
         if not parent:
-            print(f"Warning: parent '{parent_id}' not found — question created without parent link.")
+            print(
+                f"Warning: parent '{parent_id}' not found — question created without parent link."
+            )
         else:
             link = PageLink(
                 from_page_id=parent_id,
@@ -79,12 +84,14 @@ def cmd_add_question(question_text: str, parent_id: str | None,
 
     effective_budget = 5 if budget is None else budget
     if effective_budget > 0:
-        print(f"Budget:         {effective_budget} research call{'s' if effective_budget != 1 else ''}\n")
+        print(
+            f"Budget:         {effective_budget} research call{'s' if effective_budget != 1 else ''}\n"
+        )
         db.add_budget(effective_budget)
         Orchestrator(db).run(page.id)
         _print_summary(db)
     else:
-        print(f"\nTo investigate it later:")
+        print("\nTo investigate it later:")
         print(f"  python main.py --continue {page.id} --budget N")
 
 
@@ -94,7 +101,9 @@ def _read_file_content(path: Path) -> str:
         try:
             import pypdf
         except ImportError:
-            raise RuntimeError("pypdf is required for PDF ingestion: python -m pip install pypdf")
+            raise RuntimeError(
+                "pypdf is required for PDF ingestion: python -m pip install pypdf"
+            )
         reader = pypdf.PdfReader(str(path))
         pages = [page.extract_text() or "" for page in reader.pages]
         return "\n\n".join(pages)
@@ -104,6 +113,7 @@ def _read_file_content(path: Path) -> str:
 def _generate_source_summary(content: str, filename: str) -> str:
     """Generate a 2-3 sentence LLM summary of a source document."""
     from llm import run_llm
+
     excerpt = content[:8000]
     if len(content) > 8000:
         excerpt += f"\n\n[Document truncated; full length: {len(content):,} chars]"
@@ -168,8 +178,9 @@ def _run_ingest_calls(source_pages: list[Page], question_id: str, db: DB) -> int
     return made
 
 
-def cmd_ingest(ingest_files: list[str], for_question_id: str | None,
-               budget: int | None, db: DB) -> None:
+def cmd_ingest(
+    ingest_files: list[str], for_question_id: str | None, budget: int | None, db: DB
+) -> None:
     # Create source pages first (always free)
     source_pages = []
     for filepath in ingest_files:
@@ -181,13 +192,19 @@ def cmd_ingest(ingest_files: list[str], for_question_id: str | None,
         return
 
     if not for_question_id:
-        print("\nSources stored. Use --for-question QUESTION_ID to extract considerations.")
-        print("To investigate later:  python main.py --ingest FILE --for-question ID --budget N")
+        print(
+            "\nSources stored. Use --for-question QUESTION_ID to extract considerations."
+        )
+        print(
+            "To investigate later:  python main.py --ingest FILE --for-question ID --budget N"
+        )
         return
 
     question = db.get_page(for_question_id)
     if not question:
-        print(f"Error: question '{for_question_id}' not found. Run --list to see existing questions.")
+        print(
+            f"Error: question '{for_question_id}' not found. Run --list to see existing questions."
+        )
         return
 
     effective_budget = len(source_pages) if budget is None else budget
@@ -202,13 +219,15 @@ def cmd_ingest(ingest_files: list[str], for_question_id: str | None,
     total, used = db.get_budget()
     print(f"\nIngest complete. {made} extraction call{'s' if made != 1 else ''} made.")
     print(f"Budget used: {used}/{total}")
-    print(f"\nRun --map or --chat to explore the results.")
+    print("\nRun --map or --chat to explore the results.")
 
 
 def cmd_map(question_id: str, db: DB) -> None:
     question = db.get_page(question_id)
     if not question:
-        print(f"Error: question '{question_id}' not found. Run --list to see existing questions.")
+        print(
+            f"Error: question '{question_id}' not found. Run --list to see existing questions."
+        )
         sys.exit(1)
     print(f"\nGenerating map for: {question.summary[:80]}")
     path = generate_map(question_id, db)
@@ -219,7 +238,9 @@ def cmd_map(question_id: str, db: DB) -> None:
 def cmd_summary(question_id: str, db: DB) -> None:
     question = db.get_page(question_id)
     if not question:
-        print(f"Error: question '{question_id}' not found. Run --list to see existing questions.")
+        print(
+            f"Error: question '{question_id}' not found. Run --list to see existing questions."
+        )
         sys.exit(1)
 
     print(f"\nGenerating summary for: {question.summary[:80]}")
@@ -245,13 +266,19 @@ def cmd_list(db: DB) -> None:
     for q in questions:
         counts = db.count_pages_for_question(q.id)
         truncated = q.summary[:55] + "…" if len(q.summary) > 55 else q.summary
-        print(f"{q.id}  {counts['considerations']:>4}  {counts['judgements']:>4}  {truncated}")
-    print(f"\nTo continue investigating a question:")
-    print(f"  python main.py --continue QUESTION_ID --budget N")
+        print(
+            f"{q.id}  {counts['considerations']:>4}  {counts['judgements']:>4}  {truncated}"
+        )
+    print("\nTo continue investigating a question:")
+    print("  python main.py --continue QUESTION_ID --budget N")
 
 
-def cmd_new(question_text: str, budget: int | None, db: DB,
-            ingest_files: list[str] | None = None) -> None:
+def cmd_new(
+    question_text: str,
+    budget: int | None,
+    db: DB,
+    ingest_files: list[str] | None = None,
+) -> None:
     budget = budget if budget is not None else 10
     db.init_budget(budget)
     question_id = create_root_question(question_text, db)
@@ -278,10 +305,14 @@ def cmd_continue(question_id: str, additional_budget: int | None, db: DB) -> Non
     additional_budget = additional_budget if additional_budget is not None else 10
     question = db.get_page(question_id)
     if not question:
-        print(f"Error: question '{question_id}' not found. Run --list to see existing questions.")
+        print(
+            f"Error: question '{question_id}' not found. Run --list to see existing questions."
+        )
         sys.exit(1)
     if question.page_type != PageType.QUESTION:
-        print(f"Error: page '{question_id}' is a {question.page_type.value}, not a question.")
+        print(
+            f"Error: page '{question_id}' is a {question.page_type.value}, not a question."
+        )
         sys.exit(1)
 
     counts = db.count_pages_for_question(question_id)
@@ -292,9 +323,13 @@ def cmd_continue(question_id: str, additional_budget: int | None, db: DB) -> Non
 
     print(f"\nContinuing investigation of: {question.summary[:80]}")
     print(f"Question ID:  {question_id}")
-    print(f"Existing:     {counts['considerations']} considerations, {counts['judgements']} judgements")
-    print(f"Budget:       +{additional_budget} calls added "
-          f"(was {total_before - used_before} remaining, now {total_after - used_before} remaining)")
+    print(
+        f"Existing:     {counts['considerations']} considerations, {counts['judgements']} judgements"
+    )
+    print(
+        f"Budget:       +{additional_budget} calls added "
+        f"(was {total_before - used_before} remaining, now {total_after - used_before} remaining)"
+    )
 
     Orchestrator(db).run(question_id)
     _print_summary(db)
@@ -304,7 +339,7 @@ def _print_summary(db: DB) -> None:
     total, used = db.get_budget()
     print(f"\nPages written to: {PAGES_DIR}")
     print(f"Budget used:      {used}/{total} calls")
-    print(f"\nRun --list to see all questions.")
+    print("\nRun --list to see all questions.")
 
 
 def main():
@@ -319,28 +354,66 @@ def main():
         ),
     )
     parser.add_argument("question", nargs="?", help="Question to investigate (new run)")
-    parser.add_argument("--budget", type=int, default=None,
-                        help="Research call budget. With --add-question: defaults to 5, "
-                             "pass 0 to add without investigating. "
-                             "With --continue/new question: defaults to 10.")
-    parser.add_argument("--continue", dest="continue_id", metavar="QUESTION_ID",
-                        help="Continue investigating an existing question")
-    parser.add_argument("--list", action="store_true",
-                        help="List existing questions in the workspace")
-    parser.add_argument("--summary", dest="summary_id", metavar="QUESTION_ID",
-                        help="Generate an executive summary for a question")
-    parser.add_argument("--map", dest="map_id", metavar="QUESTION_ID",
-                        help="Generate a visual HTML map of the research tree")
-    parser.add_argument("--chat", dest="chat_id", metavar="QUESTION_ID",
-                        help="Chat interactively about the research on a question")
-    parser.add_argument("--add-question", dest="add_question", metavar="TEXT",
-                        help="Add a question to the workspace without investigating it yet")
-    parser.add_argument("--parent", dest="parent_id", metavar="QUESTION_ID",
-                        help="Parent question for --add-question")
-    parser.add_argument("--ingest", dest="ingest_files", action="append", metavar="FILE",
-                        help="Ingest a source file (can be repeated for multiple files)")
-    parser.add_argument("--for-question", dest="for_question_id", metavar="QUESTION_ID",
-                        help="Extract considerations from ingested source(s) for this question")
+    parser.add_argument(
+        "--budget",
+        type=int,
+        default=None,
+        help="Research call budget. With --add-question: defaults to 5, "
+        "pass 0 to add without investigating. "
+        "With --continue/new question: defaults to 10.",
+    )
+    parser.add_argument(
+        "--continue",
+        dest="continue_id",
+        metavar="QUESTION_ID",
+        help="Continue investigating an existing question",
+    )
+    parser.add_argument(
+        "--list", action="store_true", help="List existing questions in the workspace"
+    )
+    parser.add_argument(
+        "--summary",
+        dest="summary_id",
+        metavar="QUESTION_ID",
+        help="Generate an executive summary for a question",
+    )
+    parser.add_argument(
+        "--map",
+        dest="map_id",
+        metavar="QUESTION_ID",
+        help="Generate a visual HTML map of the research tree",
+    )
+    parser.add_argument(
+        "--chat",
+        dest="chat_id",
+        metavar="QUESTION_ID",
+        help="Chat interactively about the research on a question",
+    )
+    parser.add_argument(
+        "--add-question",
+        dest="add_question",
+        metavar="TEXT",
+        help="Add a question to the workspace without investigating it yet",
+    )
+    parser.add_argument(
+        "--parent",
+        dest="parent_id",
+        metavar="QUESTION_ID",
+        help="Parent question for --add-question",
+    )
+    parser.add_argument(
+        "--ingest",
+        dest="ingest_files",
+        action="append",
+        metavar="FILE",
+        help="Ingest a source file (can be repeated for multiple files)",
+    )
+    parser.add_argument(
+        "--for-question",
+        dest="for_question_id",
+        metavar="QUESTION_ID",
+        help="Extract considerations from ingested source(s) for this question",
+    )
     args = parser.parse_args()
 
     PAGES_DIR.mkdir(parents=True, exist_ok=True)

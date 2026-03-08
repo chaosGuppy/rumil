@@ -1,14 +1,21 @@
 """
 Execute parsed moves against the workspace database and file system.
 """
-from datetime import datetime
+
 from pathlib import Path
 from typing import Any, Optional
 
 from differential.database import DB
 from differential.models import (
-    Call, ConsiderationDirection, LinkType, MoveType,
-    Page, PageLayer, PageLink, PageType, Workspace,
+    Call,
+    ConsiderationDirection,
+    LinkType,
+    MoveType,
+    Page,
+    PageLayer,
+    PageLink,
+    PageType,
+    Workspace,
 )
 from differential.parser import Move
 
@@ -66,7 +73,9 @@ def _resolve_workspace(payload: dict) -> Workspace:
     return Workspace.RESEARCH if ws == "research" else Workspace.PRIORITIZATION
 
 
-def execute_move(move: Move, call: Call, db: DB, last_created_id: Optional[str] = None) -> Optional[str]:
+def execute_move(
+    move: Move, call: Call, db: DB, last_created_id: Optional[str] = None
+) -> Optional[str]:
     """
     Execute a single move. Returns the ID of any page created, or None.
     last_created_id: ID of the most recently created page, for LAST_CREATED resolution.
@@ -76,10 +85,7 @@ def execute_move(move: Move, call: Call, db: DB, last_created_id: Optional[str] 
 
     # Resolve LAST_CREATED placeholder in any string field
     if last_created_id:
-        p = {
-            k: (last_created_id if v == "LAST_CREATED" else v)
-            for k, v in p.items()
-        }
+        p = {k: (last_created_id if v == "LAST_CREATED" else v) for k, v in p.items()}
 
     if mt is MoveType.CREATE_CLAIM:
         return _create_page(p, call, db, PageType.CLAIM, PageLayer.SQUIDGY)
@@ -117,8 +123,12 @@ def execute_move(move: Move, call: Call, db: DB, last_created_id: Optional[str] 
     elif mt is MoveType.REPORT_DUPLICATE:
         pid_a = db.resolve_page_id(p.get("page_id_a", ""))
         pid_b = db.resolve_page_id(p.get("page_id_b", ""))
-        db.save_page_flag("duplicate", call_id=call.id, page_id_a=pid_a, page_id_b=pid_b)
-        print(f"  [flag] Duplicate reported: {p.get('page_id_a')} <-> {p.get('page_id_b')}")
+        db.save_page_flag(
+            "duplicate", call_id=call.id, page_id_a=pid_a, page_id_b=pid_b
+        )
+        print(
+            f"  [flag] Duplicate reported: {p.get('page_id_a')} <-> {p.get('page_id_b')}"
+        )
 
     elif mt is MoveType.PROPOSE_HYPOTHESIS:
         return _propose_hypothesis(p, call, db)
@@ -140,10 +150,20 @@ def _create_page(
     extra: dict[str, Any] = {}
 
     # Pull out well-known extra fields by page type
-    for key in ["status", "remaining_fruit", "parent_question_id",
-                 "key_dependencies", "sensitivity_analysis", "confidence_type",
-                 "decomposition_status", "source_url", "source_id",
-                 "direction", "strength", "hypothesis"]:
+    for key in [
+        "status",
+        "remaining_fruit",
+        "parent_question_id",
+        "key_dependencies",
+        "sensitivity_analysis",
+        "confidence_type",
+        "decomposition_status",
+        "source_url",
+        "source_id",
+        "direction",
+        "strength",
+        "hypothesis",
+    ]:
         if key in payload:
             extra[key] = payload[key]
 
@@ -171,13 +191,17 @@ def _link_consideration(payload: dict, db: DB) -> None:
     claim_id = payload.get("claim_id") or payload.get("from_page_id")
     question_id = payload.get("question_id") or payload.get("to_page_id")
     if not claim_id or not question_id:
-        print(f"  [executor] LINK_CONSIDERATION missing claim_id or question_id: {payload}")
+        print(
+            f"  [executor] LINK_CONSIDERATION missing claim_id or question_id: {payload}"
+        )
         return
 
     claim_id = db.resolve_page_id(claim_id)
     question_id = db.resolve_page_id(question_id)
     if not claim_id or not question_id:
-        print(f"  [executor] LINK_CONSIDERATION skipped — one or both page IDs not found: {payload}")
+        print(
+            f"  [executor] LINK_CONSIDERATION skipped — one or both page IDs not found: {payload}"
+        )
         return
 
     direction_str = payload.get("direction", "neutral").lower()
@@ -195,7 +219,9 @@ def _link_consideration(payload: dict, db: DB) -> None:
         reasoning=payload.get("reasoning", ""),
     )
     db.save_link(link)
-    print(f"  [~] Consideration: {db.page_label(claim_id)} -> {db.page_label(question_id)} ({direction_str})")
+    print(
+        f"  [~] Consideration: {db.page_label(claim_id)} -> {db.page_label(question_id)} ({direction_str})"
+    )
 
 
 def _link_pages(payload: dict, db: DB, link_type: LinkType) -> None:
@@ -208,7 +234,9 @@ def _link_pages(payload: dict, db: DB, link_type: LinkType) -> None:
     from_id = db.resolve_page_id(from_id)
     to_id = db.resolve_page_id(to_id)
     if not from_id or not to_id:
-        print(f"  [executor] {link_type.value} link skipped — one or both page IDs not found: {payload}")
+        print(
+            f"  [executor] {link_type.value} link skipped — one or both page IDs not found: {payload}"
+        )
         return
 
     link = PageLink(
@@ -218,7 +246,9 @@ def _link_pages(payload: dict, db: DB, link_type: LinkType) -> None:
         reasoning=payload.get("reasoning", ""),
     )
     db.save_link(link)
-    print(f"  [~] {link_type.value}: {db.page_label(from_id)} -> {db.page_label(to_id)}")
+    print(
+        f"  [~] {link_type.value}: {db.page_label(from_id)} -> {db.page_label(to_id)}"
+    )
 
 
 def _supersede(payload: dict, call: Call, db: DB) -> None:
@@ -241,7 +271,9 @@ def _supersede(payload: dict, call: Call, db: DB) -> None:
 def _propose_hypothesis(payload: dict, call: Call, db: DB) -> Optional[str]:
     parent_id = db.resolve_page_id(payload.get("parent_question_id", ""))
     if not parent_id:
-        print(f"  [executor] PROPOSE_HYPOTHESIS: parent_question_id not found: {payload.get('parent_question_id')}")
+        print(
+            f"  [executor] PROPOSE_HYPOTHESIS: parent_question_id not found: {payload.get('parent_question_id')}"
+        )
         return None
 
     hypothesis_text = payload.get("hypothesis", "").strip()
@@ -281,15 +313,19 @@ def _propose_hypothesis(payload: dict, call: Call, db: DB) -> Optional[str]:
     except ValueError:
         direction = ConsiderationDirection.NEUTRAL
 
-    db.save_link(PageLink(
-        from_page_id=claim.id,
-        to_page_id=parent_id,
-        link_type=LinkType.CONSIDERATION,
-        direction=direction,
-        strength=strength,
-        reasoning=reasoning,
-    ))
-    print(f"  [~] Consideration: {db.page_label(claim.id)} -> {db.page_label(parent_id)} ({direction_str})")
+    db.save_link(
+        PageLink(
+            from_page_id=claim.id,
+            to_page_id=parent_id,
+            link_type=LinkType.CONSIDERATION,
+            direction=direction,
+            strength=strength,
+            reasoning=reasoning,
+        )
+    )
+    print(
+        f"  [~] Consideration: {db.page_label(claim.id)} -> {db.page_label(parent_id)} ({direction_str})"
+    )
 
     # 2. Create the hypothesis question (investigation vehicle)
     q_text = f"What should we make of the hypothesis that {hypothesis_text}?"
@@ -310,13 +346,17 @@ def _propose_hypothesis(payload: dict, call: Call, db: DB) -> Optional[str]:
     _write_page_file(question)
     print(f"  [+] hypothesis question: {db.page_label(question.id)}")
 
-    db.save_link(PageLink(
-        from_page_id=parent_id,
-        to_page_id=question.id,
-        link_type=LinkType.CHILD_QUESTION,
-        reasoning=f"Hypothesis: {hypothesis_text[:80]}",
-    ))
-    print(f"  [~] child_question: {db.page_label(parent_id)} -> {db.page_label(question.id)}")
+    db.save_link(
+        PageLink(
+            from_page_id=parent_id,
+            to_page_id=question.id,
+            link_type=LinkType.CHILD_QUESTION,
+            reasoning=f"Hypothesis: {hypothesis_text[:80]}",
+        )
+    )
+    print(
+        f"  [~] child_question: {db.page_label(parent_id)} -> {db.page_label(question.id)}"
+    )
 
     return question.id
 

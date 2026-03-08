@@ -4,7 +4,6 @@ Build a compact, LLM-readable workspace map for context injection.
 Returns a map text and a short_id → full_uuid lookup dict.
 Short IDs are the first 8 characters of each page UUID.
 """
-import json
 from typing import Optional
 
 from differential.database import DB
@@ -52,7 +51,7 @@ def _build_question_lines(
         stats_parts.append(f"{n_sub} sub-Q{'s' if n_sub != 1 else ''}")
     stats = " · ".join(stats_parts) if stats_parts else "empty"
 
-    extra = json.loads(question.extra) if question.extra else {}
+    extra = question.extra or {}
     hypothesis_tag = " [hypothesis]" if extra.get("hypothesis") else ""
     lines = [f"{prefix}[Q]{hypothesis_tag} `{sid}` — {question.summary} ({stats})"]
 
@@ -110,7 +109,7 @@ def build_workspace_map(
         parts.append("### Sources")
         parts.append("")
         for src in source_pages:
-            extra = json.loads(src.extra) if src.extra else {}
+            extra = src.extra or {}
             filename = extra.get("filename", src.id[:8])
             char_count = extra.get("char_count", len(src.content))
             s_sid = _short_id(src.id)

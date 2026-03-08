@@ -1,5 +1,4 @@
 """Scout call: find missing considerations on a question."""
-import json as _json
 
 from differential.calls.common import (
     complete_call, dedup, format_extra_pages, print_page_ratings,
@@ -24,7 +23,7 @@ def run_scout(
     """
     print(f"\n[SCOUT] {call.id[:8]} — {db.page_label(question_id)}")
 
-    preloaded = _json.loads(call.context_page_ids or "[]")
+    preloaded = call.context_page_ids or []
     system_prompt = build_system_prompt("scout")
     context_text, short_id_map = build_call_context(question_id, db, extra_page_ids=preloaded)
 
@@ -63,6 +62,6 @@ def run_scout(
               f"confidence={review.get('confidence_in_output', '?')}")
         print_page_ratings(review, db)
 
-    call.review_json = _json.dumps(review or {})
+    call.review_json = review or {}
     complete_call(call, db, f"Scout complete. Created {len(created)} pages. Remaining fruit: {remaining_fruit}")
     return parsed, review or {}

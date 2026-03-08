@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[[ \"$CLAUDE_TOOL_INPUT_FILE_PATH\" != *.py ]] && exit 0; uv run pyright \"$CLAUDE_TOOL_INPUT_FILE_PATH\""
+            "command": "[[ \"$CLAUDE_TOOL_INPUT_FILE_PATH\" != *.py ]] && exit 0; uv run pyright --no-cache \"$CLAUDE_TOOL_INPUT_FILE_PATH\""
           }
         ]
       }

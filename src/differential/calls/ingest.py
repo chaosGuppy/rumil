@@ -1,5 +1,4 @@
 """Ingest call: extract considerations from a source document."""
-import json as _json
 
 from differential.calls.common import (
     complete_call, dedup, format_extra_pages, print_page_ratings,
@@ -23,12 +22,12 @@ def run_ingest(
     Run an Ingest call: extract considerations from a source document for a question.
     Returns (parsed_output, review_dict).
     """
-    extra = _json.loads(source_page.extra) if source_page.extra else {}
+    extra = source_page.extra or {}
     filename = extra.get("filename", source_page.id[:8])
 
     print(f"\n[INGEST] {call.id[:8]} — source '{filename}' -> {db.page_label(question_id)}")
 
-    preloaded = _json.loads(call.context_page_ids or "[]")
+    preloaded = call.context_page_ids or []
     system_prompt = build_system_prompt("ingest")
 
     question_context, short_id_map = build_call_context(question_id, db, extra_page_ids=preloaded)
@@ -75,6 +74,6 @@ def run_ingest(
               f"remaining_fruit={review.get('remaining_fruit', '?')}")
         print_page_ratings(review, db)
 
-    call.review_json = _json.dumps(review or {})
+    call.review_json = review or {}
     complete_call(call, db, f"Ingest complete. Created {len(created)} pages from '{filename}'.")
     return parsed, review or {}

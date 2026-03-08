@@ -1,7 +1,6 @@
 """
 Generate a visual HTML map of the research tree for a question.
 """
-import json
 from datetime import datetime
 from html import escape
 from pathlib import Path
@@ -92,7 +91,7 @@ def _render_consideration(claim: Page, link, parent_question_id: str) -> str:
 def _render_judgement(j: Page, index: int, total: int) -> str:
     color = _confidence_color(j.epistemic_status)
     label = f"Judgement {index + 1}/{total}" if total > 1 else "Judgement"
-    extra = json.loads(j.extra) if j.extra else {}
+    extra = j.extra or {}
     deps = extra.get("key_dependencies", "")
     sens = extra.get("sensitivity_analysis", "")
     meta = ""

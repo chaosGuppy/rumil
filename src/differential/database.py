@@ -1,11 +1,12 @@
 """
 Supabase database layer for the research workspace.
 """
-import json
 import os
 import uuid
 from datetime import datetime, timezone
+from typing import Any, cast
 
+from postgrest.types import CountMethod
 from supabase import create_client, Client
 from supabase.lib.client_options import SyncClientOptions
 
@@ -13,6 +14,15 @@ from differential.models import (
     Call, CallStatus, CallType, ConsiderationDirection,
     LinkType, Page, PageLayer, PageLink, PageType, Workspace,
 )
+
+# Supabase SDK types APIResponse.data as JSON | None, but table queries
+# always return list[dict]. We cast to this alias for clarity.
+_Rows = list[dict[str, Any]]
+
+
+def _rows(response: Any) -> _Rows:
+    """Extract rows from a Supabase API response with proper typing."""
+    return cast(_Rows, response.data) if response.data else []
 
 # Default local Supabase credentials (from `supabase status`)
 _DEFAULT_URL = 'http://127.0.0.1:54321'
@@ -29,25 +39,7 @@ def _make_client(schema: str = 'public') -> Client:
     return create_client(url, key, options=SyncClientOptions(schema=schema))
 
 
-def _json_str(value: object) -> str:
-    """Convert a JSONB value (dict/list) back to a JSON string for model compat."""
-    if isinstance(value, (dict, list)):
-        return json.dumps(value)
-    if value is None:
-        return '{}'
-    return str(value)
-
-
-def _ensure_json(value: object) -> dict | list:
-    """Convert a JSON string to dict/list for storage as JSONB."""
-    if isinstance(value, str):
-        return json.loads(value)
-    if isinstance(value, (dict, list)):
-        return value
-    return {}
-
-
-def _row_to_page(row: dict) -> Page:
+def _row_to_page(row: dict[str, Any]) -> Page:
     return Page(
         id=row['id'],
         page_type=PageType(row['page_type']),
@@ -63,11 +55,11 @@ def _row_to_page(row: dict) -> Page:
         created_at=datetime.fromisoformat(row['created_at']),
         superseded_by=row['superseded_by'],
         is_superseded=bool(row['is_superseded']),
-        extra=_json_str(row['extra']),
+        extra=row['extra'] or {},
     )
 
 
-def _row_to_link(row: dict) -> PageLink:
+def _row_to_link(row: dict[str, Any]) -> PageLink:
     return PageLink(
         id=row['id'],
         from_page_id=row['from_page_id'],
@@ -82,7 +74,7 @@ def _row_to_link(row: dict) -> PageLink:
     )
 
 
-def _row_to_call(row: dict) -> Call:
+def _row_to_call(row: dict[str, Any]) -> Call:
     return Call(
         id=row['id'],
         call_type=CallType(row['call_type']),
@@ -92,9 +84,9 @@ def _row_to_call(row: dict) -> Call:
         scope_page_id=row['scope_page_id'],
         budget_allocated=row['budget_allocated'],
         budget_used=row['budget_used'],
-        context_page_ids=_json_str(row.get('context_page_ids')),
+        context_page_ids=row.get('context_page_ids') or [],
         result_summary=row.get('result_summary') or '',
-        review_json=_json_str(row.get('review_json')),
+        review_json=row.get('review_json') or {},
         created_at=datetime.fromisoformat(row['created_at']),
         completed_at=(
             datetime.fromisoformat(row['completed_at'])
@@ -127,17 +119,17 @@ class DB:
             'created_at': page.created_at.isoformat(),
             'superseded_by': page.superseded_by,
             'is_superseded': page.is_superseded,
-            'extra': _ensure_json(page.extra),
+            'extra': page.extra,
         }).execute()
 
     def get_page(self, page_id: str) -> Page | None:
-        result = (
+        rows = _rows(
             self.client.table('pages')
             .select('*')
             .eq('id', page_id)
             .execute()
         )
-        return _row_to_page(result.data[0]) if result.data else None
+        return _row_to_page(rows[0]) if rows else None
 
     def resolve_page_id(self, page_id: str) -> str | None:
         """Resolve a page ID to a full UUID. Handles both full UUIDs and
@@ -145,28 +137,28 @@ class DB:
         if not page_id:
             return None
         # Try exact match first
-        result = (
+        rows = _rows(
             self.client.table('pages')
             .select('id')
             .eq('id', page_id)
             .execute()
         )
-        if result.data:
-            return result.data[0]['id']
+        if rows:
+            return rows[0]['id']
         # Try prefix match for short IDs
         if len(page_id) <= 8:
-            result = (
+            rows = _rows(
                 self.client.table('pages')
                 .select('id')
                 .like('id', f'{page_id}%')
                 .execute()
             )
-            if len(result.data) == 1:
-                return result.data[0]['id']
-            if len(result.data) > 1:
+            if len(rows) == 1:
+                return rows[0]['id']
+            if len(rows) > 1:
                 print(
                     f"  [db] Ambiguous short ID '{page_id}' matches "
-                    f"{len(result.data)} pages — skipping."
+                    f"{len(rows)} pages — skipping."
                 )
             return None
         return None
@@ -191,8 +183,7 @@ class DB:
             query = query.eq('page_type', page_type.value)
         if active_only:
             query = query.eq('is_superseded', False)
-        result = query.order('created_at', desc=True).execute()
-        return [_row_to_page(r) for r in result.data]
+        return [_row_to_page(r) for r in _rows(query.order('created_at', desc=True).execute())]
 
     def supersede_page(self, old_id: str, new_id: str) -> None:
         self.client.table('pages').update({
@@ -215,22 +206,22 @@ class DB:
         }).execute()
 
     def get_links_to(self, page_id: str) -> list[PageLink]:
-        result = (
+        rows = _rows(
             self.client.table('page_links')
             .select('*')
             .eq('to_page_id', page_id)
             .execute()
         )
-        return [_row_to_link(r) for r in result.data]
+        return [_row_to_link(r) for r in rows]
 
     def get_links_from(self, page_id: str) -> list[PageLink]:
-        result = (
+        rows = _rows(
             self.client.table('page_links')
             .select('*')
             .eq('from_page_id', page_id)
             .execute()
         )
-        return [_row_to_link(r) for r in result.data]
+        return [_row_to_link(r) for r in rows]
 
     def get_considerations_for_question(
         self, question_id: str,
@@ -284,9 +275,9 @@ class DB:
             'scope_page_id': call.scope_page_id,
             'budget_allocated': call.budget_allocated,
             'budget_used': call.budget_used,
-            'context_page_ids': _ensure_json(call.context_page_ids),
+            'context_page_ids': call.context_page_ids,
             'result_summary': call.result_summary,
-            'review_json': _ensure_json(call.review_json),
+            'review_json': call.review_json,
             'created_at': call.created_at.isoformat(),
             'completed_at': (
                 call.completed_at.isoformat() if call.completed_at else None
@@ -294,13 +285,13 @@ class DB:
         }).execute()
 
     def get_call(self, call_id: str) -> Call | None:
-        result = (
+        rows = _rows(
             self.client.table('calls')
             .select('*')
             .eq('id', call_id)
             .execute()
         )
-        return _row_to_call(result.data[0]) if result.data else None
+        return _row_to_call(rows[0]) if rows else None
 
     def update_call_status(
         self, call_id: str, status: CallStatus, result_summary: str = '',
@@ -332,14 +323,14 @@ class DB:
 
     def get_budget(self) -> tuple[int, int]:
         """Returns (total, used)."""
-        result = (
+        rows = _rows(
             self.client.table('budget')
             .select('total, used')
             .eq('id', 1)
             .execute()
         )
-        if result.data:
-            return result.data[0]['total'], result.data[0]['used']
+        if rows:
+            return rows[0]['total'], rows[0]['used']
         return 0, 0
 
     def consume_budget(self, amount: int = 1) -> bool:
@@ -347,7 +338,7 @@ class DB:
         result = self.client.rpc(
             'consume_budget', {'amount': amount},
         ).execute()
-        return result.data
+        return cast(bool, result.data)
 
     def add_budget(self, amount: int) -> None:
         """Add more calls to the existing budget (for continue runs)."""
@@ -362,7 +353,7 @@ class DB:
     ) -> tuple[str, int | None] | None:
         """Return (completed_at_iso, remaining_fruit) for the most recent
         scout call on this question, or None if never scouted."""
-        result = (
+        rows = _rows(
             self.client.table('calls')
             .select('completed_at, review_json')
             .eq('call_type', 'scout')
@@ -372,24 +363,19 @@ class DB:
             .limit(1)
             .execute()
         )
-        if not result.data or not result.data[0]['completed_at']:
+        if not rows or not rows[0]['completed_at']:
             return None
-        row = result.data[0]
-        review = row['review_json']
-        if isinstance(review, str):
-            try:
-                review = json.loads(review)
-            except Exception:
-                review = {}
+        row = rows[0]
+        review = row['review_json'] or {}
         fruit = review.get('remaining_fruit') if isinstance(review, dict) else None
         return row['completed_at'], fruit
 
     def get_ingest_history(self) -> dict[str, list[str]]:
         """Return {source_id: [question_id, ...]} based on considerations
         created by ingest calls."""
-        result = self.client.rpc('get_ingest_history').execute()
+        rows = _rows(self.client.rpc('get_ingest_history').execute())
         out: dict[str, list[str]] = {}
-        for row in result.data:
+        for row in rows:
             out.setdefault(row['source_id'], []).append(row['question_id'])
         return out
 
@@ -429,16 +415,16 @@ class DB:
         self, workspace: Workspace = Workspace.RESEARCH,
     ) -> list[Page]:
         """Return questions that have no parent (top-level questions)."""
-        result = self.client.rpc(
+        rows = _rows(self.client.rpc(
             'get_root_questions', {'ws': workspace.value},
-        ).execute()
-        return [_row_to_page(r) for r in result.data]
+        ).execute())
+        return [_row_to_page(r) for r in rows]
 
     def count_pages_for_question(self, question_id: str) -> dict:
         """Count pages linked to or created in context of a question."""
         cons_result = (
             self.client.table('page_links')
-            .select('id', count='exact')
+            .select('id', count=CountMethod.exact)
             .eq('to_page_id', question_id)
             .eq('link_type', 'consideration')
             .execute()
@@ -448,5 +434,5 @@ class DB:
         ).execute()
         return {
             'considerations': cons_result.count or 0,
-            'judgements': judgements_result.data or 0,
+            'judgements': cast(int, judgements_result.data or 0),
         }

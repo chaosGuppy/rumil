@@ -1,7 +1,6 @@
 """
 Build context text from workspace pages for injection into LLM prompts.
 """
-import json
 from typing import Optional
 
 from differential.database import DB
@@ -11,7 +10,7 @@ from differential.workspace_map import build_workspace_map
 
 def format_page(page: Page, db: Optional[DB] = None) -> str:
     """Format a single page as readable text for LLM context."""
-    extra = json.loads(page.extra) if page.extra else {}
+    extra = page.extra or {}
     lines = [
         f"### [{page.page_type.value.upper()}] {page.summary}",
         f"ID: {page.id}",
@@ -112,7 +111,7 @@ def _build_question_index(question_id: str, db: DB, indent: int = 0) -> list[str
     prefix = "  " * indent
     tag = "[scope]" if indent == 0 else "[child]"
 
-    extra = json.loads(question.extra) if question.extra else {}
+    extra = question.extra or {}
     is_hypothesis = extra.get("hypothesis", False)
     hypothesis_tag = " [hypothesis]" if is_hypothesis else ""
 
@@ -207,7 +206,7 @@ def build_prioritization_context(db: DB, scope_question_id: Optional[str] = None
         parts.append("## Sources and Ingest History")
         parts.append("")
         for src in source_pages:
-            src_extra = json.loads(src.extra) if src.extra else {}
+            src_extra = src.extra or {}
             filename = src_extra.get("filename", src.id[:8])
             char_count = src_extra.get("char_count", len(src.content))
             question_ids = ingest_history.get(src.id, [])

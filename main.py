@@ -9,7 +9,6 @@ Modes:
 Set ANTHROPIC_API_KEY in your environment before running.
 """
 import argparse
-import json
 import sys
 from pathlib import Path
 
@@ -38,7 +37,7 @@ def create_root_question(question_text: str, db: DB) -> str:
         provenance_model="human",
         provenance_call_type="init",
         provenance_call_id="init",
-        extra=json.dumps({"status": "open"}),
+        extra={"status": "open"},
     )
     db.save_page(page)
     return page.id
@@ -57,7 +56,7 @@ def cmd_add_question(question_text: str, parent_id: str | None,
         provenance_model="human",
         provenance_call_type="manual",
         provenance_call_id="manual",
-        extra=json.dumps({"status": "open"}),
+        extra={"status": "open"},
     )
     db.save_page(page)
 
@@ -148,7 +147,7 @@ def _create_source_page(filepath: str, db: DB) -> Page | None:
         provenance_model="human",
         provenance_call_type="ingest",
         provenance_call_id="manual",
-        extra=json.dumps({"filename": path.name, "char_count": len(content)}),
+        extra={"filename": path.name, "char_count": len(content)},
     )
     db.save_page(page)
     print(f"\nSource created: {page.id}")

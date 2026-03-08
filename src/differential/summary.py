@@ -72,13 +72,12 @@ def build_research_tree(question_id: str, db: DB, depth: int = 0, max_depth: int
     # Judgements — oldest first so the evolution of thinking is legible
     judgements = db.get_judgements_for_question(question_id)
     if judgements:
-        import json as _json
         ordered = sorted(judgements, key=lambda j: j.created_at)
         for i, j in enumerate(ordered):
             label = f"Judgement {i + 1} of {len(ordered)}" if len(ordered) > 1 else "Judgement"
             parts.append(f"{indent}**{label}** (confidence {j.epistemic_status:.2f} — {j.epistemic_type}):\n")
             parts.append(j.content)
-            extra = _json.loads(j.extra) if j.extra else {}
+            extra = j.extra or {}
             if extra.get("key_dependencies"):
                 parts.append(f"\n*Key dependencies: {extra['key_dependencies']}*")
             if extra.get("sensitivity_analysis"):

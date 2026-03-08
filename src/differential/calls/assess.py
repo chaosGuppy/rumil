@@ -1,5 +1,4 @@
 """Assess call: synthesise considerations and render a judgement."""
-import json as _json
 
 from differential.calls.common import (
     complete_call, dedup, format_extra_pages, print_page_ratings,
@@ -24,7 +23,7 @@ def run_assess(
     """
     print(f"\n[ASSESS] {call.id[:8]} — {db.page_label(question_id)}")
 
-    preloaded = _json.loads(call.context_page_ids or "[]")
+    preloaded = call.context_page_ids or []
     system_prompt = build_system_prompt("assess")
     context_text, short_id_map = build_call_context(question_id, db, extra_page_ids=preloaded)
 
@@ -64,6 +63,6 @@ def run_assess(
               f"self_assessment={review.get('self_assessment', '')[:80]}")
         print_page_ratings(review, db)
 
-    call.review_json = _json.dumps(review or {})
+    call.review_json = review or {}
     complete_call(call, db, f"Assess complete. Created {len(created)} pages.")
     return parsed, review or {}

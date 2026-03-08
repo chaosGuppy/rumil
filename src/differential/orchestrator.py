@@ -2,7 +2,6 @@
 Orchestrator: drives the research workflow using the prioritization system.
 Budget is tracked here; prioritization and review calls are free.
 """
-import json
 import uuid
 from datetime import datetime
 from typing import Optional
@@ -25,7 +24,7 @@ def _make_call(
     parent_call_id: Optional[str] = None,
     budget_allocated: Optional[int] = None,
     workspace: Workspace = Workspace.RESEARCH,
-    context_page_ids: str = "[]",
+    context_page_ids: list | None = None,
 ) -> Call:
     call = Call(
         call_type=call_type,
@@ -34,7 +33,7 @@ def _make_call(
         parent_call_id=parent_call_id,
         budget_allocated=budget_allocated,
         status=CallStatus.PENDING,
-        context_page_ids=context_page_ids,
+        context_page_ids=context_page_ids or [],
     )
     db.save_call(call)
     return call
@@ -55,7 +54,7 @@ def scout_until_done(
     max_rounds: int = DEFAULT_MAX_ROUNDS,
     fruit_threshold: int = DEFAULT_FRUIT_THRESHOLD,
     parent_call_id: Optional[str] = None,
-    context_page_ids: str = "[]",
+    context_page_ids: list | None = None,
 ) -> int:
     """
     Run Scout rounds until remaining_fruit falls below fruit_threshold or max_rounds
@@ -129,7 +128,7 @@ def assess_question(
     question_id: str,
     db: DB,
     parent_call_id: Optional[str] = None,
-    context_page_ids: str = "[]",
+    context_page_ids: list | None = None,
 ) -> bool:
     """Run one Assess call on a question. Returns False if no budget."""
     if not _consume_budget(db):
@@ -208,7 +207,6 @@ class Orchestrator:
             d_budget = int(p.get("budget", 1))
             d_reason = p.get("reason", "")
             d_context_ids = p.get("context_page_ids", [])
-            d_context_ids_json = json.dumps(d_context_ids)
             d_fruit_threshold = int(p.get("fruit_threshold", DEFAULT_FRUIT_THRESHOLD))
             d_max_rounds = int(p.get("max_rounds", DEFAULT_MAX_ROUNDS))
 
@@ -231,7 +229,7 @@ class Orchestrator:
                     max_rounds=d_max_rounds,
                     fruit_threshold=d_fruit_threshold,
                     parent_call_id=p_call.id,
-                    context_page_ids=d_context_ids_json,
+                    context_page_ids=d_context_ids,
                 )
                 budget_spent += spent
 
@@ -239,7 +237,7 @@ class Orchestrator:
                 ok = assess_question(
                     d_question_id, self.db,
                     parent_call_id=p_call.id,
-                    context_page_ids=d_context_ids_json,
+                    context_page_ids=d_context_ids,
                 )
                 if ok:
                     budget_spent += 1

@@ -1,7 +1,6 @@
 """
 Execute parsed moves against the workspace database and file system.
 """
-import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -35,7 +34,7 @@ def _write_page_file(page: Page) -> None:
     d = _pages_dir(page.workspace)
     filepath = d / _page_filename(page)
 
-    extra = json.loads(page.extra) if page.extra else {}
+    extra = page.extra or {}
 
     lines = [
         f"# {page.summary}",
@@ -159,7 +158,7 @@ def _create_page(
         provenance_model=payload.get("provenance_model", "claude-opus-4-6"),
         provenance_call_type=call.call_type.value,
         provenance_call_id=call.id,
-        extra=json.dumps(extra),
+        extra=extra,
     )
 
     db.save_page(page)
@@ -271,7 +270,7 @@ def _propose_hypothesis(payload: dict, call: Call, db: DB) -> Optional[str]:
         provenance_model=payload.get("provenance_model", "claude-opus-4-6"),
         provenance_call_type=call.call_type.value,
         provenance_call_id=call.id,
-        extra=json.dumps({"hypothesis": True}),
+        extra={"hypothesis": True},
     )
     db.save_page(claim)
     _write_page_file(claim)
@@ -305,7 +304,7 @@ def _propose_hypothesis(payload: dict, call: Call, db: DB) -> Optional[str]:
         provenance_model=payload.get("provenance_model", "claude-opus-4-6"),
         provenance_call_type=call.call_type.value,
         provenance_call_id=call.id,
-        extra=json.dumps({"hypothesis": True, "status": "open"}),
+        extra={"hypothesis": True, "status": "open"},
     )
     db.save_page(question)
     _write_page_file(question)

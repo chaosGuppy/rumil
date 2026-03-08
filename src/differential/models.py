@@ -96,8 +96,7 @@ class Page:
     created_at: datetime = field(default_factory=datetime.utcnow)
     superseded_by: Optional[str] = None
     is_superseded: bool = False
-    # type-specific extras stored as JSON string
-    extra: str = "{}"
+    extra: dict = field(default_factory=dict)
 
     def is_active(self) -> bool:
         return not self.is_superseded
@@ -125,8 +124,8 @@ class Call:
     scope_page_id: Optional[str] = None   # question/consideration this call is about
     budget_allocated: Optional[int] = None
     budget_used: int = 0
-    context_page_ids: str = "[]"           # JSON list
+    context_page_ids: list = field(default_factory=list)
     result_summary: str = ""
-    review_json: str = "{}"               # JSON dict from closing review
+    review_json: dict = field(default_factory=dict)
     created_at: datetime = field(default_factory=datetime.utcnow)
     completed_at: Optional[datetime] = None

@@ -11,6 +11,7 @@ The closing review uses a separate tag:
     { ...json payload... }
     </review>
 """
+
 import json
 import re
 from dataclasses import dataclass
@@ -25,7 +26,7 @@ MOVE_PATTERN = re.compile(
 )
 
 REVIEW_PATTERN = re.compile(
-    r'<review>\s*(.*?)\s*</review>',
+    r"<review>\s*(.*?)\s*</review>",
     re.DOTALL | re.IGNORECASE,
 )
 
@@ -52,8 +53,8 @@ class Dispatch:
 class ParsedOutput:
     moves: list[Move]
     review: Optional[dict[str, Any]]
-    dispatches: list[Dispatch]         # for prioritization calls
-    load_page_ids: list[str]           # short IDs from LOAD_PAGE moves (phase 1 only)
+    dispatches: list[Dispatch]  # for prioritization calls
+    load_page_ids: list[str]  # short IDs from LOAD_PAGE moves
     raw: str
 
 
@@ -85,6 +86,8 @@ def parse_output(raw: str) -> ParsedOutput:
         moves.append(Move(move_type=move_type, payload=payload, raw=match.group(0)))
         if move_type is MoveType.LOAD_PAGE:
             pid = payload.get("page_id", "")
+            if not pid:
+                pid = payload.get("_raw", "").strip().strip('"')
             if pid:
                 load_page_ids.append(pid)
 
@@ -108,6 +111,9 @@ def parse_output(raw: str) -> ParsedOutput:
         review = _parse_json_payload(review_match.group(1), "review")
 
     return ParsedOutput(
-        moves=moves, review=review, dispatches=dispatches,
-        load_page_ids=load_page_ids, raw=raw,
+        moves=moves,
+        review=review,
+        dispatches=dispatches,
+        load_page_ids=load_page_ids,
+        raw=raw,
     )

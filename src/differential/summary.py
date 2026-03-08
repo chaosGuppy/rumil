@@ -1,12 +1,12 @@
 """
 Generate a human-readable executive summary of research on a question.
 """
+
 from datetime import datetime
 from pathlib import Path
 
 from differential.database import DB
 from differential.llm import run_llm
-from differential.models import PageType
 
 PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts"
 SUMMARIES_DIR = Path(__file__).parent.parent.parent / "pages" / "summaries"
@@ -17,7 +17,9 @@ def _load_prompt_file(name: str) -> str:
     return path.read_text(encoding="utf-8") if path.exists() else ""
 
 
-def build_research_tree(question_id: str, db: DB, depth: int = 0, max_depth: int = 4) -> str:
+def build_research_tree(
+    question_id: str, db: DB, depth: int = 0, max_depth: int = 4
+) -> str:
     """
     Recursively build a full picture of the research on a question:
     the question itself, all its considerations (with full content),
@@ -34,14 +36,28 @@ def build_research_tree(question_id: str, db: DB, depth: int = 0, max_depth: int
     if depth == 0:
         parts.append(f"# Research Question\n\n{question.content}\n")
     else:
-        parts.append(f"{'#' * (depth + 2)} Sub-question: {question.summary}\n\n{question.content}\n")
+        parts.append(
+            f"{'#' * (depth + 2)} Sub-question: {question.summary}\n\n{question.content}\n"
+        )
 
     # Considerations
     considerations = db.get_considerations_for_question(question_id)
     if considerations:
-        supports = [(p, l) for p, l in considerations if l.direction and l.direction.value == "supports"]
-        opposes  = [(p, l) for p, l in considerations if l.direction and l.direction.value == "opposes"]
-        neutral  = [(p, l) for p, l in considerations if not l.direction or l.direction.value == "neutral"]
+        supports = [
+            (p, l)
+            for p, l in considerations
+            if l.direction and l.direction.value == "supports"
+        ]
+        opposes = [
+            (p, l)
+            for p, l in considerations
+            if l.direction and l.direction.value == "opposes"
+        ]
+        neutral = [
+            (p, l)
+            for p, l in considerations
+            if not l.direction or l.direction.value == "neutral"
+        ]
 
         def format_consideration(claim, link) -> str:
             strength_note = f" (strength {link.strength:.1f})" if link.strength else ""
@@ -74,8 +90,14 @@ def build_research_tree(question_id: str, db: DB, depth: int = 0, max_depth: int
     if judgements:
         ordered = sorted(judgements, key=lambda j: j.created_at)
         for i, j in enumerate(ordered):
-            label = f"Judgement {i + 1} of {len(ordered)}" if len(ordered) > 1 else "Judgement"
-            parts.append(f"{indent}**{label}** (confidence {j.epistemic_status:.2f} — {j.epistemic_type}):\n")
+            label = (
+                f"Judgement {i + 1} of {len(ordered)}"
+                if len(ordered) > 1
+                else "Judgement"
+            )
+            parts.append(
+                f"{indent}**{label}** (confidence {j.epistemic_status:.2f} — {j.epistemic_type}):\n"
+            )
             parts.append(j.content)
             extra = j.extra or {}
             if extra.get("key_dependencies"):
@@ -89,7 +111,11 @@ def build_research_tree(question_id: str, db: DB, depth: int = 0, max_depth: int
         children = db.get_child_questions(question_id)
         if children:
             for child in children:
-                parts.append(build_research_tree(child.id, db, depth=depth + 1, max_depth=max_depth))
+                parts.append(
+                    build_research_tree(
+                        child.id, db, depth=depth + 1, max_depth=max_depth
+                    )
+                )
 
     return "\n".join(parts)
 
@@ -117,7 +143,9 @@ def generate_summary(question_id: str, db: DB) -> str:
         f"{closing}"
     )
 
-    return run_llm(system_prompt=system_prompt, user_message=user_message, max_tokens=8192)
+    return run_llm(
+        system_prompt=system_prompt, user_message=user_message, max_tokens=8192
+    )
 
 
 def save_summary(summary_text: str, question_summary: str) -> Path:

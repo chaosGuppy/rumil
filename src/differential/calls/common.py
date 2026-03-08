@@ -1,13 +1,14 @@
 """Shared utilities for call types."""
 
 from datetime import datetime
+from typing import cast
 
 from anthropic.types import MessageParam
 
 from differential.context import format_page
 from differential.database import DB
 from differential.llm import build_user_message, run_llm
-from differential.models import Call, CallStatus, MoveType
+from differential.models import Call, CallStatus
 from differential.parser import ParsedOutput, parse_output
 
 REVIEW_SYSTEM_PROMPT = (
@@ -77,18 +78,20 @@ def run_closing_review(
         if page_lines:
             page_rating_prompt = (
                 "\n\nThe following pages were loaded into your context beyond the base "
-                "working context:\n" + "\n".join(page_lines) +
-                "\n\nFor each, include a rating in your review JSON:\n"
+                "working context:\n"
+                + "\n".join(page_lines)
+                + "\n\nFor each, include a rating in your review JSON:\n"
                 '  "page_ratings": [\n'
                 '    {"page_id": "SHORT_ID", "score": N, "note": "one sentence"}\n'
-                '  ]\n'
+                "  ]\n"
                 "Scores: -1 = actively confusing, 0 = didn't help, "
                 "1 = helped, 2 = extremely helpful"
             )
 
     page_ratings_field = (
         '  "page_ratings": [{"page_id": "...", "score": N, "note": "..."}],  // if pages were loaded\n'
-        if loaded_page_ids else ""
+        if loaded_page_ids
+        else ""
     )
 
     review_task = (
@@ -98,10 +101,10 @@ def run_closing_review(
         "<review>\n"
         "{\n"
         '  "remaining_fruit": <0-10 integer — how much useful work remains on this scope>\n'
-        '    // Scale: 0 = nothing more to add; 1-2 = close to exhausted, only marginal additions expected;\n'
-        '    // 3-4 = most significant angles covered, incremental gains likely;\n'
-        '    // 5-6 = good coverage so far, diminishing but real returns expected;\n'
-        '    // 7-8 = substantial work remains, clear gaps visible; 9-10 = barely started\n'
+        "    // Scale: 0 = nothing more to add; 1-2 = close to exhausted, only marginal additions expected;\n"
+        "    // 3-4 = most significant angles covered, incremental gains likely;\n"
+        "    // 5-6 = good coverage so far, diminishing but real returns expected;\n"
+        "    // 7-8 = substantial work remains, clear gaps visible; 9-10 = barely started\n"
         '  "confidence_in_output": <0-5 float>,\n'
         '  "context_was_adequate": <true/false>,\n'
         '  "what_was_missing": "<optional: what additional context would have helped>",\n'
@@ -133,31 +136,31 @@ def run_closing_review(
     except Exception as e:
         status = getattr(e, "status_code", None)
         reason = f"HTTP {status}" if status else type(e).__name__
-        print(f"  [review] Closing review skipped after retries ({reason}) — continuing.")
+        print(
+            f"  [review] Closing review skipped after retries ({reason}) — continuing."
+        )
         return None
 
 
 def run_phase1(
     system_prompt: str,
     phase1_user_msg: str,
-    short_id_map: dict[str, str] | None = None,
-    db: DB | None = None,
+    short_id_map: dict[str, str],
+    db: DB,
 ) -> tuple[str, list[str]]:
-    """Preliminary analysis. Returns (raw_response, short_load_ids). Free."""
+    """Preliminary analysis. Returns (raw_response, resolved_full_page_ids). Free."""
     try:
         raw = run_llm(
             system_prompt=system_prompt,
             user_message=phase1_user_msg,
             max_tokens=2048,
         )
-        load_ids = parse_output(raw).load_page_ids
-        if load_ids and db and short_id_map:
-            labels = [db.page_label(short_id_map[s]) if s in short_id_map else f'[{s}]'
-                      for s in load_ids]
+        short_ids = parse_output(raw).load_page_ids
+        resolved = resolve_load_requests(short_ids, short_id_map, db)
+        if resolved:
+            labels = [db.page_label(pid) for pid in resolved]
             print(f"  [phase1] Requested pages: {', '.join(labels)}")
-        elif load_ids:
-            print(f"  [phase1] Requested pages: {load_ids}")
-        return raw, load_ids
+        return raw, resolved
     except Exception as e:
         status = getattr(e, "status_code", None)
         reason = f"HTTP {status}" if status else type(e).__name__
@@ -176,19 +179,14 @@ def format_extra_pages(page_ids: list[str], db: DB) -> str:
 
 
 def resolve_load_requests(
-    parsed: ParsedOutput,
+    short_ids: list[str],
     short_id_map: dict[str, str],
     db: DB,
 ) -> list[str]:
-    """Return valid full UUIDs for all LOAD_PAGE moves in a parsed response."""
+    """Resolve short page IDs to valid full UUIDs, deduplicating."""
     valid_ids = []
     seen: set[str] = set()
-    for move in parsed.moves:
-        if move.move_type is not MoveType.LOAD_PAGE:
-            continue
-        pid = move.payload.get("page_id", "")
-        if not pid:
-            pid = move.payload.get("_raw", "").strip().strip('"')
+    for pid in short_ids:
         pid = pid.strip()
         if not pid or pid in seen:
             continue
@@ -201,41 +199,50 @@ def resolve_load_requests(
 
 def run_with_loading(
     system_prompt: str,
-    initial_messages: list[MessageParam],
+    initial_messages: list[dict[str, str]],
     short_id_map: dict[str, str],
     db: DB,
     max_tokens: int = 4096,
 ) -> tuple[str, ParsedOutput, list[str]]:
     """Phase 2: run the LLM with iterative LOAD_PAGE support."""
-    messages = list(initial_messages)
+    messages = cast(list[MessageParam], initial_messages)
     all_loaded: list[str] = []
 
     for round_num in range(MAX_LOAD_ROUNDS + 1):
-        raw = run_llm(system_prompt=system_prompt, messages=messages, max_tokens=max_tokens)
+        raw = run_llm(
+            system_prompt=system_prompt, messages=messages, max_tokens=max_tokens
+        )
         parsed = parse_output(raw)
 
-        load_page_moves = [m for m in parsed.moves if m.move_type is MoveType.LOAD_PAGE]
-        if not load_page_moves:
+        if not parsed.load_page_ids:
             return raw, parsed, all_loaded
 
         if round_num == MAX_LOAD_ROUNDS:
-            print(f"  [phase2] Max load rounds ({MAX_LOAD_ROUNDS}) reached — proceeding.")
+            print(
+                f"  [phase2] Max load rounds ({MAX_LOAD_ROUNDS}) reached — proceeding."
+            )
             return raw, parsed, all_loaded
 
-        valid_ids = resolve_load_requests(parsed, short_id_map, db)
+        valid_ids = resolve_load_requests(parsed.load_page_ids, short_id_map, db)
         all_loaded.extend(valid_ids)
-        print(f"  [phase2] Round {round_num + 1}: loading {len(valid_ids)} page(s) "
-              f"({len(load_page_moves)} requested)...")
+        print(
+            f"  [phase2] Round {round_num + 1}: loading {len(valid_ids)} page(s) "
+            f"({len(parsed.load_page_ids)} requested)..."
+        )
 
         extra_text = format_extra_pages(valid_ids, db) if valid_ids else ""
-        is_last = (round_num + 1 == MAX_LOAD_ROUNDS)
+        is_last = round_num + 1 == MAX_LOAD_ROUNDS
         follow_up = (
-            (f"## Additional Loaded Pages\n\n{extra_text}\n\n---\n\n" if extra_text else "")
-            + ("This is the final loading round — complete your task now, do not use LOAD_PAGE further."
-               if is_last else "Continue with your task.")
+            f"## Additional Loaded Pages\n\n{extra_text}\n\n---\n\n"
+            if extra_text
+            else ""
+        ) + (
+            "This is the final loading round — complete your task now, do not use LOAD_PAGE further."
+            if is_last
+            else "Continue with your task."
         )
 
         messages.append({"role": "assistant", "content": raw})
-        messages.append({"role": "user",      "content": follow_up})
+        messages.append({"role": "user", "content": follow_up})
 
     raise RuntimeError("Unreachable: loading loop exhausted without returning")

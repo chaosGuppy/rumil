@@ -1,4 +1,5 @@
 """Tests for MoveType enum, parsing, and execution."""
+
 from differential.models import MoveType, PageType
 from differential.parser import parse_output
 

@@ -2,6 +2,7 @@
 Interactive chat mode: ask questions about research with the full context loaded.
 Reads from the workspace; can add questions for investigation via slash commands.
 """
+
 import json
 import os
 import re
@@ -18,16 +19,17 @@ DEFAULT_INVESTIGATE_BUDGET = 3
 
 # True-colour ANSI: warm off-white for human, cool off-white for assistant
 # Works on Windows 11 terminal and most modern terminals
-_RESET  = "\033[0m"
-_HUMAN  = "\033[38;2;255;240;210m"   # warm cream
-_AI     = "\033[38;2;210;230;255m"   # cool blue-white
-_DIM    = "\033[38;2;150;150;150m"   # for system messages / slash command feedback
+_RESET = "\033[0m"
+_HUMAN = "\033[38;2;255;240;210m"  # warm cream
+_AI = "\033[38;2;210;230;255m"  # cool blue-white
+_DIM = "\033[38;2;150;150;150m"  # for system messages / slash command feedback
 
 
 def _enable_ansi_windows() -> None:
     """Enable ANSI escape codes on Windows if needed."""
     if os.name == "nt":
         import ctypes
+
         kernel32 = ctypes.windll.kernel32
         kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7)
 
@@ -42,6 +44,7 @@ def ai(text: str) -> str:
 
 def dim(text: str) -> str:
     return f"{_DIM}{text}{_RESET}"
+
 
 HELP_TEXT = (
     "\n"
@@ -74,7 +77,7 @@ def _parse_slash_command(text: str) -> tuple[str, str, int | None] | None:
     budget_match = re.search(r"--budget\s+(\d+)", text)
     if budget_match:
         budget = int(budget_match.group(1))
-        text = text[:budget_match.start()].strip()
+        text = text[: budget_match.start()].strip()
 
     parts = text.split(None, 1)
     command = parts[0].lstrip("/").lower()
@@ -127,7 +130,11 @@ def _handle_slash_command(
     if command == "add":
         page_id = _add_question(question_text, scope_question_id, db)
         print(dim(f"\n  Question added: {page_id}"))
-        print(dim(f"  To investigate later: python main.py --continue {page_id} --budget N"))
+        print(
+            dim(
+                f"  To investigate later: python main.py --continue {page_id} --budget N"
+            )
+        )
 
     elif command == "investigate":
         effective_budget = budget if budget is not None else DEFAULT_INVESTIGATE_BUDGET
@@ -162,10 +169,7 @@ def run_chat(question_id: str, db: DB) -> None:
         return
 
     system_prompt = (
-        f"{_load_chat_prompt()}\n\n"
-        "---\n\n"
-        "## Research Context\n\n"
-        f"{research_tree}"
+        f"{_load_chat_prompt()}\n\n---\n\n## Research Context\n\n{research_tree}"
     )
 
     _enable_ansi_windows()

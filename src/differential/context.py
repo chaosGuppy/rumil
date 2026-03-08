@@ -1,10 +1,11 @@
 """
 Build context text from workspace pages for injection into LLM prompts.
 """
+
 from typing import Optional
 
 from differential.database import DB
-from differential.models import Page, PageLink, PageType, Workspace
+from differential.models import Page, PageType, Workspace
 from differential.workspace_map import build_workspace_map
 
 
@@ -55,7 +56,6 @@ def format_pages_block(pages: list[Page], header: str, db: Optional[DB] = None) 
         parts.append(format_page(page, db=db))
         parts.append("")
     return "\n".join(parts)
-
 
 
 def build_context_for_question(
@@ -169,7 +169,9 @@ def build_call_context(
     return "\n".join(parts), short_id_map
 
 
-def build_prioritization_context(db: DB, scope_question_id: Optional[str] = None) -> str:
+def build_prioritization_context(
+    db: DB, scope_question_id: Optional[str] = None
+) -> str:
     """Build context for a prioritization call."""
     parts = ["# Prioritization Context", ""]
 

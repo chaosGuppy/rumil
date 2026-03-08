@@ -1,12 +1,13 @@
 """
 Generate a visual HTML map of the research tree for a question.
 """
+
 from datetime import datetime
 from html import escape
 from pathlib import Path
 
 from differential.database import DB
-from differential.models import Page, PageType
+from differential.models import Page
 
 PAGES_DIR = Path(__file__).parent.parent.parent / "pages"
 MAPS_DIR = PAGES_DIR / "maps"
@@ -38,39 +39,51 @@ def _rel_path(page_file: Path) -> str:
 
 
 def _budget_select(select_id: str) -> str:
-    return (f'<select id="{select_id}" class="budget-select">'
-            '<option value="1">1</option>'
-            '<option value="3">3</option>'
-            '<option value="5" selected>5</option>'
-            '<option value="10">10</option>'
-            '<option value="20">20</option>'
-            '</select>')
+    return (
+        f'<select id="{select_id}" class="budget-select">'
+        '<option value="1">1</option>'
+        '<option value="3">3</option>'
+        '<option value="5" selected>5</option>'
+        '<option value="10">10</option>'
+        '<option value="20">20</option>'
+        "</select>"
+    )
 
 
 def _render_consideration(claim: Page, link, parent_question_id: str) -> str:
     color = _confidence_color(claim.epistemic_status)
     stars = _stars(link.strength)
     direction = link.direction.value if link.direction else "neutral"
-    direction_icon = {"supports": "↑", "opposes": "↓", "neutral": "→"}.get(direction, "→")
+    direction_icon = {"supports": "↑", "opposes": "↓", "neutral": "→"}.get(
+        direction, "→"
+    )
 
     words = claim.summary.split()
     short = " ".join(words[:30]) + ("…" if len(words) > 30 else "")
-    epistemic = (f"{claim.epistemic_status:.1f}/5 confidence"
-                 + (f" — {escape(claim.epistemic_type)}" if claim.epistemic_type else ""))
+    epistemic = f"{claim.epistemic_status:.1f}/5 confidence" + (
+        f" — {escape(claim.epistemic_type)}" if claim.epistemic_type else ""
+    )
 
     page_file = _find_page_file(claim)
-    source_link = (f'<a class="source-link" href="{_rel_path(page_file)}">View source →</a>'
-                   if page_file else "")
+    source_link = (
+        f'<a class="source-link" href="{_rel_path(page_file)}">View source →</a>'
+        if page_file
+        else ""
+    )
 
     sel_id = f"b-{claim.id[:8]}"
     # Escape the summary for safe JS string embedding
-    js_summary = claim.summary.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
-    btn = (f'{_budget_select(sel_id)}'
-           f'<button class="inv-btn" onclick="copyCmd(this, '
-           f'\'python main.py --add-question &quot;{js_summary[:80]}&quot; '
-           f'--parent {parent_question_id} --budget \' + '
-           f'document.getElementById(\'{sel_id}\').value)">'
-           f'Dig into this</button>')
+    js_summary = (
+        claim.summary.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
+    )
+    btn = (
+        f"{_budget_select(sel_id)}"
+        f'<button class="inv-btn" onclick="copyCmd(this, '
+        f"'python main.py --add-question &quot;{js_summary[:80]}&quot; "
+        f"--parent {parent_question_id} --budget ' + "
+        f"document.getElementById('{sel_id}').value)\">"
+        f"Dig into this</button>"
+    )
 
     return f"""<div class="consideration {direction}" style="background:{color}">
   <details>
@@ -122,25 +135,49 @@ def _render_question(question_id: str, db: DB, depth: int = 0) -> str:
         return ""
 
     considerations = db.get_considerations_for_question(question_id)
-    supports = sorted([(p, l) for p, l in considerations
-                       if l.direction and l.direction.value == "supports"],
-                      key=lambda x: x[1].strength, reverse=True)
-    opposes  = sorted([(p, l) for p, l in considerations
-                       if l.direction and l.direction.value == "opposes"],
-                      key=lambda x: x[1].strength, reverse=True)
-    neutral  = sorted([(p, l) for p, l in considerations
-                       if not l.direction or l.direction.value == "neutral"],
-                      key=lambda x: x[1].strength, reverse=True)
+    supports = sorted(
+        [
+            (p, l)
+            for p, l in considerations
+            if l.direction and l.direction.value == "supports"
+        ],
+        key=lambda x: x[1].strength,
+        reverse=True,
+    )
+    opposes = sorted(
+        [
+            (p, l)
+            for p, l in considerations
+            if l.direction and l.direction.value == "opposes"
+        ],
+        key=lambda x: x[1].strength,
+        reverse=True,
+    )
+    neutral = sorted(
+        [
+            (p, l)
+            for p, l in considerations
+            if not l.direction or l.direction.value == "neutral"
+        ],
+        key=lambda x: x[1].strength,
+        reverse=True,
+    )
 
-    judgements = sorted(db.get_judgements_for_question(question_id), key=lambda j: j.created_at)
-    children   = db.get_child_questions(question_id)
+    judgements = sorted(
+        db.get_judgements_for_question(question_id), key=lambda j: j.created_at
+    )
+    children = db.get_child_questions(question_id)
 
     # Stats line
     parts = []
     if considerations:
-        parts.append(f"{len(considerations)} consideration{'s' if len(considerations) != 1 else ''}")
+        parts.append(
+            f"{len(considerations)} consideration{'s' if len(considerations) != 1 else ''}"
+        )
     if judgements:
-        parts.append(f"{len(judgements)} judgement{'s' if len(judgements) != 1 else ''}")
+        parts.append(
+            f"{len(judgements)} judgement{'s' if len(judgements) != 1 else ''}"
+        )
     if children:
         parts.append(f"{len(children)} sub-question{'s' if len(children) != 1 else ''}")
     stats = ", ".join(parts) if parts else "no research yet"
@@ -180,11 +217,13 @@ def _render_question(question_id: str, db: DB, depth: int = 0) -> str:
         ch_html += "</div>"
 
     q_sel_id = f"qb-{question_id[:8]}"
-    q_btn = (f'<div class="q-action-row">{_budget_select(q_sel_id)}'
-             f'<button class="inv-btn" onclick="copyCmd(this, '
-             f'\'python main.py --continue {question_id} --budget \' + '
-             f'document.getElementById(\'{q_sel_id}\').value)">'
-             f'Investigate further</button></div>')
+    q_btn = (
+        f'<div class="q-action-row">{_budget_select(q_sel_id)}'
+        f'<button class="inv-btn" onclick="copyCmd(this, '
+        f"'python main.py --continue {question_id} --budget ' + "
+        f"document.getElementById('{q_sel_id}').value)\">"
+        f"Investigate further</button></div>"
+    )
 
     hn = min(depth + 2, 6)
     return f"""<div class="q-node depth-{depth}">
@@ -321,7 +360,7 @@ def generate_map(question_id: str, db: DB) -> Path:
   <p class="subtitle">Research Map</p>
   <h1>{escape(question.summary)}</h1>
   {tree_html}
-  <p class="footer">Generated {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC</p>
+  <p class="footer">Generated {datetime.utcnow().strftime("%Y-%m-%d %H:%M")} UTC</p>
 </body>
 </html>"""
 

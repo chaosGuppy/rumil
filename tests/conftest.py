@@ -1,6 +1,7 @@
 """Shared fixtures for call tests."""
 
 import os
+import uuid
 
 os.environ["DIFFERENTIAL_TEST_MODE"] = "1"
 
@@ -17,18 +18,15 @@ from differential.models import (
     Workspace,
 )
 
-_TEXT_ID_TABLES = ["page_flags", "page_ratings", "page_links", "calls", "pages"]
-
 
 @pytest.fixture
 def tmp_db():
-    """Create a DB using the test schema so production data is untouched."""
-    db = DB(schema="test")
-    for table in _TEXT_ID_TABLES:
-        db.client.table(table).delete().neq("id", "__never__").execute()
-    db.client.table("budget").delete().gte("id", 0).execute()
+    """Create a DB with a unique run_id for test isolation."""
+    run_id = str(uuid.uuid4())
+    db = DB(run_id=run_id)
     db.init_budget(100)
-    return db
+    yield db
+    db.delete_run_data()
 
 
 @pytest.fixture

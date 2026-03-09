@@ -11,6 +11,7 @@ Set ANTHROPIC_API_KEY in your environment before running.
 
 import argparse
 import sys
+import uuid
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -87,7 +88,7 @@ def cmd_add_question(
         print(
             f"Budget:         {effective_budget} research call{'s' if effective_budget != 1 else ''}\n"
         )
-        db.add_budget(effective_budget)
+        db.init_budget(effective_budget)
         Orchestrator(db).run(page.id)
         _print_summary(db)
     else:
@@ -214,7 +215,7 @@ def cmd_ingest(
 
     print(f"\nExtracting considerations for: {question.summary[:80]}")
     print(f"Budget: {effective_budget} call{'s' if effective_budget != 1 else ''}\n")
-    db.add_budget(effective_budget)
+    db.init_budget(effective_budget)
     made = _run_ingest_calls(source_pages, for_question_id, db)
     total, used = db.get_budget()
     print(f"\nIngest complete. {made} extraction call{'s' if made != 1 else ''} made.")
@@ -259,9 +260,7 @@ def cmd_list(db: DB) -> None:
         print("No questions in workspace yet.")
         return
 
-    total, used = db.get_budget()
-    print(f"\nWorkspace budget: {used}/{total} calls used ({total - used} remaining)\n")
-    print(f"{'ID':38}  {'Cons':>4}  {'Judg':>4}  Question")
+    print(f"\n{'ID':38}  {'Cons':>4}  {'Judg':>4}  Question")
     print("-" * 100)
     for q in questions:
         counts = db.count_pages_for_question(q.id)
@@ -316,20 +315,14 @@ def cmd_continue(question_id: str, additional_budget: int | None, db: DB) -> Non
         sys.exit(1)
 
     counts = db.count_pages_for_question(question_id)
-    total_before, used_before = db.get_budget()
-
-    db.add_budget(additional_budget)
-    total_after, _ = db.get_budget()
+    db.init_budget(additional_budget)
 
     print(f"\nContinuing investigation of: {question.summary[:80]}")
     print(f"Question ID:  {question_id}")
     print(
         f"Existing:     {counts['considerations']} considerations, {counts['judgements']} judgements"
     )
-    print(
-        f"Budget:       +{additional_budget} calls added "
-        f"(was {total_before - used_before} remaining, now {total_after - used_before} remaining)"
-    )
+    print(f"Budget:       {additional_budget} research calls")
 
     Orchestrator(db).run(question_id)
     _print_summary(db)
@@ -417,11 +410,14 @@ def main():
     args = parser.parse_args()
 
     PAGES_DIR.mkdir(parents=True, exist_ok=True)
-    db = DB()
+
+    db = DB(run_id=str(uuid.uuid4()))
 
     if args.list:
         cmd_list(db)
-    elif args.chat_id:
+        return
+
+    if args.chat_id:
         run_chat(args.chat_id, db)
     elif args.add_question:
         cmd_add_question(args.add_question, args.parent_id, args.budget, db)

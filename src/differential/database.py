@@ -43,10 +43,10 @@ _DEFAULT_KEY = (
 )
 
 
-def _make_client(schema: str = "public") -> Client:
+def _make_client() -> Client:
     url = os.environ.get("SUPABASE_URL", _DEFAULT_URL)
     key = os.environ.get("SUPABASE_KEY", _DEFAULT_KEY)
-    return create_client(url, key, options=SyncClientOptions(schema=schema))
+    return create_client(url, key, options=SyncClientOptions(schema="public"))
 
 
 def _row_to_page(row: dict[str, Any]) -> Page:
@@ -107,10 +107,11 @@ def _row_to_call(row: dict[str, Any]) -> Call:
 class DB:
     def __init__(
         self,
+        run_id: str,
         client: Client | None = None,
-        schema: str = "public",
     ):
-        self.client = client or _make_client(schema=schema)
+        self.run_id = run_id
+        self.client = client or _make_client()
 
     # --- Pages ---
 
@@ -132,6 +133,7 @@ class DB:
                 "superseded_by": page.superseded_by,
                 "is_superseded": page.is_superseded,
                 "extra": page.extra,
+                "run_id": self.run_id,
             }
         ).execute()
 
@@ -214,6 +216,7 @@ class DB:
                 "strength": link.strength,
                 "reasoning": link.reasoning,
                 "created_at": link.created_at.isoformat(),
+                "run_id": self.run_id,
             }
         ).execute()
 
@@ -313,6 +316,7 @@ class DB:
                 "completed_at": (
                     call.completed_at.isoformat() if call.completed_at else None
                 ),
+                "run_id": self.run_id,
             }
         ).execute()
 
@@ -349,12 +353,12 @@ class DB:
             {"call_id": call_id, "amount": amount},
         ).execute()
 
-    # --- Global budget ---
+    # --- Per-run budget ---
 
     def init_budget(self, total: int) -> None:
         self.client.table("budget").upsert(
             {
-                "id": 1,
+                "run_id": self.run_id,
                 "total": total,
                 "used": 0,
             }
@@ -363,7 +367,10 @@ class DB:
     def get_budget(self) -> tuple[int, int]:
         """Returns (total, used)."""
         rows = _rows(
-            self.client.table("budget").select("total, used").eq("id", 1).execute()
+            self.client.table("budget")
+            .select("total, used")
+            .eq("run_id", self.run_id)
+            .execute()
         )
         if rows:
             return rows[0]["total"], rows[0]["used"]
@@ -373,13 +380,16 @@ class DB:
         """Deduct from global budget. Returns False if insufficient budget."""
         result = self.client.rpc(
             "consume_budget",
-            {"amount": amount},
+            {"rid": self.run_id, "amount": amount},
         ).execute()
         return cast(bool, result.data)
 
     def add_budget(self, amount: int) -> None:
         """Add more calls to the existing budget (for continue runs)."""
-        self.client.rpc("add_budget", {"amount": amount}).execute()
+        self.client.rpc(
+            "add_budget",
+            {"rid": self.run_id, "amount": amount},
+        ).execute()
 
     def budget_remaining(self) -> int:
         total, used = self.get_budget()
@@ -432,6 +442,7 @@ class DB:
                 "score": score,
                 "note": note,
                 "created_at": datetime.now(timezone.utc).isoformat(),
+                "run_id": self.run_id,
             }
         ).execute()
 
@@ -454,6 +465,7 @@ class DB:
                 "page_id_b": page_id_b,
                 "note": note,
                 "created_at": datetime.now(timezone.utc).isoformat(),
+                "run_id": self.run_id,
             }
         ).execute()
 
@@ -487,3 +499,9 @@ class DB:
             "considerations": cons_result.count or 0,
             "judgements": cast(int, judgements_result.data or 0),
         }
+
+    def delete_run_data(self) -> None:
+        """Delete all data for this run_id. Used by test teardown."""
+        for table in ["page_flags", "page_ratings", "page_links", "calls", "pages"]:
+            self.client.table(table).delete().eq("run_id", self.run_id).execute()
+        self.client.table("budget").delete().eq("run_id", self.run_id).execute()

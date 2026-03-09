@@ -56,8 +56,8 @@ def _render_page_chip(page_id: str, db: DB) -> str:
     page = db.get_page(page_id) if _looks_like_uuid(page_id) else None
     if not page:
         return f'<span class="page-chip">[{escape(short)}]</span>'
-    summary = escape(page.summary[:80])
-    content = escape(page.content[:500])
+    summary = escape(page.summary)
+    content = escape(page.content)
     ptype = page.page_type.value
     return (
         f'<details class="page-chip-detail">'
@@ -69,7 +69,7 @@ def _render_page_chip(page_id: str, db: DB) -> str:
         f'<p class="chip-meta">{ptype} | '
         f'{page.epistemic_status:.1f}/5 {escape(page.epistemic_type)}</p>'
         f'<p class="chip-body">{content}'
-        f'{"..." if len(page.content) > 500 else ""}</p>'
+        f'</p>'
         f'</div>'
         f'</details>'
     )
@@ -110,8 +110,6 @@ def _render_move(move_data: dict, db: DB) -> str:
     for k, v in move_data.items():
         if k == "type":
             continue
-        if k == "content" and isinstance(v, str) and len(v) > 120:
-            v = v[:120] + "..."
         sv = str(v)
         # Render page ID references as chips
         if k in ("claim_id", "question_id", "from_page_id", "to_page_id",
@@ -119,7 +117,7 @@ def _render_move(move_data: dict, db: DB) -> str:
                   "parent_question_id") and isinstance(v, str) and v:
             page = db.get_page(v) if _looks_like_uuid(v) else None
             if page:
-                sv = f'[{_short(v)}] "{page.summary[:60]}"'
+                sv = f'[{_short(v)}] "{page.summary}"'
             else:
                 sv = f"[{_short(v)}]"
         display_fields.append((k, sv))
@@ -153,16 +151,16 @@ def _move_one_liner(move_data: dict) -> str:
     """Generate a short one-line summary for a move."""
     summary = move_data.get("summary", "")
     if summary:
-        return summary[:80]
+        return summary
     if "hypothesis" in move_data:
-        return move_data["hypothesis"][:80]
+        return move_data["hypothesis"]
     if "claim_id" in move_data or "from_page_id" in move_data:
         direction = move_data.get("direction", "")
         return f"{direction}" if direction else "link"
     if "page_id" in move_data:
         return f'[{_short(move_data["page_id"])}]'
     if "note" in move_data:
-        return move_data["note"][:60]
+        return move_data["note"]
     return ""
 
 
@@ -180,10 +178,10 @@ def _render_event_context_built(ev: dict, db: DB) -> str:
     html += '<span class="ev-label">Context pages:</span>'
     html += _render_page_list(page_ids, db)
     if source:
-        html += '<span class="ev-label">Source:</span>'
+        html += '<br><span class="ev-label">Source:</span>'
         html += _render_page_chip(source, db)
     if budget is not None:
-        html += f'<span class="ev-label">Budget: {budget}</span>'
+        html += f'<br><span class="ev-label">Budget: {budget}</span>'
     html += "</div>"
     return html
 
@@ -257,7 +255,7 @@ def _render_event_dispatches(ev: dict, db: DB) -> str:  # noqa: ARG001
         if budget:
             html += f' <span class="dispatch-budget">budget={budget}</span>'
         if reason:
-            html += f' <span class="dispatch-reason">— {escape(reason[:120])}</span>'
+            html += f' <span class="dispatch-reason">— {escape(reason)}</span>'
         html += "</div>"
     html += "</div></div>"
     return html
@@ -375,7 +373,7 @@ def _render_call_node(call: Call, db: DB, depth: int = 0) -> str:
             dispatch_links = '<div class="dispatch-nav"><strong>Dispatches:</strong><ol>'
             for i, d in enumerate(planned):
                 ct = d.get("call_type", "?")
-                reason = d.get("reason", "")[:100]
+                reason = d.get("reason", "")
                 ex = executed_map.get(i)
                 if ex:
                     child_id = ex.get("child_call_id", "")
@@ -420,7 +418,7 @@ def _render_call_node(call: Call, db: DB, depth: int = 0) -> str:
                 f"<strong>Review:</strong> fruit={fruit}, confidence={conf}"
             )
             if assessment:
-                review_html += f'<br><em>{escape(str(assessment)[:200])}</em>'
+                review_html += f'<br><em>{escape(str(assessment))}</em>'
             review_html += "</div>"
 
     children_html = ""

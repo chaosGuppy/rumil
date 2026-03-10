@@ -272,6 +272,7 @@ def run_scout(
     question_id: str,
     call: Call,
     db: DB,
+    mode: str = "abstract",
 ) -> tuple[ParsedOutput, dict]:
     """
     Run a Scout call on a question.
@@ -283,8 +284,24 @@ def run_scout(
     system_prompt = build_system_prompt("scout")
     context_text, short_id_map = build_call_context(question_id, db, extra_page_ids=preloaded)
 
+    if mode == "concrete":
+        mode_instruction = (
+            "\n\n**Mode: CONCRETE**\n\n"
+            "Your goal is considerations, sub-questions, and hypotheses that are as specific "
+            "and falsifiable as possible. Concreteness means: named actors, specific timeframes, "
+            "quantitative claims, named mechanisms, particular cases. A concrete claim should be "
+            "possible to be clearly wrong about — that is what makes it valuable.\n\n"
+            "Concrete scouts are expected to produce claims that subsequent investigation may "
+            "refute. That is a feature, not a failure. Do not hedge your way back to vagueness.\n\n"
+            "Use the standard moves to record your output: CREATE_CLAIM + LINK_CONSIDERATION "
+            "for considerations, and PROPOSE_HYPOTHESIS for candidate answers. Concrete mode "
+            "changes the character of what you produce, not the move format."
+        )
+    else:
+        mode_instruction = ""
+
     task = (
-        f"Scout for missing considerations on this question.\n\n"
+        f"Scout for missing considerations on this question.{mode_instruction}\n\n"
         f"Question ID (use this when linking considerations): `{question_id}`"
     )
 

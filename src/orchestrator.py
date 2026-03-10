@@ -49,6 +49,16 @@ def _consume_budget(db: DB, call_id: Optional[str] = None) -> bool:
     return ok
 
 
+def _resolve_round_mode(mode: str, round_index: int) -> str:
+    """Resolve the effective mode for a given scout round.
+    'alternate' alternates abstract/concrete starting with abstract on round 0.
+    'abstract' and 'concrete' are fixed.
+    """
+    if mode == "alternate":
+        return "abstract" if round_index % 2 == 0 else "concrete"
+    return mode
+
+
 def scout_until_done(
     question_id: str,
     db: DB,
@@ -56,28 +66,31 @@ def scout_until_done(
     fruit_threshold: int = DEFAULT_FRUIT_THRESHOLD,
     parent_call_id: Optional[str] = None,
     context_page_ids: str = "[]",
+    mode: str = "alternate",
 ) -> int:
     """
     Run Scout rounds until remaining_fruit falls below fruit_threshold or max_rounds
     is reached. Returns number of Scout calls made.
     fruit_threshold is the primary stopping condition; max_rounds is a failsafe.
+    mode: 'alternate' (default) alternates abstract/concrete; 'abstract' or 'concrete' locks to one.
     """
     rounds = 0
     for i in range(max_rounds):
         if not _consume_budget(db):
             break
 
+        round_mode = _resolve_round_mode(mode, i)
         call = _make_call(
             CallType.SCOUT, db,
             scope_page_id=question_id,
             parent_call_id=parent_call_id,
             context_page_ids=context_page_ids,
         )
-        _, review = run_scout(question_id, call, db)
+        _, review = run_scout(question_id, call, db, mode=round_mode)
         rounds += 1
 
         remaining_fruit = review.get("remaining_fruit", 5) if review else 5
-        print(f"  [orchestrator] Scout round {i+1}/{max_rounds}, "
+        print(f"  [orchestrator] Scout round {i+1}/{max_rounds} [{round_mode}], "
               f"remaining_fruit={remaining_fruit} (threshold={fruit_threshold})")
 
         if remaining_fruit <= fruit_threshold:
@@ -210,6 +223,7 @@ class Orchestrator:
             d_context_ids_json = json.dumps(d_context_ids)
             d_fruit_threshold = int(dispatch.get("fruit_threshold", DEFAULT_FRUIT_THRESHOLD))
             d_max_rounds = int(dispatch.get("max_rounds", DEFAULT_MAX_ROUNDS))
+            d_mode = dispatch.get("mode", "alternate")
 
             # Validate that the question ID actually exists
             if not self.db.get_page(d_question_id):
@@ -219,7 +233,7 @@ class Orchestrator:
 
             if d_type == "scout":
                 print(f"{indent}  -> Dispatch: scout on {d_question_id[:8]} "
-                      f"(fruit_threshold={d_fruit_threshold}, max_rounds={d_max_rounds}) — {d_reason}")
+                      f"(mode={d_mode}, fruit_threshold={d_fruit_threshold}, max_rounds={d_max_rounds}) — {d_reason}")
             else:
                 print(f"{indent}  -> Dispatch: {d_type} on {d_question_id[:8]} (budget={d_budget}) — {d_reason}")
 
@@ -230,6 +244,7 @@ class Orchestrator:
                     fruit_threshold=d_fruit_threshold,
                     parent_call_id=p_call.id,
                     context_page_ids=d_context_ids_json,
+                    mode=d_mode,
                 )
                 budget_spent += spent
 

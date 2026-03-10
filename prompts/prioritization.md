@@ -20,6 +20,7 @@ Output a sequence of dispatch instructions. Your total dispatched budget must no
 <dispatch type="scout">
 {
   "question_id": "ID_OF_QUESTION",
+  "mode": "alternate",
   "fruit_threshold": 4,
   "max_rounds": 5,
   "reason": "Why scouting this question is a good use of budget",
@@ -57,6 +58,16 @@ pre-loading is warranted. Use full UUIDs (from the Questions index above), not s
 - **Respect diminishing returns.** If recent scout calls on a question reported low remaining fruit, don't keep scouting it.
 - **Order matters.** Dispatches are executed in order. Put scouts before assesses on the same question.
 - **It is fine to dispatch nothing** if the question already has a good judgement and the budget is small.
+
+## Scout Mode
+
+`mode` controls what kind of scouting to do:
+
+- **`"alternate"`** (default) — alternates abstract and concrete each round, starting with abstract. Good default for most questions.
+- **`"abstract"`** — all rounds abstract. Best for questions that are empirically underdeveloped or where the conceptual territory is still unclear.
+- **`"concrete"`** — all rounds concrete. Best for questions that already have good abstract coverage but lack grounded specifics.
+
+Abstract scouts find missing angles, framings, structural considerations, implications. Concrete scouts find specific, falsifiable considerations: named actors, timeframes, numbers, mechanisms, cases — expected to sometimes be wrong, which is the point.
 
 ## Calibrating Scout Parameters
 

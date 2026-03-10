@@ -1,12 +1,14 @@
 """Ingest call: extract considerations from a source document."""
 
+import logging
+
 from differential.calls.common import (
     RunCallResult,
     complete_call,
     extract_loaded_page_ids,
     format_moves_for_review,
+    log_page_ratings,
     moves_to_trace_data,
-    print_page_ratings,
     run_call,
     run_closing_review,
 )
@@ -14,6 +16,8 @@ from differential.context import build_call_context
 from differential.database import DB
 from differential.models import Call, CallStatus, CallType, Page
 from differential.tracer import CallTrace
+
+log = logging.getLogger(__name__)
 
 
 def run_ingest(
@@ -29,9 +33,9 @@ def run_ingest(
     trace = CallTrace(call.id, db)
     extra = source_page.extra or {}
     filename = extra.get("filename", source_page.id[:8])
-
-    print(
-        f"\n[INGEST] {call.id[:8]} — source '{filename}' -> {db.page_label(question_id)}"
+    log.info(
+        "Ingest starting: call=%s, source=%s (%s), question=%s",
+        call.id[:8], source_page.id[:8], filename, question_id[:8],
     )
 
     preloaded = call.context_page_ids or []
@@ -78,11 +82,12 @@ def run_ingest(
     review_context = format_moves_for_review(result.moves)
     review = run_closing_review(call, review_context, context_text, all_loaded_ids, db)
     if review:
-        print(
-            f"  [review] confidence={review.get('confidence_in_output', '?')}, "
-            f"remaining_fruit={review.get('remaining_fruit', '?')}"
+        log.info(
+            "Ingest review: confidence=%s, remaining_fruit=%s",
+            review.get("confidence_in_output", "?"),
+            review.get("remaining_fruit", "?"),
         )
-        print_page_ratings(review, db)
+        log_page_ratings(review, db)
         trace.record(
             "review_complete",
             {
@@ -92,6 +97,10 @@ def run_ingest(
         )
 
     call.review_json = review or {}
+    log.info(
+        "Ingest complete: call=%s, pages_created=%d, source=%s",
+        call.id[:8], len(result.created_page_ids), filename,
+    )
     complete_call(
         call,
         db,

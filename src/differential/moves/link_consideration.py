@@ -1,5 +1,7 @@
 """LINK_CONSIDERATION move: link a claim to a question as a consideration."""
 
+import logging
+
 from pydantic import BaseModel, Field
 
 from differential.database import DB
@@ -11,6 +13,8 @@ from differential.models import (
     PageLink,
 )
 from differential.moves.base import MoveDef, MoveResult
+
+log = logging.getLogger(__name__)
 
 
 class LinkConsiderationPayload(BaseModel):
@@ -30,8 +34,9 @@ def execute(payload: LinkConsiderationPayload, call: Call, db: DB) -> MoveResult
     claim_id = db.resolve_page_id(payload.claim_id)
     question_id = db.resolve_page_id(payload.question_id)
     if not claim_id or not question_id:
-        print(
-            "  [executor] LINK_CONSIDERATION skipped — one or both page IDs not found"
+        log.warning(
+            "LINK_CONSIDERATION skipped: claim_id=%s, question_id=%s",
+            claim_id, question_id,
         )
         return MoveResult("Link skipped — page IDs not found.")
 
@@ -39,6 +44,9 @@ def execute(payload: LinkConsiderationPayload, call: Call, db: DB) -> MoveResult
     try:
         direction = ConsiderationDirection(direction_str)
     except ValueError:
+        log.debug(
+            "Invalid direction '%s' defaulting to neutral", direction_str,
+        )
         direction = ConsiderationDirection.NEUTRAL
 
     link = PageLink(
@@ -50,9 +58,9 @@ def execute(payload: LinkConsiderationPayload, call: Call, db: DB) -> MoveResult
         reasoning=payload.reasoning,
     )
     db.save_link(link)
-    print(
-        f"  [~] Consideration: {db.page_label(claim_id)} -> "
-        f"{db.page_label(question_id)} ({direction_str})"
+    log.info(
+        "Consideration linked: %s -> %s (%s)",
+        claim_id[:8], question_id[:8], direction_str,
     )
     return MoveResult("Done.")
 

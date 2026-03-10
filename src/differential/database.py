@@ -2,6 +2,7 @@
 Supabase database layer for the research workspace.
 """
 
+import logging
 import os
 import uuid
 from datetime import datetime, timezone
@@ -27,6 +28,8 @@ from differential.models import (
 
 # Supabase SDK types APIResponse.data as JSON | None, but table queries
 # always return list[dict]. We cast to this alias for clarity.
+log = logging.getLogger(__name__)
+
 _Rows = list[dict[str, Any]]
 
 
@@ -164,6 +167,10 @@ class DB:
     # --- Pages ---
 
     def save_page(self, page: Page) -> None:
+        log.debug(
+            "save_page: id=%s, type=%s, summary=%s",
+            page.id[:8], page.page_type.value, page.summary[:60],
+        )
         if not page.project_id:
             page.project_id = self.project_id
         self.client.table("pages").upsert(
@@ -196,12 +203,14 @@ class DB:
         """Resolve a page ID to a full UUID. Handles both full UUIDs and
         8-char short IDs. Returns the full UUID if found, or None."""
         if not page_id:
+            log.debug("resolve_page_id: empty page_id")
             return None
         # Try exact match first
         rows = _rows(
             self.client.table("pages").select("id").eq("id", page_id).execute()
         )
         if rows:
+            log.debug("resolve_page_id: exact match for %s", page_id[:8])
             return rows[0]["id"]
         # Try prefix match for short IDs
         if len(page_id) <= 8:
@@ -212,13 +221,19 @@ class DB:
                 .execute()
             )
             if len(rows) == 1:
+                log.debug(
+                    "resolve_page_id: prefix match %s -> %s",
+                    page_id, rows[0]["id"][:8],
+                )
                 return rows[0]["id"]
             if len(rows) > 1:
-                print(
-                    f"  [db] Ambiguous short ID '{page_id}' matches "
-                    f"{len(rows)} pages — skipping."
+                log.warning(
+                    "Ambiguous short ID '%s' matches %d pages", page_id, len(rows),
                 )
+            else:
+                log.debug("resolve_page_id: no prefix match for %s", page_id)
             return None
+        log.debug("resolve_page_id: no match for %s", page_id[:8])
         return None
 
     def page_label(self, page_id: str) -> str:
@@ -259,6 +274,10 @@ class DB:
     # --- Links ---
 
     def save_link(self, link: PageLink) -> None:
+        log.debug(
+            "save_link: %s -> %s, type=%s",
+            link.from_page_id[:8], link.to_page_id[:8], link.link_type.value,
+        )
         self.client.table("page_links").upsert(
             {
                 "id": link.id,
@@ -339,6 +358,13 @@ class DB:
         workspace: Workspace = Workspace.RESEARCH,
         context_page_ids: list | None = None,
     ) -> Call:
+        log.debug(
+            "create_call: type=%s, scope=%s, parent=%s, budget=%s",
+            call_type.value,
+            scope_page_id[:8] if scope_page_id else None,
+            parent_call_id[:8] if parent_call_id else None,
+            budget_allocated,
+        )
         call = Call(
             call_type=call_type,
             workspace=workspace,
@@ -438,7 +464,9 @@ class DB:
             "consume_budget",
             {"rid": self.run_id, "amount": amount},
         ).execute()
-        return cast(bool, result.data)
+        ok = cast(bool, result.data)
+        log.debug("consume_budget: amount=%d, success=%s", amount, ok)
+        return ok
 
     def add_budget(self, amount: int) -> None:
         """Add more calls to the existing budget (for continue runs)."""

@@ -1,10 +1,14 @@
 """Prioritization call: plan budget allocation across questions."""
 
+import logging
+
 from differential.calls.common import complete_call, moves_to_trace_data, run_call
 from differential.context import build_prioritization_context, collect_subtree_ids
 from differential.database import DB
 from differential.models import Call, CallType, MoveType
 from differential.tracer import CallTrace
+
+log = logging.getLogger(__name__)
 
 
 def run_prioritization(
@@ -18,10 +22,10 @@ def run_prioritization(
     Returns a summary dict including the list of dispatches and trace.
     """
     trace = CallTrace(call.id, db)
-    print(
-        f"\n[PRIORITIZATION] {call.id[:8]} — {db.page_label(scope_question_id)} — budget {budget}"
+    log.info(
+        "Prioritization starting: call=%s, question=%s, budget=%d",
+        call.id[:8], scope_question_id[:8], budget,
     )
-
     context_text, short_id_map = build_prioritization_context(
         db, scope_question_id=scope_question_id
     )
@@ -70,6 +74,10 @@ def run_prioritization(
         "trace": trace,
     }
 
+    log.info(
+        "Prioritization complete: call=%s, dispatches=%d, moves=%d",
+        call.id[:8], len(result.dispatches), len(result.moves),
+    )
     complete_call(
         call,
         db,

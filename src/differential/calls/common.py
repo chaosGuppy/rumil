@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -30,6 +31,8 @@ from differential.calls.dispatches import DISPATCH_DEFS
 from differential.moves.base import MoveState
 from differential.moves.load_page import LoadPagePayload
 from differential.moves.registry import MOVES
+
+log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from differential.tracer import CallTrace
@@ -107,6 +110,7 @@ def _run_phase1(
     db: DB,
 ) -> list[str]:
     """Preliminary page loading. Returns resolved full page IDs. Free."""
+    log.debug("Phase 1 starting: context_len=%d", len(context_text))
     try:
         load_tool = MOVES[MoveType.LOAD_PAGE].bind(state)
         phase1_msg = build_user_message(context_text, PHASE1_TASK)
@@ -126,12 +130,12 @@ def _run_phase1(
                     loaded_ids.append(full_id)
         if loaded_ids:
             labels = [db.page_label(pid) for pid in loaded_ids]
-            print(f"  [phase1] Loaded pages: {', '.join(labels)}")
+            log.info("Phase 1 loaded %d pages: %s", len(loaded_ids), labels)
+        else:
+            log.debug("Phase 1 completed with no pages loaded")
         return loaded_ids
     except Exception as e:
-        status = getattr(e, "status_code", None)
-        reason = f"HTTP {status}" if status else type(e).__name__
-        print(f"  [phase1] Preliminary loading skipped ({reason}) — continuing.")
+        log.warning("Phase 1 skipped due to error: %s", e, exc_info=True)
         return []
 
 
@@ -155,6 +159,12 @@ def run_call(
     when the LLM calls them. Returns a RunCallResult with created page IDs,
     dispatches, and the raw agent result.
     """
+
+    log.info(
+        "run_call: type=%s, call=%s, scope=%s",
+        call_type.value, call.id[:8],
+        call.scope_page_id[:8] if call.scope_page_id else None,
+    )
 
     if available_moves is None:
         available_moves = list(MoveType)
@@ -184,6 +194,11 @@ def run_call(
         max_rounds=max_rounds,
     )
 
+    log.info(
+        "run_call complete: type=%s, pages_created=%d, dispatches=%d, moves=%d",
+        call_type.value, len(state.created_page_ids),
+        len(state.dispatches), len(state.moves),
+    )
     return RunCallResult(
         created_page_ids=state.created_page_ids,
         dispatches=state.dispatches,
@@ -229,7 +244,7 @@ REVIEW_SYSTEM_PROMPT = (
 )
 
 
-def print_page_ratings(review: dict, db: DB) -> None:
+def log_page_ratings(review: dict, db: DB) -> None:
     ratings = review.get("page_ratings", [])
     if not ratings:
         return
@@ -241,7 +256,7 @@ def print_page_ratings(review: dict, db: DB) -> None:
         score = r.get("score", "?")
         note = r.get("note", "")
         label = score_labels.get(score, str(score))
-        print(f"  [page] {page_label} [{label}]: {note}")
+        log.info("Page rating: %s [%s]: %s", page_label, label, note)
 
 
 def complete_call(
@@ -287,6 +302,10 @@ def run_closing_review(
         f"{page_rating_note}"
     )
 
+    log.debug(
+        "Closing review starting: call=%s, type=%s, loaded_pages=%d",
+        call.id[:8], call.call_type.value, len(loaded_page_ids or []),
+    )
     try:
         user_message = build_user_message(context_text, review_task)
         review = structured_call(
@@ -295,17 +314,26 @@ def run_closing_review(
             response_model=ReviewResponse,
             max_tokens=2048,
         )
-        if review and db:
-            for r in review.get("page_ratings", []):
-                pid = db.resolve_page_id(r.get("page_id", ""))
-                score = r.get("score")
-                if pid and isinstance(score, int):
-                    db.save_page_rating(pid, call.id, score, r.get("note", ""))
+        if review:
+            log.info(
+                "Closing review complete: call=%s, fruit=%s, confidence=%s",
+                call.id[:8],
+                review.get("remaining_fruit"),
+                review.get("confidence_in_output"),
+            )
+            if db:
+                for r in review.get("page_ratings", []):
+                    pid = db.resolve_page_id(r.get("page_id", ""))
+                    score = r.get("score")
+                    if pid and isinstance(score, int):
+                        db.save_page_rating(pid, call.id, score, r.get("note", ""))
+        else:
+            log.warning("Closing review returned None for call=%s", call.id[:8])
         return review
     except Exception as e:
-        status = getattr(e, "status_code", None)
-        reason = f"HTTP {status}" if status else type(e).__name__
-        print(f"  [review] Closing review skipped ({reason}) — continuing.")
+        log.error(
+            "Closing review failed for call=%s: %s", call.id[:8], e, exc_info=True,
+        )
         return None
 
 

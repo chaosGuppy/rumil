@@ -1,10 +1,14 @@
 """SUPERSEDE_PAGE move: replace an existing page with an improved version."""
 
+import logging
+
 from pydantic import Field
 
 from differential.database import DB
 from differential.models import Call, MoveType
 from differential.moves.base import CreatePagePayload, MoveDef, MoveResult, create_page
+
+log = logging.getLogger(__name__)
 
 
 class SupersedePagePayload(CreatePagePayload):
@@ -14,20 +18,17 @@ class SupersedePagePayload(CreatePagePayload):
 def execute(payload: SupersedePagePayload, call: Call, db: DB) -> MoveResult:
     old_id = db.resolve_page_id(payload.old_page_id)
     if not old_id:
-        print(f"  [executor] SUPERSEDE_PAGE: page {payload.old_page_id} not found")
+        log.warning("SUPERSEDE_PAGE: page %s not found", payload.old_page_id)
         return MoveResult(f"Supersede skipped — page {payload.old_page_id} not found.")
 
     old_page = db.get_page(old_id)
     if not old_page:
-        print(f"  [executor] SUPERSEDE_PAGE: page {old_id} not found")
+        log.warning("SUPERSEDE_PAGE: page %s resolved but not loadable", old_id[:8])
         return MoveResult(f"Supersede skipped — page {old_id} not found.")
 
     result = create_page(payload, call, db, old_page.page_type, old_page.layer)
     db.supersede_page(old_id, result.created_page_id)
-    print(
-        f"  [~] Superseded {db.page_label(old_id)} -> "
-        f"{db.page_label(result.created_page_id)}"
-    )
+    log.info("Superseded %s -> %s", old_id[:8], result.created_page_id[:8])
     return result
 
 

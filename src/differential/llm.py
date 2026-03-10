@@ -7,6 +7,7 @@ Exports three calling modes:
   - text_call: plain text call
 """
 
+import logging
 import os
 import time
 from collections.abc import Callable
@@ -23,6 +24,8 @@ MODEL = (
     if os.environ.get("DIFFERENTIAL_TEST_MODE")
     else "claude-opus-4-6"
 )
+
+log = logging.getLogger(__name__)
 
 MAX_API_RETRIES = 4
 
@@ -93,9 +96,22 @@ def _call_api(
     if tools:
         kwargs["tools"] = tools
 
+    n_tools = len(tools) if tools else 0
+    log.debug(
+        "API call: model=%s, max_tokens=%d, tools=%d, system_prompt_len=%d, messages=%d",
+        MODEL, max_tokens, n_tools, len(system_prompt), len(messages),
+    )
+
     for attempt in range(MAX_API_RETRIES):
         try:
-            return client.messages.create(**kwargs)
+            response = client.messages.create(**kwargs)
+            log.debug(
+                "API response: stop_reason=%s, usage=%d/%d tokens",
+                response.stop_reason,
+                response.usage.input_tokens,
+                response.usage.output_tokens,
+            )
+            return response
         except Exception as e:
             status = getattr(e, "status_code", None)
             name = type(e).__name__.lower()
@@ -107,12 +123,13 @@ def _call_api(
                 or "overloaded" in str(e).lower()
             )
             if not retryable or attempt == MAX_API_RETRIES - 1:
+                log.error("API call failed (non-retryable): %s", e, exc_info=True)
                 raise
             wait = 2**attempt
             label = f"HTTP {status}" if status else name
-            print(
-                f"  [llm] API temporarily unavailable ({label}), "
-                f"retrying in {wait}s... (attempt {attempt + 1}/{MAX_API_RETRIES})"
+            log.warning(
+                "API temporarily unavailable (%s), retrying in %ds (attempt %d/%d)",
+                label, wait, attempt + 1, MAX_API_RETRIES,
             )
             time.sleep(wait)
 
@@ -153,11 +170,19 @@ def agent_loop(
     ]
     tool_fns = {t.name: t.fn for t in tools}
 
+    tool_names = [t.name for t in tools]
+    log.debug(
+        "agent_loop starting: max_rounds=%d, max_tokens=%d, tools=%s",
+        max_rounds, max_tokens, tool_names,
+    )
+
     messages: list[dict] = [{"role": "user", "content": user_message}]
     text_parts: list[str] = []
     all_tool_calls: list[ToolCall] = []
+    round_num = 0
 
     for round_num in range(max_rounds + 1):
+        log.debug("agent_loop round %d/%d", round_num + 1, max_rounds)
         response = _call_api(
             client,
             system_prompt,
@@ -175,7 +200,16 @@ def agent_loop(
                 tool_uses.append(block)
 
         if response.stop_reason == "end_turn" or not tool_uses:
+            log.debug(
+                "agent_loop ending: stop_reason=%s, tool_uses=%d, rounds_used=%d",
+                response.stop_reason, len(tool_uses), round_num + 1,
+            )
             break
+
+        log.debug(
+            "agent_loop round %d: %d tool call(s): %s",
+            round_num + 1, len(tool_uses), [tu.name for tu in tool_uses],
+        )
 
         # Call each tool and build tool_result messages
         tool_results: list[dict] = []
@@ -183,6 +217,7 @@ def agent_loop(
             fn = tool_fns.get(tu.name)
             if fn is None:
                 result_str = f"Unknown tool: {tu.name}"
+                log.warning("Unknown tool called by LLM: %s", tu.name)
                 tool_results.append(
                     {
                         "type": "tool_result",
@@ -195,6 +230,9 @@ def agent_loop(
                 try:
                     result_str = fn(tu.input)
                 except Exception as e:
+                    log.error(
+                        "Tool %s raised an exception: %s", tu.name, e, exc_info=True,
+                    )
                     result_str = f"Error: {e}"
                     tool_results.append(
                         {
@@ -205,6 +243,10 @@ def agent_loop(
                         }
                     )
                 else:
+                    log.debug(
+                        "Tool %s returned: %s",
+                        tu.name, result_str[:200] if result_str else "(empty)",
+                    )
                     tool_results.append(
                         {
                             "type": "tool_result",
@@ -235,6 +277,10 @@ def agent_loop(
         messages.append({"role": "assistant", "content": response.content})
         messages.append({"role": "user", "content": tool_results + [budget_note]})
 
+    log.info(
+        "agent_loop complete: %d rounds, %d tool calls, %d text chars",
+        round_num + 1, len(all_tool_calls), sum(len(t) for t in text_parts),
+    )
     return AgentResult(
         text="\n".join(text_parts),
         tool_calls=all_tool_calls,
@@ -261,10 +307,13 @@ def text_call(
         if messages is not None
         else [{"role": "user", "content": user_message}]
     )
+    log.debug("text_call: max_tokens=%d, messages=%d", max_tokens, len(msg_list))
     response = _call_api(client, system_prompt, msg_list, max_tokens=max_tokens)
     for block in response.content:
         if isinstance(block, TextBlock):
+            log.debug("text_call returned %d chars", len(block.text))
             return block.text
+    log.debug("text_call returned empty response")
     return ""
 
 
@@ -286,6 +335,10 @@ def structured_call(
     client = anthropic.Anthropic(api_key=api_key)
 
     messages: list[MessageParam] = [{"role": "user", "content": user_message}]
+    log.debug(
+        "structured_call: model=%s, response_model=%s, max_tokens=%d",
+        MODEL, response_model.__name__, max_tokens,
+    )
 
     for attempt in range(MAX_API_RETRIES):
         try:
@@ -297,11 +350,16 @@ def structured_call(
                 output_format=response_model,
             )
             if response.parsed_output is not None:
+                log.debug(
+                    "structured_call success: %s, usage=%d/%d tokens",
+                    response_model.__name__,
+                    response.usage.input_tokens,
+                    response.usage.output_tokens,
+                )
                 return response.parsed_output.model_dump()
-            print(
-                f"  [llm] Structured output was empty "
-                f"(stop_reason={response.stop_reason}, "
-                f"usage={response.usage.output_tokens}/{max_tokens} tokens)"
+            log.warning(
+                "Structured output was empty (stop_reason=%s, usage=%d/%d tokens)",
+                response.stop_reason, response.usage.output_tokens, max_tokens,
             )
             return None
         except Exception as e:
@@ -315,12 +373,16 @@ def structured_call(
                 or "overloaded" in str(e).lower()
             )
             if not retryable or attempt == MAX_API_RETRIES - 1:
+                log.error(
+                    "structured_call failed (non-retryable): %s", e, exc_info=True,
+                )
                 raise
             wait = 2**attempt
             label = f"HTTP {status}" if status else name
-            print(
-                f"  [llm] API temporarily unavailable ({label}), "
-                f"retrying in {wait}s... (attempt {attempt + 1}/{MAX_API_RETRIES})"
+            log.warning(
+                "structured_call: API temporarily unavailable (%s), "
+                "retrying in %ds (attempt %d/%d)",
+                label, wait, attempt + 1, MAX_API_RETRIES,
             )
             time.sleep(wait)
 

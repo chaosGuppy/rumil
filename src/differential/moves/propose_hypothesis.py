@@ -1,5 +1,7 @@
 """PROPOSE_HYPOTHESIS move: create a hypothesis claim and investigation question."""
 
+import logging
+
 from pydantic import BaseModel, Field
 
 from differential.database import DB
@@ -16,6 +18,8 @@ from differential.models import (
 )
 from differential.moves.base import MoveDef, MoveResult, write_page_file
 
+log = logging.getLogger(__name__)
+
 
 class ProposeHypothesisPayload(BaseModel):
     parent_question_id: str = Field(description="Full UUID of the parent question")
@@ -31,14 +35,14 @@ class ProposeHypothesisPayload(BaseModel):
 def execute(payload: ProposeHypothesisPayload, call: Call, db: DB) -> MoveResult:
     parent_id = db.resolve_page_id(payload.parent_question_id)
     if not parent_id:
-        print(
-            "  [executor] PROPOSE_HYPOTHESIS: parent_question_id not found: "
-            f"{payload.parent_question_id}"
+        log.warning(
+            "PROPOSE_HYPOTHESIS: parent_question_id not found: %s",
+            payload.parent_question_id,
         )
         return MoveResult("Hypothesis skipped — parent question not found.")
 
     if not payload.hypothesis.strip():
-        print("  [executor] PROPOSE_HYPOTHESIS: missing hypothesis text")
+        log.warning("PROPOSE_HYPOTHESIS: missing hypothesis text")
         return MoveResult("Hypothesis skipped — missing hypothesis text.")
 
     # 1. Create the claim
@@ -61,12 +65,13 @@ def execute(payload: ProposeHypothesisPayload, call: Call, db: DB) -> MoveResult
     )
     db.save_page(claim)
     write_page_file(claim)
-    print(f"  [+] hypothesis claim: {db.page_label(claim.id)}")
+    log.info("Hypothesis claim created: %s", db.page_label(claim.id))
 
     direction_str = payload.direction.lower()
     try:
         direction = ConsiderationDirection(direction_str)
     except ValueError:
+        log.debug("Invalid direction '%s' defaulting to neutral", direction_str)
         direction = ConsiderationDirection.NEUTRAL
 
     db.save_link(
@@ -79,9 +84,9 @@ def execute(payload: ProposeHypothesisPayload, call: Call, db: DB) -> MoveResult
             reasoning=payload.reasoning,
         )
     )
-    print(
-        f"  [~] Consideration: {db.page_label(claim.id)} -> "
-        f"{db.page_label(parent_id)} ({direction_str})"
+    log.info(
+        "Consideration linked: %s -> %s (%s)",
+        claim.id[:8], parent_id[:8], direction_str,
     )
 
     # 2. Create the hypothesis question
@@ -101,7 +106,7 @@ def execute(payload: ProposeHypothesisPayload, call: Call, db: DB) -> MoveResult
     )
     db.save_page(question)
     write_page_file(question)
-    print(f"  [+] hypothesis question: {db.page_label(question.id)}")
+    log.info("Hypothesis question created: %s", db.page_label(question.id))
 
     db.save_link(
         PageLink(
@@ -111,9 +116,9 @@ def execute(payload: ProposeHypothesisPayload, call: Call, db: DB) -> MoveResult
             reasoning=f"Hypothesis: {payload.hypothesis[:80]}",
         )
     )
-    print(
-        f"  [~] child_question: {db.page_label(parent_id)} -> "
-        f"{db.page_label(question.id)}"
+    log.info(
+        "Child question linked: %s -> %s",
+        parent_id[:8], question.id[:8],
     )
 
     return MoveResult(

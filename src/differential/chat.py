@@ -4,6 +4,7 @@ Reads from the workspace; can add questions for investigation via slash commands
 """
 
 import json
+import logging
 import os
 import re
 from pathlib import Path
@@ -13,6 +14,8 @@ from differential.llm import text_call
 from differential.models import Page, PageLayer, PageLink, PageType, LinkType, Workspace
 from differential.orchestrator import Orchestrator
 from differential.summary import build_research_tree
+
+log = logging.getLogger(__name__)
 
 PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts"
 DEFAULT_INVESTIGATE_BUDGET = 3
@@ -210,6 +213,7 @@ def run_chat(question_id: str, db: DB) -> None:
                 max_tokens=1024,
             )
         except Exception as e:
+            log.error("Chat LLM call failed: %s", e, exc_info=True)
             print(dim(f"\n[chat] Error: {e}"))
             history.pop()
             continue

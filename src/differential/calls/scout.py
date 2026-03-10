@@ -1,12 +1,14 @@
 """Scout call: find missing considerations on a question."""
 
+import logging
+
 from differential.calls.common import (
     RunCallResult,
     complete_call,
     extract_loaded_page_ids,
     format_moves_for_review,
+    log_page_ratings,
     moves_to_trace_data,
-    print_page_ratings,
     run_call,
     run_closing_review,
 )
@@ -14,6 +16,8 @@ from differential.context import build_call_context
 from differential.database import DB
 from differential.models import Call, CallStatus, CallType
 from differential.tracer import CallTrace
+
+log = logging.getLogger(__name__)
 
 
 def run_scout(
@@ -26,7 +30,7 @@ def run_scout(
     Returns (run_call_result, review_dict).
     """
     trace = CallTrace(call.id, db)
-    print(f"\n[SCOUT] {call.id[:8]} — {db.page_label(question_id)}")
+    log.info("Scout starting: call=%s, question=%s", call.id[:8], question_id[:8])
 
     preloaded = call.context_page_ids or []
     context_text, _, working_page_ids = build_call_context(
@@ -64,11 +68,11 @@ def run_scout(
     remaining_fruit = 5
     if review:
         remaining_fruit = review.get("remaining_fruit", 5)
-        print(
-            f"  [review] remaining_fruit={remaining_fruit}, "
-            f"confidence={review.get('confidence_in_output', '?')}"
+        log.info(
+            "Scout review: remaining_fruit=%d, confidence=%s",
+            remaining_fruit, review.get("confidence_in_output", "?"),
         )
-        print_page_ratings(review, db)
+        log_page_ratings(review, db)
         trace.record(
             "review_complete",
             {
@@ -78,6 +82,10 @@ def run_scout(
         )
 
     call.review_json = review or {}
+    log.info(
+        "Scout complete: call=%s, pages_created=%d, fruit=%d",
+        call.id[:8], len(result.created_page_ids), remaining_fruit,
+    )
     complete_call(
         call,
         db,

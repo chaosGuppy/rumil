@@ -1,5 +1,6 @@
 """Base types and shared helpers for moves."""
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,6 +21,8 @@ from differential.models import (
     PageType,
     Workspace,
 )
+
+log = logging.getLogger(__name__)
 
 S = TypeVar("S", bound=BaseModel)
 
@@ -72,10 +75,11 @@ class MoveDef(Generic[S]):
         from differential.llm import Tool
 
         def fn(inp: dict) -> str:
+            log.debug("Move %s called with input keys: %s", self.name, list(inp.keys()))
             try:
                 validated = self.schema(**inp)
             except Exception as e:
-                print(f"  [validation] {self.name} failed: {e}")
+                log.error("Move %s validation failed: %s", self.name, e, exc_info=True)
                 raise
             if state.last_created_id:
                 validated = _resolve_last_created(validated, state.last_created_id)
@@ -84,6 +88,11 @@ class MoveDef(Generic[S]):
             if result.created_page_id:
                 state.created_page_ids.append(result.created_page_id)
                 state.last_created_id = result.created_page_id
+                log.debug(
+                    "Move %s created page: %s",
+                    self.name, result.created_page_id[:8],
+                )
+            log.debug("Move %s result: %s", self.name, result.message[:100])
             return result.message
 
         return Tool(
@@ -227,7 +236,10 @@ def create_page(
 
     db.save_page(page)
     write_page_file(page)
-    print(f"  [+] {page_type.value}: {page.summary[:70]} [{page.id[:8]}]")
+    log.info(
+        "Page created: type=%s, id=%s, summary=%s",
+        page_type.value, page.id[:8], page.summary[:70],
+    )
 
     message = (
         f"Created [{page.id[:8]}]: {payload.summary}"
@@ -248,9 +260,9 @@ def link_pages(
     from_id = db.resolve_page_id(from_id)
     to_id = db.resolve_page_id(to_id)
     if not from_id or not to_id:
-        print(
-            f"  [executor] {link_type.value} link skipped — "
-            "one or both page IDs not found"
+        log.warning(
+            "Link %s skipped: from_id=%s, to_id=%s — one or both not found",
+            link_type.value, from_id, to_id,
         )
         return MoveResult("Link skipped — page IDs not found.")
 
@@ -261,7 +273,8 @@ def link_pages(
         reasoning=reasoning,
     )
     db.save_link(link)
-    print(
-        f"  [~] {link_type.value}: {db.page_label(from_id)} -> {db.page_label(to_id)}"
+    log.info(
+        "Link created: %s %s -> %s",
+        link_type.value, from_id[:8], to_id[:8],
     )
     return MoveResult("Done.")

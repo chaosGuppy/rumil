@@ -1,12 +1,14 @@
 """Assess call: synthesise considerations and render a judgement."""
 
+import logging
+
 from differential.calls.common import (
     RunCallResult,
     complete_call,
     extract_loaded_page_ids,
     format_moves_for_review,
+    log_page_ratings,
     moves_to_trace_data,
-    print_page_ratings,
     run_call,
     run_closing_review,
 )
@@ -14,6 +16,8 @@ from differential.context import build_call_context
 from differential.database import DB
 from differential.models import Call, CallStatus, CallType
 from differential.tracer import CallTrace
+
+log = logging.getLogger(__name__)
 
 
 def run_assess(
@@ -26,7 +30,7 @@ def run_assess(
     Returns (run_call_result, review_dict).
     """
     trace = CallTrace(call.id, db)
-    print(f"\n[ASSESS] {call.id[:8]} — {db.page_label(question_id)}")
+    log.info("Assess starting: call=%s, question=%s", call.id[:8], question_id[:8])
 
     preloaded = call.context_page_ids or []
     context_text, _, working_page_ids = build_call_context(
@@ -65,11 +69,12 @@ def run_assess(
     review_context = format_moves_for_review(result.moves)
     review = run_closing_review(call, review_context, context_text, all_loaded_ids, db)
     if review:
-        print(
-            f"  [review] confidence={review.get('confidence_in_output', '?')}, "
-            f"self_assessment={review.get('self_assessment', '')[:80]}"
+        log.info(
+            "Assess review: confidence=%s, self_assessment=%s",
+            review.get("confidence_in_output", "?"),
+            review.get("self_assessment", "")[:80],
         )
-        print_page_ratings(review, db)
+        log_page_ratings(review, db)
         trace.record(
             "review_complete",
             {
@@ -79,6 +84,10 @@ def run_assess(
         )
 
     call.review_json = review or {}
+    log.info(
+        "Assess complete: call=%s, pages_created=%d",
+        call.id[:8], len(result.created_page_ids),
+    )
     complete_call(
         call,
         db,

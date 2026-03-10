@@ -1,5 +1,6 @@
 """Dispatch definitions: tool schemas and registry for prioritization dispatches."""
 
+import logging
 from dataclasses import dataclass
 from typing import Generic, TypeVar
 
@@ -13,6 +14,8 @@ from differential.models import (
     ScoutDispatchPayload,
 )
 from differential.moves.base import MoveState
+
+log = logging.getLogger(__name__)
 
 S = TypeVar("S", bound=BaseDispatchPayload)
 
@@ -51,6 +54,10 @@ class DispatchDef(Generic[S]):
                     resolved not in subtree_ids
                     and resolved not in state.created_page_ids
                 ):
+                    log.warning(
+                        "Dispatch rejected: question %s outside scope subtree",
+                        raw_qid,
+                    )
                     return (
                         f"Question {raw_qid} is outside the scope subtree and was not "
                         "created during this call. You can only dispatch on the scope "
@@ -59,6 +66,10 @@ class DispatchDef(Generic[S]):
 
             state.dispatches.append(
                 Dispatch(call_type=self.call_type, payload=validated)
+            )
+            log.debug(
+                "Dispatch recorded: type=%s, question=%s",
+                self.call_type.value, inp.get("question_id", "?")[:8],
             )
             return "Dispatch recorded."
 

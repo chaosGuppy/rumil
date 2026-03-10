@@ -10,6 +10,7 @@ Set ANTHROPIC_API_KEY in your environment before running.
 """
 
 import argparse
+import logging
 import sys
 import uuid
 from pathlib import Path
@@ -26,6 +27,8 @@ from differential.mapper import generate_map
 from differential.summary import generate_summary, save_summary
 from differential import tracer
 from differential.tracer import generate_trace
+
+log = logging.getLogger(__name__)
 
 PAGES_DIR = Path(__file__).parent / "pages"
 
@@ -131,6 +134,7 @@ def _generate_source_summary(content: str, filename: str) -> str:
             max_tokens=256,
         ).strip()
     except Exception as e:
+        log.error("Source summary generation failed: %s", e, exc_info=True)
         print(f"  [ingest] Summary generation failed ({e}) — using filename.")
         return filename
 
@@ -144,6 +148,7 @@ def _create_source_page(filepath: str, db: DB) -> Page | None:
     try:
         content = _read_file_content(path)
     except Exception as e:
+        log.error("Failed to read file %s: %s", filepath, e, exc_info=True)
         print(f"Error reading {filepath}: {e}")
         return None
 
@@ -457,7 +462,36 @@ def main():
         action="store_true",
         help="Use production Supabase (requires SUPABASE_PROD_URL and SUPABASE_PROD_KEY)",
     )
+    parser.add_argument(
+        "-v", "--verbose",
+        action="store_true",
+        help="Enable info-level logging to stderr",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug-level logging to stderr (very verbose)",
+    )
     args = parser.parse_args()
+
+    if args.debug:
+        log_level = logging.DEBUG
+    elif args.verbose:
+        log_level = logging.INFO
+    else:
+        log_level = logging.WARNING
+    logging.basicConfig(
+        level=log_level,
+        format="%(asctime)s %(name)s %(levelname)s %(message)s",
+        datefmt="%H:%M:%S",
+        stream=sys.stderr,
+    )
+    # Suppress noisy third-party loggers unless --debug
+    if not args.debug:
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+        logging.getLogger("httpcore").setLevel(logging.WARNING)
+        logging.getLogger("supabase").setLevel(logging.WARNING)
+        logging.getLogger("hpack").setLevel(logging.WARNING)
 
     if args.no_trace:
         tracer.TRACING_ENABLED = False

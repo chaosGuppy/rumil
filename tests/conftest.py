@@ -22,8 +22,21 @@ from differential.models import (
 )
 
 
+def pytest_addoption(parser):
+    parser.addoption("--llm", action="store_true", default=False, help="Run tests that call the real LLM API")
+
+
 def pytest_configure(config):
     config.addinivalue_line("markers", "llm: tests that call the real LLM API")
+
+
+def pytest_collection_modifyitems(config, items):
+    if config.getoption("--llm"):
+        return
+    skip_llm = pytest.mark.skip(reason="needs --llm flag to run")
+    for item in items:
+        if "llm" in item.keywords:
+            item.add_marker(skip_llm)
 
 
 @pytest.fixture
@@ -31,6 +44,8 @@ def tmp_db():
     """Create a DB with a unique run_id for test isolation."""
     run_id = str(uuid.uuid4())
     db = DB(run_id=run_id)
+    project = db.get_or_create_project("default")
+    db.project_id = project.id
     db.init_budget(100)
     yield db
     db.delete_run_data()

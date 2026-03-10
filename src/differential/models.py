@@ -5,7 +5,6 @@ Data models for the research workspace.
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
-from typing import Optional
 import uuid
 
 from pydantic import BaseModel, Field
@@ -125,6 +124,13 @@ class Dispatch:
 
 
 @dataclass
+class Project:
+    name: str
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+
+
+@dataclass
 class Page:
     page_type: PageType
     layer: PageLayer
@@ -132,13 +138,14 @@ class Page:
     content: str
     summary: str
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    project_id: str = ""
     epistemic_status: float = 2.5  # 0-5 subjective confidence
     epistemic_type: str = ""  # description of uncertainty type
     provenance_model: str = ""
     provenance_call_type: str = ""
     provenance_call_id: str = ""
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
-    superseded_by: Optional[str] = None
+    superseded_by: str | None = None
     is_superseded: bool = False
     extra: dict = field(default_factory=dict)
 
@@ -152,7 +159,7 @@ class PageLink:
     to_page_id: str
     link_type: LinkType
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    direction: Optional[ConsiderationDirection] = None  # for CONSIDERATION links
+    direction: ConsiderationDirection | None = None  # for CONSIDERATION links
     strength: float = 2.5  # 0-5
     reasoning: str = ""
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
@@ -163,13 +170,14 @@ class Call:
     call_type: CallType
     workspace: Workspace
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    project_id: str = ""
     status: CallStatus = CallStatus.PENDING
-    parent_call_id: Optional[str] = None
-    scope_page_id: Optional[str] = None  # question/consideration this call is about
-    budget_allocated: Optional[int] = None
+    parent_call_id: str | None = None
+    scope_page_id: str | None = None  # question/consideration this call is about
+    budget_allocated: int | None = None
     budget_used: int = 0
     context_page_ids: list = field(default_factory=list)
     result_summary: str = ""
     review_json: dict = field(default_factory=dict)
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
-    completed_at: Optional[datetime] = None
+    completed_at: datetime | None = None

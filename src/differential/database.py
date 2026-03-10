@@ -21,6 +21,7 @@ from differential.models import (
     PageLayer,
     PageLink,
     PageType,
+    Project,
     Workspace,
 )
 
@@ -61,6 +62,7 @@ def _row_to_page(row: dict[str, Any]) -> Page:
         workspace=Workspace(row["workspace"]),
         content=row["content"],
         summary=row["summary"],
+        project_id=row.get("project_id") or "",
         epistemic_status=row["epistemic_status"],
         epistemic_type=row["epistemic_type"] or "",
         provenance_model=row["provenance_model"] or "",
@@ -93,6 +95,7 @@ def _row_to_call(row: dict[str, Any]) -> Call:
         id=row["id"],
         call_type=CallType(row["call_type"]),
         workspace=Workspace(row["workspace"]),
+        project_id=row.get("project_id") or "",
         status=CallStatus(row["status"]),
         parent_call_id=row["parent_call_id"],
         scope_page_id=row["scope_page_id"],
@@ -114,13 +117,55 @@ class DB:
         run_id: str,
         client: Client | None = None,
         prod: bool = False,
+        project_id: str = "",
     ):
         self.run_id = run_id
         self.client = client or _make_client(prod=prod)
+        self.project_id = project_id
+
+    def get_or_create_project(self, name: str) -> Project:
+        rows = _rows(
+            self.client.table("projects").select("*").eq("name", name).execute()
+        )
+        if rows:
+            row = rows[0]
+            return Project(
+                id=row["id"],
+                name=row["name"],
+                created_at=datetime.fromisoformat(row["created_at"]),
+            )
+        row = _rows(
+            self.client.table("projects")
+            .insert({"name": name})
+            .execute()
+        )[0]
+        return Project(
+            id=row["id"],
+            name=row["name"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+        )
+
+    def list_projects(self) -> list[Project]:
+        rows = _rows(
+            self.client.table("projects")
+            .select("*")
+            .order("created_at")
+            .execute()
+        )
+        return [
+            Project(
+                id=r["id"],
+                name=r["name"],
+                created_at=datetime.fromisoformat(r["created_at"]),
+            )
+            for r in rows
+        ]
 
     # --- Pages ---
 
     def save_page(self, page: Page) -> None:
+        if not page.project_id:
+            page.project_id = self.project_id
         self.client.table("pages").upsert(
             {
                 "id": page.id,
@@ -129,6 +174,7 @@ class DB:
                 "workspace": page.workspace.value,
                 "content": page.content,
                 "summary": page.summary,
+                "project_id": page.project_id,
                 "epistemic_status": page.epistemic_status,
                 "epistemic_type": page.epistemic_type,
                 "provenance_model": page.provenance_model,
@@ -189,6 +235,8 @@ class DB:
         active_only: bool = True,
     ) -> list[Page]:
         query = self.client.table("pages").select("*")
+        if self.project_id:
+            query = query.eq("project_id", self.project_id)
         if workspace:
             query = query.eq("workspace", workspace.value)
         if page_type:
@@ -304,11 +352,14 @@ class DB:
         return call
 
     def save_call(self, call: Call) -> None:
+        if not call.project_id:
+            call.project_id = self.project_id
         self.client.table("calls").upsert(
             {
                 "id": call.id,
                 "call_type": call.call_type.value,
                 "workspace": call.workspace.value,
+                "project_id": call.project_id,
                 "status": call.status.value,
                 "parent_call_id": call.parent_call_id,
                 "scope_page_id": call.scope_page_id,
@@ -426,7 +477,10 @@ class DB:
     def get_ingest_history(self) -> dict[str, list[str]]:
         """Return {source_id: [question_id, ...]} based on considerations
         created by ingest calls."""
-        rows = _rows(self.client.rpc("get_ingest_history").execute())
+        params: dict[str, Any] = {}
+        if self.project_id:
+            params["pid"] = self.project_id
+        rows = _rows(self.client.rpc("get_ingest_history", params).execute())
         out: dict[str, list[str]] = {}
         for row in rows:
             out.setdefault(row["source_id"], []).append(row["question_id"])
@@ -532,11 +586,11 @@ class DB:
         workspace: Workspace = Workspace.RESEARCH,
     ) -> list[Page]:
         """Return questions that have no parent (top-level questions)."""
+        params: dict[str, Any] = {"ws": workspace.value}
+        if self.project_id:
+            params["pid"] = self.project_id
         rows = _rows(
-            self.client.rpc(
-                "get_root_questions",
-                {"ws": workspace.value},
-            ).execute()
+            self.client.rpc("get_root_questions", params).execute()
         )
         return [_row_to_page(r) for r in rows]
 
@@ -558,8 +612,12 @@ class DB:
             "judgements": cast(int, judgements_result.data or 0),
         }
 
-    def delete_run_data(self) -> None:
+    def delete_run_data(self, delete_project: bool = False) -> None:
         """Delete all data for this run_id. Used by test teardown."""
         for table in ["page_flags", "page_ratings", "page_links", "calls", "pages"]:
             self.client.table(table).delete().eq("run_id", self.run_id).execute()
         self.client.table("budget").delete().eq("run_id", self.run_id).execute()
+        if delete_project and self.project_id:
+            self.client.table("projects").delete().eq(
+                "id", self.project_id
+            ).execute()

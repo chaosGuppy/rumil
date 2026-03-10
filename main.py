@@ -262,12 +262,13 @@ def cmd_summary(question_id: str, db: DB) -> None:
     print(f"\n---\nSummary saved to: {path}")
 
 
-def cmd_list(db: DB) -> None:
+def cmd_list(db: DB, workspace_name: str) -> None:
     questions = db.get_root_questions()
     if not questions:
-        print("No questions in workspace yet.")
+        print(f"No questions in workspace '{workspace_name}'.")
         return
 
+    print(f"\nWorkspace: {workspace_name}")
     print(f"\n{'ID':38}  {'Cons':>4}  {'Judg':>4}  Question")
     print("-" * 100)
     for q in questions:
@@ -278,6 +279,17 @@ def cmd_list(db: DB) -> None:
         )
     print("\nTo continue investigating a question:")
     print("  python main.py --continue QUESTION_ID --budget N")
+
+
+def cmd_list_workspaces(db: DB) -> None:
+    projects = db.list_projects()
+    if not projects:
+        print("No workspaces yet.")
+        return
+    print(f"\n{'Name':20}  {'Created':20}  ID")
+    print("-" * 80)
+    for p in projects:
+        print(f"{p.name:20}  {p.created_at.strftime('%Y-%m-%d %H:%M'):20}  {p.id}")
 
 
 def cmd_new(
@@ -428,6 +440,18 @@ def main():
         help="Disable execution tracing for this run",
     )
     parser.add_argument(
+        "--workspace",
+        dest="workspace_name",
+        default="default",
+        help="Project workspace name (default: 'default'). Auto-created on first use.",
+    )
+    parser.add_argument(
+        "--list-workspaces",
+        dest="list_workspaces",
+        action="store_true",
+        help="List all project workspaces",
+    )
+    parser.add_argument(
         "--prod-db",
         dest="prod_db",
         action="store_true",
@@ -442,8 +466,15 @@ def main():
 
     db = DB(run_id=str(uuid.uuid4()), prod=args.prod_db)
 
+    if args.list_workspaces:
+        cmd_list_workspaces(db)
+        return
+
+    project = db.get_or_create_project(args.workspace_name)
+    db.project_id = project.id
+
     if args.list:
-        cmd_list(db)
+        cmd_list(db, args.workspace_name)
         return
     elif args.trace_id:
         cmd_trace(args.trace_id, db)

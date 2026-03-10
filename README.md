@@ -88,9 +88,33 @@ uv run python main.py --trace QUESTION_ID
 # Or trace a specific call:
 uv run python main.py --trace CALL_ID
 
+# Batch mode: investigate multiple questions concurrently
+uv run python main.py --batch questions.json
+
 # Any command can target the production database
 uv run python main.py --prod-db --list
 ```
+
+### Batch mode
+
+The `--batch` flag accepts a JSON file containing an array of questions to investigate concurrently. Each question runs with its own budget in parallel via `asyncio.gather`.
+
+```json
+[
+  {"question": "What causes coral reef bleaching?", "budget": 10},
+  {"question": "How does sleep deprivation affect cognition?", "budget": 5},
+  {"continue": "323d2d09-3463-434d-8541-68df5aaaa148", "budget": 10}
+]
+```
+
+Each entry supports:
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `question` | One of `question` or `continue` | New question to investigate |
+| `continue` | One of `question` or `continue` | ID of an existing question to continue |
+| `budget` | No (default: 10) | Research call budget for this entry |
+| `ingest` | No | List of file paths to ingest (only with `question`) |
 
 ### Execution traces
 

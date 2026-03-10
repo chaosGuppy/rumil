@@ -46,8 +46,9 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
         name="dispatch_scout",
         description=(
             'Dispatch scout rounds for a question. Finds missing considerations. '
-            'Costs up to max_rounds calls, stops early when fruit falls below '
-            'fruit_threshold.'
+            'Each round consumes 1 unit of budget. Runs up to max_rounds rounds, '
+            'stopping early when remaining fruit falls below fruit_threshold. '
+            'Budget cost: between 1 and max_rounds (inclusive).'
         ),
         schema=ScoutDispatchPayload,
     ),
@@ -55,7 +56,8 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
         call_type=CallType.ASSESS,
         name="dispatch_assess",
         description=(
-            'Dispatch an assessment for a question. Renders a judgement. Costs 1 call.'
+            'Dispatch an assessment for a question. Renders a judgement. '
+            'Budget cost: exactly 1.'
         ),
         schema=AssessDispatchPayload,
     ),
@@ -64,7 +66,7 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
         name="dispatch_prioritization",
         description=(
             'Dispatch a sub-prioritization for a question. Delegates structured '
-            'investigation. Costs the budget you assign.'
+            'investigation. Budget cost: exactly the budget you assign.'
         ),
         schema=PrioritizationDispatchPayload,
     ),

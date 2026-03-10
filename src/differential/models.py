@@ -99,7 +99,7 @@ class ScoutDispatchPayload(BaseDispatchPayload):
     fruit_threshold: int = Field(
         4, description='Remaining fruit threshold for stopping'
     )
-    max_rounds: int = Field(5, description='Maximum scouting rounds')
+    max_rounds: int = Field(5, description='Maximum scouting rounds (each round costs 1 budget)')
 
 
 class AssessDispatchPayload(BaseDispatchPayload):

@@ -2,7 +2,7 @@
 Generate a human-readable executive summary of research on a question.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from differential.database import DB
@@ -151,7 +151,7 @@ def generate_summary(question_id: str, db: DB) -> str:
 def save_summary(summary_text: str, question_summary: str) -> Path:
     """Write the summary to a file and return the path."""
     SUMMARIES_DIR.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     slug = "".join(c if c.isalnum() or c in " -" else "" for c in question_summary[:50])
     slug = slug.strip().replace(" ", "-").lower()
     filename = f"{timestamp}-{slug}.md"

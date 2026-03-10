@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
+from differential.context import format_page
 from differential.database import DB
 from differential.llm import (
     AgentResult,
@@ -61,6 +62,13 @@ class DispatchPayload(BaseModel):
     )
 
 
+PHASE1_TASK = (
+    "Review the workspace map above and decide if you need the full content of any "
+    "pages before starting your main task. Use load_page for any pages you want to "
+    "read. Write brief planning notes about your approach."
+)
+
+
 DISPATCH_TOOL_DESCRIPTION = (
     "Dispatch a research call for a question. Available call types: "
     "scout (find missing considerations; costs up to max_rounds calls, "
@@ -110,6 +118,7 @@ class RunCallResult:
     created_page_ids: list[str] = field(default_factory=list)
     dispatches: list[Dispatch] = field(default_factory=list)
     moves: list[Move] = field(default_factory=list)
+    phase1_page_ids: list[str] = field(default_factory=list)
     agent_result: AgentResult = field(default_factory=AgentResult)
 
 
@@ -135,8 +144,50 @@ def _make_dispatch_tool(state: MoveState) -> Tool:
     )
 
 
+def _format_loaded_pages(page_ids: list[str], db: DB) -> str:
+    """Format loaded pages as context text for phase 2."""
+    parts = []
+    for pid in page_ids:
+        page = db.get_page(pid)
+        if page:
+            parts.append(f"### Page `{pid[:8]}`\n\n{format_page(page, db=db)}")
+    return "\n\n---\n\n".join(parts)
+
+
+def _run_phase1(
+    system_prompt: str,
+    context_text: str,
+    state: MoveState,
+    db: DB,
+) -> list[str]:
+    """Preliminary page loading. Returns resolved full page IDs. Free."""
+    try:
+        load_tool = MOVES[MoveType.LOAD_PAGE].bind(state)
+        phase1_msg = build_user_message(context_text, PHASE1_TASK)
+        agent_loop(
+            system_prompt, phase1_msg, [load_tool],
+            max_tokens=2048, max_rounds=3,
+        )
+        loaded_ids = []
+        for m in state.moves:
+            if m.move_type == MoveType.LOAD_PAGE:
+                assert isinstance(m.payload, LoadPagePayload)
+                full_id = db.resolve_page_id(m.payload.page_id)
+                if full_id:
+                    loaded_ids.append(full_id)
+        if loaded_ids:
+            labels = [db.page_label(pid) for pid in loaded_ids]
+            print(f"  [phase1] Loaded pages: {', '.join(labels)}")
+        return loaded_ids
+    except Exception as e:
+        status = getattr(e, "status_code", None)
+        reason = f"HTTP {status}" if status else type(e).__name__
+        print(f"  [phase1] Preliminary loading skipped ({reason}) — continuing.")
+        return []
+
+
 def run_call(
-    call_type: str,
+    call_type: CallType,
     task_description: str,
     context_text: str,
     call: Call,
@@ -144,23 +195,33 @@ def run_call(
     *,
     available_moves: list[MoveType] | None = None,
     max_tokens: int = 4096,
-    max_rounds: int = 6,
+    max_rounds: int = 3,
 ) -> RunCallResult:
     """Run a workspace call with tool use.
 
-    Moves are executed immediately when the LLM calls them. Returns a
-    RunCallResult with created page IDs, dispatches, and the raw agent result.
+    For non-prioritization calls, runs a preliminary phase where the LLM can
+    load pages before starting its main work. Moves are executed immediately
+    when the LLM calls them. Returns a RunCallResult with created page IDs,
+    dispatches, and the raw agent result.
     """
 
     if available_moves is None:
         available_moves = list(MoveType)
 
     state = MoveState(call, db)
+    system_prompt = build_system_prompt(call_type.value)
+
+    phase1_ids: list[str] = []
+    if call_type != CallType.PRIORITIZATION:
+        phase1_ids = _run_phase1(system_prompt, context_text, state, db)
+        if phase1_ids:
+            extra_text = _format_loaded_pages(phase1_ids, db)
+            context_text = context_text + "\n\n## Loaded Pages\n\n" + extra_text
+
     tools = [MOVES[mt].bind(state) for mt in available_moves]
-    if call_type == "prioritization":
+    if call_type == CallType.PRIORITIZATION:
         tools.append(_make_dispatch_tool(state))
 
-    system_prompt = build_system_prompt(call_type)
     user_message = build_user_message(context_text, task_description)
 
     agent_result = agent_loop(
@@ -172,18 +233,20 @@ def run_call(
         created_page_ids=state.created_page_ids,
         dispatches=state.dispatches,
         moves=state.moves,
+        phase1_page_ids=phase1_ids,
         agent_result=agent_result,
     )
 
 
 def extract_loaded_page_ids(result: RunCallResult, db: DB) -> list[str]:
-    """Extract full page IDs for all LOAD_PAGE moves from a completed run."""
+    """Extract full page IDs for LOAD_PAGE moves from phase 2 only."""
+    phase1_set = set(result.phase1_page_ids)
     loaded = []
     for m in result.moves:
         if m.move_type == MoveType.LOAD_PAGE:
             assert isinstance(m.payload, LoadPagePayload)
             full_id = db.resolve_page_id(m.payload.page_id)
-            if full_id:
+            if full_id and full_id not in phase1_set:
                 loaded.append(full_id)
     return loaded
 
@@ -230,7 +293,7 @@ def complete_call(
     call: Call, db: DB, summary: str, trace: CallTrace | None = None
 ) -> None:
     call.status = CallStatus.COMPLETE
-    call.completed_at = datetime.utcnow()
+    call.completed_at = datetime.now(UTC)
     call.result_summary = summary
     db.save_call(call)
     if trace:

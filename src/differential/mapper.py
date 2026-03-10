@@ -2,7 +2,7 @@
 Generate a visual HTML map of the research tree for a question.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from html import escape
 from pathlib import Path
 
@@ -328,7 +328,7 @@ def generate_map(question_id: str, db: DB) -> Path:
 
     tree_html = _render_question(question_id, db)
 
-    timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     slug = "".join(c if c.isalnum() or c in " -" else "" for c in question.summary[:50])
     slug = slug.strip().replace(" ", "-").lower()
     output_path = MAPS_DIR / f"{timestamp}-{slug}.html"
@@ -360,7 +360,7 @@ def generate_map(question_id: str, db: DB) -> Path:
   <p class="subtitle">Research Map</p>
   <h1>{escape(question.summary)}</h1>
   {tree_html}
-  <p class="footer">Generated {datetime.utcnow().strftime("%Y-%m-%d %H:%M")} UTC</p>
+  <p class="footer">Generated {datetime.now(UTC).strftime("%Y-%m-%d %H:%M")} UTC</p>
 </body>
 </html>"""
 

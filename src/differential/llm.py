@@ -154,7 +154,7 @@ def agent_loop(
     text_parts: list[str] = []
     all_tool_calls: list[ToolCall] = []
 
-    for _ in range(max_rounds + 1):
+    for round_num in range(max_rounds + 1):
         response = _call_api(
             client, system_prompt, messages,
             tool_defs or None, max_tokens,
@@ -206,8 +206,14 @@ def agent_loop(
                 result=result_str,
             ))
 
+        remaining = max_rounds - round_num
+        if remaining == 1:
+            budget_note = {"type": "text", "text": "This is your final round — finish your work now."}
+        else:
+            budget_note = {"type": "text", "text": f"After this round of tool calls, you will have {remaining - 1} rounds remaining."}
+
         messages.append({"role": "assistant", "content": response.content})
-        messages.append({"role": "user", "content": tool_results})
+        messages.append({"role": "user", "content": tool_results + [budget_note]})
 
     return AgentResult(
         text="\n".join(text_parts),

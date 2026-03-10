@@ -12,7 +12,7 @@ from differential.calls.common import (
 )
 from differential.context import build_call_context
 from differential.database import DB
-from differential.models import Call, CallStatus, Page
+from differential.models import Call, CallStatus, CallType, Page
 from differential.tracer import CallTrace
 
 
@@ -35,11 +35,12 @@ def run_ingest(
     )
 
     preloaded = call.context_page_ids or []
-    question_context, short_id_map = build_call_context(
+    question_context, _, working_page_ids = build_call_context(
         question_id, db, extra_page_ids=preloaded
     )
     trace.record("context_built", {
-        "page_ids_in_context": list(short_id_map.values()),
+        "working_context_page_ids": working_page_ids,
+        "preloaded_page_ids": preloaded,
         "source_page_id": source_page.id,
     })
 
@@ -58,11 +59,16 @@ def run_ingest(
     )
 
     db.update_call_status(call.id, CallStatus.RUNNING)
-    result = run_call("ingest", task, context_text, call, db)
+    result = run_call(CallType.INGEST, task, context_text, call, db)
+    if result.phase1_page_ids:
+        trace.record("phase1_loaded", {"page_ids": result.phase1_page_ids})
+    phase2_loaded = extract_loaded_page_ids(result, db)
+    if phase2_loaded:
+        trace.record("phase2_loaded", {"page_ids": phase2_loaded})
     trace.record("moves_executed", moves_to_trace_data(result.moves, result.created_page_ids))
 
     all_loaded_ids = list(dict.fromkeys(
-        preloaded + extract_loaded_page_ids(result, db)
+        preloaded + result.phase1_page_ids + phase2_loaded
     ))
     review_context = format_moves_for_review(result.moves)
     review = run_closing_review(

@@ -3,7 +3,7 @@
 from differential.calls.common import complete_call, moves_to_trace_data, run_call
 from differential.context import build_prioritization_context
 from differential.database import DB
-from differential.models import Call
+from differential.models import Call, CallType
 from differential.tracer import CallTrace
 
 
@@ -32,7 +32,7 @@ def run_prioritization(
         "Use the dispatch tool to allocate calls."
     )
 
-    result = run_call("prioritization", task, context_text, call, db)
+    result = run_call(CallType.PRIORITIZATION, task, context_text, call, db)
 
     trace.record("dispatches_planned", {
         "dispatches": [

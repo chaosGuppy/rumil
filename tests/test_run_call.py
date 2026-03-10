@@ -3,7 +3,7 @@
 import pytest
 
 from differential.calls.common import RunCallResult, run_call
-from differential.models import MoveType
+from differential.models import CallType, MoveType
 from differential.moves.base import MoveState
 
 
@@ -21,7 +21,7 @@ def test_scout_run_call(tmp_db, question_page, scout_call):
         f"Question ID: `{question_page.id}`"
     )
 
-    result = run_call("scout", task, context, scout_call, tmp_db, max_rounds=3)
+    result = run_call(CallType.SCOUT, task, context, scout_call, tmp_db, max_rounds=3)
 
     assert isinstance(result, RunCallResult)
     assert len(result.moves) > 0
@@ -50,7 +50,7 @@ def test_prioritization_produces_dispatches(tmp_db, question_page, prioritizatio
     )
 
     result = run_call(
-        "prioritization", task, context, prioritization_call, tmp_db, max_rounds=3
+        CallType.PRIORITIZATION, task, context, prioritization_call, tmp_db, max_rounds=3
     )
 
     assert isinstance(result, RunCallResult)

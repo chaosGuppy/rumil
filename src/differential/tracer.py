@@ -7,7 +7,7 @@ from html import escape
 from pathlib import Path
 
 from differential.database import DB
-from differential.models import Call
+from differential.models import Call, CallType
 
 PAGES_DIR = Path(__file__).parent.parent.parent / "pages"
 TRACES_DIR = PAGES_DIR / "traces"
@@ -144,7 +144,7 @@ def _render_move(move_data: dict, db: DB) -> str:
         f'<details>'
         f'<summary>'
         f'<span class="move-badge {label_class}">{escape(move_type)}</span>'
-        f'<span class="move-summary">{escape(_move_one_liner(move_data))}</span>'
+        f'<span class="move-summary">{escape(_move_one_liner(move_data, db))}</span>'
         f'</summary>'
         f'{fields_html}'
         f'</details>'
@@ -152,7 +152,7 @@ def _render_move(move_data: dict, db: DB) -> str:
     )
 
 
-def _move_one_liner(move_data: dict) -> str:
+def _move_one_liner(move_data: dict, db: DB | None = None) -> str:
     """Generate a short one-line summary for a move."""
     summary = move_data.get("summary", "")
     if summary:
@@ -163,7 +163,12 @@ def _move_one_liner(move_data: dict) -> str:
         direction = move_data.get("direction", "")
         return f"{direction}" if direction else "link"
     if "page_id" in move_data:
-        return f'[{_short(move_data["page_id"])}]'
+        pid = move_data["page_id"]
+        if db:
+            page = db.get_page(pid) if _looks_like_uuid(pid) else None
+            if page:
+                return f'[{_short(pid)}] {page.summary}'
+        return f'[{_short(pid)}]'
     if "note" in move_data:
         return move_data["note"]
     return ""
@@ -171,42 +176,33 @@ def _move_one_liner(move_data: dict) -> str:
 
 def _render_event_context_built(ev: dict, db: DB) -> str:
     data = ev.get("data", {})
-    page_ids = data.get("page_ids_in_context", [])
+    working = data.get("working_context_page_ids", [])
+    preloaded = data.get("preloaded_page_ids", [])
     budget = data.get("budget")
     source = data.get("source_page_id")
 
     html = '<div class="ev-section">'
-    html += '<span class="ev-label">Context pages:</span>'
-    html += _render_page_list(page_ids, db)
+    html += '<span class="ev-label">Working context:</span>'
+    html += _render_page_list(working, db)
+    if preloaded:
+        html += '<span class="ev-label">Pre-loaded (from dispatch):</span>'
+        html += _render_page_list(preloaded, db)
     if source:
-        html += '<br><span class="ev-label">Source:</span>'
+        html += '<span class="ev-label">Source:</span>'
         html += _render_page_chip(source, db)
     if budget is not None:
-        html += f'<br><span class="ev-label">Budget: {budget}</span>'
+        html += f'<span class="ev-label">Budget: {budget}</span>'
     html += "</div>"
     return html
 
 
-def _render_event_phase1(ev: dict, db: DB) -> str:
+def _render_event_pages_loaded(ev: dict, db: DB) -> str:
     data = ev.get("data", {})
-    loaded = data.get("pages_loaded", [])
-    if not loaded:
-        return '<div class="ev-section"><span class="ev-label">Phase 1:</span> no pages loaded</div>'
-    html = '<div class="ev-section"><span class="ev-label">Phase 1 loaded:</span>'
-    html += _render_page_list(loaded, db)
-    html += "</div>"
-    return html
-
-
-def _render_event_phase2_round(ev: dict, db: DB) -> str:
-    data = ev.get("data", {})
-    round_num = data.get("round", "?")
-    loaded = data.get("pages_loaded", [])
-    html = (
-        f'<div class="ev-section">'
-        f'<span class="ev-label">Phase 2 round {round_num}:</span>'
-    )
-    html += _render_page_list(loaded, db)
+    page_ids = data.get("page_ids", [])
+    if not page_ids:
+        return '<div class="ev-section"><span class="ev-label">No pages loaded</span></div>'
+    html = '<div class="ev-section">'
+    html += _render_page_list(page_ids, db)
     html += "</div>"
     return html
 
@@ -216,16 +212,15 @@ def _render_event_moves(ev: dict, db: DB) -> str:
     moves = data.get("moves", [])
     created = data.get("created_page_ids", [])
 
+    moves = [m for m in moves if isinstance(m, dict) and m.get("type") != "LOAD_PAGE"]
+
     if not moves:
         return '<div class="ev-section"><span class="ev-label">Moves:</span> none</div>'
 
     html = f'<div class="ev-section"><span class="ev-label">Moves ({len(moves)}):</span>'
     html += '<div class="moves-list">'
     for m in moves:
-        if isinstance(m, dict):
-            html += _render_move(m, db)
-        else:
-            html += f'<div class="move-item"><span class="move-badge">{escape(str(m))}</span></div>'
+        html += _render_move(m, db)
     html += "</div>"
     if created:
         html += '<span class="ev-label">Created pages:</span>'
@@ -288,8 +283,8 @@ def _render_event_generic(ev: dict) -> str:
 
 _EVENT_RENDERERS = {
     "context_built": _render_event_context_built,
-    "phase1_complete": _render_event_phase1,
-    "phase2_round": _render_event_phase2_round,
+    "phase1_loaded": _render_event_pages_loaded,
+    "phase2_loaded": _render_event_pages_loaded,
     "moves_executed": _render_event_moves,
     "dispatches_planned": _render_event_dispatches,
     "review_complete": _render_event_review,
@@ -324,21 +319,21 @@ def _render_event(ev: dict, db: DB) -> str:
 
 
 _CALL_COLORS = {
-    "scout": "#e3f2fd",
-    "assess": "#f3e5f5",
-    "prioritization": "#fff3e0",
-    "ingest": "#e8f5e9",
+    CallType.SCOUT: "#e3f2fd",
+    CallType.ASSESS: "#f3e5f5",
+    CallType.PRIORITIZATION: "#fff3e0",
+    CallType.INGEST: "#e8f5e9",
 }
 
 
-def _call_color(call_type: str) -> str:
+def _call_color(call_type: CallType) -> str:
     return _CALL_COLORS.get(call_type, "#f5f5f5")
 
 
 def _render_call_node(call: Call, db: DB, depth: int = 0) -> str:
     trace_events = db.get_call_trace(call.id)
     children = db.get_child_calls(call.id)
-    color = _call_color(call.call_type.value)
+    color = _call_color(call.call_type)
     short_id = call.id[:8]
 
     scope_label = ""
@@ -503,8 +498,9 @@ details[open] > summary { margin-bottom: 0.4rem; }
 }
 .ev-section { margin: 0.2rem 0 0.2rem 0.5rem; font-size: 0.82rem; }
 .ev-label {
+  display: block;
   font-size: 0.75rem; font-weight: 600; color: #666;
-  margin-right: 0.3rem;
+  margin-top: 0.4rem;
 }
 .empty { color: #bbb; font-style: italic; font-size: 0.78rem; }
 

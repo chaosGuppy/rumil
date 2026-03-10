@@ -3,7 +3,7 @@ Data models for the research workspace.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any, Optional
 import uuid
@@ -108,7 +108,7 @@ class Page:
     provenance_model: str = ""
     provenance_call_type: str = ""
     provenance_call_id: str = ""
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     superseded_by: Optional[str] = None
     is_superseded: bool = False
     extra: dict = field(default_factory=dict)
@@ -126,7 +126,7 @@ class PageLink:
     direction: Optional[ConsiderationDirection] = None  # for CONSIDERATION links
     strength: float = 2.5  # 0-5
     reasoning: str = ""
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 @dataclass
@@ -142,5 +142,5 @@ class Call:
     context_page_ids: list = field(default_factory=list)
     result_summary: str = ""
     review_json: dict = field(default_factory=dict)
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     completed_at: Optional[datetime] = None

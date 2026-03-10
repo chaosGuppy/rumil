@@ -69,14 +69,14 @@ def _render_page_chip(page_id: str, db: DB) -> str:
         f'<summary class="page-chip {ptype}">'
         f'<span class="chip-id">[{short}]</span> '
         f'<span class="chip-summary">{summary}</span>'
-        f'</summary>'
+        f"</summary>"
         f'<div class="chip-content">'
         f'<p class="chip-meta">{ptype} | '
-        f'{page.epistemic_status:.1f}/5 {escape(page.epistemic_type)}</p>'
+        f"{page.epistemic_status:.1f}/5 {escape(page.epistemic_type)}</p>"
         f'<p class="chip-body">{content}'
-        f'</p>'
-        f'</div>'
-        f'</details>'
+        f"</p>"
+        f"</div>"
+        f"</details>"
     )
 
 
@@ -117,9 +117,22 @@ def _render_move(move_data: dict, db: DB) -> str:
             continue
         sv = str(v)
         # Render page ID references as chips
-        if k in ("claim_id", "question_id", "from_page_id", "to_page_id",
-                  "page_id", "page_id_a", "page_id_b", "old_page_id",
-                  "parent_question_id") and isinstance(v, str) and v:
+        if (
+            k
+            in (
+                "claim_id",
+                "question_id",
+                "from_page_id",
+                "to_page_id",
+                "page_id",
+                "page_id_a",
+                "page_id_b",
+                "old_page_id",
+                "parent_question_id",
+            )
+            and isinstance(v, str)
+            and v
+        ):
             page = db.get_page(v) if _looks_like_uuid(v) else None
             if page:
                 sv = f'[{_short(v)}] "{page.summary}"'
@@ -135,20 +148,20 @@ def _render_move(move_data: dict, db: DB) -> str:
                 f'<div class="move-field">'
                 f'<span class="field-key">{escape(k)}:</span> '
                 f'<span class="field-val">{escape(v)}</span>'
-                f'</div>'
+                f"</div>"
             )
         fields_html += "</div>"
 
     return (
         f'<div class="move-item">'
-        f'<details>'
-        f'<summary>'
+        f"<details>"
+        f"<summary>"
         f'<span class="move-badge {label_class}">{escape(move_type)}</span>'
         f'<span class="move-summary">{escape(_move_one_liner(move_data, db))}</span>'
-        f'</summary>'
-        f'{fields_html}'
-        f'</details>'
-        f'</div>'
+        f"</summary>"
+        f"{fields_html}"
+        f"</details>"
+        f"</div>"
     )
 
 
@@ -167,8 +180,8 @@ def _move_one_liner(move_data: dict, db: DB | None = None) -> str:
         if db:
             page = db.get_page(pid) if _looks_like_uuid(pid) else None
             if page:
-                return f'[{_short(pid)}] {page.summary}'
-        return f'[{_short(pid)}]'
+                return f"[{_short(pid)}] {page.summary}"
+        return f"[{_short(pid)}]"
     if "note" in move_data:
         return move_data["note"]
     return ""
@@ -217,7 +230,9 @@ def _render_event_moves(ev: dict, db: DB) -> str:
     if not moves:
         return '<div class="ev-section"><span class="ev-label">Moves:</span> none</div>'
 
-    html = f'<div class="ev-section"><span class="ev-label">Moves ({len(moves)}):</span>'
+    html = (
+        f'<div class="ev-section"><span class="ev-label">Moves ({len(moves)}):</span>'
+    )
     html += '<div class="moves-list">'
     for m in moves:
         html += _render_move(m, db)
@@ -264,8 +279,8 @@ def _render_event_review(ev: dict, db: DB) -> str:  # noqa: ARG001
     return (
         f'<div class="ev-section review-section">'
         f'<span class="ev-label">Review:</span> '
-        f'fruit={fruit}, confidence={conf}'
-        f'</div>'
+        f"fruit={fruit}, confidence={conf}"
+        f"</div>"
     )
 
 
@@ -312,7 +327,7 @@ def _render_event(ev: dict, db: DB) -> str:
         '<div class="ev-header">'
         f'<span class="ev-name">{escape(name)}</span>'
         f'<span class="ev-ts">{escape(ts)}</span>'
-        '</div>'
+        "</div>"
         f"{body_html}"
         "</div>"
     )
@@ -362,7 +377,9 @@ def _render_call_node(call: Call, db: DB, depth: int = 0) -> str:
                     if idx is not None:
                         executed_map[idx] = e.get("data", {})
 
-            dispatch_links = '<div class="dispatch-nav"><strong>Dispatches:</strong><ol>'
+            dispatch_links = (
+                '<div class="dispatch-nav"><strong>Dispatches:</strong><ol>'
+            )
             for i, d in enumerate(planned):
                 ct = d.get("call_type", "?")
                 reason = d.get("reason", "")
@@ -373,18 +390,18 @@ def _render_call_node(call: Call, db: DB, depth: int = 0) -> str:
                         dispatch_links += (
                             f'<li><a href="#call-{child_id[:8]}" class="dispatch-link">'
                             f'<span class="move-badge {ct}">{escape(ct)}</span></a>'
-                            f' {escape(reason)}</li>'
+                            f" {escape(reason)}</li>"
                         )
                     else:
                         dispatch_links += (
                             f'<li><span class="move-badge {ct}">{escape(ct)}</span>'
-                            f' {escape(reason)}</li>'
+                            f" {escape(reason)}</li>"
                         )
                 else:
                     dispatch_links += (
                         f'<li><span class="skipped">'
                         f'<span class="move-badge {ct}">{escape(ct)}</span> (skipped)'
-                        f'</span> {escape(reason)}</li>'
+                        f"</span> {escape(reason)}</li>"
                     )
             dispatch_links += "</ol></div>"
 
@@ -410,7 +427,7 @@ def _render_call_node(call: Call, db: DB, depth: int = 0) -> str:
                 f"<strong>Review:</strong> fruit={fruit}, confidence={conf}"
             )
             if assessment:
-                review_html += f'<br><em>{escape(str(assessment))}</em>'
+                review_html += f"<br><em>{escape(str(assessment))}</em>"
             review_html += "</div>"
 
     children_html = ""
@@ -422,7 +439,7 @@ def _render_call_node(call: Call, db: DB, depth: int = 0) -> str:
 
     return (
         f'<div class="call-node" id="call-{short_id}" style="background:{color};">'
-        f'<details{"" if depth > 1 else " open"}>'
+        f"<details{'' if depth > 1 else ' open'}>"
         f"<summary>"
         f'<span class="call-type">{escape(call.call_type.value)}</span>'
         f'<span class="call-id">[{short_id}]</span>'
@@ -597,9 +614,7 @@ def generate_trace(question_id_or_call_id: str, db: DB) -> Path:
         question_label = page.summary[:60]
         root_calls = db.get_root_calls_for_question(question_id_or_call_id)
         if not root_calls:
-            raise ValueError(
-                f"No calls found for question {question_id_or_call_id}"
-            )
+            raise ValueError(f"No calls found for question {question_id_or_call_id}")
         body_html = ""
         for rc in root_calls:
             body_html += _render_call_node(rc, db, depth=0)
@@ -613,19 +628,17 @@ def generate_trace(question_id_or_call_id: str, db: DB) -> Path:
         body_html = _render_call_node(call, db, depth=0)
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-    slug = "".join(
-        c if c.isalnum() or c in " -" else "" for c in question_label[:50]
-    )
+    slug = "".join(c if c.isalnum() or c in " -" else "" for c in question_label[:50])
     slug = slug.strip().replace(" ", "-").lower()
     output_path = TRACES_DIR / f"{timestamp}-{slug}.html"
 
     html = (
-        '<!DOCTYPE html>\n'
+        "<!DOCTYPE html>\n"
         '<html lang="en">\n'
         "<head>\n"
         '  <meta charset="UTF-8">\n'
         '  <meta name="viewport" content="width=device-width, initial-scale=1.0">\n'
-        f'  <title>Execution Trace: {escape(question_label)}</title>\n'
+        f"  <title>Execution Trace: {escape(question_label)}</title>\n"
         f"  <style>{_CSS}</style>\n"
         "</head>\n"
         "<body>\n"

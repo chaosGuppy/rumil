@@ -29,6 +29,7 @@ PAGES_DIR = Path(__file__).parent.parent.parent.parent / "pages"
 @dataclass
 class MoveResult:
     """Result of executing a move."""
+
     message: str
     created_page_id: str | None = None
 
@@ -59,6 +60,7 @@ def _resolve_last_created(payload: BaseModel, last_created_id: str) -> BaseModel
 @dataclass
 class MoveDef(Generic[S]):
     """Complete definition of a move: its identity, tool schema, and execution logic."""
+
     move_type: MoveType
     name: str
     description: str
@@ -93,15 +95,21 @@ class MoveDef(Generic[S]):
 
 
 class CreatePagePayload(BaseModel):
-    summary: str = Field(description=(
-        "10-15 word headline summary (20 word ceiling). Must be a sharp, "
-        "self-contained label — not a truncated sentence. Name the actual claim "
-        "or position, e.g. 'Solar payback periods have fallen below 7 years in "
-        "most climates'. Avoid vague openings like 'There are several factors...'."
-    ))
-    content: str = Field(description="Full explanation with reasoning. Be specific and substantive.")
+    summary: str = Field(
+        description=(
+            "10-15 word headline summary (20 word ceiling). Must be a sharp, "
+            "self-contained label — not a truncated sentence. Name the actual claim "
+            "or position, e.g. 'Solar payback periods have fallen below 7 years in "
+            "most climates'. Avoid vague openings like 'There are several factors...'."
+        )
+    )
+    content: str = Field(
+        description="Full explanation with reasoning. Be specific and substantive."
+    )
     epistemic_status: float = Field(2.5, description="0-5 subjective confidence")
-    epistemic_type: str = Field("", description="Nature of uncertainty, e.g. empirical, conceptual, contested")
+    epistemic_type: str = Field(
+        "", description="Nature of uncertainty, e.g. empirical, conceptual, contested"
+    )
     workspace: str = Field("research", description="research or prioritization")
     status: str | None = None
     remaining_fruit: float | None = None
@@ -110,12 +118,15 @@ class CreatePagePayload(BaseModel):
         None, description="What this judgement most depends on (judgements only)"
     )
     sensitivity_analysis: str | None = Field(
-        None, description="What would shift this judgement, and in which direction (judgements only)"
+        None,
+        description="What would shift this judgement, and in which direction (judgements only)",
     )
     confidence_type: str | None = None
     decomposition_status: str | None = None
     source_url: str | None = None
-    source_id: str | None = Field(None, description="Source page ID (ingest claims only)")
+    source_id: str | None = Field(
+        None, description="Source page ID (ingest claims only)"
+    )
     direction: str | None = None
     strength: float | None = None
     hypothesis: str | None = None

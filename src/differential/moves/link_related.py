@@ -15,8 +15,11 @@ class LinkRelatedPayload(BaseModel):
 
 def execute(payload: LinkRelatedPayload, call: Call, db: DB) -> MoveResult:
     return link_pages(
-        payload.from_page_id, payload.to_page_id, payload.reasoning,
-        db, LinkType.RELATED,
+        payload.from_page_id,
+        payload.to_page_id,
+        payload.reasoning,
+        db,
+        LinkType.RELATED,
     )
 
 

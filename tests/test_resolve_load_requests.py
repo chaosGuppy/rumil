@@ -1,6 +1,14 @@
 """Tests for load_page move execution."""
 
-from differential.models import Call, CallStatus, CallType, Page, PageLayer, PageType, Workspace
+from differential.models import (
+    Call,
+    CallStatus,
+    CallType,
+    Page,
+    PageLayer,
+    PageType,
+    Workspace,
+)
 from differential.moves.load_page import LoadPagePayload, execute
 
 

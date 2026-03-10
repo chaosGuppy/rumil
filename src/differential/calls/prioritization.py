@@ -1,9 +1,9 @@
 """Prioritization call: plan budget allocation across questions."""
 
 from differential.calls.common import complete_call, moves_to_trace_data, run_call
-from differential.context import build_prioritization_context
+from differential.context import build_prioritization_context, collect_subtree_ids
 from differential.database import DB
-from differential.models import Call, CallType
+from differential.models import Call, CallType, MoveType
 from differential.tracer import CallTrace
 
 
@@ -22,28 +22,47 @@ def run_prioritization(
         f"\n[PRIORITIZATION] {call.id[:8]} — {db.page_label(scope_question_id)} — budget {budget}"
     )
 
-    context_text = build_prioritization_context(db, scope_question_id=scope_question_id)
+    context_text, short_id_map = build_prioritization_context(
+        db, scope_question_id=scope_question_id
+    )
+    subtree_ids = collect_subtree_ids(scope_question_id, db)
     trace.record("context_built", {"budget": budget})
 
     task = (
         f"You have a budget of **{budget} research calls** to allocate on this question.\n\n"
         f"Scope question ID: `{scope_question_id}`\n\n"
         "Review the current state of the workspace above and decide how to spend the budget. "
-        "Use the dispatch tools to allocate calls."
+        "You may also create subquestions (using create_question + link_child_question) to "
+        "decompose the scope question before dispatching research on them. "
+        "Dispatch is restricted to questions within this scope subtree. "
+        "Use the dispatch tool to allocate calls."
     )
 
-    result = run_call(CallType.PRIORITIZATION, task, context_text, call, db)
+    result = run_call(
+        CallType.PRIORITIZATION,
+        task,
+        context_text,
+        call,
+        db,
+        subtree_ids=subtree_ids,
+        short_id_map=short_id_map,
+    )
 
-    trace.record("dispatches_planned", {
-        "dispatches": [
-            {
-                "call_type": d.call_type.value,
-                **d.payload.model_dump(exclude_defaults=True),
-            }
-            for d in result.dispatches
-        ],
-    })
-    trace.record("moves_executed", moves_to_trace_data(result.moves, result.created_page_ids))
+    trace.record(
+        "dispatches_planned",
+        {
+            "dispatches": [
+                {
+                    "call_type": d.call_type.value,
+                    **d.payload.model_dump(exclude_defaults=True),
+                }
+                for d in result.dispatches
+            ],
+        },
+    )
+    trace.record(
+        "moves_executed", moves_to_trace_data(result.moves, result.created_page_ids)
+    )
 
     summary = {
         "dispatches": result.dispatches,

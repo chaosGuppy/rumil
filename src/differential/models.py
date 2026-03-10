@@ -84,22 +84,24 @@ class ConsiderationDirection(str, Enum):
 
 
 class BaseDispatchPayload(BaseModel):
-    question_id: str = Field(description='Page ID of the question to investigate')
-    reason: str = Field('', description='Why this dispatch is a good use of budget')
+    question_id: str = Field(description="Page ID of the question to investigate")
+    reason: str = Field("", description="Why this dispatch is a good use of budget")
     context_page_ids: list[str] = Field(
         default_factory=list,
         description=(
-            'Optional full UUIDs of pages to pre-load into the dispatched call. '
-            'Use full UUIDs, not short IDs.'
+            "Optional full UUIDs of pages to pre-load into the dispatched call. "
+            "Use full UUIDs, not short IDs."
         ),
     )
 
 
 class ScoutDispatchPayload(BaseDispatchPayload):
     fruit_threshold: int = Field(
-        4, description='Remaining fruit threshold for stopping'
+        4, description="Remaining fruit threshold for stopping"
     )
-    max_rounds: int = Field(5, description='Maximum scouting rounds (each round costs 1 budget)')
+    max_rounds: int = Field(
+        5, description="Maximum scouting rounds (each round costs 1 budget)"
+    )
 
 
 class AssessDispatchPayload(BaseDispatchPayload):
@@ -107,7 +109,7 @@ class AssessDispatchPayload(BaseDispatchPayload):
 
 
 class PrioritizationDispatchPayload(BaseDispatchPayload):
-    budget: int = Field(description='Budget to allocate for the sub-investigation')
+    budget: int = Field(description="Budget to allocate for the sub-investigation")
 
 
 @dataclass

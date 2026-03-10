@@ -15,8 +15,11 @@ class LinkChildQuestionPayload(BaseModel):
 
 def execute(payload: LinkChildQuestionPayload, call: Call, db: DB) -> MoveResult:
     return link_pages(
-        payload.parent_id, payload.child_id, payload.reasoning,
-        db, LinkType.CHILD_QUESTION,
+        payload.parent_id,
+        payload.child_id,
+        payload.reasoning,
+        db,
+        LinkType.CHILD_QUESTION,
     )
 
 

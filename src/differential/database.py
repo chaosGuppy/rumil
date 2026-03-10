@@ -444,10 +444,7 @@ class DB:
     def get_call_trace(self, call_id: str) -> list[dict]:
         """Fetch trace events for a call."""
         rows = _rows(
-            self.client.table("calls")
-            .select("trace_json")
-            .eq("id", call_id)
-            .execute()
+            self.client.table("calls").select("trace_json").eq("id", call_id).execute()
         )
         if rows and rows[0].get("trace_json"):
             return rows[0]["trace_json"]

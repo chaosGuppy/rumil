@@ -9,6 +9,14 @@ from differential.models import Page, PageType, Workspace
 from differential.workspace_map import build_workspace_map
 
 
+def collect_subtree_ids(question_id: str, db: DB) -> set[str]:
+    """Recursively collect all question IDs in a subtree (inclusive)."""
+    result = {question_id}
+    for child in db.get_child_questions(question_id):
+        result |= collect_subtree_ids(child.id, db)
+    return result
+
+
 def format_page(page: Page, db: Optional[DB] = None) -> str:
     """Format a single page as readable text for LLM context."""
     extra = page.extra or {}
@@ -195,18 +203,26 @@ def build_call_context(
 
 def build_prioritization_context(
     db: DB, scope_question_id: Optional[str] = None
-) -> str:
-    """Build context for a prioritization call."""
-    parts = ["# Prioritization Context", ""]
+) -> tuple[str, dict[str, str]]:
+    """Build context for a prioritization call.
+
+    Returns (context_text, short_id_map) where short_id_map maps 8-char
+    short IDs to full UUIDs.
+    """
+    map_text, short_id_map = build_workspace_map(db)
+    parts = [map_text, "", "---", "", "# Prioritization Context", ""]
 
     if scope_question_id:
         question = db.get_page(scope_question_id)
         if question:
-            # Index of all dispatchable question IDs — prevents hallucination
             index_lines = _build_question_index(scope_question_id, db)
-            parts.append("## Questions available to dispatch on")
+            parts.append("## Scope Subtree — Dispatchable Questions")
             parts.append("")
-            parts.append("Use only these exact IDs in your dispatch tags:")
+            parts.append(
+                "You can only dispatch research calls on questions in this subtree "
+                "(or on new subquestions you create during this call). "
+                "Use only these exact IDs in your dispatch tags:"
+            )
             parts.append("")
             parts.extend(index_lines)
             parts.append("")
@@ -246,4 +262,4 @@ def build_prioritization_context(
                 parts.append("  Not yet ingested for any question")
         parts.append("")
 
-    return "\n".join(parts)
+    return "\n".join(parts), short_id_map

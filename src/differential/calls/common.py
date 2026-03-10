@@ -16,7 +16,7 @@ from differential.llm import (
     build_system_prompt,
     build_user_message,
     structured_call,
-    agent_loop
+    agent_loop,
 )
 from differential.models import (
     Call,
@@ -42,10 +42,11 @@ PHASE1_TASK = (
 )
 
 
-
 class PageRating(BaseModel):
     page_id: str = Field(description="Short ID of the rated page")
-    score: int = Field(description="-1 = confusing, 0 = no help, 1 = helpful, 2 = very helpful")
+    score: int = Field(
+        description="-1 = confusing, 0 = no help, 1 = helpful, 2 = very helpful"
+    )
     note: str = Field("", description="One sentence on why")
 
 
@@ -58,34 +59,35 @@ class ReviewResponse(BaseModel):
             "7-8 = substantial work remains; 9-10 = barely started"
         )
     )
-    confidence_in_output: float = Field(description="0-5 confidence in the work just done")
-    context_was_adequate: bool = Field(description="Whether the context provided was sufficient")
+    confidence_in_output: float = Field(
+        description="0-5 confidence in the work just done"
+    )
+    context_was_adequate: bool = Field(
+        description="Whether the context provided was sufficient"
+    )
     what_was_missing: str = Field(
         "", description="What additional context would have helped"
     )
     tensions_noticed: str = Field(
         "", description="Any conflicts or inconsistencies noticed"
     )
-    self_assessment: str = Field(
-        "", description="1-2 sentences on how this call went"
-    )
-    suggested_next_steps: str = Field(
-        "", description="What should happen next"
-    )
+    self_assessment: str = Field("", description="1-2 sentences on how this call went")
+    suggested_next_steps: str = Field("", description="What should happen next")
     page_ratings: list[PageRating] = Field(
-        default_factory=list, description="Ratings for pages that were loaded into context"
+        default_factory=list,
+        description="Ratings for pages that were loaded into context",
     )
 
 
 @dataclass
 class RunCallResult:
     """Result of a run_call invocation."""
+
     created_page_ids: list[str] = field(default_factory=list)
     dispatches: list[Dispatch] = field(default_factory=list)
     moves: list[Move] = field(default_factory=list)
     phase1_page_ids: list[str] = field(default_factory=list)
     agent_result: AgentResult = field(default_factory=AgentResult)
-
 
 
 def _format_loaded_pages(page_ids: list[str], db: DB) -> str:
@@ -109,8 +111,11 @@ def _run_phase1(
         load_tool = MOVES[MoveType.LOAD_PAGE].bind(state)
         phase1_msg = build_user_message(context_text, PHASE1_TASK)
         agent_loop(
-            system_prompt, phase1_msg, [load_tool],
-            max_tokens=2048, max_rounds=3,
+            system_prompt,
+            phase1_msg,
+            [load_tool],
+            max_tokens=2048,
+            max_rounds=3,
         )
         loaded_ids = []
         for m in state.moves:
@@ -140,6 +145,8 @@ def run_call(
     available_moves: list[MoveType] | None = None,
     max_tokens: int = 4096,
     max_rounds: int = 3,
+    subtree_ids: set[str] | None = None,
+    short_id_map: dict[str, str] | None = None,
 ) -> RunCallResult:
     """Run a workspace call with tool use.
 
@@ -165,13 +172,16 @@ def run_call(
     tools = [MOVES[mt].bind(state) for mt in available_moves]
     if call_type == CallType.PRIORITIZATION:
         for ddef in DISPATCH_DEFS.values():
-            tools.append(ddef.bind(state))
+            tools.append(ddef.bind(state, subtree_ids, short_id_map))
 
     user_message = build_user_message(context_text, task_description)
 
     agent_result = agent_loop(
-        system_prompt, user_message, tools,
-        max_tokens=max_tokens, max_rounds=max_rounds,
+        system_prompt,
+        user_message,
+        tools,
+        max_tokens=max_tokens,
+        max_rounds=max_rounds,
     )
 
     return RunCallResult(
@@ -295,9 +305,7 @@ def run_closing_review(
     except Exception as e:
         status = getattr(e, "status_code", None)
         reason = f"HTTP {status}" if status else type(e).__name__
-        print(
-            f"  [review] Closing review skipped ({reason}) — continuing."
-        )
+        print(f"  [review] Closing review skipped ({reason}) — continuing.")
         return None
 
 

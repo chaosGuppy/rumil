@@ -52,6 +52,7 @@ def build_user_message(context_text: str, task_description: str) -> str:
 class Tool:
     """A tool available to the LLM. fn is called with the parsed input dict
     and returns a string result that is sent back as tool_result."""
+
     name: str
     description: str
     input_schema: dict
@@ -61,6 +62,7 @@ class Tool:
 @dataclass
 class ToolCall:
     """Record of a single tool call made during agent_loop."""
+
     name: str
     input: dict
     result: str
@@ -69,6 +71,7 @@ class ToolCall:
 @dataclass
 class AgentResult:
     """Result of an agent_loop run."""
+
     text: str = ""
     tool_calls: list[ToolCall] = field(default_factory=list)
 
@@ -105,7 +108,7 @@ def _call_api(
             )
             if not retryable or attempt == MAX_API_RETRIES - 1:
                 raise
-            wait = 2 ** attempt
+            wait = 2**attempt
             label = f"HTTP {status}" if status else name
             print(
                 f"  [llm] API temporarily unavailable ({label}), "
@@ -156,8 +159,11 @@ def agent_loop(
 
     for round_num in range(max_rounds + 1):
         response = _call_api(
-            client, system_prompt, messages,
-            tool_defs or None, max_tokens,
+            client,
+            system_prompt,
+            messages,
+            tool_defs or None,
+            max_tokens,
         )
 
         # Collect text and tool_use blocks
@@ -177,40 +183,54 @@ def agent_loop(
             fn = tool_fns.get(tu.name)
             if fn is None:
                 result_str = f"Unknown tool: {tu.name}"
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": tu.id,
-                    "content": result_str,
-                    "is_error": True,
-                })
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tu.id,
+                        "content": result_str,
+                        "is_error": True,
+                    }
+                )
             else:
                 try:
                     result_str = fn(tu.input)
                 except Exception as e:
                     result_str = f"Error: {e}"
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": tu.id,
-                        "content": result_str,
-                        "is_error": True,
-                    })
+                    tool_results.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": tu.id,
+                            "content": result_str,
+                            "is_error": True,
+                        }
+                    )
                 else:
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": tu.id,
-                        "content": result_str,
-                    })
-            all_tool_calls.append(ToolCall(
-                name=tu.name,
-                input=tu.input,
-                result=result_str,
-            ))
+                    tool_results.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": tu.id,
+                            "content": result_str,
+                        }
+                    )
+            all_tool_calls.append(
+                ToolCall(
+                    name=tu.name,
+                    input=tu.input,
+                    result=result_str,
+                )
+            )
 
         remaining = max_rounds - round_num
         if remaining == 1:
-            budget_note = {"type": "text", "text": "This is your final round — finish your work now."}
+            budget_note = {
+                "type": "text",
+                "text": "This is your final round — finish your work now.",
+            }
         else:
-            budget_note = {"type": "text", "text": f"After this round of tool calls, you will have {remaining - 1} rounds remaining."}
+            budget_note = {
+                "type": "text",
+                "text": f"After this round of tool calls, you will have {remaining - 1} rounds remaining.",
+            }
 
         messages.append({"role": "assistant", "content": response.content})
         messages.append({"role": "user", "content": tool_results + [budget_note]})
@@ -234,11 +254,13 @@ def text_call(
     """
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
-        raise EnvironmentError(
-            "ANTHROPIC_API_KEY environment variable not set."
-        )
+        raise EnvironmentError("ANTHROPIC_API_KEY environment variable not set.")
     client = anthropic.Anthropic(api_key=api_key)
-    msg_list = messages if messages is not None else [{"role": "user", "content": user_message}]
+    msg_list = (
+        messages
+        if messages is not None
+        else [{"role": "user", "content": user_message}]
+    )
     response = _call_api(client, system_prompt, msg_list, max_tokens=max_tokens)
     for block in response.content:
         if isinstance(block, TextBlock):
@@ -294,7 +316,7 @@ def structured_call(
             )
             if not retryable or attempt == MAX_API_RETRIES - 1:
                 raise
-            wait = 2 ** attempt
+            wait = 2**attempt
             label = f"HTTP {status}" if status else name
             print(
                 f"  [llm] API temporarily unavailable ({label}), "

@@ -39,3 +39,18 @@ Guidance by question priority (assuming sufficient budget — always cap `max_ro
 - **High priority:** `fruit_threshold: 3, max_rounds: 8` — squeeze hard, high failsafe
 - **Medium priority:** `fruit_threshold: 4, max_rounds: 5` — standard defaults
 - **Low priority:** `fruit_threshold: 5, max_rounds: 4` — stop earlier, tighter cap
+
+## Subquestion Generation
+
+When the scope question is substantial, you should decompose it into subquestions before
+dispatching, unless it is already well-covered by questions within the workspace. Good subquestions are:
+
+- **Informative**: answering them would meaningfully advance the parent question.
+- **Non-redundant**: they don't duplicate questions already visible in the workspace map.
+- **Scoped**: each targets a specific angle, not the whole question restated.
+
+To create a subquestion: use `create_question`, then `link_child_question` to attach it
+as a child. You can then dispatch research on it.
+
+This is optional — if the question already has good subquestions or is narrow enough to
+investigate directly, skip this step.

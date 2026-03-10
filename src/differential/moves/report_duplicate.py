@@ -15,13 +15,8 @@ class ReportDuplicatePayload(BaseModel):
 def execute(payload: ReportDuplicatePayload, call: Call, db: DB) -> MoveResult:
     pid_a = db.resolve_page_id(payload.page_id_a)
     pid_b = db.resolve_page_id(payload.page_id_b)
-    db.save_page_flag(
-        "duplicate", call_id=call.id, page_id_a=pid_a, page_id_b=pid_b
-    )
-    print(
-        f"  [flag] Duplicate reported: {payload.page_id_a} <-> "
-        f"{payload.page_id_b}"
-    )
+    db.save_page_flag("duplicate", call_id=call.id, page_id_a=pid_a, page_id_b=pid_b)
+    print(f"  [flag] Duplicate reported: {payload.page_id_a} <-> {payload.page_id_b}")
     return MoveResult("Done.")
 
 

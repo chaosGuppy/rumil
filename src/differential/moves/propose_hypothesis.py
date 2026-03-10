@@ -22,9 +22,7 @@ class ProposeHypothesisPayload(BaseModel):
     hypothesis: str = Field(
         description="Specific assertive statement of the hypothesis (not a question)"
     )
-    reasoning: str = Field(
-        "", description="Why this hypothesis is worth investigating"
-    )
+    reasoning: str = Field("", description="Why this hypothesis is worth investigating")
     epistemic_status: float = Field(2.5, description="0-5 subjective confidence")
     direction: str = Field("neutral", description="supports, opposes, or neutral")
     strength: float = Field(2.5, description="0-5 consideration strength")

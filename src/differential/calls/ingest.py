@@ -38,11 +38,14 @@ def run_ingest(
     question_context, _, working_page_ids = build_call_context(
         question_id, db, extra_page_ids=preloaded
     )
-    trace.record("context_built", {
-        "working_context_page_ids": working_page_ids,
-        "preloaded_page_ids": preloaded,
-        "source_page_id": source_page.id,
-    })
+    trace.record(
+        "context_built",
+        {
+            "working_context_page_ids": working_page_ids,
+            "preloaded_page_ids": preloaded,
+            "source_page_id": source_page.id,
+        },
+    )
 
     source_section = (
         "\n\n---\n\n## Source Document\n\n"
@@ -65,29 +68,34 @@ def run_ingest(
     phase2_loaded = extract_loaded_page_ids(result, db)
     if phase2_loaded:
         trace.record("phase2_loaded", {"page_ids": phase2_loaded})
-    trace.record("moves_executed", moves_to_trace_data(result.moves, result.created_page_ids))
-
-    all_loaded_ids = list(dict.fromkeys(
-        preloaded + result.phase1_page_ids + phase2_loaded
-    ))
-    review_context = format_moves_for_review(result.moves)
-    review = run_closing_review(
-        call, review_context, context_text, all_loaded_ids, db
+    trace.record(
+        "moves_executed", moves_to_trace_data(result.moves, result.created_page_ids)
     )
+
+    all_loaded_ids = list(
+        dict.fromkeys(preloaded + result.phase1_page_ids + phase2_loaded)
+    )
+    review_context = format_moves_for_review(result.moves)
+    review = run_closing_review(call, review_context, context_text, all_loaded_ids, db)
     if review:
         print(
             f"  [review] confidence={review.get('confidence_in_output', '?')}, "
             f"remaining_fruit={review.get('remaining_fruit', '?')}"
         )
         print_page_ratings(review, db)
-        trace.record("review_complete", {
-            "remaining_fruit": review.get("remaining_fruit"),
-            "confidence": review.get("confidence_in_output"),
-        })
+        trace.record(
+            "review_complete",
+            {
+                "remaining_fruit": review.get("remaining_fruit"),
+                "confidence": review.get("confidence_in_output"),
+            },
+        )
 
     call.review_json = review or {}
     complete_call(
-        call, db, f"Ingest complete. Created {len(result.created_page_ids)} pages from '{filename}'.",
+        call,
+        db,
+        f"Ingest complete. Created {len(result.created_page_ids)} pages from '{filename}'.",
         trace=trace,
     )
     return result, review or {}

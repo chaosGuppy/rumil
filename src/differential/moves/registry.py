@@ -16,18 +16,21 @@ from differential.moves.report_duplicate import MOVE as _report_duplicate
 from differential.moves.propose_hypothesis import MOVE as _propose_hypothesis
 from differential.moves.load_page import MOVE as _load_page
 
-MOVES: dict[MoveType, MoveDef] = {m.move_type: m for m in [
-    _create_claim,
-    _create_question,
-    _create_judgement,
-    _create_concept,
-    _create_wiki_page,
-    _link_consideration,
-    _link_child_question,
-    _link_related,
-    _supersede_page,
-    _flag_funniness,
-    _report_duplicate,
-    _propose_hypothesis,
-    _load_page,
-]}
+MOVES: dict[MoveType, MoveDef] = {
+    m.move_type: m
+    for m in [
+        _create_claim,
+        _create_question,
+        _create_judgement,
+        _create_concept,
+        _create_wiki_page,
+        _link_consideration,
+        _link_child_question,
+        _link_related,
+        _supersede_page,
+        _flag_funniness,
+        _report_duplicate,
+        _propose_hypothesis,
+        _load_page,
+    ]
+}

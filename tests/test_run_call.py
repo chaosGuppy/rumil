@@ -10,11 +10,7 @@ from differential.moves.base import MoveState
 @pytest.mark.llm
 def test_scout_run_call(tmp_db, question_page, scout_call):
     """A scout call creates pages, records valid moves, and persists them."""
-    context = (
-        f"## Question\n\n"
-        f"ID: `{question_page.id}`\n\n"
-        f"{question_page.content}\n"
-    )
+    context = f"## Question\n\nID: `{question_page.id}`\n\n{question_page.content}\n"
     task = (
         "Scout this question. Create at least one claim "
         "as a consideration.\n\n"
@@ -50,7 +46,12 @@ def test_prioritization_produces_dispatches(tmp_db, question_page, prioritizatio
     )
 
     result = run_call(
-        CallType.PRIORITIZATION, task, context, prioritization_call, tmp_db, max_rounds=3
+        CallType.PRIORITIZATION,
+        task,
+        context,
+        prioritization_call,
+        tmp_db,
+        max_rounds=3,
     )
 
     assert isinstance(result, RunCallResult)
@@ -63,6 +64,7 @@ def test_available_moves_restricts_tools(tmp_db, scout_call):
     allowed = [MoveType.CREATE_CLAIM, MoveType.LOAD_PAGE]
     state = MoveState(scout_call, tmp_db)
     from differential.moves.registry import MOVES
+
     tools = [MOVES[mt].bind(state) for mt in allowed]
 
     tool_names = {t.name for t in tools}

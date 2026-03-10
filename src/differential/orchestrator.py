@@ -205,7 +205,7 @@ class Orchestrator:
             if not resolved:
                 print(
                     f"{indent}  [orchestrator] Skipping dispatch — question ID not found: {p.question_id[:8]}. "
-                    'Falling back to scope question.'
+                    "Falling back to scope question."
                 )
                 resolved = question_id
 
@@ -229,9 +229,7 @@ class Orchestrator:
                 child_call_id = child_ids[0] if child_ids else None
 
             elif isinstance(p, AssessDispatchPayload):
-                print(
-                    f"{indent}  -> Dispatch: assess on {d_label} — {p.reason}"
-                )
+                print(f"{indent}  -> Dispatch: assess on {d_label} — {p.reason}")
                 child_call_id = assess_question(
                     resolved,
                     self.db,

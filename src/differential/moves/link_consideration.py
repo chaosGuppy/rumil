@@ -17,8 +17,13 @@ class LinkConsiderationPayload(BaseModel):
     claim_id: str = Field(description="Page ID of the claim (or LAST_CREATED)")
     question_id: str = Field(description="Page ID of the question")
     direction: str = Field("neutral", description="supports, opposes, or neutral")
-    strength: float = Field(2.5, description="0-5: how strongly this claim bears on the question (0 = barely relevant, 5 = highly decisive)")
-    reasoning: str = Field("", description="Why this claim bears on the question in this direction")
+    strength: float = Field(
+        2.5,
+        description="0-5: how strongly this claim bears on the question (0 = barely relevant, 5 = highly decisive)",
+    )
+    reasoning: str = Field(
+        "", description="Why this claim bears on the question in this direction"
+    )
 
 
 def execute(payload: LinkConsiderationPayload, call: Call, db: DB) -> MoveResult:
@@ -26,8 +31,7 @@ def execute(payload: LinkConsiderationPayload, call: Call, db: DB) -> MoveResult
     question_id = db.resolve_page_id(payload.question_id)
     if not claim_id or not question_id:
         print(
-            "  [executor] LINK_CONSIDERATION skipped — "
-            "one or both page IDs not found"
+            "  [executor] LINK_CONSIDERATION skipped — one or both page IDs not found"
         )
         return MoveResult("Link skipped — page IDs not found.")
 

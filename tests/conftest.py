@@ -41,14 +41,14 @@ def pytest_collection_modifyitems(config, items):
 
 @pytest.fixture
 def tmp_db():
-    """Create a DB with a unique run_id for test isolation."""
+    """Create a DB with a unique run_id and throwaway project for test isolation."""
     run_id = str(uuid.uuid4())
     db = DB(run_id=run_id)
-    project = db.get_or_create_project("default")
+    project = db.get_or_create_project(f"test-{run_id[:8]}")
     db.project_id = project.id
     db.init_budget(100)
     yield db
-    db.delete_run_data()
+    db.delete_run_data(delete_project=True)
 
 
 @pytest.fixture

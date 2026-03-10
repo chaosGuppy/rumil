@@ -2,9 +2,13 @@
 Build context text from workspace pages for injection into LLM prompts.
 """
 
+import logging
+
 from differential.database import DB
 from differential.models import Page, PageType, Workspace
 from differential.workspace_map import build_workspace_map
+
+log = logging.getLogger(__name__)
 
 
 async def collect_subtree_ids(question_id: str, db: DB) -> set[str]:
@@ -177,6 +181,7 @@ async def build_call_context(
     part of the question's working context (question itself, considerations,
     judgements).
     """
+    log.debug("build_call_context: question=%s", question_id[:8])
     map_text, short_id_map = await build_workspace_map(db)
     working_context, working_page_ids = await build_context_for_question(question_id, db)
 
@@ -196,7 +201,12 @@ async def build_call_context(
                 parts += ["", "---", "", f"## Pre-loaded Page: `{pid[:8]}`", ""]
                 parts.append(await format_page(page, db=db))
 
-    return "\n".join(parts), short_id_map, working_page_ids
+    context_text = "\n".join(parts)
+    log.debug(
+        "build_call_context complete: %d chars, %d working pages, %d extra pages",
+        len(context_text), len(working_page_ids), len(extra_page_ids or []),
+    )
+    return context_text, short_id_map, working_page_ids
 
 
 async def build_prioritization_context(

@@ -29,7 +29,7 @@ def run_prioritization(
         f"You have a budget of **{budget} research calls** to allocate on this question.\n\n"
         f"Scope question ID: `{scope_question_id}`\n\n"
         "Review the current state of the workspace above and decide how to spend the budget. "
-        "Use the dispatch tool to allocate calls."
+        "Use the dispatch tools to allocate calls."
     )
 
     result = run_call(CallType.PRIORITIZATION, task, context_text, call, db)
@@ -38,9 +38,7 @@ def run_prioritization(
         "dispatches": [
             {
                 "call_type": d.call_type.value,
-                "question_id": d.payload.get("question_id", ""),
-                "budget": d.payload.get("budget", 1),
-                "reason": d.payload.get("reason", ""),
+                **d.payload.model_dump(exclude_defaults=True),
             }
             for d in result.dispatches
         ],

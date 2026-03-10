@@ -5,10 +5,10 @@ Data models for the research workspace.
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Optional
+from typing import Optional
 import uuid
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class PageType(str, Enum):
@@ -83,6 +83,33 @@ class ConsiderationDirection(str, Enum):
     NEUTRAL = "neutral"
 
 
+class BaseDispatchPayload(BaseModel):
+    question_id: str = Field(description='Page ID of the question to investigate')
+    reason: str = Field('', description='Why this dispatch is a good use of budget')
+    context_page_ids: list[str] = Field(
+        default_factory=list,
+        description=(
+            'Optional full UUIDs of pages to pre-load into the dispatched call. '
+            'Use full UUIDs, not short IDs.'
+        ),
+    )
+
+
+class ScoutDispatchPayload(BaseDispatchPayload):
+    fruit_threshold: int = Field(
+        4, description='Remaining fruit threshold for stopping'
+    )
+    max_rounds: int = Field(5, description='Maximum scouting rounds')
+
+
+class AssessDispatchPayload(BaseDispatchPayload):
+    pass
+
+
+class PrioritizationDispatchPayload(BaseDispatchPayload):
+    budget: int = Field(description='Budget to allocate for the sub-investigation')
+
+
 @dataclass
 class Move:
     move_type: MoveType
@@ -92,7 +119,7 @@ class Move:
 @dataclass
 class Dispatch:
     call_type: CallType
-    payload: dict[str, Any]
+    payload: BaseDispatchPayload
 
 
 @dataclass

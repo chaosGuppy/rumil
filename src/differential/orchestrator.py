@@ -7,7 +7,14 @@ from typing import Optional
 
 from differential.calls import run_assess, run_ingest, run_prioritization, run_scout
 from differential.database import DB
-from differential.models import CallType, Page, Workspace
+from differential.models import (
+    AssessDispatchPayload,
+    CallType,
+    Page,
+    PrioritizationDispatchPayload,
+    ScoutDispatchPayload,
+    Workspace,
+)
 from differential.tracer import CallTrace
 
 
@@ -192,75 +199,66 @@ class Orchestrator:
             if budget_spent >= actual_budget or self.db.budget_remaining() <= 0:
                 break
 
-            d_type = dispatch.call_type
             p = dispatch.payload
-            d_question_id = p.get("question_id", question_id)
-            d_budget = int(p.get("budget", 1))
-            d_reason = p.get("reason", "")
-            d_context_ids = p.get("context_page_ids", [])
-            d_fruit_threshold = int(p.get("fruit_threshold", DEFAULT_FRUIT_THRESHOLD))
-            d_max_rounds = int(p.get("max_rounds", DEFAULT_MAX_ROUNDS))
 
-            # Resolve short IDs and validate that the question exists
-            resolved = self.db.resolve_page_id(d_question_id)
+            resolved = self.db.resolve_page_id(p.question_id)
             if not resolved:
                 print(
-                    f"{indent}  [orchestrator] Skipping dispatch — question ID not found: {d_question_id[:8]}. "
-                    "Falling back to scope question."
+                    f"{indent}  [orchestrator] Skipping dispatch — question ID not found: {p.question_id[:8]}. "
+                    'Falling back to scope question.'
                 )
-                d_question_id = question_id
-            else:
-                d_question_id = resolved
+                resolved = question_id
 
-            d_label = self.db.page_label(d_question_id)
-            if d_type == CallType.SCOUT:
-                print(
-                    f"{indent}  -> Dispatch: scout on {d_label} "
-                    f"(fruit_threshold={d_fruit_threshold}, max_rounds={d_max_rounds}) — {d_reason}"
-                )
-            else:
-                print(
-                    f"{indent}  -> Dispatch: {d_type} on {d_label} (budget={d_budget}) — {d_reason}"
-                )
-
+            d_label = self.db.page_label(resolved)
             child_call_id: str | None = None
 
-            if d_type is CallType.SCOUT:
+            if isinstance(p, ScoutDispatchPayload):
+                print(
+                    f"{indent}  -> Dispatch: scout on {d_label} "
+                    f"(fruit_threshold={p.fruit_threshold}, max_rounds={p.max_rounds}) — {p.reason}"
+                )
                 spent, child_ids = scout_until_done(
-                    d_question_id,
+                    resolved,
                     self.db,
-                    max_rounds=d_max_rounds,
-                    fruit_threshold=d_fruit_threshold,
+                    max_rounds=p.max_rounds,
+                    fruit_threshold=p.fruit_threshold,
                     parent_call_id=p_call.id,
-                    context_page_ids=d_context_ids,
+                    context_page_ids=p.context_page_ids,
                 )
                 budget_spent += spent
                 child_call_id = child_ids[0] if child_ids else None
 
-            elif d_type is CallType.ASSESS:
+            elif isinstance(p, AssessDispatchPayload):
+                print(
+                    f"{indent}  -> Dispatch: assess on {d_label} — {p.reason}"
+                )
                 child_call_id = assess_question(
-                    d_question_id,
+                    resolved,
                     self.db,
                     parent_call_id=p_call.id,
-                    context_page_ids=d_context_ids,
+                    context_page_ids=p.context_page_ids,
                 )
                 if child_call_id:
                     budget_spent += 1
 
-            elif d_type is CallType.PRIORITIZATION:
+            elif isinstance(p, PrioritizationDispatchPayload):
+                print(
+                    f"{indent}  -> Dispatch: prioritization on {d_label} "
+                    f"(budget={p.budget}) — {p.reason}"
+                )
                 self.investigate_question(
-                    question_id=d_question_id,
-                    budget=d_budget,
+                    question_id=resolved,
+                    budget=p.budget,
                     parent_call_id=p_call.id,
                     depth=depth + 1,
                 )
-                budget_spent += d_budget
+                budget_spent += p.budget
 
             if p_trace:
                 trace_data: dict = {
                     "index": i,
-                    "child_call_type": d_type.value,
-                    "question_id": d_question_id,
+                    "child_call_type": dispatch.call_type.value,
+                    "question_id": resolved,
                 }
                 if child_call_id:
                     trace_data["child_call_id"] = child_call_id

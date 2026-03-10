@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'input=$(cat); if echo \"$input\" | grep -q \"supabase db reset\"; then echo \"{\\\"decision\\\": \\\"block\\\", \\\"reason\\\": \\\"supabase db reset is forbidden. Use supabase migration up instead to apply migrations without wiping data.\\\"}\"; else echo \"{\\\"decision\\\": \\\"allow\\\"}\"; fi'"
+            "command": "bash -c 'input=$(cat); if printf \"%s\" \"$input\" | grep -q \"supabase db reset\"; then printf \"{\\\"hookSpecificOutput\\\": {\\\"hookEventName\\\": \\\"PreToolUse\\\", \\\"permissionDecision\\\": \\\"deny\\\", \\\"permissionDecisionReason\\\": \\\"supabase db reset is forbidden. Use supabase migration up instead.\\\"}}\"; fi'"
           }
         ]
       }

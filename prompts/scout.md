@@ -23,7 +23,7 @@ For each consideration, create the claim and link it to the question.
 
 Check the workspace map for questions elsewhere in the workspace that are directly relevant to the question you're scouting. If an existing question would serve as a useful sub-question — i.e. answering it would materially inform the current question — link it with `link_child_question`. This makes existing research visible to prioritization and prevents duplicate investigation.
 
-Only link questions that are genuinely useful decompositions, not merely topically related.
+Only link questions that are genuinely useful decompositions, not merely topically related. Also, ensure that a good answer to the child question would add substantial information to the parent question, even in the presence of good answers to all other questions in the workspace. If, given answers to another set of questions in the workspace, a question's answer would not add much further value, do not link it. Think of it like a Bayesian netowrk: aim to capture conditional independence relations with your links.
 
 ## Hypothesis Questions
 

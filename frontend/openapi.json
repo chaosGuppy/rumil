@@ -1,0 +1,1002 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Differential API",
+    "description": "Read-only API for the Differential research workspace.",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/projects": {
+      "get": {
+        "summary": "List Projects",
+        "operationId": "list_projects_api_projects_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProjectOut"
+                  },
+                  "type": "array",
+                  "title": "Response List Projects Api Projects Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/pages": {
+      "get": {
+        "summary": "List Pages",
+        "operationId": "list_pages_api_projects__project_id__pages_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "page_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/PageType"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Page Type"
+            }
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Workspace"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Workspace"
+            }
+          },
+          {
+            "name": "active_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Active Only"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PageOut"
+                  },
+                  "title": "Response List Pages Api Projects  Project Id  Pages Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/pages/{page_id}": {
+      "get": {
+        "summary": "Get Page",
+        "operationId": "get_page_api_pages__page_id__get",
+        "parameters": [
+          {
+            "name": "page_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Page Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/pages/{page_id}/links/from": {
+      "get": {
+        "summary": "Get Links From",
+        "operationId": "get_links_from_api_pages__page_id__links_from_get",
+        "parameters": [
+          {
+            "name": "page_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Page Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PageLinkOut"
+                  },
+                  "title": "Response Get Links From Api Pages  Page Id  Links From Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/pages/{page_id}/links/to": {
+      "get": {
+        "summary": "Get Links To",
+        "operationId": "get_links_to_api_pages__page_id__links_to_get",
+        "parameters": [
+          {
+            "name": "page_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Page Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PageLinkOut"
+                  },
+                  "title": "Response Get Links To Api Pages  Page Id  Links To Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/pages/{page_id}/counts": {
+      "get": {
+        "summary": "Get Page Counts",
+        "operationId": "get_page_counts_api_pages__page_id__counts_get",
+        "parameters": [
+          {
+            "name": "page_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Page Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageCountsOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/questions": {
+      "get": {
+        "summary": "List Root Questions",
+        "operationId": "list_root_questions_api_projects__project_id__questions_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/Workspace",
+              "default": "research"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PageOut"
+                  },
+                  "title": "Response List Root Questions Api Projects  Project Id  Questions Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/questions/{question_id}/tree": {
+      "get": {
+        "summary": "Get Question Tree",
+        "operationId": "get_question_tree_api_questions__question_id__tree_get",
+        "parameters": [
+          {
+            "name": "question_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Question Id"
+            }
+          },
+          {
+            "name": "depth",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 5,
+              "minimum": 1,
+              "default": 2,
+              "title": "Depth"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionTreeOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/calls": {
+      "get": {
+        "summary": "List Calls",
+        "operationId": "list_calls_api_projects__project_id__calls_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "question_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Question Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CallOut"
+                  },
+                  "title": "Response List Calls Api Projects  Project Id  Calls Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/calls/{call_id}": {
+      "get": {
+        "summary": "Get Call",
+        "operationId": "get_call_api_calls__call_id__get",
+        "parameters": [
+          {
+            "name": "call_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Call Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/calls/{call_id}/children": {
+      "get": {
+        "summary": "Get Child Calls",
+        "operationId": "get_child_calls_api_calls__call_id__children_get",
+        "parameters": [
+          {
+            "name": "call_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Call Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CallOut"
+                  },
+                  "title": "Response Get Child Calls Api Calls  Call Id  Children Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CallOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "call_type": {
+            "$ref": "#/components/schemas/CallType"
+          },
+          "workspace": {
+            "$ref": "#/components/schemas/Workspace"
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CallStatus"
+          },
+          "parent_call_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Call Id"
+          },
+          "scope_page_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Page Id"
+          },
+          "budget_allocated": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Budget Allocated"
+          },
+          "budget_used": {
+            "type": "integer",
+            "title": "Budget Used"
+          },
+          "context_page_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Context Page Ids"
+          },
+          "result_summary": {
+            "type": "string",
+            "title": "Result Summary"
+          },
+          "review_json": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Review Json"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "call_type",
+          "workspace",
+          "project_id",
+          "status",
+          "parent_call_id",
+          "scope_page_id",
+          "budget_allocated",
+          "budget_used",
+          "context_page_ids",
+          "result_summary",
+          "review_json",
+          "created_at",
+          "completed_at"
+        ],
+        "title": "CallOut"
+      },
+      "CallStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "running",
+          "complete",
+          "failed"
+        ],
+        "title": "CallStatus"
+      },
+      "CallType": {
+        "type": "string",
+        "enum": [
+          "scout",
+          "assess",
+          "prioritization",
+          "ingest",
+          "reframe",
+          "maintain"
+        ],
+        "title": "CallType"
+      },
+      "ConsiderationDirection": {
+        "type": "string",
+        "enum": [
+          "supports",
+          "opposes",
+          "neutral"
+        ],
+        "title": "ConsiderationDirection"
+      },
+      "ConsiderationOut": {
+        "properties": {
+          "page": {
+            "$ref": "#/components/schemas/PageOut"
+          },
+          "link": {
+            "$ref": "#/components/schemas/PageLinkOut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "page",
+          "link"
+        ],
+        "title": "ConsiderationOut"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "LinkType": {
+        "type": "string",
+        "enum": [
+          "consideration",
+          "child_question",
+          "supersedes",
+          "related"
+        ],
+        "title": "LinkType"
+      },
+      "PageCountsOut": {
+        "properties": {
+          "considerations": {
+            "type": "integer",
+            "title": "Considerations"
+          },
+          "judgements": {
+            "type": "integer",
+            "title": "Judgements"
+          }
+        },
+        "type": "object",
+        "required": [
+          "considerations",
+          "judgements"
+        ],
+        "title": "PageCountsOut"
+      },
+      "PageLayer": {
+        "type": "string",
+        "enum": [
+          "wiki",
+          "squidgy"
+        ],
+        "title": "PageLayer"
+      },
+      "PageLinkOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "from_page_id": {
+            "type": "string",
+            "title": "From Page Id"
+          },
+          "to_page_id": {
+            "type": "string",
+            "title": "To Page Id"
+          },
+          "link_type": {
+            "$ref": "#/components/schemas/LinkType"
+          },
+          "direction": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConsiderationDirection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "strength": {
+            "type": "number",
+            "title": "Strength"
+          },
+          "reasoning": {
+            "type": "string",
+            "title": "Reasoning"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "from_page_id",
+          "to_page_id",
+          "link_type",
+          "direction",
+          "strength",
+          "reasoning",
+          "created_at"
+        ],
+        "title": "PageLinkOut"
+      },
+      "PageOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "page_type": {
+            "$ref": "#/components/schemas/PageType"
+          },
+          "layer": {
+            "$ref": "#/components/schemas/PageLayer"
+          },
+          "workspace": {
+            "$ref": "#/components/schemas/Workspace"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "epistemic_status": {
+            "type": "number",
+            "title": "Epistemic Status"
+          },
+          "epistemic_type": {
+            "type": "string",
+            "title": "Epistemic Type"
+          },
+          "provenance_model": {
+            "type": "string",
+            "title": "Provenance Model"
+          },
+          "provenance_call_type": {
+            "type": "string",
+            "title": "Provenance Call Type"
+          },
+          "provenance_call_id": {
+            "type": "string",
+            "title": "Provenance Call Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "superseded_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Superseded By"
+          },
+          "is_superseded": {
+            "type": "boolean",
+            "title": "Is Superseded"
+          },
+          "extra": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Extra"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "page_type",
+          "layer",
+          "workspace",
+          "content",
+          "summary",
+          "project_id",
+          "epistemic_status",
+          "epistemic_type",
+          "provenance_model",
+          "provenance_call_type",
+          "provenance_call_id",
+          "created_at",
+          "superseded_by",
+          "is_superseded",
+          "extra"
+        ],
+        "title": "PageOut"
+      },
+      "PageType": {
+        "type": "string",
+        "enum": [
+          "source",
+          "claim",
+          "question",
+          "judgement",
+          "concept",
+          "wiki"
+        ],
+        "title": "PageType"
+      },
+      "ProjectOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "created_at"
+        ],
+        "title": "ProjectOut"
+      },
+      "QuestionTreeOut": {
+        "properties": {
+          "question": {
+            "$ref": "#/components/schemas/PageOut"
+          },
+          "considerations": {
+            "items": {
+              "$ref": "#/components/schemas/ConsiderationOut"
+            },
+            "type": "array",
+            "title": "Considerations"
+          },
+          "judgements": {
+            "items": {
+              "$ref": "#/components/schemas/PageOut"
+            },
+            "type": "array",
+            "title": "Judgements"
+          },
+          "child_questions": {
+            "items": {
+              "$ref": "#/components/schemas/QuestionTreeOut"
+            },
+            "type": "array",
+            "title": "Child Questions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "question",
+          "considerations",
+          "judgements",
+          "child_questions"
+        ],
+        "title": "QuestionTreeOut"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "Workspace": {
+        "type": "string",
+        "enum": [
+          "research",
+          "prioritization"
+        ],
+        "title": "Workspace"
+      }
+    }
+  }
+}

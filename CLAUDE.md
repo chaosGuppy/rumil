@@ -68,6 +68,10 @@ Each call ends with a closing review that produces `remaining_fruit` (0-10 scale
 
 **Tracing** (`src/differential/tracer.py`): `CallTrace` accumulates events during a call's lifecycle and persists them as JSONB in the `trace_json` column on `calls`. Each call type creates a `CallTrace` and records context, moves, and review events. The orchestrator records `dispatch_executed` events on prioritization traces. `generate_trace()` renders an interactive HTML visualization.
 
+**API** (`src/differential/api/`): FastAPI read-only API for the frontend. `schemas.py` defines Pydantic response models, `app.py` defines endpoints. Run with `uv run uvicorn differential.api.app:app --reload`.
+
+**Frontend** (`frontend/`): Next.js TypeScript app with Tailwind. Run with `cd frontend && npm run dev`. TypeScript types in `frontend/src/api/` are auto-generated from the API's OpenAPI schema — **never create or edit these files by hand**. When API schemas change, regenerate with `./scripts/generate-api-types.sh` (or `cd frontend && npm run generate-api`). This is the only mechanism for sharing types between backend and frontend; do not manually duplicate type definitions.
+
 **Outputs:**
 - `pages/research/` — markdown files per page
 - `pages/maps/` — HTML research maps

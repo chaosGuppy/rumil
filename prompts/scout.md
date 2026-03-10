@@ -19,6 +19,12 @@ Produce **up to 3 new considerations**, prioritising importance and novelty. Do 
 
 For each consideration, create the claim and link it to the question.
 
+## Linking Existing Questions
+
+Check the workspace map for questions elsewhere in the workspace that are directly relevant to the question you're scouting. If an existing question would serve as a useful sub-question — i.e. answering it would materially inform the current question — link it with `link_child_question`. This makes existing research visible to prioritization and prevents duplicate investigation.
+
+Only link questions that are genuinely useful decompositions, not merely topically related.
+
 ## Hypothesis Questions
 
 When you have a compelling candidate answer or paradigm — not just a piece of evidence, but a specific view that, if true, would substantially shape the response to the question — propose a hypothesis. This is worth doing when the view is likely correct, or when engaging with it seriously might yield useful insights: clarifying why it fails, surfacing adjacent territory, or extracting the partial truth inside an otherwise wrong answer.

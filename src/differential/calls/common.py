@@ -2,20 +2,253 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import TYPE_CHECKING, cast
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
-from anthropic.types import MessageParam
+from pydantic import BaseModel, Field
 
 from differential.context import format_page
 from differential.database import DB
-from differential.llm import build_user_message, run_llm
-from differential.models import Call, CallStatus
-from differential.move_models import move_to_trace_dict
-from differential.parser import Move, ParsedOutput, parse_output
+from differential.llm import (
+    AgentResult,
+    Tool,
+    build_system_prompt,
+    build_user_message,
+    structured_call,
+    agent_loop
+)
+from differential.models import (
+    Call,
+    CallStatus,
+    CallType,
+    DISPATCHABLE_CALL_TYPES,
+    Dispatch,
+    Move,
+    MoveType,
+)
+from differential.moves.base import MoveState
+from differential.moves.load_page import LoadPagePayload
+from differential.moves.registry import MOVES
 
 if TYPE_CHECKING:
     from differential.tracer import CallTrace
+
+
+class DispatchPayload(BaseModel):
+    call_type: str = Field(
+        description=(
+            'Type of call to dispatch: "scout", "assess", or "prioritization"'
+        )
+    )
+    question_id: str = Field(description="Page ID of the question to investigate")
+    reason: str = Field("", description="Why this dispatch is a good use of budget")
+    budget: int | None = Field(
+        None, description="Budget to allocate (prioritization dispatches only)"
+    )
+    fruit_threshold: int | None = Field(
+        None, description="Remaining fruit threshold for stopping (scout dispatches only)"
+    )
+    max_rounds: int | None = Field(
+        None, description="Maximum scouting rounds (scout dispatches only)"
+    )
+    context_page_ids: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Optional full UUIDs of pages to pre-load into the dispatched call. "
+            "Use when you know a specific source document or consideration from "
+            "another question will be directly relevant. Use full UUIDs, not short IDs."
+        ),
+    )
+
+
+PHASE1_TASK = (
+    "Review the workspace map above and decide if you need the full content of any "
+    "pages before starting your main task. Use load_page for any pages you want to "
+    "read. Write brief planning notes about your approach."
+)
+
+
+DISPATCH_TOOL_DESCRIPTION = (
+    "Dispatch a research call for a question. Available call types: "
+    "scout (find missing considerations; costs up to max_rounds calls, "
+    "stops early when fruit falls below fruit_threshold), "
+    "assess (render a judgement; costs 1 call), "
+    "prioritization (delegate structured investigation; costs the sub-budget you assign)."
+)
+
+
+class PageRating(BaseModel):
+    page_id: str = Field(description="Short ID of the rated page")
+    score: int = Field(description="-1 = confusing, 0 = no help, 1 = helpful, 2 = very helpful")
+    note: str = Field("", description="One sentence on why")
+
+
+class ReviewResponse(BaseModel):
+    remaining_fruit: int = Field(
+        description=(
+            "0-10 integer: how much useful work remains on this scope. "
+            "0 = nothing more to add; 1-2 = close to exhausted; "
+            "3-4 = most angles covered; 5-6 = diminishing but real returns; "
+            "7-8 = substantial work remains; 9-10 = barely started"
+        )
+    )
+    confidence_in_output: float = Field(description="0-5 confidence in the work just done")
+    context_was_adequate: bool = Field(description="Whether the context provided was sufficient")
+    what_was_missing: str = Field(
+        "", description="What additional context would have helped"
+    )
+    tensions_noticed: str = Field(
+        "", description="Any conflicts or inconsistencies noticed"
+    )
+    self_assessment: str = Field(
+        "", description="1-2 sentences on how this call went"
+    )
+    suggested_next_steps: str = Field(
+        "", description="What should happen next"
+    )
+    page_ratings: list[PageRating] = Field(
+        default_factory=list, description="Ratings for pages that were loaded into context"
+    )
+
+
+@dataclass
+class RunCallResult:
+    """Result of a run_call invocation."""
+    created_page_ids: list[str] = field(default_factory=list)
+    dispatches: list[Dispatch] = field(default_factory=list)
+    moves: list[Move] = field(default_factory=list)
+    phase1_page_ids: list[str] = field(default_factory=list)
+    agent_result: AgentResult = field(default_factory=AgentResult)
+
+
+def _make_dispatch_tool(state: MoveState) -> Tool:
+    """Create a Tool that records a dispatch instruction."""
+
+    def fn(inp: dict) -> str:
+        call_type_str = inp.get("call_type", "")
+        try:
+            ct = CallType(call_type_str)
+        except ValueError:
+            return f"Unknown dispatch type: {call_type_str}"
+        if ct not in DISPATCHABLE_CALL_TYPES:
+            return f"Non-dispatchable call type: {call_type_str}"
+        state.dispatches.append(Dispatch(call_type=ct, payload=inp))
+        return "Dispatch recorded."
+
+    return Tool(
+        name="dispatch",
+        description=DISPATCH_TOOL_DESCRIPTION,
+        input_schema=DispatchPayload.model_json_schema(),
+        fn=fn,
+    )
+
+
+def _format_loaded_pages(page_ids: list[str], db: DB) -> str:
+    """Format loaded pages as context text for phase 2."""
+    parts = []
+    for pid in page_ids:
+        page = db.get_page(pid)
+        if page:
+            parts.append(f"### Page `{pid[:8]}`\n\n{format_page(page, db=db)}")
+    return "\n\n---\n\n".join(parts)
+
+
+def _run_phase1(
+    system_prompt: str,
+    context_text: str,
+    state: MoveState,
+    db: DB,
+) -> list[str]:
+    """Preliminary page loading. Returns resolved full page IDs. Free."""
+    try:
+        load_tool = MOVES[MoveType.LOAD_PAGE].bind(state)
+        phase1_msg = build_user_message(context_text, PHASE1_TASK)
+        agent_loop(
+            system_prompt, phase1_msg, [load_tool],
+            max_tokens=2048, max_rounds=3,
+        )
+        loaded_ids = []
+        for m in state.moves:
+            if m.move_type == MoveType.LOAD_PAGE:
+                assert isinstance(m.payload, LoadPagePayload)
+                full_id = db.resolve_page_id(m.payload.page_id)
+                if full_id:
+                    loaded_ids.append(full_id)
+        if loaded_ids:
+            labels = [db.page_label(pid) for pid in loaded_ids]
+            print(f"  [phase1] Loaded pages: {', '.join(labels)}")
+        return loaded_ids
+    except Exception as e:
+        status = getattr(e, "status_code", None)
+        reason = f"HTTP {status}" if status else type(e).__name__
+        print(f"  [phase1] Preliminary loading skipped ({reason}) — continuing.")
+        return []
+
+
+def run_call(
+    call_type: CallType,
+    task_description: str,
+    context_text: str,
+    call: Call,
+    db: DB,
+    *,
+    available_moves: list[MoveType] | None = None,
+    max_tokens: int = 4096,
+    max_rounds: int = 3,
+) -> RunCallResult:
+    """Run a workspace call with tool use.
+
+    For non-prioritization calls, runs a preliminary phase where the LLM can
+    load pages before starting its main work. Moves are executed immediately
+    when the LLM calls them. Returns a RunCallResult with created page IDs,
+    dispatches, and the raw agent result.
+    """
+
+    if available_moves is None:
+        available_moves = list(MoveType)
+
+    state = MoveState(call, db)
+    system_prompt = build_system_prompt(call_type.value)
+
+    phase1_ids: list[str] = []
+    if call_type != CallType.PRIORITIZATION:
+        phase1_ids = _run_phase1(system_prompt, context_text, state, db)
+        if phase1_ids:
+            extra_text = _format_loaded_pages(phase1_ids, db)
+            context_text = context_text + "\n\n## Loaded Pages\n\n" + extra_text
+
+    tools = [MOVES[mt].bind(state) for mt in available_moves]
+    if call_type == CallType.PRIORITIZATION:
+        tools.append(_make_dispatch_tool(state))
+
+    user_message = build_user_message(context_text, task_description)
+
+    agent_result = agent_loop(
+        system_prompt, user_message, tools,
+        max_tokens=max_tokens, max_rounds=max_rounds,
+    )
+
+    return RunCallResult(
+        created_page_ids=state.created_page_ids,
+        dispatches=state.dispatches,
+        moves=state.moves,
+        phase1_page_ids=phase1_ids,
+        agent_result=agent_result,
+    )
+
+
+def extract_loaded_page_ids(result: RunCallResult, db: DB) -> list[str]:
+    """Extract full page IDs for LOAD_PAGE moves from phase 2 only."""
+    phase1_set = set(result.phase1_page_ids)
+    loaded = []
+    for m in result.moves:
+        if m.move_type == MoveType.LOAD_PAGE:
+            assert isinstance(m.payload, LoadPagePayload)
+            full_id = db.resolve_page_id(m.payload.page_id)
+            if full_id and full_id not in phase1_set:
+                loaded.append(full_id)
+    return loaded
 
 
 def moves_to_trace_data(
@@ -27,36 +260,18 @@ def moves_to_trace_data(
         "moves": [
             {
                 "type": m.move_type.value,
-                **move_to_trace_dict(m.move_type, m.payload),
+                **m.payload.model_dump(exclude_none=True, exclude_defaults=True),
             }
             for m in moves
         ],
         "created_page_ids": created_page_ids,
     }
 
+
 REVIEW_SYSTEM_PROMPT = (
     "You are a research assistant completing a closing review of a call you just made "
     "in a collaborative research workspace. Be honest and specific in your self-assessment."
 )
-
-PHASE1_TASK = (
-    "Perform your preliminary analysis now. Review the workspace map above and use "
-    "LOAD_PAGE moves if you need full content from other pages. Write any planning "
-    "notes. The main task description will follow in the next turn."
-)
-
-MAX_LOAD_ROUNDS = 3
-
-
-def dedup(ids: list[str]) -> list[str]:
-    """Deduplicate a list of IDs preserving order."""
-    seen: set[str] = set()
-    result = []
-    for x in ids:
-        if x not in seen:
-            seen.add(x)
-            result.append(x)
-    return result
 
 
 def print_page_ratings(review: dict, db: DB) -> None:
@@ -78,7 +293,7 @@ def complete_call(
     call: Call, db: DB, summary: str, trace: CallTrace | None = None
 ) -> None:
     call.status = CallStatus.COMPLETE
-    call.completed_at = datetime.utcnow()
+    call.completed_at = datetime.now(UTC)
     call.result_summary = summary
     db.save_call(call)
     if trace:
@@ -92,10 +307,8 @@ def run_closing_review(
     loaded_page_ids: list[str] | None = None,
     db: DB | None = None,
 ) -> dict | None:
-    """
-    Run the closing review as a separate prompt. Free (not counted against budget).
-    """
-    page_rating_prompt = ""
+    """Run the closing review as a separate call. Free (not counted against budget)."""
+    page_rating_note = ""
     if loaded_page_ids and db:
         page_lines = []
         for pid in loaded_page_ids:
@@ -103,56 +316,30 @@ def run_closing_review(
             if page:
                 page_lines.append(f'  - `{pid[:8]}`: "{page.summary[:120]}"')
         if page_lines:
-            page_rating_prompt = (
+            page_rating_note = (
                 "\n\nThe following pages were loaded into your context beyond the base "
                 "working context:\n"
                 + "\n".join(page_lines)
-                + "\n\nFor each, include a rating in your review JSON:\n"
-                '  "page_ratings": [\n'
-                '    {"page_id": "SHORT_ID", "score": N, "note": "one sentence"}\n'
-                "  ]\n"
+                + "\n\nPlease include a rating for each in your page_ratings. "
                 "Scores: -1 = actively confusing, 0 = didn't help, "
-                "1 = helped, 2 = extremely helpful"
+                "1 = helped, 2 = extremely helpful."
             )
-
-    page_ratings_field = (
-        '  "page_ratings": [{"page_id": "...", "score": N, "note": "..."}],  // if pages were loaded\n'
-        if loaded_page_ids
-        else ""
-    )
 
     review_task = (
         f"You have just completed a {call.call_type.value} call.\n\n"
         f"Here is your output from that call:\n{main_output}\n\n"
-        "Please produce a closing review in this exact format:\n\n"
-        "<review>\n"
-        "{\n"
-        '  "remaining_fruit": <0-10 integer — how much useful work remains on this scope>\n'
-        "    // Scale: 0 = nothing more to add; 1-2 = close to exhausted, only marginal additions expected;\n"
-        "    // 3-4 = most significant angles covered, incremental gains likely;\n"
-        "    // 5-6 = good coverage so far, diminishing but real returns expected;\n"
-        "    // 7-8 = substantial work remains, clear gaps visible; 9-10 = barely started\n"
-        '  "confidence_in_output": <0-5 float>,\n'
-        '  "context_was_adequate": <true/false>,\n'
-        '  "what_was_missing": "<optional: what additional context would have helped>",\n'
-        '  "tensions_noticed": "<optional: any conflicts or inconsistencies you noticed>",\n'
-        '  "self_assessment": "<1-2 sentences on how this call went>",\n'
-        '  "suggested_next_steps": "<optional: what should happen next>"\n'
-        f"{page_ratings_field}"
-        "}\n"
-        "</review>"
-        f"{page_rating_prompt}"
+        "Please review your work and provide your assessment."
+        f"{page_rating_note}"
     )
 
-    user_message = build_user_message(context_text, review_task)
-
     try:
-        review_raw = run_llm(
+        user_message = build_user_message(context_text, review_task)
+        review = structured_call(
             system_prompt=REVIEW_SYSTEM_PROMPT,
             user_message=user_message,
-            max_tokens=1024,
+            response_model=ReviewResponse,
+            max_tokens=2048,
         )
-        review = parse_output(review_raw).review
         if review and db:
             for r in review.get("page_ratings", []):
                 pid = db.resolve_page_id(r.get("page_id", ""))
@@ -164,126 +351,20 @@ def run_closing_review(
         status = getattr(e, "status_code", None)
         reason = f"HTTP {status}" if status else type(e).__name__
         print(
-            f"  [review] Closing review skipped after retries ({reason}) — continuing."
+            f"  [review] Closing review skipped ({reason}) — continuing."
         )
         return None
 
 
-def run_phase1(
-    system_prompt: str,
-    phase1_user_msg: str,
-    short_id_map: dict[str, str],
-    db: DB,
-    trace: CallTrace | None = None,
-) -> tuple[str, list[str]]:
-    """Preliminary analysis. Returns (raw_response, resolved_full_page_ids). Free."""
-    try:
-        raw = run_llm(
-            system_prompt=system_prompt,
-            user_message=phase1_user_msg,
-            max_tokens=2048,
-        )
-        short_ids = parse_output(raw).load_page_ids
-        resolved = resolve_load_requests(short_ids, short_id_map, db)
-        if resolved:
-            labels = [db.page_label(pid) for pid in resolved]
-            print(f"  [phase1] Requested pages: {', '.join(labels)}")
-        if trace:
-            trace.record("phase1_complete", {
-                "pages_requested": short_ids,
-                "pages_loaded": resolved,
-            })
-        return raw, resolved
-    except Exception as e:
-        status = getattr(e, "status_code", None)
-        reason = f"HTTP {status}" if status else type(e).__name__
-        print(f"  [phase1] Phase 1 skipped after retries ({reason}) — continuing.")
-        return "", []
-
-
-def format_extra_pages(page_ids: list[str], db: DB) -> str:
-    """Format a list of pages (full UUIDs) as readable text for phase 2 context."""
+def format_moves_for_review(moves: list[Move]) -> str:
+    """Format moves as readable text for closing review context."""
+    if not moves:
+        return "(no moves)"
     parts = []
-    for pid in page_ids:
-        page = db.get_page(pid)
-        if page:
-            parts.append(f"### Page `{pid[:8]}`\n\n{format_page(page, db=db)}")
-    return "\n\n---\n\n".join(parts)
-
-
-def resolve_load_requests(
-    short_ids: list[str],
-    short_id_map: dict[str, str],
-    db: DB,
-) -> list[str]:
-    """Resolve short page IDs to valid full UUIDs, deduplicating."""
-    valid_ids = []
-    seen: set[str] = set()
-    for pid in short_ids:
-        pid = pid.strip()
-        if not pid or pid in seen:
-            continue
-        seen.add(pid)
-        full_id = short_id_map.get(pid) or (pid if db.get_page(pid) else None)
-        if full_id:
-            valid_ids.append(full_id)
-    return valid_ids
-
-
-def run_with_loading(
-    system_prompt: str,
-    initial_messages: list[dict[str, str]],
-    short_id_map: dict[str, str],
-    db: DB,
-    max_tokens: int = 4096,
-    trace: CallTrace | None = None,
-) -> tuple[str, ParsedOutput, list[str]]:
-    """Phase 2: run the LLM with iterative LOAD_PAGE support."""
-    messages = cast(list[MessageParam], initial_messages)
-    all_loaded: list[str] = []
-
-    for round_num in range(MAX_LOAD_ROUNDS + 1):
-        raw = run_llm(
-            system_prompt=system_prompt, messages=messages, max_tokens=max_tokens
-        )
-        parsed = parse_output(raw)
-
-        if not parsed.load_page_ids:
-            return raw, parsed, all_loaded
-
-        if round_num == MAX_LOAD_ROUNDS:
-            print(
-                f"  [phase2] Max load rounds ({MAX_LOAD_ROUNDS}) reached — proceeding."
-            )
-            return raw, parsed, all_loaded
-
-        valid_ids = resolve_load_requests(parsed.load_page_ids, short_id_map, db)
-        all_loaded.extend(valid_ids)
-        print(
-            f"  [phase2] Round {round_num + 1}: loading {len(valid_ids)} page(s) "
-            f"({len(parsed.load_page_ids)} requested)..."
-        )
-        if trace:
-            trace.record("phase2_round", {
-                "round": round_num + 1,
-                "pages_requested": parsed.load_page_ids,
-                "pages_loaded": valid_ids,
-                "move_count": len(parsed.moves),
-            })
-
-        extra_text = format_extra_pages(valid_ids, db) if valid_ids else ""
-        is_last = round_num + 1 == MAX_LOAD_ROUNDS
-        follow_up = (
-            f"## Additional Loaded Pages\n\n{extra_text}\n\n---\n\n"
-            if extra_text
-            else ""
-        ) + (
-            "This is the final loading round — complete your task now, do not use LOAD_PAGE further."
-            if is_last
-            else "Continue with your task."
-        )
-
-        messages.append({"role": "assistant", "content": raw})
-        messages.append({"role": "user", "content": follow_up})
-
-    raise RuntimeError("Unreachable: loading loop exhausted without returning")
+    for m in moves:
+        summary = getattr(m.payload, "summary", "")
+        if summary:
+            parts.append(f"- {m.move_type.value}: {summary}")
+        else:
+            parts.append(f"- {m.move_type.value}")
+    return "\n".join(parts)

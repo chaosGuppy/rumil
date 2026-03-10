@@ -1,22 +1,18 @@
 """Assess call: synthesise considerations and render a judgement."""
 
 from differential.calls.common import (
+    RunCallResult,
     complete_call,
-    dedup,
-    format_extra_pages,
+    extract_loaded_page_ids,
+    format_moves_for_review,
     moves_to_trace_data,
     print_page_ratings,
+    run_call,
     run_closing_review,
-    run_phase1,
-    run_with_loading,
-    PHASE1_TASK,
 )
 from differential.context import build_call_context
 from differential.database import DB
-from differential.executor import execute_all_moves
-from differential.llm import build_system_prompt, build_user_message
-from differential.models import Call, CallStatus
-from differential.parser import ParsedOutput
+from differential.models import Call, CallStatus, CallType
 from differential.tracer import CallTrace
 
 
@@ -24,21 +20,21 @@ def run_assess(
     question_id: str,
     call: Call,
     db: DB,
-) -> tuple[ParsedOutput, dict]:
-    """
-    Run an Assess call on a question.
-    Returns (parsed_output, review_dict).
+) -> tuple[RunCallResult, dict]:
+    """Run an Assess call on a question.
+
+    Returns (run_call_result, review_dict).
     """
     trace = CallTrace(call.id, db)
     print(f"\n[ASSESS] {call.id[:8]} — {db.page_label(question_id)}")
 
     preloaded = call.context_page_ids or []
-    system_prompt = build_system_prompt("assess")
-    context_text, short_id_map = build_call_context(
+    context_text, _, working_page_ids = build_call_context(
         question_id, db, extra_page_ids=preloaded
     )
     trace.record("context_built", {
-        "page_ids_in_context": list(short_id_map.values()),
+        "working_context_page_ids": working_page_ids,
+        "preloaded_page_ids": preloaded,
     })
 
     task = (
@@ -49,37 +45,22 @@ def run_assess(
         "Even if uncertain, commit to a position."
     )
 
-    phase1_user = build_user_message(context_text, PHASE1_TASK)
-    phase1_raw, phase1_page_ids = run_phase1(
-        system_prompt, phase1_user, short_id_map, db, trace=trace
-    )
-
-    extra_pages_text = format_extra_pages(phase1_page_ids, db)
-    phase2_user = (
-        (
-            (f"## Loaded Pages\n\n{extra_pages_text}\n\n---\n\n")
-            if extra_pages_text
-            else ""
-        )
-        + "Perform your main task now. You may use LOAD_PAGE if you need additional pages.\n\n"
-        + task
-    )
-
-    messages = [
-        {"role": "user", "content": phase1_user},
-        {"role": "assistant", "content": phase1_raw or "(no preliminary analysis)"},
-        {"role": "user", "content": phase2_user},
-    ]
-    raw, parsed, phase2_ids = run_with_loading(
-        system_prompt, messages, short_id_map, db, trace=trace
-    )
-
     db.update_call_status(call.id, CallStatus.RUNNING)
-    created = execute_all_moves(parsed, call, db)
-    trace.record("moves_executed", moves_to_trace_data(parsed.moves, created))
+    result = run_call(CallType.ASSESS, task, context_text, call, db)
+    if result.phase1_page_ids:
+        trace.record("phase1_loaded", {"page_ids": result.phase1_page_ids})
+    phase2_loaded = extract_loaded_page_ids(result, db)
+    if phase2_loaded:
+        trace.record("phase2_loaded", {"page_ids": phase2_loaded})
+    trace.record("moves_executed", moves_to_trace_data(result.moves, result.created_page_ids))
 
-    all_loaded_ids = dedup(preloaded + phase1_page_ids + phase2_ids)
-    review = run_closing_review(call, raw, context_text, all_loaded_ids, db)
+    all_loaded_ids = list(dict.fromkeys(
+        preloaded + result.phase1_page_ids + phase2_loaded
+    ))
+    review_context = format_moves_for_review(result.moves)
+    review = run_closing_review(
+        call, review_context, context_text, all_loaded_ids, db
+    )
     if review:
         print(
             f"  [review] confidence={review.get('confidence_in_output', '?')}, "
@@ -93,6 +74,6 @@ def run_assess(
 
     call.review_json = review or {}
     complete_call(
-        call, db, f"Assess complete. Created {len(created)} pages.", trace=trace
+        call, db, f"Assess complete. Created {len(result.created_page_ids)} pages.", trace=trace
     )
-    return parsed, review or {}
+    return result, review or {}

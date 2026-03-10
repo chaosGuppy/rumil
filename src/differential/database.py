@@ -404,7 +404,7 @@ class DB:
         rows = _rows(
             self.client.table("calls")
             .select("completed_at, review_json")
-            .eq("call_type", "scout")
+            .eq("call_type", CallType.SCOUT.value)
             .eq("scope_page_id", question_id)
             .eq("status", "complete")
             .order("completed_at", desc=True)

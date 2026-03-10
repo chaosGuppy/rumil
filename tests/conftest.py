@@ -1,8 +1,11 @@
-"""Shared fixtures for call tests."""
+"""Shared fixtures for tests."""
 
 import os
 import uuid
 
+from dotenv import load_dotenv
+
+load_dotenv()
 os.environ["DIFFERENTIAL_TEST_MODE"] = "1"
 
 import pytest
@@ -17,6 +20,10 @@ from differential.models import (
     PageType,
     Workspace,
 )
+
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "llm: tests that call the real LLM API")
 
 
 @pytest.fixture

@@ -64,12 +64,17 @@ def build_context_for_question(
     include_considerations: bool = True,
     include_judgements: bool = True,
     workspace: Workspace = Workspace.RESEARCH,
-) -> str:
-    """Build full context text for working on a question."""
+) -> tuple[str, list[str]]:
+    """Build full context text for working on a question.
+
+    Returns (context_text, loaded_page_ids) where loaded_page_ids lists every
+    page whose full content was included.
+    """
     question = db.get_page(question_id)
     if not question:
-        return f"[Question {question_id} not found]"
+        return f"[Question {question_id} not found]", []
 
+    loaded_ids = [question_id]
     parts = ["# Workspace Context", ""]
     parts.append(format_page(question, db=db))
     parts.append("")
@@ -80,6 +85,7 @@ def build_context_for_question(
             parts.append("## Existing Considerations")
             parts.append("")
             for claim, link in considerations:
+                loaded_ids.append(claim.id)
                 direction = link.direction.value if link.direction else "neutral"
                 parts.append(
                     f"**[{direction.upper()}, strength {link.strength:.1f}/5]** "
@@ -96,10 +102,11 @@ def build_context_for_question(
             parts.append("## Existing Judgements")
             parts.append("")
             for j in judgements:
+                loaded_ids.append(j.id)
                 parts.append(format_page(j))
                 parts.append("")
 
-    return "\n".join(parts)
+    return "\n".join(parts), loaded_ids
 
 
 def _build_question_index(question_id: str, db: DB, indent: int = 0) -> list[str]:
@@ -138,17 +145,20 @@ def build_call_context(
     question_id: str,
     db: DB,
     extra_page_ids: Optional[list[str]] = None,
-) -> tuple[str, dict[str, str]]:
+) -> tuple[str, dict[str, str], list[str]]:
     """Build full context for a scout/assess/ingest call.
 
     Prepends a compact workspace map, then the detailed working context for
     the given question. Any extra_page_ids (full UUIDs) are appended as
     pre-loaded pages at the end.
 
-    Returns (context_text, short_id_to_full_uuid).
+    Returns (context_text, short_id_to_full_uuid, working_context_page_ids).
+    working_context_page_ids lists pages whose full content was included as
+    part of the question's working context (question itself, considerations,
+    judgements).
     """
     map_text, short_id_map = build_workspace_map(db)
-    working_context = build_context_for_question(question_id, db)
+    working_context, working_page_ids = build_context_for_question(question_id, db)
 
     parts = [
         map_text,
@@ -166,7 +176,7 @@ def build_call_context(
                 parts += ["", "---", "", f"## Pre-loaded Page: `{pid[:8]}`", ""]
                 parts.append(format_page(page, db=db))
 
-    return "\n".join(parts), short_id_map
+    return "\n".join(parts), short_id_map, working_page_ids
 
 
 def build_prioritization_context(

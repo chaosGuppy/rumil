@@ -17,7 +17,7 @@ DEFAULT_INGEST_FRUIT_THRESHOLD = 5
 DEFAULT_INGEST_MAX_ROUNDS = 5
 
 
-def _consume_budget(db: DB, call_id: Optional[str] = None) -> bool:
+def _consume_budget(db: DB) -> bool:
     """Consume one unit of global budget. Returns False if exhausted."""
     ok = db.consume_budget(1)
     if not ok:
@@ -201,13 +201,16 @@ class Orchestrator:
             d_fruit_threshold = int(p.get("fruit_threshold", DEFAULT_FRUIT_THRESHOLD))
             d_max_rounds = int(p.get("max_rounds", DEFAULT_MAX_ROUNDS))
 
-            # Validate that the question ID actually exists
-            if not self.db.get_page(d_question_id):
+            # Resolve short IDs and validate that the question exists
+            resolved = self.db.resolve_page_id(d_question_id)
+            if not resolved:
                 print(
                     f"{indent}  [orchestrator] Skipping dispatch — question ID not found: {d_question_id[:8]}. "
                     "Falling back to scope question."
                 )
                 d_question_id = question_id
+            else:
+                d_question_id = resolved
 
             d_label = self.db.page_label(d_question_id)
             if d_type == CallType.SCOUT:

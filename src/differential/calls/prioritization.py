@@ -1,12 +1,9 @@
 """Prioritization call: plan budget allocation across questions."""
 
-from differential.calls.common import complete_call, moves_to_trace_data
+from differential.calls.common import complete_call, moves_to_trace_data, run_call
 from differential.context import build_prioritization_context
 from differential.database import DB
-from differential.executor import execute_all_moves
-from differential.llm import run_call
-from differential.models import Call
-from differential.parser import parse_output
+from differential.models import Call, CallType
 from differential.tracer import CallTrace
 
 
@@ -16,8 +13,8 @@ def run_prioritization(
     budget: int,
     db: DB,
 ) -> dict:
-    """
-    Run a Prioritization call.
+    """Run a Prioritization call.
+
     Returns a summary dict including the list of dispatches and trace.
     """
     trace = CallTrace(call.id, db)
@@ -32,15 +29,10 @@ def run_prioritization(
         f"You have a budget of **{budget} research calls** to allocate on this question.\n\n"
         f"Scope question ID: `{scope_question_id}`\n\n"
         "Review the current state of the workspace above and decide how to spend the budget. "
-        "Output your plan as a sequence of <dispatch> tags."
+        "Use the dispatch tool to allocate calls."
     )
 
-    raw = run_call(
-        call_type="prioritization", task_description=task, context_text=context_text
-    )
-
-    parsed = parse_output(raw)
-    created = execute_all_moves(parsed, call, db)
+    result = run_call(CallType.PRIORITIZATION, task, context_text, call, db)
 
     trace.record("dispatches_planned", {
         "dispatches": [
@@ -50,21 +42,21 @@ def run_prioritization(
                 "budget": d.payload.get("budget", 1),
                 "reason": d.payload.get("reason", ""),
             }
-            for d in parsed.dispatches
+            for d in result.dispatches
         ],
     })
-    trace.record("moves_executed", moves_to_trace_data(parsed.moves, created))
+    trace.record("moves_executed", moves_to_trace_data(result.moves, result.created_page_ids))
 
     summary = {
-        "dispatches": parsed.dispatches,
-        "moves_created": len(parsed.moves),
+        "dispatches": result.dispatches,
+        "moves_created": len(result.moves),
         "trace": trace,
     }
 
     complete_call(
         call,
         db,
-        f"Prioritization complete. Planned {len(parsed.dispatches)} dispatches.",
+        f"Prioritization complete. Planned {len(result.dispatches)} dispatches.",
         trace=trace,
     )
     return summary

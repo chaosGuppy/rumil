@@ -9,7 +9,7 @@ import re
 from pathlib import Path
 
 from differential.database import DB
-from differential.llm import run_llm
+from differential.llm import text_call
 from differential.models import Page, PageLayer, PageLink, PageType, LinkType, Workspace
 from differential.orchestrator import Orchestrator
 from differential.summary import build_research_tree
@@ -204,7 +204,7 @@ def run_chat(question_id: str, db: DB) -> None:
         history.append({"role": "user", "content": user_input})
 
         try:
-            response = run_llm(
+            response = text_call(
                 system_prompt=system_prompt,
                 messages=history,
                 max_tokens=1024,

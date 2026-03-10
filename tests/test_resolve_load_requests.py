@@ -1,7 +1,7 @@
-"""Tests for resolve_load_requests with list[str] input."""
+"""Tests for load_page move execution."""
 
-from differential.calls.common import resolve_load_requests
-from differential.models import Page, PageLayer, PageType, Workspace
+from differential.models import Call, CallStatus, CallType, Page, PageLayer, PageType, Workspace
+from differential.moves.load_page import LoadPagePayload, execute
 
 
 def _make_page(tmp_db):
@@ -10,48 +10,39 @@ def _make_page(tmp_db):
         page_type=PageType.CLAIM,
         layer=PageLayer.SQUIDGY,
         workspace=Workspace.RESEARCH,
-        content="Test claim",
+        content="Test claim content",
         summary="Test claim",
     )
     tmp_db.save_page(page)
     return page
 
 
-def test_resolves_short_ids_via_map(tmp_db):
-    """Short IDs in the map should resolve to full UUIDs."""
+def _dummy_call():
+    return Call(
+        call_type=CallType.SCOUT,
+        workspace=Workspace.RESEARCH,
+        status=CallStatus.RUNNING,
+    )
+
+
+def test_loads_page_by_short_id(tmp_db):
     page = _make_page(tmp_db)
-    short_id = page.id[:8]
-    short_id_map = {short_id: page.id}
-
-    result = resolve_load_requests([short_id], short_id_map, tmp_db)
-    assert result == [page.id]
+    result = execute(LoadPagePayload(page_id=page.id[:8]), _dummy_call(), tmp_db)
+    assert "Test claim content" in result.message
 
 
-def test_resolves_full_ids_directly(tmp_db):
-    """Full UUIDs not in the map should still resolve if the page exists."""
+def test_loads_page_by_full_id(tmp_db):
     page = _make_page(tmp_db)
-
-    result = resolve_load_requests([page.id], {}, tmp_db)
-    assert result == [page.id]
-
-
-def test_skips_unknown_ids(tmp_db):
-    """IDs that don't resolve to any page should be skipped."""
-    result = resolve_load_requests(["nonexistent"], {}, tmp_db)
-    assert result == []
+    result = execute(LoadPagePayload(page_id=page.id), _dummy_call(), tmp_db)
+    assert "Test claim content" in result.message
 
 
-def test_deduplicates(tmp_db):
-    """Duplicate short IDs should only resolve once."""
-    page = _make_page(tmp_db)
-    short_id = page.id[:8]
-    short_id_map = {short_id: page.id}
-
-    result = resolve_load_requests([short_id, short_id], short_id_map, tmp_db)
-    assert result == [page.id]
+def test_returns_not_found_for_unknown_id(tmp_db):
+    result = execute(LoadPagePayload(page_id="nonexist"), _dummy_call(), tmp_db)
+    assert "not found" in result.message
 
 
-def test_empty_input(tmp_db):
-    """Empty input should return empty output."""
-    result = resolve_load_requests([], {}, tmp_db)
-    assert result == []
+def test_does_not_create_pages(tmp_db):
+    _make_page(tmp_db)
+    result = execute(LoadPagePayload(page_id="nonexist"), _dummy_call(), tmp_db)
+    assert result.created_page_id is None

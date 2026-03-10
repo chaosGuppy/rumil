@@ -22,11 +22,11 @@ from differential.models import (
     Call,
     CallStatus,
     CallType,
-    DISPATCHABLE_CALL_TYPES,
     Dispatch,
     Move,
     MoveType,
 )
+from differential.calls.dispatches import DISPATCH_DEFS
 from differential.moves.base import MoveState
 from differential.moves.load_page import LoadPagePayload
 from differential.moves.registry import MOVES
@@ -35,47 +35,12 @@ if TYPE_CHECKING:
     from differential.tracer import CallTrace
 
 
-class DispatchPayload(BaseModel):
-    call_type: str = Field(
-        description=(
-            'Type of call to dispatch: "scout", "assess", or "prioritization"'
-        )
-    )
-    question_id: str = Field(description="Page ID of the question to investigate")
-    reason: str = Field("", description="Why this dispatch is a good use of budget")
-    budget: int | None = Field(
-        None, description="Budget to allocate (prioritization dispatches only)"
-    )
-    fruit_threshold: int | None = Field(
-        None, description="Remaining fruit threshold for stopping (scout dispatches only)"
-    )
-    max_rounds: int | None = Field(
-        None, description="Maximum scouting rounds (scout dispatches only)"
-    )
-    context_page_ids: list[str] = Field(
-        default_factory=list,
-        description=(
-            "Optional full UUIDs of pages to pre-load into the dispatched call. "
-            "Use when you know a specific source document or consideration from "
-            "another question will be directly relevant. Use full UUIDs, not short IDs."
-        ),
-    )
-
-
 PHASE1_TASK = (
     "Review the workspace map above and decide if you need the full content of any "
     "pages before starting your main task. Use load_page for any pages you want to "
     "read. Write brief planning notes about your approach."
 )
 
-
-DISPATCH_TOOL_DESCRIPTION = (
-    "Dispatch a research call for a question. Available call types: "
-    "scout (find missing considerations; costs up to max_rounds calls, "
-    "stops early when fruit falls below fruit_threshold), "
-    "assess (render a judgement; costs 1 call), "
-    "prioritization (delegate structured investigation; costs the sub-budget you assign)."
-)
 
 
 class PageRating(BaseModel):
@@ -121,27 +86,6 @@ class RunCallResult:
     phase1_page_ids: list[str] = field(default_factory=list)
     agent_result: AgentResult = field(default_factory=AgentResult)
 
-
-def _make_dispatch_tool(state: MoveState) -> Tool:
-    """Create a Tool that records a dispatch instruction."""
-
-    def fn(inp: dict) -> str:
-        call_type_str = inp.get("call_type", "")
-        try:
-            ct = CallType(call_type_str)
-        except ValueError:
-            return f"Unknown dispatch type: {call_type_str}"
-        if ct not in DISPATCHABLE_CALL_TYPES:
-            return f"Non-dispatchable call type: {call_type_str}"
-        state.dispatches.append(Dispatch(call_type=ct, payload=inp))
-        return "Dispatch recorded."
-
-    return Tool(
-        name="dispatch",
-        description=DISPATCH_TOOL_DESCRIPTION,
-        input_schema=DispatchPayload.model_json_schema(),
-        fn=fn,
-    )
 
 
 def _format_loaded_pages(page_ids: list[str], db: DB) -> str:
@@ -220,7 +164,8 @@ def run_call(
 
     tools = [MOVES[mt].bind(state) for mt in available_moves]
     if call_type == CallType.PRIORITIZATION:
-        tools.append(_make_dispatch_tool(state))
+        for ddef in DISPATCH_DEFS.values():
+            tools.append(ddef.bind(state))
 
     user_message = build_user_message(context_text, task_description)
 

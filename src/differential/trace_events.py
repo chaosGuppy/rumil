@@ -2,7 +2,20 @@
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, BeforeValidator, Field
+
+
+class PageRef(BaseModel):
+    id: str
+    summary: str = ""
+
+
+def _coerce_page_refs(v: list) -> list:
+    """Accept both bare ID strings (legacy traces) and PageRef dicts."""
+    return [{"id": x} if isinstance(x, str) else x for x in v]
+
+
+PageRefList = Annotated[list[PageRef], BeforeValidator(_coerce_page_refs)]
 
 
 class MoveTraceItem(BaseModel):
@@ -18,8 +31,8 @@ class DispatchTraceItem(BaseModel):
 
 class ContextBuiltEvent(BaseModel):
     event: Literal["context_built"] = "context_built"
-    working_context_page_ids: list[str] = []
-    preloaded_page_ids: list[str] = []
+    working_context_page_ids: PageRefList = []
+    preloaded_page_ids: PageRefList = []
     source_page_id: str | None = None
     budget: int | None = None
     scout_mode: str | None = None
@@ -27,18 +40,18 @@ class ContextBuiltEvent(BaseModel):
 
 class Phase1LoadedEvent(BaseModel):
     event: Literal["phase1_loaded"] = "phase1_loaded"
-    page_ids: list[str] = []
+    page_ids: PageRefList = []
 
 
 class Phase2LoadedEvent(BaseModel):
     event: Literal["phase2_loaded"] = "phase2_loaded"
-    page_ids: list[str] = []
+    page_ids: PageRefList = []
 
 
 class MovesExecutedEvent(BaseModel):
     event: Literal["moves_executed"] = "moves_executed"
     moves: list[MoveTraceItem] = []
-    created_page_ids: list[str] = []
+    created_page_ids: PageRefList = []
 
 
 class ReviewCompleteEvent(BaseModel):

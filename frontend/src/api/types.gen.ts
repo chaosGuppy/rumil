@@ -136,11 +136,11 @@ export type ContextBuiltEventOut = {
     /**
      * Working Context Page Ids
      */
-    working_context_page_ids?: Array<string>;
+    working_context_page_ids?: Array<PageRef>;
     /**
      * Preloaded Page Ids
      */
-    preloaded_page_ids?: Array<string>;
+    preloaded_page_ids?: Array<PageRef>;
     /**
      * Source Page Id
      */
@@ -425,7 +425,7 @@ export type MovesExecutedEventOut = {
     /**
      * Created Page Ids
      */
-    created_page_ids?: Array<string>;
+    created_page_ids?: Array<PageRef>;
 };
 
 /**
@@ -543,6 +543,20 @@ export type PageLink = {
 };
 
 /**
+ * PageRef
+ */
+export type PageRef = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Summary
+     */
+    summary?: string;
+};
+
+/**
  * PageType
  */
 export type PageType = 'source' | 'claim' | 'question' | 'judgement' | 'concept' | 'wiki';
@@ -566,7 +580,7 @@ export type Phase1LoadedEventOut = {
     /**
      * Page Ids
      */
-    page_ids?: Array<string>;
+    page_ids?: Array<PageRef>;
 };
 
 /**
@@ -588,7 +602,7 @@ export type Phase2LoadedEventOut = {
     /**
      * Page Ids
      */
-    page_ids?: Array<string>;
+    page_ids?: Array<PageRef>;
 };
 
 /**

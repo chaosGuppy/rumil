@@ -996,7 +996,7 @@
           },
           "working_context_page_ids": {
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/PageRef"
             },
             "type": "array",
             "title": "Working Context Page Ids",
@@ -1004,7 +1004,7 @@
           },
           "preloaded_page_ids": {
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/PageRef"
             },
             "type": "array",
             "title": "Preloaded Page Ids",
@@ -1485,7 +1485,7 @@
           },
           "created_page_ids": {
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/PageRef"
             },
             "type": "array",
             "title": "Created Page Ids",
@@ -1683,6 +1683,24 @@
         ],
         "title": "PageLink"
       },
+      "PageRef": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "PageRef"
+      },
       "PageType": {
         "type": "string",
         "enum": [
@@ -1712,7 +1730,7 @@
           },
           "page_ids": {
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/PageRef"
             },
             "type": "array",
             "title": "Page Ids",
@@ -1744,7 +1762,7 @@
           },
           "page_ids": {
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/PageRef"
             },
             "type": "array",
             "title": "Page Ids",

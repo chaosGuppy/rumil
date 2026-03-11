@@ -7,6 +7,7 @@ import type {
   CallTraceOut,
   DispatchExecutedEventOut,
   DispatchesPlannedEventOut,
+  PageRef,
 } from "@/api/types.gen";
 import { LLMExchangeDetail } from "./llm-exchange-detail";
 
@@ -43,22 +44,23 @@ function getDuration(call: Call): string | null {
   return `${Math.floor(secs / 60)}m${secs % 60}s`;
 }
 
-function PageChip({ pageId }: { pageId: string }) {
-  const short = typeof pageId === "string" ? pageId.slice(0, 8) : pageId;
+function PageChip({ page }: { page: PageRef }) {
+  const short = page.id.slice(0, 8);
+  const label = page.summary || short;
   return (
-    <Link href={`/pages/${pageId}`} className="trace-page-chip">
-      {short}
+    <Link href={`/pages/${page.id}`} className="trace-page-chip" title={short}>
+      {label}
     </Link>
   );
 }
 
-function PageList({ pageIds }: { pageIds: string[] }) {
-  if (!pageIds || pageIds.length === 0)
+function PageList({ pages }: { pages: PageRef[] }) {
+  if (!pages || pages.length === 0)
     return <span className="trace-empty">none</span>;
   return (
     <span className="trace-page-list">
-      {pageIds.map((id) => (
-        <PageChip key={id} pageId={id} />
+      {pages.map((p, i) => (
+        <PageChip key={p.id} page={p} />
       ))}
     </span>
   );
@@ -121,13 +123,13 @@ function EventSection({ event }: { event: TraceEvent }) {
           {(event.working_context_page_ids ?? []).length > 0 && (
             <div className="trace-kv">
               <span className="trace-kv-key">working context</span>
-              <PageList pageIds={event.working_context_page_ids ?? []} />
+              <PageList pages={event.working_context_page_ids ?? []} />
             </div>
           )}
           {(event.preloaded_page_ids ?? []).length > 0 && (
             <div className="trace-kv">
               <span className="trace-kv-key">preloaded</span>
-              <PageList pageIds={event.preloaded_page_ids ?? []} />
+              <PageList pages={event.preloaded_page_ids ?? []} />
             </div>
           )}
           {event.budget != null && (
@@ -141,7 +143,7 @@ function EventSection({ event }: { event: TraceEvent }) {
 
       {(event.event === "phase1_loaded" || event.event === "phase2_loaded") && (
         <div className="trace-event-body">
-          <PageList pageIds={event.page_ids ?? []} />
+          <PageList pages={event.page_ids ?? []} />
         </div>
       )}
 
@@ -155,7 +157,7 @@ function EventSection({ event }: { event: TraceEvent }) {
           {(event.created_page_ids ?? []).length > 0 && (
             <div className="trace-kv" style={{ marginTop: "6px" }}>
               <span className="trace-kv-key">created</span>
-              <PageList pageIds={event.created_page_ids ?? []} />
+              <PageList pages={event.created_page_ids ?? []} />
             </div>
           )}
         </div>

@@ -257,26 +257,28 @@
 /* Page chips */
 
 .trace-page-list {
-  display: inline-flex;
+  display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 5px;
 }
 
 .trace-page-chip {
-  font-family: var(--font-geist-mono), monospace;
-  font-size: 11px;
-  color: #555;
-  background: #f0f0f0;
-  padding: 2px 7px;
-  border-radius: 3px;
+  font-size: 12px;
+  color: #444;
+  background: #f6f6f6;
+  padding: 3px 10px;
+  border-radius: 4px;
   text-decoration: none;
-  transition: all 0.1s;
-  border: 1px solid #e4e4e4;
+  transition: all 0.15s ease;
+  border: 1px solid #e0e0e0;
+  line-height: 1.4;
+  letter-spacing: -0.01em;
 }
 .trace-page-chip:hover {
-  color: #222;
-  background: #e8e8e8;
-  border-color: #ccc;
+  color: #111;
+  background: #eaeaea;
+  border-color: #bbb;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
 }
 
 .trace-empty {

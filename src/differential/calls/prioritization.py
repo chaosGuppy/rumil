@@ -64,7 +64,7 @@ async def run_prioritization(
             for d in result.dispatches
         ],
     ))
-    await trace.record(moves_to_trace_event(result.moves, result.created_page_ids))
+    await trace.record(await moves_to_trace_event(result.moves, result.created_page_ids, db))
 
     summary = {
         "dispatches": result.dispatches,

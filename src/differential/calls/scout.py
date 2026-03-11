@@ -9,6 +9,7 @@ from differential.calls.common import (
     format_moves_for_review,
     log_page_ratings,
     moves_to_trace_event,
+    resolve_page_refs,
     run_call,
     run_closing_review,
 )
@@ -59,8 +60,8 @@ async def run_scout(
         question_id, db, extra_page_ids=preloaded
     )
     await trace.record(ContextBuiltEvent(
-        working_context_page_ids=working_page_ids,
-        preloaded_page_ids=preloaded,
+        working_context_page_ids=await resolve_page_refs(working_page_ids, db),
+        preloaded_page_ids=await resolve_page_refs(preloaded, db),
         scout_mode=mode.value,
     ))
 
@@ -73,11 +74,15 @@ async def run_scout(
     await db.update_call_status(call.id, CallStatus.RUNNING)
     result = await run_call(CallType.SCOUT, task, context_text, call, db, trace=trace)
     if result.phase1_page_ids:
-        await trace.record(Phase1LoadedEvent(page_ids=result.phase1_page_ids))
+        await trace.record(Phase1LoadedEvent(
+            page_ids=await resolve_page_refs(result.phase1_page_ids, db),
+        ))
     phase2_loaded = await extract_loaded_page_ids(result, db)
     if phase2_loaded:
-        await trace.record(Phase2LoadedEvent(page_ids=phase2_loaded))
-    await trace.record(moves_to_trace_event(result.moves, result.created_page_ids))
+        await trace.record(Phase2LoadedEvent(
+            page_ids=await resolve_page_refs(phase2_loaded, db),
+        ))
+    await trace.record(await moves_to_trace_event(result.moves, result.created_page_ids, db))
 
     all_loaded_ids = list(
         dict.fromkeys(preloaded + result.phase1_page_ids + phase2_loaded)

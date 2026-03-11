@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { RunTraceOut } from "@/api/types.gen";
 import { TraceViewer } from "./trace-viewer";
+import "./trace.css";
 
 const API_BASE = process.env.API_BASE_URL || "http://localhost:8000";
 
@@ -40,9 +41,9 @@ export default async function TracePage({
 
   if (!trace) {
     return (
-      <main className="max-w-6xl mx-auto p-8">
-        <p className="text-red-500">Run not found: {runId}</p>
-        <Link href="/" className="text-blue-600 hover:underline text-sm">
+      <main className="trace-page">
+        <p className="trace-error">Run not found: {runId}</p>
+        <Link href="/" className="trace-back-link">
           &larr; Back
         </Link>
       </main>
@@ -50,19 +51,21 @@ export default async function TracePage({
   }
 
   return (
-    <main className="max-w-6xl mx-auto p-8">
-      {trace.question && (
-        <Link
-          href={`/questions/${trace.question.id}`}
-          className="text-blue-600 hover:underline text-sm"
-        >
-          &larr; {trace.question.summary}
-        </Link>
-      )}
-      <h1 className="text-2xl font-semibold mt-2 mb-1">Execution Trace</h1>
-      <p className="text-sm text-gray-500 mb-6 font-mono">
-        run {runId.slice(0, 8)}
-      </p>
+    <main className="trace-page">
+      <header className="trace-header">
+        {trace.question && (
+          <Link
+            href={`/questions/${trace.question.id}`}
+            className="trace-back-link"
+          >
+            &larr; {trace.question.summary}
+          </Link>
+        )}
+        <div className="trace-title-row">
+          <h1 className="trace-title">Execution Trace</h1>
+          <span className="trace-run-id">{runId.slice(0, 8)}</span>
+        </div>
+      </header>
       <TraceViewer
         initialTrace={trace}
         runId={runId}

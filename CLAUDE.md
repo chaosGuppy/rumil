@@ -33,6 +33,12 @@ uv run python main.py --summary QUESTION_ID
 
 # Generate execution trace (accepts question ID or call ID)
 uv run python main.py --trace QUESTION_ID
+
+# Use a named workspace to isolate investigations
+uv run python main.py "Your question here" --workspace my-project --budget 10
+
+# List all workspaces
+uv run python main.py --list-workspaces
 ```
 
 Tests: `uv run pytest`. Optional dependency: `pypdf` for PDF ingestion (`uv sync --extra pdf`).
@@ -94,3 +100,4 @@ Each call ends with a closing review that produces `remaining_fruit` (0-10 scale
 - Pages are immutable once written (squidgy layer); updates use SUPERSEDE_PAGE to create a new version pointing back to the old one
 - Multiline strings use parenthesized concatenation of single-quoted lines (`"line 1 " "line 2"`), not triple-quoted strings (`"""`). Only use `f""` on lines that actually contain `{placeholder}` expressions.
 - Do not add section divider comments (e.g. `# ----------` banners). Use blank lines between logical sections; the code should speak for itself.
+- When adding new user-facing CLI flags or commands to `main.py`, always update `README.md` with corresponding documentation.

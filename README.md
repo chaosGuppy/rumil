@@ -110,6 +110,12 @@ uv run python main.py --list --workspace my-project
 
 # Any command can target the production database
 uv run python main.py --prod-db --list
+
+# Enable info-level logging to stderr
+uv run python main.py "Your question" --budget 5 -v
+
+# Enable debug-level logging to stderr (very verbose)
+uv run python main.py "Your question" --budget 5 --debug
 ```
 
 ### Batch mode

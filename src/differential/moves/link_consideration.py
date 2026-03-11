@@ -17,8 +17,7 @@ from differential.moves.base import MoveDef, MoveResult
 log = logging.getLogger(__name__)
 
 
-class LinkConsiderationPayload(BaseModel):
-    claim_id: str = Field(description="Page ID of the claim (or LAST_CREATED)")
+class ConsiderationLinkFields(BaseModel):
     question_id: str = Field(description="Page ID of the question")
     direction: str = Field("neutral", description="supports, opposes, or neutral")
     strength: float = Field(
@@ -28,6 +27,10 @@ class LinkConsiderationPayload(BaseModel):
     reasoning: str = Field(
         "", description="Why this claim bears on the question in this direction"
     )
+
+
+class LinkConsiderationPayload(ConsiderationLinkFields):
+    claim_id: str = Field(description="Page ID of the claim (or LAST_CREATED)")
 
 
 async def execute(payload: LinkConsiderationPayload, call: Call, db: DB) -> MoveResult:

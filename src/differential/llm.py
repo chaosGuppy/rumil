@@ -287,6 +287,83 @@ async def agent_loop(
     )
 
 
+async def single_call_with_tools(
+    system_prompt: str,
+    user_message: str,
+    tools: list[Tool],
+    *,
+    max_tokens: int = 4096,
+) -> AgentResult:
+    """Make a single LLM call with tools. Executes any tool calls the LLM
+    makes but does NOT loop back — the results are returned directly.
+
+    Use this when you want the LLM to pick and invoke tools in one shot
+    (e.g. phase-1 page loading, single-call prioritization).
+    """
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise EnvironmentError("ANTHROPIC_API_KEY environment variable not set.")
+    client = anthropic.AsyncAnthropic(api_key=api_key)
+
+    tool_defs = [
+        {
+            "name": t.name,
+            "description": t.description,
+            "input_schema": t.input_schema,
+        }
+        for t in tools
+    ]
+    tool_fns = {t.name: t.fn for t in tools}
+
+    log.debug(
+        "single_call: max_tokens=%d, tools=%s",
+        max_tokens, [t.name for t in tools],
+    )
+
+    messages: list[dict] = [{"role": "user", "content": user_message}]
+    response = await _call_api(
+        client, system_prompt, messages, tool_defs or None, max_tokens,
+    )
+
+    text_parts: list[str] = []
+    all_tool_calls: list[ToolCall] = []
+
+    for block in response.content:
+        if isinstance(block, TextBlock):
+            text_parts.append(block.text)
+        elif isinstance(block, ToolUseBlock):
+            fn = tool_fns.get(block.name)
+            if fn is None:
+                result_str = f"Unknown tool: {block.name}"
+                log.warning("Unknown tool called by LLM: %s", block.name)
+            else:
+                try:
+                    result_str = await fn(block.input)
+                except Exception as e:
+                    log.error(
+                        "Tool %s raised an exception: %s",
+                        block.name, e, exc_info=True,
+                    )
+                    result_str = f"Error: {e}"
+                else:
+                    log.debug(
+                        "Tool %s returned: %s",
+                        block.name, result_str[:200] if result_str else "(empty)",
+                    )
+            all_tool_calls.append(
+                ToolCall(name=block.name, input=block.input, result=result_str)
+            )
+
+    log.info(
+        "single_call complete: %d tool calls, %d text chars",
+        len(all_tool_calls), sum(len(t) for t in text_parts),
+    )
+    return AgentResult(
+        text="\n".join(text_parts),
+        tool_calls=all_tool_calls,
+    )
+
+
 async def text_call(
     system_prompt: str,
     user_message: str = "",

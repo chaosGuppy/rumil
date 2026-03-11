@@ -13,11 +13,11 @@ from differential.context import format_page
 from differential.database import DB
 from differential.llm import (
     AgentResult,
-    Tool,
     build_system_prompt,
     build_user_message,
     structured_call,
     agent_loop,
+    single_call_with_tools,
 )
 from differential.models import (
     Call,
@@ -41,18 +41,9 @@ if TYPE_CHECKING:
 PHASE1_TASK = (
     'Perform your preliminary analysis now. Review the workspace map above and '
     'decide if you need the full content of any pages before starting your main '
-    'task. The main task description will follow in the next turn.'
+    'task. The main task description will follow in the next turn. '
+    'Use the load_page tool for any pages you want to read.'
 )
-
-
-class Phase1Response(BaseModel):
-    planning_notes: str = Field(
-        description='Brief notes about your approach to the upcoming task'
-    )
-    load_pages: list[LoadPagePayload] = Field(
-        default_factory=list,
-        description='Pages to load before starting the main task',
-    )
 
 
 class PageRating(BaseModel):
@@ -116,28 +107,30 @@ async def _format_loaded_pages(page_ids: list[str], db: DB) -> str:
 async def _run_phase1(
     system_prompt: str,
     context_text: str,
-    db: DB,
+    state: MoveState,
 ) -> list[str]:
-    """Preliminary page loading via structured call. Returns resolved full page IDs. Free."""
+    """Preliminary page loading via single LLM call with load_page tool.
+
+    Returns resolved full page IDs. Free (not counted against budget).
+    """
     log.debug("Phase 1 starting: context_len=%d", len(context_text))
     try:
         phase1_msg = build_user_message(context_text, PHASE1_TASK)
-        result = await structured_call(
+        load_page_tool = MOVES[MoveType.LOAD_PAGE].bind(state)
+        result = await single_call_with_tools(
             system_prompt=system_prompt,
             user_message=phase1_msg,
-            response_model=Phase1Response,
+            tools=[load_page_tool],
             max_tokens=2048,
         )
-        if not result:
-            log.debug("Phase 1 returned empty response")
-            return []
         loaded_ids = []
-        for entry in result.get("load_pages", []):
-            full_id = await db.resolve_page_id(entry.get("page_id", ""))
-            if full_id:
-                loaded_ids.append(full_id)
+        for tc in result.tool_calls:
+            if tc.name == "load_page":
+                full_id = await state.db.resolve_page_id(tc.input.get("page_id", ""))
+                if full_id:
+                    loaded_ids.append(full_id)
         if loaded_ids:
-            labels = [await db.page_label(pid) for pid in loaded_ids]
+            labels = [await state.db.page_label(pid) for pid in loaded_ids]
             log.info("Phase 1 loaded %d pages: %s", len(loaded_ids), labels)
         else:
             log.debug("Phase 1 completed with no pages loaded")
@@ -182,7 +175,7 @@ async def run_call(
 
     phase1_ids: list[str] = []
     if call_type != CallType.PRIORITIZATION:
-        phase1_ids = await _run_phase1(system_prompt, context_text, db)
+        phase1_ids = await _run_phase1(system_prompt, context_text, state)
         if phase1_ids:
             extra_text = await _format_loaded_pages(phase1_ids, db)
             context_text = context_text + "\n\n## Loaded Pages\n\n" + extra_text
@@ -194,13 +187,21 @@ async def run_call(
 
     user_message = build_user_message(context_text, task_description)
 
-    agent_result = await agent_loop(
-        system_prompt,
-        user_message,
-        tools,
-        max_tokens=max_tokens,
-        max_rounds=max_rounds,
-    )
+    if call_type == CallType.PRIORITIZATION:
+        agent_result = await single_call_with_tools(
+            system_prompt,
+            user_message,
+            tools,
+            max_tokens=max_tokens,
+        )
+    else:
+        agent_result = await agent_loop(
+            system_prompt,
+            user_message,
+            tools,
+            max_tokens=max_tokens,
+            max_rounds=max_rounds,
+        )
 
     log.info(
         "run_call complete: type=%s, pages_created=%d, dispatches=%d, moves=%d",

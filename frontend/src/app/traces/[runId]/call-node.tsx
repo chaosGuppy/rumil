@@ -69,6 +69,7 @@ function MoveRow({ moveType, summary }: { moveType: string; summary: string }) {
   const isLink = moveType.startsWith("LINK_");
   const isSupersede = moveType === "SUPERSEDE_PAGE";
   const isHypothesis = moveType === "PROPOSE_HYPOTHESIS";
+  const isLoad = moveType === "LOAD_PAGE";
 
   const typeClass = isCreate
     ? "trace-move-create"
@@ -78,7 +79,9 @@ function MoveRow({ moveType, summary }: { moveType: string; summary: string }) {
         ? "trace-move-supersede"
         : isHypothesis
           ? "trace-move-hypothesis"
-          : "trace-move-default";
+          : isLoad
+            ? "trace-move-load"
+            : "trace-move-default";
 
   return (
     <div className="trace-move-row">
@@ -139,19 +142,11 @@ function EventSection({ event }: { event: TraceEvent }) {
         </div>
       )}
 
-      {(event.event === "phase1_loaded" || event.event === "phase2_loaded") && (
-        <div className="trace-event-body">
-          <PageList pageIds={event.page_ids ?? []} />
-        </div>
-      )}
-
       {event.event === "moves_executed" && (
         <div className="trace-event-body">
-          {(event.moves ?? [])
-            .filter((m) => m.type !== "LOAD_PAGE")
-            .map((m, i) => (
-              <MoveRow key={i} moveType={m.type} summary={m.summary || ""} />
-            ))}
+          {(event.moves ?? []).map((m, i) => (
+            <MoveRow key={i} moveType={m.type} summary={m.summary || ""} />
+          ))}
           {(event.created_page_ids ?? []).length > 0 && (
             <div className="trace-kv" style={{ marginTop: "6px" }}>
               <span className="trace-kv-key">created</span>
@@ -175,7 +170,7 @@ function EventSection({ event }: { event: TraceEvent }) {
       {event.event === "llm_exchange" && (
         <div className="trace-event-body">
           <span className="trace-exchange-info">
-            {event.phase} r{event.round}
+            {event.phase.replace(/_/g, " ")} r{event.round}
             {event.input_tokens != null && (
               <span className="trace-token-count">
                 {event.input_tokens.toLocaleString()}/{event.output_tokens?.toLocaleString()} tok
@@ -236,7 +231,10 @@ export function CallNode({
   const warningCount = events.filter((e) => e.event === "warning").length;
   const errorCount = events.filter((e) => e.event === "error").length;
 
-  const skipEvents = new Set(["dispatches_planned", "dispatch_executed"]);
+  const skipEvents = new Set([
+    "dispatches_planned", "dispatch_executed",
+    "phase1_loaded", "phase2_loaded",
+  ]);
   const displayableEvents = events.filter((e) => !skipEvents.has(e.event));
 
   const dispatchEvents = events.filter(

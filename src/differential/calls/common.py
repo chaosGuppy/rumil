@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -18,7 +17,6 @@ from differential.llm import (
     build_system_prompt,
     build_user_message,
     structured_call,
-    text_call,
     agent_loop,
 )
 from differential.models import (
@@ -40,19 +38,21 @@ if TYPE_CHECKING:
     from differential.tracer import CallTrace
 
 
-PHASE1_SYSTEM = (
-    'You are a research assistant preparing for a workspace task. '
-    'Review the context and decide if you need full content from any pages.'
-)
-
 PHASE1_TASK = (
     'Perform your preliminary analysis now. Review the workspace map above and '
-    'list any page short IDs you want to load, one per line, prefixed with '
-    'LOAD_PAGE. Write any planning notes. Example:\n\n'
-    'LOAD_PAGE abc12345\n'
-    'LOAD_PAGE def67890\n\n'
-    'The main task description will follow in the next turn.'
+    'decide if you need the full content of any pages before starting your main '
+    'task. The main task description will follow in the next turn.'
 )
+
+
+class Phase1Response(BaseModel):
+    planning_notes: str = Field(
+        description='Brief notes about your approach to the upcoming task'
+    )
+    load_pages: list[LoadPagePayload] = Field(
+        default_factory=list,
+        description='Pages to load before starting the main task',
+    )
 
 
 class PageRating(BaseModel):
@@ -113,33 +113,27 @@ def _format_loaded_pages(page_ids: list[str], db: DB) -> str:
     return "\n\n---\n\n".join(parts)
 
 
-def _parse_load_ids(text: str) -> list[str]:
-    """Extract page short IDs from LOAD_PAGE lines in a text response."""
-    ids: list[str] = []
-    for match in re.finditer(r'LOAD_PAGE\s+([0-9a-f]{8})', text):
-        pid = match.group(1)
-        if pid not in ids:
-            ids.append(pid)
-    return ids
-
-
 def _run_phase1(
+    system_prompt: str,
     context_text: str,
     db: DB,
 ) -> list[str]:
-    """Preliminary page loading via text call. Returns resolved full page IDs. Free."""
+    """Preliminary page loading via structured call. Returns resolved full page IDs. Free."""
     log.debug("Phase 1 starting: context_len=%d", len(context_text))
     try:
         phase1_msg = build_user_message(context_text, PHASE1_TASK)
-        raw = text_call(
-            system_prompt=PHASE1_SYSTEM,
+        result = structured_call(
+            system_prompt=system_prompt,
             user_message=phase1_msg,
+            response_model=Phase1Response,
             max_tokens=2048,
         )
-        short_ids = _parse_load_ids(raw)
+        if not result:
+            log.debug("Phase 1 returned empty response")
+            return []
         loaded_ids = []
-        for sid in short_ids:
-            full_id = db.resolve_page_id(sid)
+        for entry in result.get("load_pages", []):
+            full_id = db.resolve_page_id(entry.get("page_id", ""))
             if full_id:
                 loaded_ids.append(full_id)
         if loaded_ids:
@@ -188,7 +182,7 @@ def run_call(
 
     phase1_ids: list[str] = []
     if call_type != CallType.PRIORITIZATION:
-        phase1_ids = _run_phase1(context_text, db)
+        phase1_ids = _run_phase1(system_prompt, context_text, db)
         if phase1_ids:
             extra_text = _format_loaded_pages(phase1_ids, db)
             context_text = context_text + "\n\n## Loaded Pages\n\n" + extra_text

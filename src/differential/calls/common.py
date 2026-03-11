@@ -93,6 +93,44 @@ class RunCallResult:
     agent_result: AgentResult = field(default_factory=AgentResult)
 
 
+async def _save_exchanges(
+    agent_result: AgentResult,
+    call_id: str,
+    phase: str,
+    db: DB,
+    trace: "CallTrace | None" = None,
+) -> None:
+    """Save LLM exchange records from an AgentResult and record trace events."""
+    for rr in agent_result.rounds:
+        tc_data = [
+            {"name": tc.name, "input": tc.input, "result": tc.result[:500]}
+            for tc in rr.tool_calls
+        ]
+        exchange_id = await db.save_llm_exchange(
+            call_id=call_id,
+            phase=phase,
+            round_num=rr.round,
+            system_prompt=agent_result.system_prompt,
+            user_message=agent_result.user_message if rr.round == 0 else None,
+            response_text=rr.response_text,
+            tool_calls=tc_data,
+            input_tokens=rr.input_tokens,
+            output_tokens=rr.output_tokens,
+            error=rr.error,
+        )
+        if trace:
+            trace.record("llm_exchange", {
+                "exchange_id": exchange_id,
+                "phase": phase,
+                "round": rr.round,
+                "input_tokens": rr.input_tokens,
+                "output_tokens": rr.output_tokens,
+            })
+    for w in agent_result.warnings:
+        if trace:
+            trace.record("warning", {"message": w})
+
+
 async def _format_loaded_pages(page_ids: list[str], db: DB) -> str:
     """Format loaded pages as context text for phase 2."""
     parts = []
@@ -108,19 +146,22 @@ async def _run_phase1(
     context_text: str,
     state: MoveState,
     db: DB,
+    trace: "CallTrace | None" = None,
 ) -> list[str]:
     """Preliminary page loading. Returns resolved full page IDs. Free."""
     log.debug("Phase 1 starting: context_len=%d", len(context_text))
     try:
         load_tool = MOVES[MoveType.LOAD_PAGE].bind(state)
         phase1_msg = build_user_message(context_text, PHASE1_TASK)
-        await agent_loop(
+        phase1_result = await agent_loop(
             system_prompt,
             phase1_msg,
             [load_tool],
             max_tokens=2048,
             max_rounds=3,
         )
+        if trace:
+            await _save_exchanges(phase1_result, trace.call_id, "phase1", db, trace)
         loaded_ids = []
         for m in state.moves:
             if m.move_type == MoveType.LOAD_PAGE:
@@ -151,6 +192,7 @@ async def run_call(
     max_rounds: int = 3,
     subtree_ids: set[str] | None = None,
     short_id_map: dict[str, str] | None = None,
+    trace: "CallTrace | None" = None,
 ) -> RunCallResult:
     """Run a workspace call with tool use.
 
@@ -174,7 +216,7 @@ async def run_call(
 
     phase1_ids: list[str] = []
     if call_type != CallType.PRIORITIZATION:
-        phase1_ids = await _run_phase1(system_prompt, context_text, state, db)
+        phase1_ids = await _run_phase1(system_prompt, context_text, state, db, trace=trace)
         if phase1_ids:
             extra_text = await _format_loaded_pages(phase1_ids, db)
             context_text = context_text + "\n\n## Loaded Pages\n\n" + extra_text
@@ -186,6 +228,7 @@ async def run_call(
 
     user_message = build_user_message(context_text, task_description)
 
+    phase = "prioritization" if call_type == CallType.PRIORITIZATION else "phase2"
     agent_result = await agent_loop(
         system_prompt,
         user_message,
@@ -193,6 +236,8 @@ async def run_call(
         max_tokens=max_tokens,
         max_rounds=max_rounds,
     )
+    if trace:
+        await _save_exchanges(agent_result, call.id, phase, db, trace)
 
     log.info(
         "run_call complete: type=%s, pages_created=%d, dispatches=%d, moves=%d",

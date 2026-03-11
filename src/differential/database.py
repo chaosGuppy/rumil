@@ -660,8 +660,103 @@ class DB:
             "judgements": cast(int, judgements_result.data or 0),
         }
 
+    async def save_llm_exchange(
+        self,
+        call_id: str,
+        phase: str,
+        round_num: int,
+        system_prompt: str | None,
+        user_message: str | None,
+        response_text: str | None,
+        tool_calls: list[dict] | None = None,
+        input_tokens: int | None = None,
+        output_tokens: int | None = None,
+        error: str | None = None,
+    ) -> str:
+        exchange_id = str(uuid.uuid4())
+        await self.client.table("call_llm_exchanges").insert(
+            {
+                "id": exchange_id,
+                "call_id": call_id,
+                "run_id": self.run_id,
+                "phase": phase,
+                "round": round_num,
+                "system_prompt": system_prompt,
+                "user_message": user_message,
+                "response_text": response_text,
+                "tool_calls": tool_calls or [],
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "error": error,
+            }
+        ).execute()
+        return exchange_id
+
+    async def get_llm_exchanges(self, call_id: str) -> list[dict[str, Any]]:
+        rows = _rows(
+            await self.client.table("call_llm_exchanges")
+            .select("id, call_id, phase, round, input_tokens, output_tokens, error, created_at")
+            .eq("call_id", call_id)
+            .order("round")
+            .execute()
+        )
+        return rows
+
+    async def get_llm_exchange(self, exchange_id: str) -> dict[str, Any] | None:
+        rows = _rows(
+            await self.client.table("call_llm_exchanges")
+            .select("*")
+            .eq("id", exchange_id)
+            .execute()
+        )
+        return rows[0] if rows else None
+
+    async def get_calls_for_run(self, run_id: str) -> list[Call]:
+        rows = _rows(
+            await self.client.table("calls")
+            .select("*")
+            .eq("run_id", run_id)
+            .order("created_at")
+            .execute()
+        )
+        return [_row_to_call(r) for r in rows]
+
+    async def get_run_question_id(self, run_id: str) -> str | None:
+        rows = _rows(
+            await self.client.table("calls")
+            .select("scope_page_id")
+            .eq("run_id", run_id)
+            .is_("parent_call_id", "null")
+            .order("created_at")
+            .limit(1)
+            .execute()
+        )
+        return rows[0]["scope_page_id"] if rows else None
+
+    async def get_runs_for_question(self, question_id: str) -> list[dict[str, Any]]:
+        """Return distinct run_ids for calls scoped to this question."""
+        rows = _rows(
+            await self.client.table("calls")
+            .select("run_id, created_at")
+            .eq("scope_page_id", question_id)
+            .is_("parent_call_id", "null")
+            .order("created_at", desc=True)
+            .execute()
+        )
+        seen: set[str] = set()
+        result: list[dict[str, Any]] = []
+        for r in rows:
+            rid = r["run_id"]
+            if rid not in seen:
+                seen.add(rid)
+                result.append({"run_id": rid, "created_at": r["created_at"]})
+        return result
+
     async def delete_run_data(self, delete_project: bool = False) -> None:
         """Delete all data for this run_id. Used by test teardown."""
+        await self.client.table("call_llm_exchanges").delete().eq(
+            "run_id", self.run_id
+        ).execute()
         for table in ["page_flags", "page_ratings", "page_links", "calls", "pages"]:
             await self.client.table(table).delete().eq("run_id", self.run_id).execute()
         await self.client.table("budget").delete().eq("run_id", self.run_id).execute()

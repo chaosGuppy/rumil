@@ -25,12 +25,13 @@ async def run_ingest(
     question_id: str,
     call: Call,
     db: DB,
+    broadcaster=None,
 ) -> tuple[RunCallResult, dict]:
     """Run an Ingest call: extract considerations from a source document.
 
     Returns (run_call_result, review_dict).
     """
-    trace = CallTrace(call.id, db)
+    trace = CallTrace(call.id, db, broadcaster=broadcaster)
     extra = source_page.extra or {}
     filename = extra.get("filename", source_page.id[:8])
     log.info(
@@ -66,7 +67,7 @@ async def run_ingest(
     )
 
     await db.update_call_status(call.id, CallStatus.RUNNING)
-    result = await run_call(CallType.INGEST, task, context_text, call, db)
+    result = await run_call(CallType.INGEST, task, context_text, call, db, trace=trace)
     if result.phase1_page_ids:
         trace.record("phase1_loaded", {"page_ids": result.phase1_page_ids})
     phase2_loaded = await extract_loaded_page_ids(result, db)

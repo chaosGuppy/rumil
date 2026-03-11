@@ -24,12 +24,13 @@ async def run_scout(
     question_id: str,
     call: Call,
     db: DB,
+    broadcaster=None,
 ) -> tuple[RunCallResult, dict]:
     """Run a Scout call on a question.
 
     Returns (run_call_result, review_dict).
     """
-    trace = CallTrace(call.id, db)
+    trace = CallTrace(call.id, db, broadcaster=broadcaster)
     log.info("Scout starting: call=%s, question=%s", call.id[:8], question_id[:8])
 
     preloaded = call.context_page_ids or []
@@ -50,7 +51,7 @@ async def run_scout(
     )
 
     await db.update_call_status(call.id, CallStatus.RUNNING)
-    result = await run_call(CallType.SCOUT, task, context_text, call, db)
+    result = await run_call(CallType.SCOUT, task, context_text, call, db, trace=trace)
     if result.phase1_page_ids:
         trace.record("phase1_loaded", {"page_ids": result.phase1_page_ids})
     phase2_loaded = await extract_loaded_page_ids(result, db)

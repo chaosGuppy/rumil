@@ -520,6 +520,227 @@
           }
         }
       }
+    },
+    "/api/runs/{run_id}/trace": {
+      "get": {
+        "summary": "Get Run Trace",
+        "operationId": "get_run_trace_api_runs__run_id__trace_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunTraceOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/calls/{call_id}/trace": {
+      "get": {
+        "summary": "Get Call Trace",
+        "operationId": "get_call_trace_api_calls__call_id__trace_get",
+        "parameters": [
+          {
+            "name": "call_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Call Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallTraceOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/calls/{call_id}/llm-exchanges": {
+      "get": {
+        "summary": "List Llm Exchanges",
+        "operationId": "list_llm_exchanges_api_calls__call_id__llm_exchanges_get",
+        "parameters": [
+          {
+            "name": "call_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Call Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LLMExchangeSummaryOut"
+                  },
+                  "title": "Response List Llm Exchanges Api Calls  Call Id  Llm Exchanges Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/llm-exchanges/{exchange_id}": {
+      "get": {
+        "summary": "Get Llm Exchange",
+        "operationId": "get_llm_exchange_api_llm_exchanges__exchange_id__get",
+        "parameters": [
+          {
+            "name": "exchange_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Exchange Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LLMExchangeOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/realtime/config": {
+      "get": {
+        "summary": "Get Realtime Config",
+        "operationId": "get_realtime_config_api_realtime_config_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RealtimeConfigOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/questions/{question_id}/runs": {
+      "get": {
+        "summary": "List Question Runs",
+        "operationId": "list_question_runs_api_questions__question_id__runs_get",
+        "parameters": [
+          {
+            "name": "question_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Question Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RunSummaryOut"
+                  },
+                  "title": "Response List Question Runs Api Questions  Question Id  Runs Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -643,6 +864,34 @@
         ],
         "title": "CallStatus"
       },
+      "CallTraceOut": {
+        "properties": {
+          "call": {
+            "$ref": "#/components/schemas/CallOut"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/TraceEventOut"
+            },
+            "type": "array",
+            "title": "Events"
+          },
+          "children": {
+            "items": {
+              "$ref": "#/components/schemas/CallTraceOut"
+            },
+            "type": "array",
+            "title": "Children"
+          }
+        },
+        "type": "object",
+        "required": [
+          "call",
+          "events",
+          "children"
+        ],
+        "title": "CallTraceOut"
+      },
       "CallType": {
         "type": "string",
         "enum": [
@@ -692,6 +941,186 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "LLMExchangeOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "phase": {
+            "type": "string",
+            "title": "Phase"
+          },
+          "round": {
+            "type": "integer",
+            "title": "Round"
+          },
+          "system_prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "System Prompt"
+          },
+          "user_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Message"
+          },
+          "response_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Response Text"
+          },
+          "tool_calls": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Tool Calls"
+          },
+          "input_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Tokens"
+          },
+          "output_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Tokens"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "call_id",
+          "phase",
+          "round",
+          "system_prompt",
+          "user_message",
+          "response_text",
+          "tool_calls",
+          "input_tokens",
+          "output_tokens",
+          "error",
+          "created_at"
+        ],
+        "title": "LLMExchangeOut"
+      },
+      "LLMExchangeSummaryOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "phase": {
+            "type": "string",
+            "title": "Phase"
+          },
+          "round": {
+            "type": "integer",
+            "title": "Round"
+          },
+          "input_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Tokens"
+          },
+          "output_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Tokens"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "phase",
+          "round",
+          "input_tokens",
+          "output_tokens",
+          "error",
+          "created_at"
+        ],
+        "title": "LLMExchangeSummaryOut"
       },
       "LinkType": {
         "type": "string",
@@ -948,6 +1377,103 @@
           "child_questions"
         ],
         "title": "QuestionTreeOut"
+      },
+      "RealtimeConfigOut": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "anon_key": {
+            "type": "string",
+            "title": "Anon Key"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url",
+          "anon_key"
+        ],
+        "title": "RealtimeConfigOut"
+      },
+      "RunSummaryOut": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "created_at"
+        ],
+        "title": "RunSummaryOut"
+      },
+      "RunTraceOut": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "question": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "root_calls": {
+            "items": {
+              "$ref": "#/components/schemas/CallTraceOut"
+            },
+            "type": "array",
+            "title": "Root Calls"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "question",
+          "root_calls"
+        ],
+        "title": "RunTraceOut"
+      },
+      "TraceEventOut": {
+        "properties": {
+          "event": {
+            "type": "string",
+            "title": "Event"
+          },
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "data": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Data",
+            "default": {}
+          }
+        },
+        "type": "object",
+        "required": [
+          "event",
+          "ts",
+          "call_id"
+        ],
+        "title": "TraceEventOut"
       },
       "ValidationError": {
         "properties": {

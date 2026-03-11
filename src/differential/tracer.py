@@ -1,6 +1,8 @@
 """Execution tracing: capture call events and generate HTML visualizations."""
 
+import asyncio
 import json
+import logging
 import os
 from datetime import datetime, timezone
 from html import escape
@@ -8,6 +10,8 @@ from pathlib import Path
 
 from differential.database import DB
 from differential.models import Call, CallType
+
+log = logging.getLogger(__name__)
 
 PAGES_DIR = Path(__file__).parent.parent.parent / "pages"
 TRACES_DIR = PAGES_DIR / "traces"
@@ -19,11 +23,12 @@ TRACING_ENABLED = not os.environ.get("DIFFERENTIAL_TEST_MODE")
 class CallTrace:
     """Accumulates trace events during a call and persists them to the DB."""
 
-    def __init__(self, call_id: str, db: DB):
+    def __init__(self, call_id: str, db: DB, broadcaster=None):
         self.call_id = call_id
         self.db = db
         self.events: list[dict] = []
         self._enabled = TRACING_ENABLED
+        self._broadcaster = broadcaster
 
     def record(self, event: str, data: dict | None = None) -> None:
         if not self._enabled:
@@ -31,10 +36,23 @@ class CallTrace:
         entry: dict = {
             "event": event,
             "ts": datetime.now(timezone.utc).isoformat(),
+            "call_id": self.call_id,
         }
         if data:
             entry["data"] = data
         self.events.append(entry)
+        if self._broadcaster:
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(self._broadcast(event, entry))
+            except RuntimeError:
+                pass
+
+    async def _broadcast(self, event: str, entry: dict) -> None:
+        try:
+            await self._broadcaster.send(event, entry)
+        except Exception as e:
+            log.debug("Broadcast failed for event %s: %s", event, e)
 
     async def save(self) -> None:
         if not self._enabled:

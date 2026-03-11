@@ -88,3 +88,57 @@ class QuestionTreeOut(BaseModel):
 class PageCountsOut(BaseModel):
     considerations: int
     judgements: int
+
+
+class TraceEventOut(BaseModel):
+    event: str
+    ts: str
+    call_id: str
+    data: dict = {}
+
+
+class LLMExchangeSummaryOut(BaseModel):
+    id: str
+    phase: str
+    round: int
+    input_tokens: int | None
+    output_tokens: int | None
+    error: str | None
+    created_at: datetime
+
+
+class LLMExchangeOut(BaseModel):
+    id: str
+    call_id: str
+    phase: str
+    round: int
+    system_prompt: str | None
+    user_message: str | None
+    response_text: str | None
+    tool_calls: list[dict]
+    input_tokens: int | None
+    output_tokens: int | None
+    error: str | None
+    created_at: datetime
+
+
+class CallTraceOut(BaseModel):
+    call: CallOut
+    events: list[TraceEventOut]
+    children: list['CallTraceOut']
+
+
+class RunTraceOut(BaseModel):
+    run_id: str
+    question: PageOut | None
+    root_calls: list[CallTraceOut]
+
+
+class RunSummaryOut(BaseModel):
+    run_id: str
+    created_at: str
+
+
+class RealtimeConfigOut(BaseModel):
+    url: str
+    anon_key: str

@@ -14,12 +14,19 @@ from differential.database import DB
 from differential.models import PageType, Workspace
 from differential.api.schemas import (
     CallOut,
+    CallTraceOut,
     ConsiderationOut,
+    LLMExchangeOut,
+    LLMExchangeSummaryOut,
     PageCountsOut,
     PageLinkOut,
     PageOut,
     ProjectOut,
     QuestionTreeOut,
+    RealtimeConfigOut,
+    RunSummaryOut,
+    RunTraceOut,
+    TraceEventOut,
 )
 
 
@@ -253,3 +260,119 @@ def get_child_calls(call_id: str):
     db = _get_db()
     calls = db.get_child_calls(call_id)
     return [_call_out(c) for c in calls]
+
+
+def _build_call_trace(db: DB, call_id: str) -> CallTraceOut:
+    call = db.get_call(call_id)
+    if not call:
+        raise HTTPException(status_code=404, detail="Call not found")
+    trace_events = db.get_call_trace(call_id)
+    events = [
+        TraceEventOut(
+            event=e.get("event", ""),
+            ts=e.get("ts", ""),
+            call_id=e.get("call_id", call_id),
+            data=e.get("data", {}),
+        )
+        for e in trace_events
+    ]
+    children = db.get_child_calls(call_id)
+    child_traces = [_build_call_trace(db, c.id) for c in children]
+    return CallTraceOut(
+        call=_call_out(call),
+        events=events,
+        children=child_traces,
+    )
+
+
+@app.get("/api/runs/{run_id}/trace", response_model=RunTraceOut)
+def get_run_trace(run_id: str):
+    db = _get_db()
+    question_id = db.get_run_question_id(run_id)
+    question_page = None
+    if question_id:
+        page = db.get_page(question_id)
+        if page:
+            question_page = _page_out(page)
+    calls = db.get_calls_for_run(run_id)
+    root_calls = [c for c in calls if c.parent_call_id is None]
+    root_traces = [_build_call_trace(db, c.id) for c in root_calls]
+    return RunTraceOut(
+        run_id=run_id,
+        question=question_page,
+        root_calls=root_traces,
+    )
+
+
+@app.get("/api/calls/{call_id}/trace", response_model=CallTraceOut)
+def get_call_trace(call_id: str):
+    db = _get_db()
+    return _build_call_trace(db, call_id)
+
+
+@app.get(
+    "/api/calls/{call_id}/llm-exchanges",
+    response_model=list[LLMExchangeSummaryOut],
+)
+def list_llm_exchanges(call_id: str):
+    db = _get_db()
+    rows = db.get_llm_exchanges(call_id)
+    return [
+        LLMExchangeSummaryOut(
+            id=r["id"],
+            phase=r["phase"],
+            round=r["round"],
+            input_tokens=r.get("input_tokens"),
+            output_tokens=r.get("output_tokens"),
+            error=r.get("error"),
+            created_at=r["created_at"],
+        )
+        for r in rows
+    ]
+
+
+@app.get("/api/llm-exchanges/{exchange_id}", response_model=LLMExchangeOut)
+def get_llm_exchange(exchange_id: str):
+    db = _get_db()
+    row = db.get_llm_exchange(exchange_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="LLM exchange not found")
+    return LLMExchangeOut(
+        id=row["id"],
+        call_id=row["call_id"],
+        phase=row["phase"],
+        round=row["round"],
+        system_prompt=row.get("system_prompt"),
+        user_message=row.get("user_message"),
+        response_text=row.get("response_text"),
+        tool_calls=row.get("tool_calls", []),
+        input_tokens=row.get("input_tokens"),
+        output_tokens=row.get("output_tokens"),
+        error=row.get("error"),
+        created_at=row["created_at"],
+    )
+
+
+@app.get("/api/realtime/config", response_model=RealtimeConfigOut)
+def get_realtime_config():
+    url = os.environ.get("SUPABASE_URL", "http://127.0.0.1:54321")
+    anon_key = os.environ.get(
+        "SUPABASE_ANON_KEY",
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+        "eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9."
+        "CRXP1A7WO_o0BQXhz7hELn2KrME8ok-w_jA9lFk-VTk",
+    )
+    return RealtimeConfigOut(url=url, anon_key=anon_key)
+
+
+@app.get(
+    "/api/questions/{question_id}/runs",
+    response_model=list[RunSummaryOut],
+)
+def list_question_runs(question_id: str):
+    db = _get_db()
+    runs = db.get_runs_for_question(question_id)
+    return [
+        RunSummaryOut(run_id=r["run_id"], created_at=r["created_at"])
+        for r in runs
+    ]

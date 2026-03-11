@@ -16,12 +16,13 @@ async def run_prioritization(
     call: Call,
     budget: int,
     db: DB,
+    broadcaster=None,
 ) -> dict:
     """Run a Prioritization call.
 
     Returns a summary dict including the list of dispatches and trace.
     """
-    trace = CallTrace(call.id, db)
+    trace = CallTrace(call.id, db, broadcaster=broadcaster)
     log.info(
         "Prioritization starting: call=%s, question=%s, budget=%d",
         call.id[:8], scope_question_id[:8], budget,
@@ -50,6 +51,7 @@ async def run_prioritization(
         db,
         subtree_ids=subtree_ids,
         short_id_map=short_id_map,
+        trace=trace,
     )
 
     trace.record(

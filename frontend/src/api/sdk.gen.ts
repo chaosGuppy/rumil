@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { GetCallApiCallsCallIdGetData, GetCallApiCallsCallIdGetErrors, GetCallApiCallsCallIdGetResponses, GetChildCallsApiCallsCallIdChildrenGetData, GetChildCallsApiCallsCallIdChildrenGetErrors, GetChildCallsApiCallsCallIdChildrenGetResponses, GetLinksFromApiPagesPageIdLinksFromGetData, GetLinksFromApiPagesPageIdLinksFromGetErrors, GetLinksFromApiPagesPageIdLinksFromGetResponses, GetLinksToApiPagesPageIdLinksToGetData, GetLinksToApiPagesPageIdLinksToGetErrors, GetLinksToApiPagesPageIdLinksToGetResponses, GetPageApiPagesPageIdGetData, GetPageApiPagesPageIdGetErrors, GetPageApiPagesPageIdGetResponses, GetPageCountsApiPagesPageIdCountsGetData, GetPageCountsApiPagesPageIdCountsGetErrors, GetPageCountsApiPagesPageIdCountsGetResponses, GetQuestionTreeApiQuestionsQuestionIdTreeGetData, GetQuestionTreeApiQuestionsQuestionIdTreeGetErrors, GetQuestionTreeApiQuestionsQuestionIdTreeGetResponses, ListCallsApiProjectsProjectIdCallsGetData, ListCallsApiProjectsProjectIdCallsGetErrors, ListCallsApiProjectsProjectIdCallsGetResponses, ListPagesApiProjectsProjectIdPagesGetData, ListPagesApiProjectsProjectIdPagesGetErrors, ListPagesApiProjectsProjectIdPagesGetResponses, ListProjectsApiProjectsGetData, ListProjectsApiProjectsGetResponses, ListRootQuestionsApiProjectsProjectIdQuestionsGetData, ListRootQuestionsApiProjectsProjectIdQuestionsGetErrors, ListRootQuestionsApiProjectsProjectIdQuestionsGetResponses } from './types.gen';
+import type { GetCallApiCallsCallIdGetData, GetCallApiCallsCallIdGetErrors, GetCallApiCallsCallIdGetResponses, GetCallTraceApiCallsCallIdTraceGetData, GetCallTraceApiCallsCallIdTraceGetErrors, GetCallTraceApiCallsCallIdTraceGetResponses, GetChildCallsApiCallsCallIdChildrenGetData, GetChildCallsApiCallsCallIdChildrenGetErrors, GetChildCallsApiCallsCallIdChildrenGetResponses, GetLinksFromApiPagesPageIdLinksFromGetData, GetLinksFromApiPagesPageIdLinksFromGetErrors, GetLinksFromApiPagesPageIdLinksFromGetResponses, GetLinksToApiPagesPageIdLinksToGetData, GetLinksToApiPagesPageIdLinksToGetErrors, GetLinksToApiPagesPageIdLinksToGetResponses, GetLlmExchangeApiLlmExchangesExchangeIdGetData, GetLlmExchangeApiLlmExchangesExchangeIdGetErrors, GetLlmExchangeApiLlmExchangesExchangeIdGetResponses, GetPageApiPagesPageIdGetData, GetPageApiPagesPageIdGetErrors, GetPageApiPagesPageIdGetResponses, GetPageCountsApiPagesPageIdCountsGetData, GetPageCountsApiPagesPageIdCountsGetErrors, GetPageCountsApiPagesPageIdCountsGetResponses, GetQuestionTreeApiQuestionsQuestionIdTreeGetData, GetQuestionTreeApiQuestionsQuestionIdTreeGetErrors, GetQuestionTreeApiQuestionsQuestionIdTreeGetResponses, GetRealtimeConfigApiRealtimeConfigGetData, GetRealtimeConfigApiRealtimeConfigGetResponses, GetRunTraceApiRunsRunIdTraceGetData, GetRunTraceApiRunsRunIdTraceGetErrors, GetRunTraceApiRunsRunIdTraceGetResponses, ListCallsApiProjectsProjectIdCallsGetData, ListCallsApiProjectsProjectIdCallsGetErrors, ListCallsApiProjectsProjectIdCallsGetResponses, ListLlmExchangesApiCallsCallIdLlmExchangesGetData, ListLlmExchangesApiCallsCallIdLlmExchangesGetErrors, ListLlmExchangesApiCallsCallIdLlmExchangesGetResponses, ListPagesApiProjectsProjectIdPagesGetData, ListPagesApiProjectsProjectIdPagesGetErrors, ListPagesApiProjectsProjectIdPagesGetResponses, ListProjectsApiProjectsGetData, ListProjectsApiProjectsGetResponses, ListQuestionRunsApiQuestionsQuestionIdRunsGetData, ListQuestionRunsApiQuestionsQuestionIdRunsGetErrors, ListQuestionRunsApiQuestionsQuestionIdRunsGetResponses, ListRootQuestionsApiProjectsProjectIdQuestionsGetData, ListRootQuestionsApiProjectsProjectIdQuestionsGetErrors, ListRootQuestionsApiProjectsProjectIdQuestionsGetResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<TData, ThrowOnError> & {
     /**
@@ -72,3 +72,33 @@ export const getCallApiCallsCallIdGet = <ThrowOnError extends boolean = false>(o
  * Get Child Calls
  */
 export const getChildCallsApiCallsCallIdChildrenGet = <ThrowOnError extends boolean = false>(options: Options<GetChildCallsApiCallsCallIdChildrenGetData, ThrowOnError>) => (options.client ?? client).get<GetChildCallsApiCallsCallIdChildrenGetResponses, GetChildCallsApiCallsCallIdChildrenGetErrors, ThrowOnError>({ url: '/api/calls/{call_id}/children', ...options });
+
+/**
+ * Get Run Trace
+ */
+export const getRunTraceApiRunsRunIdTraceGet = <ThrowOnError extends boolean = false>(options: Options<GetRunTraceApiRunsRunIdTraceGetData, ThrowOnError>) => (options.client ?? client).get<GetRunTraceApiRunsRunIdTraceGetResponses, GetRunTraceApiRunsRunIdTraceGetErrors, ThrowOnError>({ url: '/api/runs/{run_id}/trace', ...options });
+
+/**
+ * Get Call Trace
+ */
+export const getCallTraceApiCallsCallIdTraceGet = <ThrowOnError extends boolean = false>(options: Options<GetCallTraceApiCallsCallIdTraceGetData, ThrowOnError>) => (options.client ?? client).get<GetCallTraceApiCallsCallIdTraceGetResponses, GetCallTraceApiCallsCallIdTraceGetErrors, ThrowOnError>({ url: '/api/calls/{call_id}/trace', ...options });
+
+/**
+ * List Llm Exchanges
+ */
+export const listLlmExchangesApiCallsCallIdLlmExchangesGet = <ThrowOnError extends boolean = false>(options: Options<ListLlmExchangesApiCallsCallIdLlmExchangesGetData, ThrowOnError>) => (options.client ?? client).get<ListLlmExchangesApiCallsCallIdLlmExchangesGetResponses, ListLlmExchangesApiCallsCallIdLlmExchangesGetErrors, ThrowOnError>({ url: '/api/calls/{call_id}/llm-exchanges', ...options });
+
+/**
+ * Get Llm Exchange
+ */
+export const getLlmExchangeApiLlmExchangesExchangeIdGet = <ThrowOnError extends boolean = false>(options: Options<GetLlmExchangeApiLlmExchangesExchangeIdGetData, ThrowOnError>) => (options.client ?? client).get<GetLlmExchangeApiLlmExchangesExchangeIdGetResponses, GetLlmExchangeApiLlmExchangesExchangeIdGetErrors, ThrowOnError>({ url: '/api/llm-exchanges/{exchange_id}', ...options });
+
+/**
+ * Get Realtime Config
+ */
+export const getRealtimeConfigApiRealtimeConfigGet = <ThrowOnError extends boolean = false>(options?: Options<GetRealtimeConfigApiRealtimeConfigGetData, ThrowOnError>) => (options?.client ?? client).get<GetRealtimeConfigApiRealtimeConfigGetResponses, unknown, ThrowOnError>({ url: '/api/realtime/config', ...options });
+
+/**
+ * List Question Runs
+ */
+export const listQuestionRunsApiQuestionsQuestionIdRunsGet = <ThrowOnError extends boolean = false>(options: Options<ListQuestionRunsApiQuestionsQuestionIdRunsGetData, ThrowOnError>) => (options.client ?? client).get<ListQuestionRunsApiQuestionsQuestionIdRunsGetResponses, ListQuestionRunsApiQuestionsQuestionIdRunsGetErrors, ThrowOnError>({ url: '/api/questions/{question_id}/runs', ...options });

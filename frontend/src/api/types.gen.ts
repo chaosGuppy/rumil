@@ -65,6 +65,21 @@ export type CallOut = {
 export type CallStatus = 'pending' | 'running' | 'complete' | 'failed';
 
 /**
+ * CallTraceOut
+ */
+export type CallTraceOut = {
+    call: CallOut;
+    /**
+     * Events
+     */
+    events: Array<TraceEventOut>;
+    /**
+     * Children
+     */
+    children: Array<CallTraceOut>;
+};
+
+/**
  * CallType
  */
 export type CallType = 'scout' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain';
@@ -90,6 +105,96 @@ export type HttpValidationError = {
      * Detail
      */
     detail?: Array<ValidationError>;
+};
+
+/**
+ * LLMExchangeOut
+ */
+export type LlmExchangeOut = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Phase
+     */
+    phase: string;
+    /**
+     * Round
+     */
+    round: number;
+    /**
+     * System Prompt
+     */
+    system_prompt: string | null;
+    /**
+     * User Message
+     */
+    user_message: string | null;
+    /**
+     * Response Text
+     */
+    response_text: string | null;
+    /**
+     * Tool Calls
+     */
+    tool_calls: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Input Tokens
+     */
+    input_tokens: number | null;
+    /**
+     * Output Tokens
+     */
+    output_tokens: number | null;
+    /**
+     * Error
+     */
+    error: string | null;
+    /**
+     * Created At
+     */
+    created_at: string;
+};
+
+/**
+ * LLMExchangeSummaryOut
+ */
+export type LlmExchangeSummaryOut = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Phase
+     */
+    phase: string;
+    /**
+     * Round
+     */
+    round: number;
+    /**
+     * Input Tokens
+     */
+    input_tokens: number | null;
+    /**
+     * Output Tokens
+     */
+    output_tokens: number | null;
+    /**
+     * Error
+     */
+    error: string | null;
+    /**
+     * Created At
+     */
+    created_at: string;
 };
 
 /**
@@ -251,6 +356,73 @@ export type QuestionTreeOut = {
      * Child Questions
      */
     child_questions: Array<QuestionTreeOut>;
+};
+
+/**
+ * RealtimeConfigOut
+ */
+export type RealtimeConfigOut = {
+    /**
+     * Url
+     */
+    url: string;
+    /**
+     * Anon Key
+     */
+    anon_key: string;
+};
+
+/**
+ * RunSummaryOut
+ */
+export type RunSummaryOut = {
+    /**
+     * Run Id
+     */
+    run_id: string;
+    /**
+     * Created At
+     */
+    created_at: string;
+};
+
+/**
+ * RunTraceOut
+ */
+export type RunTraceOut = {
+    /**
+     * Run Id
+     */
+    run_id: string;
+    question: PageOut | null;
+    /**
+     * Root Calls
+     */
+    root_calls: Array<CallTraceOut>;
+};
+
+/**
+ * TraceEventOut
+ */
+export type TraceEventOut = {
+    /**
+     * Event
+     */
+    event: string;
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Data
+     */
+    data?: {
+        [key: string]: unknown;
+    };
 };
 
 /**
@@ -640,3 +812,173 @@ export type GetChildCallsApiCallsCallIdChildrenGetResponses = {
 };
 
 export type GetChildCallsApiCallsCallIdChildrenGetResponse = GetChildCallsApiCallsCallIdChildrenGetResponses[keyof GetChildCallsApiCallsCallIdChildrenGetResponses];
+
+export type GetRunTraceApiRunsRunIdTraceGetData = {
+    body?: never;
+    path: {
+        /**
+         * Run Id
+         */
+        run_id: string;
+    };
+    query?: never;
+    url: '/api/runs/{run_id}/trace';
+};
+
+export type GetRunTraceApiRunsRunIdTraceGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetRunTraceApiRunsRunIdTraceGetError = GetRunTraceApiRunsRunIdTraceGetErrors[keyof GetRunTraceApiRunsRunIdTraceGetErrors];
+
+export type GetRunTraceApiRunsRunIdTraceGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: RunTraceOut;
+};
+
+export type GetRunTraceApiRunsRunIdTraceGetResponse = GetRunTraceApiRunsRunIdTraceGetResponses[keyof GetRunTraceApiRunsRunIdTraceGetResponses];
+
+export type GetCallTraceApiCallsCallIdTraceGetData = {
+    body?: never;
+    path: {
+        /**
+         * Call Id
+         */
+        call_id: string;
+    };
+    query?: never;
+    url: '/api/calls/{call_id}/trace';
+};
+
+export type GetCallTraceApiCallsCallIdTraceGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetCallTraceApiCallsCallIdTraceGetError = GetCallTraceApiCallsCallIdTraceGetErrors[keyof GetCallTraceApiCallsCallIdTraceGetErrors];
+
+export type GetCallTraceApiCallsCallIdTraceGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: CallTraceOut;
+};
+
+export type GetCallTraceApiCallsCallIdTraceGetResponse = GetCallTraceApiCallsCallIdTraceGetResponses[keyof GetCallTraceApiCallsCallIdTraceGetResponses];
+
+export type ListLlmExchangesApiCallsCallIdLlmExchangesGetData = {
+    body?: never;
+    path: {
+        /**
+         * Call Id
+         */
+        call_id: string;
+    };
+    query?: never;
+    url: '/api/calls/{call_id}/llm-exchanges';
+};
+
+export type ListLlmExchangesApiCallsCallIdLlmExchangesGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListLlmExchangesApiCallsCallIdLlmExchangesGetError = ListLlmExchangesApiCallsCallIdLlmExchangesGetErrors[keyof ListLlmExchangesApiCallsCallIdLlmExchangesGetErrors];
+
+export type ListLlmExchangesApiCallsCallIdLlmExchangesGetResponses = {
+    /**
+     * Response List Llm Exchanges Api Calls  Call Id  Llm Exchanges Get
+     *
+     * Successful Response
+     */
+    200: Array<LlmExchangeSummaryOut>;
+};
+
+export type ListLlmExchangesApiCallsCallIdLlmExchangesGetResponse = ListLlmExchangesApiCallsCallIdLlmExchangesGetResponses[keyof ListLlmExchangesApiCallsCallIdLlmExchangesGetResponses];
+
+export type GetLlmExchangeApiLlmExchangesExchangeIdGetData = {
+    body?: never;
+    path: {
+        /**
+         * Exchange Id
+         */
+        exchange_id: string;
+    };
+    query?: never;
+    url: '/api/llm-exchanges/{exchange_id}';
+};
+
+export type GetLlmExchangeApiLlmExchangesExchangeIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetLlmExchangeApiLlmExchangesExchangeIdGetError = GetLlmExchangeApiLlmExchangesExchangeIdGetErrors[keyof GetLlmExchangeApiLlmExchangesExchangeIdGetErrors];
+
+export type GetLlmExchangeApiLlmExchangesExchangeIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: LlmExchangeOut;
+};
+
+export type GetLlmExchangeApiLlmExchangesExchangeIdGetResponse = GetLlmExchangeApiLlmExchangesExchangeIdGetResponses[keyof GetLlmExchangeApiLlmExchangesExchangeIdGetResponses];
+
+export type GetRealtimeConfigApiRealtimeConfigGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/realtime/config';
+};
+
+export type GetRealtimeConfigApiRealtimeConfigGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: RealtimeConfigOut;
+};
+
+export type GetRealtimeConfigApiRealtimeConfigGetResponse = GetRealtimeConfigApiRealtimeConfigGetResponses[keyof GetRealtimeConfigApiRealtimeConfigGetResponses];
+
+export type ListQuestionRunsApiQuestionsQuestionIdRunsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Question Id
+         */
+        question_id: string;
+    };
+    query?: never;
+    url: '/api/questions/{question_id}/runs';
+};
+
+export type ListQuestionRunsApiQuestionsQuestionIdRunsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListQuestionRunsApiQuestionsQuestionIdRunsGetError = ListQuestionRunsApiQuestionsQuestionIdRunsGetErrors[keyof ListQuestionRunsApiQuestionsQuestionIdRunsGetErrors];
+
+export type ListQuestionRunsApiQuestionsQuestionIdRunsGetResponses = {
+    /**
+     * Response List Question Runs Api Questions  Question Id  Runs Get
+     *
+     * Successful Response
+     */
+    200: Array<RunSummaryOut>;
+};
+
+export type ListQuestionRunsApiQuestionsQuestionIdRunsGetResponse = ListQuestionRunsApiQuestionsQuestionIdRunsGetResponses[keyof ListQuestionRunsApiQuestionsQuestionIdRunsGetResponses];

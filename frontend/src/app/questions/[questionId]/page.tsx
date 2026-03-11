@@ -3,6 +3,11 @@ import type { QuestionTreeOut, ConsiderationOut, PageOut } from "@/api";
 
 const API_BASE = process.env.API_BASE_URL || "http://localhost:8000";
 
+interface RunSummary {
+  run_id: string;
+  created_at: string;
+}
+
 async function getQuestionTree(
   questionId: string,
 ): Promise<QuestionTreeOut | null> {
@@ -11,6 +16,15 @@ async function getQuestionTree(
     { cache: "no-store" },
   );
   if (!res.ok) return null;
+  return res.json();
+}
+
+async function getQuestionRuns(questionId: string): Promise<RunSummary[]> {
+  const res = await fetch(
+    `${API_BASE}/api/questions/${questionId}/runs`,
+    { cache: "no-store" },
+  );
+  if (!res.ok) return [];
   return res.json();
 }
 
@@ -103,7 +117,10 @@ export default async function QuestionPage({
   params: Promise<{ questionId: string }>;
 }) {
   const { questionId } = await params;
-  const tree = await getQuestionTree(questionId);
+  const [tree, runs] = await Promise.all([
+    getQuestionTree(questionId),
+    getQuestionRuns(questionId),
+  ]);
 
   if (!tree) {
     return (
@@ -127,6 +144,28 @@ export default async function QuestionPage({
       <div className="mt-4">
         <QuestionNode tree={tree} />
       </div>
+
+      {runs.length > 0 && (
+        <div className="mt-8">
+          <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+            Runs ({runs.length})
+          </h3>
+          <div className="space-y-1">
+            {runs.map((r) => (
+              <Link
+                key={r.run_id}
+                href={`/traces/${r.run_id}`}
+                className="block text-sm text-blue-600 hover:underline font-mono"
+              >
+                {r.run_id.slice(0, 8)}{" "}
+                <span className="text-gray-400 text-xs">
+                  {new Date(r.created_at).toLocaleString()}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
     </main>
   );
 }

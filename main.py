@@ -588,12 +588,10 @@ async def async_main():
         datefmt="%H:%M:%S",
         stream=sys.stderr,
     )
-    # Suppress noisy third-party loggers unless --debug
-    if not args.debug:
-        logging.getLogger("httpx").setLevel(logging.WARNING)
-        logging.getLogger("httpcore").setLevel(logging.WARNING)
-        logging.getLogger("supabase").setLevel(logging.WARNING)
-        logging.getLogger("hpack").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("supabase").setLevel(logging.WARNING)
+    logging.getLogger("hpack").setLevel(logging.WARNING)
 
     if args.no_trace:
         tracer.TRACING_ENABLED = False

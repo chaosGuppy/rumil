@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -17,6 +18,7 @@ from differential.llm import (
     build_system_prompt,
     build_user_message,
     structured_call,
+    text_call,
     agent_loop,
 )
 from differential.models import (
@@ -38,10 +40,18 @@ if TYPE_CHECKING:
     from differential.tracer import CallTrace
 
 
+PHASE1_SYSTEM = (
+    'You are a research assistant preparing for a workspace task. '
+    'Review the context and decide if you need full content from any pages.'
+)
+
 PHASE1_TASK = (
-    "Review the workspace map above and decide if you need the full content of any "
-    "pages before starting your main task. Use load_page for any pages you want to "
-    "read. Write brief planning notes about your approach."
+    'Perform your preliminary analysis now. Review the workspace map above and '
+    'list any page short IDs you want to load, one per line, prefixed with '
+    'LOAD_PAGE. Write any planning notes. Example:\n\n'
+    'LOAD_PAGE abc12345\n'
+    'LOAD_PAGE def67890\n\n'
+    'The main task description will follow in the next turn.'
 )
 
 
@@ -103,31 +113,35 @@ def _format_loaded_pages(page_ids: list[str], db: DB) -> str:
     return "\n\n---\n\n".join(parts)
 
 
+def _parse_load_ids(text: str) -> list[str]:
+    """Extract page short IDs from LOAD_PAGE lines in a text response."""
+    ids: list[str] = []
+    for match in re.finditer(r'LOAD_PAGE\s+([0-9a-f]{8})', text):
+        pid = match.group(1)
+        if pid not in ids:
+            ids.append(pid)
+    return ids
+
+
 def _run_phase1(
-    system_prompt: str,
     context_text: str,
-    state: MoveState,
     db: DB,
 ) -> list[str]:
-    """Preliminary page loading. Returns resolved full page IDs. Free."""
+    """Preliminary page loading via text call. Returns resolved full page IDs. Free."""
     log.debug("Phase 1 starting: context_len=%d", len(context_text))
     try:
-        load_tool = MOVES[MoveType.LOAD_PAGE].bind(state)
         phase1_msg = build_user_message(context_text, PHASE1_TASK)
-        agent_loop(
-            system_prompt,
-            phase1_msg,
-            [load_tool],
+        raw = text_call(
+            system_prompt=PHASE1_SYSTEM,
+            user_message=phase1_msg,
             max_tokens=2048,
-            max_rounds=3,
         )
+        short_ids = _parse_load_ids(raw)
         loaded_ids = []
-        for m in state.moves:
-            if m.move_type == MoveType.LOAD_PAGE:
-                assert isinstance(m.payload, LoadPagePayload)
-                full_id = db.resolve_page_id(m.payload.page_id)
-                if full_id:
-                    loaded_ids.append(full_id)
+        for sid in short_ids:
+            full_id = db.resolve_page_id(sid)
+            if full_id:
+                loaded_ids.append(full_id)
         if loaded_ids:
             labels = [db.page_label(pid) for pid in loaded_ids]
             log.info("Phase 1 loaded %d pages: %s", len(loaded_ids), labels)
@@ -174,7 +188,7 @@ def run_call(
 
     phase1_ids: list[str] = []
     if call_type != CallType.PRIORITIZATION:
-        phase1_ids = _run_phase1(system_prompt, context_text, state, db)
+        phase1_ids = _run_phase1(context_text, db)
         if phase1_ids:
             extra_text = _format_loaded_pages(phase1_ids, db)
             context_text = context_text + "\n\n## Loaded Pages\n\n" + extra_text

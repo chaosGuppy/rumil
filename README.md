@@ -91,6 +91,15 @@ uv run python main.py --trace CALL_ID
 # Batch mode: investigate multiple questions concurrently
 uv run python main.py --batch questions.json
 
+# Use a named workspace to isolate investigations
+uv run python main.py "Your question here" --workspace my-project --budget 10
+
+# List all workspaces
+uv run python main.py --list-workspaces
+
+# List questions in a specific workspace
+uv run python main.py --list --workspace my-project
+
 # Any command can target the production database
 uv run python main.py --prod-db --list
 ```

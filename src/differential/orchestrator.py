@@ -13,6 +13,7 @@ from differential.models import (
     Page,
     PrioritizationDispatchPayload,
     ScoutDispatchPayload,
+    ScoutMode,
     Workspace,
 )
 from differential.tracer import CallTrace
@@ -35,6 +36,17 @@ async def _consume_budget(db: DB) -> bool:
     return ok
 
 
+def _resolve_round_mode(mode: ScoutMode, round_index: int) -> ScoutMode:
+    """Resolve the effective mode for a given scout round.
+
+    'alternate' alternates abstract/concrete starting with abstract on round 0.
+    'abstract' and 'concrete' are fixed.
+    """
+    if mode == ScoutMode.ALTERNATE:
+        return ScoutMode.ABSTRACT if round_index % 2 == 0 else ScoutMode.CONCRETE
+    return mode
+
+
 async def scout_until_done(
     question_id: str,
     db: DB,
@@ -42,15 +54,17 @@ async def scout_until_done(
     fruit_threshold: int = DEFAULT_FRUIT_THRESHOLD,
     parent_call_id: str | None = None,
     context_page_ids: list | None = None,
+    mode: ScoutMode = ScoutMode.ALTERNATE,
 ) -> tuple[int, list[str]]:
     """
     Run Scout rounds until remaining_fruit falls below fruit_threshold or max_rounds
     is reached. Returns (rounds_made, list_of_call_ids).
     fruit_threshold is the primary stopping condition; max_rounds is a failsafe.
+    mode: 'alternate' (default) alternates abstract/concrete; 'abstract' or 'concrete' locks to one.
     """
     log.info(
-        "scout_until_done: question=%s, max_rounds=%d, fruit_threshold=%d",
-        question_id[:8], max_rounds, fruit_threshold,
+        "scout_until_done: question=%s, max_rounds=%d, fruit_threshold=%d, mode=%s",
+        question_id[:8], max_rounds, fruit_threshold, mode.value,
     )
     rounds = 0
     call_ids: list[str] = []
@@ -58,6 +72,7 @@ async def scout_until_done(
         if not await _consume_budget(db):
             break
 
+        round_mode = _resolve_round_mode(mode, i)
         call = await db.create_call(
             CallType.SCOUT,
             scope_page_id=question_id,
@@ -65,13 +80,13 @@ async def scout_until_done(
             context_page_ids=context_page_ids,
         )
         call_ids.append(call.id)
-        _, review = await run_scout(question_id, call, db)
+        _, review = await run_scout(question_id, call, db, mode=round_mode)
         rounds += 1
 
         remaining_fruit = review.get("remaining_fruit", 5) if review else 5
         log.info(
-            "Scout round %d/%d: remaining_fruit=%d (threshold=%d)",
-            i + 1, max_rounds, remaining_fruit, fruit_threshold,
+            "Scout round %d/%d [%s]: remaining_fruit=%d (threshold=%d)",
+            i + 1, max_rounds, round_mode.value, remaining_fruit, fruit_threshold,
         )
 
         if remaining_fruit <= fruit_threshold:
@@ -236,8 +251,8 @@ class Orchestrator:
 
             if isinstance(p, ScoutDispatchPayload):
                 log.info(
-                    "Dispatch: scout on %s (fruit_threshold=%d, max_rounds=%d) — %s",
-                    d_label, p.fruit_threshold, p.max_rounds, p.reason,
+                    "Dispatch: scout on %s (mode=%s, fruit_threshold=%d, max_rounds=%d) — %s",
+                    d_label, p.mode.value, p.fruit_threshold, p.max_rounds, p.reason,
                 )
                 spent, child_ids = await scout_until_done(
                     resolved,
@@ -246,6 +261,7 @@ class Orchestrator:
                     fruit_threshold=p.fruit_threshold,
                     parent_call_id=p_call.id,
                     context_page_ids=p.context_page_ids,
+                    mode=p.mode,
                 )
                 budget_spent += spent
                 child_call_id = child_ids[0] if child_ids else None

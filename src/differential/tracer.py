@@ -345,6 +345,14 @@ def _call_color(call_type: CallType) -> str:
     return _CALL_COLORS.get(call_type, "#f5f5f5")
 
 
+def _extract_scout_mode(trace_events: list[dict]) -> str:
+    """Extract scout mode from context_built event, if present."""
+    for ev in trace_events:
+        if ev.get("event") == "context_built":
+            return ev.get("data", {}).get("scout_mode", "")
+    return ""
+
+
 async def _render_call_node(call: Call, db: DB, depth: int = 0) -> str:
     trace_events = await db.get_call_trace(call.id)
     children = await db.get_child_calls(call.id)
@@ -354,6 +362,10 @@ async def _render_call_node(call: Call, db: DB, depth: int = 0) -> str:
     scope_label = ""
     if call.scope_page_id:
         scope_label = await db.page_label(call.scope_page_id)
+
+    scout_mode = ""
+    if call.call_type == CallType.SCOUT:
+        scout_mode = _extract_scout_mode(trace_events)
 
     status_badge = call.status.value
     duration = ""
@@ -437,6 +449,10 @@ async def _render_call_node(call: Call, db: DB, depth: int = 0) -> str:
             children_html += await _render_call_node(child, db, depth=depth + 1)
         children_html += "</div>"
 
+    mode_html = ""
+    if scout_mode:
+        mode_html = f'<span class="call-mode">{escape(scout_mode)}</span>'
+
     return (
         f'<div class="call-node" id="call-{short_id}" style="background:{color};">'
         f"<details{'' if depth > 1 else ' open'}>"
@@ -444,6 +460,7 @@ async def _render_call_node(call: Call, db: DB, depth: int = 0) -> str:
         f'<span class="call-type">{escape(call.call_type.value)}</span>'
         f'<span class="call-id">[{short_id}]</span>'
         f'<span class="call-status {status_badge}">{status_badge}{duration}</span>'
+        f"{mode_html}"
         f'<span class="call-scope">{escape(scope_label)}</span>'
         f"</summary>"
         f'<div class="call-body">'
@@ -492,6 +509,11 @@ details[open] > summary { margin-bottom: 0.4rem; }
 .call-status.failed { background: #ffcdd2; color: #c62828; }
 .call-status.running { background: #fff9c4; color: #f57f17; }
 .call-scope { font-size: 0.82rem; color: #555; }
+.call-mode {
+  font-size: 0.68rem; font-weight: 600; padding: 1px 6px; border-radius: 3px;
+  background: #bbdefb; color: #1565c0; text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
 
 .call-body { padding-top: 0.3rem; }
 

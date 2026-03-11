@@ -8,7 +8,9 @@ from differential.models import (
     DISPATCHABLE_CALL_TYPES,
     PrioritizationDispatchPayload,
     ScoutDispatchPayload,
+    ScoutMode,
 )
+from differential.orchestrator import _resolve_round_mode
 
 
 def test_dispatchable_types_include_expected():
@@ -34,8 +36,28 @@ def test_dispatch_holds_typed_payload():
 
 def test_scout_payload_has_defaults():
     p = ScoutDispatchPayload(question_id="abc")
+    assert p.mode == ScoutMode.ALTERNATE
     assert p.fruit_threshold == 4
     assert p.max_rounds == 5
+
+
+def test_scout_payload_accepts_mode():
+    p = ScoutDispatchPayload(question_id="abc", mode="concrete")
+    assert p.mode == ScoutMode.CONCRETE
+
+
+def test_resolve_round_mode_alternate():
+    assert _resolve_round_mode(ScoutMode.ALTERNATE, 0) == ScoutMode.ABSTRACT
+    assert _resolve_round_mode(ScoutMode.ALTERNATE, 1) == ScoutMode.CONCRETE
+    assert _resolve_round_mode(ScoutMode.ALTERNATE, 2) == ScoutMode.ABSTRACT
+    assert _resolve_round_mode(ScoutMode.ALTERNATE, 3) == ScoutMode.CONCRETE
+
+
+def test_resolve_round_mode_fixed():
+    assert _resolve_round_mode(ScoutMode.ABSTRACT, 0) == ScoutMode.ABSTRACT
+    assert _resolve_round_mode(ScoutMode.ABSTRACT, 1) == ScoutMode.ABSTRACT
+    assert _resolve_round_mode(ScoutMode.CONCRETE, 0) == ScoutMode.CONCRETE
+    assert _resolve_round_mode(ScoutMode.CONCRETE, 1) == ScoutMode.CONCRETE
 
 
 def test_assess_payload_has_no_extras():

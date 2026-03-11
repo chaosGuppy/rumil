@@ -39,10 +39,20 @@ if TYPE_CHECKING:
 
 
 PHASE1_TASK = (
-    "Review the workspace map above and decide if you need the full content of any "
-    "pages before starting your main task. Use load_page for any pages you want to "
-    "read. Write brief planning notes about your approach."
+    'Perform your preliminary analysis now. Review the workspace map above and '
+    'decide if you need the full content of any pages before starting your main '
+    'task. The main task description will follow in the next turn.'
 )
+
+
+class Phase1Response(BaseModel):
+    planning_notes: str = Field(
+        description='Brief notes about your approach to the upcoming task'
+    )
+    load_pages: list[LoadPagePayload] = Field(
+        default_factory=list,
+        description='Pages to load before starting the main task',
+    )
 
 
 class PageRating(BaseModel):
@@ -106,28 +116,26 @@ async def _format_loaded_pages(page_ids: list[str], db: DB) -> str:
 async def _run_phase1(
     system_prompt: str,
     context_text: str,
-    state: MoveState,
     db: DB,
 ) -> list[str]:
-    """Preliminary page loading. Returns resolved full page IDs. Free."""
+    """Preliminary page loading via structured call. Returns resolved full page IDs. Free."""
     log.debug("Phase 1 starting: context_len=%d", len(context_text))
     try:
-        load_tool = MOVES[MoveType.LOAD_PAGE].bind(state)
         phase1_msg = build_user_message(context_text, PHASE1_TASK)
-        await agent_loop(
-            system_prompt,
-            phase1_msg,
-            [load_tool],
+        result = await structured_call(
+            system_prompt=system_prompt,
+            user_message=phase1_msg,
+            response_model=Phase1Response,
             max_tokens=2048,
-            max_rounds=3,
         )
+        if not result:
+            log.debug("Phase 1 returned empty response")
+            return []
         loaded_ids = []
-        for m in state.moves:
-            if m.move_type == MoveType.LOAD_PAGE:
-                assert isinstance(m.payload, LoadPagePayload)
-                full_id = await db.resolve_page_id(m.payload.page_id)
-                if full_id:
-                    loaded_ids.append(full_id)
+        for entry in result.get("load_pages", []):
+            full_id = await db.resolve_page_id(entry.get("page_id", ""))
+            if full_id:
+                loaded_ids.append(full_id)
         if loaded_ids:
             labels = [await db.page_label(pid) for pid in loaded_ids]
             log.info("Phase 1 loaded %d pages: %s", len(loaded_ids), labels)
@@ -174,7 +182,7 @@ async def run_call(
 
     phase1_ids: list[str] = []
     if call_type != CallType.PRIORITIZATION:
-        phase1_ids = await _run_phase1(system_prompt, context_text, state, db)
+        phase1_ids = await _run_phase1(system_prompt, context_text, db)
         if phase1_ids:
             extra_text = await _format_loaded_pages(phase1_ids, db)
             context_text = context_text + "\n\n## Loaded Pages\n\n" + extra_text

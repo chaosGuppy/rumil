@@ -14,23 +14,38 @@ from differential.calls.common import (
 )
 from differential.context import build_call_context
 from differential.database import DB
-from differential.models import Call, CallStatus, CallType
+from differential.models import Call, CallStatus, CallType, ScoutMode
 from differential.tracer import CallTrace
 
 log = logging.getLogger(__name__)
+
+
+_CONCRETE_INSTRUCTION = (
+    '\n\n**Mode: CONCRETE**\n\n'
+    'Your goal is considerations, sub-questions, and hypotheses that are as specific '
+    'and falsifiable as possible. Concreteness means: named actors, specific timeframes, '
+    'quantitative claims, named mechanisms, particular cases. A concrete claim should be '
+    'possible to be clearly wrong about — that is what makes it valuable.\n\n'
+    'Concrete scouts are expected to produce claims that subsequent investigation may '
+    'refute. That is a feature, not a failure. Do not hedge your way back to vagueness.'
+)
 
 
 async def run_scout(
     question_id: str,
     call: Call,
     db: DB,
+    mode: ScoutMode = ScoutMode.ABSTRACT,
 ) -> tuple[RunCallResult, dict]:
     """Run a Scout call on a question.
 
     Returns (run_call_result, review_dict).
     """
     trace = CallTrace(call.id, db)
-    log.info("Scout starting: call=%s, question=%s", call.id[:8], question_id[:8])
+    log.info(
+        "Scout starting: call=%s, question=%s, mode=%s",
+        call.id[:8], question_id[:8], mode.value,
+    )
 
     preloaded = call.context_page_ids or []
     context_text, _, working_page_ids = await build_call_context(
@@ -41,11 +56,13 @@ async def run_scout(
         {
             "working_context_page_ids": working_page_ids,
             "preloaded_page_ids": preloaded,
+            "scout_mode": mode.value,
         },
     )
 
+    mode_instruction = _CONCRETE_INSTRUCTION if mode == ScoutMode.CONCRETE else ''
     task = (
-        "Scout for missing considerations on this question.\n\n"
+        f"Scout for missing considerations on this question.{mode_instruction}\n\n"
         f"Question ID (use this when linking considerations): `{question_id}`"
     )
 

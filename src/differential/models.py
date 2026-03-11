@@ -76,6 +76,12 @@ class MoveType(str, Enum):
     LOAD_PAGE = "LOAD_PAGE"
 
 
+class ScoutMode(str, Enum):
+    ALTERNATE = "alternate"
+    ABSTRACT = "abstract"
+    CONCRETE = "concrete"
+
+
 class ConsiderationDirection(str, Enum):
     SUPPORTS = "supports"
     OPPOSES = "opposes"
@@ -95,6 +101,13 @@ class BaseDispatchPayload(BaseModel):
 
 
 class ScoutDispatchPayload(BaseDispatchPayload):
+    mode: ScoutMode = Field(
+        ScoutMode.ALTERNATE,
+        description=(
+            "Scout mode: 'alternate' (default) alternates abstract and concrete "
+            "each round; 'abstract' for all-abstract; 'concrete' for all-concrete."
+        ),
+    )
     fruit_threshold: int = Field(
         4, description="Remaining fruit threshold for stopping"
     )

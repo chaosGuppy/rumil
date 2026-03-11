@@ -23,6 +23,16 @@ When planning dispatches, add up the **worst-case** costs and ensure the total d
 - **Order matters.** Dispatches are executed in order. Put scouts before assesses on the same question.
 - **It is fine to dispatch nothing** if the question already has a good judgement and the budget is small.
 
+## Scout Mode
+
+`mode` controls what kind of scouting to do:
+
+- **`"alternate"`** (default) — alternates abstract and concrete each round, starting with abstract. Good default for most questions.
+- **`"abstract"`** — all rounds abstract. Best for questions that are empirically underdeveloped or where the conceptual territory is still unclear.
+- **`"concrete"`** — all rounds concrete. Best for questions that already have good abstract coverage but lack grounded specifics.
+
+Abstract scouts find missing angles, framings, structural considerations, implications. Concrete scouts find specific, falsifiable considerations: named actors, timeframes, numbers, mechanisms, cases — expected to sometimes be wrong, which is the point.
+
 ## Calibrating Scout Parameters
 
 `fruit_threshold` is the primary stopping condition — scouting stops when remaining fruit falls below this value. `max_rounds` is a failsafe cap and should rarely be the reason scouting stops. Typical values are in the 3–6 range for `fruit_threshold`; use 2 only to squeeze a critical question hard, 7 only to stop very early on a low-priority question.

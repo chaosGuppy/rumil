@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     differential_test_mode: str = ""
     differential_prod_db: str = ""
+    differential_smoke_test: str = ""
     tracing_enabled: bool = True
 
     supabase_url: str = "http://127.0.0.1:54321"
@@ -28,10 +29,14 @@ class Settings(BaseSettings):
         return bool(self.differential_test_mode)
 
     @property
+    def is_smoke_test(self) -> bool:
+        return bool(self.differential_smoke_test)
+
+    @property
     def model(self) -> str:
         return (
             "claude-haiku-4-5-20251001"
-            if self.is_test_mode
+            if self.is_test_mode or self.is_smoke_test
             else "claude-opus-4-6"
         )
 

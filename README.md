@@ -108,6 +108,9 @@ uv run python main.py --list-workspaces
 # List questions in a specific workspace
 uv run python main.py --list --workspace my-project
 
+# Smoke-test mode: uses Haiku, fewer agent rounds, budget defaults to 1
+uv run python main.py "Your question here" --smoke-test
+
 # Any command can target the production database
 uv run python main.py --prod-db --list
 

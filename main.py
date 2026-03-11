@@ -67,7 +67,8 @@ async def cmd_add_question(
     print(f"\nQuestion added: {page.id}")
     print(f"Text:           {question_text}")
 
-    effective_budget = 5 if budget is None else budget
+    smoke = get_settings().is_smoke_test
+    effective_budget = budget if budget is not None else (1 if smoke else 5)
     if effective_budget > 0:
         print(
             f"Budget:         {effective_budget} research call{'s' if effective_budget != 1 else ''}\n"
@@ -204,7 +205,7 @@ async def cmd_new(
     db: DB,
     ingest_files: list[str] | None = None,
 ) -> None:
-    budget = budget if budget is not None else 10
+    budget = budget if budget is not None else (1 if get_settings().is_smoke_test else 10)
     await db.init_budget(budget)
     question_id = await create_root_question(question_text, db)
 
@@ -298,7 +299,9 @@ async def cmd_batch(batch_file: str, db: DB) -> None:
 
 
 async def cmd_continue(question_id: str, additional_budget: int | None, db: DB) -> None:
-    additional_budget = additional_budget if additional_budget is not None else 10
+    additional_budget = additional_budget if additional_budget is not None else (
+        1 if get_settings().is_smoke_test else 10
+    )
     question = await db.get_page(question_id)
     if not question:
         print(
@@ -451,6 +454,12 @@ async def async_main():
         '[{"question": "...", "budget": 10}, ...]',
     )
     parser.add_argument(
+        "--smoke-test",
+        dest="smoke_test",
+        action="store_true",
+        help="Smoke-test mode: use Haiku, fewer rounds, lower budget defaults",
+    )
+    parser.add_argument(
         "--prod-db",
         dest="prod_db",
         action="store_true",
@@ -482,6 +491,8 @@ async def async_main():
     )
     logging.getLogger("differential").setLevel(log_level)
 
+    if args.smoke_test:
+        get_settings().differential_smoke_test = "1"
     if args.no_trace:
         get_settings().tracing_enabled = False
 

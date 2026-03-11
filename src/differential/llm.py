@@ -139,7 +139,7 @@ async def agent_loop(
     tools: list[Tool],
     *,
     max_tokens: int = 4096,
-    max_rounds: int = 6,
+    max_rounds: int | None = None,
 ) -> AgentResult:
     """Run a tool-use conversation loop.
 
@@ -150,6 +150,9 @@ async def agent_loop(
     Returns AgentResult with concatenated text and a log of all tool calls.
     """
     settings = get_settings()
+    effective_rounds = max_rounds if max_rounds is not None else (
+        2 if settings.is_smoke_test else 6
+    )
     api_key = settings.require_anthropic_key()
     model = settings.model
     client = anthropic.AsyncAnthropic(api_key=api_key)
@@ -167,7 +170,7 @@ async def agent_loop(
     tool_names = [t.name for t in tools]
     log.debug(
         "agent_loop starting: max_rounds=%d, max_tokens=%d, tools=%s",
-        max_rounds, max_tokens, tool_names,
+        effective_rounds, max_tokens, tool_names,
     )
 
     messages: list[dict] = [{"role": "user", "content": user_message}]
@@ -175,8 +178,8 @@ async def agent_loop(
     all_tool_calls: list[ToolCall] = []
     round_num = 0
 
-    for round_num in range(max_rounds + 1):
-        log.debug("agent_loop round %d/%d", round_num + 1, max_rounds)
+    for round_num in range(effective_rounds + 1):
+        log.debug("agent_loop round %d/%d", round_num + 1, effective_rounds)
         response = await _call_api(
             client,
             model,
@@ -257,7 +260,7 @@ async def agent_loop(
                 )
             )
 
-        remaining = max_rounds - round_num
+        remaining = effective_rounds - round_num
         if remaining == 1:
             budget_note = {
                 "type": "text",

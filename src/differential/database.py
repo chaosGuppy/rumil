@@ -3,7 +3,6 @@ Supabase database layer for the research workspace.
 """
 
 import logging
-import os
 import uuid
 from datetime import datetime, timezone
 from typing import Any, cast
@@ -12,6 +11,7 @@ from postgrest.types import CountMethod
 from supabase import acreate_client, AsyncClient
 from supabase.lib.client_options import AsyncClientOptions
 
+from differential.settings import get_settings
 from differential.models import (
     Call,
     CallStatus,
@@ -36,24 +36,6 @@ _Rows = list[dict[str, Any]]
 def _rows(response: Any) -> _Rows:
     """Extract rows from a Supabase API response with proper typing."""
     return cast(_Rows, response.data) if response.data else []
-
-
-# Default local Supabase credentials (from `supabase status`)
-_DEFAULT_URL = "http://127.0.0.1:54321"
-_DEFAULT_KEY = (
-    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
-    "eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0."
-    "EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU"
-)
-
-
-def _get_credentials(prod: bool = False) -> tuple[str, str]:
-    if prod:
-        return os.environ["SUPABASE_PROD_URL"], os.environ["SUPABASE_PROD_KEY"]
-    return (
-        os.environ.get("SUPABASE_URL", _DEFAULT_URL),
-        os.environ.get("SUPABASE_KEY", _DEFAULT_KEY),
-    )
 
 
 def _row_to_page(row: dict[str, Any]) -> Page:
@@ -133,7 +115,7 @@ class DB:
         client: AsyncClient | None = None,
     ) -> "DB":
         if client is None:
-            url, key = _get_credentials(prod)
+            url, key = get_settings().get_supabase_credentials(prod)
             client = await acreate_client(
                 url, key, options=AsyncClientOptions(schema="public")
             )

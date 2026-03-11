@@ -17,10 +17,6 @@ import sys
 import uuid
 from pathlib import Path
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
 from differential.database import DB
 from differential.models import Page, PageLayer, PageLink, PageType, LinkType, Workspace
 from differential.orchestrator import Orchestrator, create_root_question
@@ -28,7 +24,7 @@ from differential.sources import create_source_page, run_ingest_calls
 from differential.chat import run_chat
 from differential.mapper import generate_map
 from differential.summary import generate_summary, save_summary
-from differential import tracer
+from differential.settings import get_settings
 from differential.tracer import generate_trace
 
 PAGES_DIR = Path(__file__).parent / "pages"
@@ -487,7 +483,7 @@ async def async_main():
     logging.getLogger("differential").setLevel(log_level)
 
     if args.no_trace:
-        tracer.TRACING_ENABLED = False
+        get_settings().tracing_enabled = False
 
     PAGES_DIR.mkdir(parents=True, exist_ok=True)
 

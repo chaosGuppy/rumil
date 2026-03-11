@@ -4,7 +4,6 @@ FastAPI application for the Differential research workspace.
 Read-only API for browsing projects, pages, links, and calls.
 """
 
-import os
 import uuid
 
 from fastapi import FastAPI, HTTPException, Query
@@ -12,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from differential.database import DB
 from differential.models import PageType, Workspace
+from differential.settings import get_settings
 from differential.api.schemas import (
     CallOut,
     ConsiderationOut,
@@ -38,7 +38,7 @@ app.add_middleware(
 
 
 def _get_db(project_id: str = "") -> DB:
-    prod = os.environ.get("DIFFERENTIAL_PROD_DB", "").lower() in ("1", "true")
+    prod = get_settings().is_prod_db
     return DB(
         run_id=str(uuid.uuid4()),
         prod=prod,

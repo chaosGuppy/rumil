@@ -1,16 +1,11 @@
 """Shared fixtures for tests."""
 
-import os
 import uuid
-
-from dotenv import load_dotenv
-
-load_dotenv()
-os.environ["DIFFERENTIAL_TEST_MODE"] = "1"
 
 import pytest
 import pytest_asyncio
 
+from differential.settings import override_settings
 from differential.database import DB
 from differential.models import (
     Call,
@@ -21,6 +16,13 @@ from differential.models import (
     PageType,
     Workspace,
 )
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _test_settings():
+    """Activate test-mode settings for the entire test session."""
+    with override_settings(differential_test_mode="1"):
+        yield
 
 
 def pytest_addoption(parser):

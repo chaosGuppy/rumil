@@ -1,19 +1,16 @@
 """Execution tracing: capture call events and generate HTML visualizations."""
 
 import json
-import os
 from datetime import datetime, timezone
 from html import escape
 from pathlib import Path
 
 from differential.database import DB
 from differential.models import Call, CallType
+from differential.settings import get_settings
 
 PAGES_DIR = Path(__file__).parent.parent.parent / "pages"
 TRACES_DIR = PAGES_DIR / "traces"
-
-
-TRACING_ENABLED = not os.environ.get("DIFFERENTIAL_TEST_MODE")
 
 
 class CallTrace:
@@ -23,7 +20,7 @@ class CallTrace:
         self.call_id = call_id
         self.db = db
         self.events: list[dict] = []
-        self._enabled = TRACING_ENABLED
+        self._enabled = get_settings().tracing_enabled
 
     def record(self, event: str, data: dict | None = None) -> None:
         if not self._enabled:

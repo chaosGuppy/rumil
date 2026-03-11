@@ -8,7 +8,7 @@ dependencies = [
     "anthropic>=0.84.0",
     "fastapi>=0.135.1",
     "pydantic>=2.0",
-    "python-dotenv>=1.2.2",
+    "pydantic-settings>=2.0",
     "supabase>=2.0.0",
     "uvicorn[standard]>=0.41.0",
 ]

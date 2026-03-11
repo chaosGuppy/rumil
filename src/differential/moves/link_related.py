@@ -2,9 +2,8 @@
 
 from pydantic import BaseModel, Field
 
-from differential.database import DB
-from differential.models import Call, LinkType, MoveType
-from differential.moves.base import MoveDef, MoveResult, link_pages
+from differential.models import LinkType, MoveType
+from differential.moves.base import MoveDef, MoveResult, MoveState, link_pages
 
 
 class LinkRelatedPayload(BaseModel):
@@ -13,12 +12,12 @@ class LinkRelatedPayload(BaseModel):
     reasoning: str = Field("", description="Nature of the relation")
 
 
-async def execute(payload: LinkRelatedPayload, call: Call, db: DB) -> MoveResult:
+async def execute(payload: LinkRelatedPayload, state: MoveState) -> MoveResult:
     return await link_pages(
         payload.from_page_id,
         payload.to_page_id,
         payload.reasoning,
-        db,
+        state.db,
         LinkType.RELATED,
     )
 

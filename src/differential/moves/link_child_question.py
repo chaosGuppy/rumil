@@ -2,9 +2,8 @@
 
 from pydantic import BaseModel, Field
 
-from differential.database import DB
-from differential.models import Call, LinkType, MoveType
-from differential.moves.base import MoveDef, MoveResult, link_pages
+from differential.models import LinkType, MoveType
+from differential.moves.base import MoveDef, MoveResult, MoveState, link_pages
 
 
 class LinkChildQuestionPayload(BaseModel):
@@ -13,12 +12,12 @@ class LinkChildQuestionPayload(BaseModel):
     reasoning: str = Field("", description="Why this is a sub-question")
 
 
-async def execute(payload: LinkChildQuestionPayload, call: Call, db: DB) -> MoveResult:
+async def execute(payload: LinkChildQuestionPayload, state: MoveState) -> MoveResult:
     return await link_pages(
         payload.parent_id,
         payload.child_id,
         payload.reasoning,
-        db,
+        state.db,
         LinkType.CHILD_QUESTION,
     )
 

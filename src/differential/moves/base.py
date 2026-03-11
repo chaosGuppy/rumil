@@ -68,7 +68,7 @@ class MoveDef(Generic[S]):
     name: str
     description: str
     schema: type[S]
-    execute: Callable[[S, Call, DB], Awaitable[MoveResult]]
+    execute: Callable[[S, "MoveState"], Awaitable[MoveResult]]
 
     def bind(self, state: MoveState) -> "Tool":
         """Return a Tool bound to this call's mutable state."""
@@ -83,7 +83,7 @@ class MoveDef(Generic[S]):
                 raise
             if state.last_created_id:
                 validated = _resolve_last_created(validated, state.last_created_id)
-            result = await self.execute(validated, state.call, state.db)
+            result = await self.execute(validated, state)
             state.moves.append(Move(move_type=self.move_type, payload=validated))
             if result.created_page_id:
                 state.created_page_ids.append(result.created_page_id)
@@ -193,12 +193,13 @@ def write_page_file(page: Page) -> None:
 
 async def create_page(
     payload: CreatePagePayload,
-    call: Call,
-    db: DB,
+    state: MoveState,
     page_type: PageType,
     layer: PageLayer,
 ) -> MoveResult:
     """Create a page from payload, save to DB and file system."""
+    call = state.call
+    db = state.db
     workspace = _resolve_workspace(payload.workspace)
     extra: dict[str, Any] = {}
 

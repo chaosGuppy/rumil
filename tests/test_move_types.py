@@ -1,6 +1,6 @@
 """Tests for MoveType enum, move definitions, and move execution."""
 
-from differential.models import MoveType, PageType
+from differential.models import LinkType, MoveType, PageType
 from differential.moves import MOVES
 from differential.moves.base import MoveState
 
@@ -39,3 +39,63 @@ async def test_load_page_creates_nothing(tmp_db, scout_call):
     await tool.fn({"page_id": "abc12345"})
 
     assert state.created_page_ids == []
+
+
+async def test_inline_consideration_link(tmp_db, scout_call, question_page):
+    """create_claim with links should create the page and consideration links."""
+    state = MoveState(scout_call, tmp_db)
+    tool = MOVES[MoveType.CREATE_CLAIM].bind(state)
+    await tool.fn({
+        "summary": "Sky scatters blue light",
+        "content": "Rayleigh scattering causes blue wavelengths to dominate.",
+        "links": [{
+            "question_id": question_page.id[:8],
+            "direction": "supports",
+            "strength": 4.0,
+            "reasoning": "Direct evidence for blue sky",
+        }],
+    })
+
+    assert len(state.created_page_ids) == 1
+    claim_id = state.created_page_ids[0]
+    links = await tmp_db.get_links_from(claim_id)
+    assert len(links) == 1
+    assert links[0].link_type == LinkType.CONSIDERATION
+    assert links[0].to_page_id == question_page.id
+    assert links[0].strength == 4.0
+
+
+async def test_inline_child_question_link(tmp_db, scout_call, question_page):
+    """create_question with links should create the page and child_question links."""
+    state = MoveState(scout_call, tmp_db)
+    tool = MOVES[MoveType.CREATE_QUESTION].bind(state)
+    await tool.fn({
+        "summary": "What wavelengths does the atmosphere scatter?",
+        "content": "Sub-question about atmospheric scattering.",
+        "links": [{
+            "parent_id": question_page.id[:8],
+            "reasoning": "Decomposition of blue sky question",
+        }],
+    })
+
+    assert len(state.created_page_ids) == 1
+    child_id = state.created_page_ids[0]
+    links = await tmp_db.get_links_to(child_id)
+    assert len(links) == 1
+    assert links[0].link_type == LinkType.CHILD_QUESTION
+    assert links[0].from_page_id == question_page.id
+
+
+async def test_no_links_creates_no_links(tmp_db, scout_call):
+    """create_claim without links should not create any links."""
+    state = MoveState(scout_call, tmp_db)
+    tool = MOVES[MoveType.CREATE_CLAIM].bind(state)
+    await tool.fn({
+        "summary": "Unlinked claim",
+        "content": "This claim is not linked.",
+    })
+
+    assert len(state.created_page_ids) == 1
+    claim_id = state.created_page_ids[0]
+    links = await tmp_db.get_links_from(claim_id)
+    assert len(links) == 0

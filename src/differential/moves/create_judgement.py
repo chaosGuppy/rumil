@@ -1,12 +1,11 @@
 """CREATE_JUDGEMENT move: create a considered position on a question."""
 
-from differential.database import DB
-from differential.models import Call, MoveType, PageLayer, PageType
-from differential.moves.base import CreatePagePayload, MoveDef, MoveResult, create_page
+from differential.models import MoveType, PageLayer, PageType
+from differential.moves.base import CreatePagePayload, MoveDef, MoveResult, MoveState, create_page
 
 
-async def execute(payload: CreatePagePayload, call: Call, db: DB) -> MoveResult:
-    return await create_page(payload, call, db, PageType.JUDGEMENT, PageLayer.SQUIDGY)
+async def execute(payload: CreatePagePayload, state: MoveState) -> MoveResult:
+    return await create_page(payload, state, PageType.JUDGEMENT, PageLayer.SQUIDGY)
 
 
 MOVE = MoveDef(

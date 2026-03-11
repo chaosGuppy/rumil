@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from differential.context import format_page
 from differential.database import DB
+from differential.settings import get_settings
 from differential.llm import (
     AgentResult,
     build_system_prompt,
@@ -149,7 +150,7 @@ async def run_call(
     *,
     available_moves: list[MoveType] | None = None,
     max_tokens: int = 4096,
-    max_rounds: int = 3,
+    max_rounds: int | None = None,
     subtree_ids: set[str] | None = None,
     short_id_map: dict[str, str] | None = None,
 ) -> RunCallResult:
@@ -160,6 +161,9 @@ async def run_call(
     when the LLM calls them. Returns a RunCallResult with created page IDs,
     dispatches, and the raw agent result.
     """
+
+    if max_rounds is None:
+        max_rounds = 1 if get_settings().is_smoke_test else 3
 
     log.info(
         "run_call: type=%s, call=%s, scope=%s",

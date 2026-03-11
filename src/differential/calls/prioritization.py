@@ -2,10 +2,10 @@
 
 import logging
 
-from differential.calls.common import complete_call, moves_to_trace_event, run_call
+from differential.calls.common import complete_call, run_call
 from differential.context import build_prioritization_context, collect_subtree_ids
 from differential.database import DB
-from differential.models import Call, CallType, MoveType
+from differential.models import Call, CallType
 from differential.trace_events import ContextBuiltEvent, DispatchesPlannedEvent
 from differential.tracer import CallTrace
 
@@ -64,7 +64,6 @@ async def run_prioritization(
             for d in result.dispatches
         ],
     ))
-    await trace.record(moves_to_trace_event(result.moves, result.created_page_ids))
 
     summary = {
         "dispatches": result.dispatches,

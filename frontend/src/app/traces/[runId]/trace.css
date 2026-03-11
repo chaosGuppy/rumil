@@ -305,6 +305,7 @@
 .trace-move-link { color: #4272c4; }
 .trace-move-supersede { color: #b33; }
 .trace-move-hypothesis { color: #b87c1e; }
+.trace-move-load { color: #5b9ea6; }
 .trace-move-default { color: #777; }
 
 .trace-move-summary {

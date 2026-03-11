@@ -37,6 +37,12 @@ log = logging.getLogger(__name__)
 from differential.trace_events import LLMExchangeEvent, MovesExecutedEvent, WarningEvent
 from differential.tracer import CallTrace
 
+PAGE_CREATING_MOVES = {
+    MoveType.CREATE_CLAIM, MoveType.CREATE_QUESTION, MoveType.CREATE_JUDGEMENT,
+    MoveType.CREATE_CONCEPT, MoveType.CREATE_WIKI_PAGE,
+    MoveType.PROPOSE_HYPOTHESIS, MoveType.SUPERSEDE_PAGE,
+}
+
 
 PHASE1_TASK = (
     'Perform your preliminary analysis now. Review the workspace map above and '
@@ -100,8 +106,13 @@ async def _save_exchanges(
     phase: str,
     db: DB,
     trace: "CallTrace | None" = None,
+    moves: list[Move] | None = None,
+    created_page_ids: list[str] | None = None,
 ) -> None:
-    """Save LLM exchange records from an AgentResult and record trace events."""
+    """Save LLM exchange records and interleave moves per round."""
+    move_tool_names = {md.name for md in MOVES.values()}
+    move_idx = 0
+    create_idx = 0
     for rr in agent_result.rounds:
         tc_data = [
             {"name": tc.name, "input": tc.input, "result": tc.result[:500]}
@@ -127,6 +138,21 @@ async def _save_exchanges(
                 input_tokens=rr.input_tokens,
                 output_tokens=rr.output_tokens,
             ))
+        if trace and moves:
+            round_move_count = sum(
+                1 for tc in rr.tool_calls if tc.name in move_tool_names
+            )
+            if round_move_count > 0:
+                round_moves = moves[move_idx:move_idx + round_move_count]
+                move_idx += round_move_count
+                round_created: list[str] = []
+                if created_page_ids:
+                    for m in round_moves:
+                        if (m.move_type in PAGE_CREATING_MOVES
+                                and create_idx < len(created_page_ids)):
+                            round_created.append(created_page_ids[create_idx])
+                            create_idx += 1
+                await trace.record(moves_to_trace_event(round_moves, round_created))
     for w in agent_result.warnings:
         if trace:
             await trace.record(WarningEvent(message=w))
@@ -157,14 +183,19 @@ async def _run_phase1(
     try:
         phase1_msg = build_user_message(context_text, PHASE1_TASK)
         load_page_tool = MOVES[MoveType.LOAD_PAGE].bind(state)
+        moves_before = len(state.moves)
         result = await single_call_with_tools(
             system_prompt=system_prompt,
             user_message=phase1_msg,
             tools=[load_page_tool],
             max_tokens=2048,
         )
+        phase1_moves = state.moves[moves_before:]
         if trace:
-            await _save_exchanges(result, trace.call_id, "phase1", db, trace)
+            await _save_exchanges(
+                result, trace.call_id, "initial_page_loads", db, trace,
+                moves=phase1_moves,
+            )
         loaded_ids = []
         for tc in result.tool_calls:
             if tc.name == "load_page":
@@ -233,7 +264,9 @@ async def run_call(
 
     user_message = build_user_message(context_text, task_description)
 
-    phase = "prioritization" if call_type == CallType.PRIORITIZATION else "phase2"
+    phase = "prioritization" if call_type == CallType.PRIORITIZATION else "inner_loop"
+    moves_before = len(state.moves)
+    created_before = len(state.created_page_ids)
     if call_type == CallType.PRIORITIZATION:
         agent_result = await single_call_with_tools(
             system_prompt,
@@ -249,8 +282,13 @@ async def run_call(
             max_tokens=max_tokens,
             max_rounds=max_rounds,
         )
+    phase_moves = state.moves[moves_before:]
+    phase_created = state.created_page_ids[created_before:]
     if trace:
-        await _save_exchanges(agent_result, call.id, phase, db, trace)
+        await _save_exchanges(
+            agent_result, call.id, phase, db, trace,
+            moves=phase_moves, created_page_ids=phase_created,
+        )
 
     log.info(
         "run_call complete: type=%s, pages_created=%d, dispatches=%d, moves=%d",

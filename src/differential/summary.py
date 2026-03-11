@@ -18,26 +18,39 @@ def _load_prompt_file(name: str) -> str:
 
 
 async def build_research_tree(
-    question_id: str, db: DB, depth: int = 0, max_depth: int = 4
+    question_id: str,
+    db: DB,
+    depth: int = 0,
+    max_depth: int = 4,
+    summary_cutoff: int | None = None,
 ) -> str:
     """
-    Recursively build a full picture of the research on a question:
-    the question itself, all its considerations (with full content),
-    all its judgements, and all sub-questions (recursively).
+    Recursively build a full picture of the research on a question.
+
+    The first ``summary_cutoff`` levels render full content (claims,
+    reasoning, judgement bodies). Deeper levels render only page summaries
+    to keep total context size manageable. Defaults to max_depth // 2.
     """
     question = await db.get_page(question_id)
     if not question:
         return ""
 
+    if summary_cutoff is None:
+        summary_cutoff = max_depth // 2
+    full_detail = depth < summary_cutoff
     indent = "  " * depth
     parts = []
 
     # Question heading
     if depth == 0:
         parts.append(f"# Research Question\n\n{question.content}\n")
-    else:
+    elif full_detail:
         parts.append(
             f"{'#' * (depth + 2)} Sub-question: {question.summary}\n\n{question.content}\n"
+        )
+    else:
+        parts.append(
+            f"{'#' * (depth + 2)} Sub-question: {question.summary}\n"
         )
 
     # Considerations
@@ -61,11 +74,13 @@ async def build_research_tree(
 
         def format_consideration(claim, link) -> str:
             strength_note = f" (strength {link.strength:.1f})" if link.strength else ""
-            lines = [f"- **{claim.summary}**{strength_note}"]
-            lines.append(f"  {claim.content}")
-            if link.reasoning:
-                lines.append(f"  *Bearing on question: {link.reasoning}*")
-            return "\n".join(lines)
+            if full_detail:
+                lines = [f"- **{claim.summary}**{strength_note}"]
+                lines.append(f"  {claim.content}")
+                if link.reasoning:
+                    lines.append(f"  *Bearing on question: {link.reasoning}*")
+                return '\n'.join(lines)
+            return f"- {claim.summary}{strength_note}"
 
         if supports:
             parts.append(f"{indent}**Supporting considerations:**\n")
@@ -95,15 +110,21 @@ async def build_research_tree(
                 if len(ordered) > 1
                 else "Judgement"
             )
-            parts.append(
-                f"{indent}**{label}** (confidence {j.epistemic_status:.2f} — {j.epistemic_type}):\n"
-            )
-            parts.append(j.content)
-            extra = j.extra or {}
-            if extra.get("key_dependencies"):
-                parts.append(f"\n*Key dependencies: {extra['key_dependencies']}*")
-            if extra.get("sensitivity_analysis"):
-                parts.append(f"\n*Sensitivity: {extra['sensitivity_analysis']}*")
+            if full_detail:
+                parts.append(
+                    f"{indent}**{label}** (confidence {j.epistemic_status:.2f} — {j.epistemic_type}):\n"
+                )
+                parts.append(j.content)
+                extra = j.extra or {}
+                if extra.get("key_dependencies"):
+                    parts.append(f"\n*Key dependencies: {extra['key_dependencies']}*")
+                if extra.get("sensitivity_analysis"):
+                    parts.append(f"\n*Sensitivity: {extra['sensitivity_analysis']}*")
+            else:
+                parts.append(
+                    f"{indent}**{label}** (confidence {j.epistemic_status:.2f} — "
+                    f"{j.epistemic_type}): {j.summary}"
+                )
             parts.append("")
 
     # Sub-questions (recurse)
@@ -113,14 +134,22 @@ async def build_research_tree(
             for child in children:
                 parts.append(
                     await build_research_tree(
-                        child.id, db, depth=depth + 1, max_depth=max_depth
+                        child.id, db,
+                        depth=depth + 1,
+                        max_depth=max_depth,
+                        summary_cutoff=summary_cutoff,
                     )
                 )
 
     return "\n".join(parts)
 
 
-async def generate_summary(question_id: str, db: DB) -> str:
+async def generate_summary(
+    question_id: str,
+    db: DB,
+    max_depth: int = 4,
+    summary_cutoff: int | None = None,
+) -> str:
     """
     Generate an executive summary of research on a question.
     Returns the summary as a string.
@@ -129,7 +158,9 @@ async def generate_summary(question_id: str, db: DB) -> str:
     if not question:
         raise ValueError(f"Question {question_id} not found")
 
-    research_tree = await build_research_tree(question_id, db)
+    research_tree = await build_research_tree(
+        question_id, db, max_depth=max_depth, summary_cutoff=summary_cutoff
+    )
 
     if not research_tree.strip():
         return f"No research found for question: {question.summary}"

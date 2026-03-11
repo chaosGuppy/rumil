@@ -83,6 +83,14 @@ uv run python main.py --map QUESTION_ID
 # Generate executive summary
 uv run python main.py --summary QUESTION_ID
 
+# Control how deep the summary traverses and where it switches to compact mode.
+# --max-depth N        How many levels of sub-questions to include (default: 4).
+# --summarize-after-depth N  Levels 0..N-1 show full claim/judgement content;
+#                            deeper levels show only one-line page summaries.
+#                            Default: max-depth // 2. Decrease to shrink context
+#                            when hitting LLM context-length errors.
+uv run python main.py --summary QUESTION_ID --max-depth 6 --summarize-after-depth 3
+
 # Generate execution trace visualization
 uv run python main.py --trace QUESTION_ID
 # Or trace a specific call:

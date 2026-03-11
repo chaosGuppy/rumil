@@ -251,7 +251,12 @@ async def cmd_trace(trace_id: str, db: DB) -> None:
     print("Open that file in your browser to view it.")
 
 
-async def cmd_summary(question_id: str, db: DB) -> None:
+async def cmd_summary(
+    question_id: str,
+    db: DB,
+    max_depth: int = 4,
+    summary_cutoff: int | None = None,
+) -> None:
     question = await db.get_page(question_id)
     if not question:
         print(
@@ -262,7 +267,9 @@ async def cmd_summary(question_id: str, db: DB) -> None:
     print(f"\nGenerating summary for: {question.summary[:80]}")
     print("(This will use one LLM call but does not count against research budget)\n")
 
-    summary_text = await generate_summary(question_id, db)
+    summary_text = await generate_summary(
+        question_id, db, max_depth=max_depth, summary_cutoff=summary_cutoff
+    )
     path = save_summary(summary_text, question.summary)
 
     print(summary_text)
@@ -469,6 +476,21 @@ async def async_main():
         help="Generate an executive summary for a question",
     )
     parser.add_argument(
+        "--max-depth",
+        type=int,
+        default=4,
+        help="Maximum tree depth for --summary (default: 4)",
+    )
+    parser.add_argument(
+        "--summarize-after-depth",
+        type=int,
+        default=None,
+        help=(
+            "Depth at which --summary switches from full content to page "
+            "summaries only (default: max-depth // 2)"
+        ),
+    )
+    parser.add_argument(
         "--map",
         dest="map_id",
         metavar="QUESTION_ID",
@@ -599,7 +621,11 @@ async def async_main():
     elif args.map_id:
         await cmd_map(args.map_id, db)
     elif args.summary_id:
-        await cmd_summary(args.summary_id, db)
+        await cmd_summary(
+            args.summary_id, db,
+            max_depth=args.max_depth,
+            summary_cutoff=args.summarize_after_depth,
+        )
     elif args.continue_id:
         await cmd_continue(args.continue_id, args.budget, db)
     elif args.batch_file:

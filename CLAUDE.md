@@ -31,9 +31,6 @@ uv run python main.py --map QUESTION_ID
 # Generate executive summary
 uv run python main.py --summary QUESTION_ID
 
-# Generate execution trace (accepts question ID or call ID)
-uv run python main.py --trace QUESTION_ID
-
 # Use a named workspace to isolate investigations
 uv run python main.py "Your question here" --workspace my-project --budget 10
 
@@ -82,7 +79,6 @@ Each call ends with a closing review that produces `remaining_fruit` (0-10 scale
 - `pages/research/` — markdown files per page
 - `pages/maps/` — HTML research maps
 - `pages/summaries/` — generated summaries
-- `pages/traces/` — HTML execution trace visualizations
 
 ## Key Conventions
 

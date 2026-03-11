@@ -91,11 +91,6 @@ uv run python main.py --summary QUESTION_ID
 #                            when hitting LLM context-length errors.
 uv run python main.py --summary QUESTION_ID --max-depth 6 --summarize-after-depth 3
 
-# Generate execution trace visualization
-uv run python main.py --trace QUESTION_ID
-# Or trace a specific call:
-uv run python main.py --trace CALL_ID
-
 # Batch mode: investigate multiple questions concurrently
 uv run python main.py --batch questions.json
 
@@ -141,17 +136,6 @@ Each entry supports:
 | `continue` | One of `question` or `continue` | ID of an existing question to continue |
 | `budget` | No (default: 10) | Research call budget for this entry |
 | `ingest` | No | List of file paths to ingest (only with `question`) |
-
-### Execution traces
-
-The `--trace` flag generates a self-contained HTML file in `pages/traces/` showing the full call tree for an investigation. Each call node displays:
-
-- **Context**: which pages were in scope
-- **Phases**: page loading in phase 1 and iterative phase 2 rounds
-- **Moves**: every move the LLM made (claims created, links added, etc.) with full payloads
-- **Reviews**: remaining fruit, confidence, and self-assessment
-
-For prioritization calls, dispatches are shown as clickable links that jump to the child call's trace. Page IDs render as colored chips with summaries; click to expand and see full content.
 
 For PDF ingestion, install the optional dependency: `uv sync --extra pdf`
 

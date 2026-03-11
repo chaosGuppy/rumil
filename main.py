@@ -25,7 +25,6 @@ from differential.chat import run_chat
 from differential.mapper import generate_map
 from differential.summary import generate_summary, save_summary
 from differential.settings import get_settings
-from differential.tracer import generate_trace
 
 PAGES_DIR = Path(__file__).parent / "pages"
 
@@ -135,12 +134,6 @@ async def cmd_map(question_id: str, db: DB) -> None:
     print(f"\nGenerating map for: {question.summary[:80]}")
     path = await generate_map(question_id, db)
     print(f"Map saved to: {path}")
-    print("Open that file in your browser to view it.")
-
-
-async def cmd_trace(trace_id: str, db: DB) -> None:
-    path = await generate_trace(trace_id, db)
-    print(f"Trace saved to: {path}")
     print("Open that file in your browser to view it.")
 
 
@@ -398,12 +391,6 @@ async def async_main():
         help="Chat interactively about the research on a question",
     )
     parser.add_argument(
-        "--trace",
-        dest="trace_id",
-        metavar="QUESTION_OR_CALL_ID",
-        help="Generate an HTML execution trace visualization",
-    )
-    parser.add_argument(
         "--add-question",
         dest="add_question",
         metavar="TEXT",
@@ -510,8 +497,6 @@ async def async_main():
     if args.list:
         await cmd_list(db, args.workspace_name)
         return
-    elif args.trace_id:
-        await cmd_trace(args.trace_id, db)
     elif args.chat_id:
         await run_chat(args.chat_id, db)
     elif args.add_question:

@@ -40,25 +40,24 @@ function CollapsiblePre({
   const [open, setOpen] = useState(false);
   if (!content) return null;
 
-  const preview = content.slice(0, 200);
-  const isLong = content.length > 200;
-
   return (
-    <div className="mb-2">
+    <div className="trace-collapsible">
       <button
         onClick={() => setOpen(!open)}
-        className="text-xs font-medium text-gray-600 hover:text-gray-800"
+        className="trace-collapsible-toggle"
       >
-        {open ? "▼" : "▶"} {label} ({content.length.toLocaleString()} chars)
+        <span className="trace-collapsible-icon">{open ? "\u2013" : "+"}</span>
+        <span>{label}</span>
+        <span className="trace-collapsible-meta">
+          {content.length.toLocaleString()} chars
+        </span>
       </button>
       {open && (
-        <pre className="mt-1 text-xs bg-gray-50 border rounded p-2 overflow-x-auto whitespace-pre-wrap max-h-96 overflow-y-auto">
-          {content}
-        </pre>
+        <pre className="trace-collapsible-content">{content}</pre>
       )}
-      {!open && isLong && (
-        <pre className="mt-1 text-xs bg-gray-50 border rounded p-2 text-gray-400 truncate">
-          {preview}...
+      {!open && content.length > 200 && (
+        <pre className="trace-collapsible-preview">
+          {content.slice(0, 200)}...
         </pre>
       )}
     </div>
@@ -88,50 +87,44 @@ function ExchangeRow({ summary }: { summary: ExchangeSummary }) {
   }
 
   return (
-    <div className="border-b border-gray-100 py-1.5">
-      <button
-        onClick={loadDetail}
-        className="flex items-center gap-2 text-xs hover:bg-gray-50 w-full text-left px-1 py-0.5 rounded"
-      >
-        <span className="text-gray-400">{open ? "▼" : "▶"}</span>
-        <span className="font-medium text-gray-700">{summary.phase}</span>
-        <span className="text-gray-500">round {summary.round}</span>
+    <div className="trace-exchange-row">
+      <button onClick={loadDetail} className="trace-exchange-toggle">
+        <span className="trace-exchange-icon">{open ? "\u2013" : "+"}</span>
+        <span className="trace-exchange-phase">{summary.phase}</span>
+        <span className="trace-exchange-round">r{summary.round}</span>
         {summary.input_tokens != null && (
-          <span className="text-gray-400">
-            {summary.input_tokens}/{summary.output_tokens} tokens
+          <span className="trace-exchange-tokens">
+            {summary.input_tokens.toLocaleString()}/{summary.output_tokens?.toLocaleString()} tok
           </span>
         )}
         {summary.error && (
-          <span className="text-red-600 font-medium">error</span>
+          <span className="trace-exchange-error-flag">error</span>
         )}
         {loading && (
-          <span className="text-gray-400 animate-pulse">loading...</span>
+          <span className="trace-exchange-loading">loading...</span>
         )}
       </button>
 
       {open && detail && (
-        <div className="ml-4 mt-1 space-y-1">
+        <div className="trace-exchange-detail">
           <CollapsiblePre label="System prompt" content={detail.system_prompt} />
           <CollapsiblePre label="User message" content={detail.user_message} />
-          <CollapsiblePre
-            label="Response"
-            content={detail.response_text}
-          />
+          <CollapsiblePre label="Response" content={detail.response_text} />
           {detail.tool_calls.length > 0 && (
-            <div>
-              <span className="text-xs font-medium text-gray-600">
-                Tool calls ({detail.tool_calls.length}):
-              </span>
+            <div className="trace-tool-calls">
+              <div className="trace-tool-calls-label">
+                Tool calls ({detail.tool_calls.length})
+              </div>
               {detail.tool_calls.map((tc, i) => (
-                <details key={i} className="ml-2 text-xs">
-                  <summary className="cursor-pointer text-gray-600 hover:text-gray-800">
+                <details key={i} className="trace-tool-call">
+                  <summary className="trace-tool-call-name">
                     {tc.name as string}
                   </summary>
-                  <pre className="bg-gray-50 border rounded p-1.5 mt-0.5 overflow-x-auto whitespace-pre-wrap text-xs">
+                  <pre className="trace-tool-call-input">
                     {JSON.stringify(tc.input, null, 2)}
                   </pre>
                   {tc.result ? (
-                    <pre className="bg-gray-50 border-l-2 border-green-300 rounded p-1.5 mt-0.5 overflow-x-auto whitespace-pre-wrap text-xs">
+                    <pre className="trace-tool-call-output">
                       {String(tc.result)}
                     </pre>
                   ) : null}
@@ -140,7 +133,7 @@ function ExchangeRow({ summary }: { summary: ExchangeSummary }) {
             </div>
           )}
           {detail.error && (
-            <div className="text-xs text-red-600 bg-red-50 rounded p-1.5">
+            <div className="trace-exchange-error-detail">
               {detail.error}
             </div>
           )}
@@ -163,22 +156,20 @@ export function LLMExchangeDetail({ callId }: { callId: string }) {
 
   if (loading) {
     return (
-      <div className="text-xs text-gray-400 animate-pulse">
-        Loading exchanges...
-      </div>
+      <div className="trace-exchange-loading">Loading exchanges...</div>
     );
   }
 
   if (exchanges.length === 0) {
     return (
-      <div className="text-xs text-gray-400 italic">No LLM exchanges recorded</div>
+      <div className="trace-empty">No LLM exchanges recorded</div>
     );
   }
 
   return (
-    <div className="border rounded p-2 bg-white">
-      <div className="text-xs font-medium text-gray-600 mb-1">
-        LLM Exchanges ({exchanges.length})
+    <div className="trace-exchanges-container">
+      <div className="trace-section-label">
+        LLM exchanges ({exchanges.length})
       </div>
       {exchanges.map((ex) => (
         <ExchangeRow key={ex.id} summary={ex} />

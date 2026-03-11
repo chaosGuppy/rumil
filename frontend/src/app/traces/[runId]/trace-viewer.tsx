@@ -74,12 +74,12 @@ export function TraceViewer({
   }, [runId, realtimeConfig]);
 
   return (
-    <div className="space-y-4">
+    <div className="trace-root">
       {trace.root_calls.map((ct) => (
         <CallNode key={ct.call.id} trace={ct} depth={0} />
       ))}
       {trace.root_calls.length === 0 && (
-        <p className="text-gray-500 text-sm">
+        <p className="trace-empty">
           No calls recorded for this run yet.
         </p>
       )}

@@ -12,18 +12,13 @@ import { LLMExchangeDetail } from "./llm-exchange-detail";
 
 type TraceEvent = CallTraceOut["events"][number];
 
-const CALL_TYPE_COLORS: Record<string, string> = {
-  scout: "bg-blue-100 text-blue-800",
-  assess: "bg-purple-100 text-purple-800",
-  prioritization: "bg-orange-100 text-orange-800",
-  ingest: "bg-green-100 text-green-800",
-};
-
-const STATUS_STYLES: Record<string, string> = {
-  running: "bg-yellow-100 text-yellow-700 animate-pulse",
-  complete: "bg-green-100 text-green-700",
-  failed: "bg-red-100 text-red-700",
-  pending: "bg-gray-100 text-gray-500",
+const CALL_TYPE_ACCENT: Record<string, string> = {
+  scout: "#5b8def",
+  assess: "#a07cdf",
+  prioritization: "#d4943a",
+  ingest: "#4dab6f",
+  reframe: "#c46b6b",
+  maintain: "#7a8a9e",
 };
 
 function formatTime(ts: string): string {
@@ -51,10 +46,7 @@ function getDuration(call: Call): string | null {
 function PageChip({ pageId }: { pageId: string }) {
   const short = typeof pageId === "string" ? pageId.slice(0, 8) : pageId;
   return (
-    <Link
-      href={`/pages/${pageId}`}
-      className="inline-block text-xs font-mono bg-gray-100 border rounded px-1.5 py-0.5 hover:bg-gray-200"
-    >
+    <Link href={`/pages/${pageId}`} className="trace-page-chip">
       {short}
     </Link>
   );
@@ -62,96 +54,107 @@ function PageChip({ pageId }: { pageId: string }) {
 
 function PageList({ pageIds }: { pageIds: string[] }) {
   if (!pageIds || pageIds.length === 0)
-    return <span className="text-xs text-gray-400 italic">none</span>;
+    return <span className="trace-empty">none</span>;
   return (
-    <div className="flex flex-wrap gap-1">
+    <span className="trace-page-list">
       {pageIds.map((id) => (
         <PageChip key={id} pageId={id} />
       ))}
-    </div>
-  );
-}
-
-function MoveBadge({ moveType }: { moveType: string }) {
-  const colors: Record<string, string> = {
-    CREATE_CLAIM: "bg-green-100 text-green-700",
-    CREATE_QUESTION: "bg-green-100 text-green-700",
-    CREATE_JUDGEMENT: "bg-green-100 text-green-700",
-    CREATE_CONCEPT: "bg-green-100 text-green-700",
-    LINK_CONSIDERATION: "bg-blue-100 text-blue-700",
-    LINK_CHILD_QUESTION: "bg-blue-100 text-blue-700",
-    SUPERSEDE_PAGE: "bg-red-100 text-red-700",
-    PROPOSE_HYPOTHESIS: "bg-yellow-100 text-yellow-700",
-  };
-  return (
-    <span
-      className={`text-xs font-semibold uppercase px-1.5 py-0.5 rounded ${colors[moveType] || "bg-gray-100 text-gray-600"}`}
-    >
-      {moveType}
     </span>
   );
 }
 
-function EventSection({ event }: { event: TraceEvent }) {
-  const warningBorder =
-    event.event === "warning"
-      ? "border-l-2 border-yellow-400 pl-2"
-      : event.event === "error"
-        ? "border-l-2 border-red-400 pl-2"
-        : "";
+function MoveRow({ moveType, summary }: { moveType: string; summary: string }) {
+  const isCreate = moveType.startsWith("CREATE_");
+  const isLink = moveType.startsWith("LINK_");
+  const isSupersede = moveType === "SUPERSEDE_PAGE";
+  const isHypothesis = moveType === "PROPOSE_HYPOTHESIS";
+
+  const typeClass = isCreate
+    ? "trace-move-create"
+    : isLink
+      ? "trace-move-link"
+      : isSupersede
+        ? "trace-move-supersede"
+        : isHypothesis
+          ? "trace-move-hypothesis"
+          : "trace-move-default";
 
   return (
-    <div className={`py-1.5 border-b border-gray-100 last:border-0 ${warningBorder}`}>
-      <div className="flex items-baseline gap-2 mb-0.5">
-        <span className="text-xs font-medium bg-gray-100 px-1.5 rounded">
-          {event.event}
-        </span>
-        <span className="text-xs text-gray-400 font-mono">
-          {formatTime(event.ts)}
-        </span>
+    <div className="trace-move-row">
+      <span className={`trace-move-type ${typeClass}`}>
+        {moveType.replace(/_/g, " ").toLowerCase()}
+      </span>
+      {summary && <span className="trace-move-summary">{summary}</span>}
+    </div>
+  );
+}
+
+function StatusDot({ status }: { status: string }) {
+  const colorClass =
+    status === "running"
+      ? "trace-dot-running"
+      : status === "complete"
+        ? "trace-dot-complete"
+        : status === "failed"
+          ? "trace-dot-failed"
+          : "trace-dot-pending";
+
+  return <span className={`trace-status-dot ${colorClass}`} />;
+}
+
+function EventSection({ event }: { event: TraceEvent }) {
+  const isWarning = event.event === "warning";
+  const isError = event.event === "error";
+
+  return (
+    <div
+      className={`trace-event ${isWarning ? "trace-event-warning" : ""} ${isError ? "trace-event-error" : ""}`}
+    >
+      <div className="trace-event-header">
+        <span className="trace-event-label">{event.event.replace(/_/g, " ")}</span>
+        <span className="trace-event-time">{formatTime(event.ts)}</span>
       </div>
 
       {event.event === "context_built" && (
-        <div className="ml-2 text-xs space-y-1">
+        <div className="trace-event-body">
           {(event.working_context_page_ids ?? []).length > 0 && (
-            <div>
-              <span className="text-gray-500 font-medium">Working context: </span>
+            <div className="trace-kv">
+              <span className="trace-kv-key">working context</span>
               <PageList pageIds={event.working_context_page_ids ?? []} />
             </div>
           )}
           {(event.preloaded_page_ids ?? []).length > 0 && (
-            <div>
-              <span className="text-gray-500 font-medium">Preloaded: </span>
+            <div className="trace-kv">
+              <span className="trace-kv-key">preloaded</span>
               <PageList pageIds={event.preloaded_page_ids ?? []} />
             </div>
           )}
           {event.budget != null && (
-            <div className="text-gray-500">Budget: {event.budget}</div>
+            <div className="trace-kv">
+              <span className="trace-kv-key">budget</span>
+              <span className="trace-kv-value">{event.budget}</span>
+            </div>
           )}
         </div>
       )}
 
       {(event.event === "phase1_loaded" || event.event === "phase2_loaded") && (
-        <div className="ml-2 text-xs">
+        <div className="trace-event-body">
           <PageList pageIds={event.page_ids ?? []} />
         </div>
       )}
 
       {event.event === "moves_executed" && (
-        <div className="ml-2 text-xs space-y-1">
+        <div className="trace-event-body">
           {(event.moves ?? [])
             .filter((m) => m.type !== "LOAD_PAGE")
             .map((m, i) => (
-              <div key={i} className="flex items-baseline gap-1.5">
-                <MoveBadge moveType={m.type} />
-                <span className="text-gray-600">
-                  {m.summary || ""}
-                </span>
-              </div>
+              <MoveRow key={i} moveType={m.type} summary={m.summary || ""} />
             ))}
           {(event.created_page_ids ?? []).length > 0 && (
-            <div>
-              <span className="text-gray-500 font-medium">Created: </span>
+            <div className="trace-kv" style={{ marginTop: "6px" }}>
+              <span className="trace-kv-key">created</span>
               <PageList pageIds={event.created_page_ids ?? []} />
             </div>
           )}
@@ -159,55 +162,57 @@ function EventSection({ event }: { event: TraceEvent }) {
       )}
 
       {event.event === "review_complete" && (
-        <div className="ml-2 text-xs text-gray-600">
-          fruit={String(event.remaining_fruit)}, confidence=
-          {String(event.confidence)}
+        <div className="trace-event-body">
+          <div className="trace-review-metrics">
+            <span className="trace-kv-key">remaining fruit</span>
+            <span className="trace-kv-value">{String(event.remaining_fruit)}</span>
+            <span className="trace-kv-key">confidence</span>
+            <span className="trace-kv-value">{String(event.confidence)}</span>
+          </div>
         </div>
       )}
 
       {event.event === "llm_exchange" && (
-        <div className="ml-2 text-xs text-gray-500">
-          {event.phase} round {event.round}
-          {event.input_tokens != null && (
-            <span>
-              {" "}
-              ({event.input_tokens}/{event.output_tokens} tokens)
-            </span>
-          )}
+        <div className="trace-event-body">
+          <span className="trace-exchange-info">
+            {event.phase} r{event.round}
+            {event.input_tokens != null && (
+              <span className="trace-token-count">
+                {event.input_tokens.toLocaleString()}/{event.output_tokens?.toLocaleString()} tok
+              </span>
+            )}
+          </span>
         </div>
       )}
 
       {event.event === "warning" && (
-        <div className="ml-2 text-xs text-yellow-700">
+        <div className="trace-event-body trace-warning-text">
           {event.message}
         </div>
       )}
 
       {event.event === "error" && (
-        <div className="ml-2 text-xs text-red-700">
+        <div className="trace-event-body trace-error-text">
           {event.message}
         </div>
       )}
 
       {event.event === "dispatches_planned" && (
-        <div className="ml-2 text-xs space-y-0.5">
-          {(event.dispatches ?? []).map(
-            (d, i) => (
-              <div key={i} className="flex items-baseline gap-1.5">
-                <span className="text-gray-400">{i + 1}.</span>
-                <span
-                  className={`text-xs font-semibold uppercase px-1.5 py-0.5 rounded ${CALL_TYPE_COLORS[d.call_type] || "bg-gray-100"}`}
-                >
-                  {d.call_type}
-                </span>
-                {d.reason ? (
-                  <span className="text-gray-500">
-                    &mdash; {String(d.reason)}
-                  </span>
-                ) : null}
-              </div>
-            ),
-          )}
+        <div className="trace-event-body">
+          {(event.dispatches ?? []).map((d, i) => (
+            <div key={i} className="trace-dispatch-row">
+              <span className="trace-dispatch-index">{i + 1}</span>
+              <span
+                className="trace-dispatch-type"
+                style={{ color: CALL_TYPE_ACCENT[d.call_type] || "#7a8a9e" }}
+              >
+                {d.call_type}
+              </span>
+              {d.reason ? (
+                <span className="trace-dispatch-reason">{String(d.reason)}</span>
+              ) : null}
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -226,6 +231,7 @@ export function CallNode({
   const { call, events, children } = trace;
   const shortId = call.id.slice(0, 8);
   const duration = getDuration(call);
+  const accent = CALL_TYPE_ACCENT[call.call_type] || "#7a8a9e";
 
   const warningCount = events.filter((e) => e.event === "warning").length;
   const errorCount = events.filter((e) => e.event === "error").length;
@@ -246,65 +252,58 @@ export function CallNode({
   return (
     <div
       id={`call-${shortId}`}
-      className={`border rounded-lg ${depth > 0 ? "ml-4" : ""}`}
-      style={{
-        borderLeftColor:
-          call.call_type === "scout"
-            ? "#93c5fd"
-            : call.call_type === "assess"
-              ? "#c084fc"
-              : call.call_type === "prioritization"
-                ? "#fdba74"
-                : call.call_type === "ingest"
-                  ? "#86efac"
-                  : "#d1d5db",
-        borderLeftWidth: "3px",
-      }}
+      className="trace-call-node"
+      style={
+        {
+          "--call-accent": accent,
+          marginLeft: depth > 0 ? "20px" : "0",
+        } as React.CSSProperties
+      }
     >
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50"
+        className="trace-call-header"
       >
-        <span className="text-xs text-gray-400">{isOpen ? "▼" : "▶"}</span>
-        <span
-          className={`text-xs font-semibold uppercase px-1.5 py-0.5 rounded ${CALL_TYPE_COLORS[call.call_type] || "bg-gray-100"}`}
-        >
+        <span className="trace-call-accent" style={{ backgroundColor: accent }} />
+        <span className="trace-call-type" style={{ color: accent }}>
           {call.call_type}
         </span>
-        <span className="text-xs font-mono text-gray-400">[{shortId}]</span>
-        <span
-          className={`text-xs px-1.5 py-0.5 rounded ${STATUS_STYLES[call.status] || "bg-gray-100"}`}
-        >
-          {call.status}
-          {duration && ` (${duration})`}
+        <span className="trace-call-id">{shortId}</span>
+        <span className="trace-call-meta">
+          <StatusDot status={call.status} />
+          <span className="trace-call-status">{call.status}</span>
+          {duration && <span className="trace-call-duration">{duration}</span>}
         </span>
         {warningCount > 0 && (
-          <span className="text-xs bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded">
-            {warningCount} warning{warningCount > 1 ? "s" : ""}
+          <span className="trace-badge-warning">
+            {warningCount} warn
           </span>
         )}
         {errorCount > 0 && (
-          <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded">
-            {errorCount} error{errorCount > 1 ? "s" : ""}
+          <span className="trace-badge-error">
+            {errorCount} err
           </span>
         )}
+        <span className="trace-call-chevron">{isOpen ? "\u2013" : "+"}</span>
       </button>
 
       {isOpen && (
-        <div className="px-3 pb-3 space-y-2">
+        <div className="trace-call-body">
           {dispatchEvents.length > 0 && (
-            <div className="bg-gray-50 rounded p-2 text-xs">
-              <strong className="text-gray-600">Dispatches:</strong>
-              <ol className="list-decimal ml-4 mt-1 space-y-0.5">
+            <div className="trace-dispatches">
+              <div className="trace-section-label">dispatches</div>
+              <div className="trace-dispatch-list">
                 {(dispatchEvents[0]?.dispatches ?? []).map((d, i) => {
                   const ex = executedMap.get(i);
                   const childCallId = ex?.child_call_id;
                   return (
-                    <li key={i}>
+                    <div key={i} className="trace-dispatch-item">
+                      <span className="trace-dispatch-index">{i + 1}</span>
                       {childCallId ? (
                         <a
                           href={`#call-${childCallId.slice(0, 8)}`}
-                          className="hover:underline"
+                          className="trace-dispatch-link"
+                          style={{ color: CALL_TYPE_ACCENT[d.call_type] || "#7a8a9e" }}
                           onClick={(e) => {
                             e.preventDefault();
                             document
@@ -314,34 +313,31 @@ export function CallNode({
                               ?.scrollIntoView({ behavior: "smooth" });
                           }}
                         >
-                          <span
-                            className={`font-semibold uppercase px-1 rounded ${CALL_TYPE_COLORS[d.call_type] || ""}`}
-                          >
-                            {d.call_type}
-                          </span>
+                          {d.call_type}
                         </a>
                       ) : (
                         <span
-                          className={`font-semibold uppercase px-1 rounded opacity-50 ${CALL_TYPE_COLORS[d.call_type] || ""}`}
+                          className="trace-dispatch-skipped"
+                          style={{ color: CALL_TYPE_ACCENT[d.call_type] || "#7a8a9e" }}
                         >
                           {d.call_type}
                           {!ex && " (skipped)"}
                         </span>
                       )}
                       {d.reason ? (
-                        <span className="text-gray-500 ml-1">
+                        <span className="trace-dispatch-reason">
                           {String(d.reason)}
                         </span>
                       ) : null}
-                    </li>
+                    </div>
                   );
                 })}
-              </ol>
+              </div>
             </div>
           )}
 
           {displayableEvents.length > 0 && (
-            <div>
+            <div className="trace-events">
               {displayableEvents.map((ev, i) => (
                 <EventSection key={`${ev.ts}-${i}`} event={ev} />
               ))}
@@ -350,14 +346,14 @@ export function CallNode({
 
           <button
             onClick={() => setShowExchanges(!showExchanges)}
-            className="text-xs text-blue-600 hover:underline"
+            className="trace-toggle-exchanges"
           >
-            {showExchanges ? "Hide" : "Show"} LLM exchanges
+            {showExchanges ? "\u2013 Hide" : "+ Show"} LLM exchanges
           </button>
           {showExchanges && <LLMExchangeDetail callId={call.id} />}
 
           {children.length > 0 && (
-            <div className="space-y-2 mt-2">
+            <div className="trace-children">
               {children.map((child) => (
                 <CallNode key={child.call.id} trace={child} depth={depth + 1} />
               ))}

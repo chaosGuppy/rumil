@@ -243,11 +243,21 @@ async def _build_call_trace(db: DB, call_id: str) -> CallTraceOut:
             scope_page_summary = scope_page.summary
     children = await db.get_child_calls(call_id)
     child_traces = [await _build_call_trace(db, c.id) for c in children]
+    exchange_costs = [
+        e.cost_usd for e in events
+        if hasattr(e, "cost_usd") and e.cost_usd is not None
+    ]
+    child_costs = [
+        ct.cost_usd for ct in child_traces
+        if ct.cost_usd is not None
+    ]
+    total = sum(exchange_costs) + sum(child_costs)
     return CallTraceOut(
         call=call,
         scope_page_summary=scope_page_summary,
         events=events,
         children=child_traces,
+        cost_usd=total if total > 0 else None,
     )
 
 
@@ -261,10 +271,13 @@ async def get_run_trace(run_id: str):
     calls = await db.get_calls_for_run(run_id)
     root_calls = [c for c in calls if c.parent_call_id is None]
     root_traces = [await _build_call_trace(db, c.id) for c in root_calls]
+    run_costs = [ct.cost_usd for ct in root_traces if ct.cost_usd is not None]
+    run_total = sum(run_costs)
     return RunTraceOut(
         run_id=run_id,
         question=question_page,
         root_calls=root_traces,
+        cost_usd=run_total if run_total > 0 else None,
     )
 
 

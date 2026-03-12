@@ -107,6 +107,10 @@ export type CallTraceOut = {
      * Children
      */
     children: Array<CallTraceOut>;
+    /**
+     * Cost Usd
+     */
+    cost_usd?: number | null;
 };
 
 /**
@@ -301,9 +305,21 @@ export type LlmExchangeEventOut = {
      */
     output_tokens?: number | null;
     /**
+     * Cache Creation Input Tokens
+     */
+    cache_creation_input_tokens?: number | null;
+    /**
+     * Cache Read Input Tokens
+     */
+    cache_read_input_tokens?: number | null;
+    /**
      * Duration Ms
      */
     duration_ms?: number | null;
+    /**
+     * Cost Usd
+     */
+    cost_usd?: number | null;
 };
 
 /**
@@ -754,6 +770,10 @@ export type RunTraceOut = {
      * Root Calls
      */
     root_calls: Array<CallTraceOut>;
+    /**
+     * Cost Usd
+     */
+    cost_usd?: number | null;
 };
 
 /**

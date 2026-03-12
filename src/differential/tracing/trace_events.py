@@ -67,7 +67,10 @@ class LLMExchangeEvent(BaseModel):
     round: int | None = None
     input_tokens: int | None = None
     output_tokens: int | None = None
+    cache_creation_input_tokens: int | None = None
+    cache_read_input_tokens: int | None = None
     duration_ms: int | None = None
+    cost_usd: float | None = None
 
 
 class WarningEvent(BaseModel):

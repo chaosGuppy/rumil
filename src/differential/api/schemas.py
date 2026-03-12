@@ -108,6 +108,7 @@ class LLMExchangeSummaryOut(BaseModel):
     round: int
     input_tokens: int | None
     output_tokens: int | None
+    duration_ms: int | None
     error: str | None
     created_at: datetime
 
@@ -123,6 +124,7 @@ class LLMExchangeOut(BaseModel):
     tool_calls: list[dict]
     input_tokens: int | None
     output_tokens: int | None
+    duration_ms: int | None
     error: str | None
     created_at: datetime
 

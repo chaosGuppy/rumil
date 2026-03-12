@@ -654,6 +654,7 @@ class DB:
         input_tokens: int | None = None,
         output_tokens: int | None = None,
         error: str | None = None,
+        duration_ms: int | None = None,
     ) -> str:
         exchange_id = str(uuid.uuid4())
         await self.client.table("call_llm_exchanges").insert(
@@ -670,6 +671,7 @@ class DB:
                 "input_tokens": input_tokens,
                 "output_tokens": output_tokens,
                 "error": error,
+                "duration_ms": duration_ms,
             }
         ).execute()
         return exchange_id
@@ -677,7 +679,7 @@ class DB:
     async def get_llm_exchanges(self, call_id: str) -> list[dict[str, Any]]:
         rows = _rows(
             await self.client.table("call_llm_exchanges")
-            .select("id, call_id, phase, round, input_tokens, output_tokens, error, created_at")
+            .select("id, call_id, phase, round, input_tokens, output_tokens, duration_ms, error, created_at")
             .eq("call_id", call_id)
             .order("round")
             .execute()

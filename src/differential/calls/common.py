@@ -134,6 +134,7 @@ async def _save_exchanges(
             input_tokens=rr.input_tokens,
             output_tokens=rr.output_tokens,
             error=rr.error,
+            duration_ms=rr.duration_ms or None,
         )
         if trace:
             await trace.record(LLMExchangeEvent(
@@ -142,6 +143,7 @@ async def _save_exchanges(
                 round=rr.round,
                 input_tokens=rr.input_tokens,
                 output_tokens=rr.output_tokens,
+                duration_ms=rr.duration_ms or None,
             ))
         if trace and moves:
             round_move_count = sum(

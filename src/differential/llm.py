@@ -9,6 +9,7 @@ Exports three calling modes:
 
 import asyncio
 import logging
+import time
 from collections.abc import Callable, Awaitable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -68,6 +69,14 @@ class ToolCall:
 
 
 @dataclass
+class APIResponse:
+    """Wrapper around an Anthropic Message with timing info."""
+
+    message: anthropic.types.Message
+    duration_ms: int
+
+
+@dataclass
 class RoundRecord:
     """Record of a single API round within an agent_loop."""
 
@@ -76,6 +85,7 @@ class RoundRecord:
     tool_calls: list[ToolCall]
     input_tokens: int
     output_tokens: int
+    duration_ms: int = 0
     error: str | None = None
 
 
@@ -99,7 +109,7 @@ async def _call_api(
     tools: list[dict] | None = None,
     max_tokens: int = 4096,
     warnings: list[str] | None = None,
-) -> anthropic.types.Message:
+) -> APIResponse:
     """Make a single Anthropic API call with retry logic."""
     kwargs: dict = {
         "model": model,
@@ -118,14 +128,17 @@ async def _call_api(
 
     for attempt in range(MAX_API_RETRIES):
         try:
+            start = time.monotonic()
             response = await client.messages.create(**kwargs)
+            elapsed_ms = int((time.monotonic() - start) * 1000)
             log.debug(
-                "API response: stop_reason=%s, usage=%d/%d tokens",
+                "API response: stop_reason=%s, usage=%d/%d tokens, duration=%dms",
                 response.stop_reason,
                 response.usage.input_tokens,
                 response.usage.output_tokens,
+                elapsed_ms,
             )
-            return response
+            return APIResponse(message=response, duration_ms=elapsed_ms)
         except Exception as e:
             status = getattr(e, "status_code", None)
             name = type(e).__name__.lower()
@@ -202,7 +215,7 @@ async def agent_loop(
 
     for round_num in range(effective_rounds + 1):
         log.debug("agent_loop round %d/%d", round_num + 1, effective_rounds)
-        response = await _call_api(
+        api_resp = await _call_api(
             client,
             model,
             system_prompt,
@@ -211,6 +224,7 @@ async def agent_loop(
             max_tokens,
             warnings=all_warnings,
         )
+        response = api_resp.message
 
         # Collect text and tool_use blocks
         tool_uses: list[ToolUseBlock] = []
@@ -235,6 +249,7 @@ async def agent_loop(
                 tool_calls=round_tool_calls,
                 input_tokens=response.usage.input_tokens,
                 output_tokens=response.usage.output_tokens,
+                duration_ms=api_resp.duration_ms,
             ))
             break
 
@@ -296,6 +311,7 @@ async def agent_loop(
             tool_calls=round_tool_calls,
             input_tokens=response.usage.input_tokens,
             output_tokens=response.usage.output_tokens,
+            duration_ms=api_resp.duration_ms,
         ))
 
         remaining = effective_rounds - round_num
@@ -362,10 +378,11 @@ async def single_call_with_tools(
 
     messages: list[dict] = [{"role": "user", "content": user_message}]
     all_warnings: list[str] = []
-    response = await _call_api(
+    api_resp = await _call_api(
         client, model, system_prompt, messages, tool_defs or None, max_tokens,
         warnings=all_warnings,
     )
+    response = api_resp.message
 
     text_parts: list[str] = []
     all_tool_calls: list[ToolCall] = []
@@ -402,6 +419,7 @@ async def single_call_with_tools(
         tool_calls=all_tool_calls,
         input_tokens=response.usage.input_tokens,
         output_tokens=response.usage.output_tokens,
+        duration_ms=api_resp.duration_ms,
     )
 
     log.info(
@@ -439,8 +457,8 @@ async def text_call(
         else [{"role": "user", "content": user_message}]
     )
     log.debug("text_call: max_tokens=%d, messages=%d", max_tokens, len(msg_list))
-    response = await _call_api(client, model, system_prompt, msg_list, max_tokens=max_tokens)
-    for block in response.content:
+    api_resp = await _call_api(client, model, system_prompt, msg_list, max_tokens=max_tokens)
+    for block in api_resp.message.content:
         if isinstance(block, TextBlock):
             log.debug("text_call returned %d chars", len(block.text))
             return block.text

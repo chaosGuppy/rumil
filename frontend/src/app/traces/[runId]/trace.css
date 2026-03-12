@@ -338,6 +338,13 @@
   font-size: 12px;
 }
 
+.trace-duration {
+  font-family: var(--font-geist-mono), monospace;
+  color: #999;
+  margin-left: 6px;
+  font-size: 12px;
+}
+
 .trace-warning-text {
   color: #8a6508;
   font-size: 13px;
@@ -498,6 +505,13 @@
   font-family: var(--font-geist-mono), monospace;
   font-size: 12px;
   color: #999;
+}
+
+.trace-exchange-duration {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 12px;
+  color: #999;
+  margin-left: 6px;
 }
 
 .trace-exchange-error-flag {

@@ -290,6 +290,10 @@ export type LlmExchangeEventOut = {
      * Output Tokens
      */
     output_tokens?: number | null;
+    /**
+     * Duration Ms
+     */
+    duration_ms?: number | null;
 };
 
 /**
@@ -339,6 +343,10 @@ export type LlmExchangeOut = {
      */
     output_tokens: number | null;
     /**
+     * Duration Ms
+     */
+    duration_ms: number | null;
+    /**
      * Error
      */
     error: string | null;
@@ -372,6 +380,10 @@ export type LlmExchangeSummaryOut = {
      * Output Tokens
      */
     output_tokens: number | null;
+    /**
+     * Duration Ms
+     */
+    duration_ms: number | null;
     /**
      * Error
      */

@@ -1238,6 +1238,17 @@
               }
             ],
             "title": "Output Tokens"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
           }
         },
         "type": "object",
@@ -1332,6 +1343,17 @@
             ],
             "title": "Output Tokens"
           },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
           "error": {
             "anyOf": [
               {
@@ -1361,6 +1383,7 @@
           "tool_calls",
           "input_tokens",
           "output_tokens",
+          "duration_ms",
           "error",
           "created_at"
         ],
@@ -1402,6 +1425,17 @@
             ],
             "title": "Output Tokens"
           },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
           "error": {
             "anyOf": [
               {
@@ -1426,6 +1460,7 @@
           "round",
           "input_tokens",
           "output_tokens",
+          "duration_ms",
           "error",
           "created_at"
         ],

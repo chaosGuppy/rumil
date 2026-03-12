@@ -206,6 +206,9 @@ async def _build_call_trace(db: DB, call_id: str) -> CallTraceOut:
     trace_events = await db.get_call_trace(call_id)
     events = []
     for e in trace_events:
+        if "data" in e and isinstance(e["data"], dict):
+            e = {k: v for k, v in e.items() if k != "data"} | e["data"]
+        e.setdefault("call_id", call_id)
         try:
             events.append(_trace_event_adapter.validate_python(e))
         except ValidationError:
@@ -256,6 +259,7 @@ async def list_llm_exchanges(call_id: str):
             round=r["round"],
             input_tokens=r.get("input_tokens"),
             output_tokens=r.get("output_tokens"),
+            duration_ms=r.get("duration_ms"),
             error=r.get("error"),
             created_at=r["created_at"],
         )
@@ -280,6 +284,7 @@ async def get_llm_exchange(exchange_id: str):
         tool_calls=row.get("tool_calls", []),
         input_tokens=row.get("input_tokens"),
         output_tokens=row.get("output_tokens"),
+        duration_ms=row.get("duration_ms"),
         error=row.get("error"),
         created_at=row["created_at"],
     )

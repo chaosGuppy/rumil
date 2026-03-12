@@ -178,6 +178,11 @@ function EventSection({ event }: { event: TraceEvent }) {
                 {event.input_tokens.toLocaleString()}/{event.output_tokens?.toLocaleString()} tok
               </span>
             )}
+            {event.duration_ms != null && (
+              <span className="trace-duration">
+                {(event.duration_ms / 1000).toFixed(1)}s
+              </span>
+            )}
           </span>
         </div>
       )}

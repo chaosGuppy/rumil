@@ -11,6 +11,7 @@ interface ExchangeSummary {
   round: number;
   input_tokens: number | null;
   output_tokens: number | null;
+  duration_ms: number | null;
   error: string | null;
   created_at: string;
 }
@@ -26,6 +27,7 @@ interface ExchangeFull {
   tool_calls: Array<Record<string, unknown>>;
   input_tokens: number | null;
   output_tokens: number | null;
+  duration_ms: number | null;
   error: string | null;
   created_at: string;
 }
@@ -95,6 +97,11 @@ function ExchangeRow({ summary }: { summary: ExchangeSummary }) {
         {summary.input_tokens != null && (
           <span className="trace-exchange-tokens">
             {summary.input_tokens.toLocaleString()}/{summary.output_tokens?.toLocaleString()} tok
+          </span>
+        )}
+        {summary.duration_ms != null && (
+          <span className="trace-exchange-duration">
+            {(summary.duration_ms / 1000).toFixed(1)}s
           </span>
         )}
         {summary.error && (

@@ -153,20 +153,11 @@ cd frontend && pnpm dev
 
 To point the API at the production database, set `DIFFERENTIAL_PROD_DB=1` before starting uvicorn.
 
-## Development
+## Tests
 
 ```bash
-# Run tests (uses an isolated 'test' schema — won't touch your data)
 uv run pytest
 
-# Stop the local Supabase stack
-supabase stop
-
-# Reset the database (re-applies all migrations, wipes data)
-supabase db reset
-
-# Create a new migration
-supabase migration new my_migration_name
 ```
 
 ## Supabase Studio

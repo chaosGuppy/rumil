@@ -6,8 +6,8 @@ from differential.calls.common import complete_call, run_call
 from differential.context import build_prioritization_context, collect_subtree_ids
 from differential.database import DB
 from differential.models import Call, CallType
-from differential.trace_events import ContextBuiltEvent, DispatchesPlannedEvent
-from differential.tracer import CallTrace
+from differential.tracing.trace_events import ContextBuiltEvent, DispatchesPlannedEvent
+from differential.tracing.tracer import CallTrace
 
 log = logging.getLogger(__name__)
 
@@ -79,6 +79,5 @@ async def run_prioritization(
         call,
         db,
         f"Prioritization complete. Planned {len(result.dispatches)} dispatches.",
-        trace=trace,
     )
     return summary

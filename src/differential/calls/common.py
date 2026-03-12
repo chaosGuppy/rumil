@@ -36,13 +36,13 @@ from differential.calls.dispatches import DISPATCH_DEFS
 from differential.moves.base import MoveState
 from differential.moves.load_page import LoadPagePayload
 from differential.moves.registry import MOVES
-from differential.trace_events import (
+from differential.tracing.trace_events import (
     MoveTraceItem,
     MovesExecutedEvent,
     PageRef,
     WarningEvent,
 )
-from differential.tracer import CallTrace
+from differential.tracing.tracer import CallTrace
 
 log = logging.getLogger(__name__)
 
@@ -660,15 +660,11 @@ async def log_page_ratings(review: dict, db: DB) -> None:
         log.info("Page rating: %s [%s]: %s", page_label, label, note)
 
 
-async def complete_call(
-    call: Call, db: DB, summary: str, trace: CallTrace | None = None
-) -> None:
+async def complete_call(call: Call, db: DB, summary: str) -> None:
     call.status = CallStatus.COMPLETE
     call.completed_at = datetime.now(UTC)
     call.result_summary = summary
     await db.save_call(call)
-    if trace:
-        await trace.save()
 
 
 async def run_closing_review(

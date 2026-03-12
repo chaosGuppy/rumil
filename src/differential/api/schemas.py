@@ -11,7 +11,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field
 
 from differential.models import Call, Page, PageLink
-from differential.trace_events import (
+from differential.tracing.trace_events import (
     ContextBuiltEvent,
     DispatchesPlannedEvent,
     DispatchExecutedEvent,

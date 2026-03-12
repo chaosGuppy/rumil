@@ -26,11 +26,11 @@ from anthropic.types import MessageParam, TextBlock, ToolUseBlock
 from pydantic import BaseModel
 
 from differential.settings import get_settings
-from differential.trace_events import LLMExchangeEvent
+from differential.tracing.trace_events import LLMExchangeEvent
 
 if TYPE_CHECKING:
     from differential.database import DB
-    from differential.tracer import CallTrace
+    from differential.tracing.tracer import CallTrace
 
 PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts"
 

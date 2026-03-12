@@ -6,7 +6,7 @@ Budget is tracked here; prioritization and review calls are free.
 import logging
 import os
 
-from differential.broadcast import Broadcaster
+from differential.tracing.broadcast import Broadcaster
 from differential.calls import run_assess, run_ingest, run_prioritization, run_scout
 from differential.database import DB
 from differential.settings import get_settings
@@ -21,8 +21,8 @@ from differential.models import (
     ScoutMode,
     Workspace,
 )
-from differential.trace_events import DispatchExecutedEvent
-from differential.tracer import CallTrace
+from differential.tracing.trace_events import DispatchExecutedEvent
+from differential.tracing.tracer import CallTrace
 
 
 log = logging.getLogger(__name__)
@@ -365,8 +365,6 @@ class Orchestrator:
                     child_call_id=child_call_id,
                 ))
 
-        if p_trace:
-            await p_trace.save()
 
     async def run(self, root_question_id: str) -> None:
         """Entry point. Investigate the root question with the full budget."""

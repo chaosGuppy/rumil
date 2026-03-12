@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { RunTraceOut } from "@/api/types.gen";
+import type { RunTraceOut, RealtimeConfigOut } from "@/api/types.gen";
 import { TraceViewer } from "./trace-viewer";
 import "./trace.css";
 
@@ -13,10 +13,7 @@ async function getRunTrace(runId: string): Promise<RunTraceOut | null> {
   return res.json();
 }
 
-async function getRealtimeConfig(): Promise<{
-  url: string;
-  anon_key: string;
-} | null> {
+async function getRealtimeConfig(): Promise<RealtimeConfigOut | null> {
   try {
     const res = await fetch(`${API_BASE}/api/realtime/config`, {
       cache: "no-store",

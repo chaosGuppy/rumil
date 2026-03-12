@@ -173,6 +173,7 @@ async def agent_loop(
     *,
     max_tokens: int = 4096,
     max_rounds: int | None = None,
+    on_round: Callable[[RoundRecord], Awaitable[None]] | None = None,
 ) -> AgentResult:
     """Run a tool-use conversation loop.
 
@@ -243,14 +244,17 @@ async def agent_loop(
                 "agent_loop ending: stop_reason=%s, tool_uses=%d, rounds_used=%d",
                 response.stop_reason, len(tool_uses), round_num + 1,
             )
-            all_rounds.append(RoundRecord(
+            rr = RoundRecord(
                 round=round_num,
                 response_text="\n".join(round_text_parts),
                 tool_calls=round_tool_calls,
                 input_tokens=response.usage.input_tokens,
                 output_tokens=response.usage.output_tokens,
                 duration_ms=api_resp.duration_ms,
-            ))
+            )
+            all_rounds.append(rr)
+            if on_round:
+                await on_round(rr)
             break
 
         log.debug(
@@ -305,14 +309,17 @@ async def agent_loop(
             all_tool_calls.append(tc)
             round_tool_calls.append(tc)
 
-        all_rounds.append(RoundRecord(
+        rr = RoundRecord(
             round=round_num,
             response_text="\n".join(round_text_parts),
             tool_calls=round_tool_calls,
             input_tokens=response.usage.input_tokens,
             output_tokens=response.usage.output_tokens,
             duration_ms=api_resp.duration_ms,
-        ))
+        )
+        all_rounds.append(rr)
+        if on_round:
+            await on_round(rr)
 
         remaining = effective_rounds - round_num
         if remaining == 1:

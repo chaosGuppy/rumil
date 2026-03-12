@@ -13,6 +13,7 @@ from differential.database import DB
 from differential.settings import get_settings
 from differential.llm import (
     AgentResult,
+    RoundRecord,
     StructuredCallResult,
     build_system_prompt,
     build_user_message,
@@ -299,21 +300,70 @@ async def run_call(
             tools,
             max_tokens=max_tokens,
         )
+        phase_moves = state.moves[moves_before:]
+        phase_move_created = state.move_created_ids[moves_before:]
+        if trace:
+            await _save_exchanges(
+                agent_result, call.id, phase, db, trace,
+                moves=phase_moves, move_created_ids=phase_move_created,
+            )
     else:
+        move_tool_names = {md.name for md in MOVES.values()}
+        move_cursor = moves_before
+
+        async def _on_round(rr: RoundRecord) -> None:
+            nonlocal move_cursor
+            if not trace:
+                return
+            tc_data = [
+                {"name": tc.name, "input": tc.input, "result": tc.result[:500]}
+                for tc in rr.tool_calls
+            ]
+            exchange_id = await db.save_llm_exchange(
+                call_id=call.id,
+                phase=phase,
+                round_num=rr.round,
+                system_prompt=system_prompt,
+                user_message=user_message if rr.round == 0 else None,
+                response_text=rr.response_text,
+                tool_calls=tc_data,
+                input_tokens=rr.input_tokens,
+                output_tokens=rr.output_tokens,
+                error=rr.error,
+                duration_ms=rr.duration_ms or None,
+            )
+            await trace.record(LLMExchangeEvent(
+                exchange_id=exchange_id,
+                phase=phase,
+                round=rr.round,
+                input_tokens=rr.input_tokens,
+                output_tokens=rr.output_tokens,
+                duration_ms=rr.duration_ms or None,
+            ))
+            round_move_count = sum(
+                1 for tc in rr.tool_calls if tc.name in move_tool_names
+            )
+            if round_move_count > 0:
+                round_moves = state.moves[move_cursor:move_cursor + round_move_count]
+                round_created = state.move_created_ids[
+                    move_cursor:move_cursor + round_move_count
+                ]
+                move_cursor += round_move_count
+                await trace.record(
+                    await moves_to_trace_event(round_moves, round_created, db)
+                )
+
         agent_result = await agent_loop(
             system_prompt,
             user_message,
             tools,
             max_tokens=max_tokens,
             max_rounds=max_rounds,
+            on_round=_on_round,
         )
-    phase_moves = state.moves[moves_before:]
-    phase_move_created = state.move_created_ids[moves_before:]
-    if trace:
-        await _save_exchanges(
-            agent_result, call.id, phase, db, trace,
-            moves=phase_moves, move_created_ids=phase_move_created,
-        )
+        for w in agent_result.warnings:
+            if trace:
+                await trace.record(WarningEvent(message=w))
 
     log.info(
         "run_call complete: type=%s, pages_created=%d, dispatches=%d, moves=%d",

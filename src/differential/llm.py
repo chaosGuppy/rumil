@@ -25,6 +25,7 @@ import anthropic
 from anthropic.types import MessageParam, TextBlock, ToolUseBlock
 from pydantic import BaseModel
 
+from differential.pricing import compute_cost
 from differential.settings import get_settings
 from differential.tracing.trace_events import LLMExchangeEvent
 
@@ -131,12 +132,15 @@ class LLMExchangeMetadata:
 async def _save_exchange(
     metadata: LLMExchangeMetadata,
     db: DB,
+    model: str,
     system_prompt: str,
     response_text: str | None,
     tool_calls: list[dict],
     input_tokens: int,
     output_tokens: int,
     duration_ms: int,
+    cache_creation_input_tokens: int = 0,
+    cache_read_input_tokens: int = 0,
 ) -> None:
     """Persist an LLM exchange and record a trace event."""
     exchange_id = await db.save_llm_exchange(
@@ -151,6 +155,13 @@ async def _save_exchange(
         duration_ms=duration_ms,
         round_num=metadata.round_num,
     )
+    cost_usd = compute_cost(
+        model=model,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        cache_creation_input_tokens=cache_creation_input_tokens,
+        cache_read_input_tokens=cache_read_input_tokens,
+    )
     if metadata.trace:
         await metadata.trace.record(LLMExchangeEvent(
             exchange_id=exchange_id,
@@ -158,7 +169,10 @@ async def _save_exchange(
             round=metadata.round_num,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            cache_creation_input_tokens=cache_creation_input_tokens or None,
+            cache_read_input_tokens=cache_read_input_tokens or None,
             duration_ms=duration_ms,
+            cost_usd=cost_usd or None,
         ))
 
 
@@ -220,12 +234,15 @@ async def call_api(
                 await _save_exchange(
                     metadata,
                     db=db,
+                    model=model,
                     system_prompt=system_prompt,
                     response_text="\n".join(text_parts) or None,
                     tool_calls=tool_call_data,
                     input_tokens=response.usage.input_tokens,
                     output_tokens=response.usage.output_tokens,
                     duration_ms=elapsed_ms,
+                    cache_creation_input_tokens=getattr(response.usage, "cache_creation_input_tokens", 0) or 0,
+                    cache_read_input_tokens=getattr(response.usage, "cache_read_input_tokens", 0) or 0,
                 )
             return APIResponse(message=response, duration_ms=elapsed_ms)
         except Exception as e:
@@ -342,12 +359,15 @@ async def structured_call(
                 await _save_exchange(
                     metadata,
                     db=db,
+                    model=model,
                     system_prompt=system_prompt,
                     response_text=response_text or None,
                     tool_calls=[],
                     input_tokens=response.usage.input_tokens,
                     output_tokens=response.usage.output_tokens,
                     duration_ms=elapsed_ms,
+                    cache_creation_input_tokens=getattr(response.usage, "cache_creation_input_tokens", 0) or 0,
+                    cache_read_input_tokens=getattr(response.usage, "cache_read_input_tokens", 0) or 0,
                 )
             if response.parsed_output is not None:
                 log.debug(

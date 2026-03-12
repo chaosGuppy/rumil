@@ -18,8 +18,6 @@ from differential.tracing.trace_events import (
     ErrorEvent,
     LLMExchangeEvent,
     MovesExecutedEvent,
-    Phase1LoadedEvent,
-    Phase2LoadedEvent,
     ReviewCompleteEvent,
     WarningEvent,
 )
@@ -36,18 +34,6 @@ class PageDetailOut(BaseModel):
     links_to: list[LinkedPageOut]
 
 
-class ConsiderationOut(BaseModel):
-    page: Page
-    link: PageLink
-
-
-class QuestionTreeOut(BaseModel):
-    question: Page
-    considerations: list[ConsiderationOut]
-    judgements: list[Page]
-    child_questions: list['QuestionTreeOut']
-
-
 class PageCountsOut(BaseModel):
     considerations: int
     judgements: int
@@ -60,14 +46,6 @@ class _TraceEnvelopeMixin(BaseModel):
 
 class ContextBuiltEventOut(ContextBuiltEvent, _TraceEnvelopeMixin):
     event: Literal["context_built"]
-
-
-class Phase1LoadedEventOut(Phase1LoadedEvent, _TraceEnvelopeMixin):
-    event: Literal["phase1_loaded"]
-
-
-class Phase2LoadedEventOut(Phase2LoadedEvent, _TraceEnvelopeMixin):
-    event: Literal["phase2_loaded"]
 
 
 class MovesExecutedEventOut(MovesExecutedEvent, _TraceEnvelopeMixin):
@@ -100,8 +78,6 @@ class DispatchExecutedEventOut(DispatchExecutedEvent, _TraceEnvelopeMixin):
 
 TraceEventOut = Annotated[
     ContextBuiltEventOut
-    | Phase1LoadedEventOut
-    | Phase2LoadedEventOut
     | MovesExecutedEventOut
     | ReviewCompleteEventOut
     | LLMExchangeEventOut
@@ -145,12 +121,14 @@ class CallTraceOut(BaseModel):
     scope_page_summary: str | None = None
     events: list[TraceEventOut]
     children: list['CallTraceOut']
+    cost_usd: float | None = None
 
 
 class RunTraceOut(BaseModel):
     run_id: str
     question: Page | None
     root_calls: list[CallTraceOut]
+    cost_usd: float | None = None
 
 
 class RunSummaryOut(BaseModel):

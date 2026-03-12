@@ -119,6 +119,26 @@
   color: #888;
 }
 
+.trace-call-cost {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 12px;
+  color: #4a9;
+}
+
+.trace-cost {
+  color: #4a9;
+}
+
+.trace-run-cost {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 13px;
+  color: #4a9;
+  margin-bottom: 12px;
+  padding: 6px 10px;
+  background: rgba(68, 170, 153, 0.08);
+  border-radius: 4px;
+}
+
 .trace-call-chevron {
   font-size: 14px;
   color: #aaa;
@@ -810,5 +830,11 @@
   .trace-exchange-error-detail {
     color: #e55;
     background: #1f0808;
+  }
+  .trace-call-cost { color: #5cb8a5; }
+  .trace-cost { color: #5cb8a5; }
+  .trace-run-cost {
+    color: #5cb8a5;
+    background: rgba(92, 184, 165, 0.08);
   }
 }

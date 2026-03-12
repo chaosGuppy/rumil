@@ -249,6 +249,9 @@ function EventSection({ event }: { event: TraceEvent }) {
             {event.input_tokens != null && (
               <span className="trace-token-count">
                 input tokens: {event.input_tokens.toLocaleString()} output tokens: {event.output_tokens?.toLocaleString()}
+                {event.cost_usd != null && (
+                  <span className="trace-cost"> ${event.cost_usd.toFixed(4)}</span>
+                )}
               </span>
             )}
             {event.duration_ms != null && (
@@ -367,7 +370,6 @@ export function CallNode({
 
   const skipEvents = new Set([
     "dispatches_planned", "dispatch_executed",
-    "phase1_loaded", "phase2_loaded",
   ]);
   const displayableEvents = events.filter((e) => !skipEvents.has(e.event));
 
@@ -409,6 +411,9 @@ export function CallNode({
           <StatusDot status={call.status} />
           <span className="trace-call-status">{call.status}</span>
           {duration && <span className="trace-call-duration">{duration}</span>}
+          {trace.cost_usd != null && (
+            <span className="trace-call-cost">${trace.cost_usd.toFixed(4)}</span>
+          )}
         </span>
         {warningCount > 0 && (
           <span className="trace-badge-warning">

@@ -8,7 +8,7 @@ import logging
 import os
 import uuid
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import TypeAdapter, ValidationError
 
@@ -17,13 +17,11 @@ from differential.models import Call, Page, PageLink, PageType, Project, Workspa
 from differential.settings import get_settings
 from differential.api.schemas import (
     CallTraceOut,
-    ConsiderationOut,
     LinkedPageOut,
     LLMExchangeOut,
     LLMExchangeSummaryOut,
     PageCountsOut,
     PageDetailOut,
-    QuestionTreeOut,
     RealtimeConfigOut,
     RunSummaryOut,
     RunTraceOut,
@@ -145,43 +143,6 @@ async def list_root_questions(
     return await db.get_root_questions(workspace)
 
 
-@app.get(
-    "/api/questions/{question_id}/tree",
-    response_model=QuestionTreeOut,
-)
-async def get_question_tree(question_id: str, depth: int = Query(default=2, ge=1, le=5)):
-    db = await _get_db()
-    return await _build_question_tree(db, question_id, depth)
-
-
-async def _build_question_tree(db: DB, question_id: str, depth: int) -> QuestionTreeOut:
-    page = await db.get_page(question_id)
-    if not page:
-        raise HTTPException(status_code=404, detail="Question not found")
-
-    considerations_raw = await db.get_considerations_for_question(question_id)
-    considerations = [
-        ConsiderationOut(page=p, link=l)
-        for p, l in considerations_raw
-    ]
-
-    judgements = await db.get_judgements_for_question(question_id)
-
-    child_questions: list[QuestionTreeOut] = []
-    if depth > 1:
-        children = await db.get_child_questions(question_id)
-        child_questions = [
-            await _build_question_tree(db, c.id, depth - 1) for c in children
-        ]
-
-    return QuestionTreeOut(
-        question=page,
-        considerations=considerations,
-        judgements=judgements,
-        child_questions=child_questions,
-    )
-
-
 # --- Calls ---
 
 @app.get(
@@ -243,11 +204,21 @@ async def _build_call_trace(db: DB, call_id: str) -> CallTraceOut:
             scope_page_summary = scope_page.summary
     children = await db.get_child_calls(call_id)
     child_traces = [await _build_call_trace(db, c.id) for c in children]
+    exchange_costs = [
+        e.cost_usd for e in events
+        if hasattr(e, "cost_usd") and e.cost_usd is not None
+    ]
+    child_costs = [
+        ct.cost_usd for ct in child_traces
+        if ct.cost_usd is not None
+    ]
+    total = sum(exchange_costs) + sum(child_costs)
     return CallTraceOut(
         call=call,
         scope_page_summary=scope_page_summary,
         events=events,
         children=child_traces,
+        cost_usd=total if total > 0 else None,
     )
 
 
@@ -261,10 +232,13 @@ async def get_run_trace(run_id: str):
     calls = await db.get_calls_for_run(run_id)
     root_calls = [c for c in calls if c.parent_call_id is None]
     root_traces = [await _build_call_trace(db, c.id) for c in root_calls]
+    run_costs = [ct.cost_usd for ct in root_traces if ct.cost_usd is not None]
+    run_total = sum(run_costs)
     return RunTraceOut(
         run_id=run_id,
         question=question_page,
         root_calls=root_traces,
+        cost_usd=run_total if run_total > 0 else None,
     )
 
 

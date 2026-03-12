@@ -39,16 +39,6 @@ class ContextBuiltEvent(BaseModel):
     scout_mode: str | None = None
 
 
-class Phase1LoadedEvent(BaseModel):
-    event: Literal["phase1_loaded"] = "phase1_loaded"
-    page_ids: PageRefList = []
-
-
-class Phase2LoadedEvent(BaseModel):
-    event: Literal["phase2_loaded"] = "phase2_loaded"
-    page_ids: PageRefList = []
-
-
 class MovesExecutedEvent(BaseModel):
     event: Literal["moves_executed"] = "moves_executed"
     moves: list[MoveTraceItem] = []
@@ -67,7 +57,10 @@ class LLMExchangeEvent(BaseModel):
     round: int | None = None
     input_tokens: int | None = None
     output_tokens: int | None = None
+    cache_creation_input_tokens: int | None = None
+    cache_read_input_tokens: int | None = None
     duration_ms: int | None = None
+    cost_usd: float | None = None
 
 
 class WarningEvent(BaseModel):
@@ -95,8 +88,6 @@ class DispatchExecutedEvent(BaseModel):
 
 TraceEvent = Annotated[
     ContextBuiltEvent
-    | Phase1LoadedEvent
-    | Phase2LoadedEvent
     | MovesExecutedEvent
     | ReviewCompleteEvent
     | LLMExchangeEvent

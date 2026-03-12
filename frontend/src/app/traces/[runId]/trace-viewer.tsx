@@ -17,6 +17,11 @@ export function TraceViewer({
 
   return (
     <div className="trace-root">
+      {trace.cost_usd != null && (
+        <div className="trace-run-cost">
+          Total cost: ${trace.cost_usd.toFixed(4)}
+        </div>
+      )}
       {trace.root_calls.map((ct) => (
         <CallNode key={ct.call.id} trace={ct} depth={0} />
       ))}

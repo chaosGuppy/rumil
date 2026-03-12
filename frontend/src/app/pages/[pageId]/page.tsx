@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { PageDetailOut, LinkedPageOut, Page, PageLink } from "@/api";
+import type { PageDetailOut, LinkedPageOut, Page, PageLink, RunSummaryOut } from "@/api";
 
 const API_BASE = process.env.API_BASE_URL || "http://localhost:8000";
 
@@ -59,21 +59,16 @@ async function getPageDetail(pageId: string): Promise<PageDetailOut | null> {
   return res.json();
 }
 
-interface RunSummary {
-  run_id: string;
-  created_at: string;
-}
-
 function pageHref(page: Page): string {
   return `/pages/${page.id}`;
 }
 
-async function getQuestionRuns(questionId: string): Promise<RunSummary[]> {
+async function getPageRun(pageId: string): Promise<RunSummaryOut | null> {
   const res = await fetch(
-    `${API_BASE}/api/questions/${questionId}/runs`,
+    `${API_BASE}/api/pages/${pageId}/run`,
     { cache: "no-store" },
   );
-  if (!res.ok) return [];
+  if (!res.ok) return null;
   return res.json();
 }
 
@@ -175,9 +170,9 @@ export default async function PageDetailPage({
   params: Promise<{ pageId: string }>;
 }) {
   const { pageId } = await params;
-  const [detail, runs] = await Promise.all([
+  const [detail, run] = await Promise.all([
     getPageDetail(pageId),
-    getQuestionRuns(pageId),
+    getPageRun(pageId),
   ]);
 
   if (!detail) {
@@ -266,37 +261,20 @@ export default async function PageDetailPage({
         <LinkSection title="Incoming" links={links_to} />
       </div>
 
-      {runs.length > 0 && (
-        <div className="runs-section">
-          <div className="link-section-header">
-            <span className="link-section-title">Runs</span>
-            <span className="link-section-count">{runs.length}</span>
-          </div>
-          <div className="runs-list">
-            {runs.map((r) => (
-              <Link key={r.run_id} href={`/traces/${r.run_id}`} className="run-item">
-                <span className="run-id">{r.run_id.slice(0, 8)}</span>
-                <span className="run-date">
-                  {new Date(r.created_at).toLocaleDateString("en-US", {
-                    year: "numeric",
-                    month: "short",
-                    day: "numeric",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </span>
-              </Link>
-            ))}
-          </div>
-        </div>
-      )}
-
       <footer className="page-footer">
         <span>{new Date(page.created_at).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}</span>
         <span className="footer-sep" />
         <span>{page.provenance_call_type}</span>
         <span className="footer-sep" />
         <span>{page.provenance_model}</span>
+        {run && (
+          <>
+            <span className="footer-sep" />
+            <Link href={`/traces/${run.run_id}`} className="footer-run-link">
+              run {run.run_id.slice(0, 8)}
+            </Link>
+          </>
+        )}
       </footer>
     </main>
   );
@@ -618,40 +596,14 @@ const styles = `
     background: var(--color-muted);
     opacity: 0.4;
   }
-
-  .runs-section {
-    margin-top: 2rem;
-  }
-  .runs-list {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    background: var(--color-border);
-    border: 1px solid var(--color-border);
-    overflow: hidden;
-  }
-  .run-item {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.5rem 0.75rem;
-    background: var(--color-background);
-    text-decoration: none;
-    color: inherit;
-    transition: background 0.1s ease;
-  }
-  .run-item:hover {
-    background: var(--color-surface);
-  }
-  .run-id {
-    font-size: 0.75rem;
-    font-family: var(--font-geist-mono), monospace;
+  .footer-run-link {
     color: var(--color-accent);
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    transition: border-color 0.15s;
   }
-  .run-date {
-    font-size: 0.7rem;
-    font-family: var(--font-geist-mono), monospace;
-    color: var(--color-muted);
+  .footer-run-link:hover {
+    border-color: var(--color-accent);
   }
 
   :root {

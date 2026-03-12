@@ -236,10 +236,16 @@ async def _build_call_trace(db: DB, call_id: str) -> CallTraceOut:
             events.append(_trace_event_adapter.validate_python(e))
         except ValidationError:
             log.warning("Skipping unrecognised trace event: %s", e.get("event"))
+    scope_page_summary = None
+    if call.scope_page_id:
+        scope_page = await db.get_page(call.scope_page_id)
+        if scope_page:
+            scope_page_summary = scope_page.summary
     children = await db.get_child_calls(call_id)
     child_traces = [await _build_call_trace(db, c.id) for c in children]
     return CallTraceOut(
         call=call,
+        scope_page_summary=scope_page_summary,
         events=events,
         children=child_traces,
     )

@@ -142,6 +142,7 @@ class LLMExchangeOut(BaseModel):
 
 class CallTraceOut(BaseModel):
     call: Call
+    scope_page_summary: str | None = None
     events: list[TraceEventOut]
     children: list['CallTraceOut']
 

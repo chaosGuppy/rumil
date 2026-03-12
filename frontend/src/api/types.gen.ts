@@ -76,6 +76,10 @@ export type CallStatus = 'pending' | 'running' | 'complete' | 'failed';
 export type CallTraceOut = {
     call: Call;
     /**
+     * Scope Page Summary
+     */
+    scope_page_summary?: string | null;
+    /**
      * Events
      */
     events: Array<({

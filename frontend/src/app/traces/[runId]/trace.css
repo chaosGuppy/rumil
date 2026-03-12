@@ -85,6 +85,15 @@
   letter-spacing: 0.06em;
 }
 
+.trace-call-scope {
+  font-size: 12px;
+  color: #aaa;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 400px;
+}
+
 .trace-call-id {
   font-family: var(--font-geist-mono), monospace;
   font-size: 12px;
@@ -704,6 +713,7 @@
   .trace-call-header { border-bottom-color: #2a2a2a; }
   .trace-call-header:hover { background-color: #161616; }
   .trace-call-id { color: #666; }
+  .trace-call-scope { color: #777; }
   .trace-call-status { color: #888; }
   .trace-call-duration { color: #777; }
   .trace-call-chevron { color: #555; }

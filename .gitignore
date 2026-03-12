@@ -1,6 +1,6 @@
 # Project-specific
 db/
-pages/
+/pages/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

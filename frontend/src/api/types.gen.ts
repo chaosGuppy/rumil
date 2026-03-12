@@ -400,6 +400,14 @@ export type LlmExchangeSummaryOut = {
 export type LinkType = 'consideration' | 'child_question' | 'supersedes' | 'related';
 
 /**
+ * LinkedPageOut
+ */
+export type LinkedPageOut = {
+    page: Page;
+    link: PageLink;
+};
+
+/**
  * MoveTraceItem
  */
 export type MoveTraceItem = {
@@ -515,6 +523,21 @@ export type PageCountsOut = {
      * Judgements
      */
     judgements: number;
+};
+
+/**
+ * PageDetailOut
+ */
+export type PageDetailOut = {
+    page: Page;
+    /**
+     * Links From
+     */
+    links_from: Array<LinkedPageOut>;
+    /**
+     * Links To
+     */
+    links_to: Array<LinkedPageOut>;
 };
 
 /**
@@ -934,6 +957,36 @@ export type GetLinksToApiPagesPageIdLinksToGetResponses = {
 };
 
 export type GetLinksToApiPagesPageIdLinksToGetResponse = GetLinksToApiPagesPageIdLinksToGetResponses[keyof GetLinksToApiPagesPageIdLinksToGetResponses];
+
+export type GetPageDetailApiPagesPageIdDetailGetData = {
+    body?: never;
+    path: {
+        /**
+         * Page Id
+         */
+        page_id: string;
+    };
+    query?: never;
+    url: '/api/pages/{page_id}/detail';
+};
+
+export type GetPageDetailApiPagesPageIdDetailGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetPageDetailApiPagesPageIdDetailGetError = GetPageDetailApiPagesPageIdDetailGetErrors[keyof GetPageDetailApiPagesPageIdDetailGetErrors];
+
+export type GetPageDetailApiPagesPageIdDetailGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: PageDetailOut;
+};
+
+export type GetPageDetailApiPagesPageIdDetailGetResponse = GetPageDetailApiPagesPageIdDetailGetResponses[keyof GetPageDetailApiPagesPageIdDetailGetResponses];
 
 export type GetPageCountsApiPagesPageIdCountsGetData = {
     body?: never;

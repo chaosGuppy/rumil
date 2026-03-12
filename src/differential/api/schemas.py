@@ -25,6 +25,17 @@ from differential.trace_events import (
 )
 
 
+class LinkedPageOut(BaseModel):
+    page: Page
+    link: PageLink
+
+
+class PageDetailOut(BaseModel):
+    page: Page
+    links_from: list[LinkedPageOut]
+    links_to: list[LinkedPageOut]
+
+
 class ConsiderationOut(BaseModel):
     page: Page
     link: PageLink

@@ -18,9 +18,11 @@ from differential.settings import get_settings
 from differential.api.schemas import (
     CallTraceOut,
     ConsiderationOut,
+    LinkedPageOut,
     LLMExchangeOut,
     LLMExchangeSummaryOut,
     PageCountsOut,
+    PageDetailOut,
     QuestionTreeOut,
     RealtimeConfigOut,
     RunSummaryOut,
@@ -99,6 +101,27 @@ async def get_links_from(page_id: str):
 async def get_links_to(page_id: str):
     db = await _get_db()
     return await db.get_links_to(page_id)
+
+
+@app.get("/api/pages/{page_id}/detail", response_model=PageDetailOut)
+async def get_page_detail(page_id: str):
+    db = await _get_db()
+    page = await db.get_page(page_id)
+    if not page:
+        raise HTTPException(status_code=404, detail="Page not found")
+    raw_from = await db.get_links_from(page_id)
+    raw_to = await db.get_links_to(page_id)
+    links_from = []
+    for link in raw_from:
+        target = await db.get_page(link.to_page_id)
+        if target:
+            links_from.append(LinkedPageOut(page=target, link=link))
+    links_to = []
+    for link in raw_to:
+        source = await db.get_page(link.from_page_id)
+        if source:
+            links_to.append(LinkedPageOut(page=source, link=link))
+    return PageDetailOut(page=page, links_from=links_from, links_to=links_to)
 
 
 @app.get("/api/pages/{page_id}/counts", response_model=PageCountsOut)

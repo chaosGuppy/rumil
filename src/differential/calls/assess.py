@@ -60,19 +60,19 @@ async def run_assess(
     )
     review_context = format_moves_for_review(result.moves)
     review = await run_closing_review(call, review_context, context_text, all_loaded_ids, db, trace)
-    if review:
+    if not review.error:
         log.info(
             "Assess review: confidence=%s, self_assessment=%s",
-            review.get("confidence_in_output", "?"),
-            review.get("self_assessment", "")[:80],
+            review.data.get("confidence_in_output", "?"),
+            review.data.get("self_assessment", "")[:80],
         )
-        await log_page_ratings(review, db)
+        await log_page_ratings(review.data, db)
         await trace.record(ReviewCompleteEvent(
-            remaining_fruit=review.get("remaining_fruit"),
-            confidence=review.get("confidence_in_output"),
+            remaining_fruit=review.data.get("remaining_fruit"),
+            confidence=review.data.get("confidence_in_output"),
         ))
 
-    call.review_json = review or {}
+    call.review_json = review.data
     log.info(
         "Assess complete: call=%s, pages_created=%d",
         call.id[:8], len(result.created_page_ids),
@@ -82,4 +82,4 @@ async def run_assess(
         db,
         f"Assess complete. Created {len(result.created_page_ids)} pages.",
     )
-    return result, review or {}
+    return result, review.data

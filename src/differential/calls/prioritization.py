@@ -2,14 +2,86 @@
 
 import logging
 
-from differential.calls.common import complete_call, run_call
+from differential.calls.common import (
+    RunCallResult,
+    complete_call,
+    run_single_call,
+)
+from differential.calls.dispatches import DISPATCH_DEFS
 from differential.context import build_prioritization_context, collect_subtree_ids
 from differential.database import DB
-from differential.models import Call, CallType
+from differential.llm import build_system_prompt, build_user_message
+from differential.models import Call, CallType, MoveType
+from differential.moves.base import MoveState
+from differential.moves.create_question import PRIORITIZATION_MOVE
+from differential.moves.registry import MOVES
 from differential.tracing.trace_events import ContextBuiltEvent, DispatchesPlannedEvent
 from differential.tracing.tracer import CallTrace
 
 log = logging.getLogger(__name__)
+
+
+async def run_prioritization_call(
+    task_description: str,
+    context_text: str,
+    call: Call,
+    db: DB,
+    *,
+    available_moves: list[MoveType] | None = None,
+    max_tokens: int = 4096,
+    subtree_ids: set[str] | None = None,
+    short_id_map: dict[str, str] | None = None,
+    trace: CallTrace | None = None,
+) -> RunCallResult:
+    """Run a prioritization call with tool use (single LLM round).
+
+    Uses the prioritization-specific create_subquestion tool variant and
+    dispatch tools. No phase-1 page loading.
+    """
+    log.info(
+        "run_prioritization_call: call=%s, scope=%s",
+        call.id[:8],
+        call.scope_page_id[:8] if call.scope_page_id else None,
+    )
+
+    if available_moves is None:
+        available_moves = list(MoveType)
+
+    state = MoveState(call, db)
+    system_prompt = build_system_prompt(CallType.PRIORITIZATION.value)
+
+    tools = []
+    for mt in available_moves:
+        if mt == MoveType.CREATE_QUESTION:
+            tools.append(PRIORITIZATION_MOVE.bind(state))
+        else:
+            tools.append(MOVES[mt].bind(state))
+    for ddef in DISPATCH_DEFS.values():
+        tools.append(ddef.bind(state, subtree_ids, short_id_map))
+
+    user_message = build_user_message(context_text, task_description)
+
+    agent_result = await run_single_call(
+        system_prompt, user_message, tools,
+        call_id=call.id,
+        phase="prioritization",
+        db=db,
+        state=state,
+        trace=trace,
+        max_tokens=max_tokens,
+    )
+
+    log.info(
+        "run_prioritization_call complete: pages_created=%d, dispatches=%d, moves=%d",
+        len(state.created_page_ids),
+        len(state.dispatches), len(state.moves),
+    )
+    return RunCallResult(
+        created_page_ids=state.created_page_ids,
+        dispatches=state.dispatches,
+        moves=state.moves,
+        agent_result=agent_result,
+    )
 
 
 async def run_prioritization(
@@ -44,8 +116,7 @@ async def run_prioritization(
         "Use the dispatch tool to allocate calls."
     )
 
-    result = await run_call(
-        CallType.PRIORITIZATION,
+    result = await run_prioritization_call(
         task,
         context_text,
         call,

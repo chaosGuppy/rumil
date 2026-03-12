@@ -73,19 +73,19 @@ async def run_ingest(
     )
     review_context = format_moves_for_review(result.moves)
     review = await run_closing_review(call, review_context, context_text, all_loaded_ids, db, trace)
-    if review:
+    if not review.error:
         log.info(
             "Ingest review: confidence=%s, remaining_fruit=%s",
-            review.get("confidence_in_output", "?"),
-            review.get("remaining_fruit", "?"),
+            review.data.get("confidence_in_output", "?"),
+            review.data.get("remaining_fruit", "?"),
         )
-        await log_page_ratings(review, db)
+        await log_page_ratings(review.data, db)
         await trace.record(ReviewCompleteEvent(
-            remaining_fruit=review.get("remaining_fruit"),
-            confidence=review.get("confidence_in_output"),
+            remaining_fruit=review.data.get("remaining_fruit"),
+            confidence=review.data.get("confidence_in_output"),
         ))
 
-    call.review_json = review or {}
+    call.review_json = review.data
     log.info(
         "Ingest complete: call=%s, pages_created=%d, source=%s",
         call.id[:8], len(result.created_page_ids), filename,
@@ -95,4 +95,4 @@ async def run_ingest(
         db,
         f"Ingest complete. Created {len(result.created_page_ids)} pages from '{filename}'.",
     )
-    return result, review or {}
+    return result, review.data

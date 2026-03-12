@@ -82,19 +82,19 @@ async def run_scout(
     review_context = format_moves_for_review(result.moves)
     review = await run_closing_review(call, review_context, context_text, all_loaded_ids, db, trace)
     remaining_fruit = 5
-    if review:
-        remaining_fruit = review.get("remaining_fruit", 5)
+    if not review.error:
+        remaining_fruit = review.data.get("remaining_fruit", 5)
         log.info(
             "Scout review: remaining_fruit=%d, confidence=%s",
-            remaining_fruit, review.get("confidence_in_output", "?"),
+            remaining_fruit, review.data.get("confidence_in_output", "?"),
         )
-        await log_page_ratings(review, db)
+        await log_page_ratings(review.data, db)
         await trace.record(ReviewCompleteEvent(
             remaining_fruit=remaining_fruit,
-            confidence=review.get("confidence_in_output"),
+            confidence=review.data.get("confidence_in_output"),
         ))
 
-    call.review_json = review or {}
+    call.review_json = review.data
     log.info(
         "Scout complete: call=%s, pages_created=%d, fruit=%d",
         call.id[:8], len(result.created_page_ids), remaining_fruit,
@@ -104,4 +104,4 @@ async def run_scout(
         db,
         f"Scout complete. Created {len(result.created_page_ids)} pages. Remaining fruit: {remaining_fruit}",
     )
-    return result, review or {}
+    return result, review.data

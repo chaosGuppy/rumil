@@ -32,7 +32,6 @@ from differential.models import (
     Move,
     MoveType,
 )
-from differential.calls.dispatches import DISPATCH_DEFS
 from differential.moves.base import MoveState
 from differential.moves.load_page import LoadPagePayload
 from differential.moves.registry import MOVES
@@ -487,16 +486,14 @@ async def run_call(
     available_moves: list[MoveType] | None = None,
     max_tokens: int = 4096,
     max_rounds: int | None = None,
-    subtree_ids: set[str] | None = None,
-    short_id_map: dict[str, str] | None = None,
     trace: "CallTrace | None" = None,
 ) -> RunCallResult:
-    """Run a workspace call with tool use.
+    """Run a workspace call (scout/assess/ingest) with tool use.
 
-    For non-prioritization calls, runs a preliminary phase where the LLM can
-    load pages before starting its main work. Moves are executed immediately
-    when the LLM calls them. Returns a RunCallResult with created page IDs,
-    dispatches, and the raw agent result.
+    Runs a preliminary phase where the LLM can load pages before starting
+    its main work. Moves are executed immediately when the LLM calls them.
+    Returns a RunCallResult with created page IDs, dispatches, and the raw
+    agent result.
     """
 
     if max_rounds is None:
@@ -514,51 +511,25 @@ async def run_call(
     state = MoveState(call, db)
     system_prompt = build_system_prompt(call_type.value)
 
-    phase1_ids: list[str] = []
-    if call_type != CallType.PRIORITIZATION:
-        phase1_ids = await _run_phase1(
-            system_prompt, context_text, call.id, state, db, trace=trace,
-        )
-        if phase1_ids:
-            extra_text = await _format_loaded_pages(phase1_ids, db)
-            context_text = context_text + "\n\n## Loaded Pages\n\n" + extra_text
+    phase1_ids = await _run_phase1(
+        system_prompt, context_text, call.id, state, db, trace=trace,
+    )
+    if phase1_ids:
+        extra_text = await _format_loaded_pages(phase1_ids, db)
+        context_text = context_text + "\n\n## Loaded Pages\n\n" + extra_text
 
-    if call_type == CallType.PRIORITIZATION:
-        from differential.moves.create_question import PRIORITIZATION_MOVE
-        tools = []
-        for mt in available_moves:
-            if mt == MoveType.CREATE_QUESTION:
-                tools.append(PRIORITIZATION_MOVE.bind(state))
-            else:
-                tools.append(MOVES[mt].bind(state))
-    else:
-        tools = [MOVES[mt].bind(state) for mt in available_moves]
-    if call_type == CallType.PRIORITIZATION:
-        for ddef in DISPATCH_DEFS.values():
-            tools.append(ddef.bind(state, subtree_ids, short_id_map))
-
+    tools = [MOVES[mt].bind(state) for mt in available_moves]
     user_message = build_user_message(context_text, task_description)
 
-    if call_type == CallType.PRIORITIZATION:
-        agent_result = await run_single_call(
-            system_prompt, user_message, tools,
-            call_id=call.id,
-            phase="prioritization",
-            db=db,
-            state=state,
-            trace=trace,
-            max_tokens=max_tokens,
-        )
-    else:
-        agent_result = await run_agent_loop(
-            system_prompt, user_message, tools,
-            call_id=call.id,
-            db=db,
-            state=state,
-            trace=trace,
-            max_tokens=max_tokens,
-            max_rounds=max_rounds,
-        )
+    agent_result = await run_agent_loop(
+        system_prompt, user_message, tools,
+        call_id=call.id,
+        db=db,
+        state=state,
+        trace=trace,
+        max_tokens=max_tokens,
+        max_rounds=max_rounds,
+    )
 
     log.info(
         "run_call complete: type=%s, pages_created=%d, dispatches=%d, moves=%d",
@@ -667,6 +638,14 @@ async def complete_call(call: Call, db: DB, summary: str) -> None:
     await db.save_call(call)
 
 
+@dataclass
+class ClosingReviewResult:
+    """Result of a closing review. Check `error` to determine success."""
+
+    data: dict = field(default_factory=dict)
+    error: str | None = None
+
+
 async def run_closing_review(
     call: Call,
     main_output: str,
@@ -674,7 +653,7 @@ async def run_closing_review(
     loaded_page_ids: list[str] | None = None,
     db: DB | None = None,
     trace: CallTrace | None = None,
-) -> dict | None:
+) -> ClosingReviewResult:
     """Run the closing review as a separate call. Free (not counted against budget)."""
     page_rating_note = ""
     if loaded_page_ids and db:
@@ -732,14 +711,15 @@ async def run_closing_review(
                     score = r.get("score")
                     if pid and isinstance(score, int):
                         await db.save_page_rating(pid, call.id, score, r.get("note", ""))
+            return ClosingReviewResult(data=review)
         else:
-            log.warning("Closing review returned None for call=%s", call.id[:8])
-        return review
+            log.warning("Closing review returned empty data for call=%s", call.id[:8])
+            return ClosingReviewResult(error="structured_call returned empty data")
     except Exception as e:
         log.error(
             "Closing review failed for call=%s: %s", call.id[:8], e, exc_info=True,
         )
-        return None
+        return ClosingReviewResult(error=str(e))
 
 
 def format_moves_for_review(moves: list[Move]) -> str:

@@ -3,6 +3,7 @@
 import pytest
 
 from differential.calls.common import RunCallResult, run_call
+from differential.calls.prioritization import run_prioritization_call
 from differential.models import CallType, LinkType, MoveType, PageType
 from differential.moves.base import MoveState
 
@@ -45,13 +46,11 @@ async def test_prioritization_produces_dispatches(tmp_db, question_page, priorit
         "Dispatch scout or assess calls for this question."
     )
 
-    result = await run_call(
-        CallType.PRIORITIZATION,
+    result = await run_prioritization_call(
         task,
         context,
         prioritization_call,
         tmp_db,
-        max_rounds=3,
     )
 
     assert isinstance(result, RunCallResult)
@@ -206,8 +205,7 @@ async def test_create_subquestion_with_inline_dispatches(
         "using the `links` field."
     )
 
-    result = await run_call(
-        CallType.PRIORITIZATION,
+    result = await run_prioritization_call(
         task,
         context,
         prioritization_call,

@@ -671,3 +671,110 @@
   padding: 8px 10px;
   margin-top: 4px;
 }
+
+@media (prefers-color-scheme: dark) {
+  .trace-back-link { color: #888; }
+  .trace-back-link:hover { color: #ccc; }
+
+  .trace-title { color: #e8e8e8; }
+  .trace-run-id { color: #777; }
+  .trace-error { color: #e66; }
+
+  .trace-call-header { border-bottom-color: #2a2a2a; }
+  .trace-call-header:hover { background-color: #161616; }
+  .trace-call-id { color: #666; }
+  .trace-call-status { color: #888; }
+  .trace-call-duration { color: #777; }
+  .trace-call-chevron { color: #555; }
+
+  .trace-dot-pending { background-color: #666; }
+
+  .trace-badge-warning { color: #d4a017; background: #1f1a06; }
+  .trace-badge-error { color: #e66; background: #1f0808; }
+
+  .trace-call-body { border-left-color: #2a2a2a; }
+
+  .trace-event { border-bottom-color: #1e1e1e; }
+  .trace-event-header-clickable:hover .trace-event-label { color: #ccc; }
+  .trace-event-label { color: #999; }
+  .trace-event-time { color: #555; }
+
+  .trace-kv-key { color: #777; }
+  .trace-kv-value { color: #ccc; }
+
+  .trace-page-chip {
+    color: #bbb;
+    background: #1a1a1a;
+    border-color: #333;
+  }
+  .trace-page-chip:hover {
+    color: #e0e0e0;
+    background: #252525;
+    border-color: #555;
+    box-shadow: 0 1px 3px rgba(255, 255, 255, 0.04);
+  }
+
+  .trace-empty { color: #666; }
+
+  .trace-move-create { color: #3dba6e; }
+  .trace-move-link { color: #6b9fd8; }
+  .trace-move-supersede { color: #e55; }
+  .trace-move-hypothesis { color: #d4a030; }
+  .trace-move-load { color: #7bbec6; }
+  .trace-move-default { color: #888; }
+  .trace-move-summary { color: #bbb; }
+
+  .trace-exchange-info { color: #888; }
+  .trace-token-count { color: #666; }
+  .trace-duration { color: #666; }
+  .trace-warning-text { color: #d4a017; }
+  .trace-error-text { color: #e55; }
+
+  .trace-dispatches { border-bottom-color: #1e1e1e; }
+  .trace-section-label { color: #666; }
+  .trace-dispatch-index { color: #555; }
+  .trace-dispatch-reason { color: #888; }
+
+  .trace-toggle-exchanges { color: #777; }
+  .trace-toggle-exchanges:hover { color: #ccc; }
+
+  .trace-exchanges-container { border-top-color: #2a2a2a; }
+  .trace-exchange-row { border-bottom-color: #1a1a1a; }
+  .trace-exchange-toggle:hover { background-color: #161616; }
+  .trace-exchange-icon { color: #555; }
+  .trace-exchange-phase { color: #ccc; }
+  .trace-exchange-round { color: #777; }
+  .trace-exchange-tokens { color: #666; }
+  .trace-exchange-duration { color: #666; }
+  .trace-exchange-error-flag { color: #e66; }
+  .trace-exchange-loading { color: #666; }
+
+  .trace-collapsible-toggle { color: #999; }
+  .trace-collapsible-toggle:hover { color: #ccc; }
+  .trace-collapsible-icon { color: #555; }
+  .trace-collapsible-meta { color: #555; }
+  .trace-collapsible-content {
+    background: #141414;
+    border-color: #2a2a2a;
+    color: #ccc;
+  }
+  .trace-collapsible-preview { color: #666; }
+
+  .trace-tool-calls-label { color: #999; }
+  .trace-tool-call-name { color: #bbb; }
+  .trace-tool-call-name:hover { color: #e0e0e0; }
+  .trace-tool-call-input {
+    background: #141414;
+    border-color: #2a2a2a;
+    color: #ccc;
+  }
+  .trace-tool-call-output {
+    background: #141414;
+    border-left-color: #3dba6e;
+    color: #ccc;
+  }
+  .trace-exchange-error-detail {
+    color: #e55;
+    background: #1f0808;
+  }
+}

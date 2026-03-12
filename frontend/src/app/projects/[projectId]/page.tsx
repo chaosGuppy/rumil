@@ -475,7 +475,7 @@ export default function PagesIndexPage() {
       `}</style>
 
       <Link href="/" className="back-link">
-        &larr; Projects
+        &larr; Workspaces
       </Link>
 
       <div className="pages-header">

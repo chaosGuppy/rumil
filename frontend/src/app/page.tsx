@@ -17,10 +17,10 @@ export default async function Home() {
   return (
     <main className="max-w-4xl mx-auto p-8">
       <h1 className="text-3xl font-bold mb-8">Differential</h1>
-      <h2 className="text-xl font-semibold mb-4">Projects</h2>
+      <h2 className="text-xl font-semibold mb-4">Workspaces</h2>
       {projects.length === 0 ? (
         <p className="text-gray-500">
-          No projects found. Make sure the API server is running and the database
+          No workspaces found. Make sure the API server is running and the database
           has data.
         </p>
       ) : (

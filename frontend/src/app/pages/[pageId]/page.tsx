@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Markdown from "react-markdown";
 import type { PageDetailOut, LinkedPageOut, Page, PageLink, RunSummaryOut } from "@/api";
 
 const API_BASE = process.env.API_BASE_URL || "http://localhost:8000";
@@ -198,7 +199,7 @@ export default async function PageDetailPage({
       <style>{styles}</style>
 
       <Link href={`/projects/${page.project_id}`} className="back-link">
-        &larr; Project
+        &larr; Workspace
       </Link>
 
       <article className="page-article">
@@ -228,7 +229,7 @@ export default async function PageDetailPage({
         </header>
 
         <div className="page-content">
-          {page.content}
+          <Markdown>{page.content}</Markdown>
         </div>
 
         <div className="page-meta-row">
@@ -375,8 +376,60 @@ const styles = `
     font-size: 0.9rem;
     line-height: 1.65;
     color: var(--color-foreground);
-    white-space: pre-wrap;
     opacity: 0.85;
+  }
+
+  .page-content p {
+    margin: 0 0 0.75em;
+  }
+  .page-content p:last-child {
+    margin-bottom: 0;
+  }
+  .page-content ul, .page-content ol {
+    margin: 0 0 0.75em;
+    padding-left: 1.5em;
+  }
+  .page-content li {
+    margin-bottom: 0.25em;
+  }
+  .page-content h1, .page-content h2, .page-content h3,
+  .page-content h4, .page-content h5, .page-content h6 {
+    margin: 1em 0 0.5em;
+    line-height: 1.3;
+  }
+  .page-content h1:first-child, .page-content h2:first-child,
+  .page-content h3:first-child {
+    margin-top: 0;
+  }
+  .page-content code {
+    font-size: 0.85em;
+    background: var(--color-surface);
+    padding: 0.15em 0.35em;
+    border-radius: 3px;
+  }
+  .page-content pre {
+    background: var(--color-surface);
+    padding: 0.75em 1em;
+    border-radius: 4px;
+    overflow-x: auto;
+    margin: 0 0 0.75em;
+  }
+  .page-content pre code {
+    background: none;
+    padding: 0;
+  }
+  .page-content blockquote {
+    border-left: 3px solid var(--color-border);
+    margin: 0 0 0.75em;
+    padding: 0.25em 0 0.25em 1em;
+    opacity: 0.85;
+  }
+  .page-content strong {
+    font-weight: 600;
+  }
+  .page-content a {
+    color: var(--color-accent);
+    text-decoration: underline;
   }
 
   .page-meta-row {

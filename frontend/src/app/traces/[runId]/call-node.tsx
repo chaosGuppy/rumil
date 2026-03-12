@@ -467,7 +467,6 @@ export function CallNode({
                           style={{ color: CALL_TYPE_ACCENT[d.call_type] || "#7a8a9e" }}
                         >
                           {d.call_type}
-                          {!ex && " (skipped)"}
                         </span>
                       )}
                       {d.reason ? (

@@ -35,6 +35,7 @@ class MoveResult:
 
     message: str
     created_page_id: str | None = None
+    extra_created_ids: list[str] | None = None
 
 
 class MoveState:
@@ -46,6 +47,7 @@ class MoveState:
         self.last_created_id: str | None = None
         self.created_page_ids: list[str] = []
         self.moves: list[Move] = []
+        self.move_created_ids: list[list[str]] = []
         self.dispatches: list[Dispatch] = []
 
 
@@ -85,13 +87,18 @@ class MoveDef(Generic[S]):
                 validated = _resolve_last_created(validated, state.last_created_id)
             result = await self.execute(validated, state.call, state.db)
             state.moves.append(Move(move_type=self.move_type, payload=validated))
+            move_page_ids: list[str] = []
             if result.created_page_id:
                 state.created_page_ids.append(result.created_page_id)
                 state.last_created_id = result.created_page_id
+                move_page_ids.append(result.created_page_id)
                 log.debug(
                     "Move %s created page: %s",
                     self.name, result.created_page_id[:8],
                 )
+            if result.extra_created_ids:
+                move_page_ids.extend(result.extra_created_ids)
+            state.move_created_ids.append(move_page_ids)
             log.debug("Move %s result: %s", self.name, result.message[:100])
             return result.message
 

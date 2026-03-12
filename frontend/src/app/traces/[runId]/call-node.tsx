@@ -69,11 +69,11 @@ function PageList({ pages }: { pages: PageRef[] }) {
 function MoveRow({
   moveType,
   summary,
-  pageId,
+  pageRefs,
 }: {
   moveType: string;
   summary: string;
-  pageId?: string;
+  pageRefs?: PageRef[];
 }) {
   const isCreate = moveType.startsWith("CREATE_");
   const isLink = moveType.startsWith("LINK_");
@@ -93,16 +93,22 @@ function MoveRow({
             ? "trace-move-load"
             : "trace-move-default";
 
+  const hasRefs = pageRefs && pageRefs.length > 0;
+
   return (
     <div className="trace-move-row">
       <span className={`trace-move-type ${typeClass}`}>
         {moveType.replace(/_/g, " ").toLowerCase()}
       </span>
-      {summary && <span className="trace-move-summary">{summary}</span>}
-      {pageId && (
-        <Link href={`/pages/${pageId}`} className="trace-page-chip">
-          {pageId.slice(0, 8)}
-        </Link>
+      {!hasRefs && summary && (
+        <span className="trace-move-summary">{summary}</span>
+      )}
+      {hasRefs && (
+        <span className="trace-page-list">
+          {pageRefs.map((p) => (
+            <PageChip key={p.id} page={p} />
+          ))}
+        </span>
       )}
     </div>
   );
@@ -292,15 +298,9 @@ function EventSection({ event }: { event: TraceEvent }) {
               key={i}
               moveType={m.type}
               summary={m.summary || ""}
-              pageId={m.page_id as string | undefined}
+              pageRefs={m.page_refs}
             />
           ))}
-          {(event.created_page_ids ?? []).length > 0 && (
-            <div className="trace-kv" style={{ marginTop: "6px" }}>
-              <span className="trace-kv-key">created</span>
-              <PageList pages={event.created_page_ids ?? []} />
-            </div>
-          )}
         </div>
       )}
 

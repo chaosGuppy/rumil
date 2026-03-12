@@ -1,5 +1,5 @@
 ---
-description: Writing tests for the differential codebase
+description: Use this skill any time a user wants NEW test code written. This covers creating unit tests, integration tests, regression tests, or test coverage for anything — functions, modules, CLI flags, API calls, models, moves, logic, or behavior. Trigger when the user says things like "write a test", "add a test", "test this", "add coverage", "make sure X is tested", "write a regression test", or describes specific behavior they want verified in a test. Also trigger when someone describes a bug and asks for a test to capture it. Do NOT trigger for fixing existing broken tests, configuring pytest, reviewing what's already covered, debugging production code, or tasks unrelated to test authorship.
 ---
 
 # Writing Tests

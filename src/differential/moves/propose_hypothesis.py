@@ -124,6 +124,7 @@ async def execute(payload: ProposeHypothesisPayload, call: Call, db: DB) -> Move
     return MoveResult(
         f"Created hypothesis claim [{claim.id[:8]}] and question [{question.id[:8]}].",
         created_page_id=question.id,
+        extra_created_ids=[claim.id],
     )
 
 

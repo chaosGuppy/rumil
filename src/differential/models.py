@@ -230,5 +230,6 @@ class Call(BaseModel):
     context_page_ids: list[str] = Field(default_factory=list)
     result_summary: str = ""
     review_json: dict = Field(default_factory=dict)
+    call_params: dict | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     completed_at: datetime | None = None

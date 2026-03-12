@@ -1330,34 +1330,34 @@ export type GetRealtimeConfigApiRealtimeConfigGetResponses = {
 
 export type GetRealtimeConfigApiRealtimeConfigGetResponse = GetRealtimeConfigApiRealtimeConfigGetResponses[keyof GetRealtimeConfigApiRealtimeConfigGetResponses];
 
-export type ListQuestionRunsApiQuestionsQuestionIdRunsGetData = {
+export type GetPageRunApiPagesPageIdRunGetData = {
     body?: never;
     path: {
         /**
-         * Question Id
+         * Page Id
          */
-        question_id: string;
+        page_id: string;
     };
     query?: never;
-    url: '/api/questions/{question_id}/runs';
+    url: '/api/pages/{page_id}/run';
 };
 
-export type ListQuestionRunsApiQuestionsQuestionIdRunsGetErrors = {
+export type GetPageRunApiPagesPageIdRunGetErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type ListQuestionRunsApiQuestionsQuestionIdRunsGetError = ListQuestionRunsApiQuestionsQuestionIdRunsGetErrors[keyof ListQuestionRunsApiQuestionsQuestionIdRunsGetErrors];
+export type GetPageRunApiPagesPageIdRunGetError = GetPageRunApiPagesPageIdRunGetErrors[keyof GetPageRunApiPagesPageIdRunGetErrors];
 
-export type ListQuestionRunsApiQuestionsQuestionIdRunsGetResponses = {
+export type GetPageRunApiPagesPageIdRunGetResponses = {
     /**
-     * Response List Question Runs Api Questions  Question Id  Runs Get
+     * Response Get Page Run Api Pages  Page Id  Run Get
      *
      * Successful Response
      */
-    200: Array<RunSummaryOut>;
+    200: RunSummaryOut | null;
 };
 
-export type ListQuestionRunsApiQuestionsQuestionIdRunsGetResponse = ListQuestionRunsApiQuestionsQuestionIdRunsGetResponses[keyof ListQuestionRunsApiQuestionsQuestionIdRunsGetResponses];
+export type GetPageRunApiPagesPageIdRunGetResponse = GetPageRunApiPagesPageIdRunGetResponses[keyof GetPageRunApiPagesPageIdRunGetResponses];

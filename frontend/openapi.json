@@ -738,18 +738,18 @@
         }
       }
     },
-    "/api/questions/{question_id}/runs": {
+    "/api/pages/{page_id}/run": {
       "get": {
-        "summary": "List Question Runs",
-        "operationId": "list_question_runs_api_questions__question_id__runs_get",
+        "summary": "Get Page Run",
+        "operationId": "get_page_run_api_pages__page_id__run_get",
         "parameters": [
           {
-            "name": "question_id",
+            "name": "page_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Question Id"
+              "title": "Page Id"
             }
           }
         ],
@@ -759,11 +759,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/RunSummaryOut"
-                  },
-                  "title": "Response List Question Runs Api Questions  Question Id  Runs Get"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/RunSummaryOut"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Get Page Run Api Pages  Page Id  Run Get"
                 }
               }
             }

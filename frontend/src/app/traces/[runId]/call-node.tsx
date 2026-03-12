@@ -7,9 +7,9 @@ import type {
   CallTraceOut,
   DispatchExecutedEventOut,
   DispatchesPlannedEventOut,
+  LlmExchangeOut,
   PageRef,
 } from "@/api/types.gen";
-import { LLMExchangeDetail } from "./llm-exchange-detail";
 
 type TraceEvent = CallTraceOut["events"][number];
 
@@ -95,6 +95,80 @@ function MoveRow({ moveType, summary }: { moveType: string; summary: string }) {
   );
 }
 
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+function CollapsiblePre({
+  label,
+  content,
+}: {
+  label: string;
+  content: string | null;
+}) {
+  const [open, setOpen] = useState(false);
+  if (!content) return null;
+
+  return (
+    <div className="trace-collapsible">
+      <button
+        onClick={() => setOpen(!open)}
+        className="trace-collapsible-toggle"
+      >
+        <span className="trace-collapsible-icon">{open ? "\u2013" : "+"}</span>
+        <span>{label}</span>
+        <span className="trace-collapsible-meta">
+          {content.length.toLocaleString()} chars
+        </span>
+      </button>
+      {open && (
+        <pre className="trace-collapsible-content">{content}</pre>
+      )}
+      {!open && content.length > 200 && (
+        <pre className="trace-collapsible-preview">
+          {content.slice(0, 200)}...
+        </pre>
+      )}
+    </div>
+  );
+}
+
+function ExchangeDetail({ detail }: { detail: LlmExchangeOut }) {
+  return (
+    <div className="trace-exchange-detail">
+      <CollapsiblePre label="System prompt" content={detail.system_prompt} />
+      <CollapsiblePre label="User message" content={detail.user_message} />
+      <CollapsiblePre label="Response" content={detail.response_text} />
+      {detail.tool_calls.length > 0 && (
+        <div className="trace-tool-calls">
+          <div className="trace-tool-calls-label">
+            Tool calls ({detail.tool_calls.length})
+          </div>
+          {detail.tool_calls.map((tc, i) => (
+            <details key={i} className="trace-tool-call">
+              <summary className="trace-tool-call-name">
+                {tc.name as string}
+              </summary>
+              <pre className="trace-tool-call-input">
+                {JSON.stringify(tc.input, null, 2)}
+              </pre>
+              {tc.result ? (
+                <pre className="trace-tool-call-output">
+                  {String(tc.result)}
+                </pre>
+              ) : null}
+            </details>
+          ))}
+        </div>
+      )}
+      {detail.error && (
+        <div className="trace-exchange-error-detail">
+          {detail.error}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function StatusDot({ status }: { status: string }) {
   const colorClass =
     status === "running"
@@ -111,15 +185,69 @@ function StatusDot({ status }: { status: string }) {
 function EventSection({ event }: { event: TraceEvent }) {
   const isWarning = event.event === "warning";
   const isError = event.event === "error";
+  const isExchange = event.event === "llm_exchange";
+
+  const [exchangeDetail, setExchangeDetail] = useState<LlmExchangeOut | null>(null);
+  const [exchangeOpen, setExchangeOpen] = useState(false);
+  const [exchangeLoading, setExchangeLoading] = useState(false);
+
+  async function toggleExchange() {
+    if (!isExchange) return;
+    if (exchangeDetail) {
+      setExchangeOpen(!exchangeOpen);
+      return;
+    }
+    setExchangeLoading(true);
+    try {
+      const res = await fetch(
+        `${API_BASE}/api/llm-exchanges/${event.exchange_id}`,
+      );
+      if (res.ok) {
+        setExchangeDetail(await res.json());
+        setExchangeOpen(true);
+      }
+    } finally {
+      setExchangeLoading(false);
+    }
+  }
 
   return (
     <div
       className={`trace-event ${isWarning ? "trace-event-warning" : ""} ${isError ? "trace-event-error" : ""}`}
     >
-      <div className="trace-event-header">
-        <span className="trace-event-label">{event.event.replace(/_/g, " ")}</span>
+      <div
+        className={`trace-event-header ${isExchange ? "trace-event-header-clickable" : ""}`}
+        onClick={isExchange ? toggleExchange : undefined}
+        role={isExchange ? "button" : undefined}
+      >
+        <span className="trace-event-label">
+          {isExchange ? (exchangeOpen ? "\u2013" : "+") + " " : ""}
+          {event.event.replace(/_/g, " ")}
+        </span>
+        {isExchange && (
+          <span className="trace-exchange-info">
+            {event.phase.replace(/_/g, " ")} r{event.round}
+            {event.input_tokens != null && (
+              <span className="trace-token-count">
+                {event.input_tokens.toLocaleString()}/{event.output_tokens?.toLocaleString()} tok
+              </span>
+            )}
+            {event.duration_ms != null && (
+              <span className="trace-duration">
+                {(event.duration_ms / 1000).toFixed(1)}s
+              </span>
+            )}
+            {exchangeLoading && (
+              <span className="trace-exchange-loading">loading...</span>
+            )}
+          </span>
+        )}
         <span className="trace-event-time">{formatTime(event.ts)}</span>
       </div>
+
+      {isExchange && exchangeOpen && exchangeDetail && (
+        <ExchangeDetail detail={exchangeDetail} />
+      )}
 
       {event.event === "context_built" && (
         <div className="trace-event-body">
@@ -169,24 +297,6 @@ function EventSection({ event }: { event: TraceEvent }) {
         </div>
       )}
 
-      {event.event === "llm_exchange" && (
-        <div className="trace-event-body">
-          <span className="trace-exchange-info">
-            {event.phase.replace(/_/g, " ")} r{event.round}
-            {event.input_tokens != null && (
-              <span className="trace-token-count">
-                {event.input_tokens.toLocaleString()}/{event.output_tokens?.toLocaleString()} tok
-              </span>
-            )}
-            {event.duration_ms != null && (
-              <span className="trace-duration">
-                {(event.duration_ms / 1000).toFixed(1)}s
-              </span>
-            )}
-          </span>
-        </div>
-      )}
-
       {event.event === "warning" && (
         <div className="trace-event-body trace-warning-text">
           {event.message}
@@ -229,7 +339,6 @@ export function CallNode({
   depth: number;
 }) {
   const [isOpen, setIsOpen] = useState(depth <= 1);
-  const [showExchanges, setShowExchanges] = useState(false);
   const { call, events, children } = trace;
   const shortId = call.id.slice(0, 8);
   const duration = getDuration(call);
@@ -348,14 +457,6 @@ export function CallNode({
               ))}
             </div>
           )}
-
-          <button
-            onClick={() => setShowExchanges(!showExchanges)}
-            className="trace-toggle-exchanges"
-          >
-            {showExchanges ? "\u2013 Hide" : "+ Show"} LLM exchanges
-          </button>
-          {showExchanges && <LLMExchangeDetail callId={call.id} />}
 
           {children.length > 0 && (
             <div className="trace-children">

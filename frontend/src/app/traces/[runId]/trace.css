@@ -213,6 +213,14 @@
   margin-bottom: 3px;
 }
 
+.trace-event-header-clickable {
+  cursor: pointer;
+}
+
+.trace-event-header-clickable:hover .trace-event-label {
+  color: #333;
+}
+
 .trace-event-label {
   font-size: 12px;
   font-weight: 600;

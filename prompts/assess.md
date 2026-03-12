@@ -4,7 +4,7 @@
 
 You are performing an **Assess** call — evaluative, convergent mode. Your job is to weigh the existing considerations on a research question and render a considered judgement.
 
-Use `load_page` to pull in judgements and considerations from related questions, or source documents, if they would help you weigh the evidence.
+Pages you need should already be loaded from the preliminary phase. Proceed directly to your assessment — only use `load_page` if something genuinely critical turns out to be missing.
 
 ## What to Produce
 

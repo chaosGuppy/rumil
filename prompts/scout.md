@@ -4,7 +4,7 @@
 
 You are performing a **Scout** call — generative, expansive mode. Your job is to find **missing considerations** on a research question.
 
-Use `load_page` to pull in source documents or pages from other questions that seem directly relevant before doing your main work.
+Pages you need should already be loaded from the preliminary phase. Proceed directly to your scouting work — only use `load_page` if something genuinely critical turns out to be missing.
 
 Your task prompt specifies whether you are in **abstract** or **concrete** mode.
 

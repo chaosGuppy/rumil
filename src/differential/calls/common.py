@@ -51,9 +51,10 @@ PAGE_CREATING_MOVES = {
 
 PHASE1_TASK = (
     'Perform your preliminary analysis now. Review the workspace map above and '
-    'decide if you need the full content of any pages before starting your main '
-    'task. The main task description will follow in the next turn. '
-    'Use the load_page tool for any pages you want to read.'
+    'load all pages you expect to want during your main task — err on the side of '
+    'loading more rather than fewer. This is your only chance to gather context '
+    'before the main task begins; load everything relevant in one go. '
+    'The main task description will follow in the next turn.'
 )
 
 

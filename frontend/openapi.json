@@ -821,6 +821,18 @@
             "type": "object",
             "title": "Review Json"
           },
+          "call_params": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Call Params"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -853,6 +865,7 @@
           "context_page_ids",
           "result_summary",
           "review_json",
+          "call_params",
           "created_at",
           "completed_at"
         ],

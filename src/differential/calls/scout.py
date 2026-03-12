@@ -38,11 +38,18 @@ async def run_scout(
     db: DB,
     mode: ScoutMode = ScoutMode.ABSTRACT,
     broadcaster=None,
+    max_rounds: int | None = None,
+    fruit_threshold: int | None = None,
 ) -> tuple[RunCallResult, dict]:
     """Run a Scout call on a question.
 
     Returns (run_call_result, review_dict).
     """
+    call.call_params = {"mode": mode.value}
+    if max_rounds is not None:
+        call.call_params["max_rounds"] = max_rounds
+    if fruit_threshold is not None:
+        call.call_params["fruit_threshold"] = fruit_threshold
     trace = CallTrace(call.id, db, broadcaster=broadcaster)
     log.info(
         "Scout starting: call=%s, question=%s, mode=%s",

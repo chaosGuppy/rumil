@@ -170,6 +170,35 @@
   padding: 8px 0 16px 14px;
 }
 
+/* Call params */
+
+.trace-call-params {
+  display: flex;
+  gap: 14px;
+  margin-bottom: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid #efefef;
+}
+
+.trace-call-param {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+}
+
+.trace-call-param-label {
+  font-size: 11px;
+  color: #888;
+  letter-spacing: 0.02em;
+}
+
+.trace-call-param-value {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--call-accent, #5b8def);
+}
+
 /* Events */
 
 .trace-events {
@@ -683,6 +712,9 @@
 
   .trace-badge-warning { color: #d4a017; background: #1f1a06; }
   .trace-badge-error { color: #e66; background: #1f0808; }
+
+  .trace-call-params { border-bottom-color: #1e1e1e; }
+  .trace-call-param-label { color: #666; }
 
   .trace-call-body { border-left-color: #2a2a2a; }
 

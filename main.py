@@ -114,8 +114,10 @@ async def cmd_ingest(
         print("\nSources stored (--budget 0, no extraction).")
         return
 
+    frontend = get_settings().frontend_url.rstrip("/")
     print(f"\nExtracting considerations for: {question.summary[:80]}")
-    print(f"Budget: {effective_budget} call{'s' if effective_budget != 1 else ''}\n")
+    print(f"Budget: {effective_budget} call{'s' if effective_budget != 1 else ''}")
+    print(f"Trace:  {frontend}/traces/{db.run_id}\n")
     await db.init_budget(effective_budget)
     made = await run_ingest_calls(source_pages, for_question_id, db)
     total, used = await db.get_budget()
@@ -202,9 +204,11 @@ async def cmd_new(
     await db.init_budget(budget)
     question_id = await create_root_question(question_text, db)
 
+    frontend = get_settings().frontend_url.rstrip("/")
     print(f"\nNew question: {question_id}")
     print(f"Question:     {question_text}")
     print(f"Budget:       {budget} research calls")
+    print(f"Trace:        {frontend}/traces/{db.run_id}")
 
     if ingest_files:
         source_pages = []
@@ -310,12 +314,14 @@ async def cmd_continue(question_id: str, additional_budget: int | None, db: DB) 
     counts = await db.count_pages_for_question(question_id)
     await db.init_budget(additional_budget)
 
+    frontend = get_settings().frontend_url.rstrip("/")
     print(f"\nContinuing investigation of: {question.summary[:80]}")
     print(f"Question ID:  {question_id}")
     print(
         f"Existing:     {counts['considerations']} considerations, {counts['judgements']} judgements"
     )
     print(f"Budget:       {additional_budget} research calls")
+    print(f"Trace:        {frontend}/traces/{db.run_id}")
 
     await Orchestrator(db).run(question_id)
     await _print_summary(db)
@@ -453,9 +459,9 @@ async def async_main():
         help="Use production Supabase (requires SUPABASE_PROD_URL and SUPABASE_PROD_KEY)",
     )
     parser.add_argument(
-        "-v", "--verbose",
+        "-q", "--quiet",
         action="store_true",
-        help="Enable info-level logging to stderr",
+        help="Suppress info-level logging (only show warnings and errors)",
     )
     parser.add_argument(
         "--debug",
@@ -466,10 +472,10 @@ async def async_main():
 
     if args.debug:
         log_level = logging.DEBUG
-    elif args.verbose:
-        log_level = logging.INFO
-    else:
+    elif args.quiet:
         log_level = logging.WARNING
+    else:
+        log_level = logging.INFO
     logging.basicConfig(
         level=logging.WARNING,
         format="%(asctime)s %(name)s %(levelname)s %(message)s",

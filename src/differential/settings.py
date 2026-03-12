@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     )
     supabase_prod_url: str = ""
     supabase_prod_key: str = ""
+    frontend_url: str = "http://127.0.0.1:3000"
 
     @property
     def is_test_mode(self) -> bool:

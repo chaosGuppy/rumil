@@ -109,8 +109,8 @@ uv run python main.py "Your question here" --smoke-test
 # Any command can target the production database
 uv run python main.py --prod-db --list
 
-# Enable info-level logging to stderr
-uv run python main.py "Your question" --budget 5 -v
+# Suppress info-level logging (only warnings and errors)
+uv run python main.py "Your question" --budget 5 -q
 
 # Enable debug-level logging to stderr (very verbose)
 uv run python main.py "Your question" --budget 5 --debug

@@ -368,57 +368,6 @@
         }
       }
     },
-    "/api/questions/{question_id}/tree": {
-      "get": {
-        "summary": "Get Question Tree",
-        "operationId": "get_question_tree_api_questions__question_id__tree_get",
-        "parameters": [
-          {
-            "name": "question_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Question Id"
-            }
-          },
-          {
-            "name": "depth",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 5,
-              "minimum": 1,
-              "default": 2,
-              "title": "Depth"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/QuestionTreeOut"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/projects/{project_id}/calls": {
       "get": {
         "summary": "List Calls",
@@ -936,12 +885,6 @@
                   "$ref": "#/components/schemas/ContextBuiltEventOut"
                 },
                 {
-                  "$ref": "#/components/schemas/Phase1LoadedEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/Phase2LoadedEventOut"
-                },
-                {
                   "$ref": "#/components/schemas/MovesExecutedEventOut"
                 },
                 {
@@ -972,8 +915,6 @@
                   "error": "#/components/schemas/ErrorEventOut",
                   "llm_exchange": "#/components/schemas/LLMExchangeEventOut",
                   "moves_executed": "#/components/schemas/MovesExecutedEventOut",
-                  "phase1_loaded": "#/components/schemas/Phase1LoadedEventOut",
-                  "phase2_loaded": "#/components/schemas/Phase2LoadedEventOut",
                   "review_complete": "#/components/schemas/ReviewCompleteEventOut",
                   "warning": "#/components/schemas/WarningEventOut"
                 }
@@ -1029,22 +970,6 @@
           "neutral"
         ],
         "title": "ConsiderationDirection"
-      },
-      "ConsiderationOut": {
-        "properties": {
-          "page": {
-            "$ref": "#/components/schemas/Page"
-          },
-          "link": {
-            "$ref": "#/components/schemas/PageLink"
-          }
-        },
-        "type": "object",
-        "required": [
-          "page",
-          "link"
-        ],
-        "title": "ConsiderationOut"
       },
       "ContextBuiltEventOut": {
         "properties": {
@@ -1898,70 +1823,6 @@
         ],
         "title": "PageType"
       },
-      "Phase1LoadedEventOut": {
-        "properties": {
-          "ts": {
-            "type": "string",
-            "title": "Ts"
-          },
-          "call_id": {
-            "type": "string",
-            "title": "Call Id"
-          },
-          "event": {
-            "type": "string",
-            "const": "phase1_loaded",
-            "title": "Event"
-          },
-          "page_ids": {
-            "items": {
-              "$ref": "#/components/schemas/PageRef"
-            },
-            "type": "array",
-            "title": "Page Ids",
-            "default": []
-          }
-        },
-        "type": "object",
-        "required": [
-          "ts",
-          "call_id",
-          "event"
-        ],
-        "title": "Phase1LoadedEventOut"
-      },
-      "Phase2LoadedEventOut": {
-        "properties": {
-          "ts": {
-            "type": "string",
-            "title": "Ts"
-          },
-          "call_id": {
-            "type": "string",
-            "title": "Call Id"
-          },
-          "event": {
-            "type": "string",
-            "const": "phase2_loaded",
-            "title": "Event"
-          },
-          "page_ids": {
-            "items": {
-              "$ref": "#/components/schemas/PageRef"
-            },
-            "type": "array",
-            "title": "Page Ids",
-            "default": []
-          }
-        },
-        "type": "object",
-        "required": [
-          "ts",
-          "call_id",
-          "event"
-        ],
-        "title": "Phase2LoadedEventOut"
-      },
       "Project": {
         "properties": {
           "name": {
@@ -1985,42 +1846,6 @@
           "created_at"
         ],
         "title": "Project"
-      },
-      "QuestionTreeOut": {
-        "properties": {
-          "question": {
-            "$ref": "#/components/schemas/Page"
-          },
-          "considerations": {
-            "items": {
-              "$ref": "#/components/schemas/ConsiderationOut"
-            },
-            "type": "array",
-            "title": "Considerations"
-          },
-          "judgements": {
-            "items": {
-              "$ref": "#/components/schemas/Page"
-            },
-            "type": "array",
-            "title": "Judgements"
-          },
-          "child_questions": {
-            "items": {
-              "$ref": "#/components/schemas/QuestionTreeOut"
-            },
-            "type": "array",
-            "title": "Child Questions"
-          }
-        },
-        "type": "object",
-        "required": [
-          "question",
-          "considerations",
-          "judgements",
-          "child_questions"
-        ],
-        "title": "QuestionTreeOut"
       },
       "RealtimeConfigOut": {
         "properties": {

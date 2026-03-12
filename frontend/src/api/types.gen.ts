@@ -85,10 +85,6 @@ export type CallTraceOut = {
     events: Array<({
         event: 'context_built';
     } & ContextBuiltEventOut) | ({
-        event: 'phase1_loaded';
-    } & Phase1LoadedEventOut) | ({
-        event: 'phase2_loaded';
-    } & Phase2LoadedEventOut) | ({
         event: 'moves_executed';
     } & MovesExecutedEventOut) | ({
         event: 'review_complete';
@@ -122,14 +118,6 @@ export type CallType = 'scout' | 'assess' | 'prioritization' | 'ingest' | 'refra
  * ConsiderationDirection
  */
 export type ConsiderationDirection = 'supports' | 'opposes' | 'neutral';
-
-/**
- * ConsiderationOut
- */
-export type ConsiderationOut = {
-    page: Page;
-    link: PageLink;
-};
 
 /**
  * ContextBuiltEventOut
@@ -623,50 +611,6 @@ export type PageRef = {
 export type PageType = 'source' | 'claim' | 'question' | 'judgement' | 'concept' | 'wiki';
 
 /**
- * Phase1LoadedEventOut
- */
-export type Phase1LoadedEventOut = {
-    /**
-     * Ts
-     */
-    ts: string;
-    /**
-     * Call Id
-     */
-    call_id: string;
-    /**
-     * Event
-     */
-    event: 'phase1_loaded';
-    /**
-     * Page Ids
-     */
-    page_ids?: Array<PageRef>;
-};
-
-/**
- * Phase2LoadedEventOut
- */
-export type Phase2LoadedEventOut = {
-    /**
-     * Ts
-     */
-    ts: string;
-    /**
-     * Call Id
-     */
-    call_id: string;
-    /**
-     * Event
-     */
-    event: 'phase2_loaded';
-    /**
-     * Page Ids
-     */
-    page_ids?: Array<PageRef>;
-};
-
-/**
  * Project
  */
 export type Project = {
@@ -682,25 +626,6 @@ export type Project = {
      * Created At
      */
     created_at: string;
-};
-
-/**
- * QuestionTreeOut
- */
-export type QuestionTreeOut = {
-    question: Page;
-    /**
-     * Considerations
-     */
-    considerations: Array<ConsiderationOut>;
-    /**
-     * Judgements
-     */
-    judgements: Array<Page>;
-    /**
-     * Child Questions
-     */
-    child_questions: Array<QuestionTreeOut>;
 };
 
 /**
@@ -1081,41 +1006,6 @@ export type ListRootQuestionsApiProjectsProjectIdQuestionsGetResponses = {
 };
 
 export type ListRootQuestionsApiProjectsProjectIdQuestionsGetResponse = ListRootQuestionsApiProjectsProjectIdQuestionsGetResponses[keyof ListRootQuestionsApiProjectsProjectIdQuestionsGetResponses];
-
-export type GetQuestionTreeApiQuestionsQuestionIdTreeGetData = {
-    body?: never;
-    path: {
-        /**
-         * Question Id
-         */
-        question_id: string;
-    };
-    query?: {
-        /**
-         * Depth
-         */
-        depth?: number;
-    };
-    url: '/api/questions/{question_id}/tree';
-};
-
-export type GetQuestionTreeApiQuestionsQuestionIdTreeGetErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type GetQuestionTreeApiQuestionsQuestionIdTreeGetError = GetQuestionTreeApiQuestionsQuestionIdTreeGetErrors[keyof GetQuestionTreeApiQuestionsQuestionIdTreeGetErrors];
-
-export type GetQuestionTreeApiQuestionsQuestionIdTreeGetResponses = {
-    /**
-     * Successful Response
-     */
-    200: QuestionTreeOut;
-};
-
-export type GetQuestionTreeApiQuestionsQuestionIdTreeGetResponse = GetQuestionTreeApiQuestionsQuestionIdTreeGetResponses[keyof GetQuestionTreeApiQuestionsQuestionIdTreeGetResponses];
 
 export type ListCallsApiProjectsProjectIdCallsGetData = {
     body?: never;

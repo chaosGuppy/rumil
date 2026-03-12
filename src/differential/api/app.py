@@ -8,7 +8,7 @@ import logging
 import os
 import uuid
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import TypeAdapter, ValidationError
 
@@ -17,13 +17,11 @@ from differential.models import Call, Page, PageLink, PageType, Project, Workspa
 from differential.settings import get_settings
 from differential.api.schemas import (
     CallTraceOut,
-    ConsiderationOut,
     LinkedPageOut,
     LLMExchangeOut,
     LLMExchangeSummaryOut,
     PageCountsOut,
     PageDetailOut,
-    QuestionTreeOut,
     RealtimeConfigOut,
     RunSummaryOut,
     RunTraceOut,
@@ -143,43 +141,6 @@ async def list_root_questions(
 ):
     db = await _get_db(project_id)
     return await db.get_root_questions(workspace)
-
-
-@app.get(
-    "/api/questions/{question_id}/tree",
-    response_model=QuestionTreeOut,
-)
-async def get_question_tree(question_id: str, depth: int = Query(default=2, ge=1, le=5)):
-    db = await _get_db()
-    return await _build_question_tree(db, question_id, depth)
-
-
-async def _build_question_tree(db: DB, question_id: str, depth: int) -> QuestionTreeOut:
-    page = await db.get_page(question_id)
-    if not page:
-        raise HTTPException(status_code=404, detail="Question not found")
-
-    considerations_raw = await db.get_considerations_for_question(question_id)
-    considerations = [
-        ConsiderationOut(page=p, link=l)
-        for p, l in considerations_raw
-    ]
-
-    judgements = await db.get_judgements_for_question(question_id)
-
-    child_questions: list[QuestionTreeOut] = []
-    if depth > 1:
-        children = await db.get_child_questions(question_id)
-        child_questions = [
-            await _build_question_tree(db, c.id, depth - 1) for c in children
-        ]
-
-    return QuestionTreeOut(
-        question=page,
-        considerations=considerations,
-        judgements=judgements,
-        child_questions=child_questions,
-    )
 
 
 # --- Calls ---

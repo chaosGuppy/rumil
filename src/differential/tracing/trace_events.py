@@ -39,16 +39,6 @@ class ContextBuiltEvent(BaseModel):
     scout_mode: str | None = None
 
 
-class Phase1LoadedEvent(BaseModel):
-    event: Literal["phase1_loaded"] = "phase1_loaded"
-    page_ids: PageRefList = []
-
-
-class Phase2LoadedEvent(BaseModel):
-    event: Literal["phase2_loaded"] = "phase2_loaded"
-    page_ids: PageRefList = []
-
-
 class MovesExecutedEvent(BaseModel):
     event: Literal["moves_executed"] = "moves_executed"
     moves: list[MoveTraceItem] = []
@@ -98,8 +88,6 @@ class DispatchExecutedEvent(BaseModel):
 
 TraceEvent = Annotated[
     ContextBuiltEvent
-    | Phase1LoadedEvent
-    | Phase2LoadedEvent
     | MovesExecutedEvent
     | ReviewCompleteEvent
     | LLMExchangeEvent

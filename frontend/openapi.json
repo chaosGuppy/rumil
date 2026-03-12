@@ -238,6 +238,45 @@
         }
       }
     },
+    "/api/pages/{page_id}/detail": {
+      "get": {
+        "summary": "Get Page Detail",
+        "operationId": "get_page_detail_api_pages__page_id__detail_get",
+        "parameters": [
+          {
+            "name": "page_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Page Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageDetailOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/pages/{page_id}/counts": {
       "get": {
         "summary": "Get Page Counts",
@@ -1495,6 +1534,22 @@
         ],
         "title": "LinkType"
       },
+      "LinkedPageOut": {
+        "properties": {
+          "page": {
+            "$ref": "#/components/schemas/Page"
+          },
+          "link": {
+            "$ref": "#/components/schemas/PageLink"
+          }
+        },
+        "type": "object",
+        "required": [
+          "page",
+          "link"
+        ],
+        "title": "LinkedPageOut"
+      },
       "MoveTraceItem": {
         "properties": {
           "type": {
@@ -1672,6 +1727,34 @@
           "judgements"
         ],
         "title": "PageCountsOut"
+      },
+      "PageDetailOut": {
+        "properties": {
+          "page": {
+            "$ref": "#/components/schemas/Page"
+          },
+          "links_from": {
+            "items": {
+              "$ref": "#/components/schemas/LinkedPageOut"
+            },
+            "type": "array",
+            "title": "Links From"
+          },
+          "links_to": {
+            "items": {
+              "$ref": "#/components/schemas/LinkedPageOut"
+            },
+            "type": "array",
+            "title": "Links To"
+          }
+        },
+        "type": "object",
+        "required": [
+          "page",
+          "links_from",
+          "links_to"
+        ],
+        "title": "PageDetailOut"
       },
       "PageLayer": {
         "type": "string",

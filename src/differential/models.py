@@ -6,7 +6,9 @@ from datetime import UTC, datetime
 from enum import Enum
 import uuid
 
-from pydantic import BaseModel, ConfigDict, Field
+from typing import Annotated, Literal
+
+from pydantic import BaseModel, ConfigDict, Discriminator, Field
 
 
 def _all_fields_required(schema: dict) -> None:
@@ -97,8 +99,7 @@ class ConsiderationDirection(str, Enum):
     NEUTRAL = "neutral"
 
 
-class BaseDispatchPayload(BaseModel):
-    question_id: str = Field(description="Page ID of the question to investigate")
+class _DispatchBase(BaseModel):
     reason: str = Field("", description="Why this dispatch is a good use of budget")
     context_page_ids: list[str] = Field(
         default_factory=list,
@@ -109,7 +110,11 @@ class BaseDispatchPayload(BaseModel):
     )
 
 
-class ScoutDispatchPayload(BaseDispatchPayload):
+class BaseDispatchPayload(_DispatchBase):
+    question_id: str = Field(description="Page ID of the question to investigate")
+
+
+class _ScoutFields(BaseModel):
     mode: ScoutMode = Field(
         ScoutMode.ALTERNATE,
         description=(
@@ -125,12 +130,38 @@ class ScoutDispatchPayload(BaseDispatchPayload):
     )
 
 
+class _PrioritizationFields(BaseModel):
+    budget: int = Field(description="Budget to allocate for the sub-investigation")
+
+
+class ScoutDispatchPayload(BaseDispatchPayload, _ScoutFields):
+    pass
+
+
 class AssessDispatchPayload(BaseDispatchPayload):
     pass
 
 
-class PrioritizationDispatchPayload(BaseDispatchPayload):
-    budget: int = Field(description="Budget to allocate for the sub-investigation")
+class PrioritizationDispatchPayload(BaseDispatchPayload, _PrioritizationFields):
+    pass
+
+
+class InlineScoutDispatch(_DispatchBase, _ScoutFields):
+    call_type: Literal["scout"] = "scout"
+
+
+class InlineAssessDispatch(_DispatchBase):
+    call_type: Literal["assess"] = "assess"
+
+
+class InlinePrioritizationDispatch(_DispatchBase, _PrioritizationFields):
+    call_type: Literal["prioritization"] = "prioritization"
+
+
+InlineDispatch = Annotated[
+    InlineScoutDispatch | InlineAssessDispatch | InlinePrioritizationDispatch,
+    Discriminator("call_type"),
+]
 
 
 class Move(BaseModel):

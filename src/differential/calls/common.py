@@ -13,6 +13,7 @@ from differential.database import DB
 from differential.settings import get_settings
 from differential.llm import (
     AgentResult,
+    StructuredCallResult,
     build_system_prompt,
     build_user_message,
     structured_call,
@@ -36,16 +37,22 @@ log = logging.getLogger(__name__)
 
 from differential.trace_events import (
     LLMExchangeEvent,
+    MoveTraceItem,
     MovesExecutedEvent,
     PageRef,
     WarningEvent,
 )
 from differential.tracer import CallTrace
 
-PAGE_CREATING_MOVES = {
-    MoveType.CREATE_CLAIM, MoveType.CREATE_QUESTION, MoveType.CREATE_JUDGEMENT,
-    MoveType.CREATE_CONCEPT, MoveType.CREATE_WIKI_PAGE,
-    MoveType.PROPOSE_HYPOTHESIS, MoveType.SUPERSEDE_PAGE,
+PAGE_ID_FIELDS: dict[MoveType, list[str]] = {
+    MoveType.LOAD_PAGE: ["page_id"],
+    MoveType.LINK_CONSIDERATION: ["claim_id", "question_id"],
+    MoveType.LINK_CHILD_QUESTION: ["child_id", "parent_id"],
+    MoveType.LINK_RELATED: ["from_page_id", "to_page_id"],
+    MoveType.SUPERSEDE_PAGE: ["old_page_id"],
+    MoveType.FLAG_FUNNINESS: ["page_id"],
+    MoveType.REPORT_DUPLICATE: ["page_id_a", "page_id_b"],
+    MoveType.PROPOSE_HYPOTHESIS: ["parent_question_id"],
 }
 
 
@@ -113,12 +120,11 @@ async def _save_exchanges(
     db: DB,
     trace: "CallTrace | None" = None,
     moves: list[Move] | None = None,
-    created_page_ids: list[str] | None = None,
+    move_created_ids: list[list[str]] | None = None,
 ) -> None:
     """Save LLM exchange records and interleave moves per round."""
     move_tool_names = {md.name for md in MOVES.values()}
     move_idx = 0
-    create_idx = 0
     for rr in agent_result.rounds:
         tc_data = [
             {"name": tc.name, "input": tc.input, "result": tc.result[:500]}
@@ -138,10 +144,11 @@ async def _save_exchanges(
             duration_ms=rr.duration_ms or None,
         )
         if trace:
+            has_rounds = phase == "inner_loop"
             await trace.record(LLMExchangeEvent(
                 exchange_id=exchange_id,
                 phase=phase,
-                round=rr.round,
+                round=rr.round if has_rounds else None,
                 input_tokens=rr.input_tokens,
                 output_tokens=rr.output_tokens,
                 duration_ms=rr.duration_ms or None,
@@ -152,15 +159,15 @@ async def _save_exchanges(
             )
             if round_move_count > 0:
                 round_moves = moves[move_idx:move_idx + round_move_count]
+                round_created = (
+                    move_created_ids[move_idx:move_idx + round_move_count]
+                    if move_created_ids
+                    else [[] for _ in round_moves]
+                )
                 move_idx += round_move_count
-                round_created: list[str] = []
-                if created_page_ids:
-                    for m in round_moves:
-                        if (m.move_type in PAGE_CREATING_MOVES
-                                and create_idx < len(created_page_ids)):
-                            round_created.append(created_page_ids[create_idx])
-                            create_idx += 1
-                await trace.record(await moves_to_trace_event(round_moves, round_created, db))
+                await trace.record(
+                    await moves_to_trace_event(round_moves, round_created, db)
+                )
     for w in agent_result.warnings:
         if trace:
             await trace.record(WarningEvent(message=w))
@@ -199,10 +206,12 @@ async def _run_phase1(
             max_tokens=2048,
         )
         phase1_moves = state.moves[moves_before:]
+        phase1_created = state.move_created_ids[moves_before:]
         if trace:
             await _save_exchanges(
                 result, trace.call_id, "initial_page_loads", db, trace,
                 moves=phase1_moves,
+                move_created_ids=phase1_created,
             )
         loaded_ids = []
         for tc in result.tool_calls:
@@ -265,7 +274,16 @@ async def run_call(
             extra_text = await _format_loaded_pages(phase1_ids, db)
             context_text = context_text + "\n\n## Loaded Pages\n\n" + extra_text
 
-    tools = [MOVES[mt].bind(state) for mt in available_moves]
+    if call_type == CallType.PRIORITIZATION:
+        from differential.moves.create_question import PRIORITIZATION_MOVE
+        tools = []
+        for mt in available_moves:
+            if mt == MoveType.CREATE_QUESTION:
+                tools.append(PRIORITIZATION_MOVE.bind(state))
+            else:
+                tools.append(MOVES[mt].bind(state))
+    else:
+        tools = [MOVES[mt].bind(state) for mt in available_moves]
     if call_type == CallType.PRIORITIZATION:
         for ddef in DISPATCH_DEFS.values():
             tools.append(ddef.bind(state, subtree_ids, short_id_map))
@@ -274,7 +292,6 @@ async def run_call(
 
     phase = "prioritization" if call_type == CallType.PRIORITIZATION else "inner_loop"
     moves_before = len(state.moves)
-    created_before = len(state.created_page_ids)
     if call_type == CallType.PRIORITIZATION:
         agent_result = await single_call_with_tools(
             system_prompt,
@@ -291,11 +308,11 @@ async def run_call(
             max_rounds=max_rounds,
         )
     phase_moves = state.moves[moves_before:]
-    phase_created = state.created_page_ids[created_before:]
+    phase_move_created = state.move_created_ids[moves_before:]
     if trace:
         await _save_exchanges(
             agent_result, call.id, phase, db, trace,
-            moves=phase_moves, created_page_ids=phase_created,
+            moves=phase_moves, move_created_ids=phase_move_created,
         )
 
     log.info(
@@ -335,23 +352,46 @@ async def resolve_page_refs(page_ids: list[str], db: DB) -> list[PageRef]:
     return refs
 
 
+async def _resolve_payload_refs(move: Move, db: DB) -> list[PageRef]:
+    """Resolve page IDs referenced in a move's payload fields."""
+    fields = PAGE_ID_FIELDS.get(move.move_type, [])
+    refs: list[PageRef] = []
+    for field_name in fields:
+        raw = getattr(move.payload, field_name, None)
+        if not raw:
+            continue
+        full_id = await db.resolve_page_id(raw)
+        if not full_id:
+            continue
+        page = await db.get_page(full_id)
+        summary = page.summary if page else ""
+        refs.append(PageRef(id=full_id, summary=summary))
+    return refs
+
+
 async def moves_to_trace_event(
     moves: list[Move],
-    created_page_ids: list[str],
+    move_created_ids: list[list[str]],
     db: DB,
 ) -> MovesExecutedEvent:
     """Build a typed MovesExecutedEvent from a list of moves."""
-    refs = await resolve_page_refs(created_page_ids, db)
-    return MovesExecutedEvent(
-        moves=[
-            {
-                "type": m.move_type.value,
-                **m.payload.model_dump(exclude_none=True, exclude_defaults=True),
-            }
-            for m in moves
-        ],
-        created_page_ids=refs,
-    )
+    trace_items = []
+    for i, m in enumerate(moves):
+        created_ids = move_created_ids[i] if i < len(move_created_ids) else []
+        created_refs = await resolve_page_refs(created_ids, db)
+        payload_refs = await _resolve_payload_refs(m, db)
+        seen = {r.id for r in created_refs}
+        for pr in payload_refs:
+            if pr.id not in seen:
+                created_refs.append(pr)
+                seen.add(pr.id)
+        payload_data = m.payload.model_dump(exclude_none=True, exclude_defaults=True)
+        trace_items.append(MoveTraceItem(
+            type=m.move_type.value,
+            page_refs=created_refs,
+            **payload_data,
+        ))
+    return MovesExecutedEvent(moves=trace_items)
 
 
 REVIEW_SYSTEM_PROMPT = (
@@ -392,6 +432,7 @@ async def run_closing_review(
     context_text: str,
     loaded_page_ids: list[str] | None = None,
     db: DB | None = None,
+    trace: CallTrace | None = None,
 ) -> dict | None:
     """Run the closing review as a separate call. Free (not counted against budget)."""
     page_rating_note = ""
@@ -424,12 +465,33 @@ async def run_closing_review(
     )
     try:
         user_message = build_user_message(context_text, review_task)
-        review = await structured_call(
+        result = await structured_call(
             system_prompt=REVIEW_SYSTEM_PROMPT,
             user_message=user_message,
             response_model=ReviewResponse,
             max_tokens=2048,
         )
+        review = result.data
+        if trace and db:
+            exchange_id = await db.save_llm_exchange(
+                call_id=call.id,
+                phase="closing_review",
+                round_num=0,
+                system_prompt=REVIEW_SYSTEM_PROMPT,
+                user_message=user_message,
+                response_text=result.response_text,
+                tool_calls=[],
+                input_tokens=result.input_tokens,
+                output_tokens=result.output_tokens,
+                duration_ms=result.duration_ms,
+            )
+            await trace.record(LLMExchangeEvent(
+                exchange_id=exchange_id,
+                phase="closing_review",
+                input_tokens=result.input_tokens,
+                output_tokens=result.output_tokens,
+                duration_ms=result.duration_ms,
+            ))
         if review:
             log.info(
                 "Closing review complete: call=%s, fruit=%s, confidence=%s",

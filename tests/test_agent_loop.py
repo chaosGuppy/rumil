@@ -140,7 +140,10 @@ async def test_structured_call_returns_parsed_dict():
         max_tokens=256,
     )
 
-    assert result is not None
-    assert "score" in result
-    assert isinstance(result["score"], int)
-    assert "reason" in result
+    assert result.data is not None
+    assert "score" in result.data
+    assert isinstance(result.data["score"], int)
+    assert "reason" in result.data
+    assert result.input_tokens is not None
+    assert result.output_tokens is not None
+    assert result.duration_ms is not None

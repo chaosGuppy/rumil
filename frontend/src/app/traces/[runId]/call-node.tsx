@@ -66,7 +66,15 @@ function PageList({ pages }: { pages: PageRef[] }) {
   );
 }
 
-function MoveRow({ moveType, summary }: { moveType: string; summary: string }) {
+function MoveRow({
+  moveType,
+  summary,
+  pageRefs,
+}: {
+  moveType: string;
+  summary: string;
+  pageRefs?: PageRef[];
+}) {
   const isCreate = moveType.startsWith("CREATE_");
   const isLink = moveType.startsWith("LINK_");
   const isSupersede = moveType === "SUPERSEDE_PAGE";
@@ -85,12 +93,23 @@ function MoveRow({ moveType, summary }: { moveType: string; summary: string }) {
             ? "trace-move-load"
             : "trace-move-default";
 
+  const hasRefs = pageRefs && pageRefs.length > 0;
+
   return (
     <div className="trace-move-row">
       <span className={`trace-move-type ${typeClass}`}>
         {moveType.replace(/_/g, " ").toLowerCase()}
       </span>
-      {summary && <span className="trace-move-summary">{summary}</span>}
+      {!hasRefs && summary && (
+        <span className="trace-move-summary">{summary}</span>
+      )}
+      {hasRefs && (
+        <span className="trace-page-list">
+          {pageRefs.map((p) => (
+            <PageChip key={p.id} page={p} />
+          ))}
+        </span>
+      )}
     </div>
   );
 }
@@ -226,10 +245,10 @@ function EventSection({ event }: { event: TraceEvent }) {
         </span>
         {isExchange && (
           <span className="trace-exchange-info">
-            {event.phase.replace(/_/g, " ")} r{event.round}
+            {event.phase.replace(/_/g, " ")}{event.round != null ? ` round ${event.round}` : ""}
             {event.input_tokens != null && (
               <span className="trace-token-count">
-                {event.input_tokens.toLocaleString()}/{event.output_tokens?.toLocaleString()} tok
+                input tokens: {event.input_tokens.toLocaleString()} output tokens: {event.output_tokens?.toLocaleString()}
               </span>
             )}
             {event.duration_ms != null && (
@@ -275,14 +294,13 @@ function EventSection({ event }: { event: TraceEvent }) {
       {event.event === "moves_executed" && (
         <div className="trace-event-body">
           {(event.moves ?? []).map((m, i) => (
-            <MoveRow key={i} moveType={m.type} summary={m.summary || ""} />
+            <MoveRow
+              key={i}
+              moveType={m.type}
+              summary={m.summary || ""}
+              pageRefs={m.page_refs}
+            />
           ))}
-          {(event.created_page_ids ?? []).length > 0 && (
-            <div className="trace-kv" style={{ marginTop: "6px" }}>
-              <span className="trace-kv-key">created</span>
-              <PageList pages={event.created_page_ids ?? []} />
-            </div>
-          )}
         </div>
       )}
 
@@ -371,6 +389,8 @@ export function CallNode({
         {
           "--call-accent": accent,
           marginLeft: depth > 0 ? "20px" : "0",
+          borderLeft: `3px solid ${accent}`,
+          paddingLeft: "10px",
         } as React.CSSProperties
       }
     >
@@ -378,8 +398,7 @@ export function CallNode({
         onClick={() => setIsOpen(!isOpen)}
         className="trace-call-header"
       >
-        <span className="trace-call-accent" style={{ backgroundColor: accent }} />
-        <span className="trace-call-type" style={{ color: accent }}>
+        <span className="trace-call-type">
           {call.call_type}
         </span>
         <span className="trace-call-id">{shortId}</span>

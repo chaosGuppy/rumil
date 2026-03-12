@@ -281,7 +281,7 @@ export type LlmExchangeEventOut = {
     /**
      * Round
      */
-    round: number;
+    round?: number | null;
     /**
      * Input Tokens
      */
@@ -411,6 +411,10 @@ export type MoveTraceItem = {
      * Summary
      */
     summary?: string;
+    /**
+     * Page Refs
+     */
+    page_refs?: Array<PageRef>;
     [key: string]: unknown;
 };
 
@@ -434,10 +438,6 @@ export type MovesExecutedEventOut = {
      * Moves
      */
     moves?: Array<MoveTraceItem>;
-    /**
-     * Created Page Ids
-     */
-    created_page_ids?: Array<PageRef>;
 };
 
 /**

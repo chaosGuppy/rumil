@@ -2,13 +2,14 @@
 
 import logging
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel, Field
 
 from differential.database import DB
+from differential.llm import Tool
 from differential.models import (
     Call,
     Dispatch,
@@ -25,6 +26,7 @@ from differential.models import (
 log = logging.getLogger(__name__)
 
 S = TypeVar("S", bound=BaseModel)
+P = TypeVar("P", bound=BaseModel)
 
 PAGES_DIR = Path(__file__).parent.parent.parent.parent / "pages"
 
@@ -35,6 +37,8 @@ class MoveResult:
 
     message: str
     created_page_id: str | None = None
+    dispatches: list[Dispatch] = field(default_factory=list)
+    extra_created_ids: list[str] | None = None
 
 
 class MoveState:
@@ -46,10 +50,11 @@ class MoveState:
         self.last_created_id: str | None = None
         self.created_page_ids: list[str] = []
         self.moves: list[Move] = []
+        self.move_created_ids: list[list[str]] = []
         self.dispatches: list[Dispatch] = []
 
 
-def _resolve_last_created(payload: BaseModel, last_created_id: str) -> BaseModel:
+def _resolve_last_created(payload: P, last_created_id: str) -> P:
     """Replace any string field containing 'LAST_CREATED' with the actual ID."""
     updates = {}
     for field_name, value in payload:
@@ -70,9 +75,8 @@ class MoveDef(Generic[S]):
     schema: type[S]
     execute: Callable[[S, Call, DB], Awaitable[MoveResult]]
 
-    def bind(self, state: MoveState) -> "Tool":
+    def bind(self, state: MoveState) -> Tool:
         """Return a Tool bound to this call's mutable state."""
-        from differential.llm import Tool
 
         async def fn(inp: dict) -> str:
             log.debug("Move %s called with input keys: %s", self.name, list(inp.keys()))
@@ -85,13 +89,20 @@ class MoveDef(Generic[S]):
                 validated = _resolve_last_created(validated, state.last_created_id)
             result = await self.execute(validated, state.call, state.db)
             state.moves.append(Move(move_type=self.move_type, payload=validated))
+            if result.dispatches:
+                state.dispatches.extend(result.dispatches)
+            move_page_ids: list[str] = []
             if result.created_page_id:
                 state.created_page_ids.append(result.created_page_id)
                 state.last_created_id = result.created_page_id
+                move_page_ids.append(result.created_page_id)
                 log.debug(
                     "Move %s created page: %s",
                     self.name, result.created_page_id[:8],
                 )
+            if result.extra_created_ids:
+                move_page_ids.extend(result.extra_created_ids)
+            state.move_created_ids.append(move_page_ids)
             log.debug("Move %s result: %s", self.name, result.message[:100])
             return result.message
 
@@ -257,24 +268,24 @@ async def link_pages(
     link_type: LinkType,
 ) -> MoveResult:
     """Create a link between two pages. Used by LINK_CHILD_QUESTION and LINK_RELATED."""
-    from_id = await db.resolve_page_id(from_id)
-    to_id = await db.resolve_page_id(to_id)
-    if not from_id or not to_id:
+    resolved_from = await db.resolve_page_id(from_id)
+    resolved_to = await db.resolve_page_id(to_id)
+    if not resolved_from or not resolved_to:
         log.warning(
             "Link %s skipped: from_id=%s, to_id=%s — one or both not found",
-            link_type.value, from_id, to_id,
+            link_type.value, resolved_from, resolved_to,
         )
         return MoveResult("Link skipped — page IDs not found.")
 
     link = PageLink(
-        from_page_id=from_id,
-        to_page_id=to_id,
+        from_page_id=resolved_from,
+        to_page_id=resolved_to,
         link_type=link_type,
         reasoning=reasoning,
     )
     await db.save_link(link)
     log.info(
         "Link created: %s %s -> %s",
-        link_type.value, from_id[:8], to_id[:8],
+        link_type.value, resolved_from[:8], resolved_to[:8],
     )
     return MoveResult("Done.")

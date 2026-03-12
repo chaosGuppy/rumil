@@ -59,8 +59,10 @@ dispatching, unless it is already well-covered by questions within the workspace
 - **Non-redundant**: they don't duplicate questions already visible in the workspace map.
 - **Scoped**: each targets a specific angle, not the whole question restated.
 
-To create a subquestion: use `create_question`, then `link_child_question` to attach it
-as a child. You can then dispatch research on it.
+Use `create_subquestion` to create a subquestion, link it to its parent, and dispatch
+research on it — all in a single tool call. The `links` field attaches it as a child of
+the parent question, and the `dispatches` field queues scout, assess, or sub-prioritization
+calls that will execute after prioritization completes.
 
 This is optional — if the question already has good subquestions or is narrow enough to
 investigate directly, skip this step.

@@ -148,3 +148,32 @@ async def test_create_question_with_inline_links(tmp_db, question_page, scout_ca
         'Expected at least one child_question link from the parent to the new question'
     )
     assert child_links[0].from_page_id == question_page.id
+
+
+@pytest.mark.llm
+async def test_create_subquestion_with_inline_dispatches(
+    tmp_db, question_page, prioritization_call,
+):
+    """Prioritization should create subquestions with inline dispatches."""
+    context = (
+        f"## Questions\n\n"
+        f"- `{question_page.id[:8]}`: {question_page.summary} (0 considerations)\n"
+    )
+    task = (
+        "You have a budget of **2 research calls** to allocate.\n\n"
+        f"Scope question ID: `{question_page.id}`\n\n"
+        "Create a subquestion using `create_subquestion` and dispatch a scout on it "
+        "using the `dispatches` field. Link it as a child of the scope question "
+        "using the `links` field."
+    )
+
+    result = await run_call(
+        CallType.PRIORITIZATION,
+        task,
+        context,
+        prioritization_call,
+        tmp_db,
+    )
+
+    assert len(result.created_page_ids) >= 1
+    assert len(result.dispatches) >= 1

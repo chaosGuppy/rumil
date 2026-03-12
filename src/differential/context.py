@@ -165,48 +165,43 @@ async def _build_question_index(question_id: str, db: DB, indent: int = 0) -> li
     return lines
 
 
-async def build_call_context(
-    question_id: str,
-    db: DB,
-    extra_page_ids: list[str] | None = None,
-) -> tuple[str, dict[str, str], list[str]]:
-    """Build full context for a scout/assess/ingest call.
+def assemble_call_context(
+    working_context: str,
+    workspace_map: str | None = None,
+    extra_pages_text: str | None = None,
+) -> str:
+    """Assemble context text from pre-built components.
 
-    Prepends a compact workspace map, then the detailed working context for
-    the given question. Any extra_page_ids (full UUIDs) are appended as
-    pre-loaded pages at the end.
-
-    Returns (context_text, short_id_to_full_uuid, working_context_page_ids).
-    working_context_page_ids lists pages whose full content was included as
-    part of the question's working context (question itself, considerations,
-    judgements).
+    Pure string operation — no DB dependency. Called separately for each phase
+    of a call (initial page loading, main call, closing review) with different
+    workspace maps.
     """
-    log.debug("build_call_context: question=%s", question_id[:8])
-    map_text, short_id_map = await build_workspace_map(db)
-    working_context, working_page_ids = await build_context_for_question(question_id, db)
+    parts: list[str] = []
+    if workspace_map:
+        parts.append(workspace_map)
+        parts.append("---")
+        parts.append("")
+    parts.append("## Working Context")
+    parts.append("")
+    parts.append(working_context)
+    if extra_pages_text:
+        parts.append("")
+        parts.append("## Loaded Pages")
+        parts.append("")
+        parts.append(extra_pages_text)
+    return "\n".join(parts)
 
-    parts = [
-        map_text,
-        "---",
-        "",
-        "## Working Context",
-        "",
-        working_context,
-    ]
 
-    if extra_page_ids:
-        for pid in extra_page_ids:
-            page = await db.get_page(pid)
-            if page:
-                parts += ["", "---", "", f"## Pre-loaded Page: `{pid[:8]}`", ""]
-                parts.append(await format_page(page, db=db))
-
-    context_text = "\n".join(parts)
-    log.debug(
-        "build_call_context complete: %d chars, %d working pages, %d extra pages",
-        len(context_text), len(working_page_ids), len(extra_page_ids or []),
-    )
-    return context_text, short_id_map, working_page_ids
+async def format_preloaded_pages(page_ids: list[str], db: DB) -> str:
+    """Format preloaded pages as context text."""
+    parts: list[str] = []
+    for pid in page_ids:
+        page = await db.get_page(pid)
+        if page:
+            parts += ["---", "", f"## Pre-loaded Page: `{pid[:8]}`", ""]
+            parts.append(await format_page(page, db=db))
+            parts.append("")
+    return "\n".join(parts)
 
 
 async def build_prioritization_context(

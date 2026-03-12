@@ -4,7 +4,11 @@ import uuid
 
 import pytest_asyncio
 
-from differential.context import build_call_context, build_prioritization_context
+from differential.context import (
+    assemble_call_context,
+    build_context_for_question,
+    build_prioritization_context,
+)
 from differential.database import DB
 from differential.models import (
     ConsiderationDirection,
@@ -171,8 +175,13 @@ async def test_workspace_map_isolated(two_workspaces):
 
 async def test_call_context_isolated(two_workspaces):
     w = two_workspaces
-    ctx_alpha, _, _ = await build_call_context(w["q_alpha"].id, w["db_alpha"])
-    ctx_beta, _, _ = await build_call_context(w["q_beta"].id, w["db_beta"])
+    wc_alpha, _ = await build_context_for_question(w["q_alpha"].id, w["db_alpha"])
+    map_alpha, _ = await build_workspace_map(w["db_alpha"])
+    ctx_alpha = assemble_call_context(wc_alpha, workspace_map=map_alpha)
+
+    wc_beta, _ = await build_context_for_question(w["q_beta"].id, w["db_beta"])
+    map_beta, _ = await build_workspace_map(w["db_beta"])
+    ctx_beta = assemble_call_context(wc_beta, workspace_map=map_beta)
 
     assert "Rayleigh" in ctx_alpha
     assert "salty" not in ctx_alpha

@@ -4,6 +4,7 @@ import logging
 
 from differential.calls.common import (
     RunCallResult,
+    auto_unlink_unhelpful_pages,
     complete_call,
     extract_loaded_page_ids,
     format_moves_for_review,
@@ -12,7 +13,10 @@ from differential.calls.common import (
     run_call,
     run_closing_review,
 )
-from differential.context import build_call_context
+from differential.context import (
+    build_context_for_question,
+    format_preloaded_pages,
+)
 from differential.database import DB
 from differential.models import Call, CallStatus, CallType
 from differential.tracing.trace_events import ContextBuiltEvent, ReviewCompleteEvent
@@ -35,9 +39,12 @@ async def run_assess(
     log.info("Assess starting: call=%s, question=%s", call.id[:8], question_id[:8])
 
     preloaded = call.context_page_ids or []
-    context_text, _, working_page_ids = await build_call_context(
-        question_id, db, extra_page_ids=preloaded
+    working_context, working_page_ids = await build_context_for_question(
+        question_id, db,
     )
+    if preloaded:
+        working_context += await format_preloaded_pages(preloaded, db)
+
     await trace.record(ContextBuiltEvent(
         working_context_page_ids=await resolve_page_refs(working_page_ids, db),
         preloaded_page_ids=await resolve_page_refs(preloaded, db),
@@ -52,14 +59,26 @@ async def run_assess(
     )
 
     await db.update_call_status(call.id, CallStatus.RUNNING)
-    result = await run_call(CallType.ASSESS, task, context_text, call, db, trace=trace)
+    result = await run_call(
+        CallType.ASSESS, task, working_context, call, db, trace=trace,
+    )
     phase2_loaded = await extract_loaded_page_ids(result, db)
 
-    all_loaded_ids = list(
-        dict.fromkeys(preloaded + result.phase1_page_ids + phase2_loaded)
-    )
+    all_loaded_summaries = list(result.loaded_page_summaries)
+    for pid in phase2_loaded:
+        page = await db.get_page(pid)
+        if page:
+            all_loaded_summaries.append((pid, page.summary))
+    for pid in preloaded:
+        page = await db.get_page(pid)
+        if page and not any(s[0] == pid for s in all_loaded_summaries):
+            all_loaded_summaries.append((pid, page.summary))
+
     review_context = format_moves_for_review(result.moves)
-    review = await run_closing_review(call, review_context, context_text, all_loaded_ids, db, trace)
+    review = await run_closing_review(
+        call, review_context, working_context, all_loaded_summaries, db, trace,
+        scope_question_id=question_id,
+    )
     if not review.error:
         log.info(
             "Assess review: confidence=%s, self_assessment=%s",
@@ -71,6 +90,7 @@ async def run_assess(
             remaining_fruit=review.data.get("remaining_fruit"),
             confidence=review.data.get("confidence_in_output"),
         ))
+        await auto_unlink_unhelpful_pages(review.data, call.scope_page_id, db)
 
     call.review_json = review.data
     log.info(

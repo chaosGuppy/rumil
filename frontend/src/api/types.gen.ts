@@ -112,14 +112,6 @@ export type CallType = 'scout' | 'assess' | 'prioritization' | 'ingest' | 'refra
 export type ConsiderationDirection = 'supports' | 'opposes' | 'neutral';
 
 /**
- * ConsiderationOut
- */
-export type ConsiderationOut = {
-    page: Page;
-    link: PageLink;
-};
-
-/**
  * ContextBuiltEventOut
  */
 export type ContextBuiltEventOut = {
@@ -617,25 +609,6 @@ export type Project = {
 };
 
 /**
- * QuestionTreeOut
- */
-export type QuestionTreeOut = {
-    question: Page;
-    /**
-     * Considerations
-     */
-    considerations: Array<ConsiderationOut>;
-    /**
-     * Judgements
-     */
-    judgements: Array<Page>;
-    /**
-     * Child Questions
-     */
-    child_questions: Array<QuestionTreeOut>;
-};
-
-/**
  * RealtimeConfigOut
  */
 export type RealtimeConfigOut = {
@@ -1009,41 +982,6 @@ export type ListRootQuestionsApiProjectsProjectIdQuestionsGetResponses = {
 };
 
 export type ListRootQuestionsApiProjectsProjectIdQuestionsGetResponse = ListRootQuestionsApiProjectsProjectIdQuestionsGetResponses[keyof ListRootQuestionsApiProjectsProjectIdQuestionsGetResponses];
-
-export type GetQuestionTreeApiQuestionsQuestionIdTreeGetData = {
-    body?: never;
-    path: {
-        /**
-         * Question Id
-         */
-        question_id: string;
-    };
-    query?: {
-        /**
-         * Depth
-         */
-        depth?: number;
-    };
-    url: '/api/questions/{question_id}/tree';
-};
-
-export type GetQuestionTreeApiQuestionsQuestionIdTreeGetErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type GetQuestionTreeApiQuestionsQuestionIdTreeGetError = GetQuestionTreeApiQuestionsQuestionIdTreeGetErrors[keyof GetQuestionTreeApiQuestionsQuestionIdTreeGetErrors];
-
-export type GetQuestionTreeApiQuestionsQuestionIdTreeGetResponses = {
-    /**
-     * Successful Response
-     */
-    200: QuestionTreeOut;
-};
-
-export type GetQuestionTreeApiQuestionsQuestionIdTreeGetResponse = GetQuestionTreeApiQuestionsQuestionIdTreeGetResponses[keyof GetQuestionTreeApiQuestionsQuestionIdTreeGetResponses];
 
 export type ListCallsApiProjectsProjectIdCallsGetData = {
     body?: never;

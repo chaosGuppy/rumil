@@ -368,57 +368,6 @@
         }
       }
     },
-    "/api/questions/{question_id}/tree": {
-      "get": {
-        "summary": "Get Question Tree",
-        "operationId": "get_question_tree_api_questions__question_id__tree_get",
-        "parameters": [
-          {
-            "name": "question_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Question Id"
-            }
-          },
-          {
-            "name": "depth",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 5,
-              "minimum": 1,
-              "default": 2,
-              "title": "Depth"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/QuestionTreeOut"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/projects/{project_id}/calls": {
       "get": {
         "summary": "List Calls",
@@ -1010,22 +959,6 @@
           "neutral"
         ],
         "title": "ConsiderationDirection"
-      },
-      "ConsiderationOut": {
-        "properties": {
-          "page": {
-            "$ref": "#/components/schemas/Page"
-          },
-          "link": {
-            "$ref": "#/components/schemas/PageLink"
-          }
-        },
-        "type": "object",
-        "required": [
-          "page",
-          "link"
-        ],
-        "title": "ConsiderationOut"
       },
       "ContextBuiltEventOut": {
         "properties": {
@@ -1869,42 +1802,6 @@
           "created_at"
         ],
         "title": "Project"
-      },
-      "QuestionTreeOut": {
-        "properties": {
-          "question": {
-            "$ref": "#/components/schemas/Page"
-          },
-          "considerations": {
-            "items": {
-              "$ref": "#/components/schemas/ConsiderationOut"
-            },
-            "type": "array",
-            "title": "Considerations"
-          },
-          "judgements": {
-            "items": {
-              "$ref": "#/components/schemas/Page"
-            },
-            "type": "array",
-            "title": "Judgements"
-          },
-          "child_questions": {
-            "items": {
-              "$ref": "#/components/schemas/QuestionTreeOut"
-            },
-            "type": "array",
-            "title": "Child Questions"
-          }
-        },
-        "type": "object",
-        "required": [
-          "question",
-          "considerations",
-          "judgements",
-          "child_questions"
-        ],
-        "title": "QuestionTreeOut"
       },
       "RealtimeConfigOut": {
         "properties": {

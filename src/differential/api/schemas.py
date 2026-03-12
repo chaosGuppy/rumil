@@ -34,18 +34,6 @@ class PageDetailOut(BaseModel):
     links_to: list[LinkedPageOut]
 
 
-class ConsiderationOut(BaseModel):
-    page: Page
-    link: PageLink
-
-
-class QuestionTreeOut(BaseModel):
-    question: Page
-    considerations: list[ConsiderationOut]
-    judgements: list[Page]
-    child_questions: list['QuestionTreeOut']
-
-
 class PageCountsOut(BaseModel):
     considerations: int
     judgements: int

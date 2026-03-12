@@ -1486,6 +1486,14 @@
             "type": "string",
             "title": "Summary",
             "default": ""
+          },
+          "page_refs": {
+            "items": {
+              "$ref": "#/components/schemas/PageRef"
+            },
+            "type": "array",
+            "title": "Page Refs",
+            "default": []
           }
         },
         "additionalProperties": true,
@@ -1516,14 +1524,6 @@
             },
             "type": "array",
             "title": "Moves",
-            "default": []
-          },
-          "created_page_ids": {
-            "items": {
-              "$ref": "#/components/schemas/PageRef"
-            },
-            "type": "array",
-            "title": "Created Page Ids",
             "default": []
           }
         },

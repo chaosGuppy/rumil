@@ -66,7 +66,15 @@ function PageList({ pages }: { pages: PageRef[] }) {
   );
 }
 
-function MoveRow({ moveType, summary }: { moveType: string; summary: string }) {
+function MoveRow({
+  moveType,
+  summary,
+  pageRefs,
+}: {
+  moveType: string;
+  summary: string;
+  pageRefs?: PageRef[];
+}) {
   const isCreate = moveType.startsWith("CREATE_");
   const isLink = moveType.startsWith("LINK_");
   const isSupersede = moveType === "SUPERSEDE_PAGE";
@@ -85,12 +93,23 @@ function MoveRow({ moveType, summary }: { moveType: string; summary: string }) {
             ? "trace-move-load"
             : "trace-move-default";
 
+  const hasRefs = pageRefs && pageRefs.length > 0;
+
   return (
     <div className="trace-move-row">
       <span className={`trace-move-type ${typeClass}`}>
         {moveType.replace(/_/g, " ").toLowerCase()}
       </span>
-      {summary && <span className="trace-move-summary">{summary}</span>}
+      {!hasRefs && summary && (
+        <span className="trace-move-summary">{summary}</span>
+      )}
+      {hasRefs && (
+        <span className="trace-page-list">
+          {pageRefs.map((p) => (
+            <PageChip key={p.id} page={p} />
+          ))}
+        </span>
+      )}
     </div>
   );
 }
@@ -275,14 +294,13 @@ function EventSection({ event }: { event: TraceEvent }) {
       {event.event === "moves_executed" && (
         <div className="trace-event-body">
           {(event.moves ?? []).map((m, i) => (
-            <MoveRow key={i} moveType={m.type} summary={m.summary || ""} />
+            <MoveRow
+              key={i}
+              moveType={m.type}
+              summary={m.summary || ""}
+              pageRefs={m.page_refs}
+            />
           ))}
-          {(event.created_page_ids ?? []).length > 0 && (
-            <div className="trace-kv" style={{ marginTop: "6px" }}>
-              <span className="trace-kv-key">created</span>
-              <PageList pages={event.created_page_ids ?? []} />
-            </div>
-          )}
         </div>
       )}
 

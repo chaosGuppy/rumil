@@ -21,6 +21,7 @@ PageRefList = Annotated[list[PageRef], BeforeValidator(_coerce_page_refs)]
 class MoveTraceItem(BaseModel):
     type: str
     summary: str = ""
+    page_refs: list[PageRef] = []
     model_config = {"extra": "allow"}
 
 
@@ -51,7 +52,6 @@ class Phase2LoadedEvent(BaseModel):
 class MovesExecutedEvent(BaseModel):
     event: Literal["moves_executed"] = "moves_executed"
     moves: list[MoveTraceItem] = []
-    created_page_ids: PageRefList = []
 
 
 class ReviewCompleteEvent(BaseModel):

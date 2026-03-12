@@ -719,24 +719,41 @@ class DB:
         )
         return rows[0]["scope_page_id"] if rows else None
 
-    async def get_runs_for_question(self, question_id: str) -> list[dict[str, Any]]:
-        """Return distinct run_ids for calls scoped to this question."""
+    async def get_run_for_page(self, page_id: str) -> dict[str, Any] | None:
+        """Return the run that created a page.
+
+        Looks up via provenance_call_id first. Falls back to finding a
+        root call scoped to the page (for root questions that weren't
+        created by a call).
+        """
+        page = await self.get_page(page_id)
+        if not page:
+            return None
+        if page.provenance_call_id:
+            rows = _rows(
+                await self.client.table("calls")
+                .select("run_id, created_at")
+                .eq("id", page.provenance_call_id)
+                .limit(1)
+                .execute()
+            )
+            if rows and rows[0].get("run_id"):
+                return {
+                    "run_id": rows[0]["run_id"],
+                    "created_at": rows[0]["created_at"],
+                }
         rows = _rows(
             await self.client.table("calls")
             .select("run_id, created_at")
-            .eq("scope_page_id", question_id)
+            .eq("scope_page_id", page_id)
             .is_("parent_call_id", "null")
             .order("created_at", desc=True)
+            .limit(1)
             .execute()
         )
-        seen: set[str] = set()
-        result: list[dict[str, Any]] = []
-        for r in rows:
-            rid = r["run_id"]
-            if rid not in seen:
-                seen.add(rid)
-                result.append({"run_id": rid, "created_at": r["created_at"]})
-        return result
+        if rows and rows[0].get("run_id"):
+            return {"run_id": rows[0]["run_id"], "created_at": rows[0]["created_at"]}
+        return None
 
     async def delete_run_data(self, delete_project: bool = False) -> None:
         """Delete all data for this run_id. Used by test teardown."""

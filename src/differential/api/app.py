@@ -324,13 +324,12 @@ def get_realtime_config():
 
 
 @app.get(
-    "/api/questions/{question_id}/runs",
-    response_model=list[RunSummaryOut],
+    "/api/pages/{page_id}/run",
+    response_model=RunSummaryOut | None,
 )
-async def list_question_runs(question_id: str):
+async def get_page_run(page_id: str):
     db = await _get_db()
-    runs = await db.get_runs_for_question(question_id)
-    return [
-        RunSummaryOut(run_id=r["run_id"], created_at=r["created_at"])
-        for r in runs
-    ]
+    run = await db.get_run_for_page(page_id)
+    if not run:
+        return None
+    return RunSummaryOut(run_id=run["run_id"], created_at=run["created_at"])

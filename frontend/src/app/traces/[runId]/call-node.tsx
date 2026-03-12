@@ -66,7 +66,15 @@ function PageList({ pages }: { pages: PageRef[] }) {
   );
 }
 
-function MoveRow({ moveType, summary }: { moveType: string; summary: string }) {
+function MoveRow({
+  moveType,
+  summary,
+  pageId,
+}: {
+  moveType: string;
+  summary: string;
+  pageId?: string;
+}) {
   const isCreate = moveType.startsWith("CREATE_");
   const isLink = moveType.startsWith("LINK_");
   const isSupersede = moveType === "SUPERSEDE_PAGE";
@@ -91,6 +99,11 @@ function MoveRow({ moveType, summary }: { moveType: string; summary: string }) {
         {moveType.replace(/_/g, " ").toLowerCase()}
       </span>
       {summary && <span className="trace-move-summary">{summary}</span>}
+      {pageId && (
+        <Link href={`/pages/${pageId}`} className="trace-page-chip">
+          {pageId.slice(0, 8)}
+        </Link>
+      )}
     </div>
   );
 }
@@ -275,7 +288,12 @@ function EventSection({ event }: { event: TraceEvent }) {
       {event.event === "moves_executed" && (
         <div className="trace-event-body">
           {(event.moves ?? []).map((m, i) => (
-            <MoveRow key={i} moveType={m.type} summary={m.summary || ""} />
+            <MoveRow
+              key={i}
+              moveType={m.type}
+              summary={m.summary || ""}
+              pageId={m.page_id as string | undefined}
+            />
           ))}
           {(event.created_page_ids ?? []).length > 0 && (
             <div className="trace-kv" style={{ marginTop: "6px" }}>
@@ -371,6 +389,8 @@ export function CallNode({
         {
           "--call-accent": accent,
           marginLeft: depth > 0 ? "20px" : "0",
+          borderLeft: `3px solid ${accent}`,
+          paddingLeft: "10px",
         } as React.CSSProperties
       }
     >
@@ -378,8 +398,7 @@ export function CallNode({
         onClick={() => setIsOpen(!isOpen)}
         className="trace-call-header"
       >
-        <span className="trace-call-accent" style={{ backgroundColor: accent }} />
-        <span className="trace-call-type" style={{ color: accent }}>
+        <span className="trace-call-type">
           {call.call_type}
         </span>
         <span className="trace-call-id">{shortId}</span>

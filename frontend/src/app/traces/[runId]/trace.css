@@ -72,18 +72,10 @@
   background: none;
   cursor: pointer;
   text-align: left;
-  border-bottom: 1px solid #e8e8e8;
   transition: background-color 0.1s;
 }
 .trace-call-header:hover {
   background-color: #f8f8f8;
-}
-
-.trace-call-accent {
-  width: 3px;
-  height: 18px;
-  border-radius: 2px;
-  flex-shrink: 0;
 }
 
 .trace-call-type {
@@ -176,8 +168,6 @@
 
 .trace-call-body {
   padding: 8px 0 16px 14px;
-  border-left: 1px solid #e0e0e0;
-  margin-left: 1px;
 }
 
 /* Events */
@@ -322,6 +312,7 @@
   font-size: 13px;
   color: #444;
   line-height: 1.4;
+  min-width: 0;
 }
 
 /* Review metrics */
@@ -434,6 +425,7 @@
 .trace-dispatch-reason {
   font-size: 13px;
   color: #666;
+  min-width: 0;
 }
 
 /* Toggle exchanges button */

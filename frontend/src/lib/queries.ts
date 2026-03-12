@@ -28,15 +28,11 @@ async function fetchRealtimeConfig(): Promise<RealtimeConfigOut | null> {
   }
 }
 
-const POLL_INTERVAL = 5_000;
-
 export function runTraceOptions(runId: string, initialData?: RunTraceOut) {
   return queryOptions({
     queryKey: traceKeys.detail(runId),
     queryFn: () => fetchRunTrace(runId),
     initialData,
-    staleTime: POLL_INTERVAL,
-    refetchInterval: POLL_INTERVAL,
   });
 }
 

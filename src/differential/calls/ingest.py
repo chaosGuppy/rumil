@@ -15,8 +15,8 @@ from differential.calls.common import (
 from differential.context import build_call_context
 from differential.database import DB
 from differential.models import Call, CallStatus, CallType, Page
-from differential.trace_events import ContextBuiltEvent, ReviewCompleteEvent
-from differential.tracer import CallTrace
+from differential.tracing.trace_events import ContextBuiltEvent, ReviewCompleteEvent
+from differential.tracing.tracer import CallTrace
 
 log = logging.getLogger(__name__)
 
@@ -94,6 +94,5 @@ async def run_ingest(
         call,
         db,
         f"Ingest complete. Created {len(result.created_page_ids)} pages from '{filename}'.",
-        trace=trace,
     )
     return result, review or {}

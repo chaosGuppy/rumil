@@ -1,27 +1,36 @@
 """
-LLM interface. Anthropic-specific details are confined to this module.
+LLM interface. Wraps the Anthropic API and handles exchange persistence.
 
 Exports:
-  - call_api: low-level API call with retries
+  - call_api: API call with retries and optional exchange logging
   - text_call: plain text call
   - structured_call: structured output via messages.parse
 
-Data types: Tool, ToolCall, RoundRecord, AgentResult, APIResponse.
+Data types: Tool, ToolCall, RoundRecord, AgentResult, APIResponse,
+            LLMExchangeMetadata.
 """
+
+from __future__ import annotations
 
 import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from collections.abc import Awaitable, Callable
 
 import anthropic
-from anthropic.types import MessageParam, TextBlock
+from anthropic.types import MessageParam, TextBlock, ToolUseBlock
 from pydantic import BaseModel
 
 from differential.settings import get_settings
+from differential.trace_events import LLMExchangeEvent
+
+if TYPE_CHECKING:
+    from differential.database import DB
+    from differential.tracer import CallTrace
 
 PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts"
 
@@ -104,6 +113,55 @@ class AgentResult:
     warnings: list[str] = field(default_factory=list)
 
 
+@dataclass
+class LLMExchangeMetadata:
+    """Context for automatically saving an LLM exchange to the database.
+
+    Encapsulates the parameters needed by save_llm_exchange that are not
+    already present in the call_api / structured_call signatures.
+    """
+
+    call_id: str
+    phase: str
+    trace: CallTrace | None = None
+    round_num: int | None = None
+    user_message: str | None = None
+
+
+async def _save_exchange(
+    metadata: LLMExchangeMetadata,
+    db: DB,
+    system_prompt: str,
+    response_text: str | None,
+    tool_calls: list[dict],
+    input_tokens: int,
+    output_tokens: int,
+    duration_ms: int,
+) -> None:
+    """Persist an LLM exchange and record a trace event."""
+    exchange_id = await db.save_llm_exchange(
+        call_id=metadata.call_id,
+        phase=metadata.phase,
+        system_prompt=system_prompt,
+        user_message=metadata.user_message,
+        response_text=response_text,
+        tool_calls=tool_calls,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        duration_ms=duration_ms,
+        round_num=metadata.round_num,
+    )
+    if metadata.trace:
+        await metadata.trace.record(LLMExchangeEvent(
+            exchange_id=exchange_id,
+            phase=metadata.phase,
+            round=metadata.round_num,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            duration_ms=duration_ms,
+        ))
+
+
 async def call_api(
     client: anthropic.AsyncAnthropic,
     model: str,
@@ -112,8 +170,16 @@ async def call_api(
     tools: list[dict] | None = None,
     max_tokens: int = 4096,
     warnings: list[str] | None = None,
+    metadata: LLMExchangeMetadata | None = None,
+    db: DB | None = None,
 ) -> APIResponse:
-    """Make a single Anthropic API call with retry logic."""
+    """Make a single Anthropic API call with retry logic.
+
+    If metadata and db are provided, the exchange is automatically saved
+    to the database and a trace event is recorded.
+    """
+    if bool(metadata) != bool(db):
+        raise ValueError("metadata and db must be provided together")
     kwargs: dict = {
         "model": model,
         "max_tokens": max_tokens,
@@ -141,6 +207,26 @@ async def call_api(
                 response.usage.output_tokens,
                 elapsed_ms,
             )
+            if metadata and db:
+                text_parts = []
+                tool_call_data = []
+                for block in response.content:
+                    if isinstance(block, TextBlock):
+                        text_parts.append(block.text)
+                    elif isinstance(block, ToolUseBlock):
+                        tool_call_data.append(
+                            {"name": block.name, "input": block.input}
+                        )
+                await _save_exchange(
+                    metadata,
+                    db=db,
+                    system_prompt=system_prompt,
+                    response_text="\n".join(text_parts) or None,
+                    tool_calls=tool_call_data,
+                    input_tokens=response.usage.input_tokens,
+                    output_tokens=response.usage.output_tokens,
+                    duration_ms=elapsed_ms,
+                )
             return APIResponse(message=response, duration_ms=elapsed_ms)
         except Exception as e:
             status = getattr(e, "status_code", None)
@@ -216,12 +302,16 @@ async def structured_call(
     response_model: type[BaseModel],
     *,
     max_tokens: int = 1024,
+    metadata: LLMExchangeMetadata | None = None,
+    db: DB | None = None,
 ) -> StructuredCallResult:
     """Run an LLM call that returns structured output matching response_model.
 
     Uses the Anthropic structured output API (messages.parse with output_format).
     Returns a StructuredCallResult with the parsed data and usage metadata.
     """
+    if bool(metadata) != bool(db):
+        raise ValueError("metadata and db must be provided together")
     settings = get_settings()
     api_key = settings.require_anthropic_key()
     model = settings.model
@@ -248,6 +338,17 @@ async def structured_call(
             for block in response.content:
                 if isinstance(block, TextBlock):
                     response_text += block.text
+            if metadata and db:
+                await _save_exchange(
+                    metadata,
+                    db=db,
+                    system_prompt=system_prompt,
+                    response_text=response_text or None,
+                    tool_calls=[],
+                    input_tokens=response.usage.input_tokens,
+                    output_tokens=response.usage.output_tokens,
+                    duration_ms=elapsed_ms,
+                )
             if response.parsed_output is not None:
                 log.debug(
                     "structured_call success: %s, usage=%d/%d tokens",

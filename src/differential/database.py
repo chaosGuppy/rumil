@@ -648,7 +648,6 @@ class DB:
         self,
         call_id: str,
         phase: str,
-        round_num: int,
         system_prompt: str | None,
         user_message: str | None,
         response_text: str | None,
@@ -657,6 +656,7 @@ class DB:
         output_tokens: int | None = None,
         error: str | None = None,
         duration_ms: int | None = None,
+        round_num: int | None = None,
     ) -> str:
         exchange_id = str(uuid.uuid4())
         await self.client.table("call_llm_exchanges").insert(

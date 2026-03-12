@@ -15,6 +15,7 @@ from differential.database import DB
 from differential.settings import get_settings
 from differential.llm import (
     AgentResult,
+    LLMExchangeMetadata,
     RoundRecord,
     Tool,
     ToolCall,
@@ -36,7 +37,6 @@ from differential.moves.base import MoveState
 from differential.moves.load_page import LoadPagePayload
 from differential.moves.registry import MOVES
 from differential.trace_events import (
-    LLMExchangeEvent,
     MoveTraceItem,
     MovesExecutedEvent,
     PageRef,
@@ -113,47 +113,16 @@ async def _execute_tool_uses(
     return tool_calls, tool_results
 
 
-async def _save_round(
+async def _record_round_moves(
     rr: RoundRecord,
     *,
-    call_id: str,
-    phase: str,
-    system_prompt: str,
-    user_message: str,
-    db: DB,
-    trace: "CallTrace | None",
+    trace: CallTrace,
     state: MoveState,
     move_cursor: int,
     move_tool_names: set[str],
+    db: DB,
 ) -> int:
-    """Save a round's exchange and trace events. Returns updated move_cursor."""
-    if not trace:
-        return move_cursor
-    tc_data = [
-        {"name": tc.name, "input": tc.input, "result": tc.result[:500]}
-        for tc in rr.tool_calls
-    ]
-    exchange_id = await db.save_llm_exchange(
-        call_id=call_id,
-        phase=phase,
-        round_num=rr.round,
-        system_prompt=system_prompt,
-        user_message=user_message if rr.round == 0 else None,
-        response_text=rr.response_text,
-        tool_calls=tc_data,
-        input_tokens=rr.input_tokens,
-        output_tokens=rr.output_tokens,
-        error=rr.error,
-        duration_ms=rr.duration_ms or None,
-    )
-    await trace.record(LLMExchangeEvent(
-        exchange_id=exchange_id,
-        phase=phase,
-        round=rr.round if phase == "inner_loop" else None,
-        input_tokens=rr.input_tokens,
-        output_tokens=rr.output_tokens,
-        duration_ms=rr.duration_ms or None,
-    ))
+    """Record move trace events for tools executed in this round. Returns updated move_cursor."""
     round_move_count = sum(
         1 for tc in rr.tool_calls if tc.name in move_tool_names
     )
@@ -208,9 +177,14 @@ async def run_single_call(
 
     messages: list[dict] = [{"role": "user", "content": user_message}]
     all_warnings: list[str] = []
+    meta = LLMExchangeMetadata(
+        call_id=call_id, phase=phase, trace=trace,
+        user_message=user_message,
+    )
     api_resp = await call_api(
         client, settings.model, system_prompt, messages,
         tool_defs or None, max_tokens, warnings=all_warnings,
+        metadata=meta, db=db,
     )
     response = api_resp.message
 
@@ -233,19 +207,15 @@ async def run_single_call(
         duration_ms=api_resp.duration_ms,
     )
 
-    moves_before = len(state.moves)
-    await _save_round(
-        rr,
-        call_id=call_id,
-        phase=phase,
-        system_prompt=system_prompt,
-        user_message=user_message,
-        db=db,
-        trace=trace,
-        state=state,
-        move_cursor=moves_before,
-        move_tool_names=move_tool_names,
-    )
+    if trace:
+        await _record_round_moves(
+            rr,
+            trace=trace,
+            state=state,
+            move_cursor=len(state.moves),
+            move_tool_names=move_tool_names,
+            db=db,
+        )
     for w in all_warnings:
         if trace:
             await trace.record(WarningEvent(message=w))
@@ -305,9 +275,15 @@ async def run_agent_loop(
 
     for round_num in range(effective_rounds + 1):
         log.debug("run_agent_loop round %d/%d", round_num + 1, effective_rounds)
+        meta = LLMExchangeMetadata(
+            call_id=call_id, phase="inner_loop", trace=trace,
+            round_num=round_num,
+            user_message=user_message if round_num == 0 else None,
+        )
         api_resp = await call_api(
             client, settings.model, system_prompt, messages,
             tool_defs or None, max_tokens, warnings=all_warnings,
+            metadata=meta, db=db,
         )
         response = api_resp.message
 
@@ -334,18 +310,6 @@ async def run_agent_loop(
                 duration_ms=api_resp.duration_ms,
             )
             all_rounds.append(rr)
-            move_cursor = await _save_round(
-                rr,
-                call_id=call_id,
-                phase="inner_loop",
-                system_prompt=system_prompt,
-                user_message=user_message,
-                db=db,
-                trace=trace,
-                state=state,
-                move_cursor=move_cursor,
-                move_tool_names=move_tool_names,
-            )
             break
 
         log.debug(
@@ -365,18 +329,15 @@ async def run_agent_loop(
             duration_ms=api_resp.duration_ms,
         )
         all_rounds.append(rr)
-        move_cursor = await _save_round(
-            rr,
-            call_id=call_id,
-            phase="inner_loop",
-            system_prompt=system_prompt,
-            user_message=user_message,
-            db=db,
-            trace=trace,
-            state=state,
-            move_cursor=move_cursor,
-            move_tool_names=move_tool_names,
-        )
+        if trace:
+            move_cursor = await _record_round_moves(
+                rr,
+                trace=trace,
+                state=state,
+                move_cursor=move_cursor,
+                move_tool_names=move_tool_names,
+                db=db,
+            )
 
         remaining = effective_rounds - round_num
         if remaining == 1:
@@ -749,33 +710,19 @@ async def run_closing_review(
     )
     try:
         user_message = build_user_message(context_text, review_task)
+        meta = LLMExchangeMetadata(
+            call_id=call.id, phase="closing_review",
+            trace=trace, user_message=user_message,
+        ) if db else None
         result = await structured_call(
             system_prompt=REVIEW_SYSTEM_PROMPT,
             user_message=user_message,
             response_model=ReviewResponse,
             max_tokens=2048,
+            metadata=meta,
+            db=db,
         )
         review = result.data
-        if trace and db:
-            exchange_id = await db.save_llm_exchange(
-                call_id=call.id,
-                phase="closing_review",
-                round_num=0,
-                system_prompt=REVIEW_SYSTEM_PROMPT,
-                user_message=user_message,
-                response_text=result.response_text,
-                tool_calls=[],
-                input_tokens=result.input_tokens,
-                output_tokens=result.output_tokens,
-                duration_ms=result.duration_ms,
-            )
-            await trace.record(LLMExchangeEvent(
-                exchange_id=exchange_id,
-                phase="closing_review",
-                input_tokens=result.input_tokens,
-                output_tokens=result.output_tokens,
-                duration_ms=result.duration_ms,
-            ))
         if review:
             log.info(
                 "Closing review complete: call=%s, fruit=%s, confidence=%s",

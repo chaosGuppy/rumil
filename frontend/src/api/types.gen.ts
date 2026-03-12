@@ -50,6 +50,12 @@ export type Call = {
         [key: string]: unknown;
     };
     /**
+     * Call Params
+     */
+    call_params: {
+        [key: string]: unknown;
+    } | null;
+    /**
      * Created At
      */
     created_at: string;

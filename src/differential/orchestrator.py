@@ -115,6 +115,7 @@ async def scout_until_done(
         call_ids.append(call.id)
         _, review = await run_scout(
             question_id, call, db, mode=round_mode, broadcaster=broadcaster,
+            max_rounds=max_rounds, fruit_threshold=fruit_threshold,
         )
         rounds += 1
 

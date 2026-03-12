@@ -422,6 +422,19 @@ export function CallNode({
 
       {isOpen && (
         <div className="trace-call-body">
+          {call.call_params && Object.keys(call.call_params).length > 0 && (
+            <div className="trace-call-params">
+              {Object.entries(call.call_params).map(([key, value]) => (
+                <span key={key} className="trace-call-param">
+                  <span className="trace-call-param-label">
+                    {key.replace(/_/g, " ")}
+                  </span>
+                  <span className="trace-call-param-value">{String(value)}</span>
+                </span>
+              ))}
+            </div>
+          )}
+
           {dispatchEvents.length > 0 && (
             <div className="trace-dispatches">
               <div className="trace-section-label">dispatches</div>

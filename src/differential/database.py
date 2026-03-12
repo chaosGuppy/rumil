@@ -88,6 +88,7 @@ def _row_to_call(row: dict[str, Any]) -> Call:
         context_page_ids=row.get("context_page_ids") or [],
         result_summary=row.get("result_summary") or "",
         review_json=row.get("review_json") or {},
+        call_params=row.get("call_params"),
         created_at=datetime.fromisoformat(row["created_at"]),
         completed_at=(
             datetime.fromisoformat(row["completed_at"]) if row["completed_at"] else None
@@ -391,6 +392,7 @@ class DB:
                 "context_page_ids": call.context_page_ids,
                 "result_summary": call.result_summary,
                 "review_json": call.review_json,
+                "call_params": call.call_params,
                 "created_at": call.created_at.isoformat(),
                 "completed_at": (
                     call.completed_at.isoformat() if call.completed_at else None

@@ -878,6 +878,17 @@
           "call": {
             "$ref": "#/components/schemas/Call"
           },
+          "scope_page_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Page Summary"
+          },
           "events": {
             "items": {
               "oneOf": [

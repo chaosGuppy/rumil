@@ -18,8 +18,6 @@ from differential.trace_events import (
     ErrorEvent,
     LLMExchangeEvent,
     MovesExecutedEvent,
-    Phase1LoadedEvent,
-    Phase2LoadedEvent,
     ReviewCompleteEvent,
     WarningEvent,
 )
@@ -62,14 +60,6 @@ class ContextBuiltEventOut(ContextBuiltEvent, _TraceEnvelopeMixin):
     event: Literal["context_built"]
 
 
-class Phase1LoadedEventOut(Phase1LoadedEvent, _TraceEnvelopeMixin):
-    event: Literal["phase1_loaded"]
-
-
-class Phase2LoadedEventOut(Phase2LoadedEvent, _TraceEnvelopeMixin):
-    event: Literal["phase2_loaded"]
-
-
 class MovesExecutedEventOut(MovesExecutedEvent, _TraceEnvelopeMixin):
     event: Literal["moves_executed"]
 
@@ -100,8 +90,6 @@ class DispatchExecutedEventOut(DispatchExecutedEvent, _TraceEnvelopeMixin):
 
 TraceEventOut = Annotated[
     ContextBuiltEventOut
-    | Phase1LoadedEventOut
-    | Phase2LoadedEventOut
     | MovesExecutedEventOut
     | ReviewCompleteEventOut
     | LLMExchangeEventOut

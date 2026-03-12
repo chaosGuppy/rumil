@@ -367,7 +367,6 @@ export function CallNode({
 
   const skipEvents = new Set([
     "dispatches_planned", "dispatch_executed",
-    "phase1_loaded", "phase2_loaded",
   ]);
   const displayableEvents = events.filter((e) => !skipEvents.has(e.event));
 

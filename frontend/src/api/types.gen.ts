@@ -81,10 +81,6 @@ export type CallTraceOut = {
     events: Array<({
         event: 'context_built';
     } & ContextBuiltEventOut) | ({
-        event: 'phase1_loaded';
-    } & Phase1LoadedEventOut) | ({
-        event: 'phase2_loaded';
-    } & Phase2LoadedEventOut) | ({
         event: 'moves_executed';
     } & MovesExecutedEventOut) | ({
         event: 'review_complete';
@@ -601,50 +597,6 @@ export type PageRef = {
  * PageType
  */
 export type PageType = 'source' | 'claim' | 'question' | 'judgement' | 'concept' | 'wiki';
-
-/**
- * Phase1LoadedEventOut
- */
-export type Phase1LoadedEventOut = {
-    /**
-     * Ts
-     */
-    ts: string;
-    /**
-     * Call Id
-     */
-    call_id: string;
-    /**
-     * Event
-     */
-    event: 'phase1_loaded';
-    /**
-     * Page Ids
-     */
-    page_ids?: Array<PageRef>;
-};
-
-/**
- * Phase2LoadedEventOut
- */
-export type Phase2LoadedEventOut = {
-    /**
-     * Ts
-     */
-    ts: string;
-    /**
-     * Call Id
-     */
-    call_id: string;
-    /**
-     * Event
-     */
-    event: 'phase2_loaded';
-    /**
-     * Page Ids
-     */
-    page_ids?: Array<PageRef>;
-};
 
 /**
  * Project

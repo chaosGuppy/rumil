@@ -1,7 +1,55 @@
 import Link from "next/link";
-import type { PageDetailOut, LinkedPageOut, Page } from "@/api";
+import type { PageDetailOut, LinkedPageOut, Page, PageLink } from "@/api";
 
 const API_BASE = process.env.API_BASE_URL || "http://localhost:8000";
+
+const TYPE_CONFIG: Record<
+  string,
+  { accent: string; bg: string; bgHover: string; border: string }
+> = {
+  claim: {
+    accent: "var(--type-claim)",
+    bg: "var(--type-claim-bg)",
+    bgHover: "var(--type-claim-bg-hover)",
+    border: "var(--type-claim-border)",
+  },
+  question: {
+    accent: "var(--type-question)",
+    bg: "var(--type-question-bg)",
+    bgHover: "var(--type-question-bg-hover)",
+    border: "var(--type-question-border)",
+  },
+  judgement: {
+    accent: "var(--type-judgement)",
+    bg: "var(--type-judgement-bg)",
+    bgHover: "var(--type-judgement-bg-hover)",
+    border: "var(--type-judgement-border)",
+  },
+  source: {
+    accent: "var(--type-source)",
+    bg: "var(--type-source-bg)",
+    bgHover: "var(--type-source-bg-hover)",
+    border: "var(--type-source-border)",
+  },
+  concept: {
+    accent: "var(--type-concept)",
+    bg: "var(--type-concept-bg)",
+    bgHover: "var(--type-concept-bg-hover)",
+    border: "var(--type-concept-border)",
+  },
+  wiki: {
+    accent: "var(--type-wiki)",
+    bg: "var(--type-wiki-bg)",
+    bgHover: "var(--type-wiki-bg-hover)",
+    border: "var(--type-wiki-border)",
+  },
+};
+
+const DIRECTION_CONFIG: Record<string, { color: string; label: string }> = {
+  supports: { color: "var(--dir-supports)", label: "supports" },
+  opposes: { color: "var(--dir-opposes)", label: "opposes" },
+  neutral: { color: "var(--color-muted)", label: "neutral" },
+};
 
 async function getPageDetail(pageId: string): Promise<PageDetailOut | null> {
   const res = await fetch(`${API_BASE}/api/pages/${pageId}/detail`, {
@@ -11,232 +59,113 @@ async function getPageDetail(pageId: string): Promise<PageDetailOut | null> {
   return res.json();
 }
 
+interface RunSummary {
+  run_id: string;
+  created_at: string;
+}
+
 function pageHref(page: Page): string {
-  if (page.page_type === "question") return `/questions/${page.id}`;
   return `/pages/${page.id}`;
 }
 
-function pageTypeBadge(pageType: string) {
-  const colors: Record<string, string> = {
-    claim: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
-    question: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200",
-    judgement: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
-    source: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200",
-    concept: "bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-200",
-    wiki: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
-  };
-  const cls = colors[pageType] || "bg-gray-100 text-gray-800";
+async function getQuestionRuns(questionId: string): Promise<RunSummary[]> {
+  const res = await fetch(
+    `${API_BASE}/api/questions/${questionId}/runs`,
+    { cache: "no-store" },
+  );
+  if (!res.ok) return [];
+  return res.json();
+}
+
+function EpistemicGauge({ value }: { value: number }) {
+  const segments = 5;
   return (
-    <span className={`text-xs font-medium px-2 py-0.5 rounded ${cls}`}>
-      {pageType}
-    </span>
+    <div className="ep-gauge">
+      {Array.from({ length: segments }, (_, i) => {
+        const filled = value >= i + 1;
+        const partial = !filled && value > i;
+        const pct = partial ? (value - i) * 100 : filled ? 100 : 0;
+        return (
+          <div key={i} className="ep-segment">
+            <div className="ep-segment-fill" style={{ width: `${pct}%` }} />
+          </div>
+        );
+      })}
+      <span className="ep-value">{value.toFixed(1)}</span>
+    </div>
   );
 }
 
-function directionColor(direction: string | null) {
-  if (direction === "supports") return "text-green-600";
-  if (direction === "opposes") return "text-red-600";
-  return "text-gray-500";
-}
-
-function LinkedPageCard({ lp }: { lp: LinkedPageOut }) {
+function LinkMeta({ link }: { link: PageLink }) {
+  const dir = link.direction ? DIRECTION_CONFIG[link.direction] : null;
   return (
-    <div className="border rounded p-3">
-      <div className="flex items-center gap-2 mb-1">
-        {pageTypeBadge(lp.page.page_type)}
-        {lp.link.direction && (
-          <span className={`text-xs font-medium ${directionColor(lp.link.direction)}`}>
-            {lp.link.direction}
+    <div className="link-meta">
+      <span className="link-type-label">{link.link_type.replace("_", " ")}</span>
+      {dir && (
+        <span className="link-direction" style={{ color: dir.color }}>
+          {dir.label}
+        </span>
+      )}
+      {link.strength > 0 && (
+        <span className="link-strength">
+          <span className="link-strength-bar">
+            <span
+              className="link-strength-fill"
+              style={{ width: `${(link.strength / 5) * 100}%` }}
+            />
           </span>
-        )}
-        {lp.link.strength > 0 && (
-          <span className="text-gray-400 text-xs">
-            strength {lp.link.strength}/5
-          </span>
-        )}
-        <span className="text-gray-400 text-xs">{lp.link.link_type}</span>
-      </div>
-      <Link href={pageHref(lp.page)} className="text-sm font-medium hover:underline">
-        {lp.page.summary}
-      </Link>
-      {lp.link.reasoning && (
-        <p className="text-xs text-gray-500 mt-1 line-clamp-2">{lp.link.reasoning}</p>
+          {link.strength.toFixed(1)}
+        </span>
       )}
     </div>
   );
 }
 
-function ClaimDetail({ detail }: { detail: PageDetailOut }) {
-  const { page, links_from, links_to } = detail;
-  const questionsBearedOn = links_from.filter(
-    (lp) => lp.link.link_type === "consideration",
-  );
-  const otherOutgoing = links_from.filter(
-    (lp) => lp.link.link_type !== "consideration",
-  );
-  const incoming = links_to;
-
+function LinkedCard({ lp }: { lp: LinkedPageOut }) {
+  const cfg = TYPE_CONFIG[lp.page.page_type] || TYPE_CONFIG.source;
   return (
-    <>
-      <div className="mb-6">
-        <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
-          {page.content}
-        </p>
-        <div className="mt-3 flex gap-4 text-xs text-gray-500">
-          <span>Epistemic: {page.epistemic_status}/5 ({page.epistemic_type})</span>
-          <span>Layer: {page.layer}</span>
+    <Link href={pageHref(lp.page)} className="linked-card">
+      <div className="linked-card-accent" style={{ background: cfg.accent }} />
+      <div className="linked-card-body">
+        <LinkMeta link={lp.link} />
+        <div className="linked-card-header">
+          <span
+            className="linked-card-type"
+            style={{ color: cfg.accent, background: cfg.bg }}
+          >
+            {lp.page.page_type}
+          </span>
+          <span className="linked-card-id">{lp.page.id.slice(0, 8)}</span>
         </div>
+        <div className="linked-card-summary">{lp.page.summary}</div>
+        {lp.link.reasoning && (
+          <div className="linked-card-reasoning">{lp.link.reasoning}</div>
+        )}
       </div>
-
-      {questionsBearedOn.length > 0 && (
-        <div className="mb-6">
-          <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-            Bears on ({questionsBearedOn.length})
-          </h3>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {questionsBearedOn.map((lp) => (
-              <LinkedPageCard key={lp.link.id} lp={lp} />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {otherOutgoing.length > 0 && (
-        <div className="mb-6">
-          <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-            Links from this claim ({otherOutgoing.length})
-          </h3>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {otherOutgoing.map((lp) => (
-              <LinkedPageCard key={lp.link.id} lp={lp} />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {incoming.length > 0 && (
-        <div className="mb-6">
-          <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-            Linked from ({incoming.length})
-          </h3>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {incoming.map((lp) => (
-              <LinkedPageCard key={lp.link.id} lp={lp} />
-            ))}
-          </div>
-        </div>
-      )}
-    </>
+    </Link>
   );
 }
 
-function JudgementDetail({ detail }: { detail: PageDetailOut }) {
-  const { page, links_from, links_to } = detail;
-  const questions = links_from.filter(
-    (lp) => lp.page.page_type === "question",
-  );
-  const otherOutgoing = links_from.filter(
-    (lp) => lp.page.page_type !== "question",
-  );
-  const incoming = links_to;
-
+function LinkSection({
+  title,
+  links,
+}: {
+  title: string;
+  links: LinkedPageOut[];
+}) {
+  if (links.length === 0) return null;
   return (
-    <>
-      <div className="mb-6">
-        <div className="border border-amber-300 rounded p-4 bg-amber-50 dark:bg-amber-950">
-          <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
-            {page.content}
-          </p>
-          <div className="mt-3 flex gap-4 text-xs text-gray-500">
-            <span>Epistemic: {page.epistemic_status}/5 ({page.epistemic_type})</span>
-            <span>Layer: {page.layer}</span>
-          </div>
-        </div>
+    <div className="link-section">
+      <div className="link-section-header">
+        <span className="link-section-title">{title}</span>
+        <span className="link-section-count">{links.length}</span>
       </div>
-
-      {questions.length > 0 && (
-        <div className="mb-6">
-          <h3 className="text-sm font-semibold text-amber-700 mb-2">
-            Judges ({questions.length})
-          </h3>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {questions.map((lp) => (
-              <LinkedPageCard key={lp.link.id} lp={lp} />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {otherOutgoing.length > 0 && (
-        <div className="mb-6">
-          <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-            Links from this judgement ({otherOutgoing.length})
-          </h3>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {otherOutgoing.map((lp) => (
-              <LinkedPageCard key={lp.link.id} lp={lp} />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {incoming.length > 0 && (
-        <div className="mb-6">
-          <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-            Linked from ({incoming.length})
-          </h3>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {incoming.map((lp) => (
-              <LinkedPageCard key={lp.link.id} lp={lp} />
-            ))}
-          </div>
-        </div>
-      )}
-    </>
-  );
-}
-
-function GenericDetail({ detail }: { detail: PageDetailOut }) {
-  const { page, links_from, links_to } = detail;
-
-  return (
-    <>
-      <div className="mb-6">
-        <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
-          {page.content}
-        </p>
-        <div className="mt-3 flex gap-4 text-xs text-gray-500">
-          <span>Epistemic: {page.epistemic_status}/5 ({page.epistemic_type})</span>
-          <span>Layer: {page.layer}</span>
-        </div>
+      <div className="link-grid">
+        {links.map((lp) => (
+          <LinkedCard key={lp.link.id} lp={lp} />
+        ))}
       </div>
-
-      {links_from.length > 0 && (
-        <div className="mb-6">
-          <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-            Outgoing links ({links_from.length})
-          </h3>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {links_from.map((lp) => (
-              <LinkedPageCard key={lp.link.id} lp={lp} />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {links_to.length > 0 && (
-        <div className="mb-6">
-          <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-            Incoming links ({links_to.length})
-          </h3>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {links_to.map((lp) => (
-              <LinkedPageCard key={lp.link.id} lp={lp} />
-            ))}
-          </div>
-        </div>
-      )}
-    </>
+    </div>
   );
 }
 
@@ -246,61 +175,570 @@ export default async function PageDetailPage({
   params: Promise<{ pageId: string }>;
 }) {
   const { pageId } = await params;
-  const detail = await getPageDetail(pageId);
+  const [detail, runs] = await Promise.all([
+    getPageDetail(pageId),
+    getQuestionRuns(pageId),
+  ]);
 
   if (!detail) {
     return (
-      <main className="max-w-4xl mx-auto p-8">
-        <p className="text-red-500">Page not found.</p>
-        <Link href="/" className="text-blue-600 hover:underline text-sm">
-          &larr; Back
-        </Link>
+      <main className="page-detail">
+        <style>{styles}</style>
+        <div className="not-found">
+          <span className="not-found-code">404</span>
+          <span className="not-found-msg">Page not found</span>
+          <Link href="/" className="back-link">
+            &larr; Home
+          </Link>
+        </div>
       </main>
     );
   }
 
-  const { page } = detail;
+  const { page, links_from, links_to } = detail;
+  const cfg = TYPE_CONFIG[page.page_type] || TYPE_CONFIG.source;
 
   return (
-    <main className="max-w-4xl mx-auto p-8">
-      <Link
-        href={`/projects/${page.project_id}`}
-        className="text-blue-600 hover:underline text-sm"
-      >
+    <main className="page-detail">
+      <style>{styles}</style>
+
+      <Link href={`/projects/${page.project_id}`} className="back-link">
         &larr; Project
       </Link>
-      <div className="mt-4">
-        <div className="flex items-center gap-3 mb-2">
-          {pageTypeBadge(page.page_type)}
-          <span className="text-xs text-gray-400 font-mono">{page.id.slice(0, 8)}</span>
-          {page.is_superseded && (
-            <span className="text-xs text-red-500 font-medium">superseded</span>
-          )}
+
+      <article className="page-article">
+        <div
+          className="page-type-bar"
+          style={{ background: cfg.accent }}
+        />
+
+        <header className="page-header">
+          <div className="page-header-top">
+            <span
+              className="page-type-badge"
+              style={{
+                color: cfg.accent,
+                background: cfg.bg,
+                borderColor: cfg.border,
+              }}
+            >
+              {page.page_type}
+            </span>
+            <span className="page-id">{page.id.slice(0, 8)}</span>
+            {page.is_superseded && (
+              <span className="superseded-tag">superseded</span>
+            )}
+          </div>
+          <h1 className="page-summary">{page.summary}</h1>
+        </header>
+
+        <div className="page-content">
+          {page.content}
         </div>
-        <h1 className="text-2xl font-semibold mb-4">{page.summary}</h1>
 
-        {page.page_type === "claim" && <ClaimDetail detail={detail} />}
-        {page.page_type === "judgement" && <JudgementDetail detail={detail} />}
-        {page.page_type !== "claim" && page.page_type !== "judgement" && (
-          <GenericDetail detail={detail} />
-        )}
-
-        <div className="mt-6 pt-4 border-t text-xs text-gray-400 space-y-1">
-          <p>Created: {new Date(page.created_at).toLocaleString()}</p>
-          <p>Provenance: {page.provenance_call_type} via {page.provenance_model}</p>
+        <div className="page-meta-row">
+          <div className="meta-block">
+            <span className="meta-label">epistemic status</span>
+            <EpistemicGauge value={page.epistemic_status} />
+          </div>
+          {page.epistemic_type && (
+            <div className="meta-block">
+              <span className="meta-label">uncertainty</span>
+              <span className="meta-value">{page.epistemic_type}</span>
+            </div>
+          )}
           {page.superseded_by && (
-            <p>
-              Superseded by:{" "}
+            <div className="meta-block">
+              <span className="meta-label">superseded by</span>
               <Link
                 href={`/pages/${page.superseded_by}`}
-                className="text-blue-600 hover:underline font-mono"
+                className="meta-link"
               >
                 {page.superseded_by.slice(0, 8)}
               </Link>
-            </p>
+            </div>
           )}
         </div>
+      </article>
+
+      <div className="links-container">
+        <LinkSection title="Outgoing" links={links_from} />
+        <LinkSection title="Incoming" links={links_to} />
       </div>
+
+      {runs.length > 0 && (
+        <div className="runs-section">
+          <div className="link-section-header">
+            <span className="link-section-title">Runs</span>
+            <span className="link-section-count">{runs.length}</span>
+          </div>
+          <div className="runs-list">
+            {runs.map((r) => (
+              <Link key={r.run_id} href={`/traces/${r.run_id}`} className="run-item">
+                <span className="run-id">{r.run_id.slice(0, 8)}</span>
+                <span className="run-date">
+                  {new Date(r.created_at).toLocaleDateString("en-US", {
+                    year: "numeric",
+                    month: "short",
+                    day: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <footer className="page-footer">
+        <span>{new Date(page.created_at).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}</span>
+        <span className="footer-sep" />
+        <span>{page.provenance_call_type}</span>
+        <span className="footer-sep" />
+        <span>{page.provenance_model}</span>
+      </footer>
     </main>
   );
 }
+
+const styles = `
+  .page-detail {
+    max-width: 52rem;
+    margin: 0 auto;
+    padding: 2rem;
+    font-family: var(--font-geist-sans), system-ui, sans-serif;
+  }
+
+  .page-detail a.back-link {
+    font-size: 0.75rem;
+    color: var(--color-muted);
+    text-decoration: none;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    font-family: var(--font-geist-mono), monospace;
+  }
+  .page-detail a.back-link:hover {
+    color: var(--color-foreground);
+  }
+
+  .not-found {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 6rem 1rem;
+  }
+  .not-found-code {
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: var(--color-muted);
+    font-family: var(--font-geist-mono), monospace;
+    opacity: 0.3;
+  }
+  .not-found-msg {
+    font-size: 0.9rem;
+    color: var(--color-muted);
+  }
+
+  .page-article {
+    margin-top: 1.5rem;
+    border: 1px solid var(--color-border);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .page-type-bar {
+    height: 3px;
+    width: 100%;
+  }
+
+  .page-header {
+    padding: 1.25rem 1.5rem 0;
+  }
+  .page-header-top {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+  }
+  .page-type-badge {
+    font-size: 0.7rem;
+    font-weight: 600;
+    font-family: var(--font-geist-mono), monospace;
+    padding: 0.2rem 0.5rem;
+    border: 1px solid;
+    letter-spacing: 0.02em;
+  }
+  .page-id {
+    font-size: 0.7rem;
+    font-family: var(--font-geist-mono), monospace;
+    color: var(--color-muted);
+    opacity: 0.7;
+  }
+  .superseded-tag {
+    font-size: 0.65rem;
+    font-family: var(--font-geist-mono), monospace;
+    color: var(--dir-opposes);
+    text-decoration: line-through;
+    opacity: 0.8;
+  }
+
+  .page-summary {
+    font-size: 1.4rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.3;
+    margin: 0;
+  }
+
+  .page-content {
+    padding: 1rem 1.5rem 1.25rem;
+    font-size: 0.9rem;
+    line-height: 1.65;
+    color: var(--color-foreground);
+    white-space: pre-wrap;
+    opacity: 0.85;
+  }
+
+  .page-meta-row {
+    display: flex;
+    gap: 1.5rem;
+    padding: 0.85rem 1.5rem;
+    border-top: 1px solid var(--color-border);
+    background: var(--color-surface);
+    flex-wrap: wrap;
+  }
+  .meta-block {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+  .meta-label {
+    font-size: 0.65rem;
+    font-family: var(--font-geist-mono), monospace;
+    color: var(--color-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .meta-value {
+    font-size: 0.8rem;
+    color: var(--color-foreground);
+    opacity: 0.8;
+  }
+  .meta-link {
+    font-size: 0.8rem;
+    font-family: var(--font-geist-mono), monospace;
+    color: var(--color-accent);
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    transition: border-color 0.15s;
+  }
+  .meta-link:hover {
+    border-color: var(--color-accent);
+  }
+
+  .ep-gauge {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+  .ep-segment {
+    width: 1rem;
+    height: 4px;
+    background: var(--color-border);
+    overflow: hidden;
+  }
+  .ep-segment-fill {
+    height: 100%;
+    background: var(--color-foreground);
+    opacity: 0.5;
+    transition: width 0.3s ease;
+  }
+  .ep-value {
+    font-size: 0.75rem;
+    font-family: var(--font-geist-mono), monospace;
+    color: var(--color-muted);
+    margin-left: 0.35rem;
+  }
+
+  .links-container {
+    margin-top: 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+  }
+
+  .link-section-header {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+  }
+  .link-section-title {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-family: var(--font-geist-mono), monospace;
+    color: var(--color-muted);
+  }
+  .link-section-count {
+    font-size: 0.7rem;
+    font-family: var(--font-geist-mono), monospace;
+    color: var(--color-muted);
+    opacity: 0.5;
+  }
+
+  .link-grid {
+    display: grid;
+    gap: 1px;
+    background: var(--color-border);
+    border: 1px solid var(--color-border);
+    overflow: hidden;
+  }
+
+  .linked-card {
+    display: flex;
+    background: var(--color-background);
+    text-decoration: none;
+    color: inherit;
+    transition: background 0.1s ease;
+  }
+  .linked-card:hover {
+    background: var(--color-surface);
+  }
+  .linked-card-accent {
+    width: 3px;
+    flex-shrink: 0;
+  }
+  .linked-card-body {
+    padding: 0.6rem 0.75rem;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .link-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.35rem;
+  }
+  .link-type-label {
+    font-size: 0.65rem;
+    font-family: var(--font-geist-mono), monospace;
+    color: var(--color-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  .link-direction {
+    font-size: 0.65rem;
+    font-weight: 600;
+    font-family: var(--font-geist-mono), monospace;
+    letter-spacing: 0.02em;
+  }
+  .link-strength {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.65rem;
+    font-family: var(--font-geist-mono), monospace;
+    color: var(--color-muted);
+  }
+  .link-strength-bar {
+    display: inline-block;
+    width: 2rem;
+    height: 2px;
+    background: var(--color-border);
+    overflow: hidden;
+  }
+  .link-strength-fill {
+    display: block;
+    height: 100%;
+    background: var(--color-muted);
+  }
+
+  .linked-card-header {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.2rem;
+  }
+  .linked-card-type {
+    font-size: 0.65rem;
+    font-weight: 600;
+    font-family: var(--font-geist-mono), monospace;
+    padding: 0.1rem 0.35rem;
+    letter-spacing: 0.02em;
+  }
+  .linked-card-id {
+    font-size: 0.65rem;
+    font-family: var(--font-geist-mono), monospace;
+    color: var(--color-muted);
+    opacity: 0.6;
+  }
+  .linked-card-summary {
+    font-size: 0.82rem;
+    font-weight: 500;
+    line-height: 1.35;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+  .linked-card-reasoning {
+    font-size: 0.72rem;
+    line-height: 1.4;
+    color: var(--color-muted);
+    margin-top: 0.25rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+
+  .page-footer {
+    margin-top: 2.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--color-border);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.7rem;
+    font-family: var(--font-geist-mono), monospace;
+    color: var(--color-muted);
+    opacity: 0.6;
+  }
+  .footer-sep {
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: var(--color-muted);
+    opacity: 0.4;
+  }
+
+  .runs-section {
+    margin-top: 2rem;
+  }
+  .runs-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    background: var(--color-border);
+    border: 1px solid var(--color-border);
+    overflow: hidden;
+  }
+  .run-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--color-background);
+    text-decoration: none;
+    color: inherit;
+    transition: background 0.1s ease;
+  }
+  .run-item:hover {
+    background: var(--color-surface);
+  }
+  .run-id {
+    font-size: 0.75rem;
+    font-family: var(--font-geist-mono), monospace;
+    color: var(--color-accent);
+  }
+  .run-date {
+    font-size: 0.7rem;
+    font-family: var(--font-geist-mono), monospace;
+    color: var(--color-muted);
+  }
+
+  :root {
+    --color-foreground: #111;
+    --color-muted: #888;
+    --color-dim: #aaa;
+    --color-border: #ddd;
+    --color-surface: #f6f6f6;
+    --color-background: #fff;
+    --color-accent: #444;
+
+    --dir-supports: #3a7d44;
+    --dir-opposes: #b04040;
+
+    --type-claim: #4a6d9c;
+    --type-claim-bg: #f3f5f8;
+    --type-claim-bg-hover: #eaeff4;
+    --type-claim-border: #b0bfcf;
+
+    --type-question: #6b5b8a;
+    --type-question-bg: #f4f3f7;
+    --type-question-bg-hover: #edebf2;
+    --type-question-border: #b5aec5;
+
+    --type-judgement: #8c7040;
+    --type-judgement-bg: #f7f5f0;
+    --type-judgement-bg-hover: #f0ece2;
+    --type-judgement-border: #c4b48a;
+
+    --type-source: #6b7280;
+    --type-source-bg: #f4f5f6;
+    --type-source-bg-hover: #ededef;
+    --type-source-border: #c0c3c8;
+
+    --type-concept: #4a7f78;
+    --type-concept-bg: #f2f6f5;
+    --type-concept-bg-hover: #e8efed;
+    --type-concept-border: #a3bdb8;
+
+    --type-wiki: #4e7f56;
+    --type-wiki-bg: #f3f6f3;
+    --type-wiki-bg-hover: #e9f0ea;
+    --type-wiki-border: #a5c0a9;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --color-foreground: #ededed;
+      --color-muted: #6a6a6a;
+      --color-dim: #4a4a4a;
+      --color-border: #222;
+      --color-surface: #111;
+      --color-background: #0a0a0a;
+      --color-accent: #888;
+
+      --dir-supports: #5aaa66;
+      --dir-opposes: #d06060;
+
+      --type-claim: #7a9abb;
+      --type-claim-bg: #0e1318;
+      --type-claim-bg-hover: #131a22;
+      --type-claim-border: #1e2a38;
+
+      --type-question: #9388ad;
+      --type-question-bg: #11101a;
+      --type-question-bg-hover: #181524;
+      --type-question-border: #242038;
+
+      --type-judgement: #b8a46a;
+      --type-judgement-bg: #141108;
+      --type-judgement-bg-hover: #1c180f;
+      --type-judgement-border: #2e2714;
+
+      --type-source: #8a8f96;
+      --type-source-bg: #101112;
+      --type-source-bg-hover: #171819;
+      --type-source-border: #242628;
+
+      --type-concept: #6aaa9f;
+      --type-concept-bg: #0b1413;
+      --type-concept-bg-hover: #111d1b;
+      --type-concept-border: #1a2e2a;
+
+      --type-wiki: #6fa877;
+      --type-wiki-bg: #0b140d;
+      --type-wiki-bg-hover: #111d14;
+      --type-wiki-border: #1a2e1f;
+    }
+  }
+`;

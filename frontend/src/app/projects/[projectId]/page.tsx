@@ -60,7 +60,6 @@ const TYPE_CONFIG: Record<
 };
 
 function pageHref(page: Page): string {
-  if (page.page_type === "question") return `/questions/${page.id}`;
   return `/pages/${page.id}`;
 }
 
@@ -80,9 +79,7 @@ export default function PagesIndexPage() {
   const [pages, setPages] = useState<Page[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [activeTypes, setActiveTypes] = useState<Set<PageType>>(
-    new Set(PAGE_TYPES),
-  );
+  const [activeTypes, setActiveTypes] = useState<Set<PageType>>(new Set());
 
   useEffect(() => {
     fetch(`${API_BASE}/api/projects/${projectId}/pages`, {
@@ -99,7 +96,7 @@ export default function PagesIndexPage() {
     setActiveTypes((prev) => {
       const next = new Set(prev);
       if (next.has(t)) {
-        if (next.size > 1) next.delete(t);
+        next.delete(t);
       } else {
         next.add(t);
       }
@@ -111,14 +108,14 @@ export default function PagesIndexPage() {
     setActiveTypes(new Set([t]));
   };
 
-  const selectAll = () => {
-    setActiveTypes(new Set(PAGE_TYPES));
+  const clearAll = () => {
+    setActiveTypes(new Set());
   };
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
     return pages.filter((p) => {
-      if (!activeTypes.has(p.page_type)) return false;
+      if (activeTypes.size > 0 && !activeTypes.has(p.page_type)) return false;
       if (q && !p.summary.toLowerCase().includes(q) && !p.content.toLowerCase().includes(q))
         return false;
       return true;
@@ -501,10 +498,11 @@ export default function PagesIndexPage() {
           {PAGE_TYPES.map((t) => {
             const cfg = TYPE_CONFIG[t];
             const isActive = activeTypes.has(t);
+            const noFilters = activeTypes.size === 0;
             return (
               <button
                 key={t}
-                className={`filter-chip ${isActive ? "active" : "inactive"}`}
+                className={`filter-chip ${isActive ? "active" : noFilters ? "" : "inactive"}`}
                 style={
                   isActive
                     ? {
@@ -523,10 +521,14 @@ export default function PagesIndexPage() {
               </button>
             );
           })}
-          <div className="filter-divider" />
-          <button className="filter-all" onClick={selectAll}>
-            All
-          </button>
+          {activeTypes.size > 0 && (
+            <>
+              <div className="filter-divider" />
+              <button className="filter-all" onClick={clearAll}>
+                Clear
+              </button>
+            </>
+          )}
         </div>
       </div>
 

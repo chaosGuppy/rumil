@@ -52,7 +52,7 @@ export default async function TracePage({
       <header className="trace-header">
         {trace.question && (
           <Link
-            href={`/questions/${trace.question.id}`}
+            href={`/pages/${trace.question.id}`}
             className="trace-back-link"
           >
             &larr; {trace.question.summary}

@@ -73,7 +73,7 @@ async def run_scout(
         dict.fromkeys(preloaded + result.phase1_page_ids + phase2_loaded)
     )
     review_context = format_moves_for_review(result.moves)
-    review = await run_closing_review(call, review_context, context_text, all_loaded_ids, db)
+    review = await run_closing_review(call, review_context, context_text, all_loaded_ids, db, trace)
     remaining_fruit = 5
     if review:
         remaining_fruit = review.get("remaining_fruit", 5)

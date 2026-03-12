@@ -281,7 +281,7 @@ export type LlmExchangeEventOut = {
     /**
      * Round
      */
-    round: number;
+    round?: number | null;
     /**
      * Input Tokens
      */

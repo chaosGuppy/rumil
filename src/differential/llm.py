@@ -466,17 +466,28 @@ async def text_call(
     return ""
 
 
+@dataclass
+class StructuredCallResult:
+    """Result of a structured_call invocation."""
+
+    data: dict | None = None
+    response_text: str | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    duration_ms: int | None = None
+
+
 async def structured_call(
     system_prompt: str,
     user_message: str,
     response_model: type[BaseModel],
     *,
     max_tokens: int = 1024,
-) -> dict | None:
+) -> StructuredCallResult:
     """Run an LLM call that returns structured output matching response_model.
 
     Uses the Anthropic structured output API (messages.parse with output_format).
-    Returns the parsed response as a dict, or None on failure.
+    Returns a StructuredCallResult with the parsed data and usage metadata.
     """
     settings = get_settings()
     api_key = settings.require_anthropic_key()
@@ -491,6 +502,7 @@ async def structured_call(
 
     for attempt in range(MAX_API_RETRIES):
         try:
+            t0 = time.monotonic()
             response = await client.messages.parse(
                 model=model,
                 max_tokens=max_tokens,
@@ -498,6 +510,11 @@ async def structured_call(
                 messages=messages,
                 output_format=response_model,
             )
+            elapsed_ms = int((time.monotonic() - t0) * 1000)
+            response_text = ""
+            for block in response.content:
+                if isinstance(block, TextBlock):
+                    response_text += block.text
             if response.parsed_output is not None:
                 log.debug(
                     "structured_call success: %s, usage=%d/%d tokens",
@@ -505,12 +522,23 @@ async def structured_call(
                     response.usage.input_tokens,
                     response.usage.output_tokens,
                 )
-                return response.parsed_output.model_dump()
+                return StructuredCallResult(
+                    data=response.parsed_output.model_dump(),
+                    response_text=response_text or None,
+                    input_tokens=response.usage.input_tokens,
+                    output_tokens=response.usage.output_tokens,
+                    duration_ms=elapsed_ms,
+                )
             log.warning(
                 "Structured output was empty (stop_reason=%s, usage=%d/%d tokens)",
                 response.stop_reason, response.usage.output_tokens, max_tokens,
             )
-            return None
+            return StructuredCallResult(
+                response_text=response_text or None,
+                input_tokens=response.usage.input_tokens,
+                output_tokens=response.usage.output_tokens,
+                duration_ms=elapsed_ms,
+            )
         except Exception as e:
             status = getattr(e, "status_code", None)
             name = type(e).__name__.lower()

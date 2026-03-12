@@ -13,6 +13,7 @@ from differential.database import DB
 from differential.settings import get_settings
 from differential.llm import (
     AgentResult,
+    StructuredCallResult,
     build_system_prompt,
     build_user_message,
     structured_call,
@@ -143,10 +144,11 @@ async def _save_exchanges(
             duration_ms=rr.duration_ms or None,
         )
         if trace:
+            has_rounds = phase == "inner_loop"
             await trace.record(LLMExchangeEvent(
                 exchange_id=exchange_id,
                 phase=phase,
-                round=rr.round,
+                round=rr.round if has_rounds else None,
                 input_tokens=rr.input_tokens,
                 output_tokens=rr.output_tokens,
                 duration_ms=rr.duration_ms or None,
@@ -421,6 +423,7 @@ async def run_closing_review(
     context_text: str,
     loaded_page_ids: list[str] | None = None,
     db: DB | None = None,
+    trace: CallTrace | None = None,
 ) -> dict | None:
     """Run the closing review as a separate call. Free (not counted against budget)."""
     page_rating_note = ""
@@ -453,12 +456,33 @@ async def run_closing_review(
     )
     try:
         user_message = build_user_message(context_text, review_task)
-        review = await structured_call(
+        result = await structured_call(
             system_prompt=REVIEW_SYSTEM_PROMPT,
             user_message=user_message,
             response_model=ReviewResponse,
             max_tokens=2048,
         )
+        review = result.data
+        if trace and db:
+            exchange_id = await db.save_llm_exchange(
+                call_id=call.id,
+                phase="closing_review",
+                round_num=0,
+                system_prompt=REVIEW_SYSTEM_PROMPT,
+                user_message=user_message,
+                response_text=result.response_text,
+                tool_calls=[],
+                input_tokens=result.input_tokens,
+                output_tokens=result.output_tokens,
+                duration_ms=result.duration_ms,
+            )
+            await trace.record(LLMExchangeEvent(
+                exchange_id=exchange_id,
+                phase="closing_review",
+                input_tokens=result.input_tokens,
+                output_tokens=result.output_tokens,
+                duration_ms=result.duration_ms,
+            ))
         if review:
             log.info(
                 "Closing review complete: call=%s, fruit=%s, confidence=%s",

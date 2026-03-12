@@ -245,10 +245,10 @@ function EventSection({ event }: { event: TraceEvent }) {
         </span>
         {isExchange && (
           <span className="trace-exchange-info">
-            {event.phase.replace(/_/g, " ")} r{event.round}
+            {event.phase.replace(/_/g, " ")}{event.round != null ? ` round ${event.round}` : ""}
             {event.input_tokens != null && (
               <span className="trace-token-count">
-                {event.input_tokens.toLocaleString()}/{event.output_tokens?.toLocaleString()} tok
+                input tokens: {event.input_tokens.toLocaleString()} output tokens: {event.output_tokens?.toLocaleString()}
               </span>
             )}
             {event.duration_ms != null && (

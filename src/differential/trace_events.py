@@ -64,7 +64,7 @@ class LLMExchangeEvent(BaseModel):
     event: Literal["llm_exchange"] = "llm_exchange"
     exchange_id: str
     phase: str
-    round: int
+    round: int | None = None
     input_tokens: int | None = None
     output_tokens: int | None = None
     duration_ms: int | None = None

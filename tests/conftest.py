@@ -69,34 +69,40 @@ async def question_page(tmp_db):
 
 
 @pytest_asyncio.fixture
-async def scout_call(question_page):
-    """Create a pending scout call (not yet saved to DB)."""
-    return Call(
+async def scout_call(tmp_db, question_page):
+    """Create a pending scout call, saved to DB."""
+    call = Call(
         call_type=CallType.SCOUT,
         workspace=Workspace.RESEARCH,
         scope_page_id=question_page.id,
         status=CallStatus.PENDING,
     )
+    await tmp_db.save_call(call)
+    return call
 
 
 @pytest_asyncio.fixture
-async def assess_call(question_page):
-    """Create a pending assess call (not yet saved to DB)."""
-    return Call(
+async def assess_call(tmp_db, question_page):
+    """Create a pending assess call, saved to DB."""
+    call = Call(
         call_type=CallType.ASSESS,
         workspace=Workspace.RESEARCH,
         scope_page_id=question_page.id,
         status=CallStatus.PENDING,
     )
+    await tmp_db.save_call(call)
+    return call
 
 
 @pytest_asyncio.fixture
-async def prioritization_call(question_page):
-    """Create a pending prioritization call (not yet saved to DB)."""
-    return Call(
+async def prioritization_call(tmp_db, question_page):
+    """Create a pending prioritization call, saved to DB."""
+    call = Call(
         call_type=CallType.PRIORITIZATION,
         workspace=Workspace.PRIORITIZATION,
         scope_page_id=question_page.id,
         status=CallStatus.PENDING,
         budget_allocated=5,
     )
+    await tmp_db.save_call(call)
+    return call

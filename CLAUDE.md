@@ -36,7 +36,12 @@ uv run python main.py "Your question here" --workspace my-project --budget 10
 
 # List all workspaces
 uv run python main.py --list-workspaces
+
+# Smoke test (reduced agent rounds, minimal budget)
+uv run python main.py "Your question here" --workspace test-scratch --smoke-test
 ```
+
+`--smoke-test` caps agent loop rounds at 2 per call, making runs fast and cheap. Use it for development and manual testing. When running smoke tests, don't override `--budget` unless there's a good reason to.
 
 Tests: `uv run pytest`. Optional dependency: `pypdf` for PDF ingestion (`uv sync --extra pdf`).
 
@@ -57,7 +62,7 @@ Always use the supabase cli to create new migrations: `supabase migration new`.
 
 Each call ends with a closing review that produces `remaining_fruit` (0-10 scale) — the orchestrator uses this to decide when to stop scouting.
 
-**LLM interface** (`src/rumil/llm.py`): Wraps the Anthropic API. Provides `call_api()` (single API call with tool handling), `structured_call()` (structured output), and `text_call()`. The multi-turn agent loop lives in `calls/common.py` (`run_agent_loop()`). Builds prompts from `prompts/` directory: system = preamble.md + call-type-specific .md file, user = context + task. Has retry logic for transient errors.
+**LLM interface** (`src/rumil/llm.py`): Wraps the Anthropic API. Provides `call_api()` (single API call with tool handling), `structured_call()` (structured output), and `text_call()`. The multi-turn agent loop lives in `calls/common.py` (`run_agent_loop()`). For single-turn tool-calling use `run_single_call()` — do NOT use `run_agent_loop` with `max_rounds=1`. Both support `messages` for conversation resumption and `cache=True` for prompt caching. When multiple LLM calls share a conversation prefix, pass the same tools to all of them (even if the prompt only asks the model to use a subset) so the cache prefix matches. Builds prompts from `prompts/` directory: system = preamble.md + call-type-specific .md file, user = context + task. Has retry logic for transient errors.
 
 **Prompt structure** (`prompts/`): `preamble.md` defines the workspace model, page types, and epistemic conventions shared across all call types. Each call type has its own prompt file (scout.md, assess.md, prioritization.md, ingest.md, etc.).
 

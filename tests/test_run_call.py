@@ -3,6 +3,7 @@
 import pytest
 
 from rumil.calls.common import RunCallResult, run_call
+from rumil.calls.prioritization import run_prioritization_call
 from rumil.models import CallType, LinkType, MoveType, PageType
 from rumil.moves.base import MoveState
 
@@ -10,14 +11,17 @@ from rumil.moves.base import MoveState
 @pytest.mark.llm
 async def test_scout_run_call(tmp_db, question_page, scout_call):
     """A scout call creates pages, records valid moves, and persists them."""
-    context = f"## Question\n\nID: `{question_page.id}`\n\n{question_page.content}\n"
+    working_context = f"## Question\n\nID: `{question_page.id}`\n\n{question_page.content}\n"
     task = (
         "Scout this question. Create at least one claim "
         "as a consideration.\n\n"
         f"Question ID: `{question_page.id}`"
     )
 
-    result = await run_call(CallType.SCOUT, task, context, scout_call, tmp_db, max_rounds=3)
+    result = await run_call(
+        CallType.SCOUT, task, working_context,
+        scout_call, tmp_db, max_rounds=3,
+    )
 
     assert isinstance(result, RunCallResult)
     assert len(result.moves) > 0
@@ -45,13 +49,11 @@ async def test_prioritization_produces_dispatches(tmp_db, question_page, priorit
         "Dispatch scout or assess calls for this question."
     )
 
-    result = await run_call(
-        CallType.PRIORITIZATION,
+    result = await run_prioritization_call(
         task,
         context,
         prioritization_call,
         tmp_db,
-        max_rounds=3,
     )
 
     assert isinstance(result, RunCallResult)
@@ -75,7 +77,7 @@ async def test_available_moves_restricts_tools(tmp_db, scout_call):
 @pytest.mark.llm
 async def test_create_claim_with_inline_links(tmp_db, question_page, scout_call):
     """The LLM should create a claim linked as a consideration in a single tool call."""
-    context = (
+    working_context = (
         f"## Question\n\n"
         f"ID: `{question_page.id[:8]}`\n\n"
         f"{question_page.content}\n"
@@ -89,7 +91,7 @@ async def test_create_claim_with_inline_links(tmp_db, question_page, scout_call)
     result = await run_call(
         CallType.SCOUT,
         task,
-        context,
+        working_context,
         scout_call,
         tmp_db,
         available_moves=[MoveType.CREATE_CLAIM, MoveType.LOAD_PAGE],
@@ -114,7 +116,7 @@ async def test_create_claim_with_inline_links(tmp_db, question_page, scout_call)
 @pytest.mark.llm
 async def test_create_question_with_inline_links(tmp_db, question_page, scout_call):
     """The LLM should create a sub-question linked to its parent in a single tool call."""
-    context = (
+    working_context = (
         f"## Question\n\n"
         f"ID: `{question_page.id[:8]}`\n\n"
         f"{question_page.content}\n"
@@ -128,7 +130,7 @@ async def test_create_question_with_inline_links(tmp_db, question_page, scout_ca
     result = await run_call(
         CallType.SCOUT,
         task,
-        context,
+        working_context,
         scout_call,
         tmp_db,
         available_moves=[MoveType.CREATE_QUESTION, MoveType.LOAD_PAGE],
@@ -153,7 +155,7 @@ async def test_create_question_with_inline_links(tmp_db, question_page, scout_ca
 @pytest.mark.llm
 async def test_create_judgement_with_inline_links(tmp_db, question_page, scout_call):
     """The LLM should create a judgement linked as a consideration in a single tool call."""
-    context = (
+    working_context = (
         f"## Question\n\n"
         f"ID: `{question_page.id[:8]}`\n\n"
         f"{question_page.content}\n"
@@ -167,7 +169,7 @@ async def test_create_judgement_with_inline_links(tmp_db, question_page, scout_c
     result = await run_call(
         CallType.SCOUT,
         task,
-        context,
+        working_context,
         scout_call,
         tmp_db,
         available_moves=[MoveType.CREATE_JUDGEMENT, MoveType.LOAD_PAGE],
@@ -206,8 +208,7 @@ async def test_create_subquestion_with_inline_dispatches(
         "using the `links` field."
     )
 
-    result = await run_call(
-        CallType.PRIORITIZATION,
+    result = await run_prioritization_call(
         task,
         context,
         prioritization_call,

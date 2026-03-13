@@ -13,6 +13,7 @@ from rumil.llm import Tool
 from rumil.models import (
     Call,
     Dispatch,
+    LinkRole,
     LinkType,
     Move,
     MoveType,
@@ -39,6 +40,7 @@ class MoveResult:
     created_page_id: str | None = None
     dispatches: list[Dispatch] = field(default_factory=list)
     extra_created_ids: list[str] | None = None
+    trace_extra: dict[str, Any] = field(default_factory=dict)
 
 
 class MoveState:
@@ -51,7 +53,17 @@ class MoveState:
         self.created_page_ids: list[str] = []
         self.moves: list[Move] = []
         self.move_created_ids: list[list[str]] = []
+        self.move_trace_extras: list[dict[str, Any]] = []
         self.dispatches: list[Dispatch] = []
+        self._move_cursor: int = 0
+
+    def take_new_moves(self) -> tuple[list[Move], list[list[str]], list[dict[str, Any]]]:
+        """Return moves, created-ID lists, and trace extras added since the last call."""
+        new_moves = self.moves[self._move_cursor:]
+        new_created = self.move_created_ids[self._move_cursor:]
+        new_extras = self.move_trace_extras[self._move_cursor:]
+        self._move_cursor = len(self.moves)
+        return new_moves, new_created, new_extras
 
 
 def _resolve_last_created(payload: P, last_created_id: str) -> P:
@@ -103,6 +115,7 @@ class MoveDef(Generic[S]):
             if result.extra_created_ids:
                 move_page_ids.extend(result.extra_created_ids)
             state.move_created_ids.append(move_page_ids)
+            state.move_trace_extras.append(result.trace_extra)
             log.debug("Move %s result: %s", self.name, result.message[:100])
             return result.message
 
@@ -131,25 +144,15 @@ class CreatePagePayload(BaseModel):
         "", description="Nature of uncertainty, e.g. empirical, conceptual, contested"
     )
     workspace: str = Field("research", description="research or prioritization")
-    status: str | None = None
-    remaining_fruit: float | None = None
-    parent_question_id: str | None = None
-    key_dependencies: str | None = Field(
-        None, description="What this judgement most depends on (judgements only)"
-    )
-    sensitivity_analysis: str | None = Field(
-        None,
-        description="What would shift this judgement, and in which direction (judgements only)",
-    )
-    confidence_type: str | None = None
-    decomposition_status: str | None = None
-    source_url: str | None = None
-    source_id: str | None = Field(
-        None, description="Source page ID (ingest claims only)"
-    )
-    direction: str | None = None
-    strength: float | None = None
-    hypothesis: str | None = None
+
+    def page_extra_fields(self) -> dict[str, Any]:
+        """Return type-specific metadata fields to store in page.extra.
+
+        Subclasses override to opt in their own fields. Structural fields
+        like `links` or `old_page_id` should NOT be included here — only
+        metadata that should be persisted on the page itself.
+        """
+        return {}
 
 
 def _resolve_workspace(ws: str) -> Workspace:
@@ -211,25 +214,7 @@ async def create_page(
 ) -> MoveResult:
     """Create a page from payload, save to DB and file system."""
     workspace = _resolve_workspace(payload.workspace)
-    extra: dict[str, Any] = {}
-
-    for key in [
-        "status",
-        "remaining_fruit",
-        "parent_question_id",
-        "key_dependencies",
-        "sensitivity_analysis",
-        "confidence_type",
-        "decomposition_status",
-        "source_url",
-        "source_id",
-        "direction",
-        "strength",
-        "hypothesis",
-    ]:
-        val = getattr(payload, key, None)
-        if val is not None:
-            extra[key] = val
+    extra = payload.page_extra_fields()
 
     page = Page(
         page_type=page_type,
@@ -266,6 +251,7 @@ async def link_pages(
     reasoning: str,
     db: DB,
     link_type: LinkType,
+    role: LinkRole = LinkRole.STRUCTURAL,
 ) -> MoveResult:
     """Create a link between two pages. Used by LINK_CHILD_QUESTION and LINK_RELATED."""
     resolved_from = await db.resolve_page_id(from_id)
@@ -282,6 +268,7 @@ async def link_pages(
         to_page_id=resolved_to,
         link_type=link_type,
         reasoning=reasoning,
+        role=role,
     )
     await db.save_link(link)
     log.info(

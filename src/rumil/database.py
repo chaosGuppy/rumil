@@ -17,6 +17,7 @@ from rumil.models import (
     CallStatus,
     CallType,
     ConsiderationDirection,
+    LinkRole,
     LinkType,
     Page,
     PageLayer,
@@ -70,6 +71,7 @@ def _row_to_link(row: dict[str, Any]) -> PageLink:
         ),
         strength=row["strength"],
         reasoning=row["reasoning"] or "",
+        role=LinkRole(row.get("role", "structural")),
         created_at=datetime.fromisoformat(row["created_at"]),
     )
 
@@ -285,10 +287,20 @@ class DB:
                 "direction": link.direction.value if link.direction else None,
                 "strength": link.strength,
                 "reasoning": link.reasoning,
+                "role": link.role.value,
                 "created_at": link.created_at.isoformat(),
                 "run_id": self.run_id,
             }
         ).execute()
+
+    async def get_link(self, link_id: str) -> PageLink | None:
+        rows = _rows(
+            await self.client.table("page_links")
+            .select("*")
+            .eq("id", link_id)
+            .execute()
+        )
+        return _row_to_link(rows[0]) if rows else None
 
     async def get_links_to(self, page_id: str) -> list[PageLink]:
         rows = _rows(
@@ -333,6 +345,19 @@ class DB:
             page = await self.get_page(link.to_page_id)
             if page and page.is_active():
                 result.append(page)
+        return result
+
+    async def get_child_questions_with_links(
+        self, parent_id: str,
+    ) -> list[tuple[Page, PageLink]]:
+        """Return (child_page, link) pairs for sub-questions of a question."""
+        links = await self.get_links_from(parent_id)
+        child_links = [l for l in links if l.link_type == LinkType.CHILD_QUESTION]
+        result = []
+        for link in child_links:
+            page = await self.get_page(link.to_page_id)
+            if page and page.is_active():
+                result.append((page, link))
         return result
 
     async def get_judgements_for_question(self, question_id: str) -> list[Page]:
@@ -412,18 +437,22 @@ class DB:
         call_id: str,
         status: CallStatus,
         result_summary: str = "",
+        call_params: dict | None = None,
     ) -> None:
         completed_at = (
             datetime.now(timezone.utc).isoformat()
             if status == CallStatus.COMPLETE
             else None
         )
+        payload: dict = {
+            "status": status.value,
+            "result_summary": result_summary,
+            "completed_at": completed_at,
+        }
+        if call_params is not None:
+            payload["call_params"] = call_params
         await self.client.table("calls").update(
-            {
-                "status": status.value,
-                "result_summary": result_summary,
-                "completed_at": completed_at,
-            }
+            payload
         ).eq("id", call_id).execute()
 
     async def increment_call_budget_used(
@@ -479,6 +508,31 @@ class DB:
     async def budget_remaining(self) -> int:
         total, used = await self.get_budget()
         return max(0, total - used)
+
+    async def get_links_between(
+        self,
+        from_page_id: str,
+        to_page_id: str,
+    ) -> list[PageLink]:
+        """Get all links from one page to another."""
+        rows = _rows(
+            await self.client.table("page_links")
+            .select("*")
+            .eq("from_page_id", from_page_id)
+            .eq("to_page_id", to_page_id)
+            .execute()
+        )
+        return [_row_to_link(r) for r in rows]
+
+    async def delete_link(self, link_id: str) -> None:
+        """Delete a page link by ID."""
+        await self.client.table("page_links").delete().eq("id", link_id).execute()
+
+    async def update_link_role(self, link_id: str, role: LinkRole) -> None:
+        """Update a link's role."""
+        await self.client.table("page_links").update(
+            {"role": role.value}
+        ).eq("id", link_id).execute()
 
     async def get_last_scout_info(
         self,
@@ -659,27 +713,29 @@ class DB:
         round_num: int | None = None,
         cache_creation_input_tokens: int | None = None,
         cache_read_input_tokens: int | None = None,
+        user_messages: list[dict] | None = None,
     ) -> str:
         exchange_id = str(uuid.uuid4())
-        await self.client.table("call_llm_exchanges").insert(
-            {
-                "id": exchange_id,
-                "call_id": call_id,
-                "run_id": self.run_id,
-                "phase": phase,
-                "round": round_num,
-                "system_prompt": system_prompt,
-                "user_message": user_message,
-                "response_text": response_text,
-                "tool_calls": tool_calls or [],
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
-                "error": error,
-                "duration_ms": duration_ms,
-                "cache_creation_input_tokens": cache_creation_input_tokens,
-                "cache_read_input_tokens": cache_read_input_tokens,
-            }
-        ).execute()
+        row: dict[str, Any] = {
+            "id": exchange_id,
+            "call_id": call_id,
+            "run_id": self.run_id,
+            "phase": phase,
+            "round": round_num,
+            "system_prompt": system_prompt,
+            "user_message": user_message,
+            "response_text": response_text,
+            "tool_calls": tool_calls or [],
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "error": error,
+            "duration_ms": duration_ms,
+            "cache_creation_input_tokens": cache_creation_input_tokens,
+            "cache_read_input_tokens": cache_read_input_tokens,
+        }
+        if user_messages is not None:
+            row["user_messages"] = user_messages
+        await self.client.table("call_llm_exchanges").insert(row).execute()
         return exchange_id
 
     async def get_llm_exchanges(self, call_id: str) -> list[dict[str, Any]]:

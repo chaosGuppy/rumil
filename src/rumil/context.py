@@ -5,7 +5,7 @@ Build context text from workspace pages for injection into LLM prompts.
 import logging
 
 from rumil.database import DB
-from rumil.models import Page, PageType, Workspace
+from rumil.models import LinkRole, Page, PageType, Workspace
 from rumil.workspace_map import build_workspace_map
 
 log = logging.getLogger(__name__)
@@ -40,9 +40,8 @@ async def format_page(page: Page, db: DB | None = None) -> str:
             lines.append("")
             lines.append("**Considerations:**")
             for claim, link in considerations:
-                direction = link.direction.value if link.direction else "neutral"
                 lines.append(
-                    f"- [{direction}, strength {link.strength:.1f}/5] "
+                    f"- [strength {link.strength:.1f}/5] "
                     f"{claim.summary} (ID: {claim.id})"
                 )
                 if link.reasoning:
@@ -96,9 +95,8 @@ async def build_context_for_question(
             parts.append("")
             for claim, link in considerations:
                 loaded_ids.append(claim.id)
-                direction = link.direction.value if link.direction else "neutral"
                 parts.append(
-                    f"**[{direction.upper()}, strength {link.strength:.1f}/5]** "
+                    f"**[strength {link.strength:.1f}/5]** "
                     f"{claim.summary} (ID: `{claim.id}`)"
                 )
                 parts.append(claim.content)
@@ -129,6 +127,142 @@ async def build_context_for_question(
                 parts.append(f"*On sub-question: {child.summary} (`{child.id}`)*")
                 parts.append(await format_page(j))
                 parts.append("")
+
+    return "\n".join(parts), loaded_ids
+
+
+async def build_call_context(
+    question_id: str,
+    db: DB,
+    extra_page_ids: list[str] | None = None,
+) -> tuple[str, dict[str, str], list[str]]:
+    """Build full context for an assess/ingest call.
+
+    Prepends a compact workspace map, then the detailed working context for
+    the given question. Any extra_page_ids (full UUIDs) are appended as
+    pre-loaded pages at the end.
+
+    Returns (context_text, short_id_to_full_uuid, working_context_page_ids).
+    """
+    log.debug("build_call_context: question=%s", question_id[:8])
+    map_text, short_id_map = await build_workspace_map(db)
+    working_context, working_page_ids = await build_context_for_question(question_id, db)
+
+    parts = [
+        map_text,
+        "---",
+        "",
+        "## Working Context",
+        "",
+        working_context,
+    ]
+
+    if extra_page_ids:
+        for pid in extra_page_ids:
+            page = await db.get_page(pid)
+            if page:
+                parts += ["", "---", "", f"## Pre-loaded Page: `{pid[:8]}`", ""]
+                parts.append(await format_page(page, db=db))
+
+    context_text = "\n".join(parts)
+    log.debug(
+        "build_call_context complete: %d chars, %d working pages, %d extra pages",
+        len(context_text), len(working_page_ids), len(extra_page_ids or []),
+    )
+    return context_text, short_id_map, working_page_ids
+
+
+async def format_question_for_scout(
+    question_id: str, db: DB,
+) -> tuple[str, list[str]]:
+    """Build scout working context with role-aware display.
+
+    Direct considerations/children are shown compactly (summary only).
+    Structural ones are shown expanded (full content).
+    Judgements are always expanded.
+
+    Returns (context_text, loaded_page_ids).
+    """
+    question = await db.get_page(question_id)
+    if not question:
+        return f"[Question {question_id} not found]", []
+
+    loaded_ids = [question_id]
+    parts = ["# Scope Question", ""]
+    parts.append(await format_page(question))
+    parts.append("")
+
+    considerations = await db.get_considerations_for_question(question_id)
+    direct_cons = [(p, l) for p, l in considerations if l.role == LinkRole.DIRECT]
+    structural_cons = [(p, l) for p, l in considerations if l.role == LinkRole.STRUCTURAL]
+
+    children_with_links = await db.get_child_questions_with_links(question_id)
+    direct_children = [(p, l) for p, l in children_with_links if l.role == LinkRole.DIRECT]
+    structural_children = [(p, l) for p, l in children_with_links if l.role == LinkRole.STRUCTURAL]
+
+    if direct_cons or direct_children:
+        parts.append("## Direct Considerations (compact)")
+        parts.append(
+            "These pages directly bear on the answer. They are shown in compact form "
+            "so you know what ground is already covered -- avoid redundant claims."
+        )
+        parts.append("")
+        for claim, link in direct_cons:
+            loaded_ids.append(claim.id)
+            parts.append(
+                f"- [strength {link.strength:.1f}] {claim.summary} (ID: {claim.id})"
+            )
+        for child, link in direct_children:
+            loaded_ids.append(child.id)
+            parts.append(f"- [sub-Q] {child.summary} (ID: {child.id})")
+        parts.append("")
+
+    if structural_cons or structural_children:
+        parts.append("## Structural Considerations (expanded)")
+        parts.append(
+            "These pages frame the investigation -- they indicate what evidence and "
+            "angles still need to be explored. Read them to understand what bears "
+            "on the question and in which direction."
+        )
+        parts.append("")
+        for claim, link in structural_cons:
+            loaded_ids.append(claim.id)
+            parts.append(f"### [{claim.page_type.value.upper()}] {claim.summary}")
+            parts.append(f"ID: {claim.id}")
+            parts.append(f"Strength: {link.strength:.1f}/5")
+            parts.append("")
+            parts.append(claim.content)
+            parts.append("")
+        for child, link in structural_children:
+            loaded_ids.append(child.id)
+            parts.append(f"### [QUESTION] {child.summary}")
+            parts.append(f"ID: {child.id}")
+            parts.append("")
+            parts.append(child.content)
+            parts.append("")
+
+    judgements = await db.get_judgements_for_question(question_id)
+    if judgements:
+        parts.append("## Existing Judgements")
+        parts.append("")
+        for j in judgements:
+            loaded_ids.append(j.id)
+            parts.append(await format_page(j))
+            parts.append("")
+
+    children = await db.get_child_questions(question_id)
+    child_judgements = []
+    for child in children:
+        for j in await db.get_judgements_for_question(child.id):
+            child_judgements.append((child, j))
+    if child_judgements:
+        parts.append("## Sub-question Judgements")
+        parts.append("")
+        for child, j in child_judgements:
+            loaded_ids.append(j.id)
+            parts.append(f"*On sub-question: {child.summary} (`{child.id}`)*")
+            parts.append(await format_page(j))
+            parts.append("")
 
     return "\n".join(parts), loaded_ids
 
@@ -165,48 +299,43 @@ async def _build_question_index(question_id: str, db: DB, indent: int = 0) -> li
     return lines
 
 
-async def build_call_context(
-    question_id: str,
-    db: DB,
-    extra_page_ids: list[str] | None = None,
-) -> tuple[str, dict[str, str], list[str]]:
-    """Build full context for a scout/assess/ingest call.
+def assemble_call_context(
+    working_context: str,
+    workspace_map: str | None = None,
+    extra_pages_text: str | None = None,
+) -> str:
+    """Assemble context text from pre-built components.
 
-    Prepends a compact workspace map, then the detailed working context for
-    the given question. Any extra_page_ids (full UUIDs) are appended as
-    pre-loaded pages at the end.
-
-    Returns (context_text, short_id_to_full_uuid, working_context_page_ids).
-    working_context_page_ids lists pages whose full content was included as
-    part of the question's working context (question itself, considerations,
-    judgements).
+    Pure string operation — no DB dependency. Called separately for each phase
+    of a call (initial page loading, main call, closing review) with different
+    workspace maps.
     """
-    log.debug("build_call_context: question=%s", question_id[:8])
-    map_text, short_id_map = await build_workspace_map(db)
-    working_context, working_page_ids = await build_context_for_question(question_id, db)
+    parts: list[str] = []
+    if workspace_map:
+        parts.append(workspace_map)
+        parts.append("---")
+        parts.append("")
+    parts.append("## Working Context")
+    parts.append("")
+    parts.append(working_context)
+    if extra_pages_text:
+        parts.append("")
+        parts.append("## Loaded Pages")
+        parts.append("")
+        parts.append(extra_pages_text)
+    return "\n".join(parts)
 
-    parts = [
-        map_text,
-        "---",
-        "",
-        "## Working Context",
-        "",
-        working_context,
-    ]
 
-    if extra_page_ids:
-        for pid in extra_page_ids:
-            page = await db.get_page(pid)
-            if page:
-                parts += ["", "---", "", f"## Pre-loaded Page: `{pid[:8]}`", ""]
-                parts.append(await format_page(page, db=db))
-
-    context_text = "\n".join(parts)
-    log.debug(
-        "build_call_context complete: %d chars, %d working pages, %d extra pages",
-        len(context_text), len(working_page_ids), len(extra_page_ids or []),
-    )
-    return context_text, short_id_map, working_page_ids
+async def format_preloaded_pages(page_ids: list[str], db: DB) -> str:
+    """Format preloaded pages as context text."""
+    parts: list[str] = []
+    for pid in page_ids:
+        page = await db.get_page(pid)
+        if page:
+            parts += ["---", "", f"## Pre-loaded Page: `{pid[:8]}`", ""]
+            parts.append(await format_page(page, db=db))
+            parts.append("")
+    return "\n".join(parts)
 
 
 async def build_prioritization_context(

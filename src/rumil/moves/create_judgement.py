@@ -1,13 +1,13 @@
 """CREATE_JUDGEMENT move: create a considered position on a question."""
 
 import logging
+from typing import Any
 
 from pydantic import Field
 
 from rumil.database import DB
 from rumil.models import (
     Call,
-    ConsiderationDirection,
     LinkType,
     MoveType,
     PageLayer,
@@ -21,14 +21,28 @@ log = logging.getLogger(__name__)
 
 
 class CreateJudgementPayload(CreatePagePayload):
+    key_dependencies: str | None = Field(
+        None, description="What this judgement most depends on"
+    )
+    sensitivity_analysis: str | None = Field(
+        None, description="What would shift this judgement, and in which direction"
+    )
     links: list[ConsiderationLinkFields] = Field(
         default_factory=list,
         description=(
             "Question links to create for this judgement. Each entry "
             "links this judgement as a consideration bearing on an "
-            "existing question, with direction and strength."
+            "existing question, with a strength rating."
         ),
     )
+
+    def page_extra_fields(self) -> dict[str, Any]:
+        extra = super().page_extra_fields()
+        if self.key_dependencies is not None:
+            extra["key_dependencies"] = self.key_dependencies
+        if self.sensitivity_analysis is not None:
+            extra["sensitivity_analysis"] = self.sensitivity_analysis
+        return extra
 
 
 async def execute(payload: CreateJudgementPayload, call: Call, db: DB) -> MoveResult:
@@ -45,26 +59,17 @@ async def execute(payload: CreateJudgementPayload, call: Call, db: DB) -> MoveRe
             )
             continue
 
-        direction_str = link_spec.direction.lower()
-        try:
-            direction = ConsiderationDirection(direction_str)
-        except ValueError:
-            log.debug(
-                "Invalid direction '%s' defaulting to neutral", direction_str,
-            )
-            direction = ConsiderationDirection.NEUTRAL
-
         await db.save_link(PageLink(
             from_page_id=result.created_page_id,
             to_page_id=resolved,
             link_type=LinkType.CONSIDERATION,
-            direction=direction,
             strength=link_spec.strength,
             reasoning=link_spec.reasoning,
+            role=link_spec.role,
         ))
         log.info(
-            "Inline judgement linked: %s -> %s (%s)",
-            result.created_page_id[:8], resolved[:8], direction_str,
+            "Inline judgement linked: %s -> %s (%.1f)",
+            result.created_page_id[:8], resolved[:8], link_spec.strength,
         )
 
     return result

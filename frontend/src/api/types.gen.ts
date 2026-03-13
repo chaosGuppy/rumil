@@ -329,7 +329,7 @@ export type LlmExchangeOut = {
     /**
      * Round
      */
-    round: number;
+    round: number | null;
     /**
      * System Prompt
      */
@@ -338,6 +338,12 @@ export type LlmExchangeOut = {
      * User Message
      */
     user_message: string | null;
+    /**
+     * User Messages
+     */
+    user_messages?: Array<{
+        [key: string]: unknown;
+    }> | null;
     /**
      * Response Text
      */
@@ -385,7 +391,7 @@ export type LlmExchangeSummaryOut = {
     /**
      * Round
      */
-    round: number;
+    round: number | null;
     /**
      * Input Tokens
      */

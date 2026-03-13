@@ -53,11 +53,6 @@ def _budget_select(select_id: str) -> str:
 def _render_consideration(claim: Page, link, parent_question_id: str) -> str:
     color = _confidence_color(claim.epistemic_status)
     stars = _stars(link.strength)
-    direction = link.direction.value if link.direction else "neutral"
-    direction_icon = {"supports": "↑", "opposes": "↓", "neutral": "→"}.get(
-        direction, "→"
-    )
-
     words = claim.summary.split()
     short = " ".join(words[:30]) + ("…" if len(words) > 30 else "")
     epistemic = f"{claim.epistemic_status:.1f}/5 confidence" + (
@@ -85,11 +80,10 @@ def _render_consideration(claim: Page, link, parent_question_id: str) -> str:
         f"Dig into this</button>"
     )
 
-    return f"""<div class="consideration {direction}" style="background:{color}">
+    return f"""<div class="consideration" style="background:{color}">
   <details>
     <summary>
       <span class="stars" title="Strength {link.strength:.1f}">{stars}</span>
-      <span class="dir-icon" title="{direction}">{direction_icon}</span>
       <span class="summary-text">{escape(short)}</span>
     </summary>
     <div class="expanded">
@@ -135,32 +129,8 @@ async def _render_question(question_id: str, db: DB, depth: int = 0) -> str:
         return ""
 
     considerations = await db.get_considerations_for_question(question_id)
-    supports = sorted(
-        [
-            (p, l)
-            for p, l in considerations
-            if l.direction and l.direction.value == "supports"
-        ],
-        key=lambda x: x[1].strength,
-        reverse=True,
-    )
-    opposes = sorted(
-        [
-            (p, l)
-            for p, l in considerations
-            if l.direction and l.direction.value == "opposes"
-        ],
-        key=lambda x: x[1].strength,
-        reverse=True,
-    )
-    neutral = sorted(
-        [
-            (p, l)
-            for p, l in considerations
-            if not l.direction or l.direction.value == "neutral"
-        ],
-        key=lambda x: x[1].strength,
-        reverse=True,
+    considerations_sorted = sorted(
+        considerations, key=lambda x: x[1].strength, reverse=True
     )
 
     judgements = sorted(
@@ -192,20 +162,10 @@ async def _render_question(question_id: str, db: DB, depth: int = 0) -> str:
 
     # Considerations block
     c_html = ""
-    if considerations:
-        c_html = '<div class="section">'
-        if supports:
-            c_html += "<h4>Supporting</h4>"
-            for p, l in supports:
-                c_html += _render_consideration(p, l, question_id)
-        if opposes:
-            c_html += "<h4>Opposing</h4>"
-            for p, l in opposes:
-                c_html += _render_consideration(p, l, question_id)
-        if neutral:
-            c_html += "<h4>Neutral / contextual</h4>"
-            for p, l in neutral:
-                c_html += _render_consideration(p, l, question_id)
+    if considerations_sorted:
+        c_html = '<div class="section"><h4>Considerations</h4>'
+        for p, l in considerations_sorted:
+            c_html += _render_consideration(p, l, question_id)
         c_html += "</div>"
 
     # Sub-questions block
@@ -269,9 +229,7 @@ h5, h6 { font-size: 0.95rem; margin-bottom: 0.35rem; color: #444; }
   border-radius: 5px; margin-bottom: 0.35rem;
   padding: 0.35rem 0.6rem; border: 1px solid rgba(0,0,0,.07);
 }
-.consideration.supports { border-left: 3px solid #4caf50; }
-.consideration.opposes  { border-left: 3px solid #f44336; }
-.consideration.neutral  { border-left: 3px solid #9e9e9e; }
+.consideration          { border-left: 3px solid #9e9e9e; }
 .judgement              { border-left: 3px solid #9c27b0; }
 
 details > summary {
@@ -282,7 +240,6 @@ details > summary::-webkit-details-marker { display: none; }
 details[open] > summary { margin-bottom: 0.35rem; }
 
 .stars    { color: #c89200; font-size: 0.82rem; flex-shrink: 0; }
-.dir-icon { font-size: 0.78rem; color: #888; flex-shrink: 0; }
 .summary-text { font-size: 0.88rem; }
 
 .j-label    { font-size: 0.72rem; background: #9c27b0; color: #fff;

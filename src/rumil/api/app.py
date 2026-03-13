@@ -283,6 +283,7 @@ async def get_llm_exchange(exchange_id: str):
         round=row["round"],
         system_prompt=row.get("system_prompt"),
         user_message=row.get("user_message"),
+        user_messages=row.get("user_messages"),
         response_text=row.get("response_text"),
         tool_calls=row.get("tool_calls", []),
         input_tokens=row.get("input_tokens"),

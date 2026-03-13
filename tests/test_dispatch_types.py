@@ -10,7 +10,7 @@ from rumil.models import (
     ScoutDispatchPayload,
     ScoutMode,
 )
-from rumil.orchestrator import _resolve_round_mode
+from rumil.calls.scout import _resolve_round_mode
 
 
 def test_dispatchable_types_include_expected():

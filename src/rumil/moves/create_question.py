@@ -55,6 +55,7 @@ async def execute(payload: CreateQuestionPayload, call: Call, db: DB) -> MoveRes
             to_page_id=result.created_page_id,
             link_type=LinkType.CHILD_QUESTION,
             reasoning=link_spec.reasoning,
+            role=link_spec.role,
         ))
         log.info(
             "Inline child question linked: %s -> %s",

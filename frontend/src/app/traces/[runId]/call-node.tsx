@@ -127,20 +127,29 @@ function PageList({ pages }: { pages: PageRef[] }) {
   );
 }
 
+function RoleBadge({ role }: { role: string }) {
+  const cls = role === "direct" ? "trace-role-badge-direct" : "trace-role-badge-structural";
+  return <span className={`trace-role-badge ${cls}`}>{role}</span>;
+}
+
 function MoveRow({
   moveType,
   summary,
   pageRefs,
+  extra,
 }: {
   moveType: string;
   summary: string;
   pageRefs?: PageRef[];
+  extra?: Record<string, unknown>;
 }) {
   const isCreate = moveType.startsWith("CREATE_");
   const isLink = moveType.startsWith("LINK_");
   const isSupersede = moveType === "SUPERSEDE_PAGE";
   const isHypothesis = moveType === "PROPOSE_HYPOTHESIS";
   const isLoad = moveType === "LOAD_PAGE";
+  const isChange = moveType === "CHANGE_LINK_ROLE";
+  const isRemove = moveType === "REMOVE_LINK";
 
   const typeClass = isCreate
     ? "trace-move-create"
@@ -152,9 +161,60 @@ function MoveRow({
           ? "trace-move-hypothesis"
           : isLoad
             ? "trace-move-load"
-            : "trace-move-default";
+            : isChange
+              ? "trace-move-change"
+              : isRemove
+                ? "trace-move-remove"
+                : "trace-move-default";
 
   const hasRefs = pageRefs && pageRefs.length > 0;
+
+  if (isChange && extra?.old_role && extra?.new_role) {
+    const fromPage = extra.from_page as { id: string; summary: string } | undefined;
+    const toPage = extra.to_page as { id: string; summary: string } | undefined;
+    return (
+      <div className="trace-move-row">
+        <span className={`trace-move-type ${typeClass}`}>
+          change role
+        </span>
+        <span className="trace-role-change-detail">
+          {fromPage && <PageChip page={fromPage} />}
+          {toPage && (
+            <>
+              <span className="trace-role-arrow">{"\u2192"}</span>
+              <PageChip page={toPage} />
+            </>
+          )}
+          <RoleBadge role={String(extra.old_role)} />
+          <span className="trace-role-arrow">{"\u2192"}</span>
+          <RoleBadge role={String(extra.new_role)} />
+        </span>
+      </div>
+    );
+  }
+
+  if (isRemove && extra?.from_page) {
+    const fromPage = extra.from_page as { id: string; summary: string } | undefined;
+    const toPage = extra.to_page as { id: string; summary: string } | undefined;
+    const role = extra.role as string | undefined;
+    return (
+      <div className="trace-move-row">
+        <span className={`trace-move-type ${typeClass}`}>
+          remove link
+        </span>
+        <span className="trace-role-change-detail">
+          {fromPage && <PageChip page={fromPage} />}
+          {toPage && (
+            <>
+              <span className="trace-role-arrow">{"\u2192"}</span>
+              <PageChip page={toPage} />
+            </>
+          )}
+          {role && <RoleBadge role={role} />}
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div className="trace-move-row">
@@ -212,11 +272,56 @@ function CollapsiblePre({
   );
 }
 
+function formatBlockContent(block: Record<string, unknown>): string {
+  if (block.type === "text") return String(block.text ?? "");
+  if (block.type === "tool_use")
+    return `[tool_use: ${block.name}]\n${JSON.stringify(block.input, null, 2)}`;
+  if (block.type === "tool_result") {
+    const content = block.content;
+    const text = typeof content === "string" ? content : JSON.stringify(content);
+    return `[tool_result: ${block.tool_use_id}]\n${text}`;
+  }
+  return JSON.stringify(block, null, 2);
+}
+
+function formatMessageContent(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content))
+    return content.map((b) => formatBlockContent(b as Record<string, unknown>)).join("\n");
+  return String(content ?? "");
+}
+
+function MessageThread({ messages }: { messages: Array<Record<string, unknown>> }) {
+  return (
+    <div className="trace-message-thread">
+      {messages.map((msg, i) => {
+        const role = String(msg.role ?? "unknown");
+        const text = formatMessageContent(msg.content);
+        return (
+          <details key={i} className="trace-message-turn">
+            <summary className={`trace-message-role trace-role-${role}`}>
+              {role}
+              <span className="trace-collapsible-meta">
+                {" "}{text.length.toLocaleString()} chars
+              </span>
+            </summary>
+            <pre className="trace-collapsible-content">{text}</pre>
+          </details>
+        );
+      })}
+    </div>
+  );
+}
+
 function ExchangeDetail({ detail }: { detail: LlmExchangeOut }) {
   return (
     <div className="trace-exchange-detail">
       <CollapsiblePre label="System prompt" content={detail.system_prompt} />
-      <CollapsiblePre label="User message" content={detail.user_message} />
+      {detail.user_messages && detail.user_messages.length > 0 ? (
+        <MessageThread messages={detail.user_messages as Array<Record<string, unknown>>} />
+      ) : (
+        <CollapsiblePre label="User message" content={detail.user_message} />
+      )}
       <CollapsiblePre label="Response" content={detail.response_text} />
       {detail.tool_calls.length > 0 && (
         <div className="trace-tool-calls">
@@ -364,6 +469,7 @@ function EventSection({ event }: { event: TraceEvent }) {
               moveType={m.type}
               summary={m.summary || ""}
               pageRefs={m.page_refs}
+              extra={m as unknown as Record<string, unknown>}
             />
           ))}
         </div>

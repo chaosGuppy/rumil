@@ -85,12 +85,19 @@ class MoveType(str, Enum):
     REPORT_DUPLICATE = "REPORT_DUPLICATE"
     PROPOSE_HYPOTHESIS = "PROPOSE_HYPOTHESIS"
     LOAD_PAGE = "LOAD_PAGE"
+    REMOVE_LINK = "REMOVE_LINK"
+    CHANGE_LINK_ROLE = "CHANGE_LINK_ROLE"
 
 
 class ScoutMode(str, Enum):
     ALTERNATE = "alternate"
     ABSTRACT = "abstract"
     CONCRETE = "concrete"
+
+
+class LinkRole(str, Enum):
+    DIRECT = "direct"
+    STRUCTURAL = "structural"
 
 
 class ConsiderationDirection(str, Enum):
@@ -213,6 +220,7 @@ class PageLink(BaseModel):
     direction: ConsiderationDirection | None = None  # for CONSIDERATION links
     strength: float = 2.5  # 0-5
     reasoning: str = ""
+    role: LinkRole = LinkRole.STRUCTURAL
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 

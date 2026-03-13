@@ -56,22 +56,6 @@ async def build_research_tree(
     # Considerations
     considerations = await db.get_considerations_for_question(question_id)
     if considerations:
-        supports = [
-            (p, l)
-            for p, l in considerations
-            if l.direction and l.direction.value == "supports"
-        ]
-        opposes = [
-            (p, l)
-            for p, l in considerations
-            if l.direction and l.direction.value == "opposes"
-        ]
-        neutral = [
-            (p, l)
-            for p, l in considerations
-            if not l.direction or l.direction.value == "neutral"
-        ]
-
         def format_consideration(claim, link) -> str:
             strength_note = f" (strength {link.strength:.1f})" if link.strength else ""
             if full_detail:
@@ -82,23 +66,10 @@ async def build_research_tree(
                 return '\n'.join(lines)
             return f"- {claim.summary}{strength_note}"
 
-        if supports:
-            parts.append(f"{indent}**Supporting considerations:**\n")
-            for p, l in sorted(supports, key=lambda x: x[1].strength, reverse=True):
-                parts.append(format_consideration(p, l))
-            parts.append("")
-
-        if opposes:
-            parts.append(f"{indent}**Opposing considerations:**\n")
-            for p, l in sorted(opposes, key=lambda x: x[1].strength, reverse=True):
-                parts.append(format_consideration(p, l))
-            parts.append("")
-
-        if neutral:
-            parts.append(f"{indent}**Other relevant considerations:**\n")
-            for p, l in neutral:
-                parts.append(format_consideration(p, l))
-            parts.append("")
+        parts.append(f"{indent}**Considerations:**\n")
+        for p, l in sorted(considerations, key=lambda x: x[1].strength, reverse=True):
+            parts.append(format_consideration(p, l))
+        parts.append("")
 
     # Judgements — oldest first so the evolution of thinking is legible
     judgements = await db.get_judgements_for_question(question_id)

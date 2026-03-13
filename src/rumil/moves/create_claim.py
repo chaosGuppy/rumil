@@ -1,13 +1,13 @@
 """CREATE_CLAIM move: create an assertion with supporting reasoning."""
 
 import logging
+from typing import Any
 
 from pydantic import Field
 
 from rumil.database import DB
 from rumil.models import (
     Call,
-    ConsiderationDirection,
     LinkType,
     MoveType,
     PageLayer,
@@ -21,13 +21,22 @@ log = logging.getLogger(__name__)
 
 
 class CreateClaimPayload(CreatePagePayload):
+    source_id: str | None = Field(
+        None, description="Source page ID — set when extracting claims from a source"
+    )
     links: list[ConsiderationLinkFields] = Field(
         default_factory=list,
         description=(
             "Consideration links to create for this claim. Each entry links "
-            "the new claim to a question with a direction and strength."
+            "the new claim to a question with a strength rating."
         ),
     )
+
+    def page_extra_fields(self) -> dict[str, Any]:
+        extra = super().page_extra_fields()
+        if self.source_id is not None:
+            extra["source_id"] = self.source_id
+        return extra
 
 
 async def execute(payload: CreateClaimPayload, call: Call, db: DB) -> MoveResult:
@@ -44,24 +53,17 @@ async def execute(payload: CreateClaimPayload, call: Call, db: DB) -> MoveResult
             )
             continue
 
-        direction_str = link_spec.direction.lower()
-        try:
-            direction = ConsiderationDirection(direction_str)
-        except ValueError:
-            direction = ConsiderationDirection.NEUTRAL
-
         await db.save_link(PageLink(
             from_page_id=result.created_page_id,
             to_page_id=resolved,
             link_type=LinkType.CONSIDERATION,
-            direction=direction,
             strength=link_spec.strength,
             reasoning=link_spec.reasoning,
+            role=link_spec.role,
         ))
         log.info(
-            "Inline consideration linked: %s -> %s (%s, %.1f)",
-            result.created_page_id[:8], resolved[:8],
-            direction_str, link_spec.strength,
+            "Inline consideration linked: %s -> %s (%.1f)",
+            result.created_page_id[:8], resolved[:8], link_spec.strength,
         )
 
     return result

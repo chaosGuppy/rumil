@@ -52,7 +52,6 @@ async def test_inline_consideration_link(tmp_db, scout_call, question_page):
         "content": "Rayleigh scattering causes blue wavelengths to dominate.",
         "links": [{
             "question_id": question_page.id[:8],
-            "direction": "supports",
             "strength": 4.0,
             "reasoning": "Direct evidence for blue sky",
         }],

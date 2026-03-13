@@ -19,6 +19,8 @@ Examples of the shift:
 - Abstract: "What will the economic effects be?" → Concrete: "Will US manufacturing employment recover to pre-2024 levels by 2030, or has automation permanently lowered the floor?"
 - Abstract: "AI may have important safety implications" → Concrete: "Current RLHF methods will fail to prevent specification gaming in the majority of real-world deployments by 2028"
 
+When making such concrete-but-tentative claims, be sure to set a low epistemic status.
+
 In abstract mode, look for:
 - Angles not yet represented in the existing considerations
 - Empirical evidence relevant to the question

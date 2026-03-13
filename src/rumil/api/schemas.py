@@ -107,6 +107,7 @@ class LLMExchangeOut(BaseModel):
     round: int | None
     system_prompt: str | None
     user_message: str | None
+    user_messages: list[dict] | None = None
     response_text: str | None
     tool_calls: list[dict]
     input_tokens: int | None

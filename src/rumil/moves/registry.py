@@ -15,6 +15,8 @@ from rumil.moves.flag_funniness import MOVE as _flag_funniness
 from rumil.moves.report_duplicate import MOVE as _report_duplicate
 from rumil.moves.propose_hypothesis import MOVE as _propose_hypothesis
 from rumil.moves.load_page import MOVE as _load_page
+from rumil.moves.remove_link import MOVE as _remove_link
+from rumil.moves.change_link_role import MOVE as _change_link_role
 
 MOVES: dict[MoveType, MoveDef] = {
     m.move_type: m
@@ -32,5 +34,7 @@ MOVES: dict[MoveType, MoveDef] = {
         _report_duplicate,
         _propose_hypothesis,
         _load_page,
+        _remove_link,
+        _change_link_role,
     ]
 }

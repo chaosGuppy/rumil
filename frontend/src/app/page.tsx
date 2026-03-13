@@ -152,7 +152,7 @@ export default async function Home() {
       `}</style>
 
       <div className="ws-header">
-        <h1>Differential</h1>
+        <h1>Rumil</h1>
         <div className="subtitle">workspaces</div>
       </div>
 

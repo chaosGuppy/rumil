@@ -2,7 +2,7 @@
 
 import pytest
 
-from differential.orchestrator import Orchestrator
+from rumil.orchestrator import Orchestrator
 
 
 @pytest.mark.llm

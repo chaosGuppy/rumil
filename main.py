@@ -17,14 +17,14 @@ import sys
 import uuid
 from pathlib import Path
 
-from differential.database import DB
-from differential.models import Page, PageLayer, PageLink, PageType, LinkType, Workspace
-from differential.orchestrator import Orchestrator, create_root_question
-from differential.sources import create_source_page, run_ingest_calls
-from differential.chat import run_chat
-from differential.mapper import generate_map
-from differential.summary import generate_summary, save_summary
-from differential.settings import get_settings
+from rumil.database import DB
+from rumil.models import Page, PageLayer, PageLink, PageType, LinkType, Workspace
+from rumil.orchestrator import Orchestrator, create_root_question
+from rumil.sources import create_source_page, run_ingest_calls
+from rumil.chat import run_chat
+from rumil.mapper import generate_map
+from rumil.summary import generate_summary, save_summary
+from rumil.settings import get_settings
 
 PAGES_DIR = Path(__file__).parent / "pages"
 
@@ -453,7 +453,7 @@ async def async_main():
         help="Smoke-test mode: use Haiku, fewer rounds, lower budget defaults",
     )
     parser.add_argument(
-        "--prod-db",
+        "--prod",
         dest="prod_db",
         action="store_true",
         help="Use production Supabase (requires SUPABASE_PROD_URL and SUPABASE_PROD_KEY)",
@@ -482,10 +482,12 @@ async def async_main():
         datefmt="%H:%M:%S",
         stream=sys.stderr,
     )
-    logging.getLogger("differential").setLevel(log_level)
+    logging.getLogger("rumil").setLevel(log_level)
 
     if args.smoke_test:
-        get_settings().differential_smoke_test = "1"
+        get_settings().rumil_smoke_test = "1"
+    if args.prod_db:
+        get_settings().use_prod_db = "1"
     if args.no_trace:
         get_settings().tracing_enabled = False
 

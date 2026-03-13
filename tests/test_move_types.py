@@ -1,10 +1,10 @@
 """Tests for MoveType enum, move definitions, and move execution."""
 
-from differential.models import CallType, LinkType, MoveType, PageType
-from differential.moves import MOVES
-from differential.moves.base import MoveState
-from differential.moves.create_question import MOVE as CREATE_QUESTION_MOVE
-from differential.moves.create_question import PRIORITIZATION_MOVE
+from rumil.models import CallType, LinkType, MoveType, PageType
+from rumil.moves import MOVES
+from rumil.moves.base import MoveState
+from rumil.moves.create_question import MOVE as CREATE_QUESTION_MOVE
+from rumil.moves.create_question import PRIORITIZATION_MOVE
 
 
 def test_all_move_types_have_definitions():

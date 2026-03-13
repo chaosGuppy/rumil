@@ -1,0 +1,565 @@
+"""Scout call: find missing considerations on a question."""
+
+import logging
+from dataclasses import dataclass
+
+from pydantic import BaseModel, Field
+
+from rumil.calls.common import (
+    ReviewResponse,
+    _prepare_tools,
+    complete_call,
+    log_page_ratings,
+    resolve_page_refs,
+    run_agent_loop,
+    run_single_call,
+)
+from rumil.context import (
+    assemble_call_context,
+    format_page,
+    format_preloaded_pages,
+    format_question_for_scout,
+)
+from rumil.database import DB
+from rumil.llm import (
+    build_system_prompt,
+    build_user_message,
+    structured_call,
+    LLMExchangeMetadata,
+)
+from rumil.models import Call, CallStatus, CallType, MoveType, ScoutMode
+from rumil.moves.base import MoveState
+from rumil.moves.registry import MOVES
+from rumil.tracing.trace_events import ContextBuiltEvent, ReviewCompleteEvent
+from rumil.tracing.tracer import CallTrace
+from rumil.workspace_map import build_workspace_map
+
+log = logging.getLogger(__name__)
+
+
+_CONCRETE_INSTRUCTION = (
+    '\n\n**Mode: CONCRETE**\n\n'
+    'Your goal is considerations, sub-questions, and hypotheses that are as specific '
+    'and falsifiable as possible. Concreteness means: named actors, specific timeframes, '
+    'quantitative claims, named mechanisms, particular cases. A concrete claim should be '
+    'possible to be clearly wrong about — that is what makes it valuable.\n\n'
+    'Concrete scouts are expected to produce claims that subsequent investigation may '
+    'refute. That is a feature, not a failure. Do not hedge your way back to vagueness.'
+)
+
+
+class FruitCheck(BaseModel):
+    remaining_fruit: int = Field(
+        description=(
+            "0-10 integer: how much useful work remains on this scope. "
+            "0 = nothing more to add; 1-2 = close to exhausted; "
+            "3-4 = most angles covered; 5-6 = diminishing but real returns; "
+            "7-8 = substantial work remains; 9-10 = barely started"
+        )
+    )
+    brief_reasoning: str = Field(
+        description="One sentence explaining why you chose this score"
+    )
+
+
+_FRUIT_CHECK_MESSAGE = (
+    "Before continuing, rate how much useful scouting work remains on this "
+    "scope question. Consider what you have already contributed and what "
+    "angles are left unexplored. Respond with remaining_fruit (0-10) and "
+    "brief_reasoning. Do not call any tools — they will have no effect here."
+)
+
+
+async def _run_fruit_check(
+    system_prompt: str,
+    agent_messages: list[dict],
+    tool_defs: list[dict],
+    *,
+    call_id: str,
+    db: DB,
+    trace: CallTrace | None = None,
+) -> int:
+    """Run a lightweight fruit check sharing the agent's cache prefix.
+
+    Appends a fruit-check user message to a *copy* of agent_messages and calls
+    structured_call with the same system prompt, tools, and tool_choice=none.
+    Returns the remaining_fruit score.
+    """
+    check_messages = list(agent_messages) + [
+        {"role": "user", "content": _FRUIT_CHECK_MESSAGE},
+    ]
+    meta = LLMExchangeMetadata(
+        call_id=call_id, phase="fruit_check", trace=trace,
+        user_message=_FRUIT_CHECK_MESSAGE,
+    )
+    result = await structured_call(
+        system_prompt=system_prompt,
+        response_model=FruitCheck,
+        messages=check_messages,
+        tools=tool_defs,
+        max_tokens=256,
+        metadata=meta,
+        db=db,
+        cache=True,
+    )
+    if result.data:
+        score = result.data.get("remaining_fruit", 5)
+        log.info(
+            "Fruit check: score=%d, reasoning=%s",
+            score, result.data.get("brief_reasoning", ""),
+        )
+        return score
+    log.warning("Fruit check returned empty data, defaulting to 5")
+    return 5
+
+
+_LINKING_TASK = (
+    'Review the workspace and link relevant existing pages to the scope question.\n\n'
+    'For each link, specify a role:\n'
+    '- **direct**: "Now I know X, I can immediately update my answer." The page '
+    'directly bears on the answer to the scope question — it is evidence, a '
+    'counter-argument, or a partial answer.\n'
+    '- **structural**: "Now I know X, I know better what evidence and angles to '
+    'consider." The page frames the investigation — it indicates what to look '
+    'for, how to decompose the question, or what dimensions matter.\n\n'
+    'Link claims as considerations and sub-questions as child questions.\n\n'
+    'Be discerning. Only link pages that genuinely bear on this question — '
+    'tangential or weakly related pages should not be linked. '
+    'Do not duplicate any links already shown above. '
+    'Create no more than 6 new links, and fewer if fewer are warranted — '
+    'do not force links just to fill a quota.\n\n'
+    'Scope question ID: `{question_id}`'
+)
+
+
+async def link_new_pages(
+    question_id: str,
+    call: Call,
+    db: DB,
+    state: MoveState,
+    trace: CallTrace,
+) -> None:
+    """Single LLM call that reviews the workspace and creates direct/structural links.
+
+    Uses only LINK_CONSIDERATION and LINK_CHILD_QUESTION tools with role fields.
+    Free (not counted against budget).
+    """
+    question = await db.get_page(question_id)
+    if not question:
+        return
+
+    workspace_map, _ = await build_workspace_map(db)
+    question_text = await format_page(question)
+    existing_links = await _build_link_inventory(question_id, db)
+    working_context = (
+        workspace_map + '\n\n---\n\n'
+        '# Scope Question\n\n' + question_text
+        + '\n\n' + existing_links
+    )
+
+    linking_tools = [
+        MOVES[MoveType.LINK_CONSIDERATION].bind(state),
+        MOVES[MoveType.LINK_CHILD_QUESTION].bind(state),
+    ]
+    task = _LINKING_TASK.format(question_id=question_id)
+    system_prompt = build_system_prompt(CallType.SCOUT.value)
+    user_message = build_user_message(working_context, task)
+
+    await run_single_call(
+        system_prompt=system_prompt,
+        user_message=user_message,
+        tools=linking_tools,
+        call_id=call.id,
+        phase="link_new_pages",
+        db=db,
+        state=state,
+        trace=trace,
+        max_tokens=2048,
+    )
+
+
+
+def _resolve_round_mode(mode: ScoutMode, round_index: int) -> ScoutMode:
+    """Resolve the effective mode for a given scout round."""
+    if mode == ScoutMode.ALTERNATE:
+        return ScoutMode.ABSTRACT if round_index % 2 == 0 else ScoutMode.CONCRETE
+    return mode
+
+
+_CONTINUE_TEMPLATE = (
+    'Continue scouting this question. You have already made contributions in '
+    'prior rounds (visible above). Focus on NEW angles, evidence, or '
+    'sub-questions you have not yet covered.{mode_instruction}\n\n'
+    'Question ID: `{question_id}`'
+)
+
+_LINK_REVIEW_INSTRUCTION = (
+    'You have finished scouting. Before your self-assessment, review the '
+    'links on the scope question.\n\n'
+    'For each link below, decide whether it should stay as-is, have its '
+    'role changed (direct ↔ structural), or be removed entirely.\n\n'
+    '- **direct**: the linked page directly bears on the answer.\n'
+    '- **structural**: the linked page frames what evidence/angles to explore.\n'
+    '- **remove**: the link is no longer relevant or useful.\n\n'
+    'Use `change_link_role` to switch a link between direct and structural. '
+    'Use `remove_link` to delete a link that should not exist. '
+    'Leave links alone if they are already correct.\n\n'
+    '{link_inventory}\n\n'
+    'Scope question ID: `{question_id}`'
+)
+
+_SELF_ASSESSMENT_INSTRUCTION = (
+    'Now provide your self-assessment. Do not call any tools — they will '
+    'have no effect here.\n\n'
+    'Scope question ID: `{question_id}`'
+)
+
+
+@dataclass
+class _SessionContext:
+    """Everything the scout round loop needs, built once up front."""
+
+    system_prompt: str
+    user_message: str
+    tools: list
+    tool_defs: list[dict]
+    state: MoveState
+    trace: CallTrace
+    phase1_summaries: list[tuple[str, str]]
+    preloaded_ids: list[str]
+
+
+async def _build_session_context(
+    question_id: str,
+    call: Call,
+    db: DB,
+    *,
+    mode: ScoutMode,
+    context_page_ids: list[str] | None,
+    broadcaster=None,
+) -> _SessionContext:
+    """Build all context needed for a scout session.
+
+    Runs a linking call to tag existing pages as direct/structural, then
+    builds role-aware context for the scout.
+    """
+    trace = CallTrace(call.id, db, broadcaster=broadcaster)
+    state = MoveState(call, db)
+    system_prompt = build_system_prompt(CallType.SCOUT.value)
+
+    await link_new_pages(question_id, call, db, state, trace)
+
+    working_context, working_page_ids = await format_question_for_scout(
+        question_id, db,
+    )
+
+    preloaded = context_page_ids or []
+    if preloaded:
+        working_context += await format_preloaded_pages(preloaded, db)
+
+    await trace.record(ContextBuiltEvent(
+        working_context_page_ids=await resolve_page_refs(working_page_ids, db),
+        preloaded_page_ids=await resolve_page_refs(preloaded, db),
+        scout_mode=mode.value,
+    ))
+
+    workspace_map, _ = await build_workspace_map(db)
+    phase2_context = assemble_call_context(
+        working_context, workspace_map=workspace_map,
+    )
+
+    tools = [MOVES[mt].bind(state) for mt in MoveType]
+    tool_defs, _ = _prepare_tools(tools)
+
+    round_mode = _resolve_round_mode(mode, 0)
+    mode_instruction = _CONCRETE_INSTRUCTION if round_mode == ScoutMode.CONCRETE else ''
+    task = (
+        f"Scout for missing considerations on this question.{mode_instruction}\n\n"
+        f"Question ID (use this when linking considerations): `{question_id}`"
+    )
+    user_message = build_user_message(phase2_context, task)
+
+    return _SessionContext(
+        system_prompt=system_prompt,
+        user_message=user_message,
+        tools=tools,
+        tool_defs=tool_defs,
+        state=state,
+        trace=trace,
+        phase1_summaries=[],
+        preloaded_ids=preloaded,
+    )
+
+
+async def _collect_all_loaded_summaries(
+    state: MoveState,
+    phase1_summaries: list[tuple[str, str]],
+    preloaded_ids: list[str],
+    db: DB,
+) -> list[tuple[str, str]]:
+    """Gather page summaries from phase 1, agent moves, and preloaded pages."""
+    from rumil.moves.load_page import LoadPagePayload
+
+    summaries = list(phase1_summaries)
+    seen = {pid for pid, _ in summaries}
+
+    for m in state.moves:
+        if m.move_type == MoveType.LOAD_PAGE:
+            assert isinstance(m.payload, LoadPagePayload)
+            full_id = await db.resolve_page_id(m.payload.page_id)
+            if full_id and full_id not in seen:
+                page = await db.get_page(full_id)
+                if page:
+                    summaries.append((full_id, page.summary))
+                    seen.add(full_id)
+
+    for pid in preloaded_ids:
+        if pid not in seen:
+            page = await db.get_page(pid)
+            if page:
+                summaries.append((pid, page.summary))
+                seen.add(pid)
+
+    return summaries
+
+
+async def _build_link_inventory(question_id: str, db: DB) -> str:
+    """Build a text inventory of all links to/from the scope question."""
+    considerations = await db.get_considerations_for_question(question_id)
+    children_with_links = await db.get_child_questions_with_links(question_id)
+
+    if not considerations and not children_with_links:
+        return "No existing links on the scope question."
+
+    lines = ["### Current Links"]
+    for page, link in considerations:
+        lines.append(
+            f"- [{link.role.value}] consideration: "
+            f'"{page.summary}" '
+            f"(strength {link.strength:.1f}, link_id: `{link.id}`)"
+        )
+    for page, link in children_with_links:
+        lines.append(
+            f"- [{link.role.value}] child_question: "
+            f'"{page.summary}" '
+            f"(link_id: `{link.id}`)"
+        )
+    return "\n".join(lines)
+
+
+async def _run_session_review(
+    question_id: str,
+    call: Call,
+    db: DB,
+    *,
+    system_prompt: str,
+    tool_defs: list[dict],
+    resume_messages: list[dict],
+    loaded_summaries: list[tuple[str, str]],
+    state: MoveState,
+    trace: CallTrace,
+) -> dict:
+    """Run the closing review for a scout session.
+
+    Two phases:
+    1. Link modification — agent loop with remove_link and change_link_role
+       tools, given an inventory of all current links on the scope question.
+    2. Self-assessment — structured call for remaining_fruit, confidence,
+       page ratings, etc.
+
+    Returns the review data dict.
+    """
+    link_inventory = await _build_link_inventory(question_id, db)
+    link_review_msg = _LINK_REVIEW_INSTRUCTION.format(
+        link_inventory=link_inventory, question_id=question_id,
+    )
+    link_messages = list(resume_messages) + [
+        {"role": "user", "content": link_review_msg},
+    ]
+
+    link_tools = [MOVES[mt].bind(state) for mt in MoveType]
+
+    link_result = await run_single_call(
+        system_prompt,
+        tools=link_tools,
+        call_id=call.id,
+        phase="link_review",
+        db=db,
+        state=state,
+        trace=trace,
+        messages=link_messages,
+        cache=True,
+    )
+    post_link_messages = list(link_result.messages)
+
+    page_rating_note = ""
+    if loaded_summaries:
+        page_lines = [
+            f'  - `{pid[:8]}`: "{summary[:120]}"'
+            for pid, summary in loaded_summaries
+        ]
+        page_rating_note = (
+            '\n\nThe following pages were loaded into your context:\n'
+            + '\n'.join(page_lines)
+            + '\n\nPlease include a rating for each in your page_ratings. '
+            'Scores: -1 = actively confusing, 0 = didn\'t help, '
+            '1 = helped, 2 = extremely helpful.'
+        )
+
+    assessment_msg = (
+        _SELF_ASSESSMENT_INSTRUCTION.format(question_id=question_id)
+        + page_rating_note
+    )
+    assessment_messages = post_link_messages + [
+        {"role": "user", "content": assessment_msg},
+    ]
+    meta = LLMExchangeMetadata(
+        call_id=call.id, phase="closing_review", trace=trace,
+        user_message=assessment_msg,
+    )
+    review_result = await structured_call(
+        system_prompt=system_prompt,
+        response_model=ReviewResponse,
+        messages=assessment_messages,
+        tools=tool_defs,
+        max_tokens=4096,
+        metadata=meta,
+        db=db,
+        cache=True,
+    )
+    review_data = review_result.data or {}
+
+    if review_data:
+        log.info(
+            "Scout session review: confidence=%s",
+            review_data.get("confidence_in_output", "?"),
+        )
+        await log_page_ratings(review_data, db)
+
+        for r in review_data.get("page_ratings", []):
+            pid = await db.resolve_page_id(r.get("page_id", ""))
+            score = r.get("score")
+            if pid and isinstance(score, int):
+                await db.save_page_rating(pid, call.id, score, r.get("note", ""))
+
+    call.review_json = review_data
+    return review_data
+
+
+async def run_scout_session(
+    question_id: str,
+    call: Call,
+    db: DB,
+    *,
+    max_rounds: int,
+    fruit_threshold: int,
+    mode: ScoutMode = ScoutMode.ALTERNATE,
+    context_page_ids: list[str] | None = None,
+    broadcaster=None,
+) -> int:
+    """Cache-aware multi-round scout session.
+
+    Builds context once, resumes the agent conversation across rounds,
+    uses lightweight fruit checks, and runs linking once at the end.
+    Returns (rounds_completed, created_page_ids).
+    """
+    call.call_params = {
+        "mode": mode.value,
+        "max_rounds": max_rounds,
+        "fruit_threshold": fruit_threshold,
+    }
+    await db.update_call_status(
+        call.id, CallStatus.RUNNING, call_params=call.call_params,
+    )
+
+    ctx = await _build_session_context(
+        question_id, call, db,
+        mode=mode, context_page_ids=context_page_ids, broadcaster=broadcaster,
+    )
+
+    resume_messages: list[dict] = []
+    rounds_completed = 0
+    last_fruit_score: int | None = None
+
+    for i in range(max_rounds):
+        if not await db.consume_budget(1):
+            log.info("Budget exhausted, stopping scout session at round %d", i)
+            break
+
+        round_mode = _resolve_round_mode(mode, i)
+
+        if i == 0:
+            agent_result = await run_agent_loop(
+                ctx.system_prompt,
+                user_message=ctx.user_message,
+                tools=ctx.tools,
+                call_id=call.id,
+                db=db,
+                state=ctx.state,
+                trace=ctx.trace,
+                cache=True,
+            )
+        else:
+            mode_instruction = (
+                _CONCRETE_INSTRUCTION if round_mode == ScoutMode.CONCRETE else ''
+            )
+            continue_msg = _CONTINUE_TEMPLATE.format(
+                mode_instruction=mode_instruction, question_id=question_id,
+            )
+            resume_messages.append(
+                {"role": "user", "content": continue_msg}
+            )
+            agent_result = await run_agent_loop(
+                ctx.system_prompt,
+                tools=ctx.tools,
+                call_id=call.id,
+                db=db,
+                state=ctx.state,
+                trace=ctx.trace,
+                messages=resume_messages,
+                cache=True,
+            )
+
+        rounds_completed += 1
+        resume_messages = list(agent_result.messages)
+
+        last_fruit_score = await _run_fruit_check(
+            ctx.system_prompt, resume_messages, ctx.tool_defs,
+            call_id=call.id, db=db, trace=ctx.trace,
+        )
+        if last_fruit_score <= fruit_threshold:
+            log.info(
+                "Scout fruit (%d) <= threshold (%d), stopping after round %d",
+                last_fruit_score, fruit_threshold, i + 1,
+            )
+            break
+
+    if resume_messages:
+        assert last_fruit_score is not None
+        loaded_summaries = await _collect_all_loaded_summaries(
+            ctx.state, ctx.phase1_summaries, ctx.preloaded_ids, db,
+        )
+        review_data = await _run_session_review(
+            question_id, call, db,
+            system_prompt=ctx.system_prompt,
+            tool_defs=ctx.tool_defs,
+            resume_messages=resume_messages,
+            loaded_summaries=loaded_summaries,
+            state=ctx.state,
+            trace=ctx.trace,
+        )
+        await ctx.trace.record(ReviewCompleteEvent(
+            remaining_fruit=last_fruit_score,
+            confidence=review_data.get("confidence_in_output"),
+        ))
+
+    log.info(
+        "Scout session complete: call=%s, rounds=%d, pages_created=%d",
+        call.id[:8], rounds_completed, len(ctx.state.created_page_ids),
+    )
+    await complete_call(
+        call, db,
+        f"Scout session complete. {rounds_completed} rounds, "
+        f"{len(ctx.state.created_page_ids)} pages created.",
+    )
+    return rounds_completed

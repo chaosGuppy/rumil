@@ -1,7 +1,7 @@
 """Tests for MoveState.take_new_moves drain behaviour."""
 
-from differential.models import Move, MoveType
-from differential.moves.base import MoveState
+from rumil.models import Move, MoveType
+from rumil.moves.base import MoveState
 
 
 def _append_move(state: MoveState, move_type: MoveType = MoveType.LOAD_PAGE):

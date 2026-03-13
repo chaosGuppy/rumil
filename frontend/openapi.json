@@ -1,8 +1,8 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Differential API",
-    "description": "Read-only API for the Differential research workspace.",
+    "title": "Rumil API",
+    "description": "Read-only API for the Rumil research workspace.",
     "version": "0.1.0"
   },
   "paths": {

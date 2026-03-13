@@ -3,7 +3,7 @@
 import asyncio
 from datetime import datetime, timezone
 
-from differential.models import (
+from rumil.models import (
     Call,
     CallStatus,
     CallType,
@@ -14,7 +14,7 @@ from differential.models import (
     PageType,
     Workspace,
 )
-from differential.workspace_map import build_workspace_map
+from rumil.workspace_map import build_workspace_map
 
 
 async def _make_question(db, text):

@@ -27,13 +27,13 @@ import asyncio
 import logging
 import uuid
 
-from differential.calls import run_scout_session
-from differential.calls.assess import run_assess
-from differential.calls.prioritization import run_prioritization
-from differential.database import DB
-from differential.models import CallType, ScoutMode
-from differential.orchestrator import create_root_question
-from differential.settings import get_settings
+from rumil.calls import run_scout_session
+from rumil.calls.assess import run_assess
+from rumil.calls.prioritization import run_prioritization
+from rumil.database import DB
+from rumil.models import CallType, ScoutMode
+from rumil.orchestrator import create_root_question
+from rumil.settings import get_settings
 
 
 async def run(args: argparse.Namespace) -> None:

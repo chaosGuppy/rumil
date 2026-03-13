@@ -2,10 +2,10 @@
 
 import pytest
 
-from differential.calls.common import RunCallResult, run_call
-from differential.calls.prioritization import run_prioritization_call
-from differential.models import CallType, LinkType, MoveType, PageType
-from differential.moves.base import MoveState
+from rumil.calls.common import RunCallResult, run_call
+from rumil.calls.prioritization import run_prioritization_call
+from rumil.models import CallType, LinkType, MoveType, PageType
+from rumil.moves.base import MoveState
 
 
 @pytest.mark.llm
@@ -65,7 +65,7 @@ async def test_available_moves_restricts_tools(tmp_db, scout_call):
     """When available_moves is restricted, only those move types are bound."""
     allowed = [MoveType.CREATE_CLAIM, MoveType.LOAD_PAGE]
     state = MoveState(scout_call, tmp_db)
-    from differential.moves.registry import MOVES
+    from rumil.moves.registry import MOVES
 
     tools = [MOVES[mt].bind(state) for mt in allowed]
 

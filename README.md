@@ -1,4 +1,4 @@
-# Differential
+# Rumil
 
 ## Prerequisites
 
@@ -47,7 +47,7 @@ SUPABASE_PROD_URL=https://aesjaehibxrzearctiqp.supabase.co
 SUPABASE_PROD_KEY=<service_role key from Supabase dashboard>
 ```
 
-Then pass `--prod-db` to any command. Without it, all commands target the local database.
+Then pass `--prod` to any command. Without it, all commands target the local database.
 
 To push migrations to production:
 
@@ -107,7 +107,7 @@ uv run python main.py --list --workspace my-project
 uv run python main.py "Your question here" --smoke-test
 
 # Any command can target the production database
-uv run python main.py --prod-db --list
+uv run python main.py --prod --list
 
 # Suppress info-level logging (only warnings and errors)
 uv run python main.py "Your question" --budget 5 -q
@@ -145,13 +145,13 @@ The frontend is a Next.js app that reads from a FastAPI server.
 
 ```bash
 # Start the API server (requires local Supabase to be running)
-uv run uvicorn differential.api.app:app --reload
+uv run uvicorn rumil.api.app:app --reload
 
 # Start the frontend dev server
 cd frontend && pnpm dev
 ```
 
-To point the API at the production database, set `DIFFERENTIAL_PROD_DB=1` before starting uvicorn.
+To point the API at the production database, set `USE_PROD_DB=1` before starting uvicorn.
 
 ## Tests
 

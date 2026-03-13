@@ -1,7 +1,7 @@
 """Tests for dispatch type validation."""
 
-from differential.calls.dispatches import DISPATCH_DEFS
-from differential.models import (
+from rumil.calls.dispatches import DISPATCH_DEFS
+from rumil.models import (
     AssessDispatchPayload,
     CallType,
     Dispatch,
@@ -10,7 +10,7 @@ from differential.models import (
     ScoutDispatchPayload,
     ScoutMode,
 )
-from differential.calls.scout import _resolve_round_mode
+from rumil.calls.scout import _resolve_round_mode
 
 
 def test_dispatchable_types_include_expected():

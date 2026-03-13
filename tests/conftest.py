@@ -5,9 +5,9 @@ import uuid
 import pytest
 import pytest_asyncio
 
-from differential.settings import override_settings
-from differential.database import DB
-from differential.models import (
+from rumil.settings import override_settings
+from rumil.database import DB
+from rumil.models import (
     Call,
     CallStatus,
     CallType,
@@ -21,7 +21,7 @@ from differential.models import (
 @pytest.fixture(autouse=True, scope="session")
 def _test_settings():
     """Activate test-mode settings for the entire test session."""
-    with override_settings(differential_test_mode="1"):
+    with override_settings(rumil_test_mode="1"):
         yield
 
 

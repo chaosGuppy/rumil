@@ -22,6 +22,67 @@ const CALL_TYPE_ACCENT: Record<string, string> = {
   maintain: "#7a8a9e",
 };
 
+function compactTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 10_000) return `${(n / 1_000).toFixed(0)}k`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
+function TokenMeter({
+  inputTokens,
+  outputTokens,
+  cacheRead,
+  cacheCreate,
+  costUsd,
+}: {
+  inputTokens: number;
+  outputTokens: number | null | undefined;
+  cacheRead: number | null | undefined;
+  cacheCreate: number | null | undefined;
+  costUsd: number | null | undefined;
+}) {
+  const cr = cacheRead || 0;
+  const cc = cacheCreate || 0;
+  const total = inputTokens + cr + cc;
+  const hasCache = cr > 0 || cc > 0;
+  const readPct = total > 0 ? (cr / total) * 100 : 0;
+  const createPct = total > 0 ? (cc / total) * 100 : 0;
+  const cacheHitPct = total > 0 ? Math.round((cr / total) * 100) : 0;
+
+  return (
+    <span className="trace-token-meter">
+      {hasCache && (
+        <span className="trace-token-bar-wrap" title={
+          `Cache read: ${cr.toLocaleString()} · `
+          + `Cache write: ${cc.toLocaleString()} · `
+          + `Fresh: ${inputTokens.toLocaleString()}`
+        }>
+          <span className="trace-token-bar">
+            <span
+              className="trace-token-bar-read"
+              style={{ width: `${readPct}%` }}
+            />
+            <span
+              className="trace-token-bar-create"
+              style={{ width: `${createPct}%` }}
+            />
+          </span>
+          {cacheHitPct > 0 && (
+            <span className="trace-cache-pct">{cacheHitPct}%</span>
+          )}
+        </span>
+      )}
+      <span className="trace-token-compact">
+        {compactTokens(inputTokens + cr + cc)}{"\u2009\u2192\u2009"}{outputTokens != null ? compactTokens(outputTokens) : "?"}
+      </span>
+      {costUsd != null && (
+        <span className="trace-cost">${costUsd.toFixed(4)}</span>
+      )}
+    </span>
+  );
+}
+
 function formatTime(ts: string): string {
   try {
     const d = new Date(ts);
@@ -247,12 +308,13 @@ function EventSection({ event }: { event: TraceEvent }) {
           <span className="trace-exchange-info">
             {event.phase.replace(/_/g, " ")}{event.round != null ? ` round ${event.round}` : ""}
             {event.input_tokens != null && (
-              <span className="trace-token-count">
-                input tokens: {event.input_tokens.toLocaleString()} output tokens: {event.output_tokens?.toLocaleString()}
-                {event.cost_usd != null && (
-                  <span className="trace-cost"> ${event.cost_usd.toFixed(4)}</span>
-                )}
-              </span>
+              <TokenMeter
+                inputTokens={event.input_tokens}
+                outputTokens={event.output_tokens}
+                cacheRead={event.cache_read_input_tokens}
+                cacheCreate={event.cache_creation_input_tokens}
+                costUsd={event.cost_usd}
+              />
             )}
             {event.duration_ms != null && (
               <span className="trace-duration">

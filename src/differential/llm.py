@@ -154,6 +154,8 @@ async def _save_exchange(
         output_tokens=output_tokens,
         duration_ms=duration_ms,
         round_num=metadata.round_num,
+        cache_creation_input_tokens=cache_creation_input_tokens or None,
+        cache_read_input_tokens=cache_read_input_tokens or None,
     )
     cost_usd = compute_cost(
         model=model,

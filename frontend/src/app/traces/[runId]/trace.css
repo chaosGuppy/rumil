@@ -388,6 +388,54 @@
   color: #666;
 }
 
+.trace-token-meter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 6px;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 12px;
+  color: #999;
+}
+
+.trace-token-bar-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: help;
+}
+
+.trace-token-bar {
+  display: inline-flex;
+  width: 48px;
+  height: 5px;
+  background: #e0e0e0;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.trace-token-bar-read {
+  height: 100%;
+  background: #3dba6e;
+  border-radius: 3px 0 0 3px;
+}
+
+.trace-token-bar-create {
+  height: 100%;
+  background: #e5a93e;
+}
+
+.trace-cache-pct {
+  font-size: 10px;
+  font-weight: 600;
+  color: #3dba6e;
+  letter-spacing: 0.01em;
+}
+
+.trace-token-compact {
+  white-space: nowrap;
+}
+
 .trace-token-count {
   font-family: var(--font-geist-mono), monospace;
   color: #999;
@@ -779,6 +827,9 @@
   .trace-move-summary { color: #bbb; }
 
   .trace-exchange-info { color: #888; }
+  .trace-token-meter { color: #666; }
+  .trace-token-bar { background: #333; }
+  .trace-cache-pct { color: #4dd88a; }
   .trace-token-count { color: #666; }
   .trace-duration { color: #666; }
   .trace-warning-text { color: #d4a017; }

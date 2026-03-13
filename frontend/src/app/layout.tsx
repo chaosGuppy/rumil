@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Differential",
+  title: "Rumil",
   description: "Research workspace explorer",
 };
 

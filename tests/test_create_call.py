@@ -1,6 +1,6 @@
 """Tests for DB.create_call."""
 
-from differential.models import CallStatus, CallType, Workspace
+from rumil.models import CallStatus, CallType, Workspace
 
 
 async def test_create_call_persists_and_returns_call(tmp_db, question_page):

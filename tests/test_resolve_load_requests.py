@@ -1,6 +1,6 @@
 """Tests for load_page move execution."""
 
-from differential.models import (
+from rumil.models import (
     Call,
     CallStatus,
     CallType,
@@ -9,7 +9,7 @@ from differential.models import (
     PageType,
     Workspace,
 )
-from differential.moves.load_page import LoadPagePayload, execute
+from rumil.moves.load_page import LoadPagePayload, execute
 
 
 async def _make_page(tmp_db):

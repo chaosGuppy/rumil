@@ -1,4 +1,4 @@
-# Differential
+# Rumil
 
 ## Prerequisites
 
@@ -145,7 +145,7 @@ The frontend is a Next.js app that reads from a FastAPI server.
 
 ```bash
 # Start the API server (requires local Supabase to be running)
-uv run uvicorn differential.api.app:app --reload
+uv run uvicorn rumil.api.app:app --reload
 
 # Start the frontend dev server
 cd frontend && pnpm dev

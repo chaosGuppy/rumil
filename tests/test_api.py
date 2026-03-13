@@ -3,7 +3,7 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from differential.api.app import app
+from rumil.api.app import app
 
 
 @pytest.fixture

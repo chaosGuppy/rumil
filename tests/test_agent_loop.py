@@ -7,9 +7,9 @@ works end-to-end without coupling to Anthropic response internals.
 import pytest
 from pydantic import BaseModel, Field
 
-from differential.calls.common import run_agent_loop
-from differential.llm import Tool, text_call, structured_call
-from differential.moves.base import MoveState
+from rumil.calls.common import run_agent_loop
+from rumil.llm import Tool, text_call, structured_call
+from rumil.moves.base import MoveState
 
 
 async def _add(inp: dict) -> str:

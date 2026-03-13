@@ -4,9 +4,9 @@ import uuid
 
 import pytest_asyncio
 
-from differential.context import build_call_context, build_prioritization_context
-from differential.database import DB
-from differential.models import (
+from rumil.context import build_call_context, build_prioritization_context
+from rumil.database import DB
+from rumil.models import (
     ConsiderationDirection,
     LinkType,
     Page,
@@ -15,7 +15,7 @@ from differential.models import (
     PageType,
     Workspace,
 )
-from differential.workspace_map import build_workspace_map
+from rumil.workspace_map import build_workspace_map
 
 
 async def _make_db(project_name: str) -> DB:

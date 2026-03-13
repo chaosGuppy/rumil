@@ -112,6 +112,7 @@ class AgentResult:
     system_prompt: str = ""
     user_message: str = ""
     warnings: list[str] = field(default_factory=list)
+    messages: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -315,9 +316,12 @@ class StructuredCallResult:
 
 async def structured_call(
     system_prompt: str,
-    user_message: str,
-    response_model: type[BaseModel],
+    user_message: str = "",
+    response_model: type[BaseModel] | None = None,
     *,
+    messages: list[dict] | None = None,
+    tools: list[dict] | None = None,
+    tool_choice: dict | None = None,
     max_tokens: int = 1024,
     metadata: LLMExchangeMetadata | None = None,
     db: DB | None = None,
@@ -326,30 +330,44 @@ async def structured_call(
 
     Uses the Anthropic structured output API (messages.parse with output_format).
     Returns a StructuredCallResult with the parsed data and usage metadata.
+
+    Pass `messages` for multi-turn conversations, or `user_message` for single-turn.
+    Pass `tools` and `tool_choice` to share cache prefix with agent calls.
     """
     if bool(metadata) != bool(db):
         raise ValueError("metadata and db must be provided together")
+    if not user_message and not messages:
+        raise ValueError("Either user_message or messages must be provided")
     settings = get_settings()
     api_key = settings.require_anthropic_key()
     model = settings.model
     client = anthropic.AsyncAnthropic(api_key=api_key)
 
-    messages: list[MessageParam] = [{"role": "user", "content": user_message}]
+    msg_list: list[MessageParam] = (
+        messages if messages is not None
+        else [{"role": "user", "content": user_message}]
+    )
     log.debug(
         "structured_call: model=%s, response_model=%s, max_tokens=%d",
-        model, response_model.__name__, max_tokens,
+        model, response_model.__name__ if response_model else "None", max_tokens,
     )
 
     for attempt in range(MAX_API_RETRIES):
         try:
             t0 = time.monotonic()
-            response = await client.messages.parse(
-                model=model,
-                max_tokens=max_tokens,
-                system=system_prompt,
-                messages=messages,
-                output_format=response_model,
-            )
+            parse_kwargs: dict = {
+                "model": model,
+                "max_tokens": max_tokens,
+                "system": system_prompt,
+                "messages": msg_list,
+            }
+            if response_model is not None:
+                parse_kwargs["output_format"] = response_model
+            if tools is not None:
+                parse_kwargs["tools"] = tools
+            if tool_choice is not None:
+                parse_kwargs["tool_choice"] = tool_choice
+            response = await client.messages.parse(**parse_kwargs)
             elapsed_ms = int((time.monotonic() - t0) * 1000)
             response_text = ""
             for block in response.content:

@@ -14,9 +14,6 @@ from pydantic import BaseModel, Discriminator, Field, Tag
 
 from differential.context import assemble_call_context, format_page
 from differential.database import DB
-from differential.moves.link_child_question import LinkChildQuestionPayload
-from differential.moves.link_consideration import LinkConsiderationPayload
-from differential.moves.link_related import LinkRelatedPayload
 from differential.settings import get_settings
 from differential.workspace_map import build_workspace_map
 from differential.llm import (
@@ -122,28 +119,17 @@ async def _execute_tool_uses(
 
 
 async def _record_round_moves(
-    rr: RoundRecord,
     *,
     trace: CallTrace,
     state: MoveState,
-    move_cursor: int,
-    move_tool_names: set[str],
     db: DB,
-) -> int:
-    """Record move trace events for tools executed in this round. Returns updated move_cursor."""
-    round_move_count = sum(
-        1 for tc in rr.tool_calls if tc.name in move_tool_names
-    )
-    if round_move_count > 0:
-        round_moves = state.moves[move_cursor:move_cursor + round_move_count]
-        round_created = state.move_created_ids[
-            move_cursor:move_cursor + round_move_count
-        ]
-        move_cursor += round_move_count
+) -> None:
+    """Record a trace event for any moves added since the last call."""
+    round_moves, round_created = state.take_new_moves()
+    if round_moves:
         await trace.record(
             await moves_to_trace_event(round_moves, round_created, db)
         )
-    return move_cursor
 
 
 def _prepare_tools(tools: list[Tool]) -> tuple[list[dict], dict]:
@@ -176,7 +162,6 @@ async def run_single_call(
     settings = get_settings()
     client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
     tool_defs, tool_fns = _prepare_tools(tools)
-    move_tool_names = {md.name for md in MOVES.values()}
 
     log.debug(
         "run_single_call: phase=%s, max_tokens=%d, tools=%s",
@@ -216,14 +201,7 @@ async def run_single_call(
     )
 
     if trace:
-        await _record_round_moves(
-            rr,
-            trace=trace,
-            state=state,
-            move_cursor=len(state.moves),
-            move_tool_names=move_tool_names,
-            db=db,
-        )
+        await _record_round_moves(trace=trace, state=state, db=db)
     for w in all_warnings:
         if trace:
             await trace.record(WarningEvent(message=w))
@@ -244,8 +222,8 @@ async def run_single_call(
 
 async def run_agent_loop(
     system_prompt: str,
-    user_message: str,
-    tools: list[Tool],
+    user_message: str = "",
+    tools: list[Tool] | None = None,
     *,
     call_id: str,
     db: DB,
@@ -253,32 +231,41 @@ async def run_agent_loop(
     trace: "CallTrace | None" = None,
     max_tokens: int = 4096,
     max_rounds: int | None = None,
+    messages: list[dict] | None = None,
 ) -> AgentResult:
     """Tool-use conversation loop with per-round exchange/trace persistence.
 
     Each Tool's fn is called when the LLM invokes it. The fn's return value
     is sent back as the tool_result content. If fn raises, the exception
     message is sent back as an error result.
+
+    Pass `messages` to resume a prior conversation.
     """
+    if not user_message and not messages:
+        raise ValueError("Either user_message or messages must be provided")
     settings = get_settings()
     effective_rounds = max_rounds if max_rounds is not None else (
         2 if settings.is_smoke_test else 6
     )
     client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
-    tool_defs, tool_fns = _prepare_tools(tools)
-    move_tool_names = {md.name for md in MOVES.values()}
-
+    if tools is not None:
+        tool_defs, tool_fns = _prepare_tools(tools)
+    else:
+        tool_defs = []
+        tool_fns = {}
     log.debug(
-        "run_agent_loop starting: max_rounds=%d, max_tokens=%d, tools=%s",
-        effective_rounds, max_tokens, [t.name for t in tools],
+        "run_agent_loop starting: max_rounds=%d, max_tokens=%d, resuming=%s",
+        effective_rounds, max_tokens, messages is not None,
     )
 
-    messages: list[dict] = [{"role": "user", "content": user_message}]
+    msg_list: list[dict] = (
+        messages if messages is not None
+        else [{"role": "user", "content": user_message}]
+    )
     text_parts: list[str] = []
     all_tool_calls: list[ToolCall] = []
     all_rounds: list[RoundRecord] = []
     all_warnings: list[str] = []
-    move_cursor = len(state.moves)
     round_num = 0
 
     for round_num in range(effective_rounds + 1):
@@ -289,7 +276,7 @@ async def run_agent_loop(
             user_message=user_message if round_num == 0 else None,
         )
         api_resp = await call_api(
-            client, settings.model, system_prompt, messages,
+            client, settings.model, system_prompt, msg_list,
             tool_defs or None, max_tokens, warnings=all_warnings,
             metadata=meta, db=db,
         )
@@ -338,14 +325,7 @@ async def run_agent_loop(
         )
         all_rounds.append(rr)
         if trace:
-            move_cursor = await _record_round_moves(
-                rr,
-                trace=trace,
-                state=state,
-                move_cursor=move_cursor,
-                move_tool_names=move_tool_names,
-                db=db,
-            )
+            await _record_round_moves(trace=trace, state=state, db=db)
 
         remaining = effective_rounds - round_num
         if remaining == 1:
@@ -362,8 +342,8 @@ async def run_agent_loop(
                 ),
             }
 
-        messages.append({"role": "assistant", "content": response.content})
-        messages.append({"role": "user", "content": tool_results + [budget_note]})
+        msg_list.append({"role": "assistant", "content": response.content})
+        msg_list.append({"role": "user", "content": tool_results + [budget_note]})
 
     for w in all_warnings:
         if trace:
@@ -380,6 +360,7 @@ async def run_agent_loop(
         system_prompt=system_prompt,
         user_message=user_message,
         warnings=all_warnings,
+        messages=msg_list,
     )
 
 
@@ -391,16 +372,27 @@ class PageRating(BaseModel):
     note: str = Field("", description="One sentence on why")
 
 
-class ReviewLinkConsideration(LinkConsiderationPayload):
+class ReviewLinkConsideration(BaseModel):
     link_type: Literal["consideration"] = "consideration"
+    page_id: str = Field(description="Short ID of the page to link to the scope question")
+    direction: str = Field("neutral", description="supports, opposes, or neutral")
+    strength: float = Field(
+        2.5,
+        description="0-5: how strongly this bears on the question",
+    )
+    reasoning: str = Field("", description="Why this page bears on the question")
 
 
-class ReviewLinkChildQuestion(LinkChildQuestionPayload):
+class ReviewLinkChildQuestion(BaseModel):
     link_type: Literal["child_question"] = "child_question"
+    page_id: str = Field(description="Short ID of the child question page")
+    reasoning: str = Field("", description="Why this is a sub-question")
 
 
-class ReviewLinkRelated(LinkRelatedPayload):
+class ReviewLinkRelated(BaseModel):
     link_type: Literal["related"] = "related"
+    page_id: str = Field(description="Short ID of the page to link")
+    reasoning: str = Field("", description="Nature of the relation")
 
 
 ReviewLink = Annotated[
@@ -731,29 +723,32 @@ class ClosingReviewResult:
 
 async def _execute_review_links(
     links: list[dict],
+    scope_question_id: str,
     db: DB,
 ) -> None:
-    """Execute links returned by the closing review."""
+    """Execute links returned by the closing review.
+
+    All links are between a loaded page and the scope question.
+    """
     for link_data in links:
         link_type = link_data.get("link_type")
+        page_id = await db.resolve_page_id(link_data.get("page_id", ""))
+        if not page_id:
+            log.warning(
+                "Review link skipped: unresolved page_id=%s",
+                link_data.get("page_id"),
+            )
+            continue
         try:
             if link_type == "consideration":
-                claim_id = await db.resolve_page_id(link_data.get("claim_id", ""))
-                question_id = await db.resolve_page_id(link_data.get("question_id", ""))
-                if not claim_id or not question_id:
-                    log.warning(
-                        "Review link skipped: unresolved IDs claim=%s question=%s",
-                        link_data.get("claim_id"), link_data.get("question_id"),
-                    )
-                    continue
                 direction_str = link_data.get("direction", "neutral").lower()
                 try:
                     direction = ConsiderationDirection(direction_str)
                 except ValueError:
                     direction = ConsiderationDirection.NEUTRAL
                 link = PageLink(
-                    from_page_id=claim_id,
-                    to_page_id=question_id,
+                    from_page_id=page_id,
+                    to_page_id=scope_question_id,
                     link_type=LinkType.CONSIDERATION,
                     direction=direction,
                     strength=link_data.get("strength", 2.5),
@@ -762,38 +757,31 @@ async def _execute_review_links(
                 await db.save_link(link)
                 log.info(
                     "Review link: consideration %s -> %s (%s, %.1f)",
-                    claim_id[:8], question_id[:8], direction_str, link.strength,
+                    page_id[:8], scope_question_id[:8], direction_str, link.strength,
                 )
             elif link_type == "child_question":
-                parent_id = await db.resolve_page_id(link_data.get("parent_id", ""))
-                child_id = await db.resolve_page_id(link_data.get("child_id", ""))
-                if not parent_id or not child_id:
-                    continue
                 link = PageLink(
-                    from_page_id=parent_id,
-                    to_page_id=child_id,
+                    from_page_id=scope_question_id,
+                    to_page_id=page_id,
                     link_type=LinkType.CHILD_QUESTION,
                     reasoning=link_data.get("reasoning", ""),
                 )
                 await db.save_link(link)
                 log.info(
                     "Review link: child_question %s -> %s",
-                    parent_id[:8], child_id[:8],
+                    scope_question_id[:8], page_id[:8],
                 )
             elif link_type == "related":
-                from_id = await db.resolve_page_id(link_data.get("from_page_id", ""))
-                to_id = await db.resolve_page_id(link_data.get("to_page_id", ""))
-                if not from_id or not to_id:
-                    continue
                 link = PageLink(
-                    from_page_id=from_id,
-                    to_page_id=to_id,
+                    from_page_id=page_id,
+                    to_page_id=scope_question_id,
                     link_type=LinkType.RELATED,
                     reasoning=link_data.get("reasoning", ""),
                 )
                 await db.save_link(link)
                 log.info(
-                    "Review link: related %s -> %s", from_id[:8], to_id[:8],
+                    "Review link: related %s -> %s",
+                    page_id[:8], scope_question_id[:8],
                 )
             else:
                 log.warning("Review link: unknown type '%s'", link_type)
@@ -865,7 +853,7 @@ async def run_closing_review(
             system_prompt=REVIEW_SYSTEM_PROMPT,
             user_message=user_message,
             response_model=ReviewResponse,
-            max_tokens=2048,
+            max_tokens=4096,
             metadata=meta,
             db=db,
         )
@@ -884,8 +872,8 @@ async def run_closing_review(
                     if pid and isinstance(score, int):
                         await db.save_page_rating(pid, call.id, score, r.get("note", ""))
                 review_links = review.get("links", [])
-                if review_links:
-                    await _execute_review_links(review_links, db)
+                if review_links and scope_question_id:
+                    await _execute_review_links(review_links, scope_question_id, db)
             return ClosingReviewResult(data=review)
         else:
             log.warning("Closing review returned empty data for call=%s", call.id[:8])

@@ -92,7 +92,7 @@ TraceEventOut = Annotated[
 class LLMExchangeSummaryOut(BaseModel):
     id: str
     phase: str
-    round: int
+    round: int | None
     input_tokens: int | None
     output_tokens: int | None
     duration_ms: int | None
@@ -104,7 +104,7 @@ class LLMExchangeOut(BaseModel):
     id: str
     call_id: str
     phase: str
-    round: int
+    round: int | None
     system_prompt: str | None
     user_message: str | None
     response_text: str | None

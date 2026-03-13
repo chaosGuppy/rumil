@@ -52,6 +52,14 @@ class MoveState:
         self.moves: list[Move] = []
         self.move_created_ids: list[list[str]] = []
         self.dispatches: list[Dispatch] = []
+        self._move_cursor: int = 0
+
+    def take_new_moves(self) -> tuple[list[Move], list[list[str]]]:
+        """Return moves and created-ID lists added since the last call, advancing the cursor."""
+        new_moves = self.moves[self._move_cursor:]
+        new_created = self.move_created_ids[self._move_cursor:]
+        self._move_cursor = len(self.moves)
+        return new_moves, new_created
 
 
 def _resolve_last_created(payload: P, last_created_id: str) -> P:

@@ -36,7 +36,12 @@ uv run python main.py "Your question here" --workspace my-project --budget 10
 
 # List all workspaces
 uv run python main.py --list-workspaces
+
+# Smoke test (reduced agent rounds, minimal budget)
+uv run python main.py "Your question here" --workspace test-scratch --smoke-test
 ```
+
+`--smoke-test` caps agent loop rounds at 2 per call, making runs fast and cheap. Use it for development and manual testing. When running smoke tests, don't override `--budget` unless there's a good reason to.
 
 Tests: `uv run pytest`. Optional dependency: `pypdf` for PDF ingestion (`uv sync --extra pdf`).
 

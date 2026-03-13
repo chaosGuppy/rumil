@@ -703,6 +703,37 @@
   background: none;
 }
 
+/* Message thread */
+
+.trace-message-thread {
+  margin-bottom: 8px;
+}
+
+.trace-message-turn {
+  margin-bottom: 2px;
+  font-size: 13px;
+}
+
+.trace-message-role {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 2px 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  list-style: none;
+}
+
+.trace-message-role::-webkit-details-marker {
+  display: none;
+}
+
+.trace-role-user { color: #4a7fbf; }
+.trace-role-assistant { color: #7a5fad; }
+.trace-message-role::before { content: "\25B6"; font-size: 9px; color: #aaa; }
+.trace-message-turn[open] > .trace-message-role::before { content: "\25BC"; }
+
 /* Tool calls */
 
 .trace-tool-calls {
@@ -853,6 +884,10 @@
   .trace-exchange-duration { color: #666; }
   .trace-exchange-error-flag { color: #e66; }
   .trace-exchange-loading { color: #666; }
+
+  .trace-role-user { color: #6ba3e0; }
+  .trace-role-assistant { color: #a98cd6; }
+  .trace-message-role::before, .trace-message-turn[open] > .trace-message-role::before { color: #555; }
 
   .trace-collapsible-toggle { color: #999; }
   .trace-collapsible-toggle:hover { color: #ccc; }

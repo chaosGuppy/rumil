@@ -699,27 +699,29 @@ class DB:
         round_num: int | None = None,
         cache_creation_input_tokens: int | None = None,
         cache_read_input_tokens: int | None = None,
+        user_messages: list[dict] | None = None,
     ) -> str:
         exchange_id = str(uuid.uuid4())
-        await self.client.table("call_llm_exchanges").insert(
-            {
-                "id": exchange_id,
-                "call_id": call_id,
-                "run_id": self.run_id,
-                "phase": phase,
-                "round": round_num,
-                "system_prompt": system_prompt,
-                "user_message": user_message,
-                "response_text": response_text,
-                "tool_calls": tool_calls or [],
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
-                "error": error,
-                "duration_ms": duration_ms,
-                "cache_creation_input_tokens": cache_creation_input_tokens,
-                "cache_read_input_tokens": cache_read_input_tokens,
-            }
-        ).execute()
+        row: dict[str, Any] = {
+            "id": exchange_id,
+            "call_id": call_id,
+            "run_id": self.run_id,
+            "phase": phase,
+            "round": round_num,
+            "system_prompt": system_prompt,
+            "user_message": user_message,
+            "response_text": response_text,
+            "tool_calls": tool_calls or [],
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "error": error,
+            "duration_ms": duration_ms,
+            "cache_creation_input_tokens": cache_creation_input_tokens,
+            "cache_read_input_tokens": cache_read_input_tokens,
+        }
+        if user_messages is not None:
+            row["user_messages"] = user_messages
+        await self.client.table("call_llm_exchanges").insert(row).execute()
         return exchange_id
 
     async def get_llm_exchanges(self, call_id: str) -> list[dict[str, Any]]:

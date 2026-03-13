@@ -1319,7 +1319,14 @@
             "title": "Phase"
           },
           "round": {
-            "type": "integer",
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Round"
           },
           "system_prompt": {
@@ -1343,6 +1350,21 @@
               }
             ],
             "title": "User Message"
+          },
+          "user_messages": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Messages"
           },
           "response_text": {
             "anyOf": [
@@ -1442,7 +1464,14 @@
             "title": "Phase"
           },
           "round": {
-            "type": "integer",
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Round"
           },
           "input_tokens": {

@@ -212,11 +212,56 @@ function CollapsiblePre({
   );
 }
 
+function formatBlockContent(block: Record<string, unknown>): string {
+  if (block.type === "text") return String(block.text ?? "");
+  if (block.type === "tool_use")
+    return `[tool_use: ${block.name}]\n${JSON.stringify(block.input, null, 2)}`;
+  if (block.type === "tool_result") {
+    const content = block.content;
+    const text = typeof content === "string" ? content : JSON.stringify(content);
+    return `[tool_result: ${block.tool_use_id}]\n${text}`;
+  }
+  return JSON.stringify(block, null, 2);
+}
+
+function formatMessageContent(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content))
+    return content.map((b) => formatBlockContent(b as Record<string, unknown>)).join("\n");
+  return String(content ?? "");
+}
+
+function MessageThread({ messages }: { messages: Array<Record<string, unknown>> }) {
+  return (
+    <div className="trace-message-thread">
+      {messages.map((msg, i) => {
+        const role = String(msg.role ?? "unknown");
+        const text = formatMessageContent(msg.content);
+        return (
+          <details key={i} className="trace-message-turn">
+            <summary className={`trace-message-role trace-role-${role}`}>
+              {role}
+              <span className="trace-collapsible-meta">
+                {" "}{text.length.toLocaleString()} chars
+              </span>
+            </summary>
+            <pre className="trace-collapsible-content">{text}</pre>
+          </details>
+        );
+      })}
+    </div>
+  );
+}
+
 function ExchangeDetail({ detail }: { detail: LlmExchangeOut }) {
   return (
     <div className="trace-exchange-detail">
       <CollapsiblePre label="System prompt" content={detail.system_prompt} />
-      <CollapsiblePre label="User message" content={detail.user_message} />
+      {detail.user_messages && detail.user_messages.length > 0 ? (
+        <MessageThread messages={detail.user_messages as Array<Record<string, unknown>>} />
+      ) : (
+        <CollapsiblePre label="User message" content={detail.user_message} />
+      )}
       <CollapsiblePre label="Response" content={detail.response_text} />
       {detail.tool_calls.length > 0 && (
         <div className="trace-tool-calls">

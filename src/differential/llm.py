@@ -13,7 +13,9 @@ Data types: Tool, ToolCall, RoundRecord, AgentResult, APIResponse,
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -23,7 +25,7 @@ from collections.abc import Awaitable, Callable
 
 import anthropic
 from anthropic.types import MessageParam, TextBlock, ToolUseBlock
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from differential.pricing import compute_cost
 from differential.settings import get_settings
@@ -88,6 +90,58 @@ def _add_cache_breakpoint(messages: list[dict]) -> list[dict]:
         last["content"] = content
     msgs[-1] = last
     return msgs
+
+
+_JSON_BLOCK_RE = re.compile(r'```(?:json)?\s*\n(.*?)\n```', re.DOTALL)
+
+
+def _extract_json(text: str) -> dict:
+    """Extract a JSON object from LLM response text.
+
+    Tries fenced code blocks first, then bare JSON.
+    """
+    m = _JSON_BLOCK_RE.search(text)
+    if m:
+        return json.loads(m.group(1))
+    stripped = text.strip()
+    start = stripped.find('{')
+    if start != -1:
+        return json.loads(stripped[start:stripped.rfind('}') + 1])
+    raise ValueError(f'No JSON found in response: {text[:200]}')
+
+
+def _serialize_messages(messages: list[dict]) -> list[dict]:
+    """Serialize messages for JSON storage, converting SDK objects to dicts."""
+    result = []
+    for msg in messages:
+        out: dict = {'role': msg['role']}
+        content = msg.get('content')
+        if isinstance(content, str):
+            out['content'] = content
+        elif isinstance(content, list):
+            blocks = []
+            for block in content:
+                if isinstance(block, dict):
+                    blocks.append(block)
+                elif hasattr(block, 'model_dump'):
+                    blocks.append(block.model_dump())
+                else:
+                    blocks.append(str(block))
+            out['content'] = blocks
+        else:
+            out['content'] = str(content) if content is not None else None
+        result.append(out)
+    return result
+
+
+def _schema_instruction(response_model: type[BaseModel]) -> str:
+    """Build a JSON schema instruction block for the model."""
+    schema = response_model.model_json_schema()
+    return (
+        '\n\nRespond with ONLY a JSON object matching this schema '
+        '(no other text, no markdown fences):\n'
+        + json.dumps(schema, indent=2)
+    )
 
 
 @dataclass
@@ -157,6 +211,7 @@ class LLMExchangeMetadata:
     trace: CallTrace | None = None
     round_num: int | None = None
     user_message: str | None = None
+    user_messages: list[dict] | None = None
 
 
 async def _save_exchange(
@@ -186,6 +241,7 @@ async def _save_exchange(
         round_num=metadata.round_num,
         cache_creation_input_tokens=cache_creation_input_tokens or None,
         cache_read_input_tokens=cache_read_input_tokens or None,
+        user_messages=metadata.user_messages,
     )
     cost_usd = compute_cost(
         model=model,
@@ -264,6 +320,8 @@ async def call_api(
                         tool_call_data.append(
                             {"name": block.name, "input": block.input}
                         )
+                if metadata.user_messages is None and len(messages) > 1:
+                    metadata.user_messages = _serialize_messages(messages)
                 await _save_exchange(
                     metadata,
                     db=db,
@@ -346,66 +404,145 @@ class StructuredCallResult:
     duration_ms: int | None = None
 
 
-async def structured_call(
+async def _structured_call_cached(
     system_prompt: str,
-    user_message: str = "",
-    response_model: type[BaseModel] | None = None,
+    response_model: type[BaseModel],
+    msg_list: list[dict],
     *,
-    messages: list[dict] | None = None,
+    tools: list[dict] | None = None,
+    max_tokens: int = 1024,
+    metadata: LLMExchangeMetadata | None = None,
+    db: DB | None = None,
+) -> StructuredCallResult:
+    """Structured output via create() + manual JSON parsing for cache reuse.
+
+    Uses call_api (messages.create) so the request shares the same cache
+    namespace as agent loop calls. Injects the JSON schema into the last
+    user message and validates the response with pydantic.
+    """
+    settings = get_settings()
+    client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
+    schema_text = _schema_instruction(response_model)
+    inject_msgs = _inject_into_last_user_message(msg_list, schema_text)
+
+    max_parse_attempts = 2
+    for parse_attempt in range(max_parse_attempts):
+        api_resp = await call_api(
+            client, settings.model, system_prompt, inject_msgs,
+            tools=tools, max_tokens=max_tokens,
+            metadata=metadata, db=db, cache=True,
+        )
+        response_text = ''
+        for block in api_resp.message.content:
+            if isinstance(block, TextBlock):
+                response_text += block.text
+
+        try:
+            raw = _extract_json(response_text)
+            parsed = response_model.model_validate(raw)
+            model_name = response_model.__name__
+            log.debug(
+                'structured_call (cached) success: %s, usage=%d/%d tokens',
+                model_name,
+                api_resp.message.usage.input_tokens,
+                api_resp.message.usage.output_tokens,
+            )
+            return StructuredCallResult(
+                data=parsed.model_dump(),
+                response_text=response_text or None,
+                input_tokens=api_resp.message.usage.input_tokens,
+                output_tokens=api_resp.message.usage.output_tokens,
+                duration_ms=api_resp.duration_ms,
+            )
+        except (json.JSONDecodeError, ValueError, ValidationError) as exc:
+            if parse_attempt < max_parse_attempts - 1:
+                log.warning(
+                    'structured_call (cached): parse attempt %d failed (%s), retrying',
+                    parse_attempt + 1, exc,
+                )
+                inject_msgs = list(inject_msgs)
+                inject_msgs.append({
+                    'role': 'assistant', 'content': response_text,
+                })
+                inject_msgs.append({
+                    'role': 'user',
+                    'content': (
+                        'Your previous response could not be parsed as valid JSON '
+                        'matching the schema. Please try again, responding with ONLY '
+                        'the JSON object.'
+                    ),
+                })
+                continue
+            log.warning(
+                'structured_call (cached): all parse attempts failed (%s), '
+                'returning empty result',
+                exc,
+            )
+            return StructuredCallResult(
+                response_text=response_text or None,
+                input_tokens=api_resp.message.usage.input_tokens,
+                output_tokens=api_resp.message.usage.output_tokens,
+                duration_ms=api_resp.duration_ms,
+            )
+
+    raise RuntimeError('Unreachable: parse retry loop exhausted')
+
+
+def _inject_into_last_user_message(
+    messages: list[dict], extra_text: str,
+) -> list[dict]:
+    """Append extra_text to the last user message's content."""
+    msgs = list(messages)
+    for i in range(len(msgs) - 1, -1, -1):
+        if msgs[i].get('role') == 'user':
+            last = dict(msgs[i])
+            content = last.get('content')
+            if isinstance(content, str):
+                last['content'] = content + extra_text
+            elif isinstance(content, list):
+                content = list(content)
+                content.append({'type': 'text', 'text': extra_text})
+                last['content'] = content
+            msgs[i] = last
+            return msgs
+    msgs.append({'role': 'user', 'content': extra_text})
+    return msgs
+
+
+async def _structured_call_parse(
+    system_prompt: str,
+    response_model: type[BaseModel] | None,
+    msg_list: list[dict],
+    *,
     tools: list[dict] | None = None,
     tool_choice: dict | None = None,
     max_tokens: int = 1024,
     metadata: LLMExchangeMetadata | None = None,
     db: DB | None = None,
-    cache: bool = False,
 ) -> StructuredCallResult:
-    """Run an LLM call that returns structured output matching response_model.
-
-    Uses the Anthropic structured output API (messages.parse with output_format).
-    Returns a StructuredCallResult with the parsed data and usage metadata.
-
-    Pass `messages` for multi-turn conversations, or `user_message` for single-turn.
-    Pass `tools` and `tool_choice` to share cache prefix with agent calls.
-    """
-    if bool(metadata) != bool(db):
-        raise ValueError("metadata and db must be provided together")
-    if not user_message and not messages:
-        raise ValueError("Either user_message or messages must be provided")
+    """Structured output via messages.parse (no cache sharing with create)."""
     settings = get_settings()
-    api_key = settings.require_anthropic_key()
+    client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
     model = settings.model
-    client = anthropic.AsyncAnthropic(api_key=api_key)
-
-    raw_msgs = (
-        messages if messages is not None
-        else [{"role": "user", "content": user_message}]
-    )
-    msg_list: list[MessageParam] = (
-        _add_cache_breakpoint(raw_msgs) if cache else raw_msgs
-    )
-    log.debug(
-        "structured_call: model=%s, response_model=%s, max_tokens=%d",
-        model, response_model.__name__ if response_model else "None", max_tokens,
-    )
 
     for attempt in range(MAX_API_RETRIES):
         try:
             t0 = time.monotonic()
             parse_kwargs: dict = {
-                "model": model,
-                "max_tokens": max_tokens,
-                "system": system_prompt,
-                "messages": msg_list,
+                'model': model,
+                'max_tokens': max_tokens,
+                'system': system_prompt,
+                'messages': msg_list,
             }
             if response_model is not None:
-                parse_kwargs["output_format"] = response_model
+                parse_kwargs['output_format'] = response_model
             if tools is not None:
-                parse_kwargs["tools"] = tools
+                parse_kwargs['tools'] = tools
             if tool_choice is not None:
-                parse_kwargs["tool_choice"] = tool_choice
+                parse_kwargs['tool_choice'] = tool_choice
             response = await client.messages.parse(**parse_kwargs)
             elapsed_ms = int((time.monotonic() - t0) * 1000)
-            response_text = ""
+            response_text = ''
             for block in response.content:
                 if isinstance(block, TextBlock):
                     response_text += block.text
@@ -420,12 +557,12 @@ async def structured_call(
                     input_tokens=response.usage.input_tokens,
                     output_tokens=response.usage.output_tokens,
                     duration_ms=elapsed_ms,
-                    cache_creation_input_tokens=getattr(response.usage, "cache_creation_input_tokens", 0) or 0,
-                    cache_read_input_tokens=getattr(response.usage, "cache_read_input_tokens", 0) or 0,
+                    cache_creation_input_tokens=getattr(response.usage, 'cache_creation_input_tokens', 0) or 0,
+                    cache_read_input_tokens=getattr(response.usage, 'cache_read_input_tokens', 0) or 0,
                 )
             if response.parsed_output is not None:
                 log.debug(
-                    "structured_call success: %s, usage=%d/%d tokens",
+                    'structured_call success: %s, usage=%d/%d tokens',
                     response_model.__name__,
                     response.usage.input_tokens,
                     response.usage.output_tokens,
@@ -438,7 +575,7 @@ async def structured_call(
                     duration_ms=elapsed_ms,
                 )
             log.warning(
-                "Structured output was empty (stop_reason=%s, usage=%d/%d tokens)",
+                'Structured output was empty (stop_reason=%s, usage=%d/%d tokens)',
                 response.stop_reason, response.usage.output_tokens, max_tokens,
             )
             return StructuredCallResult(
@@ -448,27 +585,77 @@ async def structured_call(
                 duration_ms=elapsed_ms,
             )
         except Exception as e:
-            status = getattr(e, "status_code", None)
+            status = getattr(e, 'status_code', None)
             name = type(e).__name__.lower()
             retryable = (
                 status in (429, 500, 529)
-                or "overloaded" in name
-                or "ratelimit" in name
-                or "internalserver" in name
-                or "overloaded" in str(e).lower()
+                or 'overloaded' in name
+                or 'ratelimit' in name
+                or 'internalserver' in name
+                or 'overloaded' in str(e).lower()
             )
             if not retryable or attempt == MAX_API_RETRIES - 1:
                 log.error(
-                    "structured_call failed (non-retryable): %s", e, exc_info=True,
+                    'structured_call failed (non-retryable): %s', e, exc_info=True,
                 )
                 raise
             wait = 2**attempt
-            label = f"HTTP {status}" if status else name
+            label = f'HTTP {status}' if status else name
             log.warning(
-                "structured_call: API temporarily unavailable (%s), "
-                "retrying in %ds (attempt %d/%d)",
+                'structured_call: API temporarily unavailable (%s), '
+                'retrying in %ds (attempt %d/%d)',
                 label, wait, attempt + 1, MAX_API_RETRIES,
             )
             await asyncio.sleep(wait)
 
-    raise RuntimeError("Unreachable: retry loop exhausted without raising")
+    raise RuntimeError('Unreachable: retry loop exhausted without raising')
+
+
+async def structured_call(
+    system_prompt: str,
+    user_message: str = '',
+    response_model: type[BaseModel] | None = None,
+    *,
+    messages: list[dict] | None = None,
+    tools: list[dict] | None = None,
+    tool_choice: dict | None = None,
+    max_tokens: int = 1024,
+    metadata: LLMExchangeMetadata | None = None,
+    db: DB | None = None,
+    cache: bool = False,
+) -> StructuredCallResult:
+    """Run an LLM call that returns structured output matching response_model.
+
+    When cache=True, uses messages.create with manual JSON parsing so the
+    request shares the same cache namespace as agent loop calls. Otherwise
+    uses messages.parse with output_format for guaranteed schema adherence.
+
+    Pass `messages` for multi-turn conversations, or `user_message` for single-turn.
+    Pass `tools` to share cache prefix with agent calls.
+    """
+    if bool(metadata) != bool(db):
+        raise ValueError('metadata and db must be provided together')
+    if not user_message and not messages:
+        raise ValueError('Either user_message or messages must be provided')
+
+    raw_msgs = (
+        messages if messages is not None
+        else [{'role': 'user', 'content': user_message}]
+    )
+    model_name = response_model.__name__ if response_model else 'None'
+    log.debug(
+        'structured_call: response_model=%s, max_tokens=%d, cache=%s',
+        model_name, max_tokens, cache,
+    )
+
+    if cache and response_model is not None:
+        return await _structured_call_cached(
+            system_prompt, response_model, raw_msgs,
+            tools=tools, max_tokens=max_tokens,
+            metadata=metadata, db=db,
+        )
+    return await _structured_call_parse(
+        system_prompt, response_model, raw_msgs,
+        tools=tools, tool_choice=tool_choice, max_tokens=max_tokens,
+        metadata=metadata, db=db,
+    )

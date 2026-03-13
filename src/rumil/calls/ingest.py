@@ -12,10 +12,7 @@ from rumil.calls.common import (
     run_call,
     run_closing_review,
 )
-from rumil.context import (
-    build_context_for_question,
-    format_preloaded_pages,
-)
+from rumil.context import build_call_context
 from rumil.database import DB
 from rumil.models import Call, CallStatus, CallType, Page
 from rumil.tracing.trace_events import ContextBuiltEvent, ReviewCompleteEvent
@@ -44,26 +41,22 @@ async def run_ingest(
     )
 
     preloaded = call.context_page_ids or []
-    working_context, working_page_ids = await build_context_for_question(
-        question_id, db,
+    question_context, _, working_page_ids = await build_call_context(
+        question_id, db, extra_page_ids=preloaded
     )
-    if preloaded:
-        working_context += await format_preloaded_pages(preloaded, db)
-
-    # Append source document to working context
-    source_section = (
-        '\n\n---\n\n## Source Document\n\n'
-        f'**File:** {filename}  \n'
-        f'**Source page ID:** `{source_page.id}`\n\n'
-        f'{source_page.content}'
-    )
-    working_context += source_section
-
     await trace.record(ContextBuiltEvent(
         working_context_page_ids=await resolve_page_refs(working_page_ids, db),
         preloaded_page_ids=await resolve_page_refs(preloaded, db),
         source_page_id=source_page.id,
     ))
+
+    source_section = (
+        "\n\n---\n\n## Source Document\n\n"
+        f"**File:** {filename}  \n"
+        f"**Source page ID:** `{source_page.id}`\n\n"
+        f"{source_page.content}"
+    )
+    context_text = question_context + source_section
 
     task = (
         "Extract considerations from the source document above for this question.\n\n"
@@ -72,39 +65,27 @@ async def run_ingest(
     )
 
     await db.update_call_status(call.id, CallStatus.RUNNING)
-    result = await run_call(
-        CallType.INGEST, task, working_context, call, db, trace=trace,
-    )
+    result = await run_call(CallType.INGEST, task, context_text, call, db, trace=trace)
     phase2_loaded = await extract_loaded_page_ids(result, db)
 
-    all_loaded_summaries = list(result.loaded_page_summaries)
-    for pid in phase2_loaded:
-        page = await db.get_page(pid)
-        if page:
-            all_loaded_summaries.append((pid, page.summary))
-    for pid in preloaded:
-        page = await db.get_page(pid)
-        if page and not any(s[0] == pid for s in all_loaded_summaries):
-            all_loaded_summaries.append((pid, page.summary))
-
-    review_context = format_moves_for_review(result.moves)
-    review = await run_closing_review(
-        call, review_context, working_context, all_loaded_summaries, db, trace,
-        scope_question_id=question_id,
+    all_loaded_ids = list(
+        dict.fromkeys(preloaded + result.phase1_page_ids + phase2_loaded)
     )
-    if not review.error:
+    review_context = format_moves_for_review(result.moves)
+    review = await run_closing_review(call, review_context, context_text, all_loaded_ids, db, trace)
+    if review:
         log.info(
             "Ingest review: confidence=%s, remaining_fruit=%s",
-            review.data.get("confidence_in_output", "?"),
-            review.data.get("remaining_fruit", "?"),
+            review.get("confidence_in_output", "?"),
+            review.get("remaining_fruit", "?"),
         )
-        await log_page_ratings(review.data, db)
+        await log_page_ratings(review, db)
         await trace.record(ReviewCompleteEvent(
-            remaining_fruit=review.data.get("remaining_fruit"),
-            confidence=review.data.get("confidence_in_output"),
+            remaining_fruit=review.get("remaining_fruit"),
+            confidence=review.get("confidence_in_output"),
         ))
 
-    call.review_json = review.data
+    call.review_json = review or {}
     log.info(
         "Ingest complete: call=%s, pages_created=%d, source=%s",
         call.id[:8], len(result.created_page_ids), filename,
@@ -114,4 +95,4 @@ async def run_ingest(
         db,
         f"Ingest complete. Created {len(result.created_page_ids)} pages from '{filename}'.",
     )
-    return result, review.data
+    return result, review or {}

@@ -6,16 +6,13 @@ import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-from typing import Annotated, Literal
-
 import anthropic
 from anthropic.types import TextBlock, ToolUseBlock
-from pydantic import BaseModel, Discriminator, Field, Tag
+from pydantic import BaseModel, Field
 
-from rumil.context import assemble_call_context, format_page
+from rumil.context import format_page
 from rumil.database import DB
 from rumil.settings import get_settings
-from rumil.workspace_map import build_workspace_map
 from rumil.llm import (
     AgentResult,
     LLMExchangeMetadata,
@@ -32,10 +29,8 @@ from rumil.models import (
     CallStatus,
     CallType,
     Dispatch,
-    LinkType,
     Move,
     MoveType,
-    PageLink,
 )
 from rumil.moves.base import MoveState
 from rumil.moves.load_page import LoadPagePayload
@@ -392,36 +387,6 @@ class PageRating(BaseModel):
     note: str = Field("", description="One sentence on why")
 
 
-class ReviewLinkConsideration(BaseModel):
-    link_type: Literal["consideration"] = "consideration"
-    page_id: str = Field(description="Short ID of the page to link to the scope question")
-    strength: float = Field(
-        2.5,
-        description="0-5: how strongly this bears on the question",
-    )
-    reasoning: str = Field("", description="Why this page bears on the question")
-
-
-class ReviewLinkChildQuestion(BaseModel):
-    link_type: Literal["child_question"] = "child_question"
-    page_id: str = Field(description="Short ID of the child question page")
-    reasoning: str = Field("", description="Why this is a sub-question")
-
-
-class ReviewLinkRelated(BaseModel):
-    link_type: Literal["related"] = "related"
-    page_id: str = Field(description="Short ID of the page to link")
-    reasoning: str = Field("", description="Nature of the relation")
-
-
-ReviewLink = Annotated[
-    Annotated[ReviewLinkConsideration, Tag("consideration")]
-    | Annotated[ReviewLinkChildQuestion, Tag("child_question")]
-    | Annotated[ReviewLinkRelated, Tag("related")],
-    Discriminator("link_type"),
-]
-
-
 class ReviewResponse(BaseModel):
     remaining_fruit: int = Field(
         description=(
@@ -449,13 +414,6 @@ class ReviewResponse(BaseModel):
         default_factory=list,
         description="Ratings for pages that were loaded into context",
     )
-    links: list[ReviewLink] = Field(
-        default_factory=list,
-        description=(
-            "Links to create between loaded pages and the scope question. "
-            "Include a link for each page rated helpful (1) or very helpful (2)."
-        ),
-    )
 
 
 @dataclass
@@ -466,43 +424,31 @@ class RunCallResult:
     dispatches: list[Dispatch] = field(default_factory=list)
     moves: list[Move] = field(default_factory=list)
     phase1_page_ids: list[str] = field(default_factory=list)
-    loaded_page_summaries: list[tuple[str, str]] = field(default_factory=list)
     agent_result: AgentResult = field(default_factory=AgentResult)
 
 
-async def _format_loaded_pages(
-    page_ids: list[str], db: DB,
-) -> tuple[str, list[tuple[str, str]]]:
-    """Format loaded pages as context text for phase 2.
-
-    Returns (formatted_text, page_summaries) where page_summaries is a list
-    of (full_page_id, summary) tuples for use in the closing review.
-    """
-    parts: list[str] = []
-    summaries: list[tuple[str, str]] = []
+async def _format_loaded_pages(page_ids: list[str], db: DB) -> str:
+    """Format loaded pages as context text for phase 2."""
+    parts = []
     for pid in page_ids:
         page = await db.get_page(pid)
         if page:
             parts.append(f"### Page `{pid[:8]}`\n\n{await format_page(page, db=db)}")
-            summaries.append((pid, page.summary))
-    return "\n\n---\n\n".join(parts), summaries
+    return "\n\n---\n\n".join(parts)
 
 
-async def _run_initial_page_loading(
+async def _run_phase1(
     system_prompt: str,
-    working_context: str,
-    workspace_map: str,
+    context_text: str,
     call_id: str,
     state: MoveState,
     db: DB,
-    trace: CallTrace | None = None,
+    trace: "CallTrace | None" = None,
 ) -> list[str]:
     """Preliminary page loading via single LLM call with load_page tool.
 
-    Assembles its own context from working_context and workspace_map.
     Returns resolved full page IDs. Free (not counted against budget).
     """
-    context_text = assemble_call_context(working_context, workspace_map=workspace_map)
     log.debug("Phase 1 starting: context_len=%d", len(context_text))
     try:
         phase1_msg = build_user_message(context_text, PHASE1_TASK)
@@ -538,7 +484,7 @@ async def _run_initial_page_loading(
 async def run_call(
     call_type: CallType,
     task_description: str,
-    working_context: str,
+    context_text: str,
     call: Call,
     db: DB,
     *,
@@ -547,16 +493,12 @@ async def run_call(
     max_rounds: int | None = None,
     trace: "CallTrace | None" = None,
 ) -> RunCallResult:
-    """Run a workspace call (scout/assess/ingest) with tool use.
+    """Run a workspace call (assess/ingest) with tool use.
 
-    Builds workspace maps internally and assembles context for each phase:
-      - Phase 1 (initial page loading): filtered map showing only pages
-        added since the last successful call of the same type. Skipped
-        entirely if there are no new pages.
-      - Phase 2 (main call): full workspace map + loaded pages
-
-    Returns a RunCallResult with created page IDs, dispatches, loaded page
-    summaries, and the raw agent result.
+    Runs a preliminary phase where the LLM can load pages before starting
+    its main work. Moves are executed immediately when the LLM calls them.
+    Returns a RunCallResult with created page IDs, dispatches, and the
+    raw agent result.
     """
 
     if max_rounds is None:
@@ -575,44 +517,15 @@ async def run_call(
     system_prompt = build_system_prompt(call_type.value)
 
     phase1_ids: list[str] = []
-    loaded_page_summaries: list[tuple[str, str]] = []
-    extra_pages_text: str | None = None
-
-    last_call_time = await db.get_last_successful_call_time(
-        call_type, call.scope_page_id or "",
-    ) if call.scope_page_id else None
-
-    if last_call_time:
-        filtered_map, filtered_ids = await build_workspace_map(
-            db, created_after=last_call_time,
-        )
-        if not filtered_ids:
-            log.info("Skipping initial page loading: no new pages since last call")
-        else:
-            phase1_ids = await _run_initial_page_loading(
-                system_prompt, working_context, filtered_map,
-                call.id, state, db, trace=trace,
-            )
-    else:
-        full_map_for_phase1, _ = await build_workspace_map(db)
-        phase1_ids = await _run_initial_page_loading(
-            system_prompt, working_context, full_map_for_phase1,
-            call.id, state, db, trace=trace,
-        )
-
-    if phase1_ids:
-        extra_pages_text, loaded_page_summaries = await _format_loaded_pages(
-            phase1_ids, db,
-        )
-
-    workspace_map, _ = await build_workspace_map(db)
-    phase2_context = assemble_call_context(
-        working_context, workspace_map=workspace_map,
-        extra_pages_text=extra_pages_text,
+    phase1_ids = await _run_phase1(
+        system_prompt, context_text, call.id, state, db, trace=trace,
     )
+    if phase1_ids:
+        extra_text = await _format_loaded_pages(phase1_ids, db)
+        context_text = context_text + '\n\n## Loaded Pages\n\n' + extra_text
 
     tools = [MOVES[mt].bind(state) for mt in available_moves]
-    user_message = build_user_message(phase2_context, task_description)
+    user_message = build_user_message(context_text, task_description)
 
     agent_result = await run_agent_loop(
         system_prompt, user_message, tools,
@@ -634,7 +547,6 @@ async def run_call(
         dispatches=state.dispatches,
         moves=state.moves,
         phase1_page_ids=phase1_ids,
-        loaded_page_summaries=loaded_page_summaries,
         agent_result=agent_result,
     )
 
@@ -735,108 +647,23 @@ async def complete_call(call: Call, db: DB, summary: str) -> None:
     await db.save_call(call)
 
 
-@dataclass
-class ClosingReviewResult:
-    """Result of a closing review. Check `error` to determine success."""
-
-    data: dict = field(default_factory=dict)
-    error: str | None = None
-
-
-async def _execute_review_links(
-    links: list[dict],
-    scope_question_id: str,
-    db: DB,
-) -> None:
-    """Execute links returned by the closing review.
-
-    All links are between a loaded page and the scope question.
-    """
-    for link_data in links:
-        link_type = link_data.get("link_type")
-        page_id = await db.resolve_page_id(link_data.get("page_id", ""))
-        if not page_id:
-            log.warning(
-                "Review link skipped: unresolved page_id=%s",
-                link_data.get("page_id"),
-            )
-            continue
-        try:
-            if link_type == "consideration":
-                link = PageLink(
-                    from_page_id=page_id,
-                    to_page_id=scope_question_id,
-                    link_type=LinkType.CONSIDERATION,
-                    strength=link_data.get("strength", 2.5),
-                    reasoning=link_data.get("reasoning", ""),
-                )
-                await db.save_link(link)
-                log.info(
-                    "Review link: consideration %s -> %s (%.1f)",
-                    page_id[:8], scope_question_id[:8], link.strength,
-                )
-            elif link_type == "child_question":
-                link = PageLink(
-                    from_page_id=scope_question_id,
-                    to_page_id=page_id,
-                    link_type=LinkType.CHILD_QUESTION,
-                    reasoning=link_data.get("reasoning", ""),
-                )
-                await db.save_link(link)
-                log.info(
-                    "Review link: child_question %s -> %s",
-                    scope_question_id[:8], page_id[:8],
-                )
-            elif link_type == "related":
-                link = PageLink(
-                    from_page_id=page_id,
-                    to_page_id=scope_question_id,
-                    link_type=LinkType.RELATED,
-                    reasoning=link_data.get("reasoning", ""),
-                )
-                await db.save_link(link)
-                log.info(
-                    "Review link: related %s -> %s",
-                    page_id[:8], scope_question_id[:8],
-                )
-            else:
-                log.warning("Review link: unknown type '%s'", link_type)
-        except Exception as e:
-            log.warning("Review link failed: %s", e, exc_info=True)
-
-
 async def run_closing_review(
     call: Call,
     main_output: str,
-    working_context: str,
-    loaded_page_summaries: list[tuple[str, str]] | None = None,
+    context_text: str,
+    loaded_page_ids: list[str] | None = None,
     db: DB | None = None,
     trace: CallTrace | None = None,
-    scope_question_id: str | None = None,
-) -> ClosingReviewResult:
-    """Run the closing review as a separate call. Free (not counted against budget).
-
-    Uses working_context with no workspace map for the review context.
-    loaded_page_summaries is a list of (page_id, summary) tuples — no DB
-    fetch needed for page info. When scope_question_id is provided, the
-    review prompt instructs the LLM to link helpful pages to the scope question.
-    """
+) -> dict | None:
+    """Run the closing review as a separate call. Free (not counted against budget)."""
     page_rating_note = ""
-    if loaded_page_summaries:
-        page_lines = [
-            f'  - `{pid[:8]}`: "{summary[:120]}"'
-            for pid, summary in loaded_page_summaries
-        ]
+    if loaded_page_ids and db:
+        page_lines = []
+        for pid in loaded_page_ids:
+            page = await db.get_page(pid)
+            if page:
+                page_lines.append(f'  - `{pid[:8]}`: "{page.summary[:120]}"')
         if page_lines:
-            scope_note = ""
-            if scope_question_id:
-                scope_note = (
-                    '\n\nFor each page you rate as helpful (1) or very helpful (2), '
-                    'include a link in the `links` field to connect it to the scope '
-                    f'question `{scope_question_id[:8]}`. Use link_type "consideration" '
-                    'for claims (with strength), "child_question" for '
-                    'sub-questions, or "related" for other page types.'
-                )
             page_rating_note = (
                 '\n\nThe following pages were loaded into your context beyond the base '
                 'working context:\n'
@@ -844,7 +671,6 @@ async def run_closing_review(
                 + '\n\nPlease include a rating for each in your page_ratings. '
                 'Scores: -1 = actively confusing, 0 = didn\'t help, '
                 '1 = helped, 2 = extremely helpful.'
-                + scope_note
             )
 
     review_task = (
@@ -854,10 +680,9 @@ async def run_closing_review(
         f"{page_rating_note}"
     )
 
-    context_text = assemble_call_context(working_context)
     log.debug(
         "Closing review starting: call=%s, type=%s, loaded_pages=%d",
-        call.id[:8], call.call_type.value, len(loaded_page_summaries or []),
+        call.id[:8], call.call_type.value, len(loaded_page_ids or []),
     )
     try:
         user_message = build_user_message(context_text, review_task)
@@ -887,18 +712,14 @@ async def run_closing_review(
                     score = r.get("score")
                     if pid and isinstance(score, int):
                         await db.save_page_rating(pid, call.id, score, r.get("note", ""))
-                review_links = review.get("links", [])
-                if review_links and scope_question_id:
-                    await _execute_review_links(review_links, scope_question_id, db)
-            return ClosingReviewResult(data=review)
         else:
-            log.warning("Closing review returned empty data for call=%s", call.id[:8])
-            return ClosingReviewResult(error="structured_call returned empty data")
+            log.warning("Closing review returned None for call=%s", call.id[:8])
+        return review
     except Exception as e:
         log.error(
             "Closing review failed for call=%s: %s", call.id[:8], e, exc_info=True,
         )
-        return ClosingReviewResult(error=str(e))
+        return None
 
 
 def format_moves_for_review(moves: list[Move]) -> str:

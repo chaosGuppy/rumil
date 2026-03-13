@@ -131,6 +131,47 @@ async def build_context_for_question(
     return "\n".join(parts), loaded_ids
 
 
+async def build_call_context(
+    question_id: str,
+    db: DB,
+    extra_page_ids: list[str] | None = None,
+) -> tuple[str, dict[str, str], list[str]]:
+    """Build full context for an assess/ingest call.
+
+    Prepends a compact workspace map, then the detailed working context for
+    the given question. Any extra_page_ids (full UUIDs) are appended as
+    pre-loaded pages at the end.
+
+    Returns (context_text, short_id_to_full_uuid, working_context_page_ids).
+    """
+    log.debug("build_call_context: question=%s", question_id[:8])
+    map_text, short_id_map = await build_workspace_map(db)
+    working_context, working_page_ids = await build_context_for_question(question_id, db)
+
+    parts = [
+        map_text,
+        "---",
+        "",
+        "## Working Context",
+        "",
+        working_context,
+    ]
+
+    if extra_page_ids:
+        for pid in extra_page_ids:
+            page = await db.get_page(pid)
+            if page:
+                parts += ["", "---", "", f"## Pre-loaded Page: `{pid[:8]}`", ""]
+                parts.append(await format_page(page, db=db))
+
+    context_text = "\n".join(parts)
+    log.debug(
+        "build_call_context complete: %d chars, %d working pages, %d extra pages",
+        len(context_text), len(working_page_ids), len(extra_page_ids or []),
+    )
+    return context_text, short_id_map, working_page_ids
+
+
 async def format_question_for_scout(
     question_id: str, db: DB,
 ) -> tuple[str, list[str]]:

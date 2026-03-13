@@ -509,27 +509,6 @@ class DB:
         total, used = await self.get_budget()
         return max(0, total - used)
 
-    async def get_last_successful_call_time(
-        self,
-        call_type: CallType,
-        question_id: str,
-    ) -> datetime | None:
-        """Return completed_at of the most recent successful call of this type
-        on this question, or None if none exist."""
-        rows = _rows(
-            await self.client.table("calls")
-            .select("completed_at")
-            .eq("call_type", call_type.value)
-            .eq("scope_page_id", question_id)
-            .eq("status", "complete")
-            .order("completed_at", desc=True)
-            .limit(1)
-            .execute()
-        )
-        if not rows or not rows[0]["completed_at"]:
-            return None
-        return datetime.fromisoformat(rows[0]["completed_at"])
-
     async def get_links_between(
         self,
         from_page_id: str,

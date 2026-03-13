@@ -11,7 +11,6 @@ from differential.context import (
 )
 from differential.database import DB
 from differential.models import (
-    ConsiderationDirection,
     LinkType,
     Page,
     PageLayer,
@@ -55,15 +54,12 @@ async def _make_claim(db: DB, text: str) -> Page:
     return page
 
 
-async def _link_consideration(
-    db: DB, claim: Page, question: Page, direction: ConsiderationDirection
-) -> None:
+async def _link_consideration(db: DB, claim: Page, question: Page) -> None:
     await db.save_link(
         PageLink(
             from_page_id=claim.id,
             to_page_id=question.id,
             link_type=LinkType.CONSIDERATION,
-            direction=direction,
             strength=4.0,
             reasoning="test link",
         )
@@ -94,7 +90,7 @@ async def two_workspaces():
         db_alpha, "The sky is blue due to Rayleigh scattering"
     )
     await _link_consideration(
-        db_alpha, claim_alpha, q_alpha, ConsiderationDirection.SUPPORTS
+        db_alpha, claim_alpha, q_alpha
     )
     source_alpha = await _make_source(db_alpha, "sky-paper.pdf")
 
@@ -103,7 +99,7 @@ async def two_workspaces():
         db_beta, "Rivers carry dissolved salts into the ocean"
     )
     await _link_consideration(
-        db_beta, claim_beta, q_beta, ConsiderationDirection.SUPPORTS
+        db_beta, claim_beta, q_beta
     )
 
     yield {

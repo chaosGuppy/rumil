@@ -7,7 +7,6 @@ from pydantic import Field
 from differential.database import DB
 from differential.models import (
     Call,
-    ConsiderationDirection,
     LinkType,
     MoveType,
     PageLayer,
@@ -26,7 +25,7 @@ class CreateJudgementPayload(CreatePagePayload):
         description=(
             "Question links to create for this judgement. Each entry "
             "links this judgement as a consideration bearing on an "
-            "existing question, with direction and strength."
+            "existing question, with a strength rating."
         ),
     )
 
@@ -45,26 +44,16 @@ async def execute(payload: CreateJudgementPayload, call: Call, db: DB) -> MoveRe
             )
             continue
 
-        direction_str = link_spec.direction.lower()
-        try:
-            direction = ConsiderationDirection(direction_str)
-        except ValueError:
-            log.debug(
-                "Invalid direction '%s' defaulting to neutral", direction_str,
-            )
-            direction = ConsiderationDirection.NEUTRAL
-
         await db.save_link(PageLink(
             from_page_id=result.created_page_id,
             to_page_id=resolved,
             link_type=LinkType.CONSIDERATION,
-            direction=direction,
             strength=link_spec.strength,
             reasoning=link_spec.reasoning,
         ))
         log.info(
-            "Inline judgement linked: %s -> %s (%s)",
-            result.created_page_id[:8], resolved[:8], direction_str,
+            "Inline judgement linked: %s -> %s (%.1f)",
+            result.created_page_id[:8], resolved[:8], link_spec.strength,
         )
 
     return result

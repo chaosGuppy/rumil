@@ -40,9 +40,8 @@ async def format_page(page: Page, db: DB | None = None) -> str:
             lines.append("")
             lines.append("**Considerations:**")
             for claim, link in considerations:
-                direction = link.direction.value if link.direction else "neutral"
                 lines.append(
-                    f"- [{direction}, strength {link.strength:.1f}/5] "
+                    f"- [strength {link.strength:.1f}/5] "
                     f"{claim.summary} (ID: {claim.id})"
                 )
                 if link.reasoning:
@@ -96,9 +95,8 @@ async def build_context_for_question(
             parts.append("")
             for claim, link in considerations:
                 loaded_ids.append(claim.id)
-                direction = link.direction.value if link.direction else "neutral"
                 parts.append(
-                    f"**[{direction.upper()}, strength {link.strength:.1f}/5]** "
+                    f"**[strength {link.strength:.1f}/5]** "
                     f"{claim.summary} (ID: `{claim.id}`)"
                 )
                 parts.append(claim.content)

@@ -7,7 +7,6 @@ from pydantic import BaseModel, Field
 from differential.database import DB
 from differential.models import (
     Call,
-    ConsiderationDirection,
     LinkType,
     MoveType,
     Page,
@@ -28,7 +27,6 @@ class ProposeHypothesisPayload(BaseModel):
     )
     reasoning: str = Field("", description="Why this hypothesis is worth investigating")
     epistemic_status: float = Field(2.5, description="0-5 subjective confidence")
-    direction: str = Field("neutral", description="supports, opposes, or neutral")
     strength: float = Field(2.5, description="0-5 consideration strength")
 
 
@@ -67,26 +65,18 @@ async def execute(payload: ProposeHypothesisPayload, call: Call, db: DB) -> Move
     write_page_file(claim)
     log.info("Hypothesis claim created: %s", claim.id[:8])
 
-    direction_str = payload.direction.lower()
-    try:
-        direction = ConsiderationDirection(direction_str)
-    except ValueError:
-        log.debug("Invalid direction '%s' defaulting to neutral", direction_str)
-        direction = ConsiderationDirection.NEUTRAL
-
     await db.save_link(
         PageLink(
             from_page_id=claim.id,
             to_page_id=parent_id,
             link_type=LinkType.CONSIDERATION,
-            direction=direction,
             strength=payload.strength,
             reasoning=payload.reasoning,
         )
     )
     log.info(
-        "Consideration linked: %s -> %s (%s)",
-        claim.id[:8], parent_id[:8], direction_str,
+        "Consideration linked: %s -> %s (%.1f)",
+        claim.id[:8], parent_id[:8], payload.strength,
     )
 
     # 2. Create the hypothesis question

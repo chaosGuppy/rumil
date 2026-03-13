@@ -46,12 +46,6 @@ const TYPE_CONFIG: Record<
   },
 };
 
-const DIRECTION_CONFIG: Record<string, { color: string; label: string }> = {
-  supports: { color: "var(--dir-supports)", label: "supports" },
-  opposes: { color: "var(--dir-opposes)", label: "opposes" },
-  neutral: { color: "var(--color-muted)", label: "neutral" },
-};
-
 async function getPageDetail(pageId: string): Promise<PageDetailOut | null> {
   const res = await fetch(`${API_BASE}/api/pages/${pageId}/detail`, {
     cache: "no-store",
@@ -93,15 +87,9 @@ function EpistemicGauge({ value }: { value: number }) {
 }
 
 function LinkMeta({ link }: { link: PageLink }) {
-  const dir = link.direction ? DIRECTION_CONFIG[link.direction] : null;
   return (
     <div className="link-meta">
       <span className="link-type-label">{link.link_type.replace("_", " ")}</span>
-      {dir && (
-        <span className="link-direction" style={{ color: dir.color }}>
-          {dir.label}
-        </span>
-      )}
       {link.strength > 0 && (
         <span className="link-strength">
           <span className="link-strength-bar">

@@ -31,7 +31,6 @@ from differential.models import (
     Call,
     CallStatus,
     CallType,
-    ConsiderationDirection,
     Dispatch,
     LinkType,
     Move,
@@ -377,7 +376,6 @@ class PageRating(BaseModel):
 class ReviewLinkConsideration(BaseModel):
     link_type: Literal["consideration"] = "consideration"
     page_id: str = Field(description="Short ID of the page to link to the scope question")
-    direction: str = Field("neutral", description="supports, opposes, or neutral")
     strength: float = Field(
         2.5,
         description="0-5: how strongly this bears on the question",
@@ -743,23 +741,17 @@ async def _execute_review_links(
             continue
         try:
             if link_type == "consideration":
-                direction_str = link_data.get("direction", "neutral").lower()
-                try:
-                    direction = ConsiderationDirection(direction_str)
-                except ValueError:
-                    direction = ConsiderationDirection.NEUTRAL
                 link = PageLink(
                     from_page_id=page_id,
                     to_page_id=scope_question_id,
                     link_type=LinkType.CONSIDERATION,
-                    direction=direction,
                     strength=link_data.get("strength", 2.5),
                     reasoning=link_data.get("reasoning", ""),
                 )
                 await db.save_link(link)
                 log.info(
-                    "Review link: consideration %s -> %s (%s, %.1f)",
-                    page_id[:8], scope_question_id[:8], direction_str, link.strength,
+                    "Review link: consideration %s -> %s (%.1f)",
+                    page_id[:8], scope_question_id[:8], link.strength,
                 )
             elif link_type == "child_question":
                 link = PageLink(
@@ -820,7 +812,7 @@ async def run_closing_review(
                     '\n\nFor each page you rate as helpful (1) or very helpful (2), '
                     'include a link in the `links` field to connect it to the scope '
                     f'question `{scope_question_id[:8]}`. Use link_type "consideration" '
-                    'for claims (with direction and strength), "child_question" for '
+                    'for claims (with strength), "child_question" for '
                     'sub-questions, or "related" for other page types.'
                 )
             page_rating_note = (

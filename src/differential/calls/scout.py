@@ -398,7 +398,7 @@ async def _run_session_review(
             '\n\nFor each page you rate as helpful (1) or very helpful (2), '
             'include a link in the `links` field to connect it to the scope '
             f'question `{question_id[:8]}`. Use link_type "consideration" '
-            'for claims (with direction and strength), "child_question" for '
+            'for claims (with strength), "child_question" for '
             'sub-questions, or "related" for other page types.'
         )
         page_rating_note = (
@@ -466,7 +466,7 @@ async def run_scout_session(
     mode: ScoutMode = ScoutMode.ALTERNATE,
     context_page_ids: list[str] | None = None,
     broadcaster=None,
-) -> tuple[int, list[str]]:
+) -> int:
     """Cache-aware multi-round scout session.
 
     Builds context once, resumes the agent conversation across rounds,
@@ -564,4 +564,4 @@ async def run_scout_session(
         f"Scout session complete. {rounds_completed} rounds, "
         f"{len(ctx.state.created_page_ids)} pages created.",
     )
-    return rounds_completed, ctx.state.created_page_ids
+    return rounds_completed

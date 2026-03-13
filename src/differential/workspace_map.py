@@ -8,20 +8,11 @@ Short IDs are the first 8 characters of each page UUID.
 from datetime import datetime
 
 from differential.database import DB
-from differential.models import ConsiderationDirection, Page, PageType
+from differential.models import Page, PageType
 
 
 def _short_id(full_uuid: str) -> str:
     return full_uuid[:8]
-
-
-def _direction_icon(direction: ConsiderationDirection | None) -> str:
-    if direction == ConsiderationDirection.SUPPORTS:
-        return "↑"
-    elif direction == ConsiderationDirection.OPPOSES:
-        return "↓"
-    else:
-        return "→"
 
 
 async def _build_question_lines(
@@ -85,9 +76,8 @@ async def _build_question_lines(
     for claim, link in considerations:
         c_sid = _short_id(claim.id)
         short_id_map[c_sid] = claim.id
-        icon = _direction_icon(link.direction)
         lines.append(
-            f"{prefix}  [{icon} {link.strength:.1f}] `{c_sid}` — {claim.summary}"
+            f"{prefix}  [{link.strength:.1f}] `{c_sid}` — {claim.summary}"
         )
 
     # Judgements

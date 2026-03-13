@@ -7,7 +7,6 @@ from differential.models import (
     Call,
     CallStatus,
     CallType,
-    ConsiderationDirection,
     LinkType,
     Page,
     PageLayer,
@@ -50,7 +49,6 @@ async def _link_consideration(db, claim, question):
             from_page_id=claim.id,
             to_page_id=question.id,
             link_type=LinkType.CONSIDERATION,
-            direction=ConsiderationDirection.SUPPORTS,
             strength=4.0,
             reasoning='test',
         )

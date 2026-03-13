@@ -98,7 +98,7 @@ async def scout_until_done(
         context_page_ids=context_page_ids,
     )
 
-    rounds, created_page_ids = await run_scout_session(
+    rounds = await run_scout_session(
         question_id, call, db,
         max_rounds=max_rounds,
         fruit_threshold=fruit_threshold,

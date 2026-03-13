@@ -41,6 +41,6 @@ If the source proposes or strongly implies a candidate answer to a workspace que
 
 - **Attribution is required.** Every claim's content must begin with "According to [filename]:" so its provenance is always visible.
 - **Your epistemic assessment matters.** Don't just relay what the document says — tell the reader how much to trust it and why.
-- **Direction and strength should reflect both content and reliability.** A finding that strongly supports a question from a low-credibility source warrants lower strength than the same finding from a high-credibility one.
+- **Strength should reflect both content and reliability.** A finding that strongly bears on a question from a low-credibility source warrants lower strength than the same finding from a high-credibility one.
 - **Do not duplicate existing considerations** already in the workspace context.
 - **Cross-question and hypothesis extraction is secondary.** If the document is rich on the primary question, prioritise that. Don't let peripheral extraction crowd out the main job.

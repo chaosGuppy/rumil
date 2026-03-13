@@ -7,7 +7,6 @@ from pydantic import BaseModel, Field
 from differential.database import DB
 from differential.models import (
     Call,
-    ConsiderationDirection,
     LinkType,
     MoveType,
     PageLink,
@@ -19,13 +18,12 @@ log = logging.getLogger(__name__)
 
 class ConsiderationLinkFields(BaseModel):
     question_id: str = Field(description="Page ID of the question")
-    direction: str = Field("neutral", description="supports, opposes, or neutral")
     strength: float = Field(
         2.5,
         description="0-5: how strongly this claim bears on the question (0 = barely relevant, 5 = highly decisive)",
     )
     reasoning: str = Field(
-        "", description="Why this claim bears on the question in this direction"
+        "", description="Why this claim bears on the question"
     )
 
 
@@ -43,27 +41,17 @@ async def execute(payload: LinkConsiderationPayload, call: Call, db: DB) -> Move
         )
         return MoveResult("Link skipped — page IDs not found.")
 
-    direction_str = payload.direction.lower()
-    try:
-        direction = ConsiderationDirection(direction_str)
-    except ValueError:
-        log.debug(
-            "Invalid direction '%s' defaulting to neutral", direction_str,
-        )
-        direction = ConsiderationDirection.NEUTRAL
-
     link = PageLink(
         from_page_id=claim_id,
         to_page_id=question_id,
         link_type=LinkType.CONSIDERATION,
-        direction=direction,
         strength=payload.strength,
         reasoning=payload.reasoning,
     )
     await db.save_link(link)
     log.info(
-        "Consideration linked: %s -> %s (%s)",
-        claim_id[:8], question_id[:8], direction_str,
+        "Consideration linked: %s -> %s (%.1f)",
+        claim_id[:8], question_id[:8], payload.strength,
     )
     return MoveResult("Done.")
 
@@ -72,9 +60,8 @@ MOVE = MoveDef(
     move_type=MoveType.LINK_CONSIDERATION,
     name="link_consideration",
     description=(
-        "Link a claim to a question as a consideration, indicating how the "
-        "claim bears on the question (supports, opposes, or neutral) with a "
-        "strength rating."
+        "Link a claim to a question as a consideration with a strength "
+        "rating indicating how strongly it bears on the question."
     ),
     schema=LinkConsiderationPayload,
     execute=execute,

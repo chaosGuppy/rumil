@@ -43,7 +43,7 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 To run against the production Supabase instance, add these to your `.env`:
 
 ```
-SUPABASE_PROD_URL=https://<project-ref>.supabase.co
+SUPABASE_PROD_URL=https://aesjaehibxrzearctiqp.supabase.co
 SUPABASE_PROD_KEY=<service_role key from Supabase dashboard>
 ```
 

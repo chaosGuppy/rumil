@@ -815,6 +815,41 @@ class DB:
             return {"run_id": rows[0]["run_id"], "created_at": rows[0]["created_at"]}
         return None
 
+    async def list_runs_for_project(self, project_id: str, limit: int = 50) -> list[dict[str, Any]]:
+        """Return recent runs for a project, newest first.
+
+        Each entry has run_id, created_at, and question_summary (if available).
+        """
+        rows = _rows(
+            await self.client.table("calls")
+            .select("run_id, created_at, scope_page_id")
+            .eq("project_id", project_id)
+            .is_("parent_call_id", "null")
+            .order("created_at", desc=True)
+            .execute()
+        )
+        seen: set[str] = set()
+        results = []
+        for row in rows:
+            run_id = row.get("run_id")
+            if not run_id or run_id in seen:
+                continue
+            seen.add(run_id)
+            question_summary = None
+            scope_id = row.get("scope_page_id")
+            if scope_id:
+                page = await self.get_page(scope_id)
+                if page:
+                    question_summary = page.summary
+            results.append({
+                "run_id": run_id,
+                "created_at": row["created_at"],
+                "question_summary": question_summary,
+            })
+            if len(results) >= limit:
+                break
+        return results
+
     async def delete_run_data(self, delete_project: bool = False) -> None:
         """Delete all data for this run_id. Used by test teardown."""
         await self.client.table("call_llm_exchanges").delete().eq(

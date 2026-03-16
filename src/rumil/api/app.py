@@ -23,6 +23,7 @@ from rumil.api.schemas import (
     PageCountsOut,
     PageDetailOut,
     RealtimeConfigOut,
+    RunListItemOut,
     RunSummaryOut,
     RunTraceOut,
     TraceEventOut,
@@ -61,6 +62,12 @@ async def _get_db(project_id: str = "") -> DB:
 async def list_projects():
     db = await _get_db()
     return await db.list_projects()
+
+
+@app.get("/api/projects/{project_id}/runs", response_model=list[RunListItemOut])
+async def list_project_runs(project_id: str):
+    db = await _get_db(project_id)
+    return await db.list_runs_for_project(project_id)
 
 
 # --- Pages ---

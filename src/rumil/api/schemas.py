@@ -137,6 +137,12 @@ class RunSummaryOut(BaseModel):
     created_at: str
 
 
+class RunListItemOut(BaseModel):
+    run_id: str
+    created_at: str
+    question_summary: str | None = None
+
+
 class RealtimeConfigOut(BaseModel):
     url: str
     anon_key: str

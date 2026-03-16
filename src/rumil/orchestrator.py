@@ -210,14 +210,13 @@ class Orchestrator:
         budget: int,
         parent_call_id: str | None = None,
         depth: int = 0,
-        _budget_entering: int = 0,
     ) -> None:
         """
         Core recursive investigation loop.
         - Runs a Prioritization call to plan the budget allocation
         - Executes the plan (Scout, Assess, sub-Prioritization)
-        - If budget remains after the plan and was actually spent, re-prioritizes
-          to redirect leftover budget (e.g. when scouts finish early)
+        - If budget remains after the plan and something was actually spent,
+          re-prioritizes to redirect leftover budget (e.g. when scouts finish early)
         """
         remaining = await self.db.budget_remaining()
         actual_budget = min(budget, remaining)
@@ -229,13 +228,6 @@ class Orchestrator:
         if actual_budget <= 0:
             log.info(
                 "No budget remaining, skipping question=%s", question_id[:8],
-            )
-            return
-
-        if _budget_entering > 0 and remaining >= _budget_entering:
-            log.info(
-                "No budget was spent on question=%s, stopping re-prioritization",
-                question_id[:8],
             )
             return
 
@@ -349,7 +341,7 @@ class Orchestrator:
                 ))
 
         leftover = await self.db.budget_remaining()
-        if leftover > 0:
+        if leftover > 0 and budget_spent > 0:
             log.info(
                 "Budget remaining after dispatches (%d units), re-prioritizing question=%s",
                 leftover, question_id[:8],
@@ -359,7 +351,6 @@ class Orchestrator:
                 budget=leftover,
                 parent_call_id=p_call.id,
                 depth=depth + 1,
-                _budget_entering=leftover,
             )
 
 

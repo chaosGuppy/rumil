@@ -255,6 +255,8 @@ class Orchestrator:
         )
         p_trace: CallTrace | None = plan.get("trace")
 
+        budget_before = await self.db.budget_remaining()
+
         if not dispatches:
             log.info(
                 "No dispatches from prioritization, running default scout+assess "
@@ -268,83 +270,77 @@ class Orchestrator:
                 question_id, self.db, parent_call_id=p_call.id,
                 broadcaster=self.broadcaster,
             )
-            return
+        else:
+            for i, dispatch in enumerate(dispatches):
+                if await self.db.budget_remaining() <= 0:
+                    break
 
-        # Execute the plan one dispatch at a time
-        budget_spent = 0
-        for i, dispatch in enumerate(dispatches):
-            if budget_spent >= actual_budget or await self.db.budget_remaining() <= 0:
-                break
+                p = dispatch.payload
 
-            p = dispatch.payload
+                resolved = await self.db.resolve_page_id(p.question_id)
+                if not resolved:
+                    log.warning(
+                        "Dispatch question ID not found: %s, falling back to scope",
+                        p.question_id[:8],
+                    )
+                    resolved = question_id
 
-            resolved = await self.db.resolve_page_id(p.question_id)
-            if not resolved:
-                log.warning(
-                    "Dispatch question ID not found: %s, falling back to scope",
-                    p.question_id[:8],
-                )
-                resolved = question_id
+                d_label = await self.db.page_label(resolved)
+                child_call_id: str | None = None
 
-            d_label = await self.db.page_label(resolved)
-            child_call_id: str | None = None
+                if isinstance(p, ScoutDispatchPayload):
+                    log.info(
+                        "Dispatch: scout on %s (mode=%s, fruit_threshold=%d, max_rounds=%d) — %s",
+                        d_label, p.mode.value, p.fruit_threshold, p.max_rounds, p.reason,
+                    )
+                    _, child_ids = await scout_until_done(
+                        resolved,
+                        self.db,
+                        max_rounds=p.max_rounds,
+                        fruit_threshold=p.fruit_threshold,
+                        parent_call_id=p_call.id,
+                        context_page_ids=p.context_page_ids,
+                        mode=p.mode,
+                        broadcaster=self.broadcaster,
+                    )
+                    child_call_id = child_ids[0] if child_ids else None
 
-            if isinstance(p, ScoutDispatchPayload):
-                log.info(
-                    "Dispatch: scout on %s (mode=%s, fruit_threshold=%d, max_rounds=%d) — %s",
-                    d_label, p.mode.value, p.fruit_threshold, p.max_rounds, p.reason,
-                )
-                spent, child_ids = await scout_until_done(
-                    resolved,
-                    self.db,
-                    max_rounds=p.max_rounds,
-                    fruit_threshold=p.fruit_threshold,
-                    parent_call_id=p_call.id,
-                    context_page_ids=p.context_page_ids,
-                    mode=p.mode,
-                    broadcaster=self.broadcaster,
-                )
-                budget_spent += spent
-                child_call_id = child_ids[0] if child_ids else None
+                elif isinstance(p, AssessDispatchPayload):
+                    log.info("Dispatch: assess on %s — %s", d_label, p.reason)
+                    child_call_id = await assess_question(
+                        resolved,
+                        self.db,
+                        parent_call_id=p_call.id,
+                        context_page_ids=p.context_page_ids,
+                        broadcaster=self.broadcaster,
+                    )
 
-            elif isinstance(p, AssessDispatchPayload):
-                log.info("Dispatch: assess on %s — %s", d_label, p.reason)
-                child_call_id = await assess_question(
-                    resolved,
-                    self.db,
-                    parent_call_id=p_call.id,
-                    context_page_ids=p.context_page_ids,
-                    broadcaster=self.broadcaster,
-                )
-                if child_call_id:
-                    budget_spent += 1
+                elif isinstance(p, PrioritizationDispatchPayload):
+                    log.info(
+                        "Dispatch: prioritization on %s (budget=%d) — %s",
+                        d_label, p.budget, p.reason,
+                    )
+                    await self.investigate_question(
+                        question_id=resolved,
+                        budget=p.budget,
+                        parent_call_id=p_call.id,
+                        depth=depth + 1,
+                    )
 
-            elif isinstance(p, PrioritizationDispatchPayload):
-                log.info(
-                    "Dispatch: prioritization on %s (budget=%d) — %s",
-                    d_label, p.budget, p.reason,
-                )
-                await self.investigate_question(
-                    question_id=resolved,
-                    budget=p.budget,
-                    parent_call_id=p_call.id,
-                    depth=depth + 1,
-                )
-                budget_spent += p.budget
-
-            if p_trace:
-                await p_trace.record(DispatchExecutedEvent(
-                    index=i,
-                    child_call_type=dispatch.call_type.value,
-                    question_id=resolved,
-                    child_call_id=child_call_id,
-                ))
+                if p_trace:
+                    await p_trace.record(DispatchExecutedEvent(
+                        index=i,
+                        child_call_type=dispatch.call_type.value,
+                        question_id=resolved,
+                        child_call_id=child_call_id,
+                    ))
 
         leftover = await self.db.budget_remaining()
-        if leftover > 0 and budget_spent > 0:
+        actually_spent = budget_before - leftover
+        if leftover > 0 and actually_spent > 0:
             log.info(
-                "Budget remaining after dispatches (%d units), re-prioritizing question=%s",
-                leftover, question_id[:8],
+                "Budget remaining after plan (%d units, spent %d), re-prioritizing question=%s",
+                leftover, actually_spent, question_id[:8],
             )
             await self.investigate_question(
                 question_id=question_id,

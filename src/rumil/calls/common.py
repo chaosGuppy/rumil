@@ -492,6 +492,7 @@ async def run_call(
     max_tokens: int = 4096,
     max_rounds: int | None = None,
     trace: "CallTrace | None" = None,
+    state: MoveState | None = None,
 ) -> RunCallResult:
     """Run a workspace call (assess/ingest) with tool use.
 
@@ -513,7 +514,8 @@ async def run_call(
     if available_moves is None:
         available_moves = list(MoveType)
 
-    state = MoveState(call, db)
+    if state is None:
+        state = MoveState(call, db)
     system_prompt = build_system_prompt(call_type.value)
 
     phase1_ids: list[str] = []

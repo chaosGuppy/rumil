@@ -72,6 +72,12 @@ function epistemicBar(value: number) {
   );
 }
 
+type RunListItem = {
+  run_id: string;
+  created_at: string;
+  question_summary: string | null;
+};
+
 export default function PagesIndexPage() {
   const params = useParams<{ projectId: string }>();
   const projectId = params.projectId;
@@ -80,6 +86,7 @@ export default function PagesIndexPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [activeTypes, setActiveTypes] = useState<Set<PageType>>(new Set());
+  const [runs, setRuns] = useState<RunListItem[]>([]);
 
   useEffect(() => {
     fetch(`${API_BASE}/api/projects/${projectId}/pages`, {
@@ -90,6 +97,11 @@ export default function PagesIndexPage() {
         setPages(data);
         setLoading(false);
       });
+    fetch(`${API_BASE}/api/projects/${projectId}/runs`, {
+      cache: "no-store",
+    })
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data: RunListItem[]) => setRuns(data));
   }, [projectId]);
 
   const toggleType = (t: PageType) => {
@@ -381,6 +393,64 @@ export default function PagesIndexPage() {
           font-size: 0.9rem;
         }
 
+        .runs-section {
+          margin-bottom: 2rem;
+        }
+        .runs-section h2 {
+          font-size: 0.75rem;
+          font-weight: 600;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          color: var(--color-muted);
+          margin: 0 0 0.5rem 0;
+          font-family: var(--font-geist-mono), monospace;
+        }
+        .runs-list {
+          display: flex;
+          flex-direction: column;
+          gap: 1px;
+          background: var(--color-border);
+          border: 1px solid var(--color-border);
+        }
+        .run-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 0.5rem 0.75rem;
+          background: var(--color-background);
+          text-decoration: none;
+          color: inherit;
+          transition: background 0.1s ease;
+          gap: 1rem;
+        }
+        .run-row:hover {
+          background: var(--color-surface);
+        }
+        .run-question {
+          font-size: 0.82rem;
+          flex: 1;
+          min-width: 0;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .run-meta {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+          flex-shrink: 0;
+        }
+        .run-id {
+          font-size: 0.7rem;
+          font-family: var(--font-geist-mono), monospace;
+          color: var(--color-muted);
+        }
+        .run-date {
+          font-size: 0.7rem;
+          color: var(--color-muted);
+          font-family: var(--font-geist-mono), monospace;
+        }
+
         .loading-state {
           padding: 4rem 1rem;
           text-align: center;
@@ -482,6 +552,27 @@ export default function PagesIndexPage() {
         <h1>Pages</h1>
         <div className="subtitle">{pages.length} total</div>
       </div>
+
+      {runs.length > 0 && (
+        <div className="runs-section">
+          <h2>Recent Runs</h2>
+          <div className="runs-list">
+            {runs.map((r) => (
+              <Link key={r.run_id} href={`/traces/${r.run_id}`} className="run-row">
+                <span className="run-question">
+                  {r.question_summary ?? "(no question)"}
+                </span>
+                <div className="run-meta">
+                  <span className="run-date">
+                    {new Date(r.created_at).toLocaleString()}
+                  </span>
+                  <span className="run-id">{r.run_id.slice(0, 8)}</span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="controls">
         <div className="search-row">

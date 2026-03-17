@@ -461,9 +461,27 @@ class ScoutCall(BaseCall):
                 '1 = helped, 2 = extremely helpful.'
             )
 
+        page_summary_note = ""
+        if self.state.created_page_ids:
+            created_lines = []
+            for pid in self.state.created_page_ids:
+                page = await self.db.get_page(pid)
+                if page:
+                    created_lines.append(f'  - `{pid[:8]}`: "{page.summary[:120]}"')
+            if created_lines:
+                page_summary_note = (
+                    '\n\nYou created the following pages during this call:\n'
+                    + '\n'.join(created_lines)
+                    + '\n\nFor each, provide a summary_short (~30 words, fully self-contained) '
+                    'and a summary_medium (~200 words, fully self-contained) in your page_summaries. '
+                    'These will be read by other LLM instances with no prior context, so do not '
+                    'assume any background knowledge.'
+                )
+
         assessment_msg = (
             _SELF_ASSESSMENT_INSTRUCTION.format(question_id=self.question_id)
             + page_rating_note
+            + page_summary_note
         )
         assessment_messages = prior_messages + [
             {"role": "user", "content": assessment_msg},
@@ -477,7 +495,7 @@ class ScoutCall(BaseCall):
             response_model=ReviewResponse,
             messages=assessment_messages,
             tools=self.tool_defs,
-            max_tokens=4096,
+            max_tokens=8192,
             metadata=meta,
             db=self.db,
             cache=True,
@@ -497,6 +515,14 @@ class ScoutCall(BaseCall):
                 if pid and isinstance(score, int):
                     await self.db.save_page_rating(
                         pid, self.call.id, score, r.get("note", ""),
+                    )
+            for s in review_data.get("page_summaries", []):
+                pid = await self.db.resolve_page_id(s.get("page_id", ""))
+                if pid:
+                    await self.db.update_page_summaries(
+                        pid,
+                        s.get("summary_short", ""),
+                        s.get("summary_medium", ""),
                     )
 
         self.call.review_json = review_data

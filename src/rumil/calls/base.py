@@ -172,6 +172,7 @@ class SimpleCall(BaseCall):
             review_context,
             self.context_text,
             self.all_loaded_ids,
+            self.result.created_page_ids,
             self.db,
             self.trace,
         )

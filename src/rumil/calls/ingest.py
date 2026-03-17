@@ -2,23 +2,69 @@
 
 import logging
 
-from rumil.calls.common import (
-    RunCallResult,
-    complete_call,
-    extract_loaded_page_ids,
-    format_moves_for_review,
-    log_page_ratings,
-    resolve_page_refs,
-    run_call,
-    run_closing_review,
-)
+from rumil.calls.base import SimpleCall
+from rumil.calls.common import RunCallResult
 from rumil.context import build_call_context
 from rumil.database import DB
-from rumil.models import Call, CallStatus, CallType, Page
-from rumil.tracing.trace_events import ContextBuiltEvent, ReviewCompleteEvent
-from rumil.tracing.tracer import CallTrace
+from rumil.models import Call, CallType, Page
 
 log = logging.getLogger(__name__)
+
+
+class IngestCall(SimpleCall):
+    """Ingest a source document: extract considerations for a question."""
+
+    def __init__(
+        self,
+        source_page: Page,
+        question_id: str,
+        call: Call,
+        db: DB,
+        *,
+        broadcaster=None,
+    ):
+        super().__init__(question_id, call, db, broadcaster=broadcaster)
+        self.source_page = source_page
+        extra = source_page.extra or {}
+        self.filename = extra.get("filename", source_page.id[:8])
+
+    def call_type(self) -> CallType:
+        return CallType.INGEST
+
+    def task_description(self) -> str:
+        return (
+            "Extract considerations from the source document above for this question.\n\n"
+            f"Question ID: `{self.question_id}`\n"
+            f"Source page ID: `{self.source_page.id}`"
+        )
+
+    def result_summary(self) -> str:
+        return (
+            f"Ingest complete. Created {len(self.result.created_page_ids)} "
+            f"pages from '{self.filename}'."
+        )
+
+    async def build_context(self) -> None:
+        question_context, _, self.working_page_ids = await build_call_context(
+            self.question_id, self.db, extra_page_ids=self.preloaded_ids,
+        )
+        await self._record_context_built(source_page_id=self.source_page.id)
+
+        source_section = (
+            "\n\n---\n\n## Source Document\n\n"
+            f"**File:** {self.filename}  \n"
+            f"**Source page ID:** `{self.source_page.id}`\n\n"
+            f"{self.source_page.content}"
+        )
+        self.context_text = question_context + source_section
+        await self._load_phase1_pages()
+
+    def _log_review(self, review: dict) -> None:
+        log.info(
+            "Ingest review: confidence=%s, remaining_fruit=%s",
+            review.get("confidence_in_output", "?"),
+            review.get("remaining_fruit", "?"),
+        )
 
 
 async def run_ingest(
@@ -32,67 +78,16 @@ async def run_ingest(
 
     Returns (run_call_result, review_dict).
     """
-    trace = CallTrace(call.id, db, broadcaster=broadcaster)
     extra = source_page.extra or {}
     filename = extra.get("filename", source_page.id[:8])
     log.info(
         "Ingest starting: call=%s, source=%s (%s), question=%s",
         call.id[:8], source_page.id[:8], filename, question_id[:8],
     )
-
-    preloaded = call.context_page_ids or []
-    question_context, _, working_page_ids = await build_call_context(
-        question_id, db, extra_page_ids=preloaded
-    )
-    await trace.record(ContextBuiltEvent(
-        working_context_page_ids=await resolve_page_refs(working_page_ids, db),
-        preloaded_page_ids=await resolve_page_refs(preloaded, db),
-        source_page_id=source_page.id,
-    ))
-
-    source_section = (
-        "\n\n---\n\n## Source Document\n\n"
-        f"**File:** {filename}  \n"
-        f"**Source page ID:** `{source_page.id}`\n\n"
-        f"{source_page.content}"
-    )
-    context_text = question_context + source_section
-
-    task = (
-        "Extract considerations from the source document above for this question.\n\n"
-        f"Question ID: `{question_id}`\n"
-        f"Source page ID: `{source_page.id}`"
-    )
-
-    await db.update_call_status(call.id, CallStatus.RUNNING)
-    result = await run_call(CallType.INGEST, task, context_text, call, db, trace=trace)
-    phase2_loaded = await extract_loaded_page_ids(result, db)
-
-    all_loaded_ids = list(
-        dict.fromkeys(preloaded + result.phase1_page_ids + phase2_loaded)
-    )
-    review_context = format_moves_for_review(result.moves)
-    review = await run_closing_review(call, review_context, context_text, all_loaded_ids, db, trace)
-    if review:
-        log.info(
-            "Ingest review: confidence=%s, remaining_fruit=%s",
-            review.get("confidence_in_output", "?"),
-            review.get("remaining_fruit", "?"),
-        )
-        await log_page_ratings(review, db)
-        await trace.record(ReviewCompleteEvent(
-            remaining_fruit=review.get("remaining_fruit"),
-            confidence=review.get("confidence_in_output"),
-        ))
-
-    call.review_json = review or {}
+    ingest = IngestCall(source_page, question_id, call, db, broadcaster=broadcaster)
+    await ingest.run()
     log.info(
         "Ingest complete: call=%s, pages_created=%d, source=%s",
-        call.id[:8], len(result.created_page_ids), filename,
+        call.id[:8], len(ingest.result.created_page_ids), filename,
     )
-    await complete_call(
-        call,
-        db,
-        f"Ingest complete. Created {len(result.created_page_ids)} pages from '{filename}'.",
-    )
-    return result, review or {}
+    return ingest.result, ingest.review

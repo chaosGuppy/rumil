@@ -206,6 +206,8 @@ class Page(BaseModel):
     superseded_by: str | None = None
     is_superseded: bool = False
     extra: dict = Field(default_factory=dict)
+    summary_short: str = ""
+    summary_medium: str = ""
 
     def is_active(self) -> bool:
         return not self.is_superseded

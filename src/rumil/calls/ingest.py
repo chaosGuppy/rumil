@@ -72,7 +72,7 @@ async def run_ingest(
         dict.fromkeys(preloaded + result.phase1_page_ids + phase2_loaded)
     )
     review_context = format_moves_for_review(result.moves)
-    review = await run_closing_review(call, review_context, context_text, all_loaded_ids, db, trace)
+    review = await run_closing_review(call, review_context, context_text, all_loaded_ids, result.created_page_ids, db, trace)
     if review:
         log.info(
             "Ingest review: confidence=%s, remaining_fruit=%s",

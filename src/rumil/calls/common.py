@@ -379,6 +379,26 @@ async def run_agent_loop(
     )
 
 
+class PageSummaryItem(BaseModel):
+    page_id: str = Field(description="Full or short ID of the page")
+    summary_short: str = Field(
+        description=(
+            "Self-contained summary of ~30 words. State the core topic and conclusion "
+            "so a reader with no prior context understands what the page is about and "
+            "what it concludes. Include the key finding and main caveat if space allows."
+        )
+    )
+    summary_medium: str = Field(
+        description=(
+            "Self-contained summary of ~200 words. Include: the core conclusion, "
+            "the main supporting reasoning or evidence, key counter-arguments and why "
+            "they were discounted, and the critical uncertainties or dependencies. "
+            "Preserve epistemic qualifications, confidence levels, and priority orderings. "
+            "Must make sense with zero prior context."
+        )
+    )
+
+
 class PageRating(BaseModel):
     page_id: str = Field(description="Short ID of the rated page")
     score: int = Field(
@@ -413,6 +433,13 @@ class ReviewResponse(BaseModel):
     page_ratings: list[PageRating] = Field(
         default_factory=list,
         description="Ratings for pages that were loaded into context",
+    )
+    page_summaries: list["PageSummaryItem"] = Field(
+        default_factory=list,
+        description=(
+            "Short and medium summaries for each page you created during this call. "
+            "Provide one entry per created page."
+        ),
     )
 
 
@@ -652,6 +679,7 @@ async def run_closing_review(
     main_output: str,
     context_text: str,
     loaded_page_ids: list[str] | None = None,
+    created_page_ids: list[str] | None = None,
     db: DB | None = None,
     trace: CallTrace | None = None,
 ) -> dict | None:
@@ -673,16 +701,35 @@ async def run_closing_review(
                 '1 = helped, 2 = extremely helpful.'
             )
 
+    page_summary_note = ""
+    if created_page_ids and db:
+        created_lines = []
+        for pid in created_page_ids:
+            page = await db.get_page(pid)
+            if page:
+                created_lines.append(f'  - `{pid[:8]}`: "{page.summary[:120]}"')
+        if created_lines:
+            page_summary_note = (
+                '\n\nYou created the following pages during this call:\n'
+                + '\n'.join(created_lines)
+                + '\n\nFor each, provide a summary_short (~30 words, fully self-contained) '
+                'and a summary_medium (~200 words, fully self-contained) in your page_summaries. '
+                'These will be read by other LLM instances with no prior context, so do not '
+                'assume any background knowledge.'
+            )
+
     review_task = (
         f"You have just completed a {call.call_type.value} call.\n\n"
         f"Here is your output from that call:\n{main_output}\n\n"
         "Please review your work and provide your assessment."
         f"{page_rating_note}"
+        f"{page_summary_note}"
     )
 
     log.debug(
-        "Closing review starting: call=%s, type=%s, loaded_pages=%d",
-        call.id[:8], call.call_type.value, len(loaded_page_ids or []),
+        "Closing review starting: call=%s, type=%s, loaded_pages=%d, created_pages=%d",
+        call.id[:8], call.call_type.value,
+        len(loaded_page_ids or []), len(created_page_ids or []),
     )
     try:
         user_message = build_user_message(context_text, review_task)
@@ -694,7 +741,7 @@ async def run_closing_review(
             system_prompt=REVIEW_SYSTEM_PROMPT,
             user_message=user_message,
             response_model=ReviewResponse,
-            max_tokens=4096,
+            max_tokens=8192,
             metadata=meta,
             db=db,
         )
@@ -712,6 +759,14 @@ async def run_closing_review(
                     score = r.get("score")
                     if pid and isinstance(score, int):
                         await db.save_page_rating(pid, call.id, score, r.get("note", ""))
+                for s in review.get("page_summaries", []):
+                    pid = await db.resolve_page_id(s.get("page_id", ""))
+                    if pid:
+                        await db.update_page_summaries(
+                            pid,
+                            s.get("summary_short", ""),
+                            s.get("summary_medium", ""),
+                        )
         else:
             log.warning("Closing review returned None for call=%s", call.id[:8])
         return review

@@ -57,6 +57,8 @@ def _row_to_page(row: dict[str, Any]) -> Page:
         superseded_by=row["superseded_by"],
         is_superseded=bool(row["is_superseded"]),
         extra=row["extra"] or {},
+        summary_short=row.get("summary_short") or "",
+        summary_medium=row.get("summary_medium") or "",
     )
 
 
@@ -190,8 +192,17 @@ class DB:
                 "is_superseded": page.is_superseded,
                 "extra": page.extra,
                 "run_id": self.run_id,
+                "summary_short": page.summary_short,
+                "summary_medium": page.summary_medium,
             }
         ).execute()
+
+    async def update_page_summaries(
+        self, page_id: str, summary_short: str, summary_medium: str
+    ) -> None:
+        await self.client.table("pages").update(
+            {"summary_short": summary_short, "summary_medium": summary_medium}
+        ).eq("id", page_id).execute()
 
     async def get_page(self, page_id: str) -> Page | None:
         rows = _rows(

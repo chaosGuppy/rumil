@@ -356,6 +356,7 @@ async def _run_session_review(
     tool_defs: list[dict],
     resume_messages: list[dict],
     loaded_summaries: list[tuple[str, str]],
+    created_page_ids: list[str],
     state: MoveState,
     trace: CallTrace,
 ) -> dict:
@@ -406,9 +407,27 @@ async def _run_session_review(
             '1 = helped, 2 = extremely helpful.'
         )
 
+    page_summary_note = ""
+    if created_page_ids:
+        created_lines = []
+        for pid in created_page_ids:
+            page = await db.get_page(pid)
+            if page:
+                created_lines.append(f'  - `{pid[:8]}`: "{page.summary[:120]}"')
+        if created_lines:
+            page_summary_note = (
+                '\n\nYou created the following pages during this call:\n'
+                + '\n'.join(created_lines)
+                + '\n\nFor each, provide a summary_short (~30 words, fully self-contained) '
+                'and a summary_medium (~200 words, fully self-contained) in your page_summaries. '
+                'These will be read by other LLM instances with no prior context, so do not '
+                'assume any background knowledge.'
+            )
+
     assessment_msg = (
         _SELF_ASSESSMENT_INSTRUCTION.format(question_id=question_id)
         + page_rating_note
+        + page_summary_note
     )
     assessment_messages = post_link_messages + [
         {"role": "user", "content": assessment_msg},
@@ -441,6 +460,15 @@ async def _run_session_review(
             score = r.get("score")
             if pid and isinstance(score, int):
                 await db.save_page_rating(pid, call.id, score, r.get("note", ""))
+
+        for s in review_data.get("page_summaries", []):
+            pid = await db.resolve_page_id(s.get("page_id", ""))
+            if pid:
+                await db.update_page_summaries(
+                    pid,
+                    s.get("summary_short", ""),
+                    s.get("summary_medium", ""),
+                )
 
     call.review_json = review_data
     return review_data
@@ -545,6 +573,7 @@ async def run_scout_session(
             tool_defs=ctx.tool_defs,
             resume_messages=resume_messages,
             loaded_summaries=loaded_summaries,
+            created_page_ids=ctx.state.created_page_ids,
             state=ctx.state,
             trace=ctx.trace,
         )

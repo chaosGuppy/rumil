@@ -12,6 +12,7 @@ dependencies = [
     "pydantic-settings>=2.0",
     "supabase>=2.0.0",
     "uvicorn[standard]>=0.41.0",
+    "voyageai>=0.3.2",
 ]
 
 [project.optional-dependencies]

@@ -56,11 +56,20 @@ Always use the supabase cli to create new migrations: `supabase migration new`.
 
 **Core loop** (`src/rumil/orchestrator.py`): `Orchestrator.run()` → `investigate_question()` recursively. Runs a free prioritization call to plan budget allocation, then dispatches scout/assess/sub-prioritization calls. Budget is a global counter in the DB; each scout/assess/ingest call costs 1 unit. Prioritization and closing reviews are free.
 
-**Call types** (`src/rumil/calls/`): Package with one module per call type (`scout.py`, `assess.py`, `prioritization.py`, `ingest.py`) plus `common.py` for shared utilities (`run_call()`, closing reviews, dispatch tool). Public API re-exported from `__init__.py`. Scout, Assess, and Ingest use a two-phase pattern:
-- Phase 1 (free): LLM sees workspace map + working context, can use `load_page` to request pages, writes planning notes. Loaded pages are formatted and injected into phase 2 context.
-- Phase 2 (costs 1 budget): main agent loop with all tools. Can still use `load_page` for additional pages.
+**Call types** (`src/rumil/calls/`): Polymorphic class hierarchy using a template method pattern. `BaseCall` defines `run()` which orchestrates three abstract phases: `build_context()`, `create_pages()`, `closing_review()`. Each call type lives in its own module (`scout.py`, `assess.py`, `prioritization.py`, `ingest.py`). `common.py` has shared utilities (`run_agent_loop()`, `run_single_call()`, closing reviews, dispatch tool). Public API re-exported from `__init__.py`.
 
-Each call ends with a closing review that produces `remaining_fruit` (0-10 scale) — the orchestrator uses this to decide when to stop scouting.
+Class hierarchy:
+- `BaseCall` (abstract) — owns `run()` orchestration, `CallTrace`, `MoveState`, shared finalization. Subclasses implement the three phase methods plus `result_summary()`.
+- `SimpleCall(BaseCall)` — concrete `create_pages()` (single `run_agent_loop` pass) and `closing_review()` (structured review producing `remaining_fruit`, `confidence_in_output`, `page_ratings`). Also provides `_load_phase1_pages()` for a free preliminary LLM call where the model can only `load_page` to preload relevant pages into context. Subclasses override `build_context()`, `call_type()`, `task_description()`, and `result_summary()`.
+- `AssessCall(SimpleCall)` / `IngestCall(SimpleCall)` — minimal overrides; build context via `build_call_context()`, then call `_load_phase1_pages()`.
+- `ScoutCall(BaseCall)` — implements all three phases directly. Multi-round `create_pages()` with conversation resumption and fruit-check stopping. Two-phase `closing_review()` (link review + self-assessment).
+
+The three phases:
+1. **build_context** (free): Assemble `self.context_text` from workspace map + working context. Optionally run `_load_phase1_pages()` (free LLM call with only `load_page` tool) to preload pages into context. Record `ContextBuiltEvent`.
+2. **create_pages** (costs budget): Main agent loop with move tools. `SimpleCall` runs one `run_agent_loop` pass. `ScoutCall` runs multiple rounds with fruit checking between them, resuming the conversation across rounds.
+3. **closing_review** (free): Self-assessment producing `remaining_fruit` (0-10) — the orchestrator uses this to decide when to stop scouting. Also produces `confidence_in_output`, `context_was_adequate`, and `page_ratings`.
+
+To add a new call type: subclass `SimpleCall` (for single-pass calls) or `BaseCall` (for custom loop logic). Implement `build_context()`, `call_type()`, `task_description()`, `result_summary()`. Add a `run_*()` free function wrapper and export from `__init__.py`.
 
 **LLM interface** (`src/rumil/llm.py`): Wraps the Anthropic API. Provides `call_api()` (single API call with tool handling), `structured_call()` (structured output), and `text_call()`. The multi-turn agent loop lives in `calls/common.py` (`run_agent_loop()`). For single-turn tool-calling use `run_single_call()` — do NOT use `run_agent_loop` with `max_rounds=1`. Both support `messages` for conversation resumption and `cache=True` for prompt caching. When multiple LLM calls share a conversation prefix, pass the same tools to all of them (even if the prompt only asks the model to use a subset) so the cache prefix matches. Builds prompts from `prompts/` directory: system = preamble.md + call-type-specific .md file, user = context + task. Has retry logic for transient errors.
 

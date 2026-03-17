@@ -3,8 +3,7 @@
 import logging
 
 from rumil.calls.base import SimpleCall
-from rumil.calls.common import RunCallResult
-from rumil.context import build_call_context
+from rumil.context import build_call_context, build_embedding_based_context
 from rumil.database import DB
 from rumil.models import Call, CallType, Page
 
@@ -67,27 +66,22 @@ class IngestCall(SimpleCall):
         )
 
 
-async def run_ingest(
-    source_page: Page,
-    question_id: str,
-    call: Call,
-    db: DB,
-    broadcaster=None,
-) -> tuple[RunCallResult, dict]:
-    """Run an Ingest call: extract considerations from a source document.
+class EmbeddingIngestCall(IngestCall):
+    """Ingest call that builds context via embedding similarity search."""
 
-    Returns (run_call_result, review_dict).
-    """
-    extra = source_page.extra or {}
-    filename = extra.get("filename", source_page.id[:8])
-    log.info(
-        "Ingest starting: call=%s, source=%s (%s), question=%s",
-        call.id[:8], source_page.id[:8], filename, question_id[:8],
-    )
-    ingest = IngestCall(source_page, question_id, call, db, broadcaster=broadcaster)
-    await ingest.run()
-    log.info(
-        "Ingest complete: call=%s, pages_created=%d, source=%s",
-        call.id[:8], len(ingest.result.created_page_ids), filename,
-    )
-    return ingest.result, ingest.review
+    async def build_context(self) -> None:
+        question = await self.db.get_page(self.question_id)
+        query = question.summary if question else self.question_id
+        result = await build_embedding_based_context(query, self.db)
+        self.working_page_ids = result.page_ids
+        await self._record_context_built(source_page_id=self.source_page.id)
+
+        source_section = (
+            '\n\n---\n\n## Source Document\n\n'
+            f'**File:** {self.filename}  \n'
+            f'**Source page ID:** `{self.source_page.id}`\n\n'
+            f'{self.source_page.content}'
+        )
+        self.context_text = result.context_text + source_section
+
+

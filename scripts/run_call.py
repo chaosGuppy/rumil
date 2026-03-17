@@ -27,8 +27,7 @@ import asyncio
 import logging
 import uuid
 
-from rumil.calls import run_scout_session
-from rumil.calls.assess import run_assess
+from rumil.calls.call_registry import ASSESS_CALL_CLASSES, SCOUT_CALL_CLASSES
 from rumil.calls.prioritization import run_prioritization
 from rumil.database import DB
 from rumil.models import CallType, ScoutMode
@@ -79,18 +78,22 @@ async def run(args: argparse.Namespace) -> None:
         call = await db.create_call(
             CallType.SCOUT, scope_page_id=question_id,
         )
-        await run_scout_session(
+        cls = SCOUT_CALL_CLASSES[settings.scout_call_variant]
+        scout = cls(
             question_id, call, db,
             max_rounds=args.max_rounds,
             fruit_threshold=args.fruit_threshold,
             mode=mode,
         )
+        await scout.run()
 
     elif call_type == "assess":
         call = await db.create_call(
             CallType.ASSESS, scope_page_id=question_id,
         )
-        await run_assess(question_id, call, db)
+        cls = ASSESS_CALL_CLASSES[settings.assess_call_variant]
+        assess = cls(question_id, call, db)
+        await assess.run()
 
     elif call_type == "prioritize":
         call = await db.create_call(

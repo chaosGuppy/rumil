@@ -1,19 +1,27 @@
 """Call types for the research workspace."""
 
-from rumil.calls.assess import AssessCall, run_assess
+from rumil.calls.assess import AssessCall, EmbeddingAssessCall
 from rumil.calls.base import BaseCall, SimpleCall
-from rumil.calls.ingest import IngestCall, run_ingest
+from rumil.calls.call_registry import (
+    ASSESS_CALL_CLASSES,
+    INGEST_CALL_CLASSES,
+    SCOUT_CALL_CLASSES,
+)
+from rumil.calls.ingest import EmbeddingIngestCall, IngestCall
 from rumil.calls.prioritization import run_prioritization
-from rumil.calls.scout import ScoutCall, run_scout_session
+from rumil.calls.scout import EmbeddingScoutCall, ScoutCall
 
 __all__ = [
     "BaseCall",
     "SimpleCall",
     "AssessCall",
+    "EmbeddingAssessCall",
     "IngestCall",
+    "EmbeddingIngestCall",
     "ScoutCall",
-    "run_scout_session",
-    "run_assess",
+    "EmbeddingScoutCall",
+    "SCOUT_CALL_CLASSES",
+    "ASSESS_CALL_CLASSES",
+    "INGEST_CALL_CLASSES",
     "run_prioritization",
-    "run_ingest",
 ]

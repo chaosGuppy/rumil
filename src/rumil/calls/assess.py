@@ -3,10 +3,9 @@
 import logging
 
 from rumil.calls.base import SimpleCall
-from rumil.calls.common import RunCallResult
-from rumil.context import build_call_context
+from rumil.context import build_call_context, build_embedding_based_context
 from rumil.database import DB
-from rumil.models import Call, CallType
+from rumil.models import CallType
 
 log = logging.getLogger(__name__)
 
@@ -44,21 +43,15 @@ class AssessCall(SimpleCall):
         )
 
 
-async def run_assess(
-    question_id: str,
-    call: Call,
-    db: DB,
-    broadcaster=None,
-) -> tuple[RunCallResult, dict]:
-    """Run an Assess call on a question.
+class EmbeddingAssessCall(AssessCall):
+    """Assess call that builds context via embedding similarity search."""
 
-    Returns (run_call_result, review_dict).
-    """
-    log.info("Assess starting: call=%s, question=%s", call.id[:8], question_id[:8])
-    assess = AssessCall(question_id, call, db, broadcaster=broadcaster)
-    await assess.run()
-    log.info(
-        "Assess complete: call=%s, pages_created=%d",
-        call.id[:8], len(assess.result.created_page_ids),
-    )
-    return assess.result, assess.review
+    async def build_context(self) -> None:
+        question = await self.db.get_page(self.question_id)
+        query = question.summary if question else self.question_id
+        result = await build_embedding_based_context(query, self.db)
+        self.context_text = result.context_text
+        self.working_page_ids = result.page_ids
+        await self._record_context_built()
+
+

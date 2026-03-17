@@ -46,3 +46,30 @@ async def test_store_and_search_round_trip(tmp_db):
     assert page.id in returned_ids
     similarity = next(s for p, s in results if p.id == page.id)
     assert 0.3 < similarity <= 1.0
+
+
+async def test_store_and_search_with_field_filter(tmp_db):
+    """Embeddings stored with a field_name can be filtered by that field."""
+    page = Page(
+        page_type=PageType.CLAIM,
+        layer=PageLayer.SQUIDGY,
+        workspace=Workspace.RESEARCH,
+        content="Quantum entanglement links particles across distances.",
+        summary="Quantum entanglement links distant particles",
+    )
+    await tmp_db.save_page(page)
+    await embed_and_store_page(tmp_db, page, field_name="summary")
+
+    results_with_filter = await search_pages(
+        tmp_db, "quantum particles", match_threshold=0.3,
+        field_name="summary",
+    )
+    returned_ids = [p.id for p, _ in results_with_filter]
+    assert page.id in returned_ids
+
+    results_wrong_field = await search_pages(
+        tmp_db, "quantum particles", match_threshold=0.3,
+        field_name="content",
+    )
+    wrong_ids = [p.id for p, _ in results_wrong_field]
+    assert page.id not in wrong_ids

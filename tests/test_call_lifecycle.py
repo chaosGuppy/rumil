@@ -8,10 +8,10 @@ page creation, closing review, and DB state transitions.
 import pytest
 import pytest_asyncio
 
-from rumil.calls.assess import run_assess
+from rumil.calls.assess import AssessCall
 from rumil.calls.common import complete_call, run_closing_review
-from rumil.calls.ingest import run_ingest
-from rumil.calls.scout import run_scout_session
+from rumil.calls.ingest import IngestCall
+from rumil.calls.scout import ScoutCall
 from rumil.models import (
     Call,
     CallStatus,
@@ -53,7 +53,9 @@ async def source_page(tmp_db):
 @pytest.mark.llm
 async def test_assess_lifecycle(tmp_db, question_page, assess_call):
     """Assess call completes with correct DB state and review data."""
-    result, review = await run_assess(question_page.id, assess_call, tmp_db)
+    assess = AssessCall(question_page.id, assess_call, tmp_db)
+    await assess.run()
+    result, review = assess.result, assess.review
 
     refreshed = await tmp_db.get_call(assess_call.id)
     assert refreshed.status == CallStatus.COMPLETE
@@ -75,9 +77,9 @@ async def test_assess_lifecycle(tmp_db, question_page, assess_call):
 @pytest.mark.llm
 async def test_ingest_lifecycle(tmp_db, question_page, ingest_call, source_page):
     """Ingest call processes source document and completes with correct DB state."""
-    result, review = await run_ingest(
-        source_page, question_page.id, ingest_call, tmp_db,
-    )
+    ingest = IngestCall(source_page, question_page.id, ingest_call, tmp_db)
+    await ingest.run()
+    result, review = ingest.result, ingest.review
 
     refreshed = await tmp_db.get_call(ingest_call.id)
     assert refreshed.status == CallStatus.COMPLETE
@@ -99,7 +101,7 @@ async def test_ingest_lifecycle(tmp_db, question_page, ingest_call, source_page)
 async def test_scout_lifecycle(tmp_db, question_page, scout_call):
     """Scout session runs rounds, checks fruit, and completes."""
     await tmp_db.init_budget(2)
-    rounds = await run_scout_session(
+    scout = ScoutCall(
         question_page.id,
         scout_call,
         tmp_db,
@@ -107,8 +109,9 @@ async def test_scout_lifecycle(tmp_db, question_page, scout_call):
         fruit_threshold=4,
         mode=ScoutMode.ALTERNATE,
     )
+    await scout.run()
 
-    assert rounds >= 1
+    assert scout.rounds_completed >= 1
 
     refreshed = await tmp_db.get_call(scout_call.id)
     assert refreshed.status == CallStatus.COMPLETE
@@ -127,15 +130,16 @@ async def test_scout_lifecycle(tmp_db, question_page, scout_call):
 async def test_scout_stops_on_budget_exhaustion(tmp_db, question_page, scout_call):
     """Scout session stops when budget runs out mid-loop."""
     await tmp_db.init_budget(1)
-    rounds = await run_scout_session(
+    scout = ScoutCall(
         question_page.id,
         scout_call,
         tmp_db,
         max_rounds=5,
         fruit_threshold=0,
     )
+    await scout.run()
 
-    assert rounds <= 1
+    assert scout.rounds_completed <= 1
 
     refreshed = await tmp_db.get_call(scout_call.id)
     assert refreshed.status == CallStatus.COMPLETE

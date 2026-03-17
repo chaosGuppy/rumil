@@ -3,12 +3,25 @@ Build context text from workspace pages for injection into LLM prompts.
 """
 
 import logging
+from collections.abc import Sequence
+from dataclasses import dataclass, field
 
 from rumil.database import DB
+from rumil.embeddings import embed_query, search_pages_by_vector
 from rumil.models import LinkRole, Page, PageType, Workspace
 from rumil.workspace_map import build_workspace_map
 
 log = logging.getLogger(__name__)
+
+
+@dataclass
+class EmbeddingBasedContextResult:
+    context_text: str
+    page_ids: list[str]
+    full_page_ids: list[str]
+    summary_page_ids: list[str]
+    distillation_page_ids: list[str] = field(default_factory=list)
+    budget_usage: dict[str, int] = field(default_factory=dict)
 
 
 async def collect_subtree_ids(question_id: str, db: DB) -> set[str]:
@@ -400,3 +413,133 @@ async def build_prioritization_context(
         parts.append("")
 
     return "\n".join(parts), short_id_map
+
+
+def _format_page_summary(page: Page) -> str:
+    """Single-line compact format for a page."""
+    e = f"{page.epistemic_status:.0f}" if page.epistemic_status is not None else "?"
+    return (
+        f'[{page.page_type.value.upper()} {e}/5] '
+        f'`{page.id[:8]}` -- {page.summary}'
+    )
+
+
+def _filter_distillation_pages(
+    ranked: Sequence[tuple[Page, float]],
+) -> list[tuple[Page, float]]:
+    """Filter pages eligible for the distillation tier (stub)."""
+    return []
+
+
+async def build_embedding_based_context(
+    question_text: str,
+    db: DB,
+    *,
+    context_char_budget: int | None = None,
+    distillation_page_char_fraction: float | None = None,
+    full_page_char_fraction: float | None = None,
+    summary_para_char_fraction: float | None = None,
+    match_threshold: float = 0.3,
+) -> EmbeddingBasedContextResult:
+    """Build context by embedding-similarity search over the whole workspace.
+
+    Budget parameters default to values from settings when not provided.
+    """
+    from rumil.settings import get_settings
+    settings = get_settings()
+    if context_char_budget is None:
+        context_char_budget = settings.context_char_budget
+    if distillation_page_char_fraction is None:
+        distillation_page_char_fraction = settings.distillation_page_char_fraction
+    if full_page_char_fraction is None:
+        full_page_char_fraction = settings.full_page_char_fraction
+    if summary_para_char_fraction is None:
+        summary_para_char_fraction = settings.summary_page_char_fraction
+    query_embedding = await embed_query(question_text)
+    ranked = await search_pages_by_vector(
+        db,
+        query_embedding,
+        match_threshold=match_threshold,
+        match_count=500,
+        field_name='summary',
+    )
+
+    distillation_budget = int(context_char_budget * distillation_page_char_fraction)
+    full_budget = int(context_char_budget * full_page_char_fraction)
+    summary_budget = int(context_char_budget * summary_para_char_fraction)
+
+    distillation_pages = _filter_distillation_pages(ranked)
+    distillation_ids: list[str] = []
+    distillation_chars = 0
+    full_parts: list[str] = []
+    full_ids: list[str] = []
+    full_chars = 0
+    summary_parts: list[str] = []
+    summary_ids: list[str] = []
+    summary_chars = 0
+
+    distillation_page_id_set = {p.id for p, _ in distillation_pages}
+    for page, _sim in distillation_pages:
+        formatted = await format_page(page, db)
+        if distillation_chars + len(formatted) <= distillation_budget:
+            full_parts.append(formatted)
+            distillation_ids.append(page.id)
+            distillation_chars += len(formatted)
+
+    for page, _sim in ranked:
+        if page.id in distillation_page_id_set:
+            continue
+
+        if full_chars < full_budget:
+            formatted = await format_page(page, db)
+            if full_chars + len(formatted) <= full_budget:
+                full_parts.append(formatted)
+                full_ids.append(page.id)
+                full_chars += len(formatted)
+                continue
+
+        if summary_chars < summary_budget:
+            line = _format_page_summary(page)
+            if summary_chars + len(line) <= summary_budget:
+                summary_parts.append(line)
+                summary_ids.append(page.id)
+                summary_chars += len(line)
+                continue
+
+        break
+
+    sections: list[str] = []
+    if full_parts:
+        sections.append('## Relevant Pages (Full)')
+        sections.append('')
+        sections.append('\n\n'.join(full_parts))
+    if summary_parts:
+        sections.append('')
+        sections.append('## Relevant Pages (Summaries)')
+        sections.append('')
+        sections.append('\n'.join(summary_parts))
+
+    context_text = '\n'.join(sections)
+
+    budget_usage = {
+        'distillation': distillation_chars,
+        'full': full_chars,
+        'summary': summary_chars,
+    }
+    log.info(
+        'Embedding context: full=%d/%d chars, summary=%d/%d chars, '
+        'distillation=%d/%d chars, pages=%d full + %d summary',
+        full_chars, full_budget, summary_chars, summary_budget,
+        distillation_chars, distillation_budget,
+        len(full_ids), len(summary_ids),
+    )
+
+    all_ids = distillation_ids + full_ids + summary_ids
+    return EmbeddingBasedContextResult(
+        context_text=context_text,
+        page_ids=all_ids,
+        full_page_ids=full_ids,
+        summary_page_ids=summary_ids,
+        distillation_page_ids=distillation_ids,
+        budget_usage=budget_usage,
+    )

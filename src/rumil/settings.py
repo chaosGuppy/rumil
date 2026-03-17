@@ -26,6 +26,15 @@ class Settings(BaseSettings):
     voyage_ai_api_key: str = ""
     frontend_url: str = "http://127.0.0.1:3000"
 
+    scout_call_variant: str = "default"
+    assess_call_variant: str = "default"
+    ingest_call_variant: str = "default"
+
+    context_char_budget: int = 10_000
+    full_page_char_fraction: float = 0.6
+    summary_page_char_fraction: float = 0.3
+    distillation_page_char_fraction: float = 0.0
+
     @property
     def is_test_mode(self) -> bool:
         return bool(self.rumil_test_mode)

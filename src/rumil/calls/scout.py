@@ -16,6 +16,7 @@ from rumil.calls.common import (
 )
 from rumil.context import (
     assemble_call_context,
+    build_embedding_based_context,
     format_page,
     format_preloaded_pages,
     format_question_for_scout,
@@ -434,6 +435,18 @@ class ScoutCall(BaseCall):
         )
         post_link_messages = list(link_result.messages)
 
+        return await self._self_assessment(post_link_messages, loaded_summaries)
+
+    async def _self_assessment(
+        self,
+        prior_messages: list[dict],
+        loaded_summaries: list[tuple[str, str]],
+    ) -> dict:
+        """Structured self-assessment appended to a message history.
+
+        Shared by the default two-phase review and the embedding variant's
+        single-phase review.
+        """
         page_rating_note = ""
         if loaded_summaries:
             page_lines = [
@@ -452,7 +465,7 @@ class ScoutCall(BaseCall):
             _SELF_ASSESSMENT_INSTRUCTION.format(question_id=self.question_id)
             + page_rating_note
         )
-        assessment_messages = post_link_messages + [
+        assessment_messages = prior_messages + [
             {"role": "user", "content": assessment_msg},
         ]
         meta = LLMExchangeMetadata(
@@ -500,30 +513,55 @@ class ScoutCall(BaseCall):
         await complete_call(self.call, self.db, self.result_summary())
 
 
-async def run_scout_session(
-    question_id: str,
-    call: Call,
-    db: DB,
-    *,
-    max_rounds: int,
-    fruit_threshold: int,
-    mode: ScoutMode = ScoutMode.ALTERNATE,
-    context_page_ids: list[str] | None = None,
-    broadcaster=None,
-) -> int:
-    """Cache-aware multi-round scout session.
+class EmbeddingScoutCall(ScoutCall):
+    """Scout call that builds context via embedding similarity search.
 
-    Builds context once, resumes the agent conversation across rounds,
-    uses lightweight fruit checks, and runs linking once at the end.
-    Returns rounds_completed.
+    Uses embedding search as the sole context source (no link_new_pages,
+    no phase1 page loading). Closing review uses the simple single-call
+    variant (no link review phase).
     """
-    scout = ScoutCall(
-        question_id, call, db,
-        max_rounds=max_rounds,
-        fruit_threshold=fruit_threshold,
-        mode=mode,
-        context_page_ids=context_page_ids,
-        broadcaster=broadcaster,
-    )
-    await scout.run()
-    return scout.rounds_completed
+
+    async def run_session_review(
+        self, loaded_summaries: list[tuple[str, str]],
+    ) -> dict:
+        """Skip link review, go straight to self-assessment."""
+        return await self._self_assessment(
+            list(self.resume_messages), loaded_summaries,
+        )
+
+    async def build_context(self) -> None:
+        question = await self.db.get_page(self.question_id)
+        query = question.summary if question else self.question_id
+        emb_result = await build_embedding_based_context(query, self.db)
+        self.working_page_ids = emb_result.page_ids
+
+        await self.trace.record(ContextBuiltEvent(
+            working_context_page_ids=await resolve_page_refs(
+                self.working_page_ids, self.db,
+            ),
+            preloaded_page_ids=[],
+            scout_mode=self.mode.value,
+        ))
+
+        workspace_map, _ = await build_workspace_map(self.db)
+        self.context_text = assemble_call_context(
+            emb_result.context_text, workspace_map=workspace_map,
+        )
+
+        self.tools = [MOVES[mt].bind(self.state) for mt in MoveType]
+        self.tool_defs, _ = _prepare_tools(self.tools)
+
+        self.system_prompt = build_system_prompt(CallType.SCOUT.value)
+
+        round_mode = _resolve_round_mode(self.mode, 0)
+        mode_instruction = (
+            _CONCRETE_INSTRUCTION if round_mode == ScoutMode.CONCRETE else ''
+        )
+        task = (
+            f'Scout for missing considerations on this question.{mode_instruction}\n\n'
+            f'Question ID (use this when linking considerations): '
+            f'`{self.question_id}`'
+        )
+        self.user_message = build_user_message(self.context_text, task)
+
+

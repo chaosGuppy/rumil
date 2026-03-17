@@ -7,7 +7,11 @@ import logging
 import os
 
 from rumil.tracing.broadcast import Broadcaster
-from rumil.calls import run_assess, run_ingest, run_scout_session
+from rumil.calls.call_registry import (
+    ASSESS_CALL_CLASSES,
+    INGEST_CALL_CLASSES,
+    SCOUT_CALL_CLASSES,
+)
 from rumil.database import DB
 from rumil.settings import get_settings
 from rumil.models import (
@@ -98,7 +102,8 @@ async def scout_until_done(
         context_page_ids=context_page_ids,
     )
 
-    rounds = await run_scout_session(
+    cls = SCOUT_CALL_CLASSES[get_settings().scout_call_variant]
+    scout = cls(
         question_id, call, db,
         max_rounds=max_rounds,
         fruit_threshold=fruit_threshold,
@@ -106,12 +111,13 @@ async def scout_until_done(
         context_page_ids=context_page_ids,
         broadcaster=broadcaster,
     )
+    await scout.run()
 
     log.info(
         "scout_until_done finished: %d rounds, call=%s",
-        rounds, call.id[:8],
+        scout.rounds_completed, call.id[:8],
     )
-    return rounds, [call.id]
+    return scout.rounds_completed, [call.id]
 
 
 async def ingest_until_done(
@@ -148,7 +154,10 @@ async def ingest_until_done(
             scope_page_id=source_page.id,
             parent_call_id=parent_call_id,
         )
-        _, review = await run_ingest(source_page, question_id, call, db, broadcaster=broadcaster)
+        cls = INGEST_CALL_CLASSES[get_settings().ingest_call_variant]
+        ingest = cls(source_page, question_id, call, db, broadcaster=broadcaster)
+        await ingest.run()
+        review = ingest.review
         rounds += 1
 
         remaining_fruit = review.get("remaining_fruit", 5) if review else 5
@@ -186,7 +195,9 @@ async def assess_question(
         parent_call_id=parent_call_id,
         context_page_ids=context_page_ids,
     )
-    await run_assess(question_id, call, db, broadcaster=broadcaster)
+    cls = ASSESS_CALL_CLASSES[get_settings().assess_call_variant]
+    assess = cls(question_id, call, db, broadcaster=broadcaster)
+    await assess.run()
     return call.id
 
 

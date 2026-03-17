@@ -6,20 +6,11 @@ Short IDs are the first 8 characters of each page UUID.
 """
 
 from rumil.database import DB
-from rumil.models import ConsiderationDirection, Page, PageType
+from rumil.models import Page, PageType
 
 
 def _short_id(full_uuid: str) -> str:
     return full_uuid[:8]
-
-
-def _direction_icon(direction: ConsiderationDirection | None) -> str:
-    if direction == ConsiderationDirection.SUPPORTS:
-        return "↑"
-    elif direction == ConsiderationDirection.OPPOSES:
-        return "↓"
-    else:
-        return "→"
 
 
 async def _build_question_lines(
@@ -27,7 +18,6 @@ async def _build_question_lines(
     db: DB,
     short_id_map: dict[str, str],
     indent: int = 0,
-    collapse_depth: int | None = None,
 ) -> list[str]:
     prefix = "  " * indent
     sid = _short_id(question.id)
@@ -54,28 +44,13 @@ async def _build_question_lines(
     hypothesis_tag = " [hypothesis]" if extra.get("hypothesis") else ""
     lines = [f"{prefix}[Q]{hypothesis_tag} `{sid}` — {question.summary} ({stats})"]
 
-    # Considerations
-    for claim, link in considerations:
-        c_sid = _short_id(claim.id)
-        short_id_map[c_sid] = claim.id
-        icon = _direction_icon(link.direction)
-        lines.append(
-            f"{prefix}  [{icon} {link.strength:.1f}] `{c_sid}` — {claim.summary}"
-        )
-
-    # Judgements
     for j in judgements:
         j_sid = _short_id(j.id)
         short_id_map[j_sid] = j.id
         lines.append(f"{prefix}  [J {j.epistemic_status:.1f}] `{j_sid}` — {j.summary}")
 
-    # Sub-questions (recursive)
     for child in children:
-        lines.extend(
-            await _build_question_lines(
-                child, db, short_id_map, indent + 1, collapse_depth
-            )
-        )
+        lines.extend(await _build_question_lines(child, db, short_id_map, indent + 1))
 
     return lines
 
@@ -102,13 +77,22 @@ async def build_workspace_map(
         parts.append("### Questions")
         parts.append("")
         for q in root_questions:
-            lines = await _build_question_lines(
-                q, db, short_id_map, indent=0, collapse_depth=collapse_depth
-            )
+            lines = await _build_question_lines(q, db, short_id_map, indent=0)
             parts.extend(lines)
             parts.append("")
 
-    # Sources section — all source pages regardless of workspace
+    claim_pages = await db.get_pages(page_type=PageType.CLAIM)
+    if claim_pages:
+        parts.append("### Claims")
+        parts.append("")
+        for claim in claim_pages:
+            c_sid = _short_id(claim.id)
+            short_id_map[c_sid] = claim.id
+            parts.append(
+                f"[C {claim.epistemic_status:.1f}] `{c_sid}` — {claim.summary}"
+            )
+        parts.append("")
+
     source_pages = await db.get_pages(page_type=PageType.SOURCE)
     if source_pages:
         parts.append("### Sources")
@@ -121,7 +105,6 @@ async def build_workspace_map(
             short_id_map[s_sid] = src.id
             parts.append(f"[SRC] `{s_sid}` — {filename} ({char_count:,} chars)")
             if src.summary and src.summary != filename:
-                # Indent the summary under the filename line
                 summary_line = src.summary.replace("\n", " ")
                 parts.append(f"       {summary_line}")
         parts.append("")

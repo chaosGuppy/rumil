@@ -48,6 +48,85 @@ async def collect_subtree_ids(
     return result
 
 
+async def render_subtree(
+    root_id: str,
+    db: DB,
+    *,
+    graph: PageGraph | None = None,
+    detail: PageDetail = PageDetail.CONTENT,
+    linked_detail: PageDetail | None = PageDetail.HEADLINE,
+) -> str:
+    """Render a full subtree of pages starting from a root page.
+
+    Loads all pages and links into a PageGraph (if not already provided)
+    to avoid per-page DB round trips, then walks the tree depth-first:
+    question -> considerations, judgements, child questions (recurse).
+
+    Non-question root pages are rendered standalone with their outgoing links.
+    """
+    if graph is None:
+        graph = await PageGraph.load(db)
+
+    root = await graph.get_page(root_id)
+    if not root:
+        return f'[Page {root_id} not found]'
+
+    parts: list[str] = []
+    visited: set[str] = set()
+
+    async def _render_question(question: Page, depth: int) -> None:
+        if question.id in visited:
+            parts.append(f'{"  " * depth}(cycle: `{question.id[:8]}`)')
+            return
+        visited.add(question.id)
+
+        indent = '  ' * depth
+        parts.append(
+            indent + await format_page(question, detail, linked_detail=None, graph=graph)
+        )
+
+        considerations = await graph.get_considerations_for_question(question.id)
+        if considerations:
+            parts.append('')
+            parts.append(f'{indent}**Considerations:**')
+            for claim, link in considerations:
+                visited.add(claim.id)
+                direction = f' ({link.direction.value})' if link.direction else ''
+                parts.append(
+                    f'{indent}- [strength {link.strength:.1f}/5{direction}] '
+                    + await format_page(claim, linked_detail or PageDetail.HEADLINE, linked_detail=None, graph=graph)
+                )
+                if link.reasoning:
+                    parts.append(f'{indent}  Reasoning: {link.reasoning}')
+
+        judgements = await graph.get_judgements_for_question(question.id)
+        if judgements:
+            parts.append('')
+            parts.append(f'{indent}**Judgements:**')
+            for j in judgements:
+                visited.add(j.id)
+                parts.append(
+                    f'{indent}- '
+                    + await format_page(j, linked_detail or PageDetail.HEADLINE, linked_detail=None, graph=graph)
+                )
+
+        children = await graph.get_child_questions(question.id)
+        if children:
+            parts.append('')
+            parts.append(f'{indent}**Sub-questions:**')
+            parts.append('')
+            for child in children:
+                await _render_question(child, depth + 1)
+                parts.append('')
+
+    if root.page_type == PageType.QUESTION:
+        await _render_question(root, 0)
+    else:
+        parts.append(await format_page(root, detail, linked_detail=linked_detail, graph=graph))
+
+    return '\n'.join(parts)
+
+
 async def format_page(
     page: Page,
     detail: PageDetail = PageDetail.CONTENT,
@@ -379,64 +458,83 @@ async def build_prioritization_context(
 ) -> tuple[str, dict[str, str]]:
     """Build context for a prioritization call.
 
+    Uses embedding-similarity search to surface the most relevant pages
+    from the workspace, then appends the scope question's full subtree
+    (at ABSTRACT detail) and a dispatchable question index.
+
     Returns (context_text, short_id_map) where short_id_map maps 8-char
     short IDs to full UUIDs.
     """
     source: DB | PageGraph = graph if graph is not None else db
-    map_text, short_id_map = await build_workspace_map(db, graph=graph)
-    parts = [map_text, "", "---", "", "# Prioritization Context", ""]
+    parts: list[str] = ['# Prioritization Context', '']
+    short_id_map: dict[str, str] = {}
 
     if scope_question_id:
         question = await source.get_page(scope_question_id)
         if question:
+            embedding_result = await build_embedding_based_context(
+                question.headline,
+                db,
+                scope_question_id=scope_question_id,
+            )
+            if embedding_result.context_text:
+                parts.append(embedding_result.context_text)
+                parts.append('')
+                parts.append('---')
+                parts.append('')
+
             index_lines = await _build_question_index(
                 scope_question_id, db, graph=graph,
             )
-            parts.append("## Scope Subtree — Dispatchable Questions")
-            parts.append("")
+            parts.append('## Scope Subtree — Dispatchable Questions')
+            parts.append('')
             parts.append(
-                "You can only dispatch research calls on questions in this subtree "
-                "(or on new subquestions you create during this call). "
-                "Use only these exact IDs in your dispatch tags:"
+                'You can only dispatch research calls on questions in this subtree '
+                '(or on new subquestions you create during this call). '
+                'Use only these exact IDs in your dispatch tags:'
             )
-            parts.append("")
+            parts.append('')
             parts.extend(index_lines)
-            parts.append("")
+            parts.append('')
 
-            parts.append("## Scope Question")
-            parts.append("")
-            parts.append(await format_page(question, PageDetail.CONTENT, db=db, graph=graph))
-            parts.append("")
+            subtree_text = await render_subtree(
+                scope_question_id, db,
+                graph=graph,
+                detail=PageDetail.ABSTRACT,
+                linked_detail=PageDetail.ABSTRACT,
+            )
+            parts.append('## Scope Subtree — Detail')
+            parts.append('')
+            parts.append(subtree_text)
+            parts.append('')
 
-            children = await source.get_child_questions(scope_question_id)
-            if children:
-                parts.append("## Sub-questions")
-                parts.append("")
-                for child in children:
-                    parts.append(await format_page(child, PageDetail.CONTENT, db=db, graph=graph))
-                    parts.append("")
+            subtree_ids = await collect_subtree_ids(
+                scope_question_id, db, graph=graph,
+            )
+            for sid in subtree_ids:
+                short_id_map[sid[:8]] = sid
 
     source_pages = await source.get_pages(page_type=PageType.SOURCE)
     if source_pages:
         ingest_history = await db.get_ingest_history()
-        parts.append("## Sources and Ingest History")
-        parts.append("")
+        parts.append('## Sources and Ingest History')
+        parts.append('')
         for src in source_pages:
             src_extra = src.extra or {}
-            filename = src_extra.get("filename", src.id[:8])
-            char_count = src_extra.get("char_count", len(src.content))
+            filename = src_extra.get('filename', src.id[:8])
+            char_count = src_extra.get('char_count', len(src.content))
             question_ids = ingest_history.get(src.id, [])
-            parts.append(f"[SRC] `{src.id[:8]}` — {filename} ({char_count:,} chars)")
+            parts.append(f'[SRC] `{src.id[:8]}` — {filename} ({char_count:,} chars)')
             if question_ids:
                 for qid in question_ids:
                     q = await source.get_page(qid)
                     q_summary = q.headline[:60] if q else qid[:8]
-                    parts.append(f"  Ingested for: `{qid[:8]}` — {q_summary}")
+                    parts.append(f'  Ingested for: `{qid[:8]}` — {q_summary}')
             else:
-                parts.append("  Not yet ingested for any question")
-        parts.append("")
+                parts.append('  Not yet ingested for any question')
+        parts.append('')
 
-    return "\n".join(parts), short_id_map
+    return '\n'.join(parts), short_id_map
 
 
 

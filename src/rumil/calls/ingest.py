@@ -6,6 +6,8 @@ from rumil.calls.base import SimpleCall
 from rumil.context import build_call_context, build_embedding_based_context
 from rumil.database import DB
 from rumil.models import Call, CallStage, CallType, Page
+from rumil.models import Call, CallType, Page
+from rumil.page_graph import PageGraph
 
 log = logging.getLogger(__name__)
 
@@ -45,8 +47,10 @@ class IngestCall(SimpleCall):
         )
 
     async def build_context(self) -> None:
+        graph = await PageGraph.load(self.db)
         question_context, _, self.working_page_ids = await build_call_context(
             self.question_id, self.db, extra_page_ids=self.preloaded_ids,
+            graph=graph,
         )
         await self._record_context_built(source_page_id=self.source_page.id)
 
@@ -73,7 +77,9 @@ class EmbeddingIngestCall(IngestCall):
     async def build_context(self) -> None:
         question = await self.db.get_page(self.question_id)
         query = question.summary if question else self.question_id
-        result = await build_embedding_based_context(query, self.db)
+        result = await build_embedding_based_context(
+            query, self.db, scope_question_id=self.question_id,
+        )
         self.working_page_ids = result.page_ids
         await self._record_context_built(source_page_id=self.source_page.id)
 

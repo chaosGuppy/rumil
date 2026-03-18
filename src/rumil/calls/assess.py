@@ -4,8 +4,8 @@ import logging
 
 from rumil.calls.base import SimpleCall
 from rumil.context import build_call_context, build_embedding_based_context
-from rumil.database import DB
 from rumil.models import CallType
+from rumil.page_graph import PageGraph
 
 log = logging.getLogger(__name__)
 
@@ -29,8 +29,10 @@ class AssessCall(SimpleCall):
         return f"Assess complete. Created {len(self.result.created_page_ids)} pages."
 
     async def build_context(self) -> None:
+        graph = await PageGraph.load(self.db)
         self.context_text, _, self.working_page_ids = await build_call_context(
             self.question_id, self.db, extra_page_ids=self.preloaded_ids,
+            graph=graph,
         )
         await self._record_context_built()
         await self._load_phase1_pages()
@@ -49,7 +51,9 @@ class EmbeddingAssessCall(AssessCall):
     async def build_context(self) -> None:
         question = await self.db.get_page(self.question_id)
         query = question.summary if question else self.question_id
-        result = await build_embedding_based_context(query, self.db)
+        result = await build_embedding_based_context(
+            query, self.db, scope_question_id=self.question_id,
+        )
         self.context_text = result.context_text
         self.working_page_ids = result.page_ids
         await self._record_context_built()

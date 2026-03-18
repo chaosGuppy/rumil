@@ -10,6 +10,7 @@ from rumil.calls.common import (
 from rumil.calls.dispatches import DISPATCH_DEFS
 from rumil.context import build_prioritization_context, collect_subtree_ids
 from rumil.database import DB
+from rumil.page_graph import PageGraph
 from rumil.llm import build_system_prompt, build_user_message
 from rumil.models import Call, CallType, MoveType
 from rumil.moves.base import MoveState
@@ -100,10 +101,11 @@ async def run_prioritization(
         "Prioritization starting: call=%s, question=%s, budget=%d",
         call.id[:8], scope_question_id[:8], budget,
     )
+    graph = await PageGraph.load(db)
     context_text, short_id_map = await build_prioritization_context(
-        db, scope_question_id=scope_question_id
+        db, scope_question_id=scope_question_id, graph=graph,
     )
-    subtree_ids = await collect_subtree_ids(scope_question_id, db)
+    subtree_ids = await collect_subtree_ids(scope_question_id, db, graph=graph)
     await trace.record(ContextBuiltEvent(budget=budget))
 
     task = (

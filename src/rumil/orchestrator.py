@@ -7,7 +7,7 @@ import logging
 import os
 
 from rumil.tracing.broadcast import Broadcaster
-from rumil.calls import run_prioritization
+from rumil.calls.summarize import summarize_question
 from rumil.calls.call_registry import (
     ASSESS_CALL_CLASSES,
     INGEST_CALL_CLASSES,
@@ -18,16 +18,16 @@ from rumil.settings import get_settings
 from rumil.models import (
     AssessDispatchPayload,
     CallType,
+    Dispatch,
     Page,
     PageLayer,
     PageType,
-    PrioritizationDispatchPayload,
     ScoutDispatchPayload,
     ScoutMode,
     Workspace,
 )
+from rumil.prioritizer import LLMPrioritizer, Prioritizer
 from rumil.tracing.trace_events import DispatchExecutedEvent
-from rumil.tracing.tracer import CallTrace
 
 
 log = logging.getLogger(__name__)
@@ -190,6 +190,8 @@ async def assess_question(
     if not await _consume_budget(db):
         return None
 
+    await summarize_question(question_id, db, parent_call_id=parent_call_id)
+
     call = await db.create_call(
         CallType.ASSESS,
         scope_page_id=question_id,
@@ -212,175 +214,115 @@ def _create_broadcaster(db: DB) -> Broadcaster | None:
 
 
 class Orchestrator:
-    def __init__(self, db: DB):
+    def __init__(self, db: DB, prioritizer: Prioritizer | None = None):
         self.db = db
         self.broadcaster: Broadcaster | None = None
+        self._prioritizer = prioritizer
 
-    async def investigate_question(
+    async def _execute_dispatch(
         self,
-        question_id: str,
-        budget: int,
-        parent_call_id: str | None = None,
-        depth: int = 0,
-    ) -> None:
+        dispatch: Dispatch,
+        scope_question_id: str,
+        parent_call_id: str | None,
+    ) -> tuple[str, str | None]:
+        """Execute a single scout or assess dispatch.
+
+        Returns (resolved_question_id, child_call_id).
         """
-        Core recursive investigation loop.
-        - Runs a Prioritization call to plan the budget allocation
-        - Executes the plan (Scout, Assess, sub-Prioritization)
-        - If budget remains after the plan and something was actually spent,
-          re-prioritizes to redirect leftover budget (e.g. when scouts finish early)
-        """
-        remaining = await self.db.budget_remaining()
-        actual_budget = min(budget, remaining)
-        log.info(
-            "investigate_question: question=%s, budget=%d, actual=%d, depth=%d",
-            question_id[:8], budget, actual_budget, depth,
-        )
+        p = dispatch.payload
 
-        if actual_budget <= 0:
-            log.info(
-                "No budget remaining, skipping question=%s", question_id[:8],
+        resolved = await self.db.resolve_page_id(p.question_id)
+        if not resolved:
+            log.warning(
+                'Dispatch question ID not found: %s, falling back to scope',
+                p.question_id[:8],
             )
-            return
+            resolved = scope_question_id
 
-        # Run a prioritization call (free) to get a plan
-        p_call = await self.db.create_call(
-            CallType.PRIORITIZATION,
-            scope_page_id=question_id,
-            parent_call_id=parent_call_id,
-            budget_allocated=actual_budget,
-            workspace=Workspace.PRIORITIZATION,
-        )
+        d_label = await self.db.page_label(resolved)
+        child_call_id: str | None = None
 
-        plan = await run_prioritization(
-            scope_question_id=question_id,
-            call=p_call,
-            budget=actual_budget,
-            db=self.db,
-            broadcaster=self.broadcaster,
-        )
-
-        dispatches = plan.get("dispatches", [])
-        log.debug(
-            "Prioritization produced %d dispatches for question=%s",
-            len(dispatches), question_id[:8],
-        )
-        p_trace: CallTrace | None = plan.get("trace")
-
-        budget_before = await self.db.budget_remaining()
-
-        if not dispatches:
+        if isinstance(p, ScoutDispatchPayload):
             log.info(
-                "No dispatches from prioritization, running default scout+assess "
-                "for question=%s", question_id[:8],
+                'Dispatch: scout on %s (mode=%s, fruit_threshold=%d, max_rounds=%d) — %s',
+                d_label, p.mode.value, p.fruit_threshold, p.max_rounds, p.reason,
             )
-            await scout_until_done(
-                question_id, self.db, parent_call_id=p_call.id,
+            _, child_ids = await scout_until_done(
+                resolved,
+                self.db,
+                max_rounds=p.max_rounds,
+                fruit_threshold=p.fruit_threshold,
+                parent_call_id=parent_call_id,
+                context_page_ids=p.context_page_ids,
+                mode=p.mode,
                 broadcaster=self.broadcaster,
             )
-            await assess_question(
-                question_id, self.db, parent_call_id=p_call.id,
+            child_call_id = child_ids[0] if child_ids else None
+
+        elif isinstance(p, AssessDispatchPayload):
+            log.info('Dispatch: assess on %s — %s', d_label, p.reason)
+            child_call_id = await assess_question(
+                resolved,
+                self.db,
+                parent_call_id=parent_call_id,
+                context_page_ids=p.context_page_ids,
                 broadcaster=self.broadcaster,
             )
-        else:
-            for i, dispatch in enumerate(dispatches):
-                if await self.db.budget_remaining() <= 0:
-                    break
 
-                p = dispatch.payload
-
-                resolved = await self.db.resolve_page_id(p.question_id)
-                if not resolved:
-                    log.warning(
-                        "Dispatch question ID not found: %s, falling back to scope",
-                        p.question_id[:8],
-                    )
-                    resolved = question_id
-
-                d_label = await self.db.page_label(resolved)
-                child_call_id: str | None = None
-
-                if isinstance(p, ScoutDispatchPayload):
-                    log.info(
-                        "Dispatch: scout on %s (mode=%s, fruit_threshold=%d, max_rounds=%d) — %s",
-                        d_label, p.mode.value, p.fruit_threshold, p.max_rounds, p.reason,
-                    )
-                    _, child_ids = await scout_until_done(
-                        resolved,
-                        self.db,
-                        max_rounds=p.max_rounds,
-                        fruit_threshold=p.fruit_threshold,
-                        parent_call_id=p_call.id,
-                        context_page_ids=p.context_page_ids,
-                        mode=p.mode,
-                        broadcaster=self.broadcaster,
-                    )
-                    child_call_id = child_ids[0] if child_ids else None
-
-                elif isinstance(p, AssessDispatchPayload):
-                    log.info("Dispatch: assess on %s — %s", d_label, p.reason)
-                    child_call_id = await assess_question(
-                        resolved,
-                        self.db,
-                        parent_call_id=p_call.id,
-                        context_page_ids=p.context_page_ids,
-                        broadcaster=self.broadcaster,
-                    )
-
-                elif isinstance(p, PrioritizationDispatchPayload):
-                    log.info(
-                        "Dispatch: prioritization on %s (budget=%d) — %s",
-                        d_label, p.budget, p.reason,
-                    )
-                    await self.investigate_question(
-                        question_id=resolved,
-                        budget=p.budget,
-                        parent_call_id=p_call.id,
-                        depth=depth + 1,
-                    )
-
-                if p_trace:
-                    await p_trace.record(DispatchExecutedEvent(
-                        index=i,
-                        child_call_type=dispatch.call_type.value,
-                        question_id=resolved,
-                        child_call_id=child_call_id,
-                    ))
-
-        leftover = await self.db.budget_remaining()
-        actually_spent = budget_before - leftover
-        if leftover > 0 and actually_spent > 0:
-            log.info(
-                "Budget remaining after plan (%d units, spent %d), re-prioritizing question=%s",
-                leftover, actually_spent, question_id[:8],
-            )
-            await self.investigate_question(
-                question_id=question_id,
-                budget=leftover,
-                parent_call_id=p_call.id,
-                depth=depth + 1,
-            )
-
+        return resolved, child_call_id
 
     async def run(self, root_question_id: str) -> None:
-        """Entry point. Investigate the root question with the full budget."""
+        """Entry point: flat loop driven by a pluggable Prioritizer."""
         self.broadcaster = _create_broadcaster(self.db)
-        log.info("Orchestrator: run_id=%s", self.db.run_id)
+        log.info('Orchestrator: run_id=%s', self.db.run_id)
 
         total, used = await self.db.get_budget()
         log.info(
-            "Orchestrator.run starting: root_question=%s, budget=%d",
+            'Orchestrator.run starting: root_question=%s, budget=%d',
             root_question_id[:8], total,
         )
 
+        prioritizer = self._prioritizer or LLMPrioritizer(
+            self.db, broadcaster=self.broadcaster,
+        )
+
         try:
-            await self.investigate_question(
-                question_id=root_question_id,
-                budget=total,
-            )
+            while True:
+                remaining = await self.db.budget_remaining()
+                if remaining <= 0:
+                    break
+
+                result = await prioritizer.get_calls(
+                    root_question_id, remaining,
+                )
+                if not result.dispatches:
+                    break
+
+                spent_any = False
+                for i, dispatch in enumerate(result.dispatches):
+                    if await self.db.budget_remaining() <= 0:
+                        break
+
+                    resolved, child_call_id = await self._execute_dispatch(
+                        dispatch, root_question_id, result.call_id,
+                    )
+                    spent_any = True
+
+                    if result.trace:
+                        await result.trace.record(DispatchExecutedEvent(
+                            index=i,
+                            child_call_type=dispatch.call_type.value,
+                            question_id=resolved,
+                            child_call_id=child_call_id,
+                        ))
+
+                if spent_any:
+                    prioritizer.mark_executed()
+                else:
+                    break
         finally:
             if self.broadcaster:
                 await self.broadcaster.close()
 
         total, used = await self.db.get_budget()
-        log.info("Orchestrator.run complete: budget used %d/%d", used, total)
+        log.info('Orchestrator.run complete: budget used %d/%d', used, total)

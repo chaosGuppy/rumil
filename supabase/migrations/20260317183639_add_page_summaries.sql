@@ -1,0 +1,2 @@
+ALTER TABLE pages ADD COLUMN summary_short TEXT NOT NULL DEFAULT '';
+ALTER TABLE pages ADD COLUMN summary_medium TEXT NOT NULL DEFAULT '';

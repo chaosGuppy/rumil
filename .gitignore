@@ -1,6 +1,7 @@
 # Project-specific
 db/
 /pages/
+.claude/settings.local.json
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -222,3 +223,6 @@ __marimo__/
 .history/
 
 .playwright-mcp/
+
+.a.env
+.b.env

@@ -1,4 +1,4 @@
-"""Test for the orchestrator's investigate_question."""
+"""Test for the orchestrator's run loop."""
 
 import pytest
 
@@ -6,11 +6,11 @@ from rumil.orchestrator import Orchestrator
 
 
 @pytest.mark.llm
-async def test_investigate_question_creates_pages(tmp_db, question_page):
+async def test_investigate_creates_pages(tmp_db, question_page):
     """Budget-1 investigation should produce at least one new page."""
     await tmp_db.init_budget(1)
     orch = Orchestrator(tmp_db)
-    await orch.investigate_question(question_page.id, budget=1)
+    await orch.run(question_page.id)
 
     rows = (
         await tmp_db.client.table("pages").select("id").eq("run_id", tmp_db.run_id).execute()

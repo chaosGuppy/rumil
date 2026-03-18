@@ -37,7 +37,9 @@ RETURNS TABLE(
     run_id TEXT,
     similarity DOUBLE PRECISION
 )
-LANGUAGE sql STABLE AS $$
+LANGUAGE sql STABLE
+SET search_path = public, extensions
+AS $$
     SELECT
         p.id,
         p.page_type,

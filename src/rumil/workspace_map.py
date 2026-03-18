@@ -1,12 +1,15 @@
 """
 Build a compact, LLM-readable workspace map for context injection.
 
-Returns a map text and a short_id → full_uuid lookup dict.
+Returns a map text and a short_id -> full_uuid lookup dict.
 Short IDs are the first 8 characters of each page UUID.
 """
 
+from __future__ import annotations
+
 from rumil.database import DB
 from rumil.models import Page, PageType
+from rumil.page_graph import PageGraph
 
 
 def _short_id(full_uuid: str) -> str:
@@ -15,7 +18,7 @@ def _short_id(full_uuid: str) -> str:
 
 async def _build_question_lines(
     question: Page,
-    db: DB,
+    source: DB | PageGraph,
     short_id_map: dict[str, str],
     indent: int = 0,
 ) -> list[str]:
@@ -23,9 +26,9 @@ async def _build_question_lines(
     sid = _short_id(question.id)
     short_id_map[sid] = question.id
 
-    considerations = await db.get_considerations_for_question(question.id)
-    judgements = await db.get_judgements_for_question(question.id)
-    children = await db.get_child_questions(question.id)
+    considerations = await source.get_considerations_for_question(question.id)
+    judgements = await source.get_judgements_for_question(question.id)
+    children = await source.get_child_questions(question.id)
 
     n_cons = len(considerations)
     n_j = len(judgements)
@@ -50,7 +53,7 @@ async def _build_question_lines(
         lines.append(f"{prefix}  [J {j.epistemic_status:.1f}] `{j_sid}` — {j.summary}")
 
     for child in children:
-        lines.extend(await _build_question_lines(child, db, short_id_map, indent + 1))
+        lines.extend(await _build_question_lines(child, source, short_id_map, indent + 1))
 
     return lines
 
@@ -58,12 +61,15 @@ async def _build_question_lines(
 async def build_workspace_map(
     db: DB,
     collapse_depth: int | None = None,
+    graph: PageGraph | None = None,
 ) -> tuple[str, dict[str, str]]:
     """Compact LLM-readable map of the entire workspace.
 
     Returns (map_text, short_id_to_full_uuid).
     collapse_depth is accepted but currently ignored (reserved for future branch collapsing).
+    When graph is provided, all lookups use the in-memory graph instead of DB.
     """
+    source: DB | PageGraph = graph if graph is not None else db
     short_id_map: dict[str, str] = {}
     parts = [
         "## Workspace Map",
@@ -72,16 +78,16 @@ async def build_workspace_map(
         "",
     ]
 
-    root_questions = await db.get_root_questions()
+    root_questions = await source.get_root_questions()
     if root_questions:
         parts.append("### Questions")
         parts.append("")
         for q in root_questions:
-            lines = await _build_question_lines(q, db, short_id_map, indent=0)
+            lines = await _build_question_lines(q, source, short_id_map, indent=0)
             parts.extend(lines)
             parts.append("")
 
-    claim_pages = await db.get_pages(page_type=PageType.CLAIM)
+    claim_pages = await source.get_pages(page_type=PageType.CLAIM)
     if claim_pages:
         parts.append("### Claims")
         parts.append("")
@@ -93,7 +99,7 @@ async def build_workspace_map(
             )
         parts.append("")
 
-    source_pages = await db.get_pages(page_type=PageType.SOURCE)
+    source_pages = await source.get_pages(page_type=PageType.SOURCE)
     if source_pages:
         parts.append("### Sources")
         parts.append("")

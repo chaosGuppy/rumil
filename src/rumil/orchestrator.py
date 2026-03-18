@@ -221,8 +221,11 @@ class Orchestrator:
         dispatch: Dispatch,
         scope_question_id: str,
         parent_call_id: str | None,
-    ) -> str | None:
-        """Execute a single scout or assess dispatch. Returns child call ID."""
+    ) -> tuple[str, str | None]:
+        """Execute a single scout or assess dispatch.
+
+        Returns (resolved_question_id, child_call_id).
+        """
         p = dispatch.payload
 
         resolved = await self.db.resolve_page_id(p.question_id)
@@ -263,7 +266,7 @@ class Orchestrator:
                 broadcaster=self.broadcaster,
             )
 
-        return child_call_id
+        return resolved, child_call_id
 
     async def run(self, root_question_id: str) -> None:
         """Entry point: flat loop driven by a pluggable Prioritizer."""
@@ -297,7 +300,7 @@ class Orchestrator:
                     if await self.db.budget_remaining() <= 0:
                         break
 
-                    child_call_id = await self._execute_dispatch(
+                    resolved, child_call_id = await self._execute_dispatch(
                         dispatch, root_question_id, result.call_id,
                     )
                     spent_any = True
@@ -306,7 +309,7 @@ class Orchestrator:
                         await result.trace.record(DispatchExecutedEvent(
                             index=i,
                             child_call_type=dispatch.call_type.value,
-                            question_id=dispatch.payload.question_id,
+                            question_id=resolved,
                             child_call_id=child_call_id,
                         ))
 

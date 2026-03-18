@@ -75,7 +75,9 @@ class EmbeddingIngestCall(IngestCall):
     async def build_context(self) -> None:
         question = await self.db.get_page(self.question_id)
         query = question.summary if question else self.question_id
-        result = await build_embedding_based_context(query, self.db)
+        result = await build_embedding_based_context(
+            query, self.db, scope_question_id=self.question_id,
+        )
         self.working_page_ids = result.page_ids
         await self._record_context_built(source_page_id=self.source_page.id)
 

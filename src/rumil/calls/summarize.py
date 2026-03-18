@@ -91,7 +91,7 @@ async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[Pa
     parts: list[str] = []
 
     def ref(page: Page) -> PageRef:
-        return PageRef(id=page.id, summary=page.headline)
+        return PageRef(id=page.id, headline=page.headline)
 
     page_refs: list[PageRef] = [ref(question)]
 

@@ -1115,7 +1115,8 @@
           "prioritization",
           "ingest",
           "reframe",
-          "maintain"
+          "maintain",
+          "summarize"
         ],
         "title": "CallType"
       },
@@ -1697,7 +1698,8 @@
           "consideration",
           "child_question",
           "supersedes",
-          "related"
+          "related",
+          "summarizes"
         ],
         "title": "LinkType"
       },
@@ -1723,9 +1725,9 @@
             "type": "string",
             "title": "Type"
           },
-          "summary": {
+          "headline": {
             "type": "string",
-            "title": "Summary",
+            "title": "Headline",
             "default": ""
           },
           "page_refs": {
@@ -1791,9 +1793,9 @@
             "type": "string",
             "title": "Content"
           },
-          "summary": {
+          "headline": {
             "type": "string",
-            "title": "Summary"
+            "title": "Headline"
           },
           "id": {
             "type": "string",
@@ -1854,6 +1856,11 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Extra"
+          },
+          "abstract": {
+            "type": "string",
+            "title": "Abstract",
+            "default": ""
           }
         },
         "type": "object",
@@ -1862,7 +1869,7 @@
           "layer",
           "workspace",
           "content",
-          "summary",
+          "headline",
           "id",
           "project_id",
           "epistemic_status",
@@ -1873,7 +1880,8 @@
           "created_at",
           "superseded_by",
           "is_superseded",
-          "extra"
+          "extra",
+          "abstract"
         ],
         "title": "Page"
       },
@@ -1998,9 +2006,9 @@
             "type": "string",
             "title": "Id"
           },
-          "summary": {
+          "headline": {
             "type": "string",
-            "title": "Summary",
+            "title": "Headline",
             "default": ""
           }
         },
@@ -2018,7 +2026,8 @@
           "question",
           "judgement",
           "concept",
-          "wiki"
+          "wiki",
+          "summary"
         ],
         "title": "PageType"
       },

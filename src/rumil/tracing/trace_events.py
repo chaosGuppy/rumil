@@ -2,12 +2,19 @@
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, BeforeValidator, Field
+from pydantic import BaseModel, BeforeValidator, Field, model_validator
 
 
 class PageRef(BaseModel):
     id: str
-    summary: str = ""
+    headline: str = ""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_summary(cls, values: dict) -> dict:
+        if isinstance(values, dict) and "summary" in values and "headline" not in values:
+            values["headline"] = values.pop("summary")
+        return values
 
 
 def _coerce_page_refs(v: list) -> list:

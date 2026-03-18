@@ -538,11 +538,10 @@ async def build_prioritization_context(
 
 
 
-def _filter_distillation_pages(
+def _filter_summary_pages(
     ranked: Sequence[tuple[Page, float]],
 ) -> list[tuple[Page, float]]:
-    """Filter pages eligible for the distillation tier (stub)."""
-    return []
+    return [(p, score) for p, score in ranked if p.page_type == PageType.SUMMARY]
 
 
 async def build_embedding_based_context(
@@ -602,7 +601,7 @@ async def build_embedding_based_context(
     abstract_budget = int(context_char_budget * abstract_page_char_fraction)
     summary_budget = int(context_char_budget * summary_para_char_fraction)
 
-    distillation_pages = _filter_distillation_pages(ranked)
+    distillation_pages = _filter_summary_pages(ranked)
     distillation_ids: list[str] = []
     distillation_chars = 0
     full_parts: list[str] = []

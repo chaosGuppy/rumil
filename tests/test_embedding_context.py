@@ -12,13 +12,13 @@ from rumil.context import (
 from rumil.models import Page, PageLayer, PageType, Workspace
 
 
-def _make_page(summary: str, content: str, page_type: PageType = PageType.CLAIM) -> Page:
+def _make_page(headline: str, content: str, page_type: PageType = PageType.CLAIM) -> Page:
     return Page(
         page_type=page_type,
         layer=PageLayer.SQUIDGY,
         workspace=Workspace.RESEARCH,
         content=content,
-        summary=summary,
+        headline=headline,
         epistemic_status=3.0,
         epistemic_type='estimate',
     )
@@ -79,7 +79,7 @@ async def test_basic_budget_split(mock_embeddings):
     mock_eq.assert_awaited_once_with('test query')
     mock_sp.assert_awaited_once()
     call_kwargs = mock_sp.call_args
-    assert call_kwargs.kwargs['field_name'] == 'summary'
+    assert call_kwargs.kwargs['field_name'] == 'headline'
     assert call_kwargs.kwargs['match_count'] == 500
 
 

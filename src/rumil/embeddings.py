@@ -54,9 +54,9 @@ async def embed_query(text: str) -> Sequence[float]:
 def page_text_for_field(page: Page, field_name: str) -> str:
     """Return the text to embed for a given page field."""
     if field_name == "content":
-        return f"{page.summary}\n\n{page.content}"
-    if field_name == "summary":
-        return page.summary
+        return f"{page.headline}\n\n{page.content}"
+    if field_name == "headline":
+        return page.headline
     raise ValueError(f"Unknown embedding field: {field_name}")
 
 

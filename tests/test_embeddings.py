@@ -34,7 +34,7 @@ async def test_store_and_search_round_trip(tmp_db):
         layer=PageLayer.SQUIDGY,
         workspace=Workspace.RESEARCH,
         content="Photosynthesis converts sunlight into chemical energy in plants.",
-        summary="Photosynthesis converts light to energy",
+        headline="Photosynthesis converts light to energy",
     )
     await tmp_db.save_page(page)
     await embed_and_store_page(tmp_db, page)
@@ -55,14 +55,14 @@ async def test_store_and_search_with_field_filter(tmp_db):
         layer=PageLayer.SQUIDGY,
         workspace=Workspace.RESEARCH,
         content="Quantum entanglement links particles across distances.",
-        summary="Quantum entanglement links distant particles",
+        headline="Quantum entanglement links distant particles",
     )
     await tmp_db.save_page(page)
-    await embed_and_store_page(tmp_db, page, field_name="summary")
+    await embed_and_store_page(tmp_db, page, field_name="headline")
 
     results_with_filter = await search_pages(
         tmp_db, "quantum particles", match_threshold=0.3,
-        field_name="summary",
+        field_name="headline",
     )
     returned_ids = [p.id for p, _ in results_with_filter]
     assert page.id in returned_ids

@@ -41,7 +41,7 @@ async def test_prioritization_produces_dispatches(tmp_db, question_page, priorit
     """A prioritization call should produce at least one dispatch."""
     context = (
         f"## Questions\n\n"
-        f"- `{question_page.id[:8]}`: {question_page.summary} (0 considerations)\n"
+        f"- `{question_page.id[:8]}`: {question_page.headline} (0 considerations)\n"
     )
     task = (
         "You have a budget of **2 research calls** to allocate.\n\n"
@@ -198,7 +198,7 @@ async def test_create_subquestion_with_inline_dispatches(
     """Prioritization should create subquestions with inline dispatches."""
     context = (
         f"## Questions\n\n"
-        f"- `{question_page.id[:8]}`: {question_page.summary} (0 considerations)\n"
+        f"- `{question_page.id[:8]}`: {question_page.headline} (0 considerations)\n"
     )
     task = (
         "You have a budget of **2 research calls** to allocate.\n\n"

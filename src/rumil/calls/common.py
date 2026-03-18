@@ -381,14 +381,14 @@ async def run_agent_loop(
 
 class PageSummaryItem(BaseModel):
     page_id: str = Field(description="Full or short ID of the page")
-    summary_short: str = Field(
+    headline: str = Field(
         description=(
             "Self-contained summary of ~30 words. State the core topic and conclusion "
             "so a reader with no prior context understands what the page is about and "
             "what it concludes. Include the key finding and main caveat if space allows."
         )
     )
-    summary_medium: str = Field(
+    abstract: str = Field(
         description=(
             "Self-contained summary of ~200 words. Include: the core conclusion, "
             "the main supporting reasoning or evidence, key counter-arguments and why "
@@ -598,8 +598,8 @@ async def resolve_page_refs(page_ids: list[str], db: DB) -> list[PageRef]:
     refs = []
     for pid in page_ids:
         page = await db.get_page(pid)
-        summary = page.summary if page else ""
-        refs.append(PageRef(id=pid, summary=summary))
+        headline = page.headline if page else ""
+        refs.append(PageRef(id=pid, summary=headline))
     return refs
 
 
@@ -615,8 +615,8 @@ async def _resolve_payload_refs(move: Move, db: DB) -> list[PageRef]:
         if not full_id:
             continue
         page = await db.get_page(full_id)
-        summary = page.summary if page else ""
-        refs.append(PageRef(id=full_id, summary=summary))
+        headline = page.headline if page else ""
+        refs.append(PageRef(id=full_id, summary=headline))
     return refs
 
 
@@ -692,7 +692,7 @@ async def run_closing_review(
         for pid in loaded_page_ids:
             page = await db.get_page(pid)
             if page:
-                page_lines.append(f'  - `{pid[:8]}`: "{page.summary[:120]}"')
+                page_lines.append(f'  - `{pid[:8]}`: "{page.headline[:120]}"')
         if page_lines:
             page_rating_note = (
                 '\n\nThe following pages were loaded into your context beyond the base '
@@ -709,13 +709,13 @@ async def run_closing_review(
         for pid in created_page_ids:
             page = await db.get_page(pid)
             if page:
-                created_lines.append(f'  - `{pid[:8]}`: "{page.summary[:120]}"')
+                created_lines.append(f'  - `{pid[:8]}`: "{page.headline[:120]}"')
         if created_lines:
             page_summary_note = (
                 '\n\nYou created the following pages during this call:\n'
                 + '\n'.join(created_lines)
-                + '\n\nFor each, provide a summary_short (~30 words, fully self-contained) '
-                'and a summary_medium (~200 words, fully self-contained) in your page_summaries. '
+                + '\n\nFor each, provide a headline (~30 words, fully self-contained) '
+                'and an abstract (~200 words, fully self-contained) in your page_summaries. '
                 'These will be read by other LLM instances with no prior context, so do not '
                 'assume any background knowledge.'
             )
@@ -766,8 +766,8 @@ async def run_closing_review(
                     if pid:
                         await db.update_page_summaries(
                             pid,
-                            s.get("summary_short", ""),
-                            s.get("summary_medium", ""),
+                            s.get("headline", ""),
+                            s.get("abstract", ""),
                         )
         else:
             log.warning("Closing review returned None for call=%s", call.id[:8])
@@ -785,9 +785,9 @@ def format_moves_for_review(moves: list[Move]) -> str:
         return "(no moves)"
     parts = []
     for m in moves:
-        summary = getattr(m.payload, "summary", "")
-        if summary:
-            parts.append(f"- {m.move_type.value}: {summary}")
+        headline = getattr(m.payload, "headline", "")
+        if headline:
+            parts.append(f"- {m.move_type.value}: {headline}")
         else:
             parts.append(f"- {m.move_type.value}")
     return "\n".join(parts)

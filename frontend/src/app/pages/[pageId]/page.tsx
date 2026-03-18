@@ -121,7 +121,7 @@ function LinkedCard({ lp }: { lp: LinkedPageOut }) {
           </span>
           <span className="linked-card-id">{lp.page.id.slice(0, 8)}</span>
         </div>
-        <div className="linked-card-summary">{lp.page.summary}</div>
+        <div className="linked-card-summary">{lp.page.headline}</div>
         {lp.link.reasoning && (
           <div className="linked-card-reasoning">{lp.link.reasoning}</div>
         )}
@@ -213,7 +213,7 @@ export default async function PageDetailPage({
               <span className="superseded-tag">superseded</span>
             )}
           </div>
-          <h1 className="page-summary">{page.summary}</h1>
+          <h1 className="page-summary">{page.headline}</h1>
         </header>
 
         <div className="page-content">

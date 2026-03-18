@@ -19,7 +19,7 @@ async def _make_page(tmp_db):
         layer=PageLayer.SQUIDGY,
         workspace=Workspace.RESEARCH,
         content="Test claim content",
-        summary="Test claim",
+        headline="Test claim",
     )
     await tmp_db.save_page(page)
     return page

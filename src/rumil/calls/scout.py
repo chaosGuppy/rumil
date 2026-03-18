@@ -194,14 +194,14 @@ async def _collect_all_loaded_summaries(
             if full_id and full_id not in seen:
                 page = await db.get_page(full_id)
                 if page:
-                    summaries.append((full_id, page.summary))
+                    summaries.append((full_id, page.headline))
                     seen.add(full_id)
 
     for pid in preloaded_ids:
         if pid not in seen:
             page = await db.get_page(pid)
             if page:
-                summaries.append((pid, page.summary))
+                summaries.append((pid, page.headline))
                 seen.add(pid)
 
     return summaries
@@ -224,13 +224,13 @@ async def _build_link_inventory(
     for page, link in considerations:
         lines.append(
             f"- [{link.role.value}] consideration: "
-            f'"{page.summary}" '
+            f'"{page.headline}" '
             f"(strength {link.strength:.1f}, link_id: `{link.id}`)"
         )
     for page, link in children_with_links:
         lines.append(
             f"- [{link.role.value}] child_question: "
-            f'"{page.summary}" '
+            f'"{page.headline}" '
             f"(link_id: `{link.id}`)"
         )
     return "\n".join(lines)
@@ -480,13 +480,13 @@ class ScoutCall(BaseCall):
             for pid in self.state.created_page_ids:
                 page = await self.db.get_page(pid)
                 if page:
-                    created_lines.append(f'  - `{pid[:8]}`: "{page.summary[:120]}"')
+                    created_lines.append(f'  - `{pid[:8]}`: "{page.headline[:120]}"')
             if created_lines:
                 page_summary_note = (
                     '\n\nYou created the following pages during this call:\n'
                     + '\n'.join(created_lines)
-                    + '\n\nFor each, provide a summary_short (~30 words, fully self-contained) '
-                    'and a summary_medium (~200 words, fully self-contained) in your page_summaries. '
+                    + '\n\nFor each, provide a headline (~30 words, fully self-contained) '
+                    'and an abstract (~200 words, fully self-contained) in your page_summaries. '
                     'These will be read by other LLM instances with no prior context, so do not '
                     'assume any background knowledge.'
                 )
@@ -534,8 +534,8 @@ class ScoutCall(BaseCall):
                 if pid:
                     await self.db.update_page_summaries(
                         pid,
-                        s.get("summary_short", ""),
-                        s.get("summary_medium", ""),
+                        s.get("headline", ""),
+                        s.get("abstract", ""),
                     )
 
         self.call.review_json = review_data
@@ -570,7 +570,7 @@ class EmbeddingScoutCall(ScoutCall):
 
     async def build_context(self) -> None:
         question = await self.db.get_page(self.question_id)
-        query = question.summary if question else self.question_id
+        query = question.headline if question else self.question_id
         emb_result = await build_embedding_based_context(
             query, self.db, scope_question_id=self.question_id,
         )

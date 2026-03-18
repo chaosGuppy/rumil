@@ -208,7 +208,7 @@ async def _build_call_trace(db: DB, call_id: str) -> CallTraceOut:
     if call.scope_page_id:
         scope_page = await db.get_page(call.scope_page_id)
         if scope_page:
-            scope_page_summary = scope_page.summary
+            scope_page_summary = scope_page.headline
     children = await db.get_child_calls(call_id)
     child_traces = [await _build_call_trace(db, c.id) for c in children]
     exchange_costs = [

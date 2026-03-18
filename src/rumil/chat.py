@@ -164,7 +164,7 @@ async def run_chat(question_id: str, db: DB) -> None:
         print(f"Question {question_id} not found.")
         return
 
-    print(f"\nLoading research context for: {question.summary[:80]}")
+    print(f"\nLoading research context for: {question.headline[:80]}")
     research_tree = await build_research_tree(question_id, db)
 
     if not research_tree.strip():

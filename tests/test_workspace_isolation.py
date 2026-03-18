@@ -34,7 +34,7 @@ async def _make_question(db: DB, text: str) -> Page:
         layer=PageLayer.SQUIDGY,
         workspace=Workspace.RESEARCH,
         content=text,
-        summary=text[:120],
+        headline=text[:120],
     )
     await db.save_page(page)
     return page
@@ -46,7 +46,7 @@ async def _make_claim(db: DB, text: str) -> Page:
         layer=PageLayer.SQUIDGY,
         workspace=Workspace.RESEARCH,
         content=text,
-        summary=text[:120],
+        headline=text[:120],
         epistemic_status=4.5,
         epistemic_type="well-established",
     )
@@ -72,7 +72,7 @@ async def _make_source(db: DB, name: str) -> Page:
         layer=PageLayer.SQUIDGY,
         workspace=Workspace.RESEARCH,
         content=f"Content of {name}",
-        summary=f"Source: {name}",
+        headline=f"Source: {name}",
         extra={"filename": name, "char_count": 100},
     )
     await db.save_page(page)

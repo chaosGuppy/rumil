@@ -45,12 +45,12 @@ async def _build_question_lines(
 
     extra = question.extra or {}
     hypothesis_tag = " [hypothesis]" if extra.get("hypothesis") else ""
-    lines = [f"{prefix}[Q]{hypothesis_tag} `{sid}` — {question.summary} ({stats})"]
+    lines = [f"{prefix}[Q]{hypothesis_tag} `{sid}` — {question.headline} ({stats})"]
 
     for j in judgements:
         j_sid = _short_id(j.id)
         short_id_map[j_sid] = j.id
-        lines.append(f"{prefix}  [J {j.epistemic_status:.1f}] `{j_sid}` — {j.summary}")
+        lines.append(f"{prefix}  [J {j.epistemic_status:.1f}] `{j_sid}` — {j.headline}")
 
     for child in children:
         lines.extend(await _build_question_lines(child, source, short_id_map, indent + 1))
@@ -95,7 +95,7 @@ async def build_workspace_map(
             c_sid = _short_id(claim.id)
             short_id_map[c_sid] = claim.id
             parts.append(
-                f"[C {claim.epistemic_status:.1f}] `{c_sid}` — {claim.summary}"
+                f"[C {claim.epistemic_status:.1f}] `{c_sid}` — {claim.headline}"
             )
         parts.append("")
 
@@ -110,8 +110,8 @@ async def build_workspace_map(
             s_sid = _short_id(src.id)
             short_id_map[s_sid] = src.id
             parts.append(f"[SRC] `{s_sid}` — {filename} ({char_count:,} chars)")
-            if src.summary and src.summary != filename:
-                summary_line = src.summary.replace("\n", " ")
+            if src.headline and src.headline != filename:
+                summary_line = src.headline.replace("\n", " ")
                 parts.append(f"       {summary_line}")
         parts.append("")
 

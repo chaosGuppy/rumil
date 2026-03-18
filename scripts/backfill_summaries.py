@@ -67,8 +67,8 @@ async def _fetch_all_needing_summaries(db: DB) -> list[dict]:
     while True:
         rows = (
             await db.client.table("pages")
-            .select("id, page_type, summary, content")
-            .or_("summary_short.eq.,summary_medium.eq.")
+            .select("id, page_type, headline, content")
+            .or_("headline.eq.,abstract.eq.")
             .eq("is_superseded", False)
             .order("created_at", desc=False)
             .range(offset, offset + CHUNK_SIZE - 1)
@@ -91,7 +91,7 @@ async def _process_page(
     counters: dict,
 ) -> None:
     page_id = row["id"]
-    page_text = f"# {row['summary']}\n\n{row['content']}"
+    page_text = f"# {row['headline']}\n\n{row['content']}"
     prompt = PROMPT_TEMPLATE.format(content=page_text)
     async with sem:
         try:
@@ -129,7 +129,7 @@ async def backfill(prod: bool, dry_run: bool, limit: int | None, concurrency: in
 
     if dry_run:
         for r in rows:
-            log.info("  [dry-run] [%s] %s", r["page_type"], r["summary"][:80])
+            log.info("  [dry-run] [%s] %s", r["page_type"], r["headline"][:80])
         return
 
     sem = asyncio.Semaphore(concurrency)

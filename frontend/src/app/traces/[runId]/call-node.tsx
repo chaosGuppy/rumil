@@ -467,7 +467,7 @@ function EventSection({ event }: { event: TraceEvent }) {
             <MoveRow
               key={i}
               moveType={m.type}
-              summary={m.summary || ""}
+              summary={m.headline || ""}
               pageRefs={m.page_refs}
               extra={m as unknown as Record<string, unknown>}
             />

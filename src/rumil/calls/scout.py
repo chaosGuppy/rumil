@@ -585,11 +585,7 @@ class EmbeddingScoutCall(ScoutCall):
             scout_mode=self.mode.value,
         ))
 
-        graph = await PageGraph.load(self.db)
-        workspace_map, _ = await build_workspace_map(self.db, graph=graph)
-        self.context_text = assemble_call_context(
-            emb_result.context_text, workspace_map=workspace_map,
-        )
+        self.context_text = emb_result.context_text
 
         self.tools = [MOVES[mt].bind(self.state) for mt in MoveType]
         self.tool_defs, _ = _prepare_tools(self.tools)

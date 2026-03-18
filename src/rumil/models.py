@@ -28,6 +28,7 @@ class PageType(str, Enum):
     JUDGEMENT = "judgement"
     CONCEPT = "concept"
     WIKI = "wiki"
+    SUMMARY = "summary"
 
 
 class PageLayer(str, Enum):
@@ -47,6 +48,7 @@ class CallType(str, Enum):
     INGEST = "ingest"
     REFRAME = "reframe"
     MAINTAIN = "maintain"
+    SUMMARIZE = "summarize"
 
 
 # The subset of CallTypes that prioritization can dispatch.
@@ -69,6 +71,7 @@ class LinkType(str, Enum):
     CHILD_QUESTION = "child_question"  # question decomposes into sub-question
     SUPERSEDES = "supersedes"  # page replaces another
     RELATED = "related"  # general relation
+    SUMMARIZES = "summarizes"  # summary page covers a question subtree
 
 
 class MoveType(str, Enum):
@@ -206,6 +209,8 @@ class Page(BaseModel):
     superseded_by: str | None = None
     is_superseded: bool = False
     extra: dict = Field(default_factory=dict)
+    summary_short: str = ""
+    summary_medium: str = ""
 
     def is_active(self) -> bool:
         return not self.is_superseded

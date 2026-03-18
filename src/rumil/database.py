@@ -57,6 +57,8 @@ def _row_to_page(row: dict[str, Any]) -> Page:
         superseded_by=row["superseded_by"],
         is_superseded=bool(row["is_superseded"]),
         extra=row["extra"] or {},
+        summary_short=row.get("summary_short") or "",
+        summary_medium=row.get("summary_medium") or "",
     )
 
 
@@ -190,8 +192,17 @@ class DB:
                 "is_superseded": page.is_superseded,
                 "extra": page.extra,
                 "run_id": self.run_id,
+                "summary_short": page.summary_short,
+                "summary_medium": page.summary_medium,
             }
         ).execute()
+
+    async def update_page_summaries(
+        self, page_id: str, summary_short: str, summary_medium: str
+    ) -> None:
+        await self.client.table("pages").update(
+            {"summary_short": summary_short, "summary_medium": summary_medium}
+        ).eq("id", page_id).execute()
 
     async def get_page(self, page_id: str) -> Page | None:
         rows = _rows(
@@ -260,7 +271,9 @@ class DB:
             query = query.eq("is_superseded", False)
         return [
             _row_to_page(r)
-            for r in _rows(await query.order("created_at", desc=True).execute())
+            for r in _rows(
+                await query.order("created_at", desc=True).limit(10000).execute()
+            )
         ]
 
     async def supersede_page(self, old_id: str, new_id: str) -> None:
@@ -319,6 +332,19 @@ class DB:
             .execute()
         )
         return [_row_to_link(r) for r in rows]
+
+    async def get_latest_summary_for_question(self, question_id: str) -> "Page | None":
+        """Return the most recent active SUMMARY page linked to a question."""
+        links = await self.get_links_to(question_id)
+        summary_links = [l for l in links if l.link_type == LinkType.SUMMARIZES]
+        candidates = []
+        for link in summary_links:
+            page = await self.get_page(link.from_page_id)
+            if page and page.is_active() and page.page_type == PageType.SUMMARY:
+                candidates.append(page)
+        if not candidates:
+            return None
+        return max(candidates, key=lambda p: p.created_at)
 
     async def get_considerations_for_question(
         self,
@@ -520,6 +546,16 @@ class DB:
             .select("*")
             .eq("from_page_id", from_page_id)
             .eq("to_page_id", to_page_id)
+            .execute()
+        )
+        return [_row_to_link(r) for r in rows]
+
+    async def get_all_links(self) -> list[PageLink]:
+        """Bulk-fetch all links, optionally scoped by project via page membership."""
+        rows = _rows(
+            await self.client.table("page_links")
+            .select("*")
+            .limit(50000)
             .execute()
         )
         return [_row_to_link(r) for r in rows]

@@ -31,6 +31,7 @@ from rumil.llm import (
 from rumil.models import Call, CallStatus, CallType, MoveType, ScoutMode
 from rumil.moves.base import MoveState
 from rumil.moves.registry import MOVES
+from rumil.page_graph import PageGraph
 from rumil.tracing.trace_events import ContextBuiltEvent, ReviewCompleteEvent
 from rumil.tracing.tracer import CallTrace
 from rumil.workspace_map import build_workspace_map
@@ -96,19 +97,21 @@ async def link_new_pages(
     db: DB,
     state: MoveState,
     trace: CallTrace,
+    graph: PageGraph | None = None,
 ) -> None:
     """Single LLM call that reviews the workspace and creates direct/structural links.
 
     Uses only LINK_CONSIDERATION and LINK_CHILD_QUESTION tools with role fields.
     Free (not counted against budget).
     """
-    question = await db.get_page(question_id)
+    source: DB | PageGraph = graph if graph is not None else db
+    question = await source.get_page(question_id)
     if not question:
         return
 
-    workspace_map, _ = await build_workspace_map(db)
+    workspace_map, _ = await build_workspace_map(db, graph=graph)
     question_text = await format_page(question)
-    existing_links = await _build_link_inventory(question_id, db)
+    existing_links = await _build_link_inventory(question_id, db, graph=graph)
     working_context = (
         workspace_map + '\n\n---\n\n'
         '# Scope Question\n\n' + question_text
@@ -204,10 +207,15 @@ async def _collect_all_loaded_summaries(
     return summaries
 
 
-async def _build_link_inventory(question_id: str, db: DB) -> str:
+async def _build_link_inventory(
+    question_id: str,
+    db: DB,
+    graph: PageGraph | None = None,
+) -> str:
     """Build a text inventory of all links to/from the scope question."""
-    considerations = await db.get_considerations_for_question(question_id)
-    children_with_links = await db.get_child_questions_with_links(question_id)
+    source: DB | PageGraph = graph if graph is not None else db
+    considerations = await source.get_considerations_for_question(question_id)
+    children_with_links = await source.get_child_questions_with_links(question_id)
 
     if not considerations and not children_with_links:
         return "No existing links on the scope question."
@@ -270,16 +278,21 @@ class ScoutCall(BaseCall):
         )
 
     async def build_context(self) -> None:
+        graph = await PageGraph.load(self.db)
         await link_new_pages(
             self.question_id, self.call, self.db, self.state, self.trace,
+            graph=graph,
         )
 
+        graph = await PageGraph.load(self.db)
         working_context, self.working_page_ids = await format_question_for_scout(
-            self.question_id, self.db,
+            self.question_id, self.db, graph=graph,
         )
 
         if self.preloaded_ids:
-            working_context += await format_preloaded_pages(self.preloaded_ids, self.db)
+            working_context += await format_preloaded_pages(
+                self.preloaded_ids, self.db, graph=graph,
+            )
 
         await self.trace.record(ContextBuiltEvent(
             working_context_page_ids=await resolve_page_refs(
@@ -289,7 +302,7 @@ class ScoutCall(BaseCall):
             scout_mode=self.mode.value,
         ))
 
-        workspace_map, _ = await build_workspace_map(self.db)
+        workspace_map, _ = await build_workspace_map(self.db, graph=graph)
         phase2_context = assemble_call_context(
             working_context, workspace_map=workspace_map,
         )
@@ -461,9 +474,27 @@ class ScoutCall(BaseCall):
                 '1 = helped, 2 = extremely helpful.'
             )
 
+        page_summary_note = ""
+        if self.state.created_page_ids:
+            created_lines = []
+            for pid in self.state.created_page_ids:
+                page = await self.db.get_page(pid)
+                if page:
+                    created_lines.append(f'  - `{pid[:8]}`: "{page.summary[:120]}"')
+            if created_lines:
+                page_summary_note = (
+                    '\n\nYou created the following pages during this call:\n'
+                    + '\n'.join(created_lines)
+                    + '\n\nFor each, provide a summary_short (~30 words, fully self-contained) '
+                    'and a summary_medium (~200 words, fully self-contained) in your page_summaries. '
+                    'These will be read by other LLM instances with no prior context, so do not '
+                    'assume any background knowledge.'
+                )
+
         assessment_msg = (
             _SELF_ASSESSMENT_INSTRUCTION.format(question_id=self.question_id)
             + page_rating_note
+            + page_summary_note
         )
         assessment_messages = prior_messages + [
             {"role": "user", "content": assessment_msg},
@@ -477,7 +508,7 @@ class ScoutCall(BaseCall):
             response_model=ReviewResponse,
             messages=assessment_messages,
             tools=self.tool_defs,
-            max_tokens=4096,
+            max_tokens=8192,
             metadata=meta,
             db=self.db,
             cache=True,
@@ -497,6 +528,14 @@ class ScoutCall(BaseCall):
                 if pid and isinstance(score, int):
                     await self.db.save_page_rating(
                         pid, self.call.id, score, r.get("note", ""),
+                    )
+            for s in review_data.get("page_summaries", []):
+                pid = await self.db.resolve_page_id(s.get("page_id", ""))
+                if pid:
+                    await self.db.update_page_summaries(
+                        pid,
+                        s.get("summary_short", ""),
+                        s.get("summary_medium", ""),
                     )
 
         self.call.review_json = review_data
@@ -543,7 +582,8 @@ class EmbeddingScoutCall(ScoutCall):
             scout_mode=self.mode.value,
         ))
 
-        workspace_map, _ = await build_workspace_map(self.db)
+        graph = await PageGraph.load(self.db)
+        workspace_map, _ = await build_workspace_map(self.db, graph=graph)
         self.context_text = assemble_call_context(
             emb_result.context_text, workspace_map=workspace_map,
         )

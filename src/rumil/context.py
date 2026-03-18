@@ -52,7 +52,7 @@ async def format_page(
     page: Page,
     detail: PageDetail = PageDetail.CONTENT,
     *,
-    include_linked: bool = True,
+    linked_detail: PageDetail | None = PageDetail.HEADLINE,
     db: DB | None = None,
     graph: PageGraph | None = None,
 ) -> str:
@@ -62,9 +62,9 @@ async def format_page(
     - ABSTRACT: header block + abstract text.
     - CONTENT: header block + full content.
 
-    When *include_linked* is True and the page is a question (at ABSTRACT or
-    CONTENT level), considerations, judgements, and sub-question judgements are
-    appended at the same detail level.
+    *linked_detail* controls how considerations, judgements, and sub-question
+    judgements are rendered for question pages. Set to None to omit them
+    entirely.
     """
     if detail == PageDetail.HEADLINE:
         e = (
@@ -90,7 +90,7 @@ async def format_page(
         lines += ["", body]
 
     source: DB | PageGraph | None = graph if graph is not None else db
-    if include_linked and source and page.page_type == PageType.QUESTION:
+    if linked_detail is not None and source and page.page_type == PageType.QUESTION:
         considerations = await source.get_considerations_for_question(page.id)
         if considerations:
             lines.append("")
@@ -98,7 +98,7 @@ async def format_page(
             for claim, link in considerations:
                 lines.append(
                     f"- [strength {link.strength:.1f}/5] "
-                    + await format_page(claim, detail, db=db, graph=graph)
+                    + await format_page(claim, linked_detail, db=db, graph=graph, linked_detail=None)
                 )
                 if link.reasoning:
                     lines.append(f"  Reasoning: {link.reasoning}")
@@ -109,7 +109,7 @@ async def format_page(
             lines.append("**Existing judgements:**")
             for j in judgements:
                 lines.append(
-                    '- ' + await format_page(j, detail, db=db, graph=graph)
+                    '- ' + await format_page(j, linked_detail, db=db, graph=graph, linked_detail=None)
                 )
 
         children = await source.get_child_questions(page.id)
@@ -123,7 +123,7 @@ async def format_page(
             for child, j in child_judgements:
                 lines.append(
                     f"- *On: {child.headline} (`{child.id[:8]}`)*  "
-                    + await format_page(j, detail, db=db, graph=graph)
+                    + await format_page(j, linked_detail, db=db, graph=graph, linked_detail=None)
                 )
 
     return "\n".join(lines)
@@ -405,7 +405,7 @@ async def build_prioritization_context(
 
             parts.append("## Scope Question")
             parts.append("")
-            parts.append(await format_page(question, PageDetail.HEADLINE, db=db, graph=graph))
+            parts.append(await format_page(question, PageDetail.CONTENT, db=db, graph=graph))
             parts.append("")
 
             children = await source.get_child_questions(scope_question_id)
@@ -413,7 +413,7 @@ async def build_prioritization_context(
                 parts.append("## Sub-questions")
                 parts.append("")
                 for child in children:
-                    parts.append(await format_page(child, PageDetail.HEADLINE, db=db, graph=graph))
+                    parts.append(await format_page(child, PageDetail.CONTENT, db=db, graph=graph))
                     parts.append("")
 
     source_pages = await source.get_pages(page_type=PageType.SOURCE)
@@ -519,7 +519,7 @@ async def build_embedding_based_context(
 
     distillation_page_id_set = {p.id for p, _ in distillation_pages}
     for page, _sim in distillation_pages:
-        formatted = await format_page(page, PageDetail.CONTENT, db=db, include_linked=False)
+        formatted = await format_page(page, PageDetail.CONTENT, db=db, linked_detail=None)
         if distillation_chars + len(formatted) <= distillation_budget:
             full_parts.append(formatted)
             distillation_ids.append(page.id)
@@ -530,7 +530,7 @@ async def build_embedding_based_context(
             continue
 
         if full_chars < full_budget:
-            formatted = await format_page(page, PageDetail.CONTENT, db=db, include_linked=False)
+            formatted = await format_page(page, PageDetail.CONTENT, db=db, linked_detail=None)
             if full_chars + len(formatted) <= full_budget:
                 full_parts.append(formatted)
                 full_ids.append(page.id)
@@ -538,7 +538,7 @@ async def build_embedding_based_context(
                 continue
 
         if abstract_chars < abstract_budget:
-            formatted = await format_page(page, PageDetail.ABSTRACT, include_linked=False)
+            formatted = await format_page(page, PageDetail.ABSTRACT, linked_detail=None)
             if abstract_chars + len(formatted) <= abstract_budget:
                 abstract_parts.append(formatted)
                 abstract_ids.append(page.id)
@@ -546,7 +546,7 @@ async def build_embedding_based_context(
                 continue
 
         if summary_chars < summary_budget:
-            formatted = await format_page(page, PageDetail.HEADLINE, include_linked=False)
+            formatted = await format_page(page, PageDetail.HEADLINE, linked_detail=None)
             if summary_chars + len(formatted) <= summary_budget:
                 summary_parts.append(formatted)
                 summary_ids.append(page.id)

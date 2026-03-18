@@ -30,7 +30,7 @@ async def execute(payload: LoadPagePayload, call: Call, db: DB) -> MoveResult:
         "load_page: loaded %s (%s, %d chars)",
         full_id[:8], page.page_type.value, len(page.content),
     )
-    return MoveResult(await format_page(page, PageDetail.HEADLINE, db=db))
+    return MoveResult(await format_page(page, PageDetail.CONTENT, db=db))
 
 
 MOVE = MoveDef(

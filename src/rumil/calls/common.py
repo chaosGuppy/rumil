@@ -283,7 +283,7 @@ async def run_agent_loop(
     all_warnings: list[str] = []
     round_num = 0
 
-    for round_num in range(effective_rounds + 1):
+    for round_num in range(effective_rounds):
         log.debug("run_agent_loop round %d/%d", round_num + 1, effective_rounds)
         meta = LLMExchangeMetadata(
             call_id=call_id, phase="inner_loop", trace=trace,

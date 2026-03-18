@@ -12,8 +12,12 @@ ALTER TABLE pages DROP COLUMN summary;
 UPDATE page_embeddings SET field_name = 'headline' WHERE field_name = 'summary';
 
 -- Step 5: Rebuild match_pages to reflect the renamed columns.
+-- Drop both the 6-param and 7-param overloads so we end up with a single function.
 DROP FUNCTION IF EXISTS match_pages(
     extensions.vector, DOUBLE PRECISION, INTEGER, TEXT, UUID, TEXT
+);
+DROP FUNCTION IF EXISTS match_pages(
+    extensions.vector, DOUBLE PRECISION, INTEGER, TEXT, UUID, TEXT, TEXT
 );
 
 CREATE OR REPLACE FUNCTION match_pages(
@@ -22,7 +26,8 @@ CREATE OR REPLACE FUNCTION match_pages(
     match_count INTEGER DEFAULT 10,
     filter_workspace TEXT DEFAULT NULL,
     filter_project_id UUID DEFAULT NULL,
-    filter_field_name TEXT DEFAULT NULL
+    filter_field_name TEXT DEFAULT NULL,
+    filter_ab_run_id TEXT DEFAULT NULL
 )
 RETURNS TABLE(
     id TEXT,
@@ -75,6 +80,7 @@ AS $$
       AND (filter_workspace IS NULL OR p.workspace = filter_workspace)
       AND (filter_project_id IS NULL OR p.project_id = filter_project_id)
       AND (filter_field_name IS NULL OR pe.field_name = filter_field_name)
+      AND (filter_ab_run_id IS NULL OR p.run_id = filter_ab_run_id)
     ORDER BY pe.embedding <=> query_embedding
     LIMIT match_count;
 $$;

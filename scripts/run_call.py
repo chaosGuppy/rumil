@@ -62,7 +62,7 @@ async def run(args: argparse.Namespace) -> None:
         if not page:
             print(f"Question {question_id} not found.")
             return
-        print(f"Using existing question: {page.summary}")
+        print(f"Using existing question: {page.headline}")
     elif args.question_text:
         question_id = await create_root_question(args.question_text, db)
         print(f"Created question: {question_id[:8]}")

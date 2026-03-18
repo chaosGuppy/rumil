@@ -73,3 +73,30 @@ async def test_store_and_search_with_field_filter(tmp_db):
     )
     wrong_ids = [p.id for p, _ in results_wrong_field]
     assert page.id not in wrong_ids
+
+
+async def test_search_with_ab_run_id_filter(tmp_db):
+    """ab_run_id filter restricts results to pages from that run."""
+    page = Page(
+        page_type=PageType.CLAIM,
+        layer=PageLayer.SQUIDGY,
+        workspace=Workspace.RESEARCH,
+        content="Tectonic plates drift slowly across the asthenosphere.",
+        headline="Tectonic plates drift on asthenosphere",
+    )
+    await tmp_db.save_page(page)
+    await embed_and_store_page(tmp_db, page)
+
+    results_matching = await search_pages(
+        tmp_db, "plate tectonics", match_threshold=0.3,
+        ab_run_id=tmp_db.run_id,
+    )
+    matching_ids = [p.id for p, _ in results_matching]
+    assert page.id in matching_ids
+
+    results_wrong_run = await search_pages(
+        tmp_db, "plate tectonics", match_threshold=0.3,
+        ab_run_id="nonexistent-run-id",
+    )
+    wrong_ids = [p.id for p, _ in results_wrong_run]
+    assert page.id not in wrong_ids

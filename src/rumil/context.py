@@ -502,6 +502,7 @@ async def build_embedding_based_context(
         match_threshold=match_threshold,
         match_count=500,
         field_name='headline',
+        ab_run_id=db.run_id,
     )
 
     scope_section = ''

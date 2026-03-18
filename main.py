@@ -37,7 +37,7 @@ async def cmd_add_question(
         layer=PageLayer.SQUIDGY,
         workspace=Workspace.RESEARCH,
         content=question_text,
-        summary=question_text[:120],
+        headline=question_text[:120],
         epistemic_status=2.5,
         epistemic_type="open question",
         provenance_model="human",

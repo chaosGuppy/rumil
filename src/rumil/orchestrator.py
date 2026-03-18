@@ -47,7 +47,7 @@ async def create_root_question(question_text: str, db: DB) -> str:
         layer=PageLayer.SQUIDGY,
         workspace=Workspace.RESEARCH,
         content=question_text,
-        summary=question_text[:120],
+        headline=question_text[:120],
         epistemic_status=2.5,
         epistemic_type="open question",
         provenance_model="human",

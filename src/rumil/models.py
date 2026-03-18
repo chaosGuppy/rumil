@@ -89,6 +89,12 @@ class MoveType(str, Enum):
     CHANGE_LINK_ROLE = "CHANGE_LINK_ROLE"
 
 
+class CallStage(str, Enum):
+    BUILD_CONTEXT = "build_context"
+    CREATE_PAGES = "create_pages"
+    CLOSING_REVIEW = "closing_review"
+
+
 class ScoutMode(str, Enum):
     ALTERNATE = "alternate"
     ABSTRACT = "abstract"

@@ -28,6 +28,49 @@
         }
       }
     },
+    "/api/projects/{project_id}/runs": {
+      "get": {
+        "summary": "List Project Runs",
+        "operationId": "list_project_runs_api_projects__project_id__runs_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RunListItemOut"
+                  },
+                  "title": "Response List Project Runs Api Projects  Project Id  Runs Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{project_id}/pages": {
       "get": {
         "summary": "List Pages",
@@ -587,6 +630,45 @@
         }
       }
     },
+    "/api/ab-runs/{ab_run_id}/trace": {
+      "get": {
+        "summary": "Get Ab Run Trace",
+        "operationId": "get_ab_run_trace_api_ab_runs__ab_run_id__trace_get",
+        "parameters": [
+          {
+            "name": "ab_run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Ab Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ABRunTraceOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/calls/{call_id}/llm-exchanges": {
       "get": {
         "summary": "List Llm Exchanges",
@@ -737,6 +819,70 @@
   },
   "components": {
     "schemas": {
+      "ABRunArmOut": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "default": ""
+          },
+          "config": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Config",
+            "default": {}
+          },
+          "trace": {
+            "$ref": "#/components/schemas/RunTraceOut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "trace"
+        ],
+        "title": "ABRunArmOut"
+      },
+      "ABRunTraceOut": {
+        "properties": {
+          "ab_run_id": {
+            "type": "string",
+            "title": "Ab Run Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "default": ""
+          },
+          "question": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Page"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "arms": {
+            "items": {
+              "$ref": "#/components/schemas/ABRunArmOut"
+            },
+            "type": "array",
+            "title": "Arms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ab_run_id",
+          "arms"
+        ],
+        "title": "ABRunTraceOut"
+      },
       "Call": {
         "properties": {
           "call_type": {
@@ -1537,6 +1683,14 @@
         ],
         "title": "LLMExchangeSummaryOut"
       },
+      "LinkRole": {
+        "type": "string",
+        "enum": [
+          "direct",
+          "structural"
+        ],
+        "title": "LinkRole"
+      },
       "LinkType": {
         "type": "string",
         "enum": [
@@ -1814,6 +1968,10 @@
             "title": "Reasoning",
             "default": ""
           },
+          "role": {
+            "$ref": "#/components/schemas/LinkRole",
+            "default": "direct"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -1829,6 +1987,7 @@
           "direction",
           "strength",
           "reasoning",
+          "role",
           "created_at"
         ],
         "title": "PageLink"
@@ -1950,6 +2109,81 @@
           "event"
         ],
         "title": "ReviewCompleteEventOut"
+      },
+      "RunListItemOut": {
+        "properties": {
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "default": ""
+          },
+          "config": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config"
+          },
+          "question_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question Summary"
+          },
+          "ab_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ab Run Id"
+          },
+          "arms": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Arms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "created_at"
+        ],
+        "title": "RunListItemOut"
       },
       "RunSummaryOut": {
         "properties": {

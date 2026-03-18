@@ -73,9 +73,13 @@ function epistemicBar(value: number) {
 }
 
 type RunListItem = {
-  run_id: string;
+  run_id?: string | null;
   created_at: string;
+  name?: string;
+  config?: Record<string, unknown> | null;
   question_summary: string | null;
+  ab_run_id?: string | null;
+  arms?: Record<string, { run_id: string; config: Record<string, unknown> }> | null;
 };
 
 export default function PagesIndexPage() {
@@ -450,6 +454,17 @@ export default function PagesIndexPage() {
           color: var(--color-muted);
           font-family: var(--font-geist-mono), monospace;
         }
+        .run-ab-badge {
+          font-size: 0.65rem;
+          font-weight: 700;
+          font-family: var(--font-geist-mono), monospace;
+          letter-spacing: 0.06em;
+          color: #d4943a;
+          background: rgba(212, 148, 58, 0.12);
+          padding: 0.15rem 0.4rem;
+          border-radius: 2px;
+          flex-shrink: 0;
+        }
 
         .loading-state {
           padding: 4rem 1rem;
@@ -557,19 +572,30 @@ export default function PagesIndexPage() {
         <div className="runs-section">
           <h2>Recent Runs</h2>
           <div className="runs-list">
-            {runs.map((r) => (
-              <Link key={r.run_id} href={`/traces/${r.run_id}`} className="run-row">
-                <span className="run-question">
-                  {r.question_summary ?? "(no question)"}
-                </span>
-                <div className="run-meta">
-                  <span className="run-date">
-                    {new Date(r.created_at).toLocaleString()}
-                  </span>
-                  <span className="run-id">{r.run_id.slice(0, 8)}</span>
-                </div>
-              </Link>
-            ))}
+            {runs.map((r, i) => {
+              const isAB = !!r.ab_run_id;
+              const href = isAB
+                ? `/ab-traces/${r.ab_run_id}`
+                : `/traces/${r.run_id}`;
+              const displayId = isAB
+                ? r.ab_run_id!.slice(0, 8)
+                : r.run_id?.slice(0, 8) ?? "—";
+              const label = r.name || r.question_summary || "(no question)";
+              return (
+                <Link key={r.ab_run_id || r.run_id || i} href={href} className="run-row">
+                  {isAB && (
+                    <span className="run-ab-badge">AB</span>
+                  )}
+                  <span className="run-question">{label}</span>
+                  <div className="run-meta">
+                    <span className="run-date">
+                      {new Date(r.created_at).toLocaleString()}
+                    </span>
+                    <span className="run-id">{displayId}</span>
+                  </div>
+                </Link>
+              );
+            })}
           </div>
         </div>
       )}

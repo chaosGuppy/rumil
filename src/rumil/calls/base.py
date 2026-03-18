@@ -19,7 +19,7 @@ from rumil.calls.common import (
 )
 from rumil.database import DB
 from rumil.llm import build_system_prompt, build_user_message
-from rumil.models import Call, CallStatus, CallType, MoveType
+from rumil.models import Call, CallStage, CallStatus, CallType, MoveType
 from rumil.moves.base import MoveState
 from rumil.moves.registry import MOVES
 from rumil.settings import get_settings
@@ -32,6 +32,12 @@ log = logging.getLogger(__name__)
 class BaseCall(ABC):
     """Template for all call types. Subclasses override individual stages."""
 
+    STAGES = (
+        CallStage.BUILD_CONTEXT,
+        CallStage.CREATE_PAGES,
+        CallStage.CLOSING_REVIEW,
+    )
+
     def __init__(
         self,
         question_id: str,
@@ -39,6 +45,7 @@ class BaseCall(ABC):
         db: DB,
         *,
         broadcaster=None,
+        up_to_stage: CallStage | None = None,
     ):
         self.question_id = question_id
         self.call = call
@@ -51,12 +58,14 @@ class BaseCall(ABC):
         self.preloaded_ids: list[str] = call.context_page_ids or []
         self.all_loaded_ids: list[str] = []
         self.review: dict = {}
+        self.up_to_stage = up_to_stage
 
     async def run(self) -> None:
         await self._enter_running()
-        await self.build_context()
-        await self.create_pages()
-        await self.closing_review()
+        for stage in self.STAGES:
+            await getattr(self, stage.value)()
+            if stage == self.up_to_stage:
+                break
         await self._finalize()
 
     async def _enter_running(self) -> None:
@@ -98,8 +107,9 @@ class SimpleCall(BaseCall):
         db: DB,
         *,
         broadcaster=None,
+        up_to_stage: CallStage | None = None,
     ):
-        super().__init__(question_id, call, db, broadcaster=broadcaster)
+        super().__init__(question_id, call, db, broadcaster=broadcaster, up_to_stage=up_to_stage)
         self.result: RunCallResult = RunCallResult()
         self.phase1_ids: list[str] = []
         self.available_moves: list[MoveType] = list(MoveType)

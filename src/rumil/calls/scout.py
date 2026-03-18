@@ -28,7 +28,7 @@ from rumil.llm import (
     structured_call,
     LLMExchangeMetadata,
 )
-from rumil.models import Call, CallStatus, CallType, MoveType, ScoutMode
+from rumil.models import Call, CallStage, CallStatus, CallType, MoveType, ScoutMode
 from rumil.moves.base import MoveState
 from rumil.moves.registry import MOVES
 from rumil.tracing.trace_events import ContextBuiltEvent, ReviewCompleteEvent
@@ -242,8 +242,9 @@ class ScoutCall(BaseCall):
         mode: ScoutMode = ScoutMode.ALTERNATE,
         context_page_ids: list[str] | None = None,
         broadcaster=None,
+        up_to_stage: CallStage | None = None,
     ):
-        super().__init__(question_id, call, db, broadcaster=broadcaster)
+        super().__init__(question_id, call, db, broadcaster=broadcaster, up_to_stage=up_to_stage)
         self.max_rounds = max_rounds
         self.fruit_threshold = fruit_threshold
         self.mode = mode

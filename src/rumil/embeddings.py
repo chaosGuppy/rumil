@@ -145,6 +145,8 @@ async def search_pages_by_vector(
         params["filter_project_id"] = db.project_id
     if field_name:
         params["filter_field_name"] = field_name
+    if db.ab_run_id:
+        params["filter_ab_run_id"] = db.ab_run_id
     rows: _Rows = _rows(await db.client.rpc("match_pages", params).execute())
     results = []
     for row in rows:

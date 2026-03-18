@@ -1,9 +1,22 @@
 """Centralised configuration loaded from environment variables and .env files."""
 
+import contextvars
 from contextlib import contextmanager
 from collections.abc import Iterator
+from pathlib import Path
 
+from typing import Any
+
+from pydantic import Field
 from pydantic_settings import BaseSettings
+
+
+_CAPTURE = {"capture": True}
+
+
+def _capture_field(**kwargs: Any) -> Any:
+    """Mark a field for inclusion in capture_config()."""
+    return Field(json_schema_extra=_CAPTURE, **kwargs)
 
 
 class Settings(BaseSettings):
@@ -26,14 +39,14 @@ class Settings(BaseSettings):
     voyage_ai_api_key: str = ""
     frontend_url: str = "http://127.0.0.1:3000"
 
-    scout_call_variant: str = "default"
-    assess_call_variant: str = "default"
-    ingest_call_variant: str = "default"
+    scout_call_variant: str = _capture_field(default="default")
+    assess_call_variant: str = _capture_field(default="default")
+    ingest_call_variant: str = _capture_field(default="default")
 
-    context_char_budget: int = 10_000
-    full_page_char_fraction: float = 0.6
-    summary_page_char_fraction: float = 0.3
-    distillation_page_char_fraction: float = 0.0
+    context_char_budget: int = _capture_field(default=10_000)
+    full_page_char_fraction: float = _capture_field(default=0.6)
+    summary_page_char_fraction: float = _capture_field(default=0.3)
+    distillation_page_char_fraction: float = _capture_field(default=0.0)
 
     @property
     def is_test_mode(self) -> bool:
@@ -72,31 +85,49 @@ class Settings(BaseSettings):
             )
         return self.anthropic_api_key
 
+    @classmethod
+    def from_env_files(cls, *env_files: str | Path) -> "Settings":
+        """Create a Settings instance loading from the given env files."""
+        return cls(_env_file=env_files)
 
-_current: Settings | None = None
+    def capture_config(self) -> dict:
+        """Collect fields marked with capture=True plus derived model."""
+        result: dict = {}
+        for name, field_info in self.model_fields.items():
+            extra = field_info.json_schema_extra
+            if isinstance(extra, dict) and extra.get("capture"):
+                result[name] = getattr(self, name)
+        result["model"] = self.model
+        return result
+
+
+_settings_var: contextvars.ContextVar[Settings | None] = contextvars.ContextVar(
+    "rumil_settings", default=None
+)
 
 
 def get_settings() -> Settings:
-    """Return the cached settings singleton (created on first call)."""
-    global _current
-    if _current is None:
-        _current = Settings()
-    return _current
+    """Return the current task-local settings (created on first call)."""
+    current = _settings_var.get()
+    if current is None:
+        current = Settings()
+        _settings_var.set(current)
+    return current
 
 
 @contextmanager
 def override_settings(**overrides: object) -> Iterator[Settings]:
-    """Replace the cached settings with a copy that has the given overrides.
+    """Replace the settings for the current context with a copy that has the given overrides.
 
     Usage (in tests)::
 
         with override_settings(rumil_test_mode="1"):
             assert get_settings().is_test_mode
     """
-    global _current
-    previous = _current
-    _current = Settings(**overrides)  # type: ignore[arg-type]
+    previous = _settings_var.get()
+    new = Settings(**overrides)  # type: ignore[arg-type]
+    _settings_var.set(new)
     try:
-        yield _current
+        yield new
     finally:
-        _current = previous
+        _settings_var.set(previous)

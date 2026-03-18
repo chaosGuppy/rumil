@@ -501,7 +501,7 @@ async def build_embedding_based_context(
         query_embedding,
         match_threshold=match_threshold,
         match_count=500,
-        field_name='headline',
+        field_name='abstract',
     )
 
     scope_section = ''

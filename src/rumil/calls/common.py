@@ -260,7 +260,7 @@ async def run_agent_loop(
         raise ValueError("Either user_message or messages must be provided")
     settings = get_settings()
     effective_rounds = max_rounds if max_rounds is not None else (
-        2 if settings.is_smoke_test else 6
+        2 if settings.is_smoke_test else 3
     )
     client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
     if tools is not None:

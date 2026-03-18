@@ -121,7 +121,7 @@ function PageList({ pages }: { pages: PageRef[] }) {
   return (
     <span className="trace-page-list">
       {pages.map((p, i) => (
-        <PageChip key={p.id} page={p} />
+        <PageChip key={`${p.id}-${i}`} page={p} />
       ))}
     </span>
   );
@@ -226,8 +226,8 @@ function MoveRow({
       )}
       {hasRefs && (
         <span className="trace-page-list">
-          {pageRefs.map((p) => (
-            <PageChip key={p.id} page={p} />
+          {pageRefs.map((p, i) => (
+            <PageChip key={`${p.id}-${i}`} page={p} />
           ))}
         </span>
       )}

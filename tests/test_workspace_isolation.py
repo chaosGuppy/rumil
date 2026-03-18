@@ -6,13 +6,14 @@ import pytest_asyncio
 
 from rumil.context import (
     assemble_call_context,
-    build_context_for_question,
     build_prioritization_context,
+    format_page,
 )
 from rumil.database import DB
 from rumil.models import (
     LinkType,
     Page,
+    PageDetail,
     PageLayer,
     PageLink,
     PageType,
@@ -171,11 +172,13 @@ async def test_workspace_map_isolated(two_workspaces):
 
 async def test_call_context_isolated(two_workspaces):
     w = two_workspaces
-    wc_alpha, _ = await build_context_for_question(w["q_alpha"].id, w["db_alpha"])
+    q_alpha = await w["db_alpha"].get_page(w["q_alpha"].id)
+    wc_alpha = await format_page(q_alpha, PageDetail.ABSTRACT, db=w["db_alpha"])
     map_alpha, _ = await build_workspace_map(w["db_alpha"])
     ctx_alpha = assemble_call_context(wc_alpha, workspace_map=map_alpha)
 
-    wc_beta, _ = await build_context_for_question(w["q_beta"].id, w["db_beta"])
+    q_beta = await w["db_beta"].get_page(w["q_beta"].id)
+    wc_beta = await format_page(q_beta, PageDetail.ABSTRACT, db=w["db_beta"])
     map_beta, _ = await build_workspace_map(w["db_beta"])
     ctx_beta = assemble_call_context(wc_beta, workspace_map=map_beta)
 

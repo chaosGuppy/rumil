@@ -6,10 +6,10 @@ import pytest
 
 from rumil.context import (
     EmbeddingBasedContextResult,
-    _format_page_summary,
     build_embedding_based_context,
+    format_page,
 )
-from rumil.models import Page, PageLayer, PageType, Workspace
+from rumil.models import Page, PageDetail, PageLayer, PageType, Workspace
 
 
 def _make_page(headline: str, content: str, page_type: PageType = PageType.CLAIM) -> Page:
@@ -74,7 +74,9 @@ async def test_basic_budget_split(mock_embeddings):
     assert result.budget_usage['full'] <= 6_000
     assert result.budget_usage['summary'] <= 3_000
     assert result.distillation_page_ids == []
-    assert set(result.page_ids) == set(result.full_page_ids + result.summary_page_ids)
+    assert set(result.page_ids) == set(
+        result.full_page_ids + result.abstract_page_ids + result.summary_page_ids
+    )
 
     mock_eq.assert_awaited_once_with('test query')
     mock_sp.assert_awaited_once()
@@ -139,10 +141,10 @@ async def test_section_headers_present(mock_embeddings):
         assert '## Relevant Pages (Summaries)' in result.context_text
 
 
-def test_format_page_summary():
-    """_format_page_summary produces the expected compact line."""
+async def test_format_page_headline():
+    """format_page with HEADLINE detail produces the expected compact line."""
     page = _make_page('Test summary', 'content')
-    line = _format_page_summary(page)
+    line = await format_page(page, PageDetail.HEADLINE)
     assert '[CLAIM 3/5]' in line
     assert page.id[:8] in line
     assert 'Test summary' in line

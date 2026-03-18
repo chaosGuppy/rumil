@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 from rumil.context import format_page
 from rumil.database import DB
-from rumil.models import Call, MoveType
+from rumil.models import Call, MoveType, PageDetail
 from rumil.moves.base import MoveDef, MoveResult
 
 log = logging.getLogger(__name__)
@@ -30,7 +30,7 @@ async def execute(payload: LoadPagePayload, call: Call, db: DB) -> MoveResult:
         "load_page: loaded %s (%s, %d chars)",
         full_id[:8], page.page_type.value, len(page.content),
     )
-    return MoveResult(await format_page(page, db=db))
+    return MoveResult(await format_page(page, PageDetail.CONTENT, db=db))
 
 
 MOVE = MoveDef(

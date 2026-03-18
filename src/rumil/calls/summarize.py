@@ -19,7 +19,7 @@ from rumil.models import (
     Workspace,
 )
 from rumil.moves.base import write_page_file
-from rumil.tracing.trace_events import ContextBuiltEvent
+from rumil.tracing.trace_events import ContextBuiltEvent, PageRef
 from rumil.tracing.tracer import CallTrace
 
 log = logging.getLogger(__name__)
@@ -69,18 +69,26 @@ def _section(title: str, body: str) -> str:
     return f"### {title}\n\n{body}\n"
 
 
-async def _build_summary_context(question_id: str, db: DB) -> str:
+async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[PageRef]]:
     question = await db.get_page(question_id)
     if not question:
         raise ValueError(f"Question {question_id} not found")
 
     parts: list[str] = []
 
+    def ref(page: Page) -> PageRef:
+        return PageRef(id=page.id, summary=page.summary)
+
+    page_refs: list[PageRef] = [ref(question)]
+
     parts.append(_section("Question (full)", question.content or question.summary))
 
     considerations = await db.get_considerations_for_question(question_id)
     judgements = await db.get_judgements_for_question(question_id)
     children = await db.get_child_questions(question_id)
+    page_refs.extend(ref(p) for p, _ in considerations)
+    page_refs.extend(ref(j) for j in judgements)
+    page_refs.extend(ref(c) for c in children)
 
     if considerations:
         index_lines = ["Index of direct pages:"]
@@ -122,6 +130,7 @@ async def _build_summary_context(question_id: str, db: DB) -> str:
 
             child_summary = await db.get_latest_summary_for_question(child.id)
             if child_summary:
+                page_refs.append(ref(child_summary))
                 child_section_parts.append(
                     f"**Summary (full):**\n{child_summary.content}"
                 )
@@ -130,12 +139,14 @@ async def _build_summary_context(question_id: str, db: DB) -> str:
 
             child_judgements = await db.get_judgements_for_question(child.id)
             if child_judgements:
+                page_refs.extend(ref(j) for j in child_judgements)
                 most_recent_j = max(child_judgements, key=lambda j: j.created_at)
                 medium = most_recent_j.summary_medium or most_recent_j.summary
                 child_section_parts.append(f"**Judgement (medium):** {medium}")
 
             child_considerations = await db.get_considerations_for_question(child.id)
             if child_considerations:
+                page_refs.extend(ref(p) for p, _ in child_considerations)
                 con_lines = [
                     f"  - {p.summary_short or p.summary}"
                     for p, _ in child_considerations
@@ -146,11 +157,16 @@ async def _build_summary_context(question_id: str, db: DB) -> str:
 
             grandchildren = await db.get_child_questions(child.id)
             if grandchildren:
+                page_refs.extend(ref(gc) for gc in grandchildren)
                 gc_lines = []
                 for gc in grandchildren:
                     gc_summary = await db.get_latest_summary_for_question(gc.id)
+                    if gc_summary:
+                        page_refs.append(ref(gc_summary))
                     gc_medium = gc_summary.summary_medium if gc_summary else None
                     gc_judgements = await db.get_judgements_for_question(gc.id)
+                    if gc_judgements:
+                        page_refs.extend(ref(j) for j in gc_judgements)
                     gc_short_j = (
                         max(gc_judgements, key=lambda j: j.created_at).summary_short
                         if gc_judgements else None
@@ -168,7 +184,7 @@ async def _build_summary_context(question_id: str, db: DB) -> str:
 
         parts.append(_section("Child Questions", "\n\n---\n\n".join(child_parts)))
 
-    return "\n\n".join(parts)
+    return "\n\n".join(parts), page_refs
 
 
 async def _supersede_old_summaries(question_id: str, new_summary_id: str, db: DB) -> None:
@@ -204,8 +220,10 @@ async def summarize_question(
     trace = CallTrace(call.id, db)
 
     try:
-        context = await _build_summary_context(question_id, db)
-        await trace.record(ContextBuiltEvent())
+        context, context_page_ids = await _build_summary_context(question_id, db)
+        await trace.record(ContextBuiltEvent(
+            working_context_page_ids=context_page_ids,
+        ))
         user_message = build_user_message(context, TASK)
 
         meta = LLMExchangeMetadata(call_id=call.id, phase="summarize", trace=trace, db=db)

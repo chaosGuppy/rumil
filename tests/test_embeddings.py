@@ -1,5 +1,7 @@
 """Tests for embedding creation and vector search."""
 
+import uuid
+
 import pytest
 
 from rumil.embeddings import (
@@ -76,7 +78,10 @@ async def test_store_and_search_with_field_filter(tmp_db):
 
 
 async def test_search_with_ab_run_id_filter(tmp_db):
-    """ab_run_id filter restricts results to pages from that run."""
+    """When db.ab_run_id is set, embedding search only returns pages from that AB arm."""
+    ab_run_id = str(uuid.uuid4())
+    tmp_db.ab_run_id = ab_run_id
+
     page = Page(
         page_type=PageType.CLAIM,
         layer=PageLayer.SQUIDGY,
@@ -89,14 +94,13 @@ async def test_search_with_ab_run_id_filter(tmp_db):
 
     results_matching = await search_pages(
         tmp_db, "plate tectonics", match_threshold=0.3,
-        ab_run_id=tmp_db.run_id,
     )
     matching_ids = [p.id for p, _ in results_matching]
     assert page.id in matching_ids
 
-    results_wrong_run = await search_pages(
+    tmp_db.ab_run_id = "nonexistent-ab-run-id"
+    results_wrong_ab = await search_pages(
         tmp_db, "plate tectonics", match_threshold=0.3,
-        ab_run_id="nonexistent-run-id",
     )
-    wrong_ids = [p.id for p, _ in results_wrong_run]
+    wrong_ids = [p.id for p, _ in results_wrong_ab]
     assert page.id not in wrong_ids

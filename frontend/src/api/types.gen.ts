@@ -5,6 +5,46 @@ export type ClientOptions = {
 };
 
 /**
+ * ABRunArmOut
+ */
+export type AbRunArmOut = {
+    /**
+     * Run Id
+     */
+    run_id: string;
+    /**
+     * Name
+     */
+    name?: string;
+    /**
+     * Config
+     */
+    config?: {
+        [key: string]: unknown;
+    };
+    trace: RunTraceOut;
+};
+
+/**
+ * ABRunTraceOut
+ */
+export type AbRunTraceOut = {
+    /**
+     * Ab Run Id
+     */
+    ab_run_id: string;
+    /**
+     * Name
+     */
+    name?: string;
+    question?: Page | null;
+    /**
+     * Arms
+     */
+    arms: Array<AbRunArmOut>;
+};
+
+/**
  * Call
  */
 export type Call = {
@@ -415,6 +455,11 @@ export type LlmExchangeSummaryOut = {
 };
 
 /**
+ * LinkRole
+ */
+export type LinkRole = 'direct' | 'structural';
+
+/**
  * LinkType
  */
 export type LinkType = 'consideration' | 'child_question' | 'supersedes' | 'related';
@@ -591,6 +636,7 @@ export type PageLink = {
      * Reasoning
      */
     reasoning: string;
+    role: LinkRole;
     /**
      * Created At
      */
@@ -672,6 +718,44 @@ export type ReviewCompleteEventOut = {
      * Confidence
      */
     confidence?: number | null;
+};
+
+/**
+ * RunListItemOut
+ */
+export type RunListItemOut = {
+    /**
+     * Run Id
+     */
+    run_id?: string | null;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Name
+     */
+    name?: string;
+    /**
+     * Config
+     */
+    config?: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Question Summary
+     */
+    question_summary?: string | null;
+    /**
+     * Ab Run Id
+     */
+    ab_run_id?: string | null;
+    /**
+     * Arms
+     */
+    arms?: {
+        [key: string]: unknown;
+    } | null;
 };
 
 /**
@@ -779,6 +863,38 @@ export type ListProjectsApiProjectsGetResponses = {
 };
 
 export type ListProjectsApiProjectsGetResponse = ListProjectsApiProjectsGetResponses[keyof ListProjectsApiProjectsGetResponses];
+
+export type ListProjectRunsApiProjectsProjectIdRunsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Project Id
+         */
+        project_id: string;
+    };
+    query?: never;
+    url: '/api/projects/{project_id}/runs';
+};
+
+export type ListProjectRunsApiProjectsProjectIdRunsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListProjectRunsApiProjectsProjectIdRunsGetError = ListProjectRunsApiProjectsProjectIdRunsGetErrors[keyof ListProjectRunsApiProjectsProjectIdRunsGetErrors];
+
+export type ListProjectRunsApiProjectsProjectIdRunsGetResponses = {
+    /**
+     * Response List Project Runs Api Projects  Project Id  Runs Get
+     *
+     * Successful Response
+     */
+    200: Array<RunListItemOut>;
+};
+
+export type ListProjectRunsApiProjectsProjectIdRunsGetResponse = ListProjectRunsApiProjectsProjectIdRunsGetResponses[keyof ListProjectRunsApiProjectsProjectIdRunsGetResponses];
 
 export type ListPagesApiProjectsProjectIdPagesGetData = {
     body?: never;
@@ -1171,6 +1287,36 @@ export type GetCallTraceApiCallsCallIdTraceGetResponses = {
 };
 
 export type GetCallTraceApiCallsCallIdTraceGetResponse = GetCallTraceApiCallsCallIdTraceGetResponses[keyof GetCallTraceApiCallsCallIdTraceGetResponses];
+
+export type GetAbRunTraceApiAbRunsAbRunIdTraceGetData = {
+    body?: never;
+    path: {
+        /**
+         * Ab Run Id
+         */
+        ab_run_id: string;
+    };
+    query?: never;
+    url: '/api/ab-runs/{ab_run_id}/trace';
+};
+
+export type GetAbRunTraceApiAbRunsAbRunIdTraceGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetAbRunTraceApiAbRunsAbRunIdTraceGetError = GetAbRunTraceApiAbRunsAbRunIdTraceGetErrors[keyof GetAbRunTraceApiAbRunsAbRunIdTraceGetErrors];
+
+export type GetAbRunTraceApiAbRunsAbRunIdTraceGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: AbRunTraceOut;
+};
+
+export type GetAbRunTraceApiAbRunsAbRunIdTraceGetResponse = GetAbRunTraceApiAbRunsAbRunIdTraceGetResponses[keyof GetAbRunTraceApiAbRunsAbRunIdTraceGetResponses];
 
 export type ListLlmExchangesApiCallsCallIdLlmExchangesGetData = {
     body?: never;

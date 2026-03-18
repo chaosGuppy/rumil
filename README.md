@@ -103,6 +103,13 @@ uv run python main.py --list-workspaces
 # List questions in a specific workspace
 uv run python main.py --list --workspace my-project
 
+# A/B test: run two arms concurrently with different configs
+# Requires .a.env and .b.env files with differing settings
+uv run python main.py --ab "Your question here" --budget 10
+
+# Name a run for easier identification in the trace viewer
+uv run python main.py "Your question here" --name "baseline v2" --budget 10
+
 # Smoke-test mode: uses Haiku, fewer agent rounds, budget defaults to 1
 uv run python main.py "Your question here" --smoke-test
 
@@ -138,6 +145,62 @@ Each entry supports:
 | `ingest` | No | List of file paths to ingest (only with `question`) |
 
 For PDF ingestion, install the optional dependency: `uv sync --extra pdf`
+
+### A/B testing
+
+The `--ab` flag runs two concurrent investigations of the same question with different configurations. Each arm reads its settings from a separate env file (`.a.env` and `.b.env`), allowing you to compare call variants, context budgets, or other settings side by side.
+
+```bash
+# Create arm-specific config files
+echo 'SCOUT_CALL_VARIANT=default' > .a.env
+echo 'SCOUT_CALL_VARIANT=embedding' > .b.env
+
+# Run the AB test
+uv run python main.py --ab "Your question" --budget 10 --workspace ab-scratch
+
+# View results in the frontend at /ab-traces/{ab_run_id}
+```
+
+Pages created by each arm are isolated — arm A cannot see pages created by arm B, and vice versa. Shared pages (like the root question) are visible to both arms. The frontend shows a side-by-side trace comparison with config diff highlighting.
+
+### Testing individual calls
+
+`scripts/run_call.py` runs a single call type (scout, assess, prioritize) against the local database, useful for development and debugging without the full orchestrator loop.
+
+```bash
+# Scout a new question
+uv run python scripts/run_call.py scout "Is the sky blue?"
+
+# Scout an existing question by ID
+uv run python scripts/run_call.py scout --question-id <UUID>
+
+# Assess or prioritize an existing question
+uv run python scripts/run_call.py assess --question-id <UUID>
+uv run python scripts/run_call.py prioritize --question-id <UUID> --budget 5
+
+# Override scout params
+uv run python scripts/run_call.py scout "Why is water wet?" --mode concrete --max-rounds 3
+
+# Use a custom workspace (default: test-calls)
+uv run python scripts/run_call.py scout "Test question" --workspace my-scratch
+
+# Use smoke-test mode
+uv run python scripts/run_call.py scout "Test question" --smoke-test
+
+# Stop after a specific stage (build_context or create_pages)
+uv run python scripts/run_call.py scout "Test question" --up-to-stage build_context
+uv run python scripts/run_call.py scout "Test question" --up-to-stage create_pages
+
+# A/B test a single call (requires .a.env and .b.env)
+uv run python scripts/run_call.py scout "Test question" --ab --smoke-test
+
+# Name a run for easier identification
+uv run python scripts/run_call.py scout "Test question" --name "context experiment"
+```
+
+The `--up-to-stage` flag truncates the call lifecycle. Each call runs three stages in order: `build_context` → `create_pages` → `closing_review`. Passing `--up-to-stage build_context` runs only context assembly; `--up-to-stage create_pages` skips the closing review. Useful for inspecting context or page output in isolation.
+
+The `--ab` flag works the same as in `main.py` — it runs both arms concurrently with settings from `.a.env` and `.b.env`, and prints an AB trace URL.
 
 ## Frontend
 

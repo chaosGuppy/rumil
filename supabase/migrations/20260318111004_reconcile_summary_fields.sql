@@ -80,7 +80,9 @@ AS $$
       AND (filter_workspace IS NULL OR p.workspace = filter_workspace)
       AND (filter_project_id IS NULL OR p.project_id = filter_project_id)
       AND (filter_field_name IS NULL OR pe.field_name = filter_field_name)
-      AND (filter_ab_run_id IS NULL OR p.run_id = filter_ab_run_id)
+      AND (filter_ab_run_id IS NULL
+           OR p.ab_run_id IS NULL
+           OR p.ab_run_id = filter_ab_run_id)
     ORDER BY pe.embedding <=> query_embedding
     LIMIT match_count;
 $$;

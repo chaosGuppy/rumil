@@ -103,7 +103,6 @@ async def search_pages(
     match_count: int = 10,
     workspace: Workspace | None = None,
     field_name: str | None = None,
-    ab_run_id: str | None = None,
 ) -> list[tuple[Page, float]]:
     """Search for pages similar to a query string.
 
@@ -118,7 +117,6 @@ async def search_pages(
         match_count=match_count,
         workspace=workspace,
         field_name=field_name,
-        ab_run_id=ab_run_id,
     )
 
 
@@ -129,12 +127,11 @@ async def search_pages_by_vector(
     match_count: int = 10,
     workspace: Workspace | None = None,
     field_name: str | None = None,
-    ab_run_id: str | None = None,
 ) -> list[tuple[Page, float]]:
     """Search for pages similar to a given embedding vector.
 
     Returns (page, similarity_score) pairs sorted by descending similarity.
-    Optionally filter to embeddings of a specific field_name or run_id.
+    Optionally filter to embeddings of a specific field_name.
     """
     embedding_str = '[' + ','.join(str(x) for x in query_embedding) + ']'
     params: dict[str, Any] = {
@@ -148,8 +145,8 @@ async def search_pages_by_vector(
         params["filter_project_id"] = db.project_id
     if field_name:
         params["filter_field_name"] = field_name
-    if ab_run_id:
-        params["filter_ab_run_id"] = ab_run_id
+    if db.ab_run_id:
+        params["filter_ab_run_id"] = db.ab_run_id
     rows: _Rows = _rows(await db.client.rpc("match_pages", params).execute())
     results = []
     for row in rows:

@@ -16,6 +16,8 @@ from rumil.database import DB
 from rumil.models import Call, Page, PageLink, PageType, Project, Workspace
 from rumil.settings import get_settings
 from rumil.api.schemas import (
+    ABRunArmOut,
+    ABRunTraceOut,
     CallTraceOut,
     LinkedPageOut,
     LLMExchangeOut,
@@ -253,6 +255,62 @@ async def get_run_trace(run_id: str):
 async def get_call_trace(call_id: str):
     db = await _get_db()
     return await _build_call_trace(db, call_id)
+
+
+@app.get("/api/ab-runs/{ab_run_id}/trace", response_model=ABRunTraceOut)
+async def get_ab_run_trace(ab_run_id: str):
+    db = await _get_db()
+    from rumil.database import _rows
+    ab_rows = _rows(
+        await db.client.table("ab_runs")
+        .select("*")
+        .eq("id", ab_run_id)
+        .execute()
+    )
+    if not ab_rows:
+        raise HTTPException(status_code=404, detail="AB run not found")
+    ab_row = ab_rows[0]
+    arm_rows = _rows(
+        await db.client.table("runs")
+        .select("id, name, config, ab_arm")
+        .eq("ab_run_id", ab_run_id)
+        .order("ab_arm")
+        .execute()
+    )
+    question_page = None
+    qid = ab_row.get("question_id")
+    if qid:
+        question_page = await db.get_page(qid)
+    arms = []
+    for arm_row in arm_rows:
+        run_id = arm_row["id"]
+        question_id = await db.get_run_question_id(run_id)
+        q_page = None
+        if question_id:
+            q_page = await db.get_page(question_id)
+        calls = await db.get_calls_for_run(run_id)
+        root_calls = [c for c in calls if c.parent_call_id is None]
+        root_traces = [await _build_call_trace(db, c.id) for c in root_calls]
+        run_costs = [ct.cost_usd for ct in root_traces if ct.cost_usd is not None]
+        run_total = sum(run_costs)
+        trace = RunTraceOut(
+            run_id=run_id,
+            question=q_page,
+            root_calls=root_traces,
+            cost_usd=run_total if run_total > 0 else None,
+        )
+        arms.append(ABRunArmOut(
+            run_id=run_id,
+            name=arm_row.get("name", ""),
+            config=arm_row.get("config", {}),
+            trace=trace,
+        ))
+    return ABRunTraceOut(
+        ab_run_id=ab_run_id,
+        name=ab_row.get("name", ""),
+        question=question_page,
+        arms=arms,
+    )
 
 
 @app.get(

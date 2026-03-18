@@ -24,7 +24,7 @@ from rumil.sources import create_source_page, run_ingest_calls
 from rumil.chat import run_chat
 from rumil.mapper import generate_map
 from rumil.summary import generate_summary, save_summary
-from rumil.settings import get_settings
+from rumil.settings import Settings, get_settings, _settings_var
 
 PAGES_DIR = Path(__file__).parent / "pages"
 
@@ -199,10 +199,16 @@ async def cmd_new(
     budget: int | None,
     db: DB,
     ingest_files: list[str] | None = None,
+    name: str = "",
 ) -> None:
     budget = budget if budget is not None else (1 if get_settings().is_smoke_test else 10)
     await db.init_budget(budget)
     question_id = await create_root_question(question_text, db)
+    await db.create_run(
+        name=name or question_text[:120],
+        question_id=question_id,
+        config=get_settings().capture_config(),
+    )
 
     frontend = get_settings().frontend_url.rstrip("/")
     print(f"\nNew question: {question_id}")
@@ -295,7 +301,67 @@ async def cmd_batch(batch_file: str, db: DB) -> None:
     await asyncio.gather(*tasks)
 
 
-async def cmd_continue(question_id: str, additional_budget: int | None, db: DB) -> None:
+async def cmd_ab(
+    question_text: str,
+    budget: int | None,
+    db: DB,
+    name: str = "",
+) -> None:
+    """Run an A/B test: two concurrent investigations with different configs."""
+    ab_run_id = str(uuid.uuid4())
+    budget = budget if budget is not None else (1 if get_settings().is_smoke_test else 10)
+
+    question_id = await create_root_question(question_text, db)
+    await db.create_ab_run(ab_run_id, name or question_text[:120], question_id)
+
+    frontend = get_settings().frontend_url.rstrip("/")
+    print(f'\nAB test: {ab_run_id}')
+    print(f'Question: {question_text}')
+    print(f'Budget per arm: {budget}')
+    print(f'Trace: {frontend}/ab-traces/{ab_run_id}')
+
+    async def run_arm(arm_label: str, env_file: str) -> None:
+        arm_settings = Settings.from_env_files('.env', env_file)
+        if get_settings().is_smoke_test:
+            arm_settings.rumil_smoke_test = '1'
+        if get_settings().is_prod_db:
+            arm_settings.use_prod_db = '1'
+        if not get_settings().tracing_enabled:
+            arm_settings.tracing_enabled = False
+        _settings_var.set(arm_settings)
+
+        arm_db = await DB.create(
+            run_id=str(uuid.uuid4()),
+            prod=arm_settings.is_prod_db,
+            client=db.client,
+            project_id=db.project_id,
+            ab_run_id=ab_run_id,
+        )
+        config = arm_settings.capture_config()
+        await arm_db.create_run(
+            name=f'{name or question_text[:100]} (arm {arm_label})',
+            question_id=question_id,
+            config=config,
+            ab_arm=arm_label,
+        )
+        await arm_db.init_budget(budget)
+        await Orchestrator(arm_db).run(question_id)
+        total, used = await arm_db.get_budget()
+        print(f'\nArm {arm_label} complete: {used}/{total} budget used')
+
+    async with asyncio.TaskGroup() as tg:
+        tg.create_task(run_arm('a', '.a.env'))
+        tg.create_task(run_arm('b', '.b.env'))
+
+    print(f'\nAB test complete: {frontend}/ab-traces/{ab_run_id}')
+
+
+async def cmd_continue(
+    question_id: str,
+    additional_budget: int | None,
+    db: DB,
+    name: str = "",
+) -> None:
     additional_budget = additional_budget if additional_budget is not None else (
         1 if get_settings().is_smoke_test else 10
     )
@@ -313,6 +379,11 @@ async def cmd_continue(question_id: str, additional_budget: int | None, db: DB) 
 
     counts = await db.count_pages_for_question(question_id)
     await db.init_budget(additional_budget)
+    await db.create_run(
+        name=name or f'continue: {question.summary[:100]}',
+        question_id=question_id,
+        config=get_settings().capture_config(),
+    )
 
     frontend = get_settings().frontend_url.rstrip("/")
     print(f"\nContinuing investigation of: {question.headline[:80]}")
@@ -447,6 +518,18 @@ async def async_main():
         '[{"question": "...", "budget": 10}, ...]',
     )
     parser.add_argument(
+        "--ab",
+        dest="ab_test",
+        action="store_true",
+        help="Run an A/B test with two arms (requires .a.env and .b.env)",
+    )
+    parser.add_argument(
+        "--name",
+        dest="run_name",
+        default="",
+        help="Optional name for this run (defaults to question text)",
+    )
+    parser.add_argument(
         "--smoke-test",
         dest="smoke_test",
         action="store_true",
@@ -518,13 +601,18 @@ async def async_main():
             summary_cutoff=args.summarize_after_depth,
         )
     elif args.continue_id:
-        await cmd_continue(args.continue_id, args.budget, db)
+        await cmd_continue(args.continue_id, args.budget, db, name=args.run_name)
     elif args.batch_file:
         await cmd_batch(args.batch_file, db)
     elif args.ingest_files and not args.question:
         await cmd_ingest(args.ingest_files, args.for_question_id, args.budget, db)
+    elif args.question and args.ab_test:
+        await cmd_ab(args.question, args.budget, db, name=args.run_name)
     elif args.question:
-        await cmd_new(args.question, args.budget, db, ingest_files=args.ingest_files)
+        await cmd_new(
+            args.question, args.budget, db,
+            ingest_files=args.ingest_files, name=args.run_name,
+        )
     else:
         parser.print_help()
 

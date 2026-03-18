@@ -138,9 +138,27 @@ class RunSummaryOut(BaseModel):
 
 
 class RunListItemOut(BaseModel):
-    run_id: str
+    run_id: str | None = None
     created_at: str
+    name: str = ""
+    config: dict | None = None
     question_summary: str | None = None
+    ab_run_id: str | None = None
+    arms: dict | None = None
+
+
+class ABRunArmOut(BaseModel):
+    run_id: str
+    name: str = ""
+    config: dict = {}
+    trace: RunTraceOut
+
+
+class ABRunTraceOut(BaseModel):
+    ab_run_id: str
+    name: str = ""
+    question: Page | None = None
+    arms: list[ABRunArmOut]
 
 
 class RealtimeConfigOut(BaseModel):

@@ -554,7 +554,7 @@ async def build_embedding_based_context(
     full_page_char_fraction: float | None = None,
     abstract_page_char_fraction: float | None = None,
     summary_para_char_fraction: float | None = None,
-    match_threshold: float = 0.3,
+    match_threshold: float = 0.01,
 ) -> EmbeddingBasedContextResult:
     """Build context by embedding-similarity search over the whole workspace.
 

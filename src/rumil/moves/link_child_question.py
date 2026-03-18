@@ -1,6 +1,6 @@
 """LINK_CHILD_QUESTION move: mark a question as a sub-question of another."""
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from rumil.database import DB
 from rumil.models import Call, LinkRole, LinkType, MoveType
@@ -9,6 +9,14 @@ from rumil.moves.base import MoveDef, MoveResult, link_pages
 
 class ChildQuestionLinkFields(BaseModel):
     parent_id: str = Field(description="Page ID of the parent question")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_question_id(cls, data: object) -> object:
+        if isinstance(data, dict) and "question_id" in data and "parent_id" not in data:
+            data = dict(data)
+            data["parent_id"] = data.pop("question_id")
+        return data
     reasoning: str = Field("", description="Why this is a sub-question")
     role: LinkRole = Field(
         LinkRole.STRUCTURAL,

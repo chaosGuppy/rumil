@@ -10,8 +10,10 @@ from rumil.tracing.broadcast import Broadcaster
 from rumil.calls.summarize import summarize_question
 from rumil.calls.call_registry import (
     ASSESS_CALL_CLASSES,
+    ASSESS_CONCEPT_CALL_CLASSES,
     INGEST_CALL_CLASSES,
     SCOUT_CALL_CLASSES,
+    SCOUT_CONCEPTS_CALL_CLASSES,
 )
 from rumil.database import DB
 from rumil.settings import get_settings
@@ -202,6 +204,132 @@ async def assess_question(
     assess = cls(question_id, call, db, broadcaster=broadcaster)
     await assess.run()
     return call.id
+
+
+async def _run_assess_concept_loop(
+    concept_id: str,
+    db: DB,
+    phase: str,
+    max_rounds: int,
+    fruit_threshold: int,
+    parent_call_id: str | None = None,
+    broadcaster=None,
+) -> dict:
+    """Run assess_concept rounds until fruit drops below threshold or max_rounds reached.
+
+    Returns the review dict from the final round.
+    """
+    from rumil.calls.assess_concept import SCREENING_PHASE, VALIDATION_PHASE
+    log.info(
+        "_run_assess_concept_loop: concept=%s, phase=%s, max_rounds=%d, threshold=%d",
+        concept_id[:8], phase, max_rounds, fruit_threshold,
+    )
+    last_review: dict = {}
+    for i in range(max_rounds):
+        call = await db.create_call(
+            CallType.ASSESS_CONCEPT,
+            scope_page_id=concept_id,
+            parent_call_id=parent_call_id,
+        )
+        cls = ASSESS_CONCEPT_CALL_CLASSES[get_settings().assess_call_variant]
+        assess = cls(concept_id, call, db, phase=phase, broadcaster=broadcaster)
+        await assess.run()
+        last_review = assess.concept_assessment
+
+        remaining_fruit = last_review.get("remaining_fruit", 10)
+        log.info(
+            "Assess concept round %d/%d (%s): fruit=%d, score=%s",
+            i + 1, max_rounds, phase,
+            remaining_fruit, last_review.get("score"),
+        )
+        if remaining_fruit <= fruit_threshold:
+            log.info(
+                "Concept fruit (%d) at or below threshold (%d), stopping %s phase",
+                remaining_fruit, fruit_threshold, phase,
+            )
+            break
+
+    return last_review
+
+
+async def run_concept_session(
+    question_id: str,
+    db: DB,
+    broadcaster=None,
+) -> None:
+    """Run a full concept-generation session for a research question.
+
+    1. Scout concepts — generate proposals for the question's subtree.
+    2. For each proposal: run stage-1 screening.
+    3. If screening passes: automatically run stage-2 validation.
+    """
+    from rumil.calls.assess_concept import (
+        SCREENING_PHASE,
+        SCREENING_FRUIT_THRESHOLD,
+        SCREENING_MAX_ROUNDS,
+        VALIDATION_PHASE,
+        VALIDATION_FRUIT_THRESHOLD,
+        VALIDATION_MAX_ROUNDS,
+    )
+    log.info("run_concept_session: question=%s", question_id[:8])
+
+    scout_call = await db.create_call(
+        CallType.SCOUT_CONCEPTS,
+        scope_page_id=question_id,
+    )
+    cls = SCOUT_CONCEPTS_CALL_CLASSES["default"]
+    scout = cls(question_id, scout_call, db, broadcaster=broadcaster)
+    await scout.run()
+    proposed_ids = scout.result.created_page_ids
+
+    log.info(
+        "Scout concepts complete: %d proposals for question=%s",
+        len(proposed_ids), question_id[:8],
+    )
+
+    for concept_id in proposed_ids:
+        concept = await db.get_page(concept_id)
+        label = concept.headline[:60] if concept else concept_id[:8]
+        log.info("Screening concept: %s [%s]", label, concept_id[:8])
+
+        screening_review = await _run_assess_concept_loop(
+            concept_id, db,
+            phase=SCREENING_PHASE,
+            max_rounds=SCREENING_MAX_ROUNDS,
+            fruit_threshold=SCREENING_FRUIT_THRESHOLD,
+            parent_call_id=scout_call.id,
+            broadcaster=broadcaster,
+        )
+
+        if not screening_review.get("screening_passed"):
+            log.info(
+                "Concept [%s] did not pass screening (score=%s)",
+                concept_id[:8], screening_review.get("score"),
+            )
+            continue
+
+        log.info(
+            "Concept [%s] passed screening (score=%s), proceeding to validation",
+            concept_id[:8], screening_review.get("score"),
+        )
+
+        validation_review = await _run_assess_concept_loop(
+            concept_id, db,
+            phase=VALIDATION_PHASE,
+            max_rounds=VALIDATION_MAX_ROUNDS,
+            fruit_threshold=VALIDATION_FRUIT_THRESHOLD,
+            parent_call_id=scout_call.id,
+            broadcaster=broadcaster,
+        )
+
+        concept_page = await db.get_page(concept_id)
+        if concept_page and concept_page.is_superseded:
+            log.info("Concept [%s] was promoted to research workspace", concept_id[:8])
+        else:
+            log.info(
+                "Concept [%s] completed validation but was not promoted (score=%s)",
+                concept_id[:8], validation_review.get("score"),
+            )
 
 
 def _create_broadcaster(db: DB) -> Broadcaster | None:

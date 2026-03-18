@@ -208,6 +208,20 @@ class DB:
             }
         ).execute()
 
+    async def update_page_extra(self, page_id: str, extra: dict) -> None:
+        """Update the extra JSONB field on a page in place."""
+        await self.client.table("pages").update(
+            {"extra": extra}
+        ).eq("id", page_id).execute()
+
+    async def get_concept_registry(self) -> list[Page]:
+        """Return all concept proposals in the concept_staging workspace."""
+        return await self.get_pages(
+            workspace=Workspace.CONCEPT_STAGING,
+            page_type=PageType.CONCEPT,
+            active_only=False,
+        )
+
     async def update_page_summaries(
         self, page_id: str, headline: str, abstract: str
     ) -> None:

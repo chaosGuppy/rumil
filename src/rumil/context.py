@@ -32,12 +32,18 @@ async def collect_subtree_ids(
     question_id: str,
     db: DB,
     graph: PageGraph | None = None,
+    _visited: set[str] | None = None,
 ) -> set[str]:
     """Recursively collect all question IDs in a subtree (inclusive)."""
+    if _visited is None:
+        _visited = set()
+    if question_id in _visited:
+        return set()
+    _visited = _visited | {question_id}
     source: DB | PageGraph = graph if graph is not None else db
     result = {question_id}
     for child in await source.get_child_questions(question_id):
-        result |= await collect_subtree_ids(child.id, db, graph=graph)
+        result |= await collect_subtree_ids(child.id, db, graph=graph, _visited=_visited)
     return result
 
 
@@ -311,9 +317,16 @@ async def _build_question_index(
     db: DB,
     indent: int = 0,
     graph: PageGraph | None = None,
+    _visited: set[str] | None = None,
 ) -> list[str]:
     """Recursively build a flat index of all questions in the tree with their IDs.
     Includes consideration count, last scout fruit/date, and hypothesis flag."""
+    if _visited is None:
+        _visited = set()
+    if question_id in _visited:
+        return [f"{'  ' * indent}[child] `{question_id}` — *** cycle detected ***"]
+    _visited = _visited | {question_id}
+
     source: DB | PageGraph = graph if graph is not None else db
     question = await source.get_page(question_id)
     if not question:
@@ -340,7 +353,9 @@ async def _build_question_index(
         f"({n_cons} cons · {scout_str})"
     ]
     for child in await source.get_child_questions(question_id):
-        lines.extend(await _build_question_index(child.id, db, indent + 1, graph=graph))
+        lines.extend(await _build_question_index(
+            child.id, db, indent + 1, graph=graph, _visited=_visited,
+        ))
     return lines
 
 

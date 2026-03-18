@@ -31,6 +31,12 @@ class PageType(str, Enum):
     SUMMARY = "summary"
 
 
+class PageDetail(str, Enum):
+    HEADLINE = "headline"
+    ABSTRACT = "abstract"
+    CONTENT = "content"
+
+
 class PageLayer(str, Enum):
     WIKI = "wiki"
     SQUIDGY = "squidgy"

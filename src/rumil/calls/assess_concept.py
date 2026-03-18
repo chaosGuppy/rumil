@@ -12,8 +12,7 @@ from rumil.calls.common import (
 from rumil.context import format_page
 from rumil.database import DB
 from rumil.llm import build_user_message, structured_call, LLMExchangeMetadata
-from rumil.models import Call, CallStage, CallType, MoveType
-from rumil.settings import get_settings
+from rumil.models import Call, CallStage, CallType, MoveType, PageDetail
 from rumil.tracing.trace_events import ContextBuiltEvent, ReviewCompleteEvent
 from rumil.workspace_map import build_workspace_map
 
@@ -129,7 +128,7 @@ class AssessConceptCall(SimpleCall):
             return
 
         map_text, _ = await build_workspace_map(self.db)
-        concept_text = await format_page(concept, db=self.db)
+        concept_text = await format_page(concept, PageDetail.HEADLINE, db=self.db)
 
         extra = concept.extra or {}
         assessment_rounds = extra.get("assessment_rounds", [])

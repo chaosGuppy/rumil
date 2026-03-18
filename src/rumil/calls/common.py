@@ -31,6 +31,7 @@ from rumil.models import (
     Dispatch,
     Move,
     MoveType,
+    PageDetail,
 )
 from rumil.moves.base import MoveState
 from rumil.moves.load_page import LoadPagePayload
@@ -460,7 +461,7 @@ async def _format_loaded_pages(page_ids: list[str], db: DB) -> str:
     for pid in page_ids:
         page = await db.get_page(pid)
         if page:
-            parts.append(f"### Page `{pid[:8]}`\n\n{await format_page(page, db=db)}")
+            parts.append(f"### Page `{pid[:8]}`\n\n{await format_page(page, PageDetail.HEADLINE, db=db)}")
     return "\n\n---\n\n".join(parts)
 
 

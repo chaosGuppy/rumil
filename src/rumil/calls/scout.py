@@ -571,7 +571,9 @@ class EmbeddingScoutCall(ScoutCall):
     async def build_context(self) -> None:
         question = await self.db.get_page(self.question_id)
         query = question.summary if question else self.question_id
-        emb_result = await build_embedding_based_context(query, self.db)
+        emb_result = await build_embedding_based_context(
+            query, self.db, scope_question_id=self.question_id,
+        )
         self.working_page_ids = emb_result.page_ids
 
         await self.trace.record(ContextBuiltEvent(

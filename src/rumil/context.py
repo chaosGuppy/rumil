@@ -13,6 +13,7 @@ from rumil.embeddings import embed_query, search_pages_by_vector
 from rumil.models import LinkRole, Page, PageType, Workspace
 from rumil.page_graph import PageGraph
 from rumil.workspace_map import build_workspace_map
+from rumil.settings import get_settings
 
 log = logging.getLogger(__name__)
 
@@ -102,7 +103,6 @@ async def build_context_for_question(
     db: DB,
     include_considerations: bool = True,
     include_judgements: bool = True,
-    workspace: Workspace = Workspace.RESEARCH,
     graph: PageGraph | None = None,
 ) -> tuple[str, list[str]]:
     """Build full context text for working on a question.
@@ -475,6 +475,7 @@ async def build_embedding_based_context(
     question_text: str,
     db: DB,
     *,
+    scope_question_id: str | None = None,
     context_char_budget: int | None = None,
     distillation_page_char_fraction: float | None = None,
     full_page_char_fraction: float | None = None,
@@ -485,7 +486,6 @@ async def build_embedding_based_context(
 
     Budget parameters default to values from settings when not provided.
     """
-    from rumil.settings import get_settings
     settings = get_settings()
     if context_char_budget is None:
         context_char_budget = settings.context_char_budget
@@ -503,6 +503,19 @@ async def build_embedding_based_context(
         match_count=500,
         field_name='summary',
     )
+
+    scope_section = ''
+    scope_page_ids: list[str] = []
+    if scope_question_id:
+        scope_page = await db.get_page(scope_question_id)
+        if scope_page:
+            scope_section = (
+                '## Scope Question\n\n'
+                + await format_page(scope_page, db)
+                + '\n\n'
+            )
+            scope_page_ids = [scope_question_id]
+            ranked = [(p, s) for p, s in ranked if p.id != scope_question_id]
 
     distillation_budget = int(context_char_budget * distillation_page_char_fraction)
     full_budget = int(context_char_budget * full_page_char_fraction)
@@ -549,6 +562,8 @@ async def build_embedding_based_context(
         break
 
     sections: list[str] = []
+    if scope_section:
+        sections.append(scope_section)
     if full_parts:
         sections.append('## Relevant Pages (Full)')
         sections.append('')
@@ -574,7 +589,7 @@ async def build_embedding_based_context(
         len(full_ids), len(summary_ids),
     )
 
-    all_ids = distillation_ids + full_ids + summary_ids
+    all_ids = scope_page_ids + distillation_ids + full_ids + summary_ids
     return EmbeddingBasedContextResult(
         context_text=context_text,
         page_ids=all_ids,

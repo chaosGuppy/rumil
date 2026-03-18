@@ -5,6 +5,7 @@ import logging
 from rumil.calls.base import SimpleCall
 from rumil.context import build_call_context, build_embedding_based_context
 from rumil.database import DB
+from rumil.models import Call, CallStage, CallType, Page
 from rumil.models import Call, CallType, Page
 from rumil.page_graph import PageGraph
 
@@ -22,8 +23,9 @@ class IngestCall(SimpleCall):
         db: DB,
         *,
         broadcaster=None,
+        up_to_stage: CallStage | None = None,
     ):
-        super().__init__(question_id, call, db, broadcaster=broadcaster)
+        super().__init__(question_id, call, db, broadcaster=broadcaster, up_to_stage=up_to_stage)
         self.source_page = source_page
         extra = source_page.extra or {}
         self.filename = extra.get("filename", source_page.id[:8])

@@ -223,3 +223,6 @@ __marimo__/
 .history/
 
 .playwright-mcp/
+
+.a.env
+.b.env

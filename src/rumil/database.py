@@ -938,7 +938,7 @@ class DB:
                 if qid:
                     page = await self.get_page(qid)
                     if page:
-                        question_summary = page.summary
+                        question_summary = page.headline
                 results.append({
                     "run_id": row["id"],
                     "created_at": row["created_at"],
@@ -958,7 +958,7 @@ class DB:
             if qid:
                 page = await self.get_page(qid)
                 if page:
-                    ab_group["question_summary"] = page.summary
+                    ab_group["question_summary"] = page.headline
             results.append(ab_group)
         # Fallback: include legacy runs from calls table that don't have a runs row
         legacy_rows = _rows(

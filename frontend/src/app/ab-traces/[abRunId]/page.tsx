@@ -40,7 +40,7 @@ export default async function ABTracePage({
             href={`/pages/${trace.question.id}`}
             className="trace-back-link"
           >
-            &larr; {trace.question.summary}
+            &larr; {trace.question.headline}
           </Link>
         )}
         <div className="ab-trace-title-row">

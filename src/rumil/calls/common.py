@@ -594,12 +594,12 @@ async def extract_loaded_page_ids(result: RunCallResult, db: DB) -> list[str]:
 
 
 async def resolve_page_refs(page_ids: list[str], db: DB) -> list[PageRef]:
-    """Resolve a list of page IDs to PageRef objects with summaries."""
+    """Resolve a list of page IDs to PageRef objects with headlines."""
     refs = []
     for pid in page_ids:
         page = await db.get_page(pid)
-        headline = page.headline if page else ""
-        refs.append(PageRef(id=pid, summary=headline))
+        hl = page.headline if page else ""
+        refs.append(PageRef(id=pid, headline=hl))
     return refs
 
 
@@ -615,8 +615,8 @@ async def _resolve_payload_refs(move: Move, db: DB) -> list[PageRef]:
         if not full_id:
             continue
         page = await db.get_page(full_id)
-        headline = page.headline if page else ""
-        refs.append(PageRef(id=full_id, summary=headline))
+        hl = page.headline if page else ""
+        refs.append(PageRef(id=full_id, headline=hl))
     return refs
 
 

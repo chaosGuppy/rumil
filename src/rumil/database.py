@@ -333,6 +333,19 @@ class DB:
         )
         return [_row_to_link(r) for r in rows]
 
+    async def get_latest_summary_for_question(self, question_id: str) -> "Page | None":
+        """Return the most recent active SUMMARY page linked to a question."""
+        links = await self.get_links_to(question_id)
+        summary_links = [l for l in links if l.link_type == LinkType.SUMMARIZES]
+        candidates = []
+        for link in summary_links:
+            page = await self.get_page(link.from_page_id)
+            if page and page.is_active() and page.page_type == PageType.SUMMARY:
+                candidates.append(page)
+        if not candidates:
+            return None
+        return max(candidates, key=lambda p: p.created_at)
+
     async def get_considerations_for_question(
         self,
         question_id: str,

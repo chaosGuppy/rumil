@@ -8,6 +8,7 @@ import os
 
 from rumil.tracing.broadcast import Broadcaster
 from rumil.calls import run_prioritization
+from rumil.calls.summarize import summarize_question
 from rumil.calls.call_registry import (
     ASSESS_CALL_CLASSES,
     INGEST_CALL_CLASSES,
@@ -189,6 +190,8 @@ async def assess_question(
     log.info("assess_question: question=%s", question_id[:8])
     if not await _consume_budget(db):
         return None
+
+    await summarize_question(question_id, db, parent_call_id=parent_call_id)
 
     call = await db.create_call(
         CallType.ASSESS,

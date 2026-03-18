@@ -16,6 +16,7 @@ from rumil.models import (
     ScoutMode,
     Workspace,
 )
+from rumil.tracing.broadcast import Broadcaster
 from rumil.tracing.tracer import CallTrace
 
 log = logging.getLogger(__name__)
@@ -52,7 +53,7 @@ class LLMPrioritizer(Prioritizer):
     call scoped to that question.
     """
 
-    def __init__(self, db: DB, broadcaster=None):
+    def __init__(self, db: DB, broadcaster: Broadcaster | None = None):
         self._db = db
         self._broadcaster = broadcaster
         self._plan: list[Dispatch] = []

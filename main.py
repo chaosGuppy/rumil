@@ -380,7 +380,7 @@ async def cmd_continue(
     counts = await db.count_pages_for_question(question_id)
     await db.init_budget(additional_budget)
     await db.create_run(
-        name=name or f'continue: {question.summary[:100]}',
+        name=name or f'continue: {question.headline[:100]}',
         question_id=question_id,
         config=get_settings().capture_config(),
     )

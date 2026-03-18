@@ -55,8 +55,8 @@ def page_text_for_field(page: Page, field_name: str) -> str:
     """Return the text to embed for a given page field."""
     if field_name == "content":
         return f"{page.headline}\n\n{page.content}"
-    if field_name == "headline":
-        return page.headline
+    if field_name == "abstract":
+        return page.abstract
     raise ValueError(f"Unknown embedding field: {field_name}")
 
 

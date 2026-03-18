@@ -79,7 +79,7 @@ async def test_basic_budget_split(mock_embeddings):
     mock_eq.assert_awaited_once_with('test query')
     mock_sp.assert_awaited_once()
     call_kwargs = mock_sp.call_args
-    assert call_kwargs.kwargs['field_name'] == 'headline'
+    assert call_kwargs.kwargs['field_name'] == 'abstract'
     assert call_kwargs.kwargs['match_count'] == 500
 
 

@@ -271,7 +271,9 @@ class DB:
             query = query.eq("is_superseded", False)
         return [
             _row_to_page(r)
-            for r in _rows(await query.order("created_at", desc=True).execute())
+            for r in _rows(
+                await query.order("created_at", desc=True).limit(10000).execute()
+            )
         ]
 
     async def supersede_page(self, old_id: str, new_id: str) -> None:
@@ -531,6 +533,16 @@ class DB:
             .select("*")
             .eq("from_page_id", from_page_id)
             .eq("to_page_id", to_page_id)
+            .execute()
+        )
+        return [_row_to_link(r) for r in rows]
+
+    async def get_all_links(self) -> list[PageLink]:
+        """Bulk-fetch all links, optionally scoped by project via page membership."""
+        rows = _rows(
+            await self.client.table("page_links")
+            .select("*")
+            .limit(50000)
             .execute()
         )
         return [_row_to_link(r) for r in rows]

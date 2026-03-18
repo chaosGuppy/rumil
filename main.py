@@ -19,7 +19,7 @@ from pathlib import Path
 
 from rumil.database import DB
 from rumil.models import Page, PageLayer, PageLink, PageType, LinkType, Workspace
-from rumil.orchestrator import Orchestrator, create_root_question
+from rumil.orchestrator import Orchestrator, create_root_question, run_concept_session
 from rumil.sources import create_source_page, run_ingest_calls
 from rumil.chat import run_chat
 from rumil.mapper import generate_map
@@ -398,6 +398,27 @@ async def cmd_continue(
     await _print_summary(db)
 
 
+async def cmd_concepts(question_id: str, db: DB) -> None:
+    question = await db.get_page(question_id)
+    if not question:
+        print(
+            f"Error: question '{question_id}' not found. Run --list to see existing questions."
+        )
+        sys.exit(1)
+    print(f"\nRunning concept session for: {question.headline[:80]}")
+    print(f"Question ID: {question_id}")
+    print("(Concept generation does not consume research budget)\n")
+    await run_concept_session(question_id, db)
+    registry = await db.get_concept_registry()
+    promoted = [p for p in registry if p.extra.get("promoted")]
+    print(f"\nConcept session complete.")
+    print(f"Registry: {len(registry)} total proposals, {len(promoted)} promoted.")
+    if promoted:
+        print("\nPromoted concepts:")
+        for p in promoted:
+            print(f"  {p.id[:8]}  {p.headline}")
+
+
 async def _print_summary(db: DB) -> None:
     total, used = await db.get_budget()
     print(f"\nPages written to: {PAGES_DIR}")
@@ -466,6 +487,12 @@ async def async_main():
         dest="chat_id",
         metavar="QUESTION_ID",
         help="Chat interactively about the research on a question",
+    )
+    parser.add_argument(
+        "--concepts",
+        dest="concepts_id",
+        metavar="QUESTION_ID",
+        help="Run a concept-generation session for a question",
     )
     parser.add_argument(
         "--add-question",
@@ -588,6 +615,8 @@ async def async_main():
     if args.list:
         await cmd_list(db, args.workspace_name)
         return
+    elif args.concepts_id:
+        await cmd_concepts(args.concepts_id, db)
     elif args.chat_id:
         await run_chat(args.chat_id, db)
     elif args.add_question:

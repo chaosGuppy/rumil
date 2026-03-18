@@ -62,7 +62,7 @@ async def question_page(tmp_db):
         layer=PageLayer.SQUIDGY,
         workspace=Workspace.RESEARCH,
         content="Is the sky blue?",
-        summary="Is the sky blue?",
+        headline="Is the sky blue?",
     )
     await tmp_db.save_page(page)
     return page

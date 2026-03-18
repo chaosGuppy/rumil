@@ -20,7 +20,7 @@ PageRefList = Annotated[list[PageRef], BeforeValidator(_coerce_page_refs)]
 
 class MoveTraceItem(BaseModel):
     type: str
-    summary: str = ""
+    headline: str = ""
     page_refs: list[PageRef] = []
     model_config = {"extra": "allow"}
 

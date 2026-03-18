@@ -74,7 +74,7 @@ async def create_source_page(filepath: str, db: DB) -> Page | None:
         layer=PageLayer.SQUIDGY,
         workspace=Workspace.RESEARCH,
         content=content,
-        summary=summary,
+        headline=summary,
         epistemic_status=2.5,
         epistemic_type="ingested document",
         provenance_model="human",

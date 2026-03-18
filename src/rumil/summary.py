@@ -46,11 +46,11 @@ async def build_research_tree(
         parts.append(f"# Research Question\n\n{question.content}\n")
     elif full_detail:
         parts.append(
-            f"{'#' * (depth + 2)} Sub-question: {question.summary}\n\n{question.content}\n"
+            f"{'#' * (depth + 2)} Sub-question: {question.headline}\n\n{question.content}\n"
         )
     else:
         parts.append(
-            f"{'#' * (depth + 2)} Sub-question: {question.summary}\n"
+            f"{'#' * (depth + 2)} Sub-question: {question.headline}\n"
         )
 
     # Considerations
@@ -59,12 +59,12 @@ async def build_research_tree(
         def format_consideration(claim, link) -> str:
             strength_note = f" (strength {link.strength:.1f})" if link.strength else ""
             if full_detail:
-                lines = [f"- **{claim.summary}**{strength_note}"]
+                lines = [f"- **{claim.headline}**{strength_note}"]
                 lines.append(f"  {claim.content}")
                 if link.reasoning:
                     lines.append(f"  *Bearing on question: {link.reasoning}*")
                 return '\n'.join(lines)
-            return f"- {claim.summary}{strength_note}"
+            return f"- {claim.headline}{strength_note}"
 
         parts.append(f"{indent}**Considerations:**\n")
         for p, l in sorted(considerations, key=lambda x: x[1].strength, reverse=True):
@@ -94,7 +94,7 @@ async def build_research_tree(
             else:
                 parts.append(
                     f"{indent}**{label}** (confidence {j.epistemic_status:.2f} — "
-                    f"{j.epistemic_type}): {j.summary}"
+                    f"{j.epistemic_type}): {j.headline}"
                 )
             parts.append("")
 
@@ -134,7 +134,7 @@ async def generate_summary(
     )
 
     if not research_tree.strip():
-        return f"No research found for question: {question.summary}"
+        return f"No research found for question: {question.headline}"
 
     system_prompt = _load_prompt_file("summarise.md")
     closing = _load_prompt_file("summarise-closing.md")

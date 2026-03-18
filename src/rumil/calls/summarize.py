@@ -41,23 +41,37 @@ TASK = (
     "(key considerations for and against, with their epistemic weight), any judgements "
     "rendered and their confidence levels, what the child questions contribute and their "
     "current state, and what remains uncertain or unresolved.\n\n"
-    "SUMMARY_SHORT (~30 words): Fully self-contained. State the question, the current "
+    "HEADLINE (~30 words): Fully self-contained. State the question, the current "
     "best answer or stance, and the main caveat. Must make sense with zero prior context.\n\n"
-    "SUMMARY_MEDIUM (~200 words): Fully self-contained. Include the core conclusion, "
+    "ABSTRACT (~200 words): Fully self-contained. Include the core conclusion, "
     "key supporting and opposing considerations, the status of child questions, and "
     "critical uncertainties. Preserve epistemic qualifications.\n\n"
     "Format your response exactly as:\n"
     "CONTENT: <text>\n\n"
-    "SUMMARY_SHORT: <text>\n\n"
-    "SUMMARY_MEDIUM: <text>"
+    "HEADLINE: <text>\n\n"
+    "ABSTRACT: <text>"
 )
 
 
 class SummaryOutput(BaseModel):
     content: str = Field(description="Main summary body (~1000 words)")
-    summary_short: str = Field(description="Self-contained ~30-word summary")
-    summary_medium: str = Field(description="Self-contained ~200-word summary")
     headline: str = Field(
+        description=(
+            "Self-contained summary of ~30 words. State the core topic and conclusion "
+            "so a reader with no prior context understands what the page is about and "
+            "what it concludes. Include the key finding and main caveat if space allows."
+        )
+    )
+    abstract: str = Field(
+        description=(
+            "Self-contained summary of ~200 words. Include: the core conclusion, "
+            "the main supporting reasoning or evidence, key counter-arguments and why "
+            "they were discounted, and the critical uncertainties or dependencies. "
+            "Preserve epistemic qualifications, confidence levels, and priority orderings. "
+            "Must make sense with zero prior context."
+        )
+    )
+    page_headline: str = Field(
         description=(
             "10-15 word headline for this summary page itself "
             "(not the question — e.g. 'Summary of evidence on X as of [date]')"
@@ -77,11 +91,11 @@ async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[Pa
     parts: list[str] = []
 
     def ref(page: Page) -> PageRef:
-        return PageRef(id=page.id, summary=page.summary)
+        return PageRef(id=page.id, summary=page.headline)
 
     page_refs: list[PageRef] = [ref(question)]
 
-    parts.append(_section("Question (full)", question.content or question.summary))
+    parts.append(_section("Question (full)", question.content or question.headline))
 
     considerations = await db.get_considerations_for_question(question_id)
     judgements = await db.get_judgements_for_question(question_id)
@@ -94,11 +108,11 @@ async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[Pa
         index_lines = ["Index of direct pages:"]
         for page, link in considerations:
             direction = f" [{link.direction.value}]" if link.direction else ""
-            index_lines.append(f"- [consideration{direction}] {page.summary_short or page.summary}")
+            index_lines.append(f"- [consideration{direction}] {page.headline}")
         for j in judgements:
-            index_lines.append(f"- [judgement {j.epistemic_status:.1f}] {j.summary_short or j.summary}")
+            index_lines.append(f"- [judgement {j.epistemic_status:.1f}] {j.headline}")
         for child in children:
-            index_lines.append(f"- [child question] {child.summary}")
+            index_lines.append(f"- [child question] {child.headline}")
         parts.append(_section("Index", "\n".join(index_lines)))
 
     if considerations:
@@ -107,7 +121,7 @@ async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[Pa
             direction = f" [{link.direction.value}]" if link.direction else ""
             cons_parts.append(
                 f"**Consideration{direction}** (strength {link.strength:.1f}): "
-                f"{page.summary}\n\n{page.content}"
+                f"{page.headline}\n\n{page.content}"
             )
         parts.append(_section("Direct Considerations (full)", "\n\n---\n\n".join(cons_parts)))
 
@@ -120,13 +134,13 @@ async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[Pa
         ))
         older = [j for j in judgements if j.id != most_recent.id]
         if older:
-            older_lines = [f"- [{j.epistemic_status:.1f}] {j.summary}" for j in older]
+            older_lines = [f"- [{j.epistemic_status:.1f}] {j.headline}" for j in older]
             parts.append(_section("Earlier Judgements (summaries)", "\n".join(older_lines)))
 
     if children:
         child_parts = []
         for child in children:
-            child_section_parts: list[str] = [f"**Child question:** {child.summary}"]
+            child_section_parts: list[str] = [f"**Child question:** {child.headline}"]
 
             child_summary = await db.get_latest_summary_for_question(child.id)
             if child_summary:
@@ -141,14 +155,14 @@ async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[Pa
             if child_judgements:
                 page_refs.extend(ref(j) for j in child_judgements)
                 most_recent_j = max(child_judgements, key=lambda j: j.created_at)
-                medium = most_recent_j.summary_medium or most_recent_j.summary
+                medium = most_recent_j.abstract or most_recent_j.headline
                 child_section_parts.append(f"**Judgement (medium):** {medium}")
 
             child_considerations = await db.get_considerations_for_question(child.id)
             if child_considerations:
                 page_refs.extend(ref(p) for p, _ in child_considerations)
                 con_lines = [
-                    f"  - {p.summary_short or p.summary}"
+                    f"  - {p.headline}"
                     for p, _ in child_considerations
                 ]
                 child_section_parts.append(
@@ -163,16 +177,16 @@ async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[Pa
                     gc_summary = await db.get_latest_summary_for_question(gc.id)
                     if gc_summary:
                         page_refs.append(ref(gc_summary))
-                    gc_medium = gc_summary.summary_medium if gc_summary else None
+                    gc_medium = gc_summary.abstract if gc_summary else None
                     gc_judgements = await db.get_judgements_for_question(gc.id)
                     if gc_judgements:
                         page_refs.extend(ref(j) for j in gc_judgements)
                     gc_short_j = (
-                        max(gc_judgements, key=lambda j: j.created_at).summary_short
+                        max(gc_judgements, key=lambda j: j.created_at).headline
                         if gc_judgements else None
                     )
                     gc_lines.append(
-                        f"  - **{gc.summary}**"
+                        f"  - **{gc.headline}**"
                         + (f"\n    Summary: {gc_medium}" if gc_medium else "")
                         + (f"\n    Judgement: {gc_short_j}" if gc_short_j else "")
                     )
@@ -243,16 +257,18 @@ async def summarize_question(
 
         data = result.data
         question = await db.get_page(question_id)
-        headline = data.get("headline") or f"Summary of {question.summary[:60] if question else question_id[:8]}"
+        page_headline = (
+            data.get("page_headline")
+            or f"Summary of {question.headline[:60] if question else question_id[:8]}"
+        )
 
         page = Page(
             page_type=PageType.SUMMARY,
             layer=PageLayer.SQUIDGY,
             workspace=Workspace.RESEARCH,
             content=data.get("content", ""),
-            summary=headline,
-            summary_short=data.get("summary_short", ""),
-            summary_medium=data.get("summary_medium", ""),
+            headline=data.get("headline") or page_headline,
+            abstract=data.get("abstract", ""),
             epistemic_status=0.0,
             epistemic_type="derived",
             provenance_model="claude-sonnet-4-6",
@@ -274,7 +290,7 @@ async def summarize_question(
 
         call.status = CallStatus.COMPLETE
         call.completed_at = datetime.now(UTC)
-        call.result_summary = f"Summary created: {headline[:80]}"
+        call.result_summary = f"Summary created: {page_headline[:80]}"
         await db.save_call(call)
 
         log.info("summarize_question complete: page=%s", page.id[:8])

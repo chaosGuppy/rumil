@@ -1,5 +1,7 @@
 """Tests for embedding creation and vector search."""
 
+import uuid
+
 import pytest
 
 from rumil.embeddings import (
@@ -34,7 +36,7 @@ async def test_store_and_search_round_trip(tmp_db):
         layer=PageLayer.SQUIDGY,
         workspace=Workspace.RESEARCH,
         content="Photosynthesis converts sunlight into chemical energy in plants.",
-        summary="Photosynthesis converts light to energy",
+        headline="Photosynthesis converts light to energy",
     )
     await tmp_db.save_page(page)
     await embed_and_store_page(tmp_db, page)
@@ -55,14 +57,14 @@ async def test_store_and_search_with_field_filter(tmp_db):
         layer=PageLayer.SQUIDGY,
         workspace=Workspace.RESEARCH,
         content="Quantum entanglement links particles across distances.",
-        summary="Quantum entanglement links distant particles",
+        headline="Quantum entanglement links distant particles",
     )
     await tmp_db.save_page(page)
-    await embed_and_store_page(tmp_db, page, field_name="summary")
+    await embed_and_store_page(tmp_db, page, field_name="headline")
 
     results_with_filter = await search_pages(
         tmp_db, "quantum particles", match_threshold=0.3,
-        field_name="summary",
+        field_name="headline",
     )
     returned_ids = [p.id for p, _ in results_with_filter]
     assert page.id in returned_ids
@@ -72,4 +74,33 @@ async def test_store_and_search_with_field_filter(tmp_db):
         field_name="content",
     )
     wrong_ids = [p.id for p, _ in results_wrong_field]
+    assert page.id not in wrong_ids
+
+
+async def test_search_with_ab_run_id_filter(tmp_db):
+    """When db.ab_run_id is set, embedding search only returns pages from that AB arm."""
+    ab_run_id = str(uuid.uuid4())
+    tmp_db.ab_run_id = ab_run_id
+
+    page = Page(
+        page_type=PageType.CLAIM,
+        layer=PageLayer.SQUIDGY,
+        workspace=Workspace.RESEARCH,
+        content="Tectonic plates drift slowly across the asthenosphere.",
+        headline="Tectonic plates drift on asthenosphere",
+    )
+    await tmp_db.save_page(page)
+    await embed_and_store_page(tmp_db, page)
+
+    results_matching = await search_pages(
+        tmp_db, "plate tectonics", match_threshold=0.3,
+    )
+    matching_ids = [p.id for p, _ in results_matching]
+    assert page.id in matching_ids
+
+    tmp_db.ab_run_id = "nonexistent-ab-run-id"
+    results_wrong_ab = await search_pages(
+        tmp_db, "plate tectonics", match_threshold=0.3,
+    )
+    wrong_ids = [p.id for p, _ in results_wrong_ab]
     assert page.id not in wrong_ids

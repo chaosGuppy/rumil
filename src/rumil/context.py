@@ -50,7 +50,7 @@ async def format_page(
     source: DB | PageGraph | None = graph if graph is not None else db
     extra = page.extra or {}
     lines = [
-        f"### [{page.page_type.value.upper()}] {page.summary}",
+        f"### [{page.page_type.value.upper()}] {page.headline}",
         f"ID: {page.id}",
         f"Epistemic status: {page.epistemic_status:.1f}/5 ({page.epistemic_type})",
     ]
@@ -68,7 +68,7 @@ async def format_page(
             for claim, link in considerations:
                 lines.append(
                     f"- [strength {link.strength:.1f}/5] "
-                    f"{claim.summary} (ID: {claim.id})"
+                    f"{claim.headline} (ID: {claim.id})"
                 )
                 if link.reasoning:
                     lines.append(f"  Reasoning: {link.reasoning}")
@@ -78,7 +78,7 @@ async def format_page(
             lines.append("")
             lines.append("**Existing judgements:**")
             for j in judgements:
-                lines.append(f"- {j.summary} (confidence: {j.epistemic_status:.1f}/5)")
+                lines.append(f"- {j.headline} (confidence: {j.epistemic_status:.1f}/5)")
 
     return "\n".join(lines)
 
@@ -129,7 +129,7 @@ async def build_context_for_question(
                 loaded_ids.append(claim.id)
                 parts.append(
                     f"**[strength {link.strength:.1f}/5]** "
-                    f"{claim.summary} (ID: `{claim.id}`)"
+                    f"{claim.headline} (ID: `{claim.id}`)"
                 )
                 parts.append(claim.content)
                 if link.reasoning:
@@ -156,7 +156,7 @@ async def build_context_for_question(
             parts.append("")
             for child, j in child_judgements:
                 loaded_ids.append(j.id)
-                parts.append(f"*On sub-question: {child.summary} (`{child.id}`)*")
+                parts.append(f"*On sub-question: {child.headline} (`{child.id}`)*")
                 parts.append(await format_page(j))
                 parts.append("")
 
@@ -249,11 +249,11 @@ async def format_question_for_scout(
         for claim, link in direct_cons:
             loaded_ids.append(claim.id)
             parts.append(
-                f"- [strength {link.strength:.1f}] {claim.summary} (ID: {claim.id})"
+                f"- [strength {link.strength:.1f}] {claim.headline} (ID: {claim.id})"
             )
         for child, link in direct_children:
             loaded_ids.append(child.id)
-            parts.append(f"- [sub-Q] {child.summary} (ID: {child.id})")
+            parts.append(f"- [sub-Q] {child.headline} (ID: {child.id})")
         parts.append("")
 
     if structural_cons or structural_children:
@@ -266,7 +266,7 @@ async def format_question_for_scout(
         parts.append("")
         for claim, link in structural_cons:
             loaded_ids.append(claim.id)
-            parts.append(f"### [{claim.page_type.value.upper()}] {claim.summary}")
+            parts.append(f"### [{claim.page_type.value.upper()}] {claim.headline}")
             parts.append(f"ID: {claim.id}")
             parts.append(f"Strength: {link.strength:.1f}/5")
             parts.append("")
@@ -274,7 +274,7 @@ async def format_question_for_scout(
             parts.append("")
         for child, link in structural_children:
             loaded_ids.append(child.id)
-            parts.append(f"### [QUESTION] {child.summary}")
+            parts.append(f"### [QUESTION] {child.headline}")
             parts.append(f"ID: {child.id}")
             parts.append("")
             parts.append(child.content)
@@ -299,7 +299,7 @@ async def format_question_for_scout(
         parts.append("")
         for child, j in child_judgements:
             loaded_ids.append(j.id)
-            parts.append(f"*On sub-question: {child.summary} (`{child.id}`)*")
+            parts.append(f"*On sub-question: {child.headline} (`{child.id}`)*")
             parts.append(await format_page(j))
             parts.append("")
 
@@ -336,7 +336,7 @@ async def _build_question_index(
         scout_str = "never scouted"
 
     lines = [
-        f"{prefix}{tag}{hypothesis_tag} `{question_id}` — {question.summary} "
+        f"{prefix}{tag}{hypothesis_tag} `{question_id}` — {question.headline} "
         f"({n_cons} cons · {scout_str})"
     ]
     for child in await source.get_child_questions(question_id):
@@ -446,7 +446,7 @@ async def build_prioritization_context(
             if question_ids:
                 for qid in question_ids:
                     q = await source.get_page(qid)
-                    q_summary = q.summary[:60] if q else qid[:8]
+                    q_summary = q.headline[:60] if q else qid[:8]
                     parts.append(f"  Ingested for: `{qid[:8]}` — {q_summary}")
             else:
                 parts.append("  Not yet ingested for any question")
@@ -460,7 +460,7 @@ def _format_page_summary(page: Page) -> str:
     e = f"{page.epistemic_status:.0f}" if page.epistemic_status is not None else "?"
     return (
         f'[{page.page_type.value.upper()} {e}/5] '
-        f'`{page.id[:8]}` -- {page.summary}'
+        f'`{page.id[:8]}` -- {page.headline}'
     )
 
 
@@ -501,7 +501,7 @@ async def build_embedding_based_context(
         query_embedding,
         match_threshold=match_threshold,
         match_count=500,
-        field_name='summary',
+        field_name='headline',
     )
 
     scope_section = ''

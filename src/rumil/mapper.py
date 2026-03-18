@@ -53,7 +53,7 @@ def _budget_select(select_id: str) -> str:
 def _render_consideration(claim: Page, link, parent_question_id: str) -> str:
     color = _confidence_color(claim.epistemic_status)
     stars = _stars(link.strength)
-    words = claim.summary.split()
+    words = claim.headline.split()
     short = " ".join(words[:30]) + ("…" if len(words) > 30 else "")
     epistemic = f"{claim.epistemic_status:.1f}/5 confidence" + (
         f" — {escape(claim.epistemic_type)}" if claim.epistemic_type else ""
@@ -69,7 +69,7 @@ def _render_consideration(claim: Page, link, parent_question_id: str) -> str:
     sel_id = f"b-{claim.id[:8]}"
     # Escape the summary for safe JS string embedding
     js_summary = (
-        claim.summary.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
+        claim.headline.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
     )
     btn = (
         f"{_budget_select(sel_id)}"
@@ -112,7 +112,7 @@ def _render_judgement(j: Page, index: int, total: int) -> str:
     <summary>
       <span class="j-label">{label}</span>
       <span class="conf-badge">{j.epistemic_status:.1f}/5</span>
-      <span class="summary-text">{escape(j.summary[:100])}</span>
+      <span class="summary-text">{escape(j.headline[:100])}</span>
     </summary>
     <div class="expanded">
       <p class="epistemic">{j.epistemic_status:.1f}/5 confidence — {escape(j.epistemic_type)}</p>
@@ -187,7 +187,7 @@ async def _render_question(question_id: str, db: DB, depth: int = 0) -> str:
 
     hn = min(depth + 2, 6)
     return f"""<div class="q-node depth-{depth}">
-  <h{hn} class="q-heading">{escape(question.summary)}</h{hn}>
+  <h{hn} class="q-heading">{escape(question.headline)}</h{hn}>
   <p class="q-stats">{stats}</p>
   {q_btn}
   {j_html}{c_html}{ch_html}
@@ -286,7 +286,7 @@ async def generate_map(question_id: str, db: DB) -> Path:
     tree_html = await _render_question(question_id, db)
 
     timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-    slug = "".join(c if c.isalnum() or c in " -" else "" for c in question.summary[:50])
+    slug = "".join(c if c.isalnum() or c in " -" else "" for c in question.headline[:50])
     slug = slug.strip().replace(" ", "-").lower()
     output_path = MAPS_DIR / f"{timestamp}-{slug}.html"
 
@@ -295,7 +295,7 @@ async def generate_map(question_id: str, db: DB) -> Path:
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Research Map: {escape(question.summary[:60])}</title>
+  <title>Research Map: {escape(question.headline[:60])}</title>
   <style>{_CSS}</style>
   <script>
   function copyCmd(btn, cmd) {{
@@ -315,7 +315,7 @@ async def generate_map(question_id: str, db: DB) -> Path:
 </head>
 <body>
   <p class="subtitle">Research Map</p>
-  <h1>{escape(question.summary)}</h1>
+  <h1>{escape(question.headline)}</h1>
   {tree_html}
   <p class="footer">Generated {datetime.now(UTC).strftime("%Y-%m-%d %H:%M")} UTC</p>
 </body>

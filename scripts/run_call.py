@@ -48,6 +48,8 @@ from rumil.settings import Settings, get_settings, _settings_var
 async def run_call(args: argparse.Namespace, db: DB, question_id: str) -> None:
     """Execute a single call (scout/assess/prioritize) against the given DB."""
     settings = get_settings()
+
+
     call_type = args.call_type
     up_to_stage = CallStage(args.up_to_stage) if args.up_to_stage else None
 

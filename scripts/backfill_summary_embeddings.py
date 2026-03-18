@@ -28,7 +28,7 @@ async def run(args: argparse.Namespace) -> None:
     total = 0
     while True:
         count = await backfill_embeddings(
-            db, field_name="summary", batch_size=args.batch_size,
+            db, field_name="headline", batch_size=args.batch_size,
         )
         total += count
         if count < args.batch_size:

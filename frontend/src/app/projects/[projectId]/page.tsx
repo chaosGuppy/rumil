@@ -132,7 +132,7 @@ export default function PagesIndexPage() {
     const q = search.toLowerCase();
     return pages.filter((p) => {
       if (activeTypes.size > 0 && !activeTypes.has(p.page_type)) return false;
-      if (q && !p.summary.toLowerCase().includes(q) && !p.content.toLowerCase().includes(q))
+      if (q && !p.headline.toLowerCase().includes(q) && !p.content.toLowerCase().includes(q))
         return false;
       return true;
     });
@@ -685,7 +685,7 @@ export default function PagesIndexPage() {
                     {p.page_type}
                   </span>
                   <div className="row-body">
-                    <div className="row-summary">{p.summary}</div>
+                    <div className="row-summary">{p.headline}</div>
                     <div className="row-content">{p.content}</div>
                   </div>
                   <div className="row-meta">

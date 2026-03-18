@@ -55,7 +55,7 @@ export default async function TracePage({
             href={`/pages/${trace.question.id}`}
             className="trace-back-link"
           >
-            &larr; {trace.question.summary}
+            &larr; {trace.question.headline}
           </Link>
         )}
         <div className="trace-title-row">

@@ -33,11 +33,11 @@ async def execute(
         to_page = await db.get_page(link.to_page_id)
         trace_extra["from_page"] = {
             "id": link.from_page_id,
-            "summary": from_page.summary if from_page else "",
+            "summary": from_page.headline if from_page else "",
         }
         trace_extra["to_page"] = {
             "id": link.to_page_id,
-            "summary": to_page.summary if to_page else "",
+            "summary": to_page.headline if to_page else "",
         }
     await db.update_link_role(payload.link_id, payload.new_role)
     log.info(

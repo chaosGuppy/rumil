@@ -96,7 +96,7 @@ async def _add_question(question_text: str, parent_id: str, db: DB) -> str:
         layer=PageLayer.SQUIDGY,
         workspace=Workspace.RESEARCH,
         content=question_text,
-        summary=question_text[:120],
+        headline=question_text[:120],
         epistemic_status=2.5,
         epistemic_type="open question",
         provenance_model="human",
@@ -164,7 +164,7 @@ async def run_chat(question_id: str, db: DB) -> None:
         print(f"Question {question_id} not found.")
         return
 
-    print(f"\nLoading research context for: {question.summary[:80]}")
+    print(f"\nLoading research context for: {question.headline[:80]}")
     research_tree = await build_research_tree(question_id, db)
 
     if not research_tree.strip():

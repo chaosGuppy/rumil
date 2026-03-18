@@ -203,7 +203,7 @@ class Page(BaseModel):
     layer: PageLayer
     workspace: Workspace
     content: str
-    summary: str
+    headline: str
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     project_id: str = ""
     epistemic_status: float = 2.5  # 0-5 subjective confidence
@@ -215,8 +215,7 @@ class Page(BaseModel):
     superseded_by: str | None = None
     is_superseded: bool = False
     extra: dict = Field(default_factory=dict)
-    summary_short: str = ""
-    summary_medium: str = ""
+    abstract: str = ""
 
     def is_active(self) -> bool:
         return not self.is_superseded

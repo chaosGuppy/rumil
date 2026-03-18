@@ -43,7 +43,7 @@ async def source_page(tmp_db):
         layer=PageLayer.SQUIDGY,
         workspace=Workspace.RESEARCH,
         content="The sky appears blue due to Rayleigh scattering of sunlight.",
-        summary="Rayleigh scattering explains blue sky",
+        headline="Rayleigh scattering explains blue sky",
         extra={"filename": "sky-science.txt", "char_count": 58},
     )
     await tmp_db.save_page(page)

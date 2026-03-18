@@ -37,7 +37,7 @@ async def cmd_add_question(
         layer=PageLayer.SQUIDGY,
         workspace=Workspace.RESEARCH,
         content=question_text,
-        summary=question_text[:120],
+        headline=question_text[:120],
         epistemic_status=2.5,
         epistemic_type="open question",
         provenance_model="human",
@@ -61,7 +61,7 @@ async def cmd_add_question(
                 reasoning="Manually added sub-question",
             )
             await db.save_link(link)
-            print(f"\nAdded as sub-question of: {parent.summary[:70]}")
+            print(f"\nAdded as sub-question of: {parent.headline[:70]}")
 
     print(f"\nQuestion added: {page.id}")
     print(f"Text:           {question_text}")
@@ -115,7 +115,7 @@ async def cmd_ingest(
         return
 
     frontend = get_settings().frontend_url.rstrip("/")
-    print(f"\nExtracting considerations for: {question.summary[:80]}")
+    print(f"\nExtracting considerations for: {question.headline[:80]}")
     print(f"Budget: {effective_budget} call{'s' if effective_budget != 1 else ''}")
     print(f"Trace:  {frontend}/traces/{db.run_id}\n")
     await db.init_budget(effective_budget)
@@ -133,7 +133,7 @@ async def cmd_map(question_id: str, db: DB) -> None:
             f"Error: question '{question_id}' not found. Run --list to see existing questions."
         )
         sys.exit(1)
-    print(f"\nGenerating map for: {question.summary[:80]}")
+    print(f"\nGenerating map for: {question.headline[:80]}")
     path = await generate_map(question_id, db)
     print(f"Map saved to: {path}")
     print("Open that file in your browser to view it.")
@@ -152,13 +152,13 @@ async def cmd_summary(
         )
         sys.exit(1)
 
-    print(f"\nGenerating summary for: {question.summary[:80]}")
+    print(f"\nGenerating summary for: {question.headline[:80]}")
     print("(This will use one LLM call but does not count against research budget)\n")
 
     summary_text = await generate_summary(
         question_id, db, max_depth=max_depth, summary_cutoff=summary_cutoff
     )
-    path = save_summary(summary_text, question.summary)
+    path = save_summary(summary_text, question.headline)
 
     print(summary_text)
     print(f"\n---\nSummary saved to: {path}")
@@ -175,7 +175,7 @@ async def cmd_list(db: DB, workspace_name: str) -> None:
     print("-" * 100)
     for q in questions:
         counts = await db.count_pages_for_question(q.id)
-        truncated = q.summary[:55] + "…" if len(q.summary) > 55 else q.summary
+        truncated = q.headline[:55] + "…" if len(q.headline) > 55 else q.headline
         print(
             f"{q.id}  {counts['considerations']:>4}  {counts['judgements']:>4}  {truncated}"
         )
@@ -386,7 +386,7 @@ async def cmd_continue(
     )
 
     frontend = get_settings().frontend_url.rstrip("/")
-    print(f"\nContinuing investigation of: {question.summary[:80]}")
+    print(f"\nContinuing investigation of: {question.headline[:80]}")
     print(f"Question ID:  {question_id}")
     print(
         f"Existing:     {counts['considerations']} considerations, {counts['judgements']} judgements"

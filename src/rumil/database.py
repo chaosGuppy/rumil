@@ -46,7 +46,7 @@ def _row_to_page(row: dict[str, Any]) -> Page:
         layer=PageLayer(row["layer"]),
         workspace=Workspace(row["workspace"]),
         content=row["content"],
-        summary=row["summary"],
+        headline=row["headline"],
         project_id=row.get("project_id") or "",
         epistemic_status=row["epistemic_status"],
         epistemic_type=row["epistemic_type"] or "",
@@ -57,8 +57,7 @@ def _row_to_page(row: dict[str, Any]) -> Page:
         superseded_by=row["superseded_by"],
         is_superseded=bool(row["is_superseded"]),
         extra=row["extra"] or {},
-        summary_short=row.get("summary_short") or "",
-        summary_medium=row.get("summary_medium") or "",
+        abstract=row.get("abstract") or "",
     )
 
 
@@ -180,8 +179,8 @@ class DB:
 
     async def save_page(self, page: Page) -> None:
         log.debug(
-            "save_page: id=%s, type=%s, summary=%s",
-            page.id[:8], page.page_type.value, page.summary[:60],
+            "save_page: id=%s, type=%s, headline=%s",
+            page.id[:8], page.page_type.value, page.headline[:60],
         )
         if not page.project_id:
             page.project_id = self.project_id
@@ -192,7 +191,7 @@ class DB:
                 "layer": page.layer.value,
                 "workspace": page.workspace.value,
                 "content": page.content,
-                "summary": page.summary,
+                "headline": page.headline,
                 "project_id": page.project_id,
                 "epistemic_status": page.epistemic_status,
                 "epistemic_type": page.epistemic_type,
@@ -205,16 +204,15 @@ class DB:
                 "extra": page.extra,
                 "run_id": self.run_id,
                 "ab_run_id": self.ab_run_id,
-                "summary_short": page.summary_short,
-                "summary_medium": page.summary_medium,
+                "abstract": page.abstract,
             }
         ).execute()
 
     async def update_page_summaries(
-        self, page_id: str, summary_short: str, summary_medium: str
+        self, page_id: str, headline: str, abstract: str
     ) -> None:
         await self.client.table("pages").update(
-            {"summary_short": summary_short, "summary_medium": summary_medium}
+            {"headline": headline, "abstract": abstract}
         ).eq("id", page_id).execute()
 
     async def get_page(self, page_id: str) -> Page | None:
@@ -264,7 +262,7 @@ class DB:
         """Return a human-readable label like '"Summary text" [short_id]'."""
         page = await self.get_page(page_id)
         if page:
-            return f'"{page.summary[:60]}" [{page_id[:8]}]'
+            return f'"{page.headline[:60]}" [{page_id[:8]}]'
         return f"[{page_id[:8]}]"
 
     async def get_pages(
@@ -982,7 +980,7 @@ class DB:
             if scope_id:
                 page = await self.get_page(scope_id)
                 if page:
-                    question_summary = page.summary
+                    question_summary = page.headline
             results.append({
                 "run_id": rid,
                 "created_at": row["created_at"],

@@ -128,9 +128,9 @@ class MoveDef(Generic[S]):
 
 
 class CreatePagePayload(BaseModel):
-    summary: str = Field(
+    headline: str = Field(
         description=(
-            "10-15 word headline summary (20 word ceiling). Must be a sharp, "
+            "10-15 word headline (20 word ceiling). Must be a sharp, "
             "self-contained label — not a truncated sentence. Name the actual claim "
             "or position, e.g. 'Solar payback periods have fallen below 7 years in "
             "most climates'. Avoid vague openings like 'There are several factors...'."
@@ -166,7 +166,7 @@ def _pages_dir(workspace: Workspace) -> Path:
 
 
 def _page_filename(page: Page) -> str:
-    slug = page.summary[:60].lower()
+    slug = page.headline[:60].lower()
     slug = "".join(c if c.isalnum() or c in " -" else "" for c in slug)
     slug = slug.strip().replace(" ", "-")
     short_id = page.id[:8]
@@ -181,7 +181,7 @@ def write_page_file(page: Page) -> None:
     extra = page.extra or {}
 
     lines = [
-        f"# {page.summary}",
+        f"# {page.headline}",
         "",
         f"**Type:** {page.page_type.value}  ",
         f"**Layer:** {page.layer.value}  ",
@@ -221,7 +221,7 @@ async def create_page(
         layer=layer,
         workspace=workspace,
         content=payload.content,
-        summary=payload.summary,
+        headline=payload.headline,
         epistemic_status=payload.epistemic_status,
         epistemic_type=payload.epistemic_type,
         provenance_model="claude-opus-4-6",
@@ -233,13 +233,13 @@ async def create_page(
     await db.save_page(page)
     write_page_file(page)
     log.info(
-        "Page created: type=%s, id=%s, summary=%s",
-        page_type.value, page.id[:8], page.summary[:70],
+        "Page created: type=%s, id=%s, headline=%s",
+        page_type.value, page.id[:8], page.headline[:70],
     )
 
     message = (
-        f"Created [{page.id[:8]}]: {payload.summary}"
-        if payload.summary
+        f"Created [{page.id[:8]}]: {payload.headline}"
+        if payload.headline
         else f"Created [{page.id[:8]}]"
     )
     return MoveResult(message=message, created_page_id=page.id)

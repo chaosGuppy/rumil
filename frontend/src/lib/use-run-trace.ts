@@ -23,10 +23,16 @@ export function useRunTrace(
       .on("broadcast", { event: "*" }, () => {
         queryClient.invalidateQueries({ queryKey: traceKeys.detail(runId) });
       })
-      .subscribe();
+      .subscribe((status) => {
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          // Force an immediate refetch so polling picks up the slack.
+          queryClient.invalidateQueries({ queryKey: traceKeys.detail(runId) });
+        }
+      });
 
     return () => {
       channel.unsubscribe();
+      client.removeAllChannels();
     };
   }, [runId, realtimeConfig, queryClient]);
 

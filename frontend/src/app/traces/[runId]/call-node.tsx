@@ -235,8 +235,7 @@ function MoveRow({
   );
 }
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+import { CLIENT_API_BASE as API_BASE } from "@/api-config";
 
 function CollapsiblePre({
   label,

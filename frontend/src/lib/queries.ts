@@ -1,7 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 import type { RunTraceOut, RealtimeConfigOut } from "@/api/types.gen";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+import { CLIENT_API_BASE as API_BASE } from "@/api-config";
 
 export const traceKeys = {
   all: ["traces"] as const,

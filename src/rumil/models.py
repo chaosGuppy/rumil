@@ -58,6 +58,7 @@ class CallType(str, Enum):
     SUMMARIZE = "summarize"
     SCOUT_CONCEPTS = "scout_concepts"
     ASSESS_CONCEPT = "assess_concept"
+    WEB_RESEARCH = "web_research"
 
 
 # The subset of CallTypes that prioritization can dispatch.

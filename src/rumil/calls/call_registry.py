@@ -9,6 +9,7 @@ from rumil.calls.assess_concept import AssessConceptCall
 from rumil.calls.ingest import EmbeddingIngestCall, IngestCall
 from rumil.calls.scout import EmbeddingScoutCall, ScoutCall
 from rumil.calls.scout_concepts import ScoutConceptsCall
+from rumil.calls.web_research import WebResearchCall
 
 SCOUT_CALL_CLASSES: dict[str, type[ScoutCall]] = {
     "default": ScoutCall,
@@ -31,4 +32,8 @@ SCOUT_CONCEPTS_CALL_CLASSES: dict[str, type[ScoutConceptsCall]] = {
 
 ASSESS_CONCEPT_CALL_CLASSES: dict[str, type[AssessConceptCall]] = {
     "default": AssessConceptCall,
+}
+
+WEB_RESEARCH_CALL_CLASSES: dict[str, type[WebResearchCall]] = {
+    "default": WebResearchCall,
 }

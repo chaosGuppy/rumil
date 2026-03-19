@@ -53,6 +53,10 @@ async def format_page(
     graph: PageGraph | None = None,
 ) -> str:
     """Format a single page as readable text for LLM context."""
+    if not page.content and db:
+        full = await db.get_page(page.id)
+        if full:
+            page = full
     source: DB | PageGraph | None = graph if graph is not None else db
     extra = page.extra or {}
     lines = [
@@ -149,7 +153,7 @@ async def build_context_for_question(
             parts.append("")
             for j in judgements:
                 loaded_ids.append(j.id)
-                parts.append(await format_page(j))
+                parts.append(await format_page(j, db=db))
                 parts.append("")
 
         children = await source.get_child_questions(question_id)
@@ -163,7 +167,7 @@ async def build_context_for_question(
             for child, j in child_judgements:
                 loaded_ids.append(j.id)
                 parts.append(f"*On sub-question: {child.headline} (`{child.id}`)*")
-                parts.append(await format_page(j))
+                parts.append(await format_page(j, db=db))
                 parts.append("")
 
     return "\n".join(parts), loaded_ids
@@ -234,7 +238,7 @@ async def format_question_for_scout(
 
     loaded_ids = [question_id]
     parts = ["# Scope Question", ""]
-    parts.append(await format_page(question))
+    parts.append(await format_page(question, db=db))
     parts.append("")
 
     considerations = await source.get_considerations_for_question(question_id)
@@ -272,6 +276,10 @@ async def format_question_for_scout(
         parts.append("")
         for claim, link in structural_cons:
             loaded_ids.append(claim.id)
+            if not claim.content:
+                full = await db.get_page(claim.id)
+                if full:
+                    claim = full
             parts.append(f"### [{claim.page_type.value.upper()}] {claim.headline}")
             parts.append(f"ID: {claim.id}")
             parts.append(f"Strength: {link.strength:.1f}/5")
@@ -280,6 +288,10 @@ async def format_question_for_scout(
             parts.append("")
         for child, link in structural_children:
             loaded_ids.append(child.id)
+            if not child.content:
+                full = await db.get_page(child.id)
+                if full:
+                    child = full
             parts.append(f"### [QUESTION] {child.headline}")
             parts.append(f"ID: {child.id}")
             parts.append("")
@@ -292,7 +304,7 @@ async def format_question_for_scout(
         parts.append("")
         for j in judgements:
             loaded_ids.append(j.id)
-            parts.append(await format_page(j))
+            parts.append(await format_page(j, db=db))
             parts.append("")
 
     children = await source.get_child_questions(question_id)
@@ -306,7 +318,7 @@ async def format_question_for_scout(
         for child, j in child_judgements:
             loaded_ids.append(j.id)
             parts.append(f"*On sub-question: {child.headline} (`{child.id}`)*")
-            parts.append(await format_page(j))
+            parts.append(await format_page(j, db=db))
             parts.append("")
 
     return "\n".join(parts), loaded_ids
@@ -411,13 +423,15 @@ async def build_prioritization_context(
     """Build context for a prioritization call.
 
     Returns (context_text, short_id_map) where short_id_map maps 8-char
-    short IDs to full UUIDs.
+    short IDs to full UUIDs for the scope subtree only.
     """
     source: DB | PageGraph = graph if graph is not None else db
-    map_text, short_id_map = await build_workspace_map(db, graph=graph)
-    parts = [map_text, "", "---", "", "# Prioritization Context", ""]
+    parts = ["# Prioritization Context", ""]
 
+    short_id_map: dict[str, str] = {}
     if scope_question_id:
+        subtree_ids = await collect_subtree_ids(scope_question_id, db, graph=graph)
+        short_id_map = {sid[:8]: sid for sid in subtree_ids}
         question = await source.get_page(scope_question_id)
         if question:
             index_lines = await _build_question_index(

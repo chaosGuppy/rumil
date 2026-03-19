@@ -39,24 +39,31 @@ def _rows(response: Any) -> _Rows:
     return cast(_Rows, response.data) if response.data else []
 
 
+_SLIM_PAGE_COLUMNS = (
+    "id,page_type,layer,workspace,headline,abstract,"
+    "epistemic_status,epistemic_type,extra,is_superseded,"
+    "project_id,created_at,superseded_by,run_id"
+)
+
+
 def _row_to_page(row: dict[str, Any]) -> Page:
     return Page(
         id=row["id"],
         page_type=PageType(row["page_type"]),
         layer=PageLayer(row["layer"]),
         workspace=Workspace(row["workspace"]),
-        content=row["content"],
-        headline=row["headline"],
+        content=row.get("content") or "",
+        headline=row.get("headline") or "",
         project_id=row.get("project_id") or "",
-        epistemic_status=row["epistemic_status"],
-        epistemic_type=row["epistemic_type"] or "",
-        provenance_model=row["provenance_model"] or "",
-        provenance_call_type=row["provenance_call_type"] or "",
-        provenance_call_id=row["provenance_call_id"] or "",
+        epistemic_status=row.get("epistemic_status") or 0.0,
+        epistemic_type=row.get("epistemic_type") or "",
+        provenance_model=row.get("provenance_model") or "",
+        provenance_call_type=row.get("provenance_call_type") or "",
+        provenance_call_id=row.get("provenance_call_id") or "",
         created_at=datetime.fromisoformat(row["created_at"]),
-        superseded_by=row["superseded_by"],
-        is_superseded=bool(row["is_superseded"]),
-        extra=row["extra"] or {},
+        superseded_by=row.get("superseded_by"),
+        is_superseded=bool(row.get("is_superseded", False)),
+        extra=row.get("extra") or {},
         abstract=row.get("abstract") or "",
     )
 
@@ -278,6 +285,21 @@ class DB:
         if page:
             return f'"{page.headline[:60]}" [{page_id[:8]}]'
         return f"[{page_id[:8]}]"
+
+    async def get_pages_slim(self, active_only: bool = True) -> list[Page]:
+        """Fetch all pages without the content field — safe for bulk loads."""
+        query = self.client.table("pages").select(_SLIM_PAGE_COLUMNS)
+        if self.project_id:
+            query = query.eq("project_id", self.project_id)
+        if active_only:
+            query = query.eq("is_superseded", False)
+        query = self._ab_filter(query)
+        return [
+            _row_to_page(r)
+            for r in _rows(
+                await query.order("created_at", desc=True).limit(10000).execute()
+            )
+        ]
 
     async def get_pages(
         self,

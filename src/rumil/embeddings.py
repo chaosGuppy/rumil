@@ -52,11 +52,17 @@ async def embed_query(text: str) -> Sequence[float]:
 
 
 def page_text_for_field(page: Page, field_name: str) -> str:
-    """Return the text to embed for a given page field."""
+    """Return the text to embed for a given page field.
+
+    For the 'abstract' field, falls back to headline+content when abstract is empty
+    (pages that pre-date summary generation or haven't been through closing review).
+    """
     if field_name == "content":
         return f"{page.headline}\n\n{page.content}"
     if field_name == "abstract":
-        return page.abstract
+        if page.abstract and page.abstract.strip():
+            return page.abstract
+        return f"{page.headline}\n\n{page.content}"
     raise ValueError(f"Unknown embedding field: {field_name}")
 
 
@@ -180,9 +186,13 @@ async def backfill_embeddings(
     if not rows:
         return 0
     pages = [_row_to_page(r) for r in rows]
-    texts = [page_text_for_field(p, field_name) for p in pages]
-    embeddings = await embed_texts(texts, input_type="document")
-    for page, embedding in zip(pages, embeddings):
+    eligible = [(p, page_text_for_field(p, field_name)) for p in pages]
+    eligible = [(p, t) for p, t in eligible if t and t.strip()]
+    if not eligible:
+        return 0
+    pages_to_embed, texts = zip(*eligible)
+    embeddings = await embed_texts(list(texts), input_type="document")
+    for page, embedding in zip(pages_to_embed, embeddings):
         await store_embedding(db, page.id, field_name, embedding)
-    log.info("Backfilled %s embeddings for %d pages", field_name, len(pages))
-    return len(pages)
+    log.info("Backfilled %s embeddings for %d pages", field_name, len(pages_to_embed))
+    return len(pages_to_embed)

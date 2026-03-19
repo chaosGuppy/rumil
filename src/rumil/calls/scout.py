@@ -110,7 +110,7 @@ async def link_new_pages(
         return
 
     workspace_map, _ = await build_workspace_map(db, graph=graph)
-    question_text = await format_page(question)
+    question_text = await format_page(question, db=db)
     existing_links = await _build_link_inventory(question_id, db, graph=graph)
     working_context = (
         workspace_map + '\n\n---\n\n'
@@ -585,11 +585,7 @@ class EmbeddingScoutCall(ScoutCall):
             scout_mode=self.mode.value,
         ))
 
-        graph = await PageGraph.load(self.db)
-        workspace_map, _ = await build_workspace_map(self.db, graph=graph)
-        self.context_text = assemble_call_context(
-            emb_result.context_text, workspace_map=workspace_map,
-        )
+        self.context_text = assemble_call_context(emb_result.context_text)
 
         self.tools = [MOVES[mt].bind(self.state) for mt in MoveType]
         self.tool_defs, _ = _prepare_tools(self.tools)

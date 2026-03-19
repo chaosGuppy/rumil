@@ -48,6 +48,29 @@ async def collect_subtree_ids(
     return result
 
 
+async def collect_all_subtree_page_ids(
+    question_id: str,
+    db: DB,
+    graph: PageGraph | None = None,
+    _visited: set[str] | None = None,
+) -> set[str]:
+    """Recursively collect all page IDs in a subtree: questions, considerations, and judgements."""
+    if _visited is None:
+        _visited = set()
+    if question_id in _visited:
+        return set()
+    _visited = _visited | {question_id}
+    source: DB | PageGraph = graph if graph is not None else db
+    result: set[str] = {question_id}
+    for page, _ in await source.get_considerations_for_question(question_id):
+        result.add(page.id)
+    for j in await source.get_judgements_for_question(question_id):
+        result.add(j.id)
+    for child in await source.get_child_questions(question_id):
+        result |= await collect_all_subtree_page_ids(child.id, db, graph=graph, _visited=_visited)
+    return result
+
+
 async def render_subtree(
     root_id: str,
     db: DB,
@@ -99,7 +122,10 @@ async def render_subtree(
                 if link.reasoning:
                     parts.append(f'{indent}  Reasoning: {link.reasoning}')
 
-        judgements = await graph.get_judgements_for_question(question.id)
+        all_judgements = await graph.get_judgements_for_question(question.id)
+        judgements = (
+            [max(all_judgements, key=lambda j: j.created_at)] if all_judgements else []
+        )
         if judgements:
             parts.append('')
             parts.append(f'{indent}**Judgements:**')
@@ -145,6 +171,11 @@ async def format_page(
     judgements are rendered for question pages. Set to None to omit them
     entirely.
     """
+    if detail != PageDetail.HEADLINE and not page.content and db:
+        full = await db.get_page(page.id)
+        if full:
+            page = full
+
     if detail == PageDetail.HEADLINE:
         e = (
             f'{page.epistemic_status:.0f}'
@@ -320,6 +351,10 @@ async def format_question_for_scout(
         parts.append("")
         for claim, link in structural_cons:
             loaded_ids.append(claim.id)
+            if not claim.content:
+                full = await db.get_page(claim.id)
+                if full:
+                    claim = full
             parts.append(f"### [{claim.page_type.value.upper()}] {claim.headline}")
             parts.append(f"ID: {claim.id}")
             parts.append(f"Strength: {link.strength:.1f}/5")
@@ -328,6 +363,10 @@ async def format_question_for_scout(
             parts.append("")
         for child, link in structural_children:
             loaded_ids.append(child.id)
+            if not child.content:
+                full = await db.get_page(child.id)
+                if full:
+                    child = full
             parts.append(f"### [QUESTION] {child.headline}")
             parts.append(f"ID: {child.id}")
             parts.append("")
@@ -472,10 +511,14 @@ async def build_prioritization_context(
     if scope_question_id:
         question = await source.get_page(scope_question_id)
         if question:
+            subtree_page_ids = await collect_all_subtree_page_ids(
+                scope_question_id, db, graph=graph,
+            )
             embedding_result = await build_embedding_based_context(
                 question.headline,
                 db,
                 scope_question_id=scope_question_id,
+                headline_only_ids=subtree_page_ids,
             )
             if embedding_result.context_text:
                 parts.append(embedding_result.context_text)
@@ -549,6 +592,7 @@ async def build_embedding_based_context(
     db: DB,
     *,
     scope_question_id: str | None = None,
+    headline_only_ids: set[str] | None = None,
     context_char_budget: int | None = None,
     distillation_page_char_fraction: float | None = None,
     full_page_char_fraction: float | None = None,
@@ -614,7 +658,9 @@ async def build_embedding_based_context(
     summary_ids: list[str] = []
     summary_chars = 0
 
+    _headline_only = headline_only_ids or set()
     distillation_page_id_set = {p.id for p, _ in distillation_pages}
+
     for page, _sim in distillation_pages:
         formatted = await format_page(page, PageDetail.CONTENT, db=db, linked_detail=None)
         if distillation_chars + len(formatted) <= distillation_budget:
@@ -624,6 +670,18 @@ async def build_embedding_based_context(
 
     for page, _sim in ranked:
         if page.id in distillation_page_id_set:
+            continue
+        if page.id in _headline_only:
+            formatted = await format_page(page, PageDetail.HEADLINE, linked_detail=None)
+            summary_parts.append(formatted)
+            summary_ids.append(page.id)
+            summary_chars += len(formatted)
+            continue
+
+    for page, _sim in ranked:
+        if page.id in distillation_page_id_set:
+            continue
+        if page.id in _headline_only:
             continue
 
         if full_chars < full_budget:

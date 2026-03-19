@@ -49,7 +49,7 @@ class PageGraph:
 
     @classmethod
     async def load(cls, db: "PageSource") -> "PageGraph":
-        pages = await db.get_pages(active_only=True)
+        pages = await db.get_pages_slim(active_only=True)
         links = await db.get_all_links()
         log.debug(
             'PageGraph.load: %d pages, %d links', len(pages), len(links),

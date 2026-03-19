@@ -1,4 +1,4 @@
-"""Scout call: find missing considerations on a question."""
+"""Find considerations call: find missing considerations on a question."""
 
 import logging
 
@@ -19,7 +19,7 @@ from rumil.context import (
     build_embedding_based_context,
     format_page,
     format_preloaded_pages,
-    format_question_for_scout,
+    format_question_for_find_considerations,
 )
 from rumil.database import DB
 from rumil.llm import (
@@ -123,7 +123,7 @@ async def link_new_pages(
         MOVES[MoveType.LINK_CHILD_QUESTION].bind(state),
     ]
     task = _LINKING_TASK.format(question_id=question_id)
-    system_prompt = build_system_prompt(CallType.SCOUT.value)
+    system_prompt = build_system_prompt(CallType.FIND_CONSIDERATIONS.value)
     user_message = build_user_message(working_context, task)
 
     await run_single_call(
@@ -286,7 +286,7 @@ class ScoutCall(BaseCall):
         )
 
         graph = await PageGraph.load(self.db)
-        working_context, self.working_page_ids = await format_question_for_scout(
+        working_context, self.working_page_ids = await format_question_for_find_considerations(
             self.question_id, self.db, graph=graph,
         )
 
@@ -311,7 +311,7 @@ class ScoutCall(BaseCall):
         self.tools = [MOVES[mt].bind(self.state) for mt in MoveType]
         self.tool_defs, _ = _prepare_tools(self.tools)
 
-        self.system_prompt = build_system_prompt(CallType.SCOUT.value)
+        self.system_prompt = build_system_prompt(CallType.FIND_CONSIDERATIONS.value)
 
         round_mode = _resolve_round_mode(self.mode, 0)
         mode_instruction = (
@@ -590,7 +590,7 @@ class EmbeddingScoutCall(ScoutCall):
         self.tools = [MOVES[mt].bind(self.state) for mt in MoveType]
         self.tool_defs, _ = _prepare_tools(self.tools)
 
-        self.system_prompt = build_system_prompt(CallType.SCOUT.value)
+        self.system_prompt = build_system_prompt(CallType.FIND_CONSIDERATIONS.value)
 
         round_mode = _resolve_round_mode(self.mode, 0)
         mode_instruction = (

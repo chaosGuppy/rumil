@@ -3,7 +3,7 @@ import type { AbRunTraceOut } from "@/api/types.gen";
 import { ABTraceViewer } from "./ab-trace-viewer";
 import "../../traces/[runId]/trace.css";
 
-const API_BASE = process.env.API_BASE_URL || "http://localhost:8000";
+import { API_BASE } from "@/lib/api-base";
 
 async function getABRunTrace(abRunId: string): Promise<AbRunTraceOut | null> {
   const res = await fetch(`${API_BASE}/api/ab-runs/${abRunId}/trace`, {

@@ -1,7 +1,6 @@
 import Link from "next/link";
 import type { Project } from "@/api";
-
-const API_BASE = process.env.API_BASE_URL || "http://localhost:8000";
+import { API_BASE } from "@/lib/api-base";
 
 async function getProjects(): Promise<Project[]> {
   const res = await fetch(`${API_BASE}/api/projects`, {

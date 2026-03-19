@@ -49,7 +49,7 @@ class Workspace(str, Enum):
 
 
 class CallType(str, Enum):
-    SCOUT = "scout"
+    FIND_CONSIDERATIONS = "find_considerations"
     ASSESS = "assess"
     PRIORITIZATION = "prioritization"
     INGEST = "ingest"
@@ -67,7 +67,7 @@ class CallType(str, Enum):
 
 # The subset of CallTypes that prioritization can dispatch.
 DISPATCHABLE_CALL_TYPES: set[CallType] = {
-    CallType.SCOUT,
+    CallType.FIND_CONSIDERATIONS,
     CallType.ASSESS,
     CallType.PRIORITIZATION,
     CallType.SCOUT_SUBQUESTIONS,
@@ -209,7 +209,7 @@ class RecurseDispatchPayload(BaseDispatchPayload, _PrioritizationFields):
 
 
 class InlineScoutDispatch(_DispatchBase, _ScoutFields):
-    call_type: Literal["scout"] = "scout"
+    call_type: Literal["find_considerations"] = "find_considerations"
 
 
 class InlineAssessDispatch(_DispatchBase):

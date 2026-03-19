@@ -30,7 +30,7 @@ class PageGraph:
 
     Load once per call lifecycle via ``PageGraph.load(db)``, then pass to
     functions that would otherwise make recursive per-page DB queries
-    (build_workspace_map, format_question_for_scout, etc.).
+    (build_workspace_map, format_question_for_find_considerations, etc.).
     """
 
     def __init__(
@@ -147,7 +147,7 @@ class PageGraph:
             and p.id not in child_ids
         ]
 
-    async def get_last_scout_info(
+    async def get_last_find_considerations_info(
         self, question_id: str,
     ) -> tuple[str, int | None] | None:
         return None

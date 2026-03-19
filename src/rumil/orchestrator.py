@@ -12,7 +12,7 @@ from rumil.calls.call_registry import (
     ASSESS_CALL_CLASSES,
     ASSESS_CONCEPT_CALL_CLASSES,
     INGEST_CALL_CLASSES,
-    SCOUT_CALL_CLASSES,
+    FIND_CONSIDERATIONS_CALL_CLASSES,
     SCOUT_CONCEPTS_CALL_CLASSES,
     SCOUT_ANALOGIES_CALL_CLASSES,
     SCOUT_ESTIMATES_CALL_CLASSES,
@@ -81,7 +81,7 @@ async def _consume_budget(db: DB) -> bool:
     return ok
 
 
-async def scout_until_done(
+async def find_considerations_until_done(
     question_id: str,
     db: DB,
     max_rounds: int | None = None,
@@ -91,9 +91,9 @@ async def scout_until_done(
     mode: ScoutMode = ScoutMode.ALTERNATE,
     broadcaster=None,
 ) -> tuple[int, list[str]]:
-    """Run a cache-aware scout session.
+    """Run a cache-aware find-considerations session.
 
-    Creates one Call and delegates to run_scout_session, which handles
+    Creates one Call and delegates to the ScoutCall class, which handles
     multi-round looping with conversation resumption, lightweight fruit
     checks, and a single closing review at the end.
 
@@ -105,18 +105,18 @@ async def scout_until_done(
             else DEFAULT_MAX_ROUNDS
         )
     log.info(
-        "scout_until_done: question=%s, max_rounds=%d, fruit_threshold=%d, mode=%s",
+        "find_considerations_until_done: question=%s, max_rounds=%d, fruit_threshold=%d, mode=%s",
         question_id[:8], max_rounds, fruit_threshold, mode.value,
     )
 
     call = await db.create_call(
-        CallType.SCOUT,
+        CallType.FIND_CONSIDERATIONS,
         scope_page_id=question_id,
         parent_call_id=parent_call_id,
         context_page_ids=context_page_ids,
     )
 
-    cls = SCOUT_CALL_CLASSES[get_settings().scout_call_variant]
+    cls = FIND_CONSIDERATIONS_CALL_CLASSES[get_settings().find_considerations_call_variant]
     scout = cls(
         question_id, call, db,
         max_rounds=max_rounds,
@@ -128,7 +128,7 @@ async def scout_until_done(
     await scout.run()
 
     log.info(
-        "scout_until_done finished: %d rounds, call=%s",
+        "find_considerations_until_done finished: %d rounds, call=%s",
         scout.rounds_completed, call.id[:8],
     )
     return scout.rounds_completed, [call.id]
@@ -488,10 +488,10 @@ class Orchestrator:
 
         if isinstance(p, ScoutDispatchPayload):
             log.info(
-                'Dispatch: scout on %s (mode=%s, fruit_threshold=%d, max_rounds=%d) — %s',
+                'Dispatch: find_considerations on %s (mode=%s, fruit_threshold=%d, max_rounds=%d) — %s',
                 d_label, p.mode.value, p.fruit_threshold, p.max_rounds, p.reason,
             )
-            _, child_ids = await scout_until_done(
+            _, child_ids = await find_considerations_until_done(
                 resolved,
                 self.db,
                 max_rounds=p.max_rounds,

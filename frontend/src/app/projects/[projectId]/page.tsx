@@ -5,8 +5,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useState, useMemo } from "react";
 import type { Page, PageType } from "@/api";
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+import { CLIENT_API_BASE as API_BASE } from "@/api-config";
 
 const PAGE_TYPES: PageType[] = [
   "question",

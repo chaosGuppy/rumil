@@ -11,7 +11,7 @@ import pytest_asyncio
 from rumil.calls.assess import AssessCall
 from rumil.calls.common import complete_call, run_closing_review
 from rumil.calls.ingest import IngestCall
-from rumil.calls.scout import ScoutCall
+from rumil.calls.find_considerations import ScoutCall
 from rumil.models import (
     Call,
     CallStatus,

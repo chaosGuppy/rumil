@@ -1,11 +1,11 @@
 """Run a single call end-to-end against the local database.
 
 Usage:
-    # Scout a question (creates one if needed)
-    uv run python scripts/run_call.py scout "Is the sky blue?"
+    # Find considerations on a question (creates one if needed)
+    uv run python scripts/run_call.py find-considerations "Is the sky blue?"
 
-    # Scout an existing question by ID
-    uv run python scripts/run_call.py scout --question-id <UUID>
+    # Find considerations on an existing question by ID
+    uv run python scripts/run_call.py find-considerations --question-id <UUID>
 
     # Assess an existing question
     uv run python scripts/run_call.py assess --question-id <UUID>
@@ -13,21 +13,21 @@ Usage:
     # Prioritization on an existing question
     uv run python scripts/run_call.py prioritize --question-id <UUID> --budget 5
 
-    # Override scout params
-    uv run python scripts/run_call.py scout "Why is water wet?" --mode concrete --max-rounds 3
+    # Override find-considerations params
+    uv run python scripts/run_call.py find-considerations "Why is water wet?" --mode concrete --max-rounds 3
 
     # Use smoke-test model (haiku)
-    uv run python scripts/run_call.py scout "Test question" --smoke-test
+    uv run python scripts/run_call.py find-considerations "Test question" --smoke-test
 
     # Use a custom workspace
-    uv run python scripts/run_call.py scout "Test question" --workspace my-scratch
+    uv run python scripts/run_call.py find-considerations "Test question" --workspace my-scratch
 
     # A/B test a call (requires .a.env and .b.env)
-    uv run python scripts/run_call.py scout "Test question" --ab --smoke-test
+    uv run python scripts/run_call.py find-considerations "Test question" --ab --smoke-test
 
     # Run only up to a specific stage (build_context or create_pages)
-    uv run python scripts/run_call.py scout "Test question" --up-to-stage build_context
-    uv run python scripts/run_call.py scout "Test question" --up-to-stage create_pages
+    uv run python scripts/run_call.py find-considerations "Test question" --up-to-stage build_context
+    uv run python scripts/run_call.py find-considerations "Test question" --up-to-stage create_pages
 
 All runs write to the local database under the workspace 'test-calls' by default.
 """
@@ -37,7 +37,7 @@ import asyncio
 import logging
 import uuid
 
-from rumil.calls.call_registry import ASSESS_CALL_CLASSES, SCOUT_CALL_CLASSES
+from rumil.calls.call_registry import ASSESS_CALL_CLASSES, FIND_CONSIDERATIONS_CALL_CLASSES
 from rumil.calls.prioritization import run_prioritization
 from rumil.database import DB
 from rumil.models import CallStage, CallType, ScoutMode
@@ -46,19 +46,19 @@ from rumil.settings import Settings, get_settings, _settings_var
 
 
 async def run_call(args: argparse.Namespace, db: DB, question_id: str) -> None:
-    """Execute a single call (scout/assess/prioritize) against the given DB."""
+    """Execute a single call (find-considerations/assess/prioritize) against the given DB."""
     settings = get_settings()
 
 
     call_type = args.call_type
     up_to_stage = CallStage(args.up_to_stage) if args.up_to_stage else None
 
-    if call_type == "scout":
+    if call_type == "find-considerations":
         mode = ScoutMode(args.mode)
         call = await db.create_call(
-            CallType.SCOUT, scope_page_id=question_id,
+            CallType.FIND_CONSIDERATIONS, scope_page_id=question_id,
         )
-        cls = SCOUT_CALL_CLASSES[settings.scout_call_variant]
+        cls = FIND_CONSIDERATIONS_CALL_CLASSES[settings.find_considerations_call_variant]
         scout = cls(
             question_id, call, db,
             max_rounds=args.max_rounds,
@@ -202,7 +202,7 @@ async def _run_ab(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run a single call end-to-end.")
     parser.add_argument(
-        "call_type", choices=["scout", "assess", "prioritize"],
+        "call_type", choices=["find-considerations", "assess", "prioritize"],
         help="Type of call to run",
     )
     parser.add_argument(
@@ -214,10 +214,10 @@ def main() -> None:
     parser.add_argument(
         "--mode", default="alternate",
         choices=["alternate", "abstract", "concrete"],
-        help="Scout mode (default: alternate)",
+        help="Find-considerations mode (default: alternate)",
     )
     parser.add_argument(
-        "--max-rounds", type=int, default=5, help="Max scout rounds (default: 5)",
+        "--max-rounds", type=int, default=5, help="Max rounds (default: 5)",
     )
     parser.add_argument(
         "--fruit-threshold", type=int, default=4,

@@ -76,9 +76,9 @@ async def question_page(tmp_db):
 
 @pytest_asyncio.fixture
 async def scout_call(tmp_db, question_page):
-    """Create a pending scout call, saved to DB."""
+    """Create a pending find_considerations call, saved to DB."""
     call = Call(
-        call_type=CallType.SCOUT,
+        call_type=CallType.FIND_CONSIDERATIONS,
         workspace=Workspace.RESEARCH,
         scope_page_id=question_page.id,
         status=CallStatus.PENDING,

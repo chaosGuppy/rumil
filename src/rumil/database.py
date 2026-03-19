@@ -614,16 +614,16 @@ class DB:
             {"role": role.value}
         ).eq("id", link_id).execute()
 
-    async def get_last_scout_info(
+    async def get_last_find_considerations_info(
         self,
         question_id: str,
     ) -> tuple[str, int | None] | None:
         """Return (completed_at_iso, remaining_fruit) for the most recent
-        scout call on this question, or None if never scouted."""
+        find_considerations call on this question, or None if never run."""
         rows = _rows(
             await self.client.table("calls")
             .select("completed_at, review_json")
-            .eq("call_type", CallType.SCOUT.value)
+            .eq("call_type", CallType.FIND_CONSIDERATIONS.value)
             .eq("scope_page_id", question_id)
             .eq("status", "complete")
             .order("completed_at", desc=True)

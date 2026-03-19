@@ -82,14 +82,14 @@ class DispatchDef(Generic[S]):
 
 
 DISPATCH_DEFS: dict[CallType, DispatchDef] = {
-    CallType.SCOUT: DispatchDef(
-        call_type=CallType.SCOUT,
-        name="dispatch_scout",
+    CallType.FIND_CONSIDERATIONS: DispatchDef(
+        call_type=CallType.FIND_CONSIDERATIONS,
+        name="dispatch_find_considerations",
         description=(
-            "Dispatch scout rounds for a question. Finds missing considerations. "
-            "Each round consumes 1 unit of budget. Runs up to max_rounds rounds, "
-            "stopping early when remaining fruit falls below fruit_threshold. "
-            "Budget cost: between 1 and max_rounds (inclusive)."
+            "Dispatch find-considerations rounds for a question. Finds missing "
+            "considerations. Each round consumes 1 unit of budget. Runs up to "
+            "max_rounds rounds, stopping early when remaining fruit falls below "
+            "fruit_threshold. Budget cost: between 1 and max_rounds (inclusive)."
         ),
         schema=ScoutDispatchPayload,
     ),

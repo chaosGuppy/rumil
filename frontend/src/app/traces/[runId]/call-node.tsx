@@ -14,7 +14,7 @@ import type {
 type TraceEvent = CallTraceOut["events"][number];
 
 const CALL_TYPE_ACCENT: Record<string, string> = {
-  scout: "#5b8def",
+  find_considerations: "#5b8def",
   assess: "#a07cdf",
   prioritization: "#d4943a",
   ingest: "#4dab6f",

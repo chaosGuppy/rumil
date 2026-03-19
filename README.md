@@ -168,37 +168,37 @@ Pages created by each arm are isolated — arm A cannot see pages created by arm
 
 ### Testing individual calls
 
-`scripts/run_call.py` runs a single call type (scout, assess, prioritize) against the local database, useful for development and debugging without the full orchestrator loop.
+`scripts/run_call.py` runs a single call type (find-considerations, assess, prioritize) against the local database, useful for development and debugging without the full orchestrator loop.
 
 ```bash
-# Scout a new question
-uv run python scripts/run_call.py scout "Is the sky blue?"
+# Find considerations on a new question
+uv run python scripts/run_call.py find-considerations "Is the sky blue?"
 
-# Scout an existing question by ID
-uv run python scripts/run_call.py scout --question-id <UUID>
+# Find considerations on an existing question by ID
+uv run python scripts/run_call.py find-considerations --question-id <UUID>
 
 # Assess or prioritize an existing question
 uv run python scripts/run_call.py assess --question-id <UUID>
 uv run python scripts/run_call.py prioritize --question-id <UUID> --budget 5
 
-# Override scout params
-uv run python scripts/run_call.py scout "Why is water wet?" --mode concrete --max-rounds 3
+# Override find-considerations params
+uv run python scripts/run_call.py find-considerations "Why is water wet?" --mode concrete --max-rounds 3
 
 # Use a custom workspace (default: test-calls)
-uv run python scripts/run_call.py scout "Test question" --workspace my-scratch
+uv run python scripts/run_call.py find-considerations "Test question" --workspace my-scratch
 
 # Use smoke-test mode
-uv run python scripts/run_call.py scout "Test question" --smoke-test
+uv run python scripts/run_call.py find-considerations "Test question" --smoke-test
 
 # Stop after a specific stage (build_context or create_pages)
-uv run python scripts/run_call.py scout "Test question" --up-to-stage build_context
-uv run python scripts/run_call.py scout "Test question" --up-to-stage create_pages
+uv run python scripts/run_call.py find-considerations "Test question" --up-to-stage build_context
+uv run python scripts/run_call.py find-considerations "Test question" --up-to-stage create_pages
 
 # A/B test a single call (requires .a.env and .b.env)
-uv run python scripts/run_call.py scout "Test question" --ab --smoke-test
+uv run python scripts/run_call.py find-considerations "Test question" --ab --smoke-test
 
 # Name a run for easier identification
-uv run python scripts/run_call.py scout "Test question" --name "context experiment"
+uv run python scripts/run_call.py find-considerations "Test question" --name "context experiment"
 ```
 
 The `--up-to-stage` flag truncates the call lifecycle. Each call runs three stages in order: `build_context` → `create_pages` → `closing_review`. Passing `--up-to-stage build_context` runs only context assembly; `--up-to-stage create_pages` skips the closing review. Useful for inspecting context or page output in isolation.

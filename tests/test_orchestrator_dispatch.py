@@ -48,7 +48,7 @@ class ScriptedPrioritizer(Prioritizer):
 
 def _scout_dispatch(question_id: str, **kwargs) -> Dispatch:
     return Dispatch(
-        call_type=CallType.SCOUT,
+        call_type=CallType.FIND_CONSIDERATIONS,
         payload=ScoutDispatchPayload(question_id=question_id, **kwargs),
     )
 
@@ -73,7 +73,7 @@ async def test_scout_dispatch_creates_scout_call(tmp_db, question_page):
         await tmp_db.client.table("calls")
         .select("call_type")
         .eq("run_id", tmp_db.run_id)
-        .eq("call_type", "scout")
+        .eq("call_type", "find_considerations")
         .execute()
     )
     assert len(rows.data) >= 1
@@ -116,7 +116,7 @@ async def test_budget_exhaustion_limits_dispatches(tmp_db, question_page):
         await tmp_db.client.table("calls")
         .select("call_type")
         .eq("run_id", tmp_db.run_id)
-        .eq("call_type", "scout")
+        .eq("call_type", "find_considerations")
         .execute()
     )
     assert len(rows.data) == 1
@@ -135,7 +135,7 @@ async def test_empty_dispatches_exits_loop(tmp_db, question_page):
         .execute()
     )
     call_types = {r["call_type"] for r in rows.data}
-    assert "scout" not in call_types
+    assert "find_considerations" not in call_types
     assert "assess" not in call_types
 
 

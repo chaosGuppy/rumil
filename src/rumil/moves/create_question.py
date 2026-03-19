@@ -76,7 +76,7 @@ class CreateSubquestionPayload(CreateQuestionPayload):
 
 
 _INLINE_DISPATCH_TO_PAYLOAD = {
-    "scout": (CallType.SCOUT, ScoutDispatchPayload),
+    "find_considerations": (CallType.FIND_CONSIDERATIONS, ScoutDispatchPayload),
     "assess": (CallType.ASSESS, AssessDispatchPayload),
     "prioritization": (CallType.PRIORITIZATION, PrioritizationDispatchPayload),
 }
@@ -113,7 +113,7 @@ PRIORITIZATION_MOVE = MoveDef(
     name="create_subquestion",
     description=(
         "Create a new research sub-question and optionally dispatch research "
-        "calls on it immediately. Use the dispatches field to queue scout, "
+        "calls on it immediately. Use the dispatches field to queue find-considerations, "
         "assess, or sub-prioritization calls that will execute after "
         "prioritization completes. Use the links field to attach this "
         "question as a child of a parent question."

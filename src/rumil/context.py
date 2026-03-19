@@ -289,12 +289,12 @@ async def build_call_context(
     return context_text, short_id_map, working_page_ids
 
 
-async def format_question_for_scout(
+async def format_question_for_find_considerations(
     question_id: str,
     db: DB,
     graph: PageGraph | None = None,
 ) -> tuple[str, list[str]]:
-    """Build scout working context with role-aware display.
+    """Build find-considerations working context with role-aware display.
 
     Direct considerations/children are shown compactly (summary only).
     Structural ones are shown expanded (full content).
@@ -407,7 +407,7 @@ async def _build_question_index(
     _visited: set[str] | None = None,
 ) -> list[str]:
     """Recursively build a flat index of all questions in the tree with their IDs.
-    Includes consideration count, last scout fruit/date, and hypothesis flag."""
+    Includes consideration count, last find-considerations fruit/date, and hypothesis flag."""
     if _visited is None:
         _visited = set()
     if question_id in _visited:
@@ -426,18 +426,18 @@ async def _build_question_index(
     hypothesis_tag = " [hypothesis]" if is_hypothesis else ""
 
     n_cons = len(await source.get_considerations_for_question(question_id))
-    scout_info = await db.get_last_scout_info(question_id)
-    if scout_info:
-        date_str = scout_info[0][:10]
-        fruit = scout_info[1]
+    fc_info = await db.get_last_find_considerations_info(question_id)
+    if fc_info:
+        date_str = fc_info[0][:10]
+        fruit = fc_info[1]
         fruit_str = f"fruit={fruit}" if fruit is not None else "fruit=?"
-        scout_str = f"{fruit_str} · {date_str}"
+        fc_str = f"{fruit_str} · {date_str}"
     else:
-        scout_str = "never scouted"
+        fc_str = "never explored"
 
     lines = [
         f"{prefix}{tag}{hypothesis_tag} `{question_id}` — {question.headline} "
-        f"({n_cons} cons · {scout_str})"
+        f"({n_cons} cons · {fc_str})"
     ]
     for child in await source.get_child_questions(question_id):
         lines.extend(await _build_question_index(

@@ -4,8 +4,8 @@ from rumil.models import CallStatus, CallType, Workspace
 
 
 async def test_create_call_persists_and_returns_call(tmp_db, question_page):
-    call = await tmp_db.create_call(CallType.SCOUT, scope_page_id=question_page.id)
-    assert call.call_type == CallType.SCOUT
+    call = await tmp_db.create_call(CallType.FIND_CONSIDERATIONS, scope_page_id=question_page.id)
+    assert call.call_type == CallType.FIND_CONSIDERATIONS
     assert call.scope_page_id == question_page.id
     assert call.status == CallStatus.PENDING
 

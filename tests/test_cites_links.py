@@ -135,7 +135,7 @@ async def test_cites_and_consideration_links_coexist(
     assert consideration_links[0].to_page_id == question_page.id
 
 
-@pytest.mark.llm
+@pytest.mark.integration
 async def test_ingest_creates_cites_links(tmp_db, question_page, source_page):
     """End-to-end ingest: claims should have CITES links to the source."""
     ingest_call = Call(

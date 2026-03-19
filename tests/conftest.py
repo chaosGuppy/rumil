@@ -27,19 +27,25 @@ def _test_settings():
 
 def pytest_addoption(parser):
     parser.addoption("--llm", action="store_true", default=False, help="Run tests that call the real LLM API")
+    parser.addoption("--integration", action="store_true", default=False, help="Run slow integration tests (implies --llm)")
 
 
 def pytest_configure(config):
     config.addinivalue_line("markers", "llm: tests that call the real LLM API")
+    config.addinivalue_line("markers", "integration: slow integration tests that call the real LLM API")
 
 
 def pytest_collection_modifyitems(config, items):
-    if config.getoption("--llm"):
-        return
-    skip_llm = pytest.mark.skip(reason="needs --llm flag to run")
+    run_llm = config.getoption("--llm")
+    run_integration = config.getoption("--integration")
+    if run_integration:
+        run_llm = True
+
     for item in items:
-        if "llm" in item.keywords:
-            item.add_marker(skip_llm)
+        if "integration" in item.keywords and not run_integration:
+            item.add_marker(pytest.mark.skip(reason="needs --integration flag to run"))
+        elif "llm" in item.keywords and not run_llm:
+            item.add_marker(pytest.mark.skip(reason="needs --llm flag to run"))
 
 
 @pytest_asyncio.fixture

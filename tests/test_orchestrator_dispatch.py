@@ -60,7 +60,7 @@ def _assess_dispatch(question_id: str, **kwargs) -> Dispatch:
     )
 
 
-@pytest.mark.llm
+@pytest.mark.integration
 async def test_scout_dispatch_creates_scout_call(tmp_db, question_page):
     """A scout dispatch should produce a scout call in the DB."""
     prioritizer = ScriptedPrioritizer([
@@ -79,7 +79,7 @@ async def test_scout_dispatch_creates_scout_call(tmp_db, question_page):
     assert len(rows.data) >= 1
 
 
-@pytest.mark.llm
+@pytest.mark.integration
 async def test_assess_dispatch_creates_assess_call(tmp_db, question_page):
     """An assess dispatch should produce an assess call in the DB."""
     prioritizer = ScriptedPrioritizer([
@@ -98,7 +98,7 @@ async def test_assess_dispatch_creates_assess_call(tmp_db, question_page):
     assert len(rows.data) >= 1
 
 
-@pytest.mark.llm
+@pytest.mark.integration
 async def test_budget_exhaustion_limits_dispatches(tmp_db, question_page):
     """Only dispatches that fit within the budget should execute."""
     await tmp_db.init_budget(1)
@@ -139,7 +139,7 @@ async def test_empty_dispatches_exits_loop(tmp_db, question_page):
     assert "assess" not in call_types
 
 
-@pytest.mark.llm
+@pytest.mark.integration
 async def test_reprioritization_on_leftover_budget(tmp_db, question_page):
     """Prioritizer should be queried again when budget remains after execution."""
     await tmp_db.init_budget(5)
@@ -165,7 +165,7 @@ async def test_no_infinite_loop_when_nothing_spent(tmp_db, question_page):
     assert prioritizer.get_calls_count == 0
 
 
-@pytest.mark.llm
+@pytest.mark.integration
 async def test_unresolvable_question_id_falls_back_to_root(tmp_db, question_page):
     """When a dispatch references a non-existent page, the root question is used."""
     fake_id = str(uuid.uuid4())
@@ -186,7 +186,7 @@ async def test_unresolvable_question_id_falls_back_to_root(tmp_db, question_page
     assert rows.data[0]["scope_page_id"] == question_page.id
 
 
-@pytest.mark.llm
+@pytest.mark.integration
 async def test_dispatch_executed_events_recorded(tmp_db, question_page):
     """DispatchExecutedEvent should be persisted to trace_json."""
     p_call = await tmp_db.create_call(

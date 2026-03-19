@@ -97,7 +97,7 @@ async def test_ingest_lifecycle(tmp_db, question_page, ingest_call, source_page)
     assert context_event.get("source_page_id") == source_page.id
 
 
-@pytest.mark.llm
+@pytest.mark.integration
 async def test_scout_lifecycle(tmp_db, question_page, scout_call):
     """Scout session runs rounds, checks fruit, and completes."""
     await tmp_db.init_budget(2)
@@ -126,7 +126,7 @@ async def test_scout_lifecycle(tmp_db, question_page, scout_call):
     assert "review_complete" in event_types
 
 
-@pytest.mark.llm
+@pytest.mark.integration
 async def test_scout_stops_on_budget_exhaustion(tmp_db, question_page, scout_call):
     """Scout session stops when budget runs out mid-loop."""
     await tmp_db.init_budget(1)
@@ -161,7 +161,7 @@ async def test_complete_call(tmp_db, assess_call):
     assert refreshed.result_summary == "Test summary"
 
 
-@pytest.mark.llm
+@pytest.mark.integration
 async def test_closing_review_saves_page_ratings(
     tmp_db, question_page, assess_call,
 ):

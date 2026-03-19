@@ -81,6 +81,7 @@ class LinkType(str, Enum):
     SUPERSEDES = "supersedes"  # page replaces another
     RELATED = "related"  # general relation
     SUMMARIZES = "summarizes"  # summary page covers a question subtree
+    CITES = "cites"  # claim cites a source
 
 
 class MoveType(str, Enum):

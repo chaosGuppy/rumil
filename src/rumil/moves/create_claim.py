@@ -1,7 +1,7 @@
 """CREATE_CLAIM move: create an assertion with supporting reasoning."""
 
 import logging
-from typing import Any
+from collections.abc import Sequence
 
 from pydantic import Field
 
@@ -21,8 +21,9 @@ log = logging.getLogger(__name__)
 
 
 class CreateClaimPayload(CreatePagePayload):
-    source_id: str | None = Field(
-        None, description="Source page ID — set when extracting claims from a source"
+    source_ids: Sequence[str] = Field(
+        default_factory=list,
+        description="Source page IDs this claim cites. Creates citation links.",
     )
     links: list[ConsiderationLinkFields] = Field(
         default_factory=list,
@@ -32,16 +33,10 @@ class CreateClaimPayload(CreatePagePayload):
         ),
     )
 
-    def page_extra_fields(self) -> dict[str, Any]:
-        extra = super().page_extra_fields()
-        if self.source_id is not None:
-            extra["source_id"] = self.source_id
-        return extra
-
 
 async def execute(payload: CreateClaimPayload, call: Call, db: DB) -> MoveResult:
     result = await create_page(payload, call, db, PageType.CLAIM, PageLayer.SQUIDGY)
-    if not result.created_page_id or not payload.links:
+    if not result.created_page_id:
         return result
 
     for link_spec in payload.links:
@@ -64,6 +59,24 @@ async def execute(payload: CreateClaimPayload, call: Call, db: DB) -> MoveResult
         log.info(
             "Inline consideration linked: %s -> %s (%.1f)",
             result.created_page_id[:8], resolved[:8], link_spec.strength,
+        )
+
+    for sid in payload.source_ids:
+        resolved = await db.resolve_page_id(sid)
+        if not resolved:
+            log.warning(
+                "Citation link skipped: source %s not found", sid,
+            )
+            continue
+
+        await db.save_link(PageLink(
+            from_page_id=result.created_page_id,
+            to_page_id=resolved,
+            link_type=LinkType.CITES,
+        ))
+        log.info(
+            "Citation linked: %s -> %s",
+            result.created_page_id[:8], resolved[:8],
         )
 
     return result

@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING
 from collections.abc import Awaitable, Callable
 
 import anthropic
-from anthropic.types import MessageParam, TextBlock, ToolUseBlock
+from anthropic.types import MessageParam, ServerToolUseBlock, TextBlock, ToolUseBlock
 from pydantic import BaseModel, ValidationError
 
 from rumil.pricing import compute_cost
@@ -316,7 +316,7 @@ async def call_api(
                 for block in response.content:
                     if isinstance(block, TextBlock):
                         text_parts.append(block.text)
-                    elif isinstance(block, ToolUseBlock):
+                    elif isinstance(block, (ToolUseBlock, ServerToolUseBlock)):
                         tool_call_data.append(
                             {"name": block.name, "input": block.input}
                         )

@@ -10,6 +10,7 @@ from rumil.calls.ingest import EmbeddingIngestCall, IngestCall
 from rumil.calls.find_considerations import EmbeddingScoutCall, ScoutCall
 from rumil.calls.scout_analogies import ScoutAnalogiesCall
 from rumil.calls.scout_concepts import ScoutConceptsCall
+from rumil.calls.web_research import WebResearchCall
 from rumil.calls.scout_estimates import ScoutEstimatesCall
 from rumil.calls.scout_hypotheses import ScoutHypothesesCall
 from rumil.calls.scout_subquestions import ScoutSubquestionsCall
@@ -35,6 +36,10 @@ SCOUT_CONCEPTS_CALL_CLASSES: dict[str, type[ScoutConceptsCall]] = {
 
 ASSESS_CONCEPT_CALL_CLASSES: dict[str, type[AssessConceptCall]] = {
     "default": AssessConceptCall,
+}
+
+WEB_RESEARCH_CALL_CLASSES: dict[str, type[WebResearchCall]] = {
+    "default": WebResearchCall,
 }
 
 SCOUT_SUBQUESTIONS_CALL_CLASSES: dict[str, type[ScoutSubquestionsCall]] = {

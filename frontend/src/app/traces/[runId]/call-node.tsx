@@ -430,7 +430,7 @@ function EventSection({ event }: { event: TraceEvent }) {
             )}
           </span>
         )}
-        <span className="trace-event-time">{formatTime(event.ts)}</span>
+        <span className="trace-event-time" suppressHydrationWarning>{formatTime(event.ts)}</span>
       </div>
 
       {isExchange && exchangeOpen && exchangeDetail && (

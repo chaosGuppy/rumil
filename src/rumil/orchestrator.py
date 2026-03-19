@@ -14,6 +14,7 @@ from rumil.calls.call_registry import (
     INGEST_CALL_CLASSES,
     SCOUT_CALL_CLASSES,
     SCOUT_CONCEPTS_CALL_CLASSES,
+    WEB_RESEARCH_CALL_CLASSES,
 )
 from rumil.database import DB
 from rumil.settings import get_settings
@@ -330,6 +331,33 @@ async def run_concept_session(
                 "Concept [%s] completed validation but was not promoted (score=%s)",
                 concept_id[:8], validation_review.get("score"),
             )
+
+
+async def web_research_question(
+    question_id: str,
+    db: DB,
+    allowed_domains: list[str] | None = None,
+    parent_call_id: str | None = None,
+    broadcaster=None,
+) -> str | None:
+    """Run one web research call on a question. Returns call ID, or None if no budget."""
+    log.info('web_research_question: question=%s', question_id[:8])
+    if not await _consume_budget(db):
+        return None
+
+    call = await db.create_call(
+        CallType.WEB_RESEARCH,
+        scope_page_id=question_id,
+        parent_call_id=parent_call_id,
+    )
+    cls = WEB_RESEARCH_CALL_CLASSES[get_settings().web_research_call_variant]
+    web_research = cls(
+        question_id, call, db,
+        allowed_domains=allowed_domains,
+        broadcaster=broadcaster,
+    )
+    await web_research.run()
+    return call.id
 
 
 def _create_broadcaster(db: DB) -> Broadcaster | None:

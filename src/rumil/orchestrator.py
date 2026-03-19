@@ -14,6 +14,10 @@ from rumil.calls.call_registry import (
     INGEST_CALL_CLASSES,
     SCOUT_CALL_CLASSES,
     SCOUT_CONCEPTS_CALL_CLASSES,
+    SCOUT_ANALOGIES_CALL_CLASSES,
+    SCOUT_ESTIMATES_CALL_CLASSES,
+    SCOUT_HYPOTHESES_CALL_CLASSES,
+    SCOUT_SUBQUESTIONS_CALL_CLASSES,
     WEB_RESEARCH_CALL_CLASSES,
 )
 from rumil.database import DB
@@ -25,11 +29,17 @@ from rumil.models import (
     Page,
     PageLayer,
     PageType,
+    RecurseDispatchPayload,
+    ScoutAnalogiesDispatchPayload,
     ScoutDispatchPayload,
+    ScoutEstimatesDispatchPayload,
+    ScoutHypothesesDispatchPayload,
     ScoutMode,
+    ScoutSubquestionsDispatchPayload,
+    WebResearchDispatchPayload,
     Workspace,
 )
-from rumil.prioritizer import LLMPrioritizer, Prioritizer
+from rumil.prioritizer import LLMPrioritizer, NewQuestionPrioritizer, Prioritizer
 from rumil.tracing.trace_events import DispatchExecutedEvent
 
 
@@ -375,13 +385,91 @@ class Orchestrator:
         self.broadcaster: Broadcaster | None = None
         self._prioritizer = prioritizer
 
+    async def _run_simple_call_dispatch(
+        self,
+        question_id: str,
+        call_type: CallType,
+        registry: dict,
+        parent_call_id: str | None,
+    ) -> str | None:
+        """Run a simple (single-pass) call dispatch. Consumes 1 budget."""
+        if not await _consume_budget(self.db):
+            return None
+
+        call = await self.db.create_call(
+            call_type,
+            scope_page_id=question_id,
+            parent_call_id=parent_call_id,
+        )
+        cls = registry['default']
+        instance = cls(question_id, call, self.db, broadcaster=self.broadcaster)
+        await instance.run()
+        return call.id
+
+    async def _run_recursive_investigation(
+        self,
+        question_id: str,
+        allocated_budget: int,
+        parent_call_id: str | None,
+    ) -> None:
+        """Recursively investigate a child question with a fresh prioritizer."""
+        remaining = await self.db.budget_remaining()
+        effective_budget = min(allocated_budget, remaining)
+        if effective_budget <= 0:
+            log.info(
+                'Recursive investigation skipped: no budget for question=%s',
+                question_id[:8],
+            )
+            return
+
+        prioritizer = NewQuestionPrioritizer(self.db, broadcaster=self.broadcaster)
+        log.info(
+            'Recursive investigation: question=%s, budget=%d',
+            question_id[:8], effective_budget,
+        )
+
+        budget_spent = 0
+        while budget_spent < effective_budget:
+            remaining = await self.db.budget_remaining()
+            if remaining <= 0:
+                break
+
+            capped_remaining = min(remaining, effective_budget - budget_spent)
+            result = await prioritizer.get_calls(
+                question_id, capped_remaining, parent_call_id=parent_call_id,
+            )
+            if not result.dispatches:
+                break
+
+            spent_any = False
+            pre_remaining = await self.db.budget_remaining()
+            for dispatch in result.dispatches:
+                if await self.db.budget_remaining() <= 0:
+                    break
+                if budget_spent >= effective_budget:
+                    break
+                await self._execute_dispatch(
+                    dispatch, question_id, result.call_id,
+                )
+                spent_any = True
+
+            post_remaining = await self.db.budget_remaining()
+            budget_spent += pre_remaining - post_remaining
+
+            if spent_any:
+                prioritizer.mark_executed()
+            else:
+                break
+
+        log.info('Recursive investigation complete: question=%s', question_id[:8])
+
     async def _execute_dispatch(
         self,
         dispatch: Dispatch,
         scope_question_id: str,
         parent_call_id: str | None,
     ) -> tuple[str, str | None]:
-        """Execute a single scout or assess dispatch.
+        """Execute a single dispatch.
 
         Returns (resolved_question_id, child_call_id).
         """
@@ -425,6 +513,51 @@ class Orchestrator:
                 broadcaster=self.broadcaster,
             )
 
+        elif isinstance(p, ScoutSubquestionsDispatchPayload):
+            log.info('Dispatch: scout_subquestions on %s — %s', d_label, p.reason)
+            child_call_id = await self._run_simple_call_dispatch(
+                resolved, CallType.SCOUT_SUBQUESTIONS,
+                SCOUT_SUBQUESTIONS_CALL_CLASSES, parent_call_id,
+            )
+
+        elif isinstance(p, ScoutEstimatesDispatchPayload):
+            log.info('Dispatch: scout_estimates on %s — %s', d_label, p.reason)
+            child_call_id = await self._run_simple_call_dispatch(
+                resolved, CallType.SCOUT_ESTIMATES,
+                SCOUT_ESTIMATES_CALL_CLASSES, parent_call_id,
+            )
+
+        elif isinstance(p, ScoutHypothesesDispatchPayload):
+            log.info('Dispatch: scout_hypotheses on %s — %s', d_label, p.reason)
+            child_call_id = await self._run_simple_call_dispatch(
+                resolved, CallType.SCOUT_HYPOTHESES,
+                SCOUT_HYPOTHESES_CALL_CLASSES, parent_call_id,
+            )
+
+        elif isinstance(p, ScoutAnalogiesDispatchPayload):
+            log.info('Dispatch: scout_analogies on %s — %s', d_label, p.reason)
+            child_call_id = await self._run_simple_call_dispatch(
+                resolved, CallType.SCOUT_ANALOGIES,
+                SCOUT_ANALOGIES_CALL_CLASSES, parent_call_id,
+            )
+
+        elif isinstance(p, WebResearchDispatchPayload):
+            log.info('Dispatch: web_research on %s — %s', d_label, p.reason)
+            child_call_id = await web_research_question(
+                resolved, self.db,
+                parent_call_id=parent_call_id,
+                broadcaster=self.broadcaster,
+            )
+
+        elif isinstance(p, RecurseDispatchPayload):
+            log.info(
+                'Dispatch: recurse on %s (budget=%d) — %s',
+                d_label, p.budget, p.reason,
+            )
+            await self._run_recursive_investigation(
+                resolved, p.budget, parent_call_id,
+            )
+
         return resolved, child_call_id
 
     async def run(self, root_question_id: str) -> None:
@@ -438,9 +571,16 @@ class Orchestrator:
             root_question_id[:8], total,
         )
 
-        prioritizer = self._prioritizer or LLMPrioritizer(
-            self.db, broadcaster=self.broadcaster,
-        )
+        if self._prioritizer:
+            prioritizer = self._prioritizer
+        elif get_settings().prioritizer_variant == 'new_question':
+            prioritizer = NewQuestionPrioritizer(
+                self.db, broadcaster=self.broadcaster,
+            )
+        else:
+            prioritizer = LLMPrioritizer(
+                self.db, broadcaster=self.broadcaster,
+            )
 
         try:
             while True:

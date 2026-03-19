@@ -7,7 +7,9 @@ from rumil.calls.common import (
     complete_call,
     run_single_call,
 )
-from rumil.calls.dispatches import DISPATCH_DEFS
+from collections.abc import Sequence
+
+from rumil.calls.dispatches import DISPATCH_DEFS, DispatchDef
 from rumil.context import build_prioritization_context, collect_subtree_ids
 from rumil.database import DB
 from rumil.page_graph import PageGraph
@@ -33,6 +35,8 @@ async def run_prioritization_call(
     subtree_ids: set[str] | None = None,
     short_id_map: dict[str, str] | None = None,
     trace: CallTrace | None = None,
+    dispatch_types: Sequence[CallType] | None = None,
+    extra_dispatch_defs: Sequence[DispatchDef] | None = None,
 ) -> RunCallResult:
     """Run a prioritization call with tool use (single LLM round).
 
@@ -57,7 +61,15 @@ async def run_prioritization_call(
             tools.append(PRIORITIZATION_MOVE.bind(state))
         else:
             tools.append(MOVES[mt].bind(state))
-    for ddef in DISPATCH_DEFS.values():
+    if dispatch_types is not None:
+        selected_defs = [
+            DISPATCH_DEFS[ct] for ct in dispatch_types if ct in DISPATCH_DEFS
+        ]
+    else:
+        selected_defs = list(DISPATCH_DEFS.values())
+    if extra_dispatch_defs:
+        selected_defs.extend(extra_dispatch_defs)
+    for ddef in selected_defs:
         tools.append(ddef.bind(state, subtree_ids, short_id_map))
 
     user_message = build_user_message(context_text, task_description)

@@ -62,6 +62,7 @@ class CallType(str, Enum):
     SCOUT_ESTIMATES = "scout_estimates"
     SCOUT_HYPOTHESES = "scout_hypotheses"
     SCOUT_ANALOGIES = "scout_analogies"
+    WEB_RESEARCH = "web_research"
 
 
 # The subset of CallTypes that prioritization can dispatch.
@@ -69,6 +70,11 @@ DISPATCHABLE_CALL_TYPES: set[CallType] = {
     CallType.SCOUT,
     CallType.ASSESS,
     CallType.PRIORITIZATION,
+    CallType.SCOUT_SUBQUESTIONS,
+    CallType.SCOUT_ESTIMATES,
+    CallType.SCOUT_HYPOTHESES,
+    CallType.SCOUT_ANALOGIES,
+    CallType.WEB_RESEARCH,
 }
 
 
@@ -175,6 +181,30 @@ class AssessDispatchPayload(BaseDispatchPayload):
 
 
 class PrioritizationDispatchPayload(BaseDispatchPayload, _PrioritizationFields):
+    pass
+
+
+class ScoutSubquestionsDispatchPayload(BaseDispatchPayload):
+    pass
+
+
+class ScoutEstimatesDispatchPayload(BaseDispatchPayload):
+    pass
+
+
+class ScoutHypothesesDispatchPayload(BaseDispatchPayload):
+    pass
+
+
+class ScoutAnalogiesDispatchPayload(BaseDispatchPayload):
+    pass
+
+
+class WebResearchDispatchPayload(BaseDispatchPayload):
+    pass
+
+
+class RecurseDispatchPayload(BaseDispatchPayload, _PrioritizationFields):
     pass
 
 

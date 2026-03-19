@@ -11,7 +11,13 @@ from rumil.models import (
     CallType,
     Dispatch,
     PrioritizationDispatchPayload,
+    RecurseDispatchPayload,
+    ScoutAnalogiesDispatchPayload,
     ScoutDispatchPayload,
+    ScoutEstimatesDispatchPayload,
+    ScoutHypothesesDispatchPayload,
+    ScoutSubquestionsDispatchPayload,
+    WebResearchDispatchPayload,
 )
 from rumil.moves.base import MoveState
 
@@ -111,4 +117,59 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
         ),
         schema=PrioritizationDispatchPayload,
     ),
+    CallType.SCOUT_SUBQUESTIONS: DispatchDef(
+        call_type=CallType.SCOUT_SUBQUESTIONS,
+        name="dispatch_scout_subquestions",
+        description=(
+            "Dispatch a specialized scout that identifies informative subquestions "
+            "for a question. Budget cost: exactly 1."
+        ),
+        schema=ScoutSubquestionsDispatchPayload,
+    ),
+    CallType.SCOUT_ESTIMATES: DispatchDef(
+        call_type=CallType.SCOUT_ESTIMATES,
+        name="dispatch_scout_estimates",
+        description=(
+            "Dispatch a specialized scout that generates quantitative estimates "
+            "bearing on a question. Budget cost: exactly 1."
+        ),
+        schema=ScoutEstimatesDispatchPayload,
+    ),
+    CallType.SCOUT_HYPOTHESES: DispatchDef(
+        call_type=CallType.SCOUT_HYPOTHESES,
+        name="dispatch_scout_hypotheses",
+        description=(
+            "Dispatch a specialized scout that proposes competing hypotheses "
+            "for a question. Budget cost: exactly 1."
+        ),
+        schema=ScoutHypothesesDispatchPayload,
+    ),
+    CallType.SCOUT_ANALOGIES: DispatchDef(
+        call_type=CallType.SCOUT_ANALOGIES,
+        name="dispatch_scout_analogies",
+        description=(
+            "Dispatch a specialized scout that finds illuminating analogies "
+            "for a question. Budget cost: exactly 1."
+        ),
+        schema=ScoutAnalogiesDispatchPayload,
+    ),
+    CallType.WEB_RESEARCH: DispatchDef(
+        call_type=CallType.WEB_RESEARCH,
+        name="dispatch_web_research",
+        description=(
+            "Dispatch web research for a question. Searches the web and extracts "
+            "relevant claims. Budget cost: exactly 1."
+        ),
+        schema=WebResearchDispatchPayload,
+    ),
 }
+
+RECURSE_DISPATCH_DEF: DispatchDef[RecurseDispatchPayload] = DispatchDef(
+    call_type=CallType.PRIORITIZATION,
+    name="recurse_into_subquestion",
+    description=(
+        "Recursively investigate a subquestion with its own two-phase "
+        "prioritization cycle. Budget cost: exactly the budget you assign."
+    ),
+    schema=RecurseDispatchPayload,
+)

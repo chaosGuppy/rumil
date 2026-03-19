@@ -171,6 +171,11 @@ async def format_page(
     judgements are rendered for question pages. Set to None to omit them
     entirely.
     """
+    if detail != PageDetail.HEADLINE and not page.content and db:
+        full = await db.get_page(page.id)
+        if full:
+            page = full
+
     if detail == PageDetail.HEADLINE:
         e = (
             f'{page.epistemic_status:.0f}'
@@ -346,6 +351,10 @@ async def format_question_for_scout(
         parts.append("")
         for claim, link in structural_cons:
             loaded_ids.append(claim.id)
+            if not claim.content:
+                full = await db.get_page(claim.id)
+                if full:
+                    claim = full
             parts.append(f"### [{claim.page_type.value.upper()}] {claim.headline}")
             parts.append(f"ID: {claim.id}")
             parts.append(f"Strength: {link.strength:.1f}/5")
@@ -354,6 +363,10 @@ async def format_question_for_scout(
             parts.append("")
         for child, link in structural_children:
             loaded_ids.append(child.id)
+            if not child.content:
+                full = await db.get_page(child.id)
+                if full:
+                    child = full
             parts.append(f"### [QUESTION] {child.headline}")
             parts.append(f"ID: {child.id}")
             parts.append("")

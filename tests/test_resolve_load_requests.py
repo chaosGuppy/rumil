@@ -27,7 +27,7 @@ async def _make_page(tmp_db):
 
 def _dummy_call():
     return Call(
-        call_type=CallType.SCOUT,
+        call_type=CallType.FIND_CONSIDERATIONS,
         workspace=Workspace.RESEARCH,
         status=CallStatus.RUNNING,
     )

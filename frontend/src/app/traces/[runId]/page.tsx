@@ -3,7 +3,7 @@ import type { RunTraceOut, RealtimeConfigOut } from "@/api/types.gen";
 import { TraceViewer } from "./trace-viewer";
 import "./trace.css";
 
-const API_BASE = process.env.API_BASE_URL || "http://localhost:8000";
+import { API_BASE } from "@/lib/api-base";
 
 async function getRunTrace(runId: string): Promise<RunTraceOut | null> {
   const res = await fetch(`${API_BASE}/api/runs/${runId}/trace`, {

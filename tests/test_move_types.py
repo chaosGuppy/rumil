@@ -116,7 +116,7 @@ async def test_inline_dispatch_on_create_subquestion(
             "reasoning": "Decomposition of main question",
         }],
         "dispatches": [{
-            "call_type": "scout",
+            "call_type": "find_considerations",
             "reason": "Need initial evidence",
             "max_rounds": 3,
         }],
@@ -125,7 +125,7 @@ async def test_inline_dispatch_on_create_subquestion(
     assert len(state.created_page_ids) == 1
     assert len(state.dispatches) == 1
     d = state.dispatches[0]
-    assert d.call_type is CallType.SCOUT
+    assert d.call_type is CallType.FIND_CONSIDERATIONS
     assert d.payload.question_id == state.created_page_ids[0]
 
 
@@ -143,13 +143,13 @@ async def test_inline_dispatch_multiple_types(
             "reasoning": "Decomposition",
         }],
         "dispatches": [
-            {"call_type": "scout", "reason": "Explore", "max_rounds": 2},
+            {"call_type": "find_considerations", "reason": "Explore", "max_rounds": 2},
             {"call_type": "assess", "reason": "Evaluate"},
         ],
     })
 
     assert len(state.dispatches) == 2
-    assert state.dispatches[0].call_type is CallType.SCOUT
+    assert state.dispatches[0].call_type is CallType.FIND_CONSIDERATIONS
     assert state.dispatches[1].call_type is CallType.ASSESS
     for d in state.dispatches:
         assert d.payload.question_id == state.created_page_ids[0]

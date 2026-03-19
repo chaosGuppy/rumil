@@ -19,7 +19,7 @@ async def test_scout_run_call(tmp_db, question_page, scout_call):
     )
 
     result = await run_call(
-        CallType.SCOUT, task, working_context,
+        CallType.FIND_CONSIDERATIONS, task, working_context,
         scout_call, tmp_db, max_rounds=3,
     )
 
@@ -89,7 +89,7 @@ async def test_create_claim_with_inline_links(tmp_db, question_page, scout_call)
     )
 
     result = await run_call(
-        CallType.SCOUT,
+        CallType.FIND_CONSIDERATIONS,
         task,
         working_context,
         scout_call,
@@ -128,7 +128,7 @@ async def test_create_question_with_inline_links(tmp_db, question_page, scout_ca
     )
 
     result = await run_call(
-        CallType.SCOUT,
+        CallType.FIND_CONSIDERATIONS,
         task,
         working_context,
         scout_call,
@@ -167,7 +167,7 @@ async def test_create_judgement_with_inline_links(tmp_db, question_page, scout_c
     )
 
     result = await run_call(
-        CallType.SCOUT,
+        CallType.FIND_CONSIDERATIONS,
         task,
         working_context,
         scout_call,

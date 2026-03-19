@@ -2,7 +2,7 @@ import Link from "next/link";
 import Markdown from "react-markdown";
 import type { PageDetailOut, LinkedPageOut, Page, PageLink, RunSummaryOut } from "@/api";
 
-const API_BASE = process.env.API_BASE_URL || "http://localhost:8000";
+import { API_BASE } from "@/lib/api-base";
 
 const TYPE_CONFIG: Record<
   string,

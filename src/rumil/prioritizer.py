@@ -48,7 +48,7 @@ class LLMPrioritizer(Prioritizer):
 
     Maintains an internal plan (list of dispatches) and a cursor. Each
     ``get_calls()`` invocation returns the next batch of executable
-    (scout/assess) dispatches. When a sub-prioritization dispatch is
+    (find_considerations/assess) dispatches. When a sub-prioritization dispatch is
     encountered, it is expanded inline by running a fresh prioritization
     call scoped to that question.
     """
@@ -188,15 +188,15 @@ class LLMPrioritizer(Prioritizer):
         )
 
     def _synthesize_default(self, question_id: str) -> PrioritizationResult:
-        """Return default scout+assess when the LLM produces no dispatches."""
+        """Return default find_considerations+assess when the LLM produces no dispatches."""
         log.info(
             'No dispatches from prioritization, synthesizing default '
-            'scout+assess for question=%s', question_id[:8],
+            'find_considerations+assess for question=%s', question_id[:8],
         )
         return PrioritizationResult(
             dispatches=[
                 Dispatch(
-                    call_type=CallType.SCOUT,
+                    call_type=CallType.FIND_CONSIDERATIONS,
                     payload=ScoutDispatchPayload(
                         question_id=question_id,
                         mode=ScoutMode.ALTERNATE,

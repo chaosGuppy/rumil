@@ -10,11 +10,11 @@ from rumil.models import (
     ScoutDispatchPayload,
     ScoutMode,
 )
-from rumil.calls.scout import _resolve_round_mode
+from rumil.calls.find_considerations import _resolve_round_mode
 
 
 def test_dispatchable_types_include_expected():
-    assert CallType.SCOUT in DISPATCHABLE_CALL_TYPES
+    assert CallType.FIND_CONSIDERATIONS in DISPATCHABLE_CALL_TYPES
     assert CallType.ASSESS in DISPATCHABLE_CALL_TYPES
     assert CallType.PRIORITIZATION in DISPATCHABLE_CALL_TYPES
 
@@ -29,8 +29,8 @@ def test_dispatch_defs_match_dispatchable_types():
 
 def test_dispatch_holds_typed_payload():
     payload = ScoutDispatchPayload(question_id="abc", reason="test")
-    d = Dispatch(call_type=CallType.SCOUT, payload=payload)
-    assert d.call_type is CallType.SCOUT
+    d = Dispatch(call_type=CallType.FIND_CONSIDERATIONS, payload=payload)
+    assert d.call_type is CallType.FIND_CONSIDERATIONS
     assert d.payload.question_id == "abc"
 
 

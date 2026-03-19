@@ -14,7 +14,7 @@ import type {
 type TraceEvent = CallTraceOut["events"][number];
 
 const CALL_TYPE_ACCENT: Record<string, string> = {
-  scout: "#5b8def",
+  find_considerations: "#5b8def",
   assess: "#a07cdf",
   prioritization: "#d4943a",
   ingest: "#4dab6f",
@@ -235,8 +235,7 @@ function MoveRow({
   );
 }
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+import { CLIENT_API_BASE as API_BASE } from "@/api-config";
 
 function CollapsiblePre({
   label,

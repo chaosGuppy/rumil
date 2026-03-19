@@ -1,13 +1,13 @@
 """Registries mapping variant names to call classes.
 
-Each call type (scout, assess, ingest) has its own registry so callers can
-look up the concrete class by a short string name stored in settings.
+Each call type (find_considerations, assess, ingest) has its own registry so
+callers can look up the concrete class by a short string name stored in settings.
 """
 
 from rumil.calls.assess import AssessCall, EmbeddingAssessCall
 from rumil.calls.assess_concept import AssessConceptCall
 from rumil.calls.ingest import EmbeddingIngestCall, IngestCall
-from rumil.calls.scout import EmbeddingScoutCall, ScoutCall
+from rumil.calls.find_considerations import EmbeddingScoutCall, ScoutCall
 from rumil.calls.scout_analogies import ScoutAnalogiesCall
 from rumil.calls.scout_concepts import ScoutConceptsCall
 from rumil.calls.web_research import WebResearchCall
@@ -15,7 +15,7 @@ from rumil.calls.scout_estimates import ScoutEstimatesCall
 from rumil.calls.scout_hypotheses import ScoutHypothesesCall
 from rumil.calls.scout_subquestions import ScoutSubquestionsCall
 
-SCOUT_CALL_CLASSES: dict[str, type[ScoutCall]] = {
+FIND_CONSIDERATIONS_CALL_CLASSES: dict[str, type[ScoutCall]] = {
     "default": ScoutCall,
     "embedding": EmbeddingScoutCall,
 }

@@ -91,7 +91,7 @@ async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[Pa
     parts: list[str] = []
 
     def ref(page: Page) -> PageRef:
-        return PageRef(id=page.id, summary=page.headline)
+        return PageRef(id=page.id, headline=page.headline)
 
     page_refs: list[PageRef] = [ref(question)]
 
@@ -240,7 +240,7 @@ async def summarize_question(
         ))
         user_message = build_user_message(context, TASK)
 
-        meta = LLMExchangeMetadata(call_id=call.id, phase="summarize", trace=trace, db=db)
+        meta = LLMExchangeMetadata(call_id=call.id, phase="summarize", trace=trace)
         result = await structured_call(
             system_prompt=SYSTEM_PROMPT,
             user_message=user_message,

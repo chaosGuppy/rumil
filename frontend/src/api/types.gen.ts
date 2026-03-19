@@ -152,7 +152,7 @@ export type CallTraceOut = {
 /**
  * CallType
  */
-export type CallType = 'scout' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain';
+export type CallType = 'scout' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize';
 
 /**
  * ConsiderationDirection
@@ -462,7 +462,7 @@ export type LinkRole = 'direct' | 'structural';
 /**
  * LinkType
  */
-export type LinkType = 'consideration' | 'child_question' | 'supersedes' | 'related';
+export type LinkType = 'consideration' | 'child_question' | 'supersedes' | 'related' | 'summarizes';
 
 /**
  * LinkedPageOut
@@ -481,9 +481,9 @@ export type MoveTraceItem = {
      */
     type: string;
     /**
-     * Summary
+     * Headline
      */
-    summary?: string;
+    headline?: string;
     /**
      * Page Refs
      */
@@ -525,9 +525,9 @@ export type Page = {
      */
     content: string;
     /**
-     * Summary
+     * Headline
      */
-    summary: string;
+    headline: string;
     /**
      * Id
      */
@@ -574,6 +574,10 @@ export type Page = {
     extra: {
         [key: string]: unknown;
     };
+    /**
+     * Abstract
+     */
+    abstract: string;
 };
 
 /**
@@ -652,15 +656,15 @@ export type PageRef = {
      */
     id: string;
     /**
-     * Summary
+     * Headline
      */
-    summary?: string;
+    headline?: string;
 };
 
 /**
  * PageType
  */
-export type PageType = 'source' | 'claim' | 'question' | 'judgement' | 'concept' | 'wiki';
+export type PageType = 'source' | 'claim' | 'question' | 'judgement' | 'concept' | 'wiki' | 'summary';
 
 /**
  * Project

@@ -31,6 +31,7 @@ from rumil.models import (
     Dispatch,
     Move,
     MoveType,
+    PageDetail,
 )
 from rumil.moves.base import MoveState
 from rumil.moves.load_page import LoadPagePayload
@@ -259,7 +260,7 @@ async def run_agent_loop(
         raise ValueError("Either user_message or messages must be provided")
     settings = get_settings()
     effective_rounds = max_rounds if max_rounds is not None else (
-        2 if settings.is_smoke_test else 6
+        2 if settings.is_smoke_test else 3
     )
     client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
     if tools is not None:
@@ -282,7 +283,7 @@ async def run_agent_loop(
     all_warnings: list[str] = []
     round_num = 0
 
-    for round_num in range(effective_rounds + 1):
+    for round_num in range(effective_rounds):
         log.debug("run_agent_loop round %d/%d", round_num + 1, effective_rounds)
         meta = LLMExchangeMetadata(
             call_id=call_id, phase="inner_loop", trace=trace,
@@ -460,7 +461,7 @@ async def _format_loaded_pages(page_ids: list[str], db: DB) -> str:
     for pid in page_ids:
         page = await db.get_page(pid)
         if page:
-            parts.append(f"### Page `{pid[:8]}`\n\n{await format_page(page, db=db)}")
+            parts.append(f"### Page `{pid[:8]}`\n\n{await format_page(page, PageDetail.HEADLINE, db=db)}")
     return "\n\n---\n\n".join(parts)
 
 
@@ -594,12 +595,12 @@ async def extract_loaded_page_ids(result: RunCallResult, db: DB) -> list[str]:
 
 
 async def resolve_page_refs(page_ids: list[str], db: DB) -> list[PageRef]:
-    """Resolve a list of page IDs to PageRef objects with summaries."""
+    """Resolve a list of page IDs to PageRef objects with headlines."""
     refs = []
     for pid in page_ids:
         page = await db.get_page(pid)
-        headline = page.headline if page else ""
-        refs.append(PageRef(id=pid, summary=headline))
+        hl = page.headline if page else ""
+        refs.append(PageRef(id=pid, headline=hl))
     return refs
 
 
@@ -615,8 +616,8 @@ async def _resolve_payload_refs(move: Move, db: DB) -> list[PageRef]:
         if not full_id:
             continue
         page = await db.get_page(full_id)
-        headline = page.headline if page else ""
-        refs.append(PageRef(id=full_id, summary=headline))
+        hl = page.headline if page else ""
+        refs.append(PageRef(id=full_id, headline=hl))
     return refs
 
 

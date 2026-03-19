@@ -31,6 +31,12 @@ class PageType(str, Enum):
     SUMMARY = "summary"
 
 
+class PageDetail(str, Enum):
+    HEADLINE = "headline"
+    ABSTRACT = "abstract"
+    CONTENT = "content"
+
+
 class PageLayer(str, Enum):
     WIKI = "wiki"
     SQUIDGY = "squidgy"
@@ -39,6 +45,7 @@ class PageLayer(str, Enum):
 class Workspace(str, Enum):
     RESEARCH = "research"
     PRIORITIZATION = "prioritization"
+    CONCEPT_STAGING = "concept_staging"
 
 
 class CallType(str, Enum):
@@ -49,6 +56,8 @@ class CallType(str, Enum):
     REFRAME = "reframe"
     MAINTAIN = "maintain"
     SUMMARIZE = "summarize"
+    SCOUT_CONCEPTS = "scout_concepts"
+    ASSESS_CONCEPT = "assess_concept"
 
 
 # The subset of CallTypes that prioritization can dispatch.
@@ -90,6 +99,8 @@ class MoveType(str, Enum):
     LOAD_PAGE = "LOAD_PAGE"
     REMOVE_LINK = "REMOVE_LINK"
     CHANGE_LINK_ROLE = "CHANGE_LINK_ROLE"
+    PROPOSE_CONCEPT = "PROPOSE_CONCEPT"
+    PROMOTE_CONCEPT = "PROMOTE_CONCEPT"
 
 
 class CallStage(str, Enum):

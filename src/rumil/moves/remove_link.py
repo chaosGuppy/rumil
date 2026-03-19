@@ -25,11 +25,11 @@ async def execute(payload: RemoveLinkPayload, call: Call, db: DB) -> MoveResult:
         to_page = await db.get_page(link.to_page_id)
         trace_extra["from_page"] = {
             "id": link.from_page_id,
-            "summary": from_page.headline if from_page else "",
+            "headline": from_page.headline if from_page else "",
         }
         trace_extra["to_page"] = {
             "id": link.to_page_id,
-            "summary": to_page.headline if to_page else "",
+            "headline": to_page.headline if to_page else "",
         }
     await db.delete_link(payload.link_id)
     log.info("Link removed: %s", payload.link_id[:8])

@@ -17,6 +17,8 @@ from rumil.moves.propose_hypothesis import MOVE as _propose_hypothesis
 from rumil.moves.load_page import MOVE as _load_page
 from rumil.moves.remove_link import MOVE as _remove_link
 from rumil.moves.change_link_role import MOVE as _change_link_role
+from rumil.moves.propose_concept import MOVE as _propose_concept
+from rumil.moves.promote_concept import MOVE as _promote_concept
 
 MOVES: dict[MoveType, MoveDef] = {
     m.move_type: m
@@ -36,5 +38,7 @@ MOVES: dict[MoveType, MoveDef] = {
         _load_page,
         _remove_link,
         _change_link_role,
+        _propose_concept,
+        _promote_concept,
     ]
 }

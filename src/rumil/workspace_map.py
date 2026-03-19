@@ -21,7 +21,14 @@ async def _build_question_lines(
     source: DB | PageGraph,
     short_id_map: dict[str, str],
     indent: int = 0,
+    _visited: set[str] | None = None,
 ) -> list[str]:
+    if _visited is None:
+        _visited = set()
+    if question.id in _visited:
+        return [f"{'  ' * indent}[Q] `{_short_id(question.id)}` — *** cycle detected ***"]
+    _visited = _visited | {question.id}
+
     prefix = "  " * indent
     sid = _short_id(question.id)
     short_id_map[sid] = question.id
@@ -53,7 +60,9 @@ async def _build_question_lines(
         lines.append(f"{prefix}  [J {j.epistemic_status:.1f}] `{j_sid}` — {j.headline}")
 
     for child in children:
-        lines.extend(await _build_question_lines(child, source, short_id_map, indent + 1))
+        lines.extend(await _build_question_lines(
+            child, source, short_id_map, indent + 1, _visited,
+        ))
 
     return lines
 

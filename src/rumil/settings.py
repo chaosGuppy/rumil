@@ -44,8 +44,9 @@ class Settings(BaseSettings):
     ingest_call_variant: str = _capture_field(default="default")
 
     context_char_budget: int = _capture_field(default=10_000)
-    full_page_char_fraction: float = _capture_field(default=0.6)
-    summary_page_char_fraction: float = _capture_field(default=0.3)
+    full_page_char_fraction: float = _capture_field(default=0.4)
+    abstract_page_char_fraction: float = _capture_field(default=0.3)
+    summary_page_char_fraction: float = _capture_field(default=0.2)
     distillation_page_char_fraction: float = _capture_field(default=0.0)
 
     @property

@@ -5,8 +5,10 @@ look up the concrete class by a short string name stored in settings.
 """
 
 from rumil.calls.assess import AssessCall, EmbeddingAssessCall
+from rumil.calls.assess_concept import AssessConceptCall
 from rumil.calls.ingest import EmbeddingIngestCall, IngestCall
 from rumil.calls.scout import EmbeddingScoutCall, ScoutCall
+from rumil.calls.scout_concepts import ScoutConceptsCall
 
 SCOUT_CALL_CLASSES: dict[str, type[ScoutCall]] = {
     "default": ScoutCall,
@@ -21,4 +23,12 @@ ASSESS_CALL_CLASSES: dict[str, type[AssessCall]] = {
 INGEST_CALL_CLASSES: dict[str, type[IngestCall]] = {
     "default": IngestCall,
     "embedding": EmbeddingIngestCall,
+}
+
+SCOUT_CONCEPTS_CALL_CLASSES: dict[str, type[ScoutConceptsCall]] = {
+    "default": ScoutConceptsCall,
+}
+
+ASSESS_CONCEPT_CALL_CLASSES: dict[str, type[AssessConceptCall]] = {
+    "default": AssessConceptCall,
 }

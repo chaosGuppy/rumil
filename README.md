@@ -83,6 +83,9 @@ uv run python main.py --map QUESTION_ID
 # Generate executive summary
 uv run python main.py --summary QUESTION_ID
 
+# Run a concept-generation session (propose and assess conceptual tools for the research)
+uv run python main.py --concepts QUESTION_ID
+
 # Control how deep the summary traverses and where it switches to compact mode.
 # --max-depth N        How many levels of sub-questions to include (default: 4).
 # --summarize-after-depth N  Levels 0..N-1 show full claim/judgement content;

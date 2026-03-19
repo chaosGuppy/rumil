@@ -107,7 +107,7 @@ function getDuration(call: Call): string | null {
 
 function PageChip({ page }: { page: PageRef }) {
   const short = page.id.slice(0, 8);
-  const label = page.summary || short;
+  const label = page.headline || short;
   return (
     <Link href={`/pages/${page.id}`} className="trace-page-chip" title={short}>
       {label}
@@ -121,7 +121,7 @@ function PageList({ pages }: { pages: PageRef[] }) {
   return (
     <span className="trace-page-list">
       {pages.map((p, i) => (
-        <PageChip key={p.id} page={p} />
+        <PageChip key={`${p.id}-${i}`} page={p} />
       ))}
     </span>
   );
@@ -170,8 +170,8 @@ function MoveRow({
   const hasRefs = pageRefs && pageRefs.length > 0;
 
   if (isChange && extra?.old_role && extra?.new_role) {
-    const fromPage = extra.from_page as { id: string; summary: string } | undefined;
-    const toPage = extra.to_page as { id: string; summary: string } | undefined;
+    const fromPage = extra.from_page as { id: string; headline: string } | undefined;
+    const toPage = extra.to_page as { id: string; headline: string } | undefined;
     return (
       <div className="trace-move-row">
         <span className={`trace-move-type ${typeClass}`}>
@@ -194,8 +194,8 @@ function MoveRow({
   }
 
   if (isRemove && extra?.from_page) {
-    const fromPage = extra.from_page as { id: string; summary: string } | undefined;
-    const toPage = extra.to_page as { id: string; summary: string } | undefined;
+    const fromPage = extra.from_page as { id: string; headline: string } | undefined;
+    const toPage = extra.to_page as { id: string; headline: string } | undefined;
     const role = extra.role as string | undefined;
     return (
       <div className="trace-move-row">
@@ -226,8 +226,8 @@ function MoveRow({
       )}
       {hasRefs && (
         <span className="trace-page-list">
-          {pageRefs.map((p) => (
-            <PageChip key={p.id} page={p} />
+          {pageRefs.map((p, i) => (
+            <PageChip key={`${p.id}-${i}`} page={p} />
           ))}
         </span>
       )}

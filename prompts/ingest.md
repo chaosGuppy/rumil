@@ -25,7 +25,7 @@ Calibrate your `epistemic_status` and `epistemic_type` accordingly. A well-evide
 
 Extract **3–5 considerations** that bear on the primary question. Quality over quantity — if only 2 genuinely matter, produce 2.
 
-For each consideration, create the claim and link it to the primary question. Set the `source_id` field on each claim to the source page ID.
+For each consideration, create the claim and link it to the primary question. Set the `source_ids` field on each claim to include the source page ID.
 
 ### Cross-question extraction
 

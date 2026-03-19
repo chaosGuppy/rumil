@@ -202,12 +202,14 @@ class LLMPrioritizer(Prioritizer):
                         mode=ScoutMode.ALTERNATE,
                         fruit_threshold=DEFAULT_FRUIT_THRESHOLD,
                         max_rounds=DEFAULT_MAX_ROUNDS,
+                        reason="fallback"
                     ),
                 ),
                 Dispatch(
                     call_type=CallType.ASSESS,
                     payload=AssessDispatchPayload(
                         question_id=question_id,
+                        reason="fallback"
                     ),
                 ),
             ],

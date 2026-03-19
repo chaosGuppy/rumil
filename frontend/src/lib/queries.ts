@@ -33,6 +33,7 @@ export function runTraceOptions(runId: string, initialData?: RunTraceOut) {
     queryKey: traceKeys.detail(runId),
     queryFn: () => fetchRunTrace(runId),
     initialData,
+    refetchInterval: 3000,
   });
 }
 

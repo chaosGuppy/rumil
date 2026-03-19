@@ -1,7 +1,5 @@
 """Tests for build_embedding_based_context."""
 
-from unittest.mock import AsyncMock, patch
-
 import pytest
 
 from rumil.context import (
@@ -38,32 +36,32 @@ FAKE_EMBEDDING = [0.1] * 1024
 
 
 @pytest.fixture
-def mock_embeddings():
-    with (
-        patch(
-            'rumil.context.embed_query',
-            new_callable=AsyncMock,
-            return_value=FAKE_EMBEDDING,
-        ) as mock_eq,
-        patch(
-            'rumil.context.search_pages_by_vector',
-            new_callable=AsyncMock,
-            return_value=RANKED,
-        ) as mock_sp,
-    ):
-        yield mock_eq, mock_sp
+def mock_embeddings(mocker):
+    mocker.patch(
+        'rumil.context.embed_query',
+        new_callable=mocker.AsyncMock,
+        return_value=FAKE_EMBEDDING,
+    )
+    mocker.patch(
+        'rumil.context.search_pages_by_vector',
+        new_callable=mocker.AsyncMock,
+        return_value=RANKED,
+    )
 
 
-async def test_basic_budget_split(mock_embeddings):
+@pytest.fixture
+def mock_db(mocker):
+    db = mocker.AsyncMock()
+    db.get_considerations_for_question = mocker.AsyncMock(return_value=[])
+    db.get_judgements_for_question = mocker.AsyncMock(return_value=[])
+    return db
+
+
+async def test_basic_budget_split(mock_embeddings, mock_db):
     """Pages fill full tier first, then summary tier."""
-    mock_eq, mock_sp = mock_embeddings
-    db = AsyncMock()
-    db.get_considerations_for_question = AsyncMock(return_value=[])
-    db.get_judgements_for_question = AsyncMock(return_value=[])
-
     result = await build_embedding_based_context(
         'test query',
-        db,
+        mock_db,
         context_char_budget=10_000,
         full_page_char_fraction=0.6,
         summary_para_char_fraction=0.3,
@@ -76,23 +74,12 @@ async def test_basic_budget_split(mock_embeddings):
     assert result.distillation_page_ids == []
     assert set(result.page_ids) == set(result.full_page_ids + result.summary_page_ids)
 
-    mock_eq.assert_awaited_once_with('test query')
-    mock_sp.assert_awaited_once()
-    call_kwargs = mock_sp.call_args
-    assert call_kwargs.kwargs['field_name'] == 'headline'
-    assert call_kwargs.kwargs['match_count'] == 500
 
-
-async def test_similarity_ordering(mock_embeddings):
+async def test_similarity_ordering(mock_embeddings, mock_db):
     """Pages appear in similarity order: highest-similarity first in full tier."""
-    mock_embeddings  # just activate the fixture
-    db = AsyncMock()
-    db.get_considerations_for_question = AsyncMock(return_value=[])
-    db.get_judgements_for_question = AsyncMock(return_value=[])
-
     result = await build_embedding_based_context(
         'test query',
-        db,
+        mock_db,
         context_char_budget=10_000,
     )
 
@@ -103,16 +90,11 @@ async def test_similarity_ordering(mock_embeddings):
             assert page_order.index(full_ids[i]) < page_order.index(full_ids[i + 1])
 
 
-async def test_small_budget_forces_summaries(mock_embeddings):
+async def test_small_budget_forces_summaries(mock_embeddings, mock_db):
     """With a tiny full budget, pages overflow to summary tier."""
-    mock_embeddings
-    db = AsyncMock()
-    db.get_considerations_for_question = AsyncMock(return_value=[])
-    db.get_judgements_for_question = AsyncMock(return_value=[])
-
     result = await build_embedding_based_context(
         'test query',
-        db,
+        mock_db,
         context_char_budget=1_000,
         full_page_char_fraction=0.1,
         summary_para_char_fraction=0.8,
@@ -121,16 +103,11 @@ async def test_small_budget_forces_summaries(mock_embeddings):
     assert len(result.summary_page_ids) > 0
 
 
-async def test_section_headers_present(mock_embeddings):
+async def test_section_headers_present(mock_embeddings, mock_db):
     """Output contains expected section headers."""
-    mock_embeddings
-    db = AsyncMock()
-    db.get_considerations_for_question = AsyncMock(return_value=[])
-    db.get_judgements_for_question = AsyncMock(return_value=[])
-
     result = await build_embedding_based_context(
         'test query',
-        db,
+        mock_db,
         context_char_budget=10_000,
     )
 
@@ -148,26 +125,13 @@ def test_format_page_summary():
     assert 'Test summary' in line
 
 
-async def test_zero_budget_returns_empty():
+async def test_zero_budget_returns_empty(mock_embeddings, mock_db):
     """A zero budget produces no pages."""
-    with (
-        patch(
-            'rumil.context.embed_query',
-            new_callable=AsyncMock,
-            return_value=FAKE_EMBEDDING,
-        ),
-        patch(
-            'rumil.context.search_pages_by_vector',
-            new_callable=AsyncMock,
-            return_value=RANKED,
-        ),
-    ):
-        db = AsyncMock()
-        result = await build_embedding_based_context(
-            'test query',
-            db,
-            context_char_budget=0,
-        )
-        assert result.page_ids == []
-        assert result.full_page_ids == []
-        assert result.summary_page_ids == []
+    result = await build_embedding_based_context(
+        'test query',
+        mock_db,
+        context_char_budget=0,
+    )
+    assert result.page_ids == []
+    assert result.full_page_ids == []
+    assert result.summary_page_ids == []

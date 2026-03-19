@@ -59,12 +59,13 @@ async def test_store_and_search_with_field_filter(tmp_db):
         content="Quantum entanglement links particles across distances.",
         headline="Quantum entanglement links distant particles",
     )
+    page.abstract = "Entangled quantum particles share correlated states instantly."
     await tmp_db.save_page(page)
-    await embed_and_store_page(tmp_db, page, field_name="headline")
+    await embed_and_store_page(tmp_db, page, field_name="abstract")
 
     results_with_filter = await search_pages(
         tmp_db, "quantum particles", match_threshold=0.3,
-        field_name="headline",
+        field_name="abstract",
     )
     returned_ids = [p.id for p, _ in results_with_filter]
     assert page.id in returned_ids

@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     assess_call_variant: str = _capture_field(default="default")
     ingest_call_variant: str = _capture_field(default="default")
     web_research_call_variant: str = _capture_field(default="default")
+    prioritizer_variant: str = _capture_field(default="two_phase")
 
     full_page_char_budget: int = _capture_field(default=10_000)
     abstract_page_char_budget: int = _capture_field(default=10_000)

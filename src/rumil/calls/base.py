@@ -9,7 +9,7 @@ from rumil.calls.common import (
     RunCallResult,
     _format_loaded_pages,
     _run_phase1,
-    complete_call,
+    mark_call_completed,
     extract_loaded_page_ids,
     format_moves_for_review,
     log_page_ratings,
@@ -89,7 +89,7 @@ class BaseCall(ABC):
 
     async def _finalize(self) -> None:
         self.call.review_json = self.review
-        await complete_call(self.call, self.db, self.result_summary())
+        await mark_call_completed(self.call, self.db, self.result_summary())
 
 
 class SimpleCall(BaseCall):

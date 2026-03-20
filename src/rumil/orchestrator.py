@@ -3,8 +3,10 @@ Orchestrator: drives the research workflow using the prioritization system.
 Budget is tracked here; prioritization and review calls are free.
 """
 
+import asyncio
 import logging
 import os
+from collections.abc import Sequence
 
 from rumil.tracing.broadcast import Broadcaster
 from rumil.calls.summarize import summarize_question
@@ -14,6 +16,11 @@ from rumil.calls.call_registry import (
     INGEST_CALL_CLASSES,
     FIND_CONSIDERATIONS_CALL_CLASSES,
     SCOUT_CONCEPTS_CALL_CLASSES,
+    SCOUT_ANALOGIES_CALL_CLASSES,
+    SCOUT_PARADIGM_CASES_CALL_CLASSES,
+    SCOUT_ESTIMATES_CALL_CLASSES,
+    SCOUT_HYPOTHESES_CALL_CLASSES,
+    SCOUT_SUBQUESTIONS_CALL_CLASSES,
     WEB_RESEARCH_CALL_CLASSES,
 )
 from rumil.database import DB
@@ -26,11 +33,18 @@ from rumil.models import (
     Page,
     PageLayer,
     PageType,
+    ScoutAnalogiesDispatchPayload,
     ScoutDispatchPayload,
+    ScoutParadigmCasesDispatchPayload,
+    ScoutEstimatesDispatchPayload,
+    ScoutHypothesesDispatchPayload,
     ScoutMode,
+    ScoutSubquestionsDispatchPayload,
+    WebResearchDispatchPayload,
     Workspace,
 )
-from rumil.prioritizer import LLMPrioritizer, Prioritizer
+from rumil.prioritizer import LLMPrioritizer, TwoPhasePrioritizer, Prioritizer
+from rumil.tracing.tracer import CallTrace
 from rumil.tracing.trace_events import DispatchExecutedEvent
 
 
@@ -67,12 +81,22 @@ async def create_root_question(question_text: str, db: DB) -> str:
     return page.id
 
 
-async def _consume_budget(db: DB) -> bool:
-    """Consume one unit of global budget. Returns False if exhausted."""
+async def _consume_budget(db: DB, force: bool = False) -> bool:
+    """Consume one unit of global budget. Returns False if exhausted.
+
+    When *force* is True the call always succeeds: if normal consumption
+    fails, budget is temporarily expanded so the dispatch can proceed.
+    This is used to guarantee that every dispatch in a committed batch
+    runs, even if it means slightly exceeding the original budget.
+    """
     ok = await db.consume_budget(1)
     if not ok:
-        remaining = await db.budget_remaining()
-        log.info("Budget exhausted (remaining: %d)", remaining)
+        if force:
+            await db.add_budget(1)
+            ok = await db.consume_budget(1)
+        if not ok:
+            remaining = await db.budget_remaining()
+            log.info("Budget exhausted (remaining: %d)", remaining)
     return ok
 
 
@@ -85,6 +109,7 @@ async def find_considerations_until_done(
     context_page_ids: list | None = None,
     mode: ScoutMode = ScoutMode.ALTERNATE,
     broadcaster=None,
+    force: bool = False,
 ) -> tuple[int, list[str]]:
     """Run a cache-aware find-considerations session.
 
@@ -103,6 +128,9 @@ async def find_considerations_until_done(
         "find_considerations_until_done: question=%s, max_rounds=%d, fruit_threshold=%d, mode=%s",
         question_id[:8], max_rounds, fruit_threshold, mode.value,
     )
+
+    if force and await db.budget_remaining() <= 0:
+        await db.add_budget(1)
 
     call = await db.create_call(
         CallType.FIND_CONSIDERATIONS,
@@ -192,10 +220,11 @@ async def assess_question(
     parent_call_id: str | None = None,
     context_page_ids: list | None = None,
     broadcaster=None,
+    force: bool = False,
 ) -> str | None:
     """Run one Assess call on a question. Returns call ID, or None if no budget."""
     log.info("assess_question: question=%s", question_id[:8])
-    if not await _consume_budget(db):
+    if not await _consume_budget(db, force=force):
         return None
 
     await summarize_question(question_id, db, parent_call_id=parent_call_id)
@@ -344,10 +373,11 @@ async def web_research_question(
     allowed_domains: list[str] | None = None,
     parent_call_id: str | None = None,
     broadcaster=None,
+    force: bool = False,
 ) -> str | None:
     """Run one web research call on a question. Returns call ID, or None if no budget."""
     log.info('web_research_question: question=%s', question_id[:8])
-    if not await _consume_budget(db):
+    if not await _consume_budget(db, force=force):
         return None
 
     call = await db.create_call(
@@ -380,13 +410,70 @@ class Orchestrator:
         self.broadcaster: Broadcaster | None = None
         self._prioritizer = prioritizer
 
+    async def _run_simple_call_dispatch(
+        self,
+        question_id: str,
+        call_type: CallType,
+        registry: dict,
+        parent_call_id: str | None,
+        force: bool = False,
+    ) -> str | None:
+        """Run a simple (single-pass) call dispatch. Consumes 1 budget."""
+        if not await _consume_budget(self.db, force=force):
+            return None
+
+        call = await self.db.create_call(
+            call_type,
+            scope_page_id=question_id,
+            parent_call_id=parent_call_id,
+        )
+        cls = registry['default']
+        instance = cls(question_id, call, self.db, broadcaster=self.broadcaster)
+        await instance.run()
+        return call.id
+
+    async def _run_dispatch_sequence(
+        self,
+        sequence: Sequence[Dispatch],
+        scope_question_id: str,
+        parent_call_id: str | None,
+        trace: CallTrace | None,
+        base_index: int,
+    ) -> bool:
+        """Run dispatches in a sequence sequentially. Returns True if any executed.
+
+        All dispatches in the sequence are guaranteed to run: if budget
+        is exhausted mid-sequence, subsequent dispatches force-consume
+        so that trailing calls (e.g. auto-assess) are never skipped.
+        """
+        executed = False
+        for i, dispatch in enumerate(sequence):
+            force = i > 0 and await self.db.budget_remaining() <= 0
+            resolved, child_call_id = await self._execute_dispatch(
+                dispatch, scope_question_id, parent_call_id, force=force,
+            )
+            executed = True
+            if trace:
+                await trace.record(DispatchExecutedEvent(
+                    index=base_index + i,
+                    child_call_type=dispatch.call_type.value,
+                    question_id=resolved,
+                    child_call_id=child_call_id,
+                ))
+        return executed
+
     async def _execute_dispatch(
         self,
         dispatch: Dispatch,
         scope_question_id: str,
         parent_call_id: str | None,
+        *,
+        force: bool = False,
     ) -> tuple[str, str | None]:
-        """Execute a single find-considerations or assess dispatch.
+        """Execute a single dispatch.
+
+        When *force* is True, budget is expanded if needed so the call
+        always proceeds (used for trailing dispatches in a committed batch).
 
         Returns (resolved_question_id, child_call_id).
         """
@@ -417,6 +504,7 @@ class Orchestrator:
                 context_page_ids=p.context_page_ids,
                 mode=p.mode,
                 broadcaster=self.broadcaster,
+                force=force,
             )
             child_call_id = child_ids[0] if child_ids else None
 
@@ -428,6 +516,56 @@ class Orchestrator:
                 parent_call_id=parent_call_id,
                 context_page_ids=p.context_page_ids,
                 broadcaster=self.broadcaster,
+                force=force,
+            )
+
+        elif isinstance(p, ScoutSubquestionsDispatchPayload):
+            log.info('Dispatch: scout_subquestions on %s — %s', d_label, p.reason)
+            child_call_id = await self._run_simple_call_dispatch(
+                resolved, CallType.SCOUT_SUBQUESTIONS,
+                SCOUT_SUBQUESTIONS_CALL_CLASSES, parent_call_id,
+                force=force,
+            )
+
+        elif isinstance(p, ScoutEstimatesDispatchPayload):
+            log.info('Dispatch: scout_estimates on %s — %s', d_label, p.reason)
+            child_call_id = await self._run_simple_call_dispatch(
+                resolved, CallType.SCOUT_ESTIMATES,
+                SCOUT_ESTIMATES_CALL_CLASSES, parent_call_id,
+                force=force,
+            )
+
+        elif isinstance(p, ScoutHypothesesDispatchPayload):
+            log.info('Dispatch: scout_hypotheses on %s — %s', d_label, p.reason)
+            child_call_id = await self._run_simple_call_dispatch(
+                resolved, CallType.SCOUT_HYPOTHESES,
+                SCOUT_HYPOTHESES_CALL_CLASSES, parent_call_id,
+                force=force,
+            )
+
+        elif isinstance(p, ScoutAnalogiesDispatchPayload):
+            log.info('Dispatch: scout_analogies on %s — %s', d_label, p.reason)
+            child_call_id = await self._run_simple_call_dispatch(
+                resolved, CallType.SCOUT_ANALOGIES,
+                SCOUT_ANALOGIES_CALL_CLASSES, parent_call_id,
+                force=force,
+            )
+
+        elif isinstance(p, ScoutParadigmCasesDispatchPayload):
+            log.info('Dispatch: scout_paradigm_cases on %s — %s', d_label, p.reason)
+            child_call_id = await self._run_simple_call_dispatch(
+                resolved, CallType.SCOUT_PARADIGM_CASES,
+                SCOUT_PARADIGM_CASES_CALL_CLASSES, parent_call_id,
+                force=force,
+            )
+
+        elif isinstance(p, WebResearchDispatchPayload):
+            log.info('Dispatch: web_research on %s — %s', d_label, p.reason)
+            child_call_id = await web_research_question(
+                resolved, self.db,
+                parent_call_id=parent_call_id,
+                broadcaster=self.broadcaster,
+                force=force,
             )
 
         return resolved, child_call_id
@@ -443,9 +581,16 @@ class Orchestrator:
             root_question_id[:8], total,
         )
 
-        prioritizer = self._prioritizer or LLMPrioritizer(
-            self.db, broadcaster=self.broadcaster,
-        )
+        if self._prioritizer:
+            prioritizer = self._prioritizer
+        elif get_settings().prioritizer_variant == 'two_phase':
+            prioritizer = TwoPhasePrioritizer(
+                self.db, broadcaster=self.broadcaster,
+            )
+        else:
+            prioritizer = LLMPrioritizer(
+                self.db, broadcaster=self.broadcaster,
+            )
 
         try:
             while True:
@@ -456,28 +601,20 @@ class Orchestrator:
                 result = await prioritizer.get_calls(
                     root_question_id, remaining,
                 )
-                if not result.dispatches:
+                if not result.dispatch_sequences:
                     break
 
-                spent_any = False
-                for i, dispatch in enumerate(result.dispatches):
-                    if await self.db.budget_remaining() <= 0:
-                        break
+                base_index = 0
+                tasks = []
+                for seq in result.dispatch_sequences:
+                    tasks.append(self._run_dispatch_sequence(
+                        seq, root_question_id, result.call_id,
+                        result.trace, base_index,
+                    ))
+                    base_index += len(seq)
 
-                    resolved, child_call_id = await self._execute_dispatch(
-                        dispatch, root_question_id, result.call_id,
-                    )
-                    spent_any = True
-
-                    if result.trace:
-                        await result.trace.record(DispatchExecutedEvent(
-                            index=i,
-                            child_call_type=dispatch.call_type.value,
-                            question_id=resolved,
-                            child_call_id=child_call_id,
-                        ))
-
-                if spent_any:
+                sequence_results = await asyncio.gather(*tasks)
+                if any(sequence_results):
                     prioritizer.mark_executed()
                 else:
                     break

@@ -9,7 +9,7 @@ import pytest
 import pytest_asyncio
 
 from rumil.calls.assess import AssessCall
-from rumil.calls.common import complete_call, run_closing_review
+from rumil.calls.common import mark_call_completed, run_closing_review
 from rumil.calls.ingest import IngestCall
 from rumil.calls.find_considerations import ScoutCall
 from rumil.models import (
@@ -150,7 +150,7 @@ async def test_complete_call(tmp_db, assess_call):
     assert assess_call.status == CallStatus.PENDING
     assert assess_call.completed_at is None
 
-    await complete_call(assess_call, tmp_db, "Test summary")
+    await mark_call_completed(assess_call, tmp_db, "Test summary")
 
     assert assess_call.status == CallStatus.COMPLETE
     assert assess_call.completed_at is not None

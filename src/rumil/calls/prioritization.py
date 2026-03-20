@@ -4,10 +4,12 @@ import logging
 
 from rumil.calls.common import (
     RunCallResult,
-    complete_call,
+    mark_call_completed,
     run_single_call,
 )
-from rumil.calls.dispatches import DISPATCH_DEFS
+from collections.abc import Sequence
+
+from rumil.calls.dispatches import DISPATCH_DEFS, DispatchDef
 from rumil.context import build_prioritization_context, collect_subtree_ids
 from rumil.database import DB
 from rumil.page_graph import PageGraph
@@ -16,7 +18,7 @@ from rumil.models import Call, CallType, MoveType
 from rumil.moves.base import MoveState
 from rumil.moves.create_question import PRIORITIZATION_MOVE
 from rumil.moves.registry import MOVES
-from rumil.tracing.trace_events import ContextBuiltEvent, DispatchesPlannedEvent
+from rumil.tracing.trace_events import ContextBuiltEvent, DispatchTraceItem, DispatchesPlannedEvent
 from rumil.tracing.tracer import CallTrace
 
 log = logging.getLogger(__name__)
@@ -33,6 +35,9 @@ async def run_prioritization_call(
     subtree_ids: set[str] | None = None,
     short_id_map: dict[str, str] | None = None,
     trace: CallTrace | None = None,
+    dispatch_types: Sequence[CallType] | None = None,
+    extra_dispatch_defs: Sequence[DispatchDef] | None = None,
+    system_prompt_override: str | None = None,
 ) -> RunCallResult:
     """Run a prioritization call with tool use (single LLM round).
 
@@ -49,7 +54,7 @@ async def run_prioritization_call(
         available_moves = list(MoveType)
 
     state = MoveState(call, db)
-    system_prompt = build_system_prompt(CallType.PRIORITIZATION.value)
+    system_prompt = system_prompt_override or build_system_prompt(CallType.PRIORITIZATION.value)
 
     tools = []
     for mt in available_moves:
@@ -57,7 +62,15 @@ async def run_prioritization_call(
             tools.append(PRIORITIZATION_MOVE.bind(state))
         else:
             tools.append(MOVES[mt].bind(state))
-    for ddef in DISPATCH_DEFS.values():
+    if dispatch_types is not None:
+        selected_defs = [
+            DISPATCH_DEFS[ct] for ct in dispatch_types if ct in DISPATCH_DEFS
+        ]
+    else:
+        selected_defs = list(DISPATCH_DEFS.values())
+    if extra_dispatch_defs:
+        selected_defs.extend(extra_dispatch_defs)
+    for ddef in selected_defs:
         tools.append(ddef.bind(state, subtree_ids, short_id_map))
 
     user_message = build_user_message(context_text, task_description)
@@ -130,10 +143,10 @@ async def run_prioritization(
 
     await trace.record(DispatchesPlannedEvent(
         dispatches=[
-            {
-                "call_type": d.call_type.value,
+            DispatchTraceItem(
+                call_type=d.call_type.value,
                 **d.payload.model_dump(exclude_defaults=True),
-            }
+            )
             for d in result.dispatches
         ],
     ))
@@ -148,7 +161,7 @@ async def run_prioritization(
         "Prioritization complete: call=%s, dispatches=%d, moves=%d",
         call.id[:8], len(result.dispatches), len(result.moves),
     )
-    await complete_call(
+    await mark_call_completed(
         call,
         db,
         f"Prioritization complete. Planned {len(result.dispatches)} dispatches.",

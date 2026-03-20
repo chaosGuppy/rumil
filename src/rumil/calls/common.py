@@ -531,8 +531,8 @@ async def run_call(
     raw agent result.
     """
 
-    if max_rounds is None:
-        max_rounds = 1 if get_settings().is_smoke_test else 3
+    if max_rounds is None and not get_settings().is_smoke_test:
+        max_rounds = 3
 
     log.info(
         "run_call: type=%s, call=%s, scope=%s",
@@ -671,7 +671,7 @@ async def log_page_ratings(review: dict, db: DB) -> None:
         log.info("Page rating: %s [%s]: %s", page_label, label, note)
 
 
-async def complete_call(call: Call, db: DB, summary: str) -> None:
+async def mark_call_completed(call: Call, db: DB, summary: str) -> None:
     call.status = CallStatus.COMPLETE
     call.completed_at = datetime.now(UTC)
     call.result_summary = summary

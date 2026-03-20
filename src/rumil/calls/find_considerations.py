@@ -8,7 +8,7 @@ from rumil.calls.base import BaseCall
 from rumil.calls.common import (
     ReviewResponse,
     _prepare_tools,
-    complete_call,
+    mark_call_completed,
     log_page_ratings,
     resolve_page_refs,
     run_agent_loop,
@@ -576,7 +576,7 @@ class ScoutCall(BaseCall):
 
     async def _finalize(self) -> None:
         self.call.review_json = self.review
-        await complete_call(self.call, self.db, self.result_summary())
+        await mark_call_completed(self.call, self.db, self.result_summary())
 
 
 class EmbeddingScoutCall(ScoutCall):

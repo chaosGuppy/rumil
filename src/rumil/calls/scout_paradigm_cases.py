@@ -1,4 +1,4 @@
-"""Scout Subquestions call: identify informative subquestions and initial considerations."""
+"""Scout Paradigm Cases call: identify concrete cases that illuminate the question."""
 
 import logging
 
@@ -9,23 +9,24 @@ from rumil.models import CallType, MoveType
 log = logging.getLogger(__name__)
 
 
-class ScoutSubquestionsCall(SimpleCall):
-    """Identify subquestions whose answers would be highly informative about the parent."""
+class ScoutParadigmCasesCall(SimpleCall):
+    """Identify concrete cases or examples that illuminate the question."""
 
     def call_type(self) -> CallType:
-        return CallType.SCOUT_SUBQUESTIONS
+        return CallType.SCOUT_PARADIGM_CASES
 
     def task_description(self) -> str:
         return (
-            'Identify subquestions whose answers would be highly informative '
-            'about the parent question, and generate initial considerations '
-            'that bear on the question.\n\n'
+            'Identify paradigm cases — concrete, real-world examples that '
+            'illuminate the parent question. For each case, create claims '
+            'describing it and its relevance, and generate subquestions '
+            'asking about its details and implications.\n\n'
             f'Question ID: `{self.question_id}`'
         )
 
     def result_summary(self) -> str:
         return (
-            f'Scout subquestions complete. '
+            f'Scout paradigm cases complete. '
             f'Created {len(self.result.created_page_ids)} pages.'
         )
 
@@ -45,6 +46,7 @@ class ScoutSubquestionsCall(SimpleCall):
             MoveType.CREATE_QUESTION,
             MoveType.LINK_CONSIDERATION,
             MoveType.LINK_CHILD_QUESTION,
+            MoveType.LINK_RELATED,
             MoveType.LOAD_PAGE,
         ]
 

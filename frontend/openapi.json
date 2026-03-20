@@ -1057,6 +1057,9 @@
                   "$ref": "#/components/schemas/ErrorEventOut"
                 },
                 {
+                  "$ref": "#/components/schemas/ScoringCompletedEventOut"
+                },
+                {
                   "$ref": "#/components/schemas/DispatchesPlannedEventOut"
                 },
                 {
@@ -1073,6 +1076,7 @@
                   "llm_exchange": "#/components/schemas/LLMExchangeEventOut",
                   "moves_executed": "#/components/schemas/MovesExecutedEventOut",
                   "review_complete": "#/components/schemas/ReviewCompleteEventOut",
+                  "scoring_completed": "#/components/schemas/ScoringCompletedEventOut",
                   "warning": "#/components/schemas/WarningEventOut"
                 }
               }
@@ -1110,13 +1114,20 @@
       "CallType": {
         "type": "string",
         "enum": [
-          "scout",
+          "find_considerations",
           "assess",
           "prioritization",
           "ingest",
           "reframe",
           "maintain",
-          "summarize"
+          "summarize",
+          "scout_concepts",
+          "assess_concept",
+          "scout_subquestions",
+          "scout_estimates",
+          "scout_hypotheses",
+          "scout_analogies",
+          "web_research"
         ],
         "title": "CallType"
       },
@@ -1699,7 +1710,8 @@
           "child_question",
           "supersedes",
           "related",
-          "summarizes"
+          "summarizes",
+          "cites"
         ],
         "title": "LinkType"
       },
@@ -2255,6 +2267,87 @@
         ],
         "title": "RunTraceOut"
       },
+      "ScoringCompletedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "scoring_completed",
+            "title": "Event"
+          },
+          "subquestion_scores": {
+            "items": {
+              "$ref": "#/components/schemas/SubquestionScoreItem"
+            },
+            "type": "array",
+            "title": "Subquestion Scores",
+            "default": []
+          },
+          "parent_fruit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Fruit"
+          },
+          "parent_fruit_reasoning": {
+            "type": "string",
+            "title": "Parent Fruit Reasoning",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event"
+        ],
+        "title": "ScoringCompletedEventOut"
+      },
+      "SubquestionScoreItem": {
+        "properties": {
+          "question_id": {
+            "type": "string",
+            "title": "Question Id"
+          },
+          "headline": {
+            "type": "string",
+            "title": "Headline",
+            "default": ""
+          },
+          "impact": {
+            "type": "integer",
+            "title": "Impact",
+            "default": 0
+          },
+          "fruit": {
+            "type": "integer",
+            "title": "Fruit",
+            "default": 0
+          },
+          "reasoning": {
+            "type": "string",
+            "title": "Reasoning",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "question_id"
+        ],
+        "title": "SubquestionScoreItem"
+      },
       "ValidationError": {
         "properties": {
           "loc": {
@@ -2328,7 +2421,8 @@
         "type": "string",
         "enum": [
           "research",
-          "prioritization"
+          "prioritization",
+          "concept_staging"
         ],
         "title": "Workspace"
       }

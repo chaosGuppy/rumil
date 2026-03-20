@@ -1,5 +1,6 @@
 """Web research call: search the web and create source-grounded claims."""
 
+import json
 import logging
 from collections.abc import Sequence
 
@@ -16,7 +17,7 @@ from rumil.calls.common import (
     resolve_page_refs,
     run_closing_review,
 )
-from rumil.context import build_call_context, build_embedding_based_context
+from rumil.context import build_embedding_based_context
 from rumil.database import DB
 from rumil.llm import (
     LLMExchangeMetadata,
@@ -37,7 +38,6 @@ from rumil.models import (
 )
 from rumil.moves.base import write_page_file
 from rumil.moves.registry import MOVES
-from rumil.page_graph import PageGraph
 from rumil.settings import get_settings
 from rumil.tracing.trace_events import ContextBuiltEvent, ReviewCompleteEvent
 
@@ -81,7 +81,7 @@ class WebResearchCall(BaseCall):
 
         system_prompt = build_system_prompt('web_research')
         user_message = build_user_message(self.context_text, '(diagnostic)')
-        log.info(
+        log.debug(
             'Web research context diagnostic: '
             'context_text=%d chars, system_prompt=%d chars, '
             'user_message=%d chars, total_prompt=%d chars, '
@@ -123,16 +123,15 @@ class WebResearchCall(BaseCall):
         user_message = build_user_message(self.context_text, task)
         messages: list[dict] = [{'role': 'user', 'content': user_message}]
 
-        log.info(
+        log.debug(
             'Web research create_pages starting: '
             'system_prompt=%d chars, user_message=%d chars, '
             'server_tools=%d, custom_tools=%d, all_tool_defs=%d',
             len(system_prompt), len(user_message),
             len(server_tools), len(custom_tool_defs), len(all_tool_defs),
         )
-        import json as _json
-        tool_defs_chars = len(_json.dumps(all_tool_defs))
-        log.info(
+        tool_defs_chars = len(json.dumps(all_tool_defs))
+        log.debug(
             'Tool definitions total: %d chars (%d tokens approx)',
             tool_defs_chars, tool_defs_chars // 4,
         )
@@ -141,7 +140,7 @@ class WebResearchCall(BaseCall):
             total_msg_chars = sum(
                 len(str(m.get('content', ''))) for m in messages
             )
-            log.info(
+            log.debug(
                 'Round %d: %d messages, ~%d chars in messages',
                 round_num, len(messages), total_msg_chars,
             )
@@ -226,6 +225,7 @@ class WebResearchCall(BaseCall):
         web_fetch: dict = {
             'type': 'web_fetch_20250910',
             'name': 'web_fetch',
+            'max_content_tokens': 20000,
         }
         if self.allowed_domains:
             web_fetch['allowed_domains'] = list(self.allowed_domains)

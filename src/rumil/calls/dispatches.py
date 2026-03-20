@@ -48,30 +48,6 @@ class DispatchDef(Generic[S]):
         async def fn(inp: dict) -> str:
             validated = self.schema(**inp)
 
-            if subtree_ids is not None:
-                raw_qid = inp.get("question_id", "")
-                resolved = raw_qid
-                if short_id_map and raw_qid in short_id_map:
-                    resolved = short_id_map[raw_qid]
-                elif len(raw_qid) <= 8:
-                    for full_id in state.created_page_ids:
-                        if full_id.startswith(raw_qid):
-                            resolved = full_id
-                            break
-                if (
-                    resolved not in subtree_ids
-                    and resolved not in state.created_page_ids
-                ):
-                    log.warning(
-                        "Dispatch rejected: question %s outside scope subtree",
-                        raw_qid,
-                    )
-                    return (
-                        f"Question {raw_qid} is outside the scope subtree and was not "
-                        "created during this call. You can only dispatch on the scope "
-                        "question, its descendant sub-questions, or questions you just created."
-                    )
-
             state.dispatches.append(
                 Dispatch(call_type=self.call_type, payload=validated)
             )

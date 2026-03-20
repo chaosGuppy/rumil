@@ -485,6 +485,36 @@ function EventSection({ event }: { event: TraceEvent }) {
         </div>
       )}
 
+      {event.event === "scoring_completed" && (
+        <div className="trace-event-body">
+          {(event.subquestion_scores ?? []).length > 0 && (
+            <div className="trace-scoring-section">
+              <div className="trace-kv">
+                <span className="trace-kv-key">subquestion scores</span>
+              </div>
+              {(event.subquestion_scores ?? []).map((s, i) => (
+                <div key={i} className="trace-score-row">
+                  <span className="trace-score-headline">{s.headline || s.question_id.slice(0, 8)}</span>
+                  <span className="trace-kv-value">impact={s.impact} fruit={s.fruit}</span>
+                  {s.reasoning && (
+                    <span className="trace-score-reasoning">{s.reasoning}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          {event.parent_fruit != null && (
+            <div className="trace-kv">
+              <span className="trace-kv-key">parent fruit</span>
+              <span className="trace-kv-value">{event.parent_fruit}/10</span>
+              {event.parent_fruit_reasoning && (
+                <span className="trace-score-reasoning">{event.parent_fruit_reasoning}</span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {event.event === "warning" && (
         <div className="trace-event-body trace-warning-text">
           {event.message}

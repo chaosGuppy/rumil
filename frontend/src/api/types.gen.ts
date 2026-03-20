@@ -135,6 +135,8 @@ export type CallTraceOut = {
     } & WarningEventOut) | ({
         event: 'error';
     } & ErrorEventOut) | ({
+        event: 'scoring_completed';
+    } & ScoringCompletedEventOut) | ({
         event: 'dispatches_planned';
     } & DispatchesPlannedEventOut) | ({
         event: 'dispatch_executed';
@@ -152,7 +154,7 @@ export type CallTraceOut = {
 /**
  * CallType
  */
-export type CallType = 'scout' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize';
+export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_concepts' | 'assess_concept' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'web_research';
 
 /**
  * ConsiderationDirection
@@ -462,7 +464,7 @@ export type LinkRole = 'direct' | 'structural';
 /**
  * LinkType
  */
-export type LinkType = 'consideration' | 'child_question' | 'supersedes' | 'related' | 'summarizes';
+export type LinkType = 'consideration' | 'child_question' | 'supersedes' | 'related' | 'summarizes' | 'cites';
 
 /**
  * LinkedPageOut
@@ -796,6 +798,62 @@ export type RunTraceOut = {
 };
 
 /**
+ * ScoringCompletedEventOut
+ */
+export type ScoringCompletedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'scoring_completed';
+    /**
+     * Subquestion Scores
+     */
+    subquestion_scores?: Array<SubquestionScoreItem>;
+    /**
+     * Parent Fruit
+     */
+    parent_fruit?: number | null;
+    /**
+     * Parent Fruit Reasoning
+     */
+    parent_fruit_reasoning?: string;
+};
+
+/**
+ * SubquestionScoreItem
+ */
+export type SubquestionScoreItem = {
+    /**
+     * Question Id
+     */
+    question_id: string;
+    /**
+     * Headline
+     */
+    headline?: string;
+    /**
+     * Impact
+     */
+    impact?: number;
+    /**
+     * Fruit
+     */
+    fruit?: number;
+    /**
+     * Reasoning
+     */
+    reasoning?: string;
+};
+
+/**
  * ValidationError
  */
 export type ValidationError = {
@@ -848,7 +906,7 @@ export type WarningEventOut = {
 /**
  * Workspace
  */
-export type Workspace = 'research' | 'prioritization';
+export type Workspace = 'research' | 'prioritization' | 'concept_staging';
 
 export type ListProjectsApiProjectsGetData = {
     body?: never;

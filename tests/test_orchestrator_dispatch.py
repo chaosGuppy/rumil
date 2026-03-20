@@ -36,11 +36,11 @@ class ScriptedPrioritizer(Prioritizer):
             batch = self._batches[self._index]
             self._index += 1
             return PrioritizationResult(
-                dispatches=batch,
+                dispatch_sequences=[batch] if batch else [],
                 call_id=self._call_id,
                 trace=self._trace,
             )
-        return PrioritizationResult(dispatches=[])
+        return PrioritizationResult(dispatch_sequences=[])
 
     def mark_executed(self) -> None:
         pass

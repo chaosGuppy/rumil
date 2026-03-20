@@ -3,8 +3,10 @@ Orchestrator: drives the research workflow using the prioritization system.
 Budget is tracked here; prioritization and review calls are free.
 """
 
+import asyncio
 import logging
 import os
+from collections.abc import Sequence
 
 from rumil.tracing.broadcast import Broadcaster
 from rumil.calls.summarize import summarize_question
@@ -29,7 +31,6 @@ from rumil.models import (
     Page,
     PageLayer,
     PageType,
-    RecurseDispatchPayload,
     ScoutAnalogiesDispatchPayload,
     ScoutDispatchPayload,
     ScoutEstimatesDispatchPayload,
@@ -39,7 +40,8 @@ from rumil.models import (
     WebResearchDispatchPayload,
     Workspace,
 )
-from rumil.prioritizer import LLMPrioritizer, NewQuestionPrioritizer, Prioritizer
+from rumil.prioritizer import LLMPrioritizer, TwoPhasePrioritizer, Prioritizer
+from rumil.tracing.tracer import CallTrace
 from rumil.tracing.trace_events import DispatchExecutedEvent
 
 
@@ -72,12 +74,22 @@ async def create_root_question(question_text: str, db: DB) -> str:
     return page.id
 
 
-async def _consume_budget(db: DB) -> bool:
-    """Consume one unit of global budget. Returns False if exhausted."""
+async def _consume_budget(db: DB, force: bool = False) -> bool:
+    """Consume one unit of global budget. Returns False if exhausted.
+
+    When *force* is True the call always succeeds: if normal consumption
+    fails, budget is temporarily expanded so the dispatch can proceed.
+    This is used to guarantee that every dispatch in a committed batch
+    runs, even if it means slightly exceeding the original budget.
+    """
     ok = await db.consume_budget(1)
     if not ok:
-        remaining = await db.budget_remaining()
-        log.info("Budget exhausted (remaining: %d)", remaining)
+        if force:
+            await db.add_budget(1)
+            ok = await db.consume_budget(1)
+        if not ok:
+            remaining = await db.budget_remaining()
+            log.info("Budget exhausted (remaining: %d)", remaining)
     return ok
 
 
@@ -90,6 +102,7 @@ async def find_considerations_until_done(
     context_page_ids: list | None = None,
     mode: ScoutMode = ScoutMode.ALTERNATE,
     broadcaster=None,
+    force: bool = False,
 ) -> tuple[int, list[str]]:
     """Run a cache-aware find-considerations session.
 
@@ -108,6 +121,9 @@ async def find_considerations_until_done(
         "find_considerations_until_done: question=%s, max_rounds=%d, fruit_threshold=%d, mode=%s",
         question_id[:8], max_rounds, fruit_threshold, mode.value,
     )
+
+    if force and await db.budget_remaining() <= 0:
+        await db.add_budget(1)
 
     call = await db.create_call(
         CallType.FIND_CONSIDERATIONS,
@@ -197,10 +213,11 @@ async def assess_question(
     parent_call_id: str | None = None,
     context_page_ids: list | None = None,
     broadcaster=None,
+    force: bool = False,
 ) -> str | None:
     """Run one Assess call on a question. Returns call ID, or None if no budget."""
     log.info("assess_question: question=%s", question_id[:8])
-    if not await _consume_budget(db):
+    if not await _consume_budget(db, force=force):
         return None
 
     await summarize_question(question_id, db, parent_call_id=parent_call_id)
@@ -349,10 +366,11 @@ async def web_research_question(
     allowed_domains: list[str] | None = None,
     parent_call_id: str | None = None,
     broadcaster=None,
+    force: bool = False,
 ) -> str | None:
     """Run one web research call on a question. Returns call ID, or None if no budget."""
     log.info('web_research_question: question=%s', question_id[:8])
-    if not await _consume_budget(db):
+    if not await _consume_budget(db, force=force):
         return None
 
     call = await db.create_call(
@@ -391,9 +409,10 @@ class Orchestrator:
         call_type: CallType,
         registry: dict,
         parent_call_id: str | None,
+        force: bool = False,
     ) -> str | None:
         """Run a simple (single-pass) call dispatch. Consumes 1 budget."""
-        if not await _consume_budget(self.db):
+        if not await _consume_budget(self.db, force=force):
             return None
 
         call = await self.db.create_call(
@@ -406,70 +425,48 @@ class Orchestrator:
         await instance.run()
         return call.id
 
-    async def _run_recursive_investigation(
+    async def _run_dispatch_sequence(
         self,
-        question_id: str,
-        allocated_budget: int,
+        sequence: Sequence[Dispatch],
+        scope_question_id: str,
         parent_call_id: str | None,
-    ) -> None:
-        """Recursively investigate a child question with a fresh prioritizer."""
-        remaining = await self.db.budget_remaining()
-        effective_budget = min(allocated_budget, remaining)
-        if effective_budget <= 0:
-            log.info(
-                'Recursive investigation skipped: no budget for question=%s',
-                question_id[:8],
+        trace: CallTrace | None,
+        base_index: int,
+    ) -> bool:
+        """Run dispatches in a sequence sequentially. Returns True if any executed.
+
+        All dispatches in the sequence are guaranteed to run: if budget
+        is exhausted mid-sequence, subsequent dispatches force-consume
+        so that trailing calls (e.g. auto-assess) are never skipped.
+        """
+        executed = False
+        for i, dispatch in enumerate(sequence):
+            force = i > 0 and await self.db.budget_remaining() <= 0
+            resolved, child_call_id = await self._execute_dispatch(
+                dispatch, scope_question_id, parent_call_id, force=force,
             )
-            return
-
-        prioritizer = NewQuestionPrioritizer(self.db, broadcaster=self.broadcaster)
-        log.info(
-            'Recursive investigation: question=%s, budget=%d',
-            question_id[:8], effective_budget,
-        )
-
-        budget_spent = 0
-        while budget_spent < effective_budget:
-            remaining = await self.db.budget_remaining()
-            if remaining <= 0:
-                break
-
-            capped_remaining = min(remaining, effective_budget - budget_spent)
-            result = await prioritizer.get_calls(
-                question_id, capped_remaining, parent_call_id=parent_call_id,
-            )
-            if not result.dispatches:
-                break
-
-            spent_any = False
-            pre_remaining = await self.db.budget_remaining()
-            for dispatch in result.dispatches:
-                if await self.db.budget_remaining() <= 0:
-                    break
-                if budget_spent >= effective_budget:
-                    break
-                await self._execute_dispatch(
-                    dispatch, question_id, result.call_id,
-                )
-                spent_any = True
-
-            post_remaining = await self.db.budget_remaining()
-            budget_spent += pre_remaining - post_remaining
-
-            if spent_any:
-                prioritizer.mark_executed()
-            else:
-                break
-
-        log.info('Recursive investigation complete: question=%s', question_id[:8])
+            executed = True
+            if trace:
+                await trace.record(DispatchExecutedEvent(
+                    index=base_index + i,
+                    child_call_type=dispatch.call_type.value,
+                    question_id=resolved,
+                    child_call_id=child_call_id,
+                ))
+        return executed
 
     async def _execute_dispatch(
         self,
         dispatch: Dispatch,
         scope_question_id: str,
         parent_call_id: str | None,
+        *,
+        force: bool = False,
     ) -> tuple[str, str | None]:
         """Execute a single dispatch.
+
+        When *force* is True, budget is expanded if needed so the call
+        always proceeds (used for trailing dispatches in a committed batch).
 
         Returns (resolved_question_id, child_call_id).
         """
@@ -500,6 +497,7 @@ class Orchestrator:
                 context_page_ids=p.context_page_ids,
                 mode=p.mode,
                 broadcaster=self.broadcaster,
+                force=force,
             )
             child_call_id = child_ids[0] if child_ids else None
 
@@ -511,6 +509,7 @@ class Orchestrator:
                 parent_call_id=parent_call_id,
                 context_page_ids=p.context_page_ids,
                 broadcaster=self.broadcaster,
+                force=force,
             )
 
         elif isinstance(p, ScoutSubquestionsDispatchPayload):
@@ -518,6 +517,7 @@ class Orchestrator:
             child_call_id = await self._run_simple_call_dispatch(
                 resolved, CallType.SCOUT_SUBQUESTIONS,
                 SCOUT_SUBQUESTIONS_CALL_CLASSES, parent_call_id,
+                force=force,
             )
 
         elif isinstance(p, ScoutEstimatesDispatchPayload):
@@ -525,6 +525,7 @@ class Orchestrator:
             child_call_id = await self._run_simple_call_dispatch(
                 resolved, CallType.SCOUT_ESTIMATES,
                 SCOUT_ESTIMATES_CALL_CLASSES, parent_call_id,
+                force=force,
             )
 
         elif isinstance(p, ScoutHypothesesDispatchPayload):
@@ -532,6 +533,7 @@ class Orchestrator:
             child_call_id = await self._run_simple_call_dispatch(
                 resolved, CallType.SCOUT_HYPOTHESES,
                 SCOUT_HYPOTHESES_CALL_CLASSES, parent_call_id,
+                force=force,
             )
 
         elif isinstance(p, ScoutAnalogiesDispatchPayload):
@@ -539,6 +541,7 @@ class Orchestrator:
             child_call_id = await self._run_simple_call_dispatch(
                 resolved, CallType.SCOUT_ANALOGIES,
                 SCOUT_ANALOGIES_CALL_CLASSES, parent_call_id,
+                force=force,
             )
 
         elif isinstance(p, WebResearchDispatchPayload):
@@ -547,15 +550,7 @@ class Orchestrator:
                 resolved, self.db,
                 parent_call_id=parent_call_id,
                 broadcaster=self.broadcaster,
-            )
-
-        elif isinstance(p, RecurseDispatchPayload):
-            log.info(
-                'Dispatch: recurse on %s (budget=%d) — %s',
-                d_label, p.budget, p.reason,
-            )
-            await self._run_recursive_investigation(
-                resolved, p.budget, parent_call_id,
+                force=force,
             )
 
         return resolved, child_call_id
@@ -573,8 +568,8 @@ class Orchestrator:
 
         if self._prioritizer:
             prioritizer = self._prioritizer
-        elif get_settings().prioritizer_variant == 'new_question':
-            prioritizer = NewQuestionPrioritizer(
+        elif get_settings().prioritizer_variant == 'two_phase':
+            prioritizer = TwoPhasePrioritizer(
                 self.db, broadcaster=self.broadcaster,
             )
         else:
@@ -591,28 +586,20 @@ class Orchestrator:
                 result = await prioritizer.get_calls(
                     root_question_id, remaining,
                 )
-                if not result.dispatches:
+                if not result.dispatch_sequences:
                     break
 
-                spent_any = False
-                for i, dispatch in enumerate(result.dispatches):
-                    if await self.db.budget_remaining() <= 0:
-                        break
+                base_index = 0
+                tasks = []
+                for seq in result.dispatch_sequences:
+                    tasks.append(self._run_dispatch_sequence(
+                        seq, root_question_id, result.call_id,
+                        result.trace, base_index,
+                    ))
+                    base_index += len(seq)
 
-                    resolved, child_call_id = await self._execute_dispatch(
-                        dispatch, root_question_id, result.call_id,
-                    )
-                    spent_any = True
-
-                    if result.trace:
-                        await result.trace.record(DispatchExecutedEvent(
-                            index=i,
-                            child_call_type=dispatch.call_type.value,
-                            question_id=resolved,
-                            child_call_id=child_call_id,
-                        ))
-
-                if spent_any:
+                sequence_results = await asyncio.gather(*tasks)
+                if any(sequence_results):
                     prioritizer.mark_executed()
                 else:
                     break

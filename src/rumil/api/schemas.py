@@ -19,6 +19,7 @@ from rumil.tracing.trace_events import (
     LLMExchangeEvent,
     MovesExecutedEvent,
     ReviewCompleteEvent,
+    ScoringCompletedEvent,
     WarningEvent,
 )
 
@@ -68,6 +69,10 @@ class ErrorEventOut(ErrorEvent, _TraceEnvelopeMixin):
     event: Literal["error"]
 
 
+class ScoringCompletedEventOut(ScoringCompletedEvent, _TraceEnvelopeMixin):
+    event: Literal["scoring_completed"]
+
+
 class DispatchesPlannedEventOut(DispatchesPlannedEvent, _TraceEnvelopeMixin):
     event: Literal["dispatches_planned"]
 
@@ -83,6 +88,7 @@ TraceEventOut = Annotated[
     | LLMExchangeEventOut
     | WarningEventOut
     | ErrorEventOut
+    | ScoringCompletedEventOut
     | DispatchesPlannedEventOut
     | DispatchExecutedEventOut,
     Field(discriminator="event"),

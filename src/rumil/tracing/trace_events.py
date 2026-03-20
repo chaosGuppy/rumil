@@ -80,6 +80,21 @@ class ErrorEvent(BaseModel):
     message: str
 
 
+class SubquestionScoreItem(BaseModel):
+    question_id: str
+    headline: str = ""
+    impact: int = 0
+    fruit: int = 0
+    reasoning: str = ""
+
+
+class ScoringCompletedEvent(BaseModel):
+    event: Literal["scoring_completed"] = "scoring_completed"
+    subquestion_scores: list[SubquestionScoreItem] = []
+    parent_fruit: int | None = None
+    parent_fruit_reasoning: str = ""
+
+
 class DispatchesPlannedEvent(BaseModel):
     event: Literal["dispatches_planned"] = "dispatches_planned"
     dispatches: list[DispatchTraceItem] = []
@@ -100,6 +115,7 @@ TraceEvent = Annotated[
     | LLMExchangeEvent
     | WarningEvent
     | ErrorEvent
+    | ScoringCompletedEvent
     | DispatchesPlannedEvent
     | DispatchExecutedEvent,
     Field(discriminator="event"),

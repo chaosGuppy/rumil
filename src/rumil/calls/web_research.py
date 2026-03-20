@@ -16,7 +16,7 @@ from rumil.calls.common import (
     resolve_page_refs,
     run_closing_review,
 )
-from rumil.context import build_call_context
+from rumil.context import build_call_context, build_embedding_based_context
 from rumil.database import DB
 from rumil.llm import (
     LLMExchangeMetadata,
@@ -66,10 +66,13 @@ class WebResearchCall(BaseCall):
         self.source_page_ids: dict[str, str] = {}
 
     async def build_context(self) -> None:
-        graph = await PageGraph.load(self.db)
-        self.context_text, _, self.working_page_ids = await build_call_context(
-            self.question_id, self.db, graph=graph,
+        question = await self.db.get_page(self.question_id)
+        query = question.headline if question else self.question_id
+        emb_result = await build_embedding_based_context(
+            query, self.db, scope_question_id=self.question_id,
         )
+        self.working_page_ids = emb_result.page_ids
+        self.context_text = emb_result.context_text
         await self.trace.record(ContextBuiltEvent(
             working_context_page_ids=await resolve_page_refs(
                 self.working_page_ids, self.db,

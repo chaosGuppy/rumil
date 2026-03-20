@@ -27,6 +27,7 @@ from rumil.llm import (
 )
 from rumil.models import (
     Call,
+    CallStage,
     CallType,
     MoveType,
     Page,
@@ -60,8 +61,12 @@ class WebResearchCall(BaseCall):
         *,
         allowed_domains: Sequence[str] | None = None,
         broadcaster=None,
+        up_to_stage: CallStage | None = None,
     ):
-        super().__init__(question_id, call, db, broadcaster=broadcaster)
+        super().__init__(
+            question_id, call, db,
+            broadcaster=broadcaster, up_to_stage=up_to_stage,
+        )
         self.allowed_domains = allowed_domains
         self.source_page_ids: dict[str, str] = {}
 
@@ -73,6 +78,23 @@ class WebResearchCall(BaseCall):
         )
         self.working_page_ids = emb_result.page_ids
         self.context_text = emb_result.context_text
+
+        system_prompt = build_system_prompt('web_research')
+        user_message = build_user_message(self.context_text, '(diagnostic)')
+        log.info(
+            'Web research context diagnostic: '
+            'context_text=%d chars, system_prompt=%d chars, '
+            'user_message=%d chars, total_prompt=%d chars, '
+            'full_pages=%d, abstract_pages=%d, summary_pages=%d, '
+            'distillation_pages=%d, '
+            'budget_usage=%s',
+            len(self.context_text), len(system_prompt),
+            len(user_message), len(system_prompt) + len(user_message),
+            len(emb_result.full_page_ids), len(emb_result.abstract_page_ids),
+            len(emb_result.summary_page_ids), len(emb_result.distillation_page_ids),
+            emb_result.budget_usage,
+        )
+
         await self.trace.record(ContextBuiltEvent(
             working_context_page_ids=await resolve_page_refs(
                 self.working_page_ids, self.db,
@@ -101,7 +123,28 @@ class WebResearchCall(BaseCall):
         user_message = build_user_message(self.context_text, task)
         messages: list[dict] = [{'role': 'user', 'content': user_message}]
 
+        log.info(
+            'Web research create_pages starting: '
+            'system_prompt=%d chars, user_message=%d chars, '
+            'server_tools=%d, custom_tools=%d, all_tool_defs=%d',
+            len(system_prompt), len(user_message),
+            len(server_tools), len(custom_tool_defs), len(all_tool_defs),
+        )
+        import json as _json
+        tool_defs_chars = len(_json.dumps(all_tool_defs))
+        log.info(
+            'Tool definitions total: %d chars (%d tokens approx)',
+            tool_defs_chars, tool_defs_chars // 4,
+        )
+
         for round_num in range(max_rounds):
+            total_msg_chars = sum(
+                len(str(m.get('content', ''))) for m in messages
+            )
+            log.info(
+                'Round %d: %d messages, ~%d chars in messages',
+                round_num, len(messages), total_msg_chars,
+            )
             meta = LLMExchangeMetadata(
                 call_id=self.call.id, phase='web_research_loop',
                 trace=self.trace, round_num=round_num,

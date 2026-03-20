@@ -85,7 +85,9 @@ async def run_call(args: argparse.Namespace, db: DB, question_id: str) -> None:
             CallType.WEB_RESEARCH, scope_page_id=question_id,
         )
         cls = WEB_RESEARCH_CALL_CLASSES[settings.web_research_call_variant]
-        web_research = cls(question_id, call, db)
+        web_research = cls(
+            question_id, call, db, up_to_stage=up_to_stage,
+        )
         await web_research.run()
 
     elif call_type == "prioritize":

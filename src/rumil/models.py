@@ -211,7 +211,7 @@ class WebResearchDispatchPayload(BaseDispatchPayload):
 
 
 class RecurseDispatchPayload(BaseDispatchPayload, _PrioritizationFields):
-    pass
+    budget: int = Field(ge=4, description="Budget to allocate for the sub-investigation (minimum 4)")
 
 
 class InlineScoutDispatch(_DispatchBase, _ScoutFields):

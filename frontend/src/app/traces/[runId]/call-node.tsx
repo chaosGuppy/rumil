@@ -17,6 +17,7 @@ const CALL_TYPE_ACCENT: Record<string, string> = {
   find_considerations: "#5b8def",
   assess: "#a07cdf",
   prioritization: "#d4943a",
+  recurse: "#e8853a",
   ingest: "#4dab6f",
   reframe: "#c46b6b",
   maintain: "#7a8a9e",
@@ -529,20 +530,27 @@ function EventSection({ event }: { event: TraceEvent }) {
 
       {event.event === "dispatches_planned" && (
         <div className="trace-event-body">
-          {(event.dispatches ?? []).map((d, i) => (
-            <div key={i} className="trace-dispatch-row">
-              <span className="trace-dispatch-index">{i + 1}</span>
-              <span
-                className="trace-dispatch-type"
-                style={{ color: CALL_TYPE_ACCENT[d.call_type] || "#7a8a9e" }}
-              >
-                {d.call_type}
-              </span>
-              {d.reason ? (
-                <span className="trace-dispatch-reason">{String(d.reason)}</span>
-              ) : null}
-            </div>
-          ))}
+          {(event.dispatches ?? []).map((d, i) => {
+            const isRecurse = d.call_type === "recurse";
+            const budget = (d as Record<string, unknown>).budget as number | undefined;
+            return (
+              <div key={i} className={`trace-dispatch-row${isRecurse ? " trace-dispatch-recurse" : ""}`}>
+                <span className="trace-dispatch-index">{i + 1}</span>
+                <span
+                  className="trace-dispatch-type"
+                  style={{ color: CALL_TYPE_ACCENT[d.call_type] || "#7a8a9e" }}
+                >
+                  {isRecurse ? "recurse" : d.call_type}
+                </span>
+                {isRecurse && budget != null && (
+                  <span className="trace-dispatch-budget">budget {budget}</span>
+                )}
+                {d.reason ? (
+                  <span className="trace-dispatch-reason">{String(d.reason)}</span>
+                ) : null}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -647,14 +655,17 @@ export function CallNode({
                 {(dispatchEvents[0]?.dispatches ?? []).map((d, i) => {
                   const ex = executedMap.get(i);
                   const childCallId = ex?.child_call_id;
+                  const isRecurse = d.call_type === "recurse";
+                  const accent = CALL_TYPE_ACCENT[d.call_type] || "#7a8a9e";
+                  const budget = (d as Record<string, unknown>).budget as number | undefined;
                   return (
-                    <div key={i} className="trace-dispatch-item">
+                    <div key={i} className={`trace-dispatch-item${isRecurse ? " trace-dispatch-recurse" : ""}`}>
                       <span className="trace-dispatch-index">{i + 1}</span>
                       {childCallId ? (
                         <a
                           href={`#call-${childCallId.slice(0, 8)}`}
                           className="trace-dispatch-link"
-                          style={{ color: CALL_TYPE_ACCENT[d.call_type] || "#7a8a9e" }}
+                          style={{ color: accent }}
                           onClick={(e) => {
                             e.preventDefault();
                             document
@@ -664,15 +675,18 @@ export function CallNode({
                               ?.scrollIntoView({ behavior: "smooth" });
                           }}
                         >
-                          {d.call_type}
+                          {isRecurse ? "recurse" : d.call_type}
                         </a>
                       ) : (
                         <span
-                          className="trace-dispatch-skipped"
-                          style={{ color: CALL_TYPE_ACCENT[d.call_type] || "#7a8a9e" }}
+                          className={isRecurse ? "trace-dispatch-type" : "trace-dispatch-skipped"}
+                          style={{ color: accent }}
                         >
-                          {d.call_type}
+                          {isRecurse ? "recurse" : d.call_type}
                         </span>
+                      )}
+                      {isRecurse && budget != null && (
+                        <span className="trace-dispatch-budget">budget {budget}</span>
                       )}
                       {d.reason ? (
                         <span className="trace-dispatch-reason">

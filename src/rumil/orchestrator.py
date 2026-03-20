@@ -36,8 +36,10 @@ from rumil.embeddings import embed_and_store_page
 from rumil.llm import LLMExchangeMetadata, build_system_prompt, build_user_message, structured_call
 from rumil.models import (
     AssessDispatchPayload,
+    Call,
     CallType,
     Dispatch,
+    LinkType,
     MoveType,
     Page,
     PageLayer,
@@ -94,6 +96,11 @@ PHASE1_SCOUT_TYPES: Sequence[CallType] = [
 PHASE2_DISPATCH_TYPES: Sequence[CallType] = [
     CallType.FIND_CONSIDERATIONS,
     CallType.WEB_RESEARCH,
+    CallType.SCOUT_SUBQUESTIONS,
+    CallType.SCOUT_ESTIMATES,
+    CallType.SCOUT_HYPOTHESES,
+    CallType.SCOUT_ANALOGIES,
+    CallType.SCOUT_PARADIGM_CASES,
 ]
 
 
@@ -887,11 +894,35 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         self._executed_since_last_plan: bool = False
         self._budget_cap: int | None = budget_cap
         self._consumed: int = 0
+        self._initial_call: Call | None = None
 
     def _effective_budget(self, global_remaining: int) -> int:
         if self._budget_cap is not None:
             return min(global_remaining, self._budget_cap - self._consumed)
         return global_remaining
+
+    async def create_initial_call(
+        self,
+        question_id: str,
+        parent_call_id: str | None = None,
+    ) -> str:
+        """Eagerly create the phase-1 prioritization call record.
+
+        Sets ``_call_id`` so the parent can reference this child's call
+        before ``run()`` begins. ``_phase1`` reuses the pre-created call.
+        """
+        budget = self._effective_budget(await self.db.budget_remaining())
+        phase1_budget = min(budget - 3, 4)
+        p_call = await self.db.create_call(
+            CallType.PRIORITIZATION,
+            scope_page_id=question_id,
+            parent_call_id=parent_call_id,
+            budget_allocated=phase1_budget,
+            workspace=Workspace.PRIORITIZATION,
+        )
+        self._call_id = p_call.id
+        self._initial_call = p_call
+        return p_call.id
 
     async def run(self, root_question_id: str) -> None:
         await self._setup()
@@ -923,10 +954,16 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                     if isinstance(r, Exception):
                         log.error('Concurrent dispatch failed: %s', r, exc_info=r)
 
-                if any(not isinstance(r, Exception) for r in results):
-                    self._executed_since_last_plan = True
-                else:
+                if not any(not isinstance(r, Exception) for r in results):
                     break
+
+                self._executed_since_last_plan = True
+
+                if self._invocation > 1:
+                    await assess_question(
+                        root_question_id, self.db,
+                        broadcaster=self.broadcaster, force=True,
+                    )
         finally:
             await self._teardown()
 
@@ -945,6 +982,11 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             self._consumed += len(sequence)
         return result
 
+    async def _is_new_question(self, question_id: str) -> bool:
+        """A question is 'new' if it has no links besides child_question to a parent."""
+        links = await self.db.get_links_to(question_id)
+        return all(l.link_type == LinkType.CHILD_QUESTION for l in links)
+
     async def _get_next_batch(
         self,
         question_id: str,
@@ -953,7 +995,9 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
     ) -> PrioritizationResult:
         if self._invocation == 0:
             self._invocation += 1
-            return await self._phase1(question_id, budget, parent_call_id)
+            if await self._is_new_question(question_id):
+                return await self._phase1(question_id, budget, parent_call_id)
+            self._executed_since_last_plan = True
 
         if not self._executed_since_last_plan:
             return PrioritizationResult(dispatch_sequences=[])
@@ -968,7 +1012,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         budget: int,
         parent_call_id: str | None,
     ) -> PrioritizationResult:
-        phase1_budget = min(budget - 1, 4)
+        phase1_budget = min(budget - 3, 4)
         log.info(
             'TwoPhaseOrchestrator phase1: question=%s, budget=%d, phase1_budget=%d',
             question_id[:8], budget, phase1_budget,
@@ -980,13 +1024,17 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         )
         subtree_ids = await collect_subtree_ids(question_id, self.db, graph=graph)
 
-        p_call = await self.db.create_call(
-            CallType.PRIORITIZATION,
-            scope_page_id=question_id,
-            parent_call_id=parent_call_id,
-            budget_allocated=phase1_budget,
-            workspace=Workspace.PRIORITIZATION,
-        )
+        if self._initial_call is not None:
+            p_call = self._initial_call
+            self._initial_call = None
+        else:
+            p_call = await self.db.create_call(
+                CallType.PRIORITIZATION,
+                scope_page_id=question_id,
+                parent_call_id=parent_call_id,
+                budget_allocated=phase1_budget,
+                workspace=Workspace.PRIORITIZATION,
+            )
         trace = CallTrace(p_call.id, self.db, broadcaster=self.broadcaster)
         await trace.record(ContextBuiltEvent(budget=phase1_budget))
 
@@ -1182,11 +1230,11 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             'exploration that can be based purely on your trained knowledge and does not require web research, '
             'dispatch_web_research for web-based evidence, or '
             'recurse_into_subquestion to recursively investigate a child '
-            'question with its own prioritization cycle. '
+            'question with its own prioritization cycle (minimum budget: 4). '
             'You can target the parent question or any child question.\n\n'
             'You may create subquestions before dispatching. '
-            'You must make all your dispatch calls now — this is your only turn.'
-            'CRITICAL: You MUST dispatch at least two recurse_into_subquestion calls if you have enough budget to do so.'
+            'You must make all your dispatch calls now — this is your only turn. '
+            'Each recurse call must have a budget of at least 4.'
         )
 
         result = await run_prioritization_call(
@@ -1229,19 +1277,37 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                 sequences.append([d, assess])
 
         all_dispatches = [d for seq in sequences for d in seq]
-        await trace.record(DispatchesPlannedEvent(
-            dispatches=[
-                DispatchTraceItem(
-                    call_type=d.call_type.value,
+        all_trace_items = [
+            DispatchTraceItem(
+                call_type=d.call_type.value,
+                **d.payload.model_dump(exclude_defaults=True),
+            )
+            for d in all_dispatches
+        ]
+        for d in result.dispatches:
+            if isinstance(d.payload, RecurseDispatchPayload):
+                all_trace_items.append(DispatchTraceItem(
+                    call_type='recurse',
                     **d.payload.model_dump(exclude_defaults=True),
-                )
-                for d in all_dispatches
-            ],
-        ))
+                ))
+        await trace.record(DispatchesPlannedEvent(dispatches=all_trace_items))
+
+        recurse_base = len(all_dispatches)
+        for ci, (child, child_qid) in enumerate(children):
+            child_call_id = await child.create_initial_call(
+                child_qid, parent_call_id=p_call.id,
+            )
+            await trace.record(DispatchExecutedEvent(
+                index=recurse_base + ci,
+                child_call_type='recurse',
+                question_id=child_qid,
+                child_call_id=child_call_id,
+            ))
 
         await mark_call_completed(
             p_call, self.db,
-            f'Phase 2 complete. Planned {len(sequences)} concurrent sequences.',
+            f'Phase 2 complete. Planned {len(sequences)} concurrent sequences, '
+            f'{len(children)} recursive children.',
         )
 
         self._call_id = p_call.id

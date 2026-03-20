@@ -109,7 +109,7 @@ class WebResearchCall(BaseCall):
             )
             api_resp = await call_api(
                 client, settings.model, system_prompt, messages,
-                all_tool_defs, max_tokens=4096,
+                all_tool_defs,
                 metadata=meta, db=self.db,
             )
             response = api_resp.message

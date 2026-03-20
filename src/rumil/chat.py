@@ -210,7 +210,6 @@ async def run_chat(question_id: str, db: DB) -> None:
             response = await text_call(
                 system_prompt=system_prompt,
                 messages=history,
-                max_tokens=1024,
             )
         except Exception as e:
             log.error("Chat LLM call failed: %s", e, exc_info=True)

@@ -97,7 +97,7 @@ async def _process_page(
         try:
             response = await client.messages.create(
                 model=MODEL,
-                max_tokens=600,
+                max_tokens=50_000,
                 system=SYSTEM,
                 messages=[{"role": "user", "content": prompt}],
             )

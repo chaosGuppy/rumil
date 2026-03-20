@@ -245,7 +245,6 @@ async def summarize_question(
             system_prompt=SYSTEM_PROMPT,
             user_message=user_message,
             response_model=SummaryOutput,
-            max_tokens=4096,
             metadata=meta,
             db=db,
         )

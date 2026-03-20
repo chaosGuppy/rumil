@@ -62,9 +62,8 @@ async def test_basic_budget_split(mock_embeddings, mock_db):
     result = await build_embedding_based_context(
         'test query',
         mock_db,
-        context_char_budget=10_000,
-        full_page_char_fraction=0.6,
-        summary_para_char_fraction=0.3,
+        full_page_char_budget=6_000,
+        summary_page_char_budget=3_000,
     )
 
     assert isinstance(result, EmbeddingBasedContextResult)
@@ -81,7 +80,7 @@ async def test_similarity_ordering(mock_embeddings, mock_db):
     result = await build_embedding_based_context(
         'test query',
         mock_db,
-        context_char_budget=10_000,
+        full_page_char_budget=10_000,
     )
 
     if len(result.full_page_ids) >= 2:
@@ -91,17 +90,17 @@ async def test_similarity_ordering(mock_embeddings, mock_db):
             assert page_order.index(full_ids[i]) < page_order.index(full_ids[i + 1])
 
 
-async def test_small_budget_forces_summaries(mock_embeddings, mock_db):
-    """With a tiny full budget, pages overflow to summary tier."""
+async def test_small_budget_forces_lower_tiers(mock_embeddings, mock_db):
+    """With a tiny full budget, pages overflow to abstract/summary tiers."""
     result = await build_embedding_based_context(
         'test query',
         mock_db,
-        context_char_budget=1_000,
-        full_page_char_fraction=0.1,
-        summary_para_char_fraction=0.8,
+        full_page_char_budget=100,
+        abstract_page_char_budget=800,
+        summary_page_char_budget=800,
     )
 
-    assert len(result.summary_page_ids) > 0
+    assert len(result.abstract_page_ids) + len(result.summary_page_ids) > 0
 
 
 async def test_section_headers_present(mock_embeddings, mock_db):
@@ -109,7 +108,7 @@ async def test_section_headers_present(mock_embeddings, mock_db):
     result = await build_embedding_based_context(
         'test query',
         mock_db,
-        context_char_budget=10_000,
+        full_page_char_budget=10_000,
     )
 
     assert '## Relevant Pages (Full)' in result.context_text
@@ -131,7 +130,10 @@ async def test_zero_budget_returns_empty(mock_embeddings, mock_db):
     result = await build_embedding_based_context(
         'test query',
         mock_db,
-        context_char_budget=0,
+        full_page_char_budget=0,
+        abstract_page_char_budget=0,
+        summary_page_char_budget=0,
+        distillation_page_char_budget=0,
     )
     assert result.page_ids == []
     assert result.full_page_ids == []

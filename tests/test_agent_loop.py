@@ -53,7 +53,6 @@ async def test_text_only_returns_nonempty_text(tmp_db, scout_call):
         call_id=scout_call.id,
         db=tmp_db,
         state=state,
-        max_tokens=64,
     )
     assert result.text.strip()
     assert result.tool_calls == []
@@ -70,7 +69,6 @@ async def test_tool_is_called_and_result_recorded(tmp_db, scout_call):
         call_id=scout_call.id,
         db=tmp_db,
         state=state,
-        max_tokens=256,
         max_rounds=2,
     )
     assert len(result.tool_calls) >= 1
@@ -90,7 +88,6 @@ async def test_tool_error_does_not_crash_loop(tmp_db, scout_call):
         call_id=scout_call.id,
         db=tmp_db,
         state=state,
-        max_tokens=256,
         max_rounds=2,
     )
     assert len(result.tool_calls) >= 1
@@ -121,7 +118,6 @@ async def test_max_rounds_limits_tool_calls(tmp_db, scout_call):
         call_id=scout_call.id,
         db=tmp_db,
         state=state,
-        max_tokens=128,
         max_rounds=2,
     )
     # max_rounds=2 means at most 3 rounds (0, 1, 2), so tool calls are bounded
@@ -134,7 +130,6 @@ async def test_text_call_returns_string():
     result = await text_call(
         "You are a helpful assistant.",
         "Say 'yes' and nothing else.",
-        max_tokens=16,
     )
     assert isinstance(result, str)
     assert result.strip()
@@ -152,7 +147,6 @@ async def test_structured_call_returns_parsed_dict():
         "You are a rating bot.",
         "Rate the color blue on a scale of 1-5.",
         response_model=Rating,
-        max_tokens=256,
     )
     assert result.data is not None
     assert isinstance(result.data["score"], int)

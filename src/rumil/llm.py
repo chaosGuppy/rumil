@@ -28,6 +28,8 @@ from anthropic.types import MessageParam, ServerToolUseBlock, TextBlock, ToolUse
 from pydantic import BaseModel, ValidationError
 
 from rumil.pricing import compute_cost
+
+DEFAULT_MAX_TOKENS = 50_000
 from rumil.settings import get_settings
 from rumil.tracing.trace_events import LLMExchangeEvent
 
@@ -270,7 +272,6 @@ async def call_api(
     system_prompt: str,
     messages: list[dict],
     tools: list[dict] | None = None,
-    max_tokens: int = 4096,
     warnings: list[str] | None = None,
     metadata: LLMExchangeMetadata | None = None,
     db: DB | None = None,
@@ -285,7 +286,7 @@ async def call_api(
         raise ValueError("metadata and db must be provided together")
     kwargs: dict = {
         "model": model,
-        "max_tokens": max_tokens,
+        "max_tokens": DEFAULT_MAX_TOKENS,
         "system": system_prompt,
         "messages": _add_cache_breakpoint(messages) if cache else messages,
     }
@@ -294,8 +295,8 @@ async def call_api(
 
     n_tools = len(tools) if tools else 0
     log.debug(
-        "API call: model=%s, max_tokens=%d, tools=%d, system_prompt_len=%d, messages=%d",
-        model, max_tokens, n_tools, len(system_prompt), len(messages),
+        "API call: model=%s, tools=%d, system_prompt_len=%d, messages=%d",
+        model, n_tools, len(system_prompt), len(messages),
     )
 
     for attempt in range(MAX_API_RETRIES):
@@ -368,7 +369,6 @@ async def text_call(
     user_message: str = "",
     *,
     messages: list[dict] | None = None,
-    max_tokens: int = 4096,
 ) -> str:
     """Make a plain text LLM call. Returns the raw text response.
 
@@ -383,8 +383,8 @@ async def text_call(
         if messages is not None
         else [{"role": "user", "content": user_message}]
     )
-    log.debug("text_call: max_tokens=%d, messages=%d", max_tokens, len(msg_list))
-    api_resp = await call_api(client, model, system_prompt, msg_list, max_tokens=max_tokens)
+    log.debug("text_call: messages=%d", len(msg_list))
+    api_resp = await call_api(client, model, system_prompt, msg_list)
     for block in api_resp.message.content:
         if isinstance(block, TextBlock):
             log.debug("text_call returned %d chars", len(block.text))
@@ -410,7 +410,6 @@ async def _structured_call_cached(
     msg_list: list[dict],
     *,
     tools: list[dict] | None = None,
-    max_tokens: int = 1024,
     metadata: LLMExchangeMetadata | None = None,
     db: DB | None = None,
 ) -> StructuredCallResult:
@@ -429,7 +428,7 @@ async def _structured_call_cached(
     for parse_attempt in range(max_parse_attempts):
         api_resp = await call_api(
             client, settings.model, system_prompt, inject_msgs,
-            tools=tools, max_tokens=max_tokens,
+            tools=tools,
             metadata=metadata, db=db, cache=True,
         )
         response_text = ''
@@ -516,7 +515,6 @@ async def _structured_call_parse(
     *,
     tools: list[dict] | None = None,
     tool_choice: dict | None = None,
-    max_tokens: int = 1024,
     metadata: LLMExchangeMetadata | None = None,
     db: DB | None = None,
 ) -> StructuredCallResult:
@@ -530,7 +528,7 @@ async def _structured_call_parse(
             t0 = time.monotonic()
             parse_kwargs: dict = {
                 'model': model,
-                'max_tokens': max_tokens,
+                'max_tokens': DEFAULT_MAX_TOKENS,
                 'system': system_prompt,
                 'messages': msg_list,
             }
@@ -575,8 +573,8 @@ async def _structured_call_parse(
                     duration_ms=elapsed_ms,
                 )
             log.warning(
-                'Structured output was empty (stop_reason=%s, usage=%d/%d tokens)',
-                response.stop_reason, response.usage.output_tokens, max_tokens,
+                'Structured output was empty (stop_reason=%s, usage=%d tokens)',
+                response.stop_reason, response.usage.output_tokens,
             )
             return StructuredCallResult(
                 response_text=response_text or None,
@@ -619,7 +617,6 @@ async def structured_call(
     messages: list[dict] | None = None,
     tools: list[dict] | None = None,
     tool_choice: dict | None = None,
-    max_tokens: int = 1024,
     metadata: LLMExchangeMetadata | None = None,
     db: DB | None = None,
     cache: bool = False,
@@ -644,18 +641,18 @@ async def structured_call(
     )
     model_name = response_model.__name__ if response_model else 'None'
     log.debug(
-        'structured_call: response_model=%s, max_tokens=%d, cache=%s',
-        model_name, max_tokens, cache,
+        'structured_call: response_model=%s, cache=%s',
+        model_name, cache,
     )
 
     if cache and response_model is not None:
         return await _structured_call_cached(
             system_prompt, response_model, raw_msgs,
-            tools=tools, max_tokens=max_tokens,
+            tools=tools,
             metadata=metadata, db=db,
         )
     return await _structured_call_parse(
         system_prompt, response_model, raw_msgs,
-        tools=tools, tool_choice=tool_choice, max_tokens=max_tokens,
+        tools=tools, tool_choice=tool_choice,
         metadata=metadata, db=db,
     )

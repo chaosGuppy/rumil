@@ -6,14 +6,13 @@ from datetime import UTC, datetime
 
 import httpx
 from bs4 import BeautifulSoup
+from fake_useragent import UserAgent
 
 log = logging.getLogger(__name__)
 
 MAX_CONTENT_CHARS = 50_000
 TIMEOUT_SECONDS = 15
-USER_AGENT = (
-    'Mozilla/5.0 (compatible; Rumil/0.1; +https://github.com/chaosGuppy/differential)'
-)
+_ua = UserAgent(browsers=['Chrome', 'Firefox'], min_version=120.0)
 
 
 @dataclass
@@ -33,7 +32,7 @@ async def scrape_url(url: str) -> ScrapedPage | None:
         async with httpx.AsyncClient(
             timeout=TIMEOUT_SECONDS,
             follow_redirects=True,
-            headers={'User-Agent': USER_AGENT},
+            headers={'User-Agent': _ua.random},
         ) as client:
             response = await client.get(url)
             response.raise_for_status()

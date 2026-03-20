@@ -119,6 +119,7 @@ class PrioritizationResult:
     dispatch_sequences: Sequence[Sequence[Dispatch]]
     call_id: str | None = None
     trace: CallTrace | None = None
+    children: Sequence[tuple['TwoPhaseOrchestrator', str]] = ()
 
 
 async def create_root_question(question_text: str, db: DB) -> str:
@@ -470,10 +471,12 @@ class BaseOrchestrator(ABC):
     def __init__(self, db: DB, broadcaster: Broadcaster | None = None):
         self.db = db
         self.broadcaster: Broadcaster | None = broadcaster
+        self._owns_broadcaster: bool = False
 
     async def _setup(self) -> None:
         if not self.broadcaster:
             self.broadcaster = _create_broadcaster(self.db)
+            self._owns_broadcaster = True
         log.info('Orchestrator: run_id=%s', self.db.run_id)
         total, used = await self.db.get_budget()
         log.info(
@@ -482,7 +485,7 @@ class BaseOrchestrator(ABC):
         )
 
     async def _teardown(self) -> None:
-        if self.broadcaster:
+        if self.broadcaster and self._owns_broadcaster:
             await self.broadcaster.close()
         total, used = await self.db.get_budget()
         log.info('Orchestrator.run complete: budget used %d/%d', used, total)
@@ -872,43 +875,75 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
     then dispatch targeted follow-up (scout, web research, or recurse).
     """
 
-    def __init__(self, db: DB, broadcaster: Broadcaster | None = None):
+    def __init__(
+        self, db: DB,
+        broadcaster: Broadcaster | None = None,
+        budget_cap: int | None = None,
+    ):
         super().__init__(db, broadcaster)
         self._invocation: int = 0
         self._call_id: str | None = None
         self._trace: CallTrace | None = None
         self._executed_since_last_plan: bool = False
-        self._pending_children: list[tuple['TwoPhaseOrchestrator', str, int]] = []
-        self._active_child: tuple['TwoPhaseOrchestrator', str, int, int] | None = None
+        self._budget_cap: int | None = budget_cap
+        self._consumed: int = 0
+
+    def _effective_budget(self, global_remaining: int) -> int:
+        if self._budget_cap is not None:
+            return min(global_remaining, self._budget_cap - self._consumed)
+        return global_remaining
 
     async def run(self, root_question_id: str) -> None:
         await self._setup()
         try:
             while True:
                 remaining = await self.db.budget_remaining()
-                if remaining <= 0:
+                effective = self._effective_budget(remaining)
+                if effective <= 0:
                     break
 
-                result = await self._get_next_batch(root_question_id, remaining)
-                if not result.dispatch_sequences:
+                result = await self._get_next_batch(root_question_id, effective)
+                if not result.dispatch_sequences and not result.children:
                     break
 
-                executed = await self._run_sequences(
-                    result.dispatch_sequences, root_question_id,
-                    result.call_id, result.trace,
-                )
-                if executed:
-                    self._mark_executed()
+                tasks: list = []
+                if result.dispatch_sequences:
+                    tasks.append(self._run_sequences(
+                        result.dispatch_sequences, root_question_id,
+                        result.call_id, result.trace,
+                    ))
+                for child, child_qid in result.children:
+                    tasks.append(child.run(child_qid))
+
+                if not tasks:
+                    break
+
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                for r in results:
+                    if isinstance(r, Exception):
+                        log.error('Concurrent dispatch failed: %s', r, exc_info=r)
+
+                if any(not isinstance(r, Exception) for r in results):
+                    self._executed_since_last_plan = True
                 else:
                     break
         finally:
             await self._teardown()
 
-    def _mark_executed(self) -> None:
-        if self._active_child:
-            self._active_child[0]._mark_executed()
-        else:
-            self._executed_since_last_plan = True
+    async def _run_dispatch_sequence(
+        self,
+        sequence: Sequence[Dispatch],
+        scope_question_id: str,
+        parent_call_id: str | None,
+        trace: CallTrace | None,
+        base_index: int,
+    ) -> bool:
+        result = await super()._run_dispatch_sequence(
+            sequence, scope_question_id, parent_call_id, trace, base_index,
+        )
+        if result:
+            self._consumed += len(sequence)
+        return result
 
     async def _get_next_batch(
         self,
@@ -916,10 +951,6 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         budget: int,
         parent_call_id: str | None = None,
     ) -> PrioritizationResult:
-        child_result = await self._service_children(budget, parent_call_id)
-        if child_result is not None:
-            return child_result
-
         if self._invocation == 0:
             self._invocation += 1
             return await self._phase1(question_id, budget, parent_call_id)
@@ -930,53 +961,6 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         self._executed_since_last_plan = False
         self._invocation += 1
         return await self._phase2(question_id, budget, parent_call_id)
-
-    async def _service_children(
-        self,
-        budget: int,
-        parent_call_id: str | None,
-    ) -> PrioritizationResult | None:
-        """Delegate to active/pending child orchestrators.
-
-        Returns a result when a child has dispatches to execute, or None
-        when all children are done and the parent should resume.
-        """
-        had_children = self._active_child is not None or bool(self._pending_children)
-
-        while True:
-            if self._active_child:
-                child_o, child_qid, child_alloc, start_budget = self._active_child
-                spent = start_budget - budget
-                child_remaining = max(0, child_alloc - spent)
-
-                if child_remaining <= 0:
-                    log.info(
-                        'Child budget exhausted: question=%s', child_qid[:8],
-                    )
-                    self._active_child = None
-                    continue
-
-                result = await child_o._get_next_batch(
-                    child_qid, child_remaining, parent_call_id,
-                )
-                if result.dispatch_sequences:
-                    return result
-
-                self._active_child = None
-                continue
-
-            if self._pending_children:
-                child_o, child_qid, child_alloc = self._pending_children.pop(0)
-                log.info(
-                    'Activating child orchestrator: question=%s, budget=%d',
-                    child_qid[:8], child_alloc,
-                )
-                self._active_child = (child_o, child_qid, child_alloc, budget)
-                continue
-
-            if had_children:
-                self._executed_since_last_plan = True
-            return None
 
     async def _phase1(
         self,
@@ -1096,17 +1080,17 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         trace = CallTrace(p_call.id, self.db, broadcaster=self.broadcaster)
         await trace.record(ContextBuiltEvent(budget=budget))
 
-        children = await self.db.get_child_questions(question_id)
+        child_questions = await self.db.get_child_questions(question_id)
         parent_question = await self.db.get_page(question_id)
         parent_headline = parent_question.headline if parent_question else question_id[:8]
 
         scoring_system = build_system_prompt('score_subquestions')
 
         scoring_tasks = []
-        if children:
+        if child_questions:
             child_descriptions = '\n'.join(
                 f'- `{c.id}` — {c.headline}'
-                for c in children
+                for c in child_questions
             )
             subq_user_msg = build_user_message(
                 f'Parent question: {parent_headline}\n\n'
@@ -1202,6 +1186,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             'You can target the parent question or any child question.\n\n'
             'You may create subquestions before dispatching. '
             'You must make all your dispatch calls now — this is your only turn.'
+            'CRITICAL: You MUST dispatch at least two recurse_into_subquestion calls if you have enough budget to do so.'
         )
 
         result = await run_prioritization_call(
@@ -1215,6 +1200,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         )
 
         sequences: list[list[Dispatch]] = []
+        children: list[tuple[TwoPhaseOrchestrator, str]] = []
         for d in result.dispatches:
             if isinstance(d.payload, RecurseDispatchPayload):
                 resolved = await self.db.resolve_page_id(d.payload.question_id)
@@ -1224,10 +1210,10 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                         d.payload.question_id[:8],
                     )
                     continue
-                child = TwoPhaseOrchestrator(self.db, self.broadcaster)
-                self._pending_children.append(
-                    (child, resolved, d.payload.budget),
+                child = TwoPhaseOrchestrator(
+                    self.db, self.broadcaster, budget_cap=d.payload.budget,
                 )
+                children.append((child, resolved))
                 log.info(
                     'Queued recursive investigation: question=%s, budget=%d — %s',
                     resolved[:8], d.payload.budget, d.payload.reason,
@@ -1262,13 +1248,14 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         self._trace = trace
 
         log.info(
-            'TwoPhaseOrchestrator phase2 complete: %d sequences',
-            len(sequences),
+            'TwoPhaseOrchestrator phase2 complete: %d sequences, %d children',
+            len(sequences), len(children),
         )
         return PrioritizationResult(
             dispatch_sequences=sequences,
             call_id=p_call.id,
             trace=trace,
+            children=children,
         )
 
 

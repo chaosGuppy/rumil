@@ -9,6 +9,7 @@ from rumil.calls.assess_concept import AssessConceptCall
 from rumil.calls.ingest import EmbeddingIngestCall, IngestCall
 from rumil.calls.find_considerations import EmbeddingScoutCall, ScoutCall
 from rumil.calls.scout_analogies import ScoutAnalogiesCall
+from rumil.calls.scout_facts_to_check import ScoutFactsToCheckCall
 from rumil.calls.scout_paradigm_cases import ScoutParadigmCasesCall
 from rumil.calls.scout_concepts import ScoutConceptsCall
 from rumil.calls.web_research import WebResearchCall
@@ -61,4 +62,8 @@ SCOUT_ANALOGIES_CALL_CLASSES: dict[str, type[ScoutAnalogiesCall]] = {
 
 SCOUT_PARADIGM_CASES_CALL_CLASSES: dict[str, type[ScoutParadigmCasesCall]] = {
     "default": ScoutParadigmCasesCall,
+}
+
+SCOUT_FACTS_TO_CHECK_CALL_CLASSES: dict[str, type[ScoutFactsToCheckCall]] = {
+    "default": ScoutFactsToCheckCall,
 }

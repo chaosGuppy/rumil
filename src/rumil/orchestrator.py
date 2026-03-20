@@ -24,6 +24,7 @@ from rumil.calls.call_registry import (
     FIND_CONSIDERATIONS_CALL_CLASSES,
     SCOUT_CONCEPTS_CALL_CLASSES,
     SCOUT_ANALOGIES_CALL_CLASSES,
+    SCOUT_FACTS_TO_CHECK_CALL_CLASSES,
     SCOUT_PARADIGM_CASES_CALL_CLASSES,
     SCOUT_ESTIMATES_CALL_CLASSES,
     SCOUT_HYPOTHESES_CALL_CLASSES,
@@ -48,6 +49,7 @@ from rumil.models import (
     RecurseDispatchPayload,
     ScoutAnalogiesDispatchPayload,
     ScoutDispatchPayload,
+    ScoutFactsToCheckDispatchPayload,
     ScoutMode,
     ScoutParadigmCasesDispatchPayload,
     ScoutEstimatesDispatchPayload,
@@ -91,6 +93,7 @@ PHASE1_SCOUT_TYPES: Sequence[CallType] = [
     CallType.SCOUT_HYPOTHESES,
     CallType.SCOUT_ANALOGIES,
     CallType.SCOUT_PARADIGM_CASES,
+    CallType.SCOUT_FACTS_TO_CHECK,
 ]
 
 PHASE2_DISPATCH_TYPES: Sequence[CallType] = [
@@ -101,6 +104,7 @@ PHASE2_DISPATCH_TYPES: Sequence[CallType] = [
     CallType.SCOUT_HYPOTHESES,
     CallType.SCOUT_ANALOGIES,
     CallType.SCOUT_PARADIGM_CASES,
+    CallType.SCOUT_FACTS_TO_CHECK,
 ]
 
 
@@ -643,6 +647,14 @@ class BaseOrchestrator(ABC):
             child_call_id = await self._run_simple_call_dispatch(
                 resolved, CallType.SCOUT_PARADIGM_CASES,
                 SCOUT_PARADIGM_CASES_CALL_CLASSES, parent_call_id,
+                force=force,
+            )
+
+        elif isinstance(p, ScoutFactsToCheckDispatchPayload):
+            log.info('Dispatch: scout_facts_to_check on %s — %s', d_label, p.reason)
+            child_call_id = await self._run_simple_call_dispatch(
+                resolved, CallType.SCOUT_FACTS_TO_CHECK,
+                SCOUT_FACTS_TO_CHECK_CALL_CLASSES, parent_call_id,
                 force=force,
             )
 

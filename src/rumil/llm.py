@@ -29,13 +29,14 @@ from pydantic import BaseModel, ValidationError
 
 from rumil.pricing import compute_cost
 
-DEFAULT_MAX_TOKENS = 50_000
 from rumil.settings import get_settings
 from rumil.tracing.trace_events import LLMExchangeEvent
 
 if TYPE_CHECKING:
     from rumil.database import DB
     from rumil.tracing.tracer import CallTrace
+
+DEFAULT_MAX_TOKENS = 20_000
 
 PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts"
 

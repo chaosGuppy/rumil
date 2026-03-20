@@ -31,7 +31,6 @@ async def run_prioritization_call(
     db: DB,
     *,
     available_moves: list[MoveType] | None = None,
-    max_tokens: int = 4096,
     subtree_ids: set[str] | None = None,
     short_id_map: dict[str, str] | None = None,
     trace: CallTrace | None = None,
@@ -82,7 +81,6 @@ async def run_prioritization_call(
         db=db,
         state=state,
         trace=trace,
-        max_tokens=max_tokens,
     )
 
     log.info(

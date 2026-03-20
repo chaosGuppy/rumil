@@ -150,7 +150,6 @@ async def link_new_pages(
         db=db,
         state=state,
         trace=trace,
-        max_tokens=2048,
     )
 
 
@@ -406,7 +405,6 @@ class ScoutCall(BaseCall):
             response_model=FruitCheck,
             messages=check_messages,
             tools=self.tool_defs,
-            max_tokens=256,
             metadata=meta,
             db=self.db,
             cache=True,
@@ -522,7 +520,6 @@ class ScoutCall(BaseCall):
             response_model=ReviewResponse,
             messages=assessment_messages,
             tools=self.tool_defs,
-            max_tokens=8192,
             metadata=meta,
             db=self.db,
             cache=True,

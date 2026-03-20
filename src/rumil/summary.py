@@ -146,7 +146,7 @@ async def generate_summary(
     )
 
     return await text_call(
-        system_prompt=system_prompt, user_message=user_message, max_tokens=8192
+        system_prompt=system_prompt, user_message=user_message
     )
 
 

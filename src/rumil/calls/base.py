@@ -150,7 +150,6 @@ class SimpleCall(BaseCall):
             db=self.db,
             state=self.state,
             trace=self.trace,
-            max_tokens=4096,
             max_rounds=max_rounds,
         )
 

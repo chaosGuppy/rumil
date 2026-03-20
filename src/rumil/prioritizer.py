@@ -503,7 +503,6 @@ class TwoPhasePrioritizer(Prioritizer):
                 scoring_system,
                 user_message=subq_user_msg,
                 response_model=SubquestionScoringResult,
-                max_tokens=2048,
                 metadata=LLMExchangeMetadata(
                     call_id=p_call.id,
                     phase='score_subquestions',
@@ -526,7 +525,6 @@ class TwoPhasePrioritizer(Prioritizer):
             scoring_system,
             user_message=fruit_user_msg,
             response_model=FruitResult,
-            max_tokens=512,
             metadata=LLMExchangeMetadata(
                 call_id=p_call.id,
                 phase='score_parent_fruit',

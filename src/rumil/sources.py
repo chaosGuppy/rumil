@@ -45,7 +45,6 @@ async def generate_source_summary(content: str, filename: str) -> str:
                 f'Filename: {filename}\n\n'
                 f'{excerpt}'
             ),
-            max_tokens=256,
         )
         return result.strip()
     except Exception as e:

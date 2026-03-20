@@ -189,7 +189,6 @@ class AssessConceptCall(SimpleCall):
                 system_prompt=REVIEW_SYSTEM_PROMPT,
                 user_message=user_message,
                 response_model=ConceptAssessmentReview,
-                max_tokens=2048,
                 metadata=meta,
                 db=self.db,
             )

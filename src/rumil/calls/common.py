@@ -148,7 +148,6 @@ async def run_single_call(
     db: DB,
     state: MoveState,
     trace: "CallTrace | None" = None,
-    max_tokens: int = 4096,
     messages: list[dict] | None = None,
     cache: bool = False,
 ) -> AgentResult:
@@ -171,8 +170,8 @@ async def run_single_call(
         tool_fns = {}
 
     log.debug(
-        "run_single_call: phase=%s, max_tokens=%d, tools=%d, resuming=%s",
-        phase, max_tokens, len(tool_defs), messages is not None,
+        "run_single_call: phase=%s, tools=%d, resuming=%s",
+        phase, len(tool_defs), messages is not None,
     )
 
     msg_list: list[dict] = (
@@ -186,7 +185,7 @@ async def run_single_call(
     )
     api_resp = await call_api(
         client, settings.model, system_prompt, msg_list,
-        tool_defs or None, max_tokens, warnings=all_warnings,
+        tool_defs or None, warnings=all_warnings,
         metadata=meta, db=db, cache=cache,
     )
     response = api_resp.message
@@ -244,7 +243,6 @@ async def run_agent_loop(
     db: DB,
     state: MoveState,
     trace: "CallTrace | None" = None,
-    max_tokens: int = 4096,
     max_rounds: int | None = None,
     messages: list[dict] | None = None,
     cache: bool = False,
@@ -270,8 +268,8 @@ async def run_agent_loop(
         tool_defs = []
         tool_fns = {}
     log.debug(
-        "run_agent_loop starting: max_rounds=%d, max_tokens=%d, resuming=%s",
-        effective_rounds, max_tokens, messages is not None,
+        "run_agent_loop starting: max_rounds=%d, resuming=%s",
+        effective_rounds, messages is not None,
     )
 
     msg_list: list[dict] = (
@@ -293,7 +291,7 @@ async def run_agent_loop(
         )
         api_resp = await call_api(
             client, settings.model, system_prompt, msg_list,
-            tool_defs or None, max_tokens, warnings=all_warnings,
+            tool_defs or None, warnings=all_warnings,
             metadata=meta, db=db, cache=cache,
         )
         response = api_resp.message
@@ -491,7 +489,6 @@ async def _run_phase1(
             db=db,
             state=state,
             trace=trace,
-            max_tokens=2048,
         )
         loaded_ids = []
         for tc in result.tool_calls:
@@ -518,7 +515,6 @@ async def run_call(
     db: DB,
     *,
     available_moves: list[MoveType] | None = None,
-    max_tokens: int = 4096,
     max_rounds: int | None = None,
     trace: "CallTrace | None" = None,
     state: MoveState | None = None,
@@ -564,7 +560,6 @@ async def run_call(
         db=db,
         state=state,
         trace=trace,
-        max_tokens=max_tokens,
         max_rounds=max_rounds,
     )
 
@@ -745,7 +740,6 @@ async def run_closing_review(
             system_prompt=REVIEW_SYSTEM_PROMPT,
             user_message=user_message,
             response_model=ReviewResponse,
-            max_tokens=8192,
             metadata=meta,
             db=db,
         )

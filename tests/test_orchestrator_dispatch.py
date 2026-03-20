@@ -1,4 +1,4 @@
-"""Tests for the orchestrator's dispatch execution loop and prioritizer integration."""
+"""Tests for the orchestrator's dispatch execution loop."""
 
 import uuid
 
@@ -10,40 +10,37 @@ from rumil.models import (
     Dispatch,
     ScoutDispatchPayload,
 )
-from rumil.orchestrator import Orchestrator
-from rumil.prioritizer import Prioritizer, PrioritizationResult
+from rumil.orchestrator import BaseOrchestrator
 from rumil.tracing.tracer import CallTrace
 
 
-class ScriptedPrioritizer(Prioritizer):
-    """Returns pre-scripted batches of dispatches, one per get_calls() invocation."""
+class ScriptedOrchestrator(BaseOrchestrator):
+    """Returns pre-scripted batches of dispatches, one per loop iteration."""
 
-    def __init__(self, batches: list[list[Dispatch]], call_id: str | None = None, trace: CallTrace | None = None):
+    def __init__(self, db, batches, call_id=None, trace=None):
+        super().__init__(db)
         self._batches = list(batches)
         self._index = 0
         self._call_id = call_id
         self._trace = trace
         self.get_calls_count = 0
 
-    async def get_calls(
-        self,
-        question_id: str,
-        budget: int,
-        parent_call_id: str | None = None,
-    ) -> PrioritizationResult:
-        self.get_calls_count += 1
-        if self._index < len(self._batches):
-            batch = self._batches[self._index]
-            self._index += 1
-            return PrioritizationResult(
-                dispatch_sequences=[batch] if batch else [],
-                call_id=self._call_id,
-                trace=self._trace,
-            )
-        return PrioritizationResult(dispatch_sequences=[])
-
-    def mark_executed(self) -> None:
-        pass
+    async def run(self, root_question_id):
+        await self._setup()
+        try:
+            for batch in self._batches:
+                remaining = await self.db.budget_remaining()
+                if remaining <= 0:
+                    break
+                self.get_calls_count += 1
+                if not batch:
+                    break
+                await self._run_sequences(
+                    [batch], root_question_id,
+                    self._call_id, self._trace,
+                )
+        finally:
+            await self._teardown()
 
 
 def _scout_dispatch(question_id: str, **kwargs) -> Dispatch:
@@ -63,10 +60,9 @@ def _assess_dispatch(question_id: str, **kwargs) -> Dispatch:
 @pytest.mark.integration
 async def test_scout_dispatch_creates_scout_call(tmp_db, question_page):
     """A scout dispatch should produce a scout call in the DB."""
-    prioritizer = ScriptedPrioritizer([
+    orch = ScriptedOrchestrator(tmp_db, batches=[
         [_scout_dispatch(question_page.id, max_rounds=1)],
     ])
-    orch = Orchestrator(tmp_db, prioritizer=prioritizer)
     await orch.run(question_page.id)
 
     rows = (
@@ -82,10 +78,9 @@ async def test_scout_dispatch_creates_scout_call(tmp_db, question_page):
 @pytest.mark.integration
 async def test_assess_dispatch_creates_assess_call(tmp_db, question_page):
     """An assess dispatch should produce an assess call in the DB."""
-    prioritizer = ScriptedPrioritizer([
+    orch = ScriptedOrchestrator(tmp_db, batches=[
         [_assess_dispatch(question_page.id)],
     ])
-    orch = Orchestrator(tmp_db, prioritizer=prioritizer)
     await orch.run(question_page.id)
 
     rows = (
@@ -102,14 +97,13 @@ async def test_assess_dispatch_creates_assess_call(tmp_db, question_page):
 async def test_budget_exhaustion_limits_dispatches(tmp_db, question_page):
     """Only dispatches that fit within the budget should execute."""
     await tmp_db.init_budget(1)
-    prioritizer = ScriptedPrioritizer([
+    orch = ScriptedOrchestrator(tmp_db, batches=[
         [
             _scout_dispatch(question_page.id, max_rounds=1),
             _scout_dispatch(question_page.id, max_rounds=1),
             _scout_dispatch(question_page.id, max_rounds=1),
         ],
     ])
-    orch = Orchestrator(tmp_db, prioritizer=prioritizer)
     await orch.run(question_page.id)
 
     rows = (
@@ -123,9 +117,8 @@ async def test_budget_exhaustion_limits_dispatches(tmp_db, question_page):
 
 
 async def test_empty_dispatches_exits_loop(tmp_db, question_page):
-    """When the prioritizer returns no dispatches, the loop should exit."""
-    prioritizer = ScriptedPrioritizer([])
-    orch = Orchestrator(tmp_db, prioritizer=prioritizer)
+    """When the orchestrator has no dispatches, the loop should exit."""
+    orch = ScriptedOrchestrator(tmp_db, batches=[])
     await orch.run(question_page.id)
 
     rows = (
@@ -141,38 +134,35 @@ async def test_empty_dispatches_exits_loop(tmp_db, question_page):
 
 @pytest.mark.integration
 async def test_reprioritization_on_leftover_budget(tmp_db, question_page):
-    """Prioritizer should be queried again when budget remains after execution."""
+    """Orchestrator should process multiple batches when budget remains."""
     await tmp_db.init_budget(5)
-    prioritizer = ScriptedPrioritizer([
+    orch = ScriptedOrchestrator(tmp_db, batches=[
         [_scout_dispatch(question_page.id, max_rounds=1)],
         [_assess_dispatch(question_page.id)],
     ])
-    orch = Orchestrator(tmp_db, prioritizer=prioritizer)
     await orch.run(question_page.id)
 
-    assert prioritizer.get_calls_count >= 2
+    assert orch.get_calls_count >= 2
 
 
 async def test_no_infinite_loop_when_nothing_spent(tmp_db, question_page):
     """If budget is 0 the loop should exit immediately, not spin."""
     await tmp_db.init_budget(0)
-    prioritizer = ScriptedPrioritizer([
+    orch = ScriptedOrchestrator(tmp_db, batches=[
         [_scout_dispatch(question_page.id, max_rounds=1)],
     ])
-    orch = Orchestrator(tmp_db, prioritizer=prioritizer)
     await orch.run(question_page.id)
 
-    assert prioritizer.get_calls_count == 0
+    assert orch.get_calls_count == 0
 
 
 @pytest.mark.integration
 async def test_unresolvable_question_id_falls_back_to_root(tmp_db, question_page):
     """When a dispatch references a non-existent page, the root question is used."""
     fake_id = str(uuid.uuid4())
-    prioritizer = ScriptedPrioritizer([
+    orch = ScriptedOrchestrator(tmp_db, batches=[
         [_assess_dispatch(fake_id)],
     ])
-    orch = Orchestrator(tmp_db, prioritizer=prioritizer)
     await orch.run(question_page.id)
 
     rows = (
@@ -195,12 +185,12 @@ async def test_dispatch_executed_events_recorded(tmp_db, question_page):
     )
     trace = CallTrace(p_call.id, tmp_db)
 
-    prioritizer = ScriptedPrioritizer(
+    orch = ScriptedOrchestrator(
+        tmp_db,
         batches=[[_assess_dispatch(question_page.id)]],
         call_id=p_call.id,
         trace=trace,
     )
-    orch = Orchestrator(tmp_db, prioritizer=prioritizer)
     await orch.run(question_page.id)
 
     rows = (

@@ -13,6 +13,7 @@ Each scouting dispatch costs exactly 1 budget unit. You must call at least one d
 - **Scout hypotheses**: Generate candidate answers to explore.
 - **Scout analogies**: Find analogies that might illuminate the question.
 - **Scout paradigm cases**: Identify concrete, real-world cases or examples that illuminate the question.
+- **Scout facts-to-check**: Surface uncertain factual claims whose truth value could materially affect the answer.
 
 ## How to Decide
 

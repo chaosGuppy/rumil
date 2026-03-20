@@ -16,6 +16,7 @@ from rumil.models import (
     ScoutDispatchPayload,
     ScoutParadigmCasesDispatchPayload,
     ScoutEstimatesDispatchPayload,
+    ScoutFactsToCheckDispatchPayload,
     ScoutHypothesesDispatchPayload,
     ScoutSubquestionsDispatchPayload,
     WebResearchDispatchPayload,
@@ -162,6 +163,16 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
             "cases illuminating a question. Budget cost: exactly 1."
         ),
         schema=ScoutParadigmCasesDispatchPayload,
+    ),
+    CallType.SCOUT_FACTS_TO_CHECK: DispatchDef(
+        call_type=CallType.SCOUT_FACTS_TO_CHECK,
+        name="dispatch_scout_facts_to_check",
+        description=(
+            "Dispatch a specialized scout that surfaces uncertain factual "
+            "claims whose truth value could materially affect the answer. "
+            "Budget cost: exactly 1."
+        ),
+        schema=ScoutFactsToCheckDispatchPayload,
     ),
     CallType.WEB_RESEARCH: DispatchDef(
         call_type=CallType.WEB_RESEARCH,

@@ -62,6 +62,7 @@ class CallType(str, Enum):
     SCOUT_ESTIMATES = "scout_estimates"
     SCOUT_HYPOTHESES = "scout_hypotheses"
     SCOUT_ANALOGIES = "scout_analogies"
+    SCOUT_PARADIGM_CASES = "scout_paradigm_cases"
     WEB_RESEARCH = "web_research"
 
 
@@ -74,6 +75,7 @@ DISPATCHABLE_CALL_TYPES: set[CallType] = {
     CallType.SCOUT_ESTIMATES,
     CallType.SCOUT_HYPOTHESES,
     CallType.SCOUT_ANALOGIES,
+    CallType.SCOUT_PARADIGM_CASES,
     CallType.WEB_RESEARCH,
 }
 
@@ -197,6 +199,10 @@ class ScoutHypothesesDispatchPayload(BaseDispatchPayload):
 
 
 class ScoutAnalogiesDispatchPayload(BaseDispatchPayload):
+    pass
+
+
+class ScoutParadigmCasesDispatchPayload(BaseDispatchPayload):
     pass
 
 

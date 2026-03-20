@@ -52,6 +52,7 @@ PHASE1_SCOUT_TYPES: Sequence[CallType] = [
     CallType.SCOUT_ESTIMATES,
     CallType.SCOUT_HYPOTHESES,
     CallType.SCOUT_ANALOGIES,
+    CallType.SCOUT_PARADIGM_CASES,
 ]
 
 PHASE2_DISPATCH_TYPES: Sequence[CallType] = [
@@ -369,7 +370,7 @@ class TwoPhasePrioritizer(Prioritizer):
         budget: int,
         parent_call_id: str | None,
     ) -> PrioritizationResult:
-        phase1_budget = min(budget - 1, 3)
+        phase1_budget = min(budget - 1, 4)
         log.info(
             'NewQuestionPrioritizer phase1: question=%s, budget=%d, phase1_budget=%d',
             question_id[:8], budget, phase1_budget,

@@ -17,6 +17,7 @@ from rumil.calls.call_registry import (
     FIND_CONSIDERATIONS_CALL_CLASSES,
     SCOUT_CONCEPTS_CALL_CLASSES,
     SCOUT_ANALOGIES_CALL_CLASSES,
+    SCOUT_PARADIGM_CASES_CALL_CLASSES,
     SCOUT_ESTIMATES_CALL_CLASSES,
     SCOUT_HYPOTHESES_CALL_CLASSES,
     SCOUT_SUBQUESTIONS_CALL_CLASSES,
@@ -33,6 +34,7 @@ from rumil.models import (
     PageType,
     ScoutAnalogiesDispatchPayload,
     ScoutDispatchPayload,
+    ScoutParadigmCasesDispatchPayload,
     ScoutEstimatesDispatchPayload,
     ScoutHypothesesDispatchPayload,
     ScoutMode,
@@ -541,6 +543,14 @@ class Orchestrator:
             child_call_id = await self._run_simple_call_dispatch(
                 resolved, CallType.SCOUT_ANALOGIES,
                 SCOUT_ANALOGIES_CALL_CLASSES, parent_call_id,
+                force=force,
+            )
+
+        elif isinstance(p, ScoutParadigmCasesDispatchPayload):
+            log.info('Dispatch: scout_paradigm_cases on %s — %s', d_label, p.reason)
+            child_call_id = await self._run_simple_call_dispatch(
+                resolved, CallType.SCOUT_PARADIGM_CASES,
+                SCOUT_PARADIGM_CASES_CALL_CLASSES, parent_call_id,
                 force=force,
             )
 

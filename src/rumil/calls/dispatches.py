@@ -14,6 +14,7 @@ from rumil.models import (
     RecurseDispatchPayload,
     ScoutAnalogiesDispatchPayload,
     ScoutDispatchPayload,
+    ScoutParadigmCasesDispatchPayload,
     ScoutEstimatesDispatchPayload,
     ScoutHypothesesDispatchPayload,
     ScoutSubquestionsDispatchPayload,
@@ -152,6 +153,15 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
             "for a question. Budget cost: exactly 1."
         ),
         schema=ScoutAnalogiesDispatchPayload,
+    ),
+    CallType.SCOUT_PARADIGM_CASES: DispatchDef(
+        call_type=CallType.SCOUT_PARADIGM_CASES,
+        name="dispatch_scout_paradigm_cases",
+        description=(
+            "Dispatch a specialized scout that identifies concrete paradigm "
+            "cases illuminating a question. Budget cost: exactly 1."
+        ),
+        schema=ScoutParadigmCasesDispatchPayload,
     ),
     CallType.WEB_RESEARCH: DispatchDef(
         call_type=CallType.WEB_RESEARCH,

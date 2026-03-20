@@ -17,11 +17,13 @@ from rumil.calls.common import (
 from rumil.context import (
     assemble_call_context,
     build_embedding_based_context,
+    build_scout_context,
     format_page,
     format_preloaded_pages,
     format_question_for_find_considerations,
 )
 from rumil.database import DB
+from rumil.embeddings import embed_and_store_page
 from rumil.llm import (
     build_system_prompt,
     build_user_message,
@@ -97,23 +99,36 @@ async def link_new_pages(
     db: DB,
     state: MoveState,
     trace: CallTrace,
+    context_page_ids: list[str] | None = None,
     graph: PageGraph | None = None,
 ) -> None:
-    """Single LLM call that reviews the workspace and creates direct/structural links.
+    """Single LLM call that reviews nearby pages and creates direct/structural links.
 
     Uses only LINK_CONSIDERATION and LINK_CHILD_QUESTION tools with role fields.
     Free (not counted against budget).
+
+    If *context_page_ids* is provided, those pages are shown as headlines
+    instead of the full workspace map.
     """
     source: DB | PageGraph = graph if graph is not None else db
     question = await source.get_page(question_id)
     if not question:
         return
 
-    workspace_map, _ = await build_workspace_map(db, graph=graph)
+    if context_page_ids:
+        page_lines: list[str] = []
+        for pid in context_page_ids:
+            page = await source.get_page(pid)
+            if page and page.id != question_id:
+                page_lines.append(await format_page(page, PageDetail.HEADLINE))
+        pages_text = '# Nearby Pages\n\n' + '\n'.join(page_lines)
+    else:
+        pages_text, _ = await build_workspace_map(db, graph=graph)
+
     question_text = await format_page(question, PageDetail.HEADLINE)
     existing_links = await _build_link_inventory(question_id, db, graph=graph)
     working_context = (
-        workspace_map + '\n\n---\n\n'
+        pages_text + '\n\n---\n\n'
         '# Scope Question\n\n' + question_text
         + '\n\n' + existing_links
     )
@@ -280,18 +295,21 @@ class ScoutCall(BaseCall):
 
     async def build_context(self) -> None:
         graph = await PageGraph.load(self.db)
-        await link_new_pages(
-            self.question_id, self.call, self.db, self.state, self.trace,
-            graph=graph,
-        )
-
-        graph = await PageGraph.load(self.db)
-        working_context, self.working_page_ids = await format_question_for_find_considerations(
+        scout_ctx = await build_scout_context(
             self.question_id, self.db, graph=graph,
         )
 
+        await link_new_pages(
+            self.question_id, self.call, self.db, self.state, self.trace,
+            context_page_ids=scout_ctx.page_ids,
+            graph=graph,
+        )
+
+        self.working_page_ids = scout_ctx.page_ids
+
+        context_text = scout_ctx.context_text
         if self.preloaded_ids:
-            working_context += await format_preloaded_pages(
+            context_text += await format_preloaded_pages(
                 self.preloaded_ids, self.db, graph=graph,
             )
 
@@ -302,11 +320,6 @@ class ScoutCall(BaseCall):
             preloaded_page_ids=await resolve_page_refs(self.preloaded_ids, self.db),
             scout_mode=self.mode.value,
         ))
-
-        workspace_map, _ = await build_workspace_map(self.db, graph=graph)
-        phase2_context = assemble_call_context(
-            working_context, workspace_map=workspace_map,
-        )
 
         self.tools = [MOVES[mt].bind(self.state) for mt in MoveType]
         self.tool_defs, _ = _prepare_tools(self.tools)
@@ -322,7 +335,7 @@ class ScoutCall(BaseCall):
             f"Question ID (use this when linking considerations): "
             f"`{self.question_id}`"
         )
-        self.user_message = build_user_message(phase2_context, task)
+        self.user_message = build_user_message(context_text, task)
 
     async def create_pages(self) -> None:
         for i in range(self.max_rounds):
@@ -538,6 +551,19 @@ class ScoutCall(BaseCall):
                         s.get("headline", ""),
                         s.get("abstract", ""),
                     )
+                    abstract_text = s.get("abstract", "")
+                    if abstract_text.strip():
+                        page = await self.db.get_page(pid)
+                        if page:
+                            try:
+                                await embed_and_store_page(
+                                    self.db, page, field_name="abstract",
+                                )
+                            except Exception:
+                                log.warning(
+                                    "Failed to re-embed page %s", pid[:8],
+                                    exc_info=True,
+                                )
 
         self.call.review_json = review_data
         return review_data
@@ -570,12 +596,11 @@ class EmbeddingScoutCall(ScoutCall):
         )
 
     async def build_context(self) -> None:
-        question = await self.db.get_page(self.question_id)
-        query = question.headline if question else self.question_id
-        emb_result = await build_embedding_based_context(
-            query, self.db, scope_question_id=self.question_id,
+        graph = await PageGraph.load(self.db)
+        scout_ctx = await build_scout_context(
+            self.question_id, self.db, graph=graph,
         )
-        self.working_page_ids = emb_result.page_ids
+        self.working_page_ids = scout_ctx.page_ids
 
         await self.trace.record(ContextBuiltEvent(
             working_context_page_ids=await resolve_page_refs(
@@ -585,7 +610,7 @@ class EmbeddingScoutCall(ScoutCall):
             scout_mode=self.mode.value,
         ))
 
-        self.context_text = emb_result.context_text
+        self.context_text = scout_ctx.context_text
 
         self.tools = [MOVES[mt].bind(self.state) for mt in MoveType]
         self.tool_defs, _ = _prepare_tools(self.tools)

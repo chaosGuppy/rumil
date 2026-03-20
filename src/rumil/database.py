@@ -405,6 +405,16 @@ class DB:
                 result.append((page, link))
         return result
 
+    async def get_parent_question(self, question_id: str) -> Page | None:
+        """Return the parent question, or None if this is a root question."""
+        links = await self.get_links_to(question_id)
+        for link in links:
+            if link.link_type == LinkType.CHILD_QUESTION:
+                page = await self.get_page(link.from_page_id)
+                if page and page.is_active():
+                    return page
+        return None
+
     async def get_child_questions(self, parent_id: str) -> list[Page]:
         """Return sub-questions of a question."""
         links = await self.get_links_from(parent_id)

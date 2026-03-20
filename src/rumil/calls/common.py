@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from rumil.context import format_page
 from rumil.database import DB
+from rumil.embeddings import embed_and_store_page
 from rumil.settings import get_settings
 from rumil.llm import (
     AgentResult,
@@ -770,6 +771,19 @@ async def run_closing_review(
                             s.get("headline", ""),
                             s.get("abstract", ""),
                         )
+                        abstract_text = s.get("abstract", "")
+                        if abstract_text.strip():
+                            page = await db.get_page(pid)
+                            if page:
+                                try:
+                                    await embed_and_store_page(
+                                        db, page, field_name="abstract",
+                                    )
+                                except Exception:
+                                    log.warning(
+                                        "Failed to re-embed page %s", pid[:8],
+                                        exc_info=True,
+                                    )
         else:
             log.warning("Closing review returned None for call=%s", call.id[:8])
         return review

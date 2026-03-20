@@ -17,6 +17,7 @@ from rumil.calls.call_registry import (
     WEB_RESEARCH_CALL_CLASSES,
 )
 from rumil.database import DB
+from rumil.embeddings import embed_and_store_page
 from rumil.settings import get_settings
 from rumil.models import (
     AssessDispatchPayload,
@@ -59,6 +60,10 @@ async def create_root_question(question_text: str, db: DB) -> str:
         extra={"status": "open"},
     )
     await db.save_page(page)
+    try:
+        await embed_and_store_page(db, page, field_name="abstract")
+    except Exception:
+        log.warning("Failed to create embedding for root question %s", page.id[:8], exc_info=True)
     return page.id
 
 

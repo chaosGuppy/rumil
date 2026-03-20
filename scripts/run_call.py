@@ -37,7 +37,11 @@ import asyncio
 import logging
 import uuid
 
-from rumil.calls.call_registry import ASSESS_CALL_CLASSES, FIND_CONSIDERATIONS_CALL_CLASSES
+from rumil.calls.call_registry import (
+    ASSESS_CALL_CLASSES,
+    FIND_CONSIDERATIONS_CALL_CLASSES,
+    WEB_RESEARCH_CALL_CLASSES,
+)
 from rumil.calls.prioritization import run_prioritization
 from rumil.database import DB
 from rumil.models import CallStage, CallType, ScoutMode
@@ -75,6 +79,16 @@ async def run_call(args: argparse.Namespace, db: DB, question_id: str) -> None:
         cls = ASSESS_CALL_CLASSES[settings.assess_call_variant]
         assess = cls(question_id, call, db, up_to_stage=up_to_stage)
         await assess.run()
+
+    elif call_type == "web-research":
+        call = await db.create_call(
+            CallType.WEB_RESEARCH, scope_page_id=question_id,
+        )
+        cls = WEB_RESEARCH_CALL_CLASSES[settings.web_research_call_variant]
+        web_research = cls(
+            question_id, call, db, up_to_stage=up_to_stage,
+        )
+        await web_research.run()
 
     elif call_type == "prioritize":
         if up_to_stage:
@@ -202,7 +216,7 @@ async def _run_ab(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run a single call end-to-end.")
     parser.add_argument(
-        "call_type", choices=["find-considerations", "assess", "prioritize"],
+        "call_type", choices=["find-considerations", "assess", "prioritize", "web-research"],
         help="Type of call to run",
     )
     parser.add_argument(

@@ -306,11 +306,13 @@ async def call_api(
             response = await client.messages.create(**kwargs)
             elapsed_ms = int((time.monotonic() - start) * 1000)
             log.debug(
-                "API response: stop_reason=%s, usage=%d/%d tokens, duration=%dms",
+                "API response: stop_reason=%s, usage=%d/%d tokens, duration=%dms, "
+                "full_usage=%s",
                 response.stop_reason,
                 response.usage.input_tokens,
                 response.usage.output_tokens,
                 elapsed_ms,
+                response.usage,
             )
             if metadata and db:
                 text_parts = []

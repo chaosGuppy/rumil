@@ -9,6 +9,7 @@ from typing import Any, Generic, TypeVar
 from pydantic import BaseModel, Field
 
 from rumil.database import DB
+from rumil.embeddings import embed_and_store_page
 from rumil.llm import Tool
 from rumil.models import (
     Call,
@@ -232,6 +233,10 @@ async def create_page(
 
     await db.save_page(page)
     write_page_file(page)
+    try:
+        await embed_and_store_page(db, page, field_name="abstract")
+    except Exception:
+        log.warning("Failed to create embedding for page %s", page.id[:8], exc_info=True)
     log.info(
         "Page created: type=%s, id=%s, headline=%s",
         page_type.value, page.id[:8], page.headline[:70],

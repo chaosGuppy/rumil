@@ -44,11 +44,13 @@ class Settings(BaseSettings):
     ingest_call_variant: str = _capture_field(default="default")
     web_research_call_variant: str = _capture_field(default="default")
 
-    context_char_budget: int = _capture_field(default=10_000)
-    full_page_char_fraction: float = _capture_field(default=0.4)
-    abstract_page_char_fraction: float = _capture_field(default=0.3)
-    summary_page_char_fraction: float = _capture_field(default=0.2)
-    distillation_page_char_fraction: float = _capture_field(default=0.0)
+    full_page_char_budget: int = _capture_field(default=10_000)
+    abstract_page_char_budget: int = _capture_field(default=10_000)
+    summary_page_char_budget: int = _capture_field(default=5_000)
+    distillation_page_char_budget: int = _capture_field(default=3_000)
+    full_page_similarity_floor: float = _capture_field(default=0.3)
+    abstract_page_similarity_floor: float = _capture_field(default=0.2)
+    summary_page_similarity_floor: float = _capture_field(default=0.1)
 
     @property
     def is_test_mode(self) -> bool:

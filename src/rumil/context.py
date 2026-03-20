@@ -71,6 +71,243 @@ async def collect_all_subtree_page_ids(
     return result
 
 
+async def _get_ancestry_chain(
+    question_id: str,
+    source: DB | PageGraph,
+) -> list[Page]:
+    """Walk up from question to root. Returns [parent, grandparent, ...] order."""
+    chain: list[Page] = []
+    current_id = question_id
+    visited = {question_id}
+    while True:
+        parent = await source.get_parent_question(current_id)
+        if not parent or parent.id in visited:
+            break
+        chain.append(parent)
+        visited.add(parent.id)
+        current_id = parent.id
+    return chain
+
+
+async def _render_subtree_headlines(
+    question_id: str,
+    source: DB | PageGraph,
+    db: DB,
+    indent: int = 0,
+    _visited: set[str] | None = None,
+) -> tuple[list[str], list[str]]:
+    """Render a question subtree as headlines. Returns (lines, page_ids)."""
+    if _visited is None:
+        _visited = set()
+    if question_id in _visited:
+        return [], []
+    _visited = _visited | {question_id}
+
+    question = await source.get_page(question_id)
+    if not question:
+        return [], []
+
+    prefix = '  ' * indent
+    lines = [prefix + await format_page(question, PageDetail.HEADLINE)]
+    page_ids = [question_id]
+
+    judgements = await source.get_judgements_for_question(question_id)
+    if judgements:
+        latest = max(judgements, key=lambda j: j.created_at)
+        lines.append(
+            prefix + '  ' + await format_page(latest, PageDetail.HEADLINE)
+        )
+        page_ids.append(latest.id)
+
+    for child in await source.get_child_questions(question_id):
+        child_lines, child_ids = await _render_subtree_headlines(
+            child.id, source, db, indent + 1, _visited=_visited,
+        )
+        lines.extend(child_lines)
+        page_ids.extend(child_ids)
+
+    return lines, page_ids
+
+
+@dataclass
+class ScoutContextResult:
+    context_text: str
+    page_ids: list[str]
+    structural_page_ids: set[str]
+
+
+async def build_scout_context(
+    question_id: str,
+    db: DB,
+    graph: PageGraph | None = None,
+) -> ScoutContextResult:
+    """Build context for a find_considerations call.
+
+    Combines embedding search with structural context:
+    - Full text of scope question
+    - Abstract of parent/grandparent + direct child considerations/questions/judgements
+    - Headlines for ancestry chain, siblings, subtree, and judgements on each
+    """
+    source: DB | PageGraph = graph if graph is not None else db
+    question = await source.get_page(question_id)
+    if not question:
+        return ScoutContextResult(
+            context_text=f'[Question {question_id} not found]',
+            page_ids=[], structural_page_ids=set(),
+        )
+
+    all_page_ids: list[str] = []
+    structural_ids: set[str] = set()
+    parts: list[str] = []
+
+    parts.append('# Scope Question')
+    parts.append('')
+    parts.append(await format_page(question, PageDetail.CONTENT, db=db, linked_detail=None))
+    parts.append('')
+    all_page_ids.append(question_id)
+    structural_ids.add(question_id)
+
+    ancestry = await _get_ancestry_chain(question_id, source)
+    parent = ancestry[0] if len(ancestry) >= 1 else None
+    grandparent = ancestry[1] if len(ancestry) >= 2 else None
+
+    if parent or grandparent:
+        parts.append('# Parent Context')
+        parts.append('')
+        if parent:
+            parts.append('## Parent Question')
+            parts.append('')
+            parts.append(await format_page(parent, PageDetail.ABSTRACT, db=db, linked_detail=None))
+            parts.append('')
+            all_page_ids.append(parent.id)
+            structural_ids.add(parent.id)
+        if grandparent:
+            parts.append('## Grandparent Question')
+            parts.append('')
+            parts.append(await format_page(grandparent, PageDetail.ABSTRACT, db=db, linked_detail=None))
+            parts.append('')
+            all_page_ids.append(grandparent.id)
+            structural_ids.add(grandparent.id)
+
+    considerations = await source.get_considerations_for_question(question_id)
+    children = await source.get_child_questions(question_id)
+    child_judgements: list[tuple[Page, Page]] = []
+    for child in children:
+        for j in await source.get_judgements_for_question(child.id):
+            child_judgements.append((child, j))
+
+    if considerations or children or child_judgements:
+        parts.append('# Direct Context')
+        parts.append('')
+
+        if considerations:
+            parts.append('## Considerations on Scope Question')
+            parts.append('')
+            for claim, link in considerations:
+                direction = f' ({link.direction.value})' if link.direction else ''
+                parts.append(
+                    f'**[strength {link.strength:.1f}/5{direction}]**'
+                )
+                parts.append(await format_page(claim, PageDetail.ABSTRACT, db=db, linked_detail=None))
+                parts.append('')
+                all_page_ids.append(claim.id)
+                structural_ids.add(claim.id)
+
+        if children:
+            parts.append('## Direct Child Questions')
+            parts.append('')
+            for child in children:
+                parts.append(await format_page(child, PageDetail.ABSTRACT, db=db, linked_detail=None))
+                parts.append('')
+                all_page_ids.append(child.id)
+                structural_ids.add(child.id)
+
+        if child_judgements:
+            parts.append('## Judgements on Child Questions')
+            parts.append('')
+            for child, j in child_judgements:
+                parts.append(
+                    f'*On: {child.headline} (`{child.id[:8]}`)*'
+                )
+                parts.append(await format_page(j, PageDetail.ABSTRACT, db=db, linked_detail=None))
+                parts.append('')
+                all_page_ids.append(j.id)
+                structural_ids.add(j.id)
+
+    headline_lines: list[str] = []
+    headline_ids: list[str] = []
+
+    if ancestry:
+        headline_lines.append('## Ancestry & Siblings')
+        headline_lines.append('')
+        for ancestor in reversed(ancestry):
+            structural_ids.add(ancestor.id)
+            headline_lines.append(await format_page(ancestor, PageDetail.HEADLINE))
+            a_judgements = await source.get_judgements_for_question(ancestor.id)
+            if a_judgements:
+                latest = max(a_judgements, key=lambda j: j.created_at)
+                headline_lines.append(
+                    '  ' + await format_page(latest, PageDetail.HEADLINE)
+                )
+                headline_ids.append(latest.id)
+                structural_ids.add(latest.id)
+            siblings = await source.get_child_questions(ancestor.id)
+            for sib in siblings:
+                if sib.id == question_id or any(a.id == sib.id for a in ancestry):
+                    continue
+                headline_lines.append(
+                    '  ' + await format_page(sib, PageDetail.HEADLINE)
+                )
+                headline_ids.append(sib.id)
+                structural_ids.add(sib.id)
+                sib_judgements = await source.get_judgements_for_question(sib.id)
+                if sib_judgements:
+                    latest = max(sib_judgements, key=lambda j: j.created_at)
+                    headline_lines.append(
+                        '    ' + await format_page(latest, PageDetail.HEADLINE)
+                    )
+                    headline_ids.append(latest.id)
+                    structural_ids.add(latest.id)
+        headline_lines.append('')
+
+    subtree_lines, subtree_ids = await _render_subtree_headlines(
+        question_id, source, db,
+    )
+    if subtree_lines:
+        headline_lines.append('## Scope Subtree')
+        headline_lines.append('')
+        headline_lines.extend(subtree_lines)
+        headline_lines.append('')
+        headline_ids.extend(subtree_ids)
+        structural_ids.update(subtree_ids)
+
+    if headline_lines:
+        parts.append('# Wider Context (Headlines)')
+        parts.append('')
+        parts.extend(headline_lines)
+
+    all_page_ids.extend(headline_ids)
+
+    embedding_result = await build_embedding_based_context(
+        question.headline,
+        db,
+        scope_question_id=question_id,
+        headline_only_ids=structural_ids,
+    )
+    if embedding_result.context_text:
+        parts.append('# Embedding Search Results')
+        parts.append('')
+        parts.append(embedding_result.context_text)
+        parts.append('')
+    all_page_ids.extend(embedding_result.page_ids)
+
+    return ScoutContextResult(
+        context_text='\n'.join(parts),
+        page_ids=all_page_ids,
+        structural_page_ids=structural_ids,
+    )
+
+
 async def render_subtree(
     root_id: str,
     db: DB,
@@ -78,6 +315,7 @@ async def render_subtree(
     graph: PageGraph | None = None,
     detail: PageDetail = PageDetail.CONTENT,
     linked_detail: PageDetail | None = PageDetail.HEADLINE,
+    content_page_ids: set[str] | None = None,
 ) -> str:
     """Render a full subtree of pages starting from a root page.
 
@@ -86,6 +324,9 @@ async def render_subtree(
     question -> considerations, judgements, child questions (recurse).
 
     Non-question root pages are rendered standalone with their outgoing links.
+
+    Pages whose IDs appear in *content_page_ids* are rendered at CONTENT
+    detail regardless of the *detail* parameter.
     """
     if graph is None:
         graph = await PageGraph.load(db)
@@ -94,6 +335,7 @@ async def render_subtree(
     if not root:
         return f'[Page {root_id} not found]'
 
+    _content_ids = content_page_ids or set()
     parts: list[str] = []
     visited: set[str] = set()
 
@@ -103,9 +345,10 @@ async def render_subtree(
             return
         visited.add(question.id)
 
+        q_detail = PageDetail.CONTENT if question.id in _content_ids else detail
         indent = '  ' * depth
         parts.append(
-            indent + await format_page(question, detail, linked_detail=None, graph=graph)
+            indent + await format_page(question, q_detail, linked_detail=None, db=db, graph=graph)
         )
 
         considerations = await graph.get_considerations_for_question(question.id)
@@ -540,11 +783,14 @@ async def build_prioritization_context(
             parts.extend(index_lines)
             parts.append('')
 
+            direct_children = await source.get_child_questions(scope_question_id)
+            full_page_ids = {scope_question_id} | {c.id for c in direct_children}
             subtree_text = await render_subtree(
                 scope_question_id, db,
                 graph=graph,
                 detail=PageDetail.ABSTRACT,
                 linked_detail=PageDetail.ABSTRACT,
+                content_page_ids=full_page_ids,
             )
             parts.append('## Scope Subtree — Detail')
             parts.append('')
@@ -593,31 +839,41 @@ async def build_embedding_based_context(
     *,
     scope_question_id: str | None = None,
     headline_only_ids: set[str] | None = None,
-    context_char_budget: int | None = None,
-    distillation_page_char_fraction: float | None = None,
-    full_page_char_fraction: float | None = None,
-    abstract_page_char_fraction: float | None = None,
-    summary_para_char_fraction: float | None = None,
-    match_threshold: float = 0.01,
+    full_page_char_budget: int | None = None,
+    abstract_page_char_budget: int | None = None,
+    summary_page_char_budget: int | None = None,
+    distillation_page_char_budget: int | None = None,
+    full_page_similarity_floor: float | None = None,
+    abstract_page_similarity_floor: float | None = None,
+    summary_page_similarity_floor: float | None = None,
 ) -> EmbeddingBasedContextResult:
     """Build context by embedding-similarity search over the whole workspace.
 
     Pages are ranked by similarity and placed into tiers by descending detail:
     distillation (CONTENT) -> full (CONTENT) -> abstract (ABSTRACT) -> summary
-    (HEADLINE). Budget parameters default to values from settings when not
-    provided.
+    (HEADLINE). Each tier has its own char budget and similarity floor.
     """
     settings = get_settings()
-    if context_char_budget is None:
-        context_char_budget = settings.context_char_budget
-    if distillation_page_char_fraction is None:
-        distillation_page_char_fraction = settings.distillation_page_char_fraction
-    if full_page_char_fraction is None:
-        full_page_char_fraction = settings.full_page_char_fraction
-    if abstract_page_char_fraction is None:
-        abstract_page_char_fraction = settings.abstract_page_char_fraction
-    if summary_para_char_fraction is None:
-        summary_para_char_fraction = settings.summary_page_char_fraction
+    if full_page_char_budget is None:
+        full_page_char_budget = settings.full_page_char_budget
+    if abstract_page_char_budget is None:
+        abstract_page_char_budget = settings.abstract_page_char_budget
+    if summary_page_char_budget is None:
+        summary_page_char_budget = settings.summary_page_char_budget
+    if distillation_page_char_budget is None:
+        distillation_page_char_budget = settings.distillation_page_char_budget
+    if full_page_similarity_floor is None:
+        full_page_similarity_floor = settings.full_page_similarity_floor
+    if abstract_page_similarity_floor is None:
+        abstract_page_similarity_floor = settings.abstract_page_similarity_floor
+    if summary_page_similarity_floor is None:
+        summary_page_similarity_floor = settings.summary_page_similarity_floor
+
+    match_threshold = min(
+        full_page_similarity_floor,
+        abstract_page_similarity_floor,
+        summary_page_similarity_floor,
+    )
     query_embedding = await embed_query(question_text)
     ranked = await search_pages_by_vector(
         db,
@@ -640,10 +896,10 @@ async def build_embedding_based_context(
             scope_page_ids = [scope_question_id]
             ranked = [(p, s) for p, s in ranked if p.id != scope_question_id]
 
-    distillation_budget = int(context_char_budget * distillation_page_char_fraction)
-    full_budget = int(context_char_budget * full_page_char_fraction)
-    abstract_budget = int(context_char_budget * abstract_page_char_fraction)
-    summary_budget = int(context_char_budget * summary_para_char_fraction)
+    distillation_budget = distillation_page_char_budget
+    full_budget = full_page_char_budget
+    abstract_budget = abstract_page_char_budget
+    summary_budget = summary_page_char_budget
 
     distillation_pages = _filter_summary_pages(ranked)
     distillation_ids: list[str] = []
@@ -678,13 +934,13 @@ async def build_embedding_based_context(
             summary_chars += len(formatted)
             continue
 
-    for page, _sim in ranked:
+    for page, sim in ranked:
         if page.id in distillation_page_id_set:
             continue
         if page.id in _headline_only:
             continue
 
-        if full_chars < full_budget:
+        if sim >= full_page_similarity_floor and full_chars < full_budget:
             formatted = await format_page(page, PageDetail.CONTENT, db=db, linked_detail=None)
             if full_chars + len(formatted) <= full_budget:
                 full_parts.append(formatted)
@@ -692,7 +948,7 @@ async def build_embedding_based_context(
                 full_chars += len(formatted)
                 continue
 
-        if abstract_chars < abstract_budget:
+        if sim >= abstract_page_similarity_floor and abstract_chars < abstract_budget:
             formatted = await format_page(page, PageDetail.ABSTRACT, linked_detail=None)
             if abstract_chars + len(formatted) <= abstract_budget:
                 abstract_parts.append(formatted)
@@ -700,7 +956,7 @@ async def build_embedding_based_context(
                 abstract_chars += len(formatted)
                 continue
 
-        if summary_chars < summary_budget:
+        if sim >= summary_page_similarity_floor and summary_chars < summary_budget:
             formatted = await format_page(page, PageDetail.HEADLINE, linked_detail=None)
             if summary_chars + len(formatted) <= summary_budget:
                 summary_parts.append(formatted)
@@ -708,7 +964,8 @@ async def build_embedding_based_context(
                 summary_chars += len(formatted)
                 continue
 
-        break
+        if sim < summary_page_similarity_floor:
+            break
 
     sections: list[str] = []
     if scope_section:

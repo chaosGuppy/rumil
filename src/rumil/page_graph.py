@@ -107,6 +107,15 @@ class PageGraph:
                 result.append(page)
         return result
 
+    async def get_parent_question(self, question_id: str) -> Page | None:
+        """Return the parent question, or None if this is a root question."""
+        for link in self._links_to.get(question_id, []):
+            if link.link_type == LinkType.CHILD_QUESTION:
+                page = self._pages.get(link.from_page_id)
+                if page and page.is_active():
+                    return page
+        return None
+
     async def get_child_questions(self, parent_id: str) -> list[Page]:
         links = self._links_from.get(parent_id, [])
         result = []

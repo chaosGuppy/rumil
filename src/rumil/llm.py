@@ -564,7 +564,7 @@ async def _structured_call_parse(
             if response.parsed_output is not None:
                 log.debug(
                     'structured_call success: %s, usage=%d/%d tokens',
-                    response_model.__name__,
+                    response_model.__name__ if response_model else 'unknown',
                     response.usage.input_tokens,
                     response.usage.output_tokens,
                 )

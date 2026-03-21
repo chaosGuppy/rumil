@@ -987,6 +987,28 @@
               }
             ],
             "title": "Completed At"
+          },
+          "sequence_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sequence Id"
+          },
+          "sequence_position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sequence Position"
           }
         },
         "type": "object",
@@ -1005,9 +1027,37 @@
           "review_json",
           "call_params",
           "created_at",
-          "completed_at"
+          "completed_at",
+          "sequence_id",
+          "sequence_position"
         ],
         "title": "Call"
+      },
+      "CallSequenceOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "position_in_batch": {
+            "type": "integer",
+            "title": "Position In Batch"
+          },
+          "calls": {
+            "items": {
+              "$ref": "#/components/schemas/CallTraceOut"
+            },
+            "type": "array",
+            "title": "Calls"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "position_in_batch",
+          "calls"
+        ],
+        "title": "CallSequenceOut"
       },
       "CallStatus": {
         "type": "string",
@@ -1090,6 +1140,20 @@
             },
             "type": "array",
             "title": "Children"
+          },
+          "sequences": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/CallSequenceOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sequences"
           },
           "cost_usd": {
             "anyOf": [

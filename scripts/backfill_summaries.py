@@ -11,6 +11,7 @@ import logging
 import uuid
 
 import anthropic
+from anthropic.types import TextBlock
 from dotenv import load_dotenv
 
 from rumil.database import DB
@@ -62,7 +63,7 @@ def _parse_response(text: str) -> tuple[str, str]:
 
 async def _fetch_all_needing_summaries(db: DB) -> list[dict]:
     """Paginate past the PostgREST 1000-row limit."""
-    all_rows: list[dict] = []
+    all_rows: list = []
     offset = 0
     while True:
         rows = (
@@ -101,11 +102,16 @@ async def _process_page(
                 system=SYSTEM,
                 messages=[{"role": "user", "content": prompt}],
             )
-            short, medium = _parse_response(response.content[0].text.strip())
+            block = response.content[0]
+            if not isinstance(block, TextBlock):
+                log.warning("[%d/%d] Non-text response for %s", idx, total, page_id[:8])
+                counters["failed"] += 1
+                return
+            short, medium = _parse_response(block.text.strip())
             if not short or not medium:
                 log.warning(
                     "[%d/%d] Parse failed for %s — raw: %s",
-                    idx, total, page_id[:8], response.content[0].text[:120],
+                    idx, total, page_id[:8], block.text[:120],
                 )
                 counters["failed"] += 1
                 return

@@ -1,10 +1,10 @@
 ## What This Is
 
-An LLM-powered research workspace. Users pose questions, and the system recursively investigates them by making structured LLM calls (find_considerations, assess, prioritize, ingest) that produce "pages" (claims, questions, judgements, concepts) stored in a Supabase (Postgres) database. Pages link together into a research tree with considerations bearing on questions.
+An LLM-powered research workspace. Users pose questions, and the system investigates them by making structured LLM calls (find_considerations, assess, prioritize, ingest) that produce "pages" (claims, questions, judgements, concepts). Pages link together into a research graph with considerations bearing on questions. The codebase is optimised for experimentation, containing multiple implementations of pluggable abstractions, rather than being a monolithic application where there's only one way of achieving things.
 
 ## Running
 
-Requires `ANTHROPIC_API_KEY` in environment. Uses `anthropic` Python SDK and `claude-opus-4-6`. Environment managed with `uv`. Data is stored in Supabase — local by default, or production with `--prod`.
+Environment managed with `uv`.
 
 ```bash
 # New investigation
@@ -13,20 +13,8 @@ uv run python main.py "Your question here" --budget 20
 # Use production database (any command)
 uv run python main.py --prod "Your question here" --budget 20
 
-# Continue existing question
-uv run python main.py --continue QUESTION_ID --budget 10
-
-# Ingest a source document
-uv run python main.py --ingest FILE --for-question QUESTION_ID --budget 5
-
 # List questions
 uv run python main.py --list
-
-# Interactive chat about research
-uv run python main.py --chat QUESTION_ID
-
-# Generate HTML research map
-uv run python main.py --map QUESTION_ID
 
 # Generate executive summary
 uv run python main.py --summary QUESTION_ID
@@ -43,20 +31,20 @@ uv run python main.py "Your question here" --workspace test-scratch --smoke-test
 
 `--smoke-test` caps agent loop rounds at 2 per call, making runs fast and cheap. Use it for development and manual testing. When running smoke tests, don't override `--budget` unless there's a good reason to.
 
-Tests: `uv run pytest`. Optional dependency: `pypdf` for PDF ingestion (`uv sync --extra pdf`).
+Tests: `uv run pytest`.
 
-**Database:** Runs against local Supabase by default (`supabase start`). Pass `--prod` to any command to target production. Production requires `SUPABASE_PROD_URL` and `SUPABASE_PROD_KEY` (service_role) in `.env`. Migrations live in `supabase/migrations/` and are pushed to prod with `supabase db push`.
+**Database:** Runs against local Supabase by default (`supabase start`). Pass `--prod` to any command to target production. Migrations live in `supabase/migrations/` and are pushed to prod with `supabase db push`.
 Always use the supabase cli to create new migrations: `supabase migration new`.
 
 ## Architecture
 
 **Entry point:** `main.py` — CLI arg parsing, dispatches to command functions.
 
-**Single-call runner** (`scripts/run_call.py`): Runs one call type (find-considerations/assess/prioritize) against the local database. Supports `--workspace`, `--smoke-test`, `--ab` (A/B testing with `.a.env`/`.b.env`), `--name`, and `--up-to-stage` (truncate the call lifecycle after `build_context` or `create_pages`). Runs are recorded in the `runs` table with captured config.
+**Single-call runner** (`scripts/run_call.py`): Runs one call type against the local database. Supports `--workspace`, `--smoke-test`, `--ab` (A/B testing with `.a.env`/`.b.env`), `--name`, and `--up-to-stage` (truncate the call lifecycle after `build_context` or `create_pages`). Runs are recorded in the `runs` table with captured config.
 
 **Package:** `src/rumil/` — installed as `rumil` via hatch/uv. Uses src layout. Always use absolute imports (e.g. `from rumil.database import DB`).
 
-**Core loop** (`src/rumil/orchestrator.py`): `Orchestrator.run()` → `investigate_question()` recursively. Runs a free prioritization call to plan budget allocation, then dispatches find_considerations/assess/sub-prioritization calls via call variant registries. Budget is a global counter in the DB; each find_considerations/assess/ingest call costs 1 unit. Prioritization and closing reviews are free.
+**Orchestrators** (`src/rumil/orchestrator.py`): Orchestrators determine the sequence of calls to dispatch. Each represents a different way of prioritizing and executing research. 
 
 **Call types** (`src/rumil/calls/`): Polymorphic class hierarchy using a template method pattern. `BaseCall` defines `run()` which orchestrates three abstract phases: `build_context()`, `create_pages()`, `closing_review()`. Each call type lives in its own module (`scout.py` for find_considerations, `assess.py`, `prioritization.py`, `ingest.py`). `common.py` has shared utilities (`run_agent_loop()`, `run_single_call()`, closing reviews, dispatch tool). Public API re-exported from `__init__.py`.
 
@@ -68,9 +56,9 @@ Class hierarchy:
 - Embedding variants (`EmbeddingAssessCall`, `EmbeddingIngestCall`, `EmbeddingScoutCall`) — subclass the above, override `build_context()` to use `build_embedding_based_context()` as the sole context source. `EmbeddingScoutCall` also skips `link_new_pages()` and the link review phase in closing (overrides `run_session_review()` to go straight to `_self_assessment()`).
 
 The three phases:
-1. **build_context** (free): Assemble `self.context_text` from workspace map + working context. Optionally run `_load_phase1_pages()` (free LLM call with only `load_page` tool) to preload pages into context. Record `ContextBuiltEvent`.
-2. **create_pages** (costs budget): Main agent loop with move tools. `SimpleCall` runs one `run_agent_loop` pass. `ScoutCall` (find_considerations) runs multiple rounds with fruit checking between them, resuming the conversation across rounds.
-3. **closing_review** (free): Self-assessment producing `remaining_fruit` (0-10) — the orchestrator uses this to decide when to stop finding considerations. Also produces `confidence_in_output`, `context_was_adequate`, and `page_ratings`.
+1. **build_context**
+2. **create_pages**
+3. **closing_review**
 
 To add a new call type: subclass `SimpleCall` (for single-pass calls) or `BaseCall` (for custom loop logic). Implement `build_context()`, `call_type()`, `task_description()`, `result_summary()`. Register the class in the appropriate registry in `call_registry.py` and export from `__init__.py`.
 
@@ -84,7 +72,7 @@ To add a new call type: subclass `SimpleCall` (for single-pass calls) or `BaseCa
 
 **Data layer** (`src/rumil/database.py`): Supabase (Postgres) via the `supabase` Python SDK. Tables: pages, page_links, calls, budget, page_ratings, page_flags. `DB.create(run_id, prod=True)` classmethod handles connection setup (delegated to `settings.py`); defaults to local Supabase. Several operations use Postgres RPC functions defined in the migrations.
 
-**Data models** (`src/rumil/models.py`): Pydantic BaseModels for Page, PageLink, Call, Project. Used directly as both internal models and FastAPI response types (no separate `*Out` duplicates). Fields with defaults use `_all_fields_required` schema helper so they appear required in the OpenAPI spec. Key enums: PageType (source/claim/question/judgement/concept/wiki), CallType (find_considerations/assess/prioritization/ingest/reframe/maintain), CallStage (build_context/create_pages/closing_review), LinkType (consideration/child_question/supersedes/related), ConsiderationDirection (supports/opposes/neutral), MoveType (the full set of moves the LLM can emit). MoveType is the source of truth for valid moves — the moves registry maps each to its `MoveDef`. `DISPATCHABLE_CALL_TYPES` defines which `CallType`s prioritization can dispatch (find_considerations/assess/prioritization) — the dispatch tool validates against it and the orchestrator dispatches on `CallType` enum values.
+**Data models** (`src/rumil/models.py`): Pydantic BaseModels for Page, PageLink, Call, Project. Used directly as both internal models and FastAPI response types (no separate `*Out` duplicates). Fields with defaults use `_all_fields_required` schema helper so they appear required in the OpenAPI spec. Key enums: PageType, CallType, CallStage, LinkType, ConsiderationDirection, MoveType. MoveType is the source of truth for valid moves — the moves registry maps each to its `MoveDef`. `DISPATCHABLE_CALL_TYPES` defines which `CallType`s prioritization can dispatch (find_considerations/assess/prioritization) — the dispatch tool validates against it and the orchestrator dispatches on `CallType` enum values.
 
 **Context building** (`src/rumil/context.py`): Assembles LLM context from DB state. `build_call_context()` prepends a compact workspace map (from `src/rumil/workspace_map.py`) then detailed working context for the target question. `build_prioritization_context()` includes a question index with dispatchable IDs. `build_embedding_based_context()` uses vector similarity search (`embed_query` + `search_pages_by_vector`) to surface the most relevant pages from the entire workspace regardless of graph distance, filling a full-page tier then a summary tier within configurable char budgets (settings: `context_char_budget`, `full_page_char_fraction`, `summary_page_char_fraction`, `distillation_page_char_fraction`).
 
@@ -92,12 +80,7 @@ To add a new call type: subclass `SimpleCall` (for single-pass calls) or `BaseCa
 
 **API** (`src/rumil/api/`): FastAPI read-only API for the frontend. Core models from `models.py` are used directly as response types. `schemas.py` defines composite response types (e.g. `CallTraceOut`) and trace event envelope types. `app.py` defines endpoints. Run with `uv run uvicorn rumil.api.app:app --reload`.
 
-**Frontend** (`frontend/`): Next.js TypeScript app with Tailwind. Uses pnpm. Run with `cd frontend && pnpm dev`. TypeScript types in `frontend/src/api/` are auto-generated from the API's OpenAPI schema — **never create or edit these files by hand**. When API schemas change, regenerate with `./scripts/generate-api-types.sh` (or `cd frontend && pnpm generate-api`). This is the only mechanism for sharing types between backend and frontend; do not manually duplicate type definitions.
-
-**Outputs:**
-- `pages/research/` — markdown files per page
-- `pages/maps/` — HTML research maps
-- `pages/summaries/` — generated summaries
+**Frontend** (`frontend/`): Next.js TypeScript app with Tailwind. Uses pnpm. Run with `cd frontend && pnpm dev`. TypeScript types in `frontend/src/api/` are auto-generated from the API's OpenAPI schema — **never create or edit these files by hand**. When API schemas change, theese need to be regenerated with `./scripts/generate-api-types.sh` (or `cd frontend && pnpm generate-api`). This is the only mechanism for sharing types between backend and frontend; do not manually duplicate type definitions. When `schemas.py` or `models.py` is edited, `./scripts/generate-api-types.sh` is automaticaly run via a hook.
 
 ## Key Conventions
 
@@ -105,17 +88,23 @@ To add a new call type: subclass `SimpleCall` (for single-pass calls) or `BaseCa
 - **Never run `supabase db reset`** — this wipes the database and is destructive. To apply pending migrations, use `supabase migration up` instead. If you find yourself wanting to reset the database, stop and ask the user first.
 - Always scope your test runs to a temp/scratch workspace, e.g. `uv run main.py "Is the sky blue?" --workspace skyblue-scratch`
 
-- Epistemic status is a 0-5 float (subjective confidence), always paired with an epistemic_type string
-- Consideration strength is 0-5 (relevance to question)
-- Page summaries must be 10-15 words, self-contained headlines
-- Short IDs are first 8 chars of UUID, used in workspace maps and display
 - Always use absolute imports: `from rumil.module import name` (no relative imports)
 - Always put imports at the top of the file, not inside functions
 - Use modern type syntax: `X | None` not `Optional[X]`, `list[str]` not `List[str]`, etc. No `from typing import Optional, List, Dict`.
 - Prefer `Sequence` over `list` in type hints for parameters and return types. Only use `list` where mutation (e.g. `.append()`) is actually needed.
-- Pages are immutable once written (squidgy layer); updates use SUPERSEDE_PAGE to create a new version pointing back to the old one
 - Multiline strings use parenthesized concatenation of single-quoted lines (`"line 1 " "line 2"`), not triple-quoted strings (`"""`). Only use `f""` on lines that actually contain `{placeholder}` expressions.
 - Do not add section divider comments (e.g. `# ----------` banners). Use blank lines between logical sections; the code should speak for itself.
 - When adding new user-facing CLI flags or commands to `main.py`, always update `README.md` with corresponding documentation.
+
+## Hooks
+
+PostToolUse hooks in `.claude/settings.json` run automatically after file edits. Do not manually invoke these — they fire on every Edit/Write/MultiEdit:
+
+- **Python lint+format:** `ruff check --fix` and `ruff format` on edited `.py` files.
+- **Python type-check:** `uv run pyright` (project-wide) on any `.py` edit.
+- **TypeScript type-check:** `npx tsc --noEmit` in `frontend/` on any `.ts`/`.tsx` edit.
+- **Frontend type regeneration:** `./scripts/generate-api-types.sh` when `schemas.py` or `models.py` is edited. Do not manually run the type generation script after editing these files — the hook handles it.
+
+## User Interaction
 
 Whenever you run a script that prints a trace url, please report that trace url to the user immediately so they can follow along.

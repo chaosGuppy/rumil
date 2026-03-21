@@ -188,6 +188,8 @@ async def find_considerations_until_done(
     broadcaster=None,
     force: bool = False,
     call_id: str | None = None,
+    sequence_id: str | None = None,
+    sequence_position: int | None = None,
 ) -> tuple[int, list[str]]:
     """Run a cache-aware find-considerations session.
 
@@ -216,6 +218,8 @@ async def find_considerations_until_done(
         parent_call_id=parent_call_id,
         context_page_ids=context_page_ids,
         call_id=call_id,
+        sequence_id=sequence_id,
+        sequence_position=sequence_position,
     )
 
     cls = FIND_CONSIDERATIONS_CALL_CLASSES[get_settings().find_considerations_call_variant]
@@ -301,6 +305,8 @@ async def assess_question(
     broadcaster=None,
     force: bool = False,
     call_id: str | None = None,
+    sequence_id: str | None = None,
+    sequence_position: int | None = None,
 ) -> str | None:
     """Run one Assess call on a question. Returns call ID, or None if no budget."""
     log.info("assess_question: question=%s", question_id[:8])
@@ -315,6 +321,8 @@ async def assess_question(
         parent_call_id=parent_call_id,
         context_page_ids=context_page_ids,
         call_id=call_id,
+        sequence_id=sequence_id,
+        sequence_position=sequence_position,
     )
     cls = ASSESS_CALL_CLASSES[get_settings().assess_call_variant]
     assess = cls(question_id, call, db, broadcaster=broadcaster)
@@ -456,6 +464,8 @@ async def web_research_question(
     broadcaster=None,
     force: bool = False,
     call_id: str | None = None,
+    sequence_id: str | None = None,
+    sequence_position: int | None = None,
 ) -> str | None:
     """Run one web research call on a question. Returns call ID, or None if no budget."""
     log.info('web_research_question: question=%s', question_id[:8])
@@ -467,6 +477,8 @@ async def web_research_question(
         scope_page_id=question_id,
         parent_call_id=parent_call_id,
         call_id=call_id,
+        sequence_id=sequence_id,
+        sequence_position=sequence_position,
     )
     cls = WEB_RESEARCH_CALL_CLASSES[get_settings().web_research_call_variant]
     web_research = cls(
@@ -518,6 +530,8 @@ class BaseOrchestrator(ABC):
         parent_call_id: str | None,
         force: bool = False,
         call_id: str | None = None,
+        sequence_id: str | None = None,
+        sequence_position: int | None = None,
     ) -> str | None:
         """Run a simple (single-pass) call dispatch. Consumes 1 budget."""
         if not await _consume_budget(self.db, force=force):
@@ -528,6 +542,8 @@ class BaseOrchestrator(ABC):
             scope_page_id=question_id,
             parent_call_id=parent_call_id,
             call_id=call_id,
+            sequence_id=sequence_id,
+            sequence_position=sequence_position,
         )
         cls = registry['default']
         instance = cls(question_id, call, self.db, broadcaster=self.broadcaster)
@@ -541,6 +557,7 @@ class BaseOrchestrator(ABC):
         parent_call_id: str | None,
         trace: CallTrace | None,
         base_index: int,
+        position_in_batch: int = 0,
     ) -> bool:
         """Run dispatches in a sequence sequentially. Returns True if any executed.
 
@@ -552,6 +569,16 @@ class BaseOrchestrator(ABC):
         can be recorded before execution begins, making dispatch links
         clickable in the trace frontend immediately.
         """
+        is_multi_step = len(sequence) > 1
+        seq_id: str | None = None
+        if is_multi_step:
+            call_sequence = await self.db.create_call_sequence(
+                parent_call_id=parent_call_id,
+                scope_question_id=scope_question_id,
+                position_in_batch=position_in_batch,
+            )
+            seq_id = call_sequence.id
+
         pre_ids = [str(uuid.uuid4()) for _ in sequence]
         resolves = []
         headlines = []
@@ -578,6 +605,7 @@ class BaseOrchestrator(ABC):
             await self._execute_dispatch(
                 dispatch, scope_question_id, parent_call_id,
                 force=force, call_id=pre_ids[i],
+                sequence_id=seq_id, sequence_position=i if is_multi_step else None,
             )
             executed = True
         return executed
@@ -590,6 +618,8 @@ class BaseOrchestrator(ABC):
         *,
         force: bool = False,
         call_id: str | None = None,
+        sequence_id: str | None = None,
+        sequence_position: int | None = None,
     ) -> tuple[str, str | None]:
         """Execute a single dispatch.
 
@@ -630,6 +660,8 @@ class BaseOrchestrator(ABC):
                 broadcaster=self.broadcaster,
                 force=force,
                 call_id=call_id,
+                sequence_id=sequence_id,
+                sequence_position=sequence_position,
             )
             child_call_id = child_ids[0] if child_ids else None
 
@@ -643,6 +675,8 @@ class BaseOrchestrator(ABC):
                 broadcaster=self.broadcaster,
                 force=force,
                 call_id=call_id,
+                sequence_id=sequence_id,
+                sequence_position=sequence_position,
             )
 
         elif isinstance(p, ScoutSubquestionsDispatchPayload):
@@ -651,6 +685,7 @@ class BaseOrchestrator(ABC):
                 resolved, CallType.SCOUT_SUBQUESTIONS,
                 SCOUT_SUBQUESTIONS_CALL_CLASSES, parent_call_id,
                 force=force, call_id=call_id,
+                sequence_id=sequence_id, sequence_position=sequence_position,
             )
 
         elif isinstance(p, ScoutEstimatesDispatchPayload):
@@ -659,6 +694,7 @@ class BaseOrchestrator(ABC):
                 resolved, CallType.SCOUT_ESTIMATES,
                 SCOUT_ESTIMATES_CALL_CLASSES, parent_call_id,
                 force=force, call_id=call_id,
+                sequence_id=sequence_id, sequence_position=sequence_position,
             )
 
         elif isinstance(p, ScoutHypothesesDispatchPayload):
@@ -667,6 +703,7 @@ class BaseOrchestrator(ABC):
                 resolved, CallType.SCOUT_HYPOTHESES,
                 SCOUT_HYPOTHESES_CALL_CLASSES, parent_call_id,
                 force=force, call_id=call_id,
+                sequence_id=sequence_id, sequence_position=sequence_position,
             )
 
         elif isinstance(p, ScoutAnalogiesDispatchPayload):
@@ -675,6 +712,7 @@ class BaseOrchestrator(ABC):
                 resolved, CallType.SCOUT_ANALOGIES,
                 SCOUT_ANALOGIES_CALL_CLASSES, parent_call_id,
                 force=force, call_id=call_id,
+                sequence_id=sequence_id, sequence_position=sequence_position,
             )
 
         elif isinstance(p, ScoutParadigmCasesDispatchPayload):
@@ -683,6 +721,7 @@ class BaseOrchestrator(ABC):
                 resolved, CallType.SCOUT_PARADIGM_CASES,
                 SCOUT_PARADIGM_CASES_CALL_CLASSES, parent_call_id,
                 force=force, call_id=call_id,
+                sequence_id=sequence_id, sequence_position=sequence_position,
             )
 
         elif isinstance(p, ScoutFactsToCheckDispatchPayload):
@@ -691,6 +730,7 @@ class BaseOrchestrator(ABC):
                 resolved, CallType.SCOUT_FACTS_TO_CHECK,
                 SCOUT_FACTS_TO_CHECK_CALL_CLASSES, parent_call_id,
                 force=force, call_id=call_id,
+                sequence_id=sequence_id, sequence_position=sequence_position,
             )
 
         elif isinstance(p, WebResearchDispatchPayload):
@@ -701,6 +741,8 @@ class BaseOrchestrator(ABC):
                 broadcaster=self.broadcaster,
                 force=force,
                 call_id=call_id,
+                sequence_id=sequence_id,
+                sequence_position=sequence_position,
             )
 
         return resolved, child_call_id
@@ -715,10 +757,11 @@ class BaseOrchestrator(ABC):
         """Run multiple dispatch sequences concurrently. Returns True if any executed."""
         base_index = 0
         tasks = []
-        for seq in sequences:
+        for batch_pos, seq in enumerate(sequences):
             tasks.append(self._run_dispatch_sequence(
                 seq, scope_question_id, call_id,
                 trace, base_index,
+                position_in_batch=batch_pos,
             ))
             base_index += len(seq)
 
@@ -1031,9 +1074,11 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         parent_call_id: str | None,
         trace: CallTrace | None,
         base_index: int,
+        position_in_batch: int = 0,
     ) -> bool:
         result = await super()._run_dispatch_sequence(
             sequence, scope_question_id, parent_call_id, trace, base_index,
+            position_in_batch=position_in_batch,
         )
         if result:
             self._consumed += len(sequence)

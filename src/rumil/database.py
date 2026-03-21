@@ -4,6 +4,7 @@ Supabase database layer for the research workspace.
 
 import logging
 import uuid
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from typing import Any, cast
 
@@ -14,6 +15,7 @@ from supabase.lib.client_options import AsyncClientOptions
 from rumil.settings import get_settings
 from rumil.models import (
     Call,
+    CallSequence,
     CallStatus,
     CallType,
     ConsiderationDirection,
@@ -103,6 +105,19 @@ def _row_to_call(row: dict[str, Any]) -> Call:
         completed_at=(
             datetime.fromisoformat(row["completed_at"]) if row["completed_at"] else None
         ),
+        sequence_id=row.get("sequence_id"),
+        sequence_position=row.get("sequence_position"),
+    )
+
+
+def _row_to_call_sequence(row: dict[str, Any]) -> CallSequence:
+    return CallSequence(
+        id=row["id"],
+        parent_call_id=row.get("parent_call_id"),
+        run_id=row.get("run_id", ""),
+        scope_question_id=row.get("scope_question_id"),
+        position_in_batch=row.get("position_in_batch", 0),
+        created_at=datetime.fromisoformat(row["created_at"]),
     )
 
 
@@ -460,6 +475,8 @@ class DB:
         workspace: Workspace = Workspace.RESEARCH,
         context_page_ids: list | None = None,
         call_id: str | None = None,
+        sequence_id: str | None = None,
+        sequence_position: int | None = None,
     ) -> Call:
         log.debug(
             "create_call: type=%s, scope=%s, parent=%s, budget=%s",
@@ -476,6 +493,8 @@ class DB:
             budget_allocated=budget_allocated,
             status=CallStatus.PENDING,
             context_page_ids=context_page_ids or [],
+            sequence_id=sequence_id,
+            sequence_position=sequence_position,
         )
         if call_id is not None:
             call.id = call_id
@@ -505,6 +524,8 @@ class DB:
                     call.completed_at.isoformat() if call.completed_at else None
                 ),
                 "run_id": self.run_id,
+                "sequence_id": call.sequence_id,
+                "sequence_position": call.sequence_position,
             }
         ).execute()
 
@@ -690,6 +711,56 @@ class DB:
             .select("*")
             .eq("parent_call_id", parent_call_id)
             .order("created_at")
+            .execute()
+        )
+        return [_row_to_call(r) for r in rows]
+
+    async def create_call_sequence(
+        self,
+        parent_call_id: str | None,
+        scope_question_id: str | None,
+        position_in_batch: int = 0,
+    ) -> CallSequence:
+        seq = CallSequence(
+            parent_call_id=parent_call_id,
+            run_id=self.run_id,
+            scope_question_id=scope_question_id,
+            position_in_batch=position_in_batch,
+        )
+        await self.client.table("call_sequences").insert(
+            {
+                "id": seq.id,
+                "parent_call_id": seq.parent_call_id,
+                "run_id": seq.run_id,
+                "scope_question_id": seq.scope_question_id,
+                "position_in_batch": seq.position_in_batch,
+                "created_at": seq.created_at.isoformat(),
+            }
+        ).execute()
+        return seq
+
+    async def get_sequences_for_call(
+        self, parent_call_id: str,
+    ) -> Sequence[CallSequence]:
+        """Fetch sequences for a parent call, ordered by position_in_batch."""
+        rows = _rows(
+            await self.client.table("call_sequences")
+            .select("*")
+            .eq("parent_call_id", parent_call_id)
+            .order("position_in_batch")
+            .execute()
+        )
+        return [_row_to_call_sequence(r) for r in rows]
+
+    async def get_calls_for_sequence(
+        self, sequence_id: str,
+    ) -> Sequence[Call]:
+        """Fetch calls in a sequence, ordered by sequence_position."""
+        rows = _rows(
+            await self.client.table("calls")
+            .select("*")
+            .eq("sequence_id", sequence_id)
+            .order("sequence_position")
             .execute()
         )
         return [_row_to_call(r) for r in rows]
@@ -1043,7 +1114,16 @@ class DB:
         await self.client.table("call_llm_exchanges").delete().eq(
             "run_id", self.run_id
         ).execute()
-        for table in ["page_flags", "page_ratings", "page_links", "calls", "pages"]:
+        for table in ["page_flags", "page_ratings", "page_links"]:
+            await self.client.table(table).delete().eq("run_id", self.run_id).execute()
+        # Null out sequence_id FK before deleting sequences and calls
+        await self.client.table("calls").update(
+            {"sequence_id": None}
+        ).eq("run_id", self.run_id).execute()
+        await self.client.table("call_sequences").delete().eq(
+            "run_id", self.run_id
+        ).execute()
+        for table in ["calls", "pages"]:
             await self.client.table(table).delete().eq("run_id", self.run_id).execute()
         await self.client.table("budget").delete().eq("run_id", self.run_id).execute()
         await self.client.table("runs").delete().eq("id", self.run_id).execute()

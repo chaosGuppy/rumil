@@ -27,8 +27,12 @@ async def execute(payload: SupersedePagePayload, call: Call, db: DB) -> MoveResu
         return MoveResult(f"Supersede skipped — page {old_id} not found.")
 
     result = await create_page(payload, call, db, old_page.page_type, old_page.layer)
-    await db.supersede_page(old_id, result.created_page_id)
-    log.info("Superseded %s -> %s", old_id[:8], result.created_page_id[:8])
+    new_id = result.created_page_id
+    if not new_id:
+        log.warning("SUPERSEDE_PAGE: create_page returned no page ID")
+        return MoveResult("Supersede failed — no page created.")
+    await db.supersede_page(old_id, new_id)
+    log.info("Superseded %s -> %s", old_id[:8], new_id[:8])
     return result
 
 

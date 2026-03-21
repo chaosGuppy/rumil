@@ -641,6 +641,47 @@
   margin-top: 12px;
 }
 
+/* Sequences */
+
+.trace-sequences {
+  margin-top: 12px;
+}
+
+.trace-sequences-multi {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+}
+
+.trace-sequences-multi > .trace-sequence-lane {
+  flex: 1;
+  min-width: 280px;
+}
+
+.trace-sequence-lane {
+  border-left: 2px solid #d0d0d0;
+  padding-left: 8px;
+}
+
+.trace-sequence-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.trace-sequence-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.trace-sequence-meta {
+  font-size: 10px;
+  opacity: 0.5;
+}
+
 /* LLM Exchanges */
 
 .trace-exchanges-container {

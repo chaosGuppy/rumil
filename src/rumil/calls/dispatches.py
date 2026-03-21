@@ -12,6 +12,7 @@ from rumil.models import (
     Dispatch,
     PrioritizationDispatchPayload,
     RecurseDispatchPayload,
+    ScopeOnlyDispatchPayload,
     ScoutAnalogiesDispatchPayload,
     ScoutDispatchPayload,
     ScoutParadigmCasesDispatchPayload,
@@ -42,18 +43,23 @@ class DispatchDef(Generic[S]):
         state: MoveState,
         subtree_ids: set[str] | None = None,
         short_id_map: dict[str, str] | None = None,
+        scope_question_id: str | None = None,
     ) -> Tool:
         """Return a Tool bound to a call's mutable state."""
 
         async def fn(inp: dict) -> str:
             validated = self.schema(**inp)
 
+            if isinstance(validated, ScopeOnlyDispatchPayload) and scope_question_id:
+                validated.question_id = scope_question_id
+
             state.dispatches.append(
                 Dispatch(call_type=self.call_type, payload=validated)
             )
             log.debug(
                 "Dispatch recorded: type=%s, question=%s",
-                self.call_type.value, inp.get("question_id", "?")[:8],
+                self.call_type.value,
+                getattr(validated, 'question_id', '?')[:8],
             )
             return "Dispatch recorded."
 
@@ -100,7 +106,8 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
         name="dispatch_scout_subquestions",
         description=(
             "Dispatch a specialized scout that identifies informative subquestions "
-            "for a question. Budget cost: exactly 1."
+            "for the scope question. Always targets the scope question. "
+            "Budget cost: exactly 1."
         ),
         schema=ScoutSubquestionsDispatchPayload,
     ),
@@ -109,7 +116,8 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
         name="dispatch_scout_estimates",
         description=(
             "Dispatch a specialized scout that generates quantitative estimates "
-            "bearing on a question. Budget cost: exactly 1."
+            "bearing on the scope question. Always targets the scope question. "
+            "Budget cost: exactly 1."
         ),
         schema=ScoutEstimatesDispatchPayload,
     ),
@@ -118,7 +126,8 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
         name="dispatch_scout_hypotheses",
         description=(
             "Dispatch a specialized scout that proposes competing hypotheses "
-            "for a question. Budget cost: exactly 1."
+            "for the scope question. Always targets the scope question. "
+            "Budget cost: exactly 1."
         ),
         schema=ScoutHypothesesDispatchPayload,
     ),
@@ -127,7 +136,8 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
         name="dispatch_scout_analogies",
         description=(
             "Dispatch a specialized scout that finds illuminating analogies "
-            "for a question. Budget cost: exactly 1."
+            "for the scope question. Always targets the scope question. "
+            "Budget cost: exactly 1."
         ),
         schema=ScoutAnalogiesDispatchPayload,
     ),
@@ -136,7 +146,8 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
         name="dispatch_scout_paradigm_cases",
         description=(
             "Dispatch a specialized scout that identifies concrete paradigm "
-            "cases illuminating a question. Budget cost: exactly 1."
+            "cases illuminating the scope question. Always targets the scope question. "
+            "Budget cost: exactly 1."
         ),
         schema=ScoutParadigmCasesDispatchPayload,
     ),
@@ -145,7 +156,8 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
         name="dispatch_scout_facts_to_check",
         description=(
             "Dispatch a specialized scout that surfaces uncertain factual "
-            "claims whose truth value could materially affect the answer. "
+            "claims whose truth value could materially affect the answer "
+            "to the scope question. Always targets the scope question. "
             "Budget cost: exactly 1."
         ),
         schema=ScoutFactsToCheckDispatchPayload,

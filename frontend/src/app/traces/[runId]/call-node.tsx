@@ -720,43 +720,48 @@ export function CallNode({
                   const questionId = (ex?.question_id ?? (d as Record<string, unknown>).question_id) as string | undefined;
                   return (
                     <div key={i} className={`trace-dispatch-item${isRecurse ? " trace-dispatch-recurse" : ""}`}>
-                      <span className="trace-dispatch-index">{i + 1}</span>
-                      {childCallId ? (
-                        <a
-                          href={`#call-${childCallId.slice(0, 8)}`}
-                          className="trace-dispatch-link"
-                          style={{ color: accent }}
-                          onClick={(e) => {
-                            e.preventDefault();
-                            document
-                              .getElementById(
-                                `call-${childCallId.slice(0, 8)}`,
-                              )
-                              ?.scrollIntoView({ behavior: "smooth" });
-                          }}
-                        >
-                          {isRecurse ? "recurse" : d.call_type}
-                        </a>
-                      ) : (
-                        <span
-                          className={isRecurse ? "trace-dispatch-type" : "trace-dispatch-skipped"}
-                          style={{ color: accent }}
-                        >
-                          {isRecurse ? "recurse" : d.call_type}
-                        </span>
-                      )}
-                      {isRecurse && budget != null && (
-                        <span className="trace-dispatch-budget">budget {budget}</span>
-                      )}
-                      {(questionHeadline || questionId) && (
-                        <span className="trace-dispatch-question">
-                          {questionHeadline || questionId?.slice(0, 8)}
-                        </span>
-                      )}
+                      <div className="trace-dispatch-header">
+                        <span className="trace-dispatch-index">{i + 1}</span>
+                        {childCallId ? (
+                          <a
+                            href={`#call-${childCallId.slice(0, 8)}`}
+                            className="trace-dispatch-link"
+                            style={{ color: accent }}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              document
+                                .getElementById(
+                                  `call-${childCallId.slice(0, 8)}`,
+                                )
+                                ?.scrollIntoView({ behavior: "smooth" });
+                            }}
+                          >
+                            {isRecurse ? "recurse" : d.call_type}
+                          </a>
+                        ) : (
+                          <span
+                            className={isRecurse ? "trace-dispatch-type" : "trace-dispatch-skipped"}
+                            style={{ color: accent }}
+                          >
+                            {isRecurse ? "recurse" : d.call_type}
+                          </span>
+                        )}
+                        {isRecurse && budget != null && (
+                          <span className="trace-dispatch-budget">budget {budget}</span>
+                        )}
+                        {(questionHeadline || questionId) && (
+                          <span
+                            className="trace-dispatch-question"
+                            title={questionHeadline || questionId}
+                          >
+                            {questionHeadline || questionId?.slice(0, 8)}
+                          </span>
+                        )}
+                      </div>
                       {d.reason ? (
-                        <span className="trace-dispatch-reason">
+                        <div className="trace-dispatch-reason">
                           {String(d.reason)}
-                        </span>
+                        </div>
                       ) : null}
                     </div>
                   );

@@ -539,10 +539,22 @@
 .trace-dispatch-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
-.trace-dispatch-item,
+.trace-dispatch-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.trace-dispatch-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
 .trace-dispatch-row {
   display: flex;
   align-items: baseline;
@@ -588,9 +600,10 @@
 }
 
 .trace-dispatch-reason {
-  font-size: 13px;
-  color: #666;
-  min-width: 0;
+  font-size: 12px;
+  color: #888;
+  line-height: 1.4;
+  margin-left: 22px;
 }
 
 .trace-dispatch-recurse {
@@ -616,7 +629,10 @@
   padding: 1px 6px;
   border-radius: 3px;
   letter-spacing: 0.02em;
-  flex-shrink: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Toggle exchanges button */

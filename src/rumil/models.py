@@ -190,27 +190,46 @@ class PrioritizationDispatchPayload(BaseDispatchPayload, _PrioritizationFields):
     pass
 
 
-class ScoutSubquestionsDispatchPayload(BaseDispatchPayload):
+def _hide_question_id(schema: dict) -> None:  # type: ignore[type-arg]
+    props = schema.get('properties', {})
+    props.pop('question_id', None)
+    req = schema.get('required', [])
+    if 'question_id' in req:
+        req.remove('question_id')
+
+
+class ScopeOnlyDispatchPayload(BaseDispatchPayload):
+    """Dispatch payload where question_id is injected at runtime, not by the LLM.
+
+    The generated JSON schema hides question_id so the LLM tool never
+    exposes it.  At bind time the orchestrator injects the scope question ID.
+    """
+
+    model_config = ConfigDict(json_schema_extra=_hide_question_id)
+    question_id: str = Field(default='', description='Injected at runtime')
+
+
+class ScoutSubquestionsDispatchPayload(ScopeOnlyDispatchPayload):
     pass
 
 
-class ScoutEstimatesDispatchPayload(BaseDispatchPayload):
+class ScoutEstimatesDispatchPayload(ScopeOnlyDispatchPayload):
     pass
 
 
-class ScoutHypothesesDispatchPayload(BaseDispatchPayload):
+class ScoutHypothesesDispatchPayload(ScopeOnlyDispatchPayload):
     pass
 
 
-class ScoutAnalogiesDispatchPayload(BaseDispatchPayload):
+class ScoutAnalogiesDispatchPayload(ScopeOnlyDispatchPayload):
     pass
 
 
-class ScoutParadigmCasesDispatchPayload(BaseDispatchPayload):
+class ScoutParadigmCasesDispatchPayload(ScopeOnlyDispatchPayload):
     pass
 
 
-class ScoutFactsToCheckDispatchPayload(BaseDispatchPayload):
+class ScoutFactsToCheckDispatchPayload(ScopeOnlyDispatchPayload):
     pass
 
 

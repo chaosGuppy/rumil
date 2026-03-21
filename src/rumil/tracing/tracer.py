@@ -31,4 +31,4 @@ class CallTrace:
             try:
                 await self._broadcaster.send(dumped["event"], dumped)
             except Exception as e:
-                log.debug("Broadcast failed for event %s: %s", dumped["event"], e)
+                log.warning("Broadcast failed for event %s: %s", dumped["event"], e)

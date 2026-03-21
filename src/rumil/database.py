@@ -459,6 +459,7 @@ class DB:
         budget_allocated: int | None = None,
         workspace: Workspace = Workspace.RESEARCH,
         context_page_ids: list | None = None,
+        call_id: str | None = None,
     ) -> Call:
         log.debug(
             "create_call: type=%s, scope=%s, parent=%s, budget=%s",
@@ -476,6 +477,8 @@ class DB:
             status=CallStatus.PENDING,
             context_page_ids=context_page_ids or [],
         )
+        if call_id is not None:
+            call.id = call_id
         await self.save_call(call)
         return call
 

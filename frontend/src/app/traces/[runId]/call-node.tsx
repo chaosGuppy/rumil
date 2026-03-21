@@ -21,6 +21,16 @@ const CALL_TYPE_ACCENT: Record<string, string> = {
   ingest: "#4dab6f",
   reframe: "#c46b6b",
   maintain: "#7a8a9e",
+  summarize: "#8a9e7a",
+  scout_concepts: "#4a9ec4",
+  assess_concept: "#b48ad4",
+  scout_subquestions: "#3d8cb5",
+  scout_estimates: "#6b9fd4",
+  scout_hypotheses: "#4d8fba",
+  scout_analogies: "#5498c8",
+  scout_paradigm_cases: "#3b7fa8",
+  scout_facts_to_check: "#4793bf",
+  web_research: "#c4884d",
 };
 
 function compactTokens(n: number): string {
@@ -658,6 +668,8 @@ export function CallNode({
                   const isRecurse = d.call_type === "recurse";
                   const accent = CALL_TYPE_ACCENT[d.call_type] || "#7a8a9e";
                   const budget = (d as Record<string, unknown>).budget as number | undefined;
+                  const questionHeadline = ex?.question_headline || null;
+                  const questionId = (ex?.question_id ?? (d as Record<string, unknown>).question_id) as string | undefined;
                   return (
                     <div key={i} className={`trace-dispatch-item${isRecurse ? " trace-dispatch-recurse" : ""}`}>
                       <span className="trace-dispatch-index">{i + 1}</span>
@@ -687,6 +699,11 @@ export function CallNode({
                       )}
                       {isRecurse && budget != null && (
                         <span className="trace-dispatch-budget">budget {budget}</span>
+                      )}
+                      {(questionHeadline || questionId) && (
+                        <span className="trace-dispatch-question">
+                          {questionHeadline || questionId?.slice(0, 8)}
+                        </span>
                       )}
                       {d.reason ? (
                         <span className="trace-dispatch-reason">

@@ -608,6 +608,17 @@
   flex-shrink: 0;
 }
 
+.trace-dispatch-question {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 11px;
+  color: #7a8a9e;
+  background: rgba(122, 138, 158, 0.08);
+  padding: 1px 6px;
+  border-radius: 3px;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+
 /* Toggle exchanges button */
 
 .trace-toggle-exchanges {

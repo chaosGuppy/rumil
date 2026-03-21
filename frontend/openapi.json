@@ -1127,6 +1127,8 @@
           "scout_estimates",
           "scout_hypotheses",
           "scout_analogies",
+          "scout_paradigm_cases",
+          "scout_facts_to_check",
           "web_research"
         ],
         "title": "CallType"
@@ -1239,6 +1241,11 @@
           "question_id": {
             "type": "string",
             "title": "Question Id"
+          },
+          "question_headline": {
+            "type": "string",
+            "title": "Question Headline",
+            "default": ""
           },
           "child_call_id": {
             "anyOf": [

@@ -19,6 +19,7 @@ from pathlib import Path
 
 from rumil.database import DB
 from rumil.models import Page, PageLayer, PageLink, PageType, LinkType, Workspace
+from rumil.constants import MIN_TWOPHASE_BUDGET
 from rumil.orchestrator import Orchestrator, create_root_question, run_concept_session
 from rumil.sources import create_source_page, run_ingest_calls
 from rumil.chat import run_chat
@@ -27,6 +28,19 @@ from rumil.summary import generate_summary, save_summary
 from rumil.settings import Settings, get_settings, _settings_var
 
 PAGES_DIR = Path(__file__).parent / "pages"
+
+NORMAL_BUDGET_DEFAULT = 10
+
+
+def _default_budget(budget: int | None, fallback: int = NORMAL_BUDGET_DEFAULT) -> int:
+    if budget is not None:
+        return budget
+    settings = get_settings()
+    if settings.is_smoke_test:
+        if settings.prioritizer_variant == 'two_phase':
+            return MIN_TWOPHASE_BUDGET
+        return 1
+    return fallback
 
 
 async def cmd_add_question(
@@ -66,8 +80,7 @@ async def cmd_add_question(
     print(f"\nQuestion added: {page.id}")
     print(f"Text:           {question_text}")
 
-    smoke = get_settings().is_smoke_test
-    effective_budget = budget if budget is not None else (1 if smoke else 5)
+    effective_budget = _default_budget(budget, fallback=5)
     if effective_budget > 0:
         print(
             f"Budget:         {effective_budget} research call{'s' if effective_budget != 1 else ''}\n"
@@ -201,7 +214,7 @@ async def cmd_new(
     ingest_files: list[str] | None = None,
     name: str = "",
 ) -> None:
-    budget = budget if budget is not None else (1 if get_settings().is_smoke_test else 10)
+    budget = _default_budget(budget)
     await db.init_budget(budget)
     question_id = await create_root_question(question_text, db)
     await db.create_run(
@@ -309,7 +322,7 @@ async def cmd_ab(
 ) -> None:
     """Run an A/B test: two concurrent investigations with different configs."""
     ab_run_id = str(uuid.uuid4())
-    budget = budget if budget is not None else (1 if get_settings().is_smoke_test else 10)
+    budget = _default_budget(budget)
 
     question_id = await create_root_question(question_text, db)
     await db.create_ab_run(ab_run_id, name or question_text[:120], question_id)
@@ -563,6 +576,12 @@ async def async_main():
         help="Smoke-test mode: use Haiku, fewer rounds, lower budget defaults",
     )
     parser.add_argument(
+        "--force-twophase-recurse",
+        dest="force_twophase_recurse",
+        action="store_true",
+        help="Force the two-phase orchestrator to dispatch two recurse calls",
+    )
+    parser.add_argument(
         "--prod",
         dest="prod_db",
         action="store_true",
@@ -600,6 +619,8 @@ async def async_main():
         get_settings().use_prod_db = "1"
     if args.no_trace:
         get_settings().tracing_enabled = False
+    if args.force_twophase_recurse:
+        get_settings().force_twophase_recurse = True
 
     PAGES_DIR.mkdir(parents=True, exist_ok=True)
 

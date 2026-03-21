@@ -109,6 +109,8 @@ async def run(args: argparse.Namespace) -> None:
     settings = get_settings()
     if args.smoke_test:
         settings.rumil_smoke_test = "1"
+    if args.force_twophase_recurse:
+        settings.force_twophase_recurse = True
 
     logging.basicConfig(
         level=logging.INFO,
@@ -240,6 +242,11 @@ def main() -> None:
     parser.add_argument(
         "--smoke-test", action="store_true",
         help="Use smoke-test settings (haiku model, reduced rounds)",
+    )
+    parser.add_argument(
+        "--force-twophase-recurse", action="store_true",
+        dest="force_twophase_recurse",
+        help="Force the two-phase orchestrator to dispatch two recurse calls",
     )
     parser.add_argument(
         "--ab", action="store_true",

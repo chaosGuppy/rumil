@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     rumil_test_mode: str = ""
     rumil_smoke_test: str = ""
+    force_twophase_recurse: bool = False
     use_prod_db: str = ""
     tracing_enabled: bool = True
 

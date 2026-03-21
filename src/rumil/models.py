@@ -10,6 +10,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Discriminator, Field
 
+from rumil.constants import MIN_TWOPHASE_BUDGET
+
 
 def _all_fields_required(schema: dict) -> None:
     """Mark all fields as required in JSON schema.
@@ -217,7 +219,10 @@ class WebResearchDispatchPayload(BaseDispatchPayload):
 
 
 class RecurseDispatchPayload(BaseDispatchPayload, _PrioritizationFields):
-    budget: int = Field(ge=4, description="Budget to allocate for the sub-investigation (minimum 4)")
+    budget: int = Field(
+        ge=MIN_TWOPHASE_BUDGET,
+        description=f'Budget to allocate for the sub-investigation (minimum {MIN_TWOPHASE_BUDGET})',
+    )
 
 
 class InlineScoutDispatch(_DispatchBase, _ScoutFields):

@@ -14,7 +14,7 @@ from rumil.context import build_prioritization_context, collect_subtree_ids
 from rumil.database import DB
 from rumil.page_graph import PageGraph
 from rumil.llm import build_system_prompt, build_user_message
-from rumil.models import Call, CallType, MoveType
+from rumil.models import Call, CallStatus, CallType, MoveType
 from rumil.moves.base import MoveState
 from rumil.moves.create_question import PRIORITIZATION_MOVE
 from rumil.moves.registry import MOVES
@@ -48,6 +48,7 @@ async def run_prioritization_call(
         call.id[:8],
         call.scope_page_id[:8] if call.scope_page_id else None,
     )
+    await db.update_call_status(call.id, CallStatus.RUNNING)
 
     if available_moves is None:
         available_moves = list(MoveType)

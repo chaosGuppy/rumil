@@ -6,6 +6,7 @@ Budget is tracked here; prioritization and review calls are free.
 import asyncio
 import logging
 import os
+import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -35,6 +36,15 @@ from rumil.context import build_prioritization_context, collect_subtree_ids
 from rumil.database import DB
 from rumil.embeddings import embed_and_store_page
 from rumil.llm import LLMExchangeMetadata, build_system_prompt, build_user_message, structured_call
+from rumil.constants import (
+    DEFAULT_FRUIT_THRESHOLD,
+    DEFAULT_INGEST_FRUIT_THRESHOLD,
+    DEFAULT_INGEST_MAX_ROUNDS,
+    DEFAULT_MAX_ROUNDS,
+    MIN_TWOPHASE_BUDGET,
+    SMOKE_TEST_INGEST_MAX_ROUNDS,
+    SMOKE_TEST_MAX_ROUNDS,
+)
 from rumil.models import (
     AssessDispatchPayload,
     Call,
@@ -74,13 +84,6 @@ from rumil.tracing.trace_events import (
 
 log = logging.getLogger(__name__)
 
-DEFAULT_FRUIT_THRESHOLD = 4
-DEFAULT_MAX_ROUNDS = 5
-DEFAULT_INGEST_FRUIT_THRESHOLD = 5
-DEFAULT_INGEST_MAX_ROUNDS = 5
-
-SMOKE_TEST_MAX_ROUNDS = 1
-SMOKE_TEST_INGEST_MAX_ROUNDS = 1
 
 PRIORITIZATION_MOVES: list[MoveType] = [
     MoveType.CREATE_QUESTION,
@@ -184,6 +187,7 @@ async def find_considerations_until_done(
     mode: ScoutMode = ScoutMode.ALTERNATE,
     broadcaster=None,
     force: bool = False,
+    call_id: str | None = None,
 ) -> tuple[int, list[str]]:
     """Run a cache-aware find-considerations session.
 
@@ -211,6 +215,7 @@ async def find_considerations_until_done(
         scope_page_id=question_id,
         parent_call_id=parent_call_id,
         context_page_ids=context_page_ids,
+        call_id=call_id,
     )
 
     cls = FIND_CONSIDERATIONS_CALL_CLASSES[get_settings().find_considerations_call_variant]
@@ -295,6 +300,7 @@ async def assess_question(
     context_page_ids: list | None = None,
     broadcaster=None,
     force: bool = False,
+    call_id: str | None = None,
 ) -> str | None:
     """Run one Assess call on a question. Returns call ID, or None if no budget."""
     log.info("assess_question: question=%s", question_id[:8])
@@ -308,6 +314,7 @@ async def assess_question(
         scope_page_id=question_id,
         parent_call_id=parent_call_id,
         context_page_ids=context_page_ids,
+        call_id=call_id,
     )
     cls = ASSESS_CALL_CLASSES[get_settings().assess_call_variant]
     assess = cls(question_id, call, db, broadcaster=broadcaster)
@@ -448,6 +455,7 @@ async def web_research_question(
     parent_call_id: str | None = None,
     broadcaster=None,
     force: bool = False,
+    call_id: str | None = None,
 ) -> str | None:
     """Run one web research call on a question. Returns call ID, or None if no budget."""
     log.info('web_research_question: question=%s', question_id[:8])
@@ -458,6 +466,7 @@ async def web_research_question(
         CallType.WEB_RESEARCH,
         scope_page_id=question_id,
         parent_call_id=parent_call_id,
+        call_id=call_id,
     )
     cls = WEB_RESEARCH_CALL_CLASSES[get_settings().web_research_call_variant]
     web_research = cls(
@@ -508,6 +517,7 @@ class BaseOrchestrator(ABC):
         registry: dict,
         parent_call_id: str | None,
         force: bool = False,
+        call_id: str | None = None,
     ) -> str | None:
         """Run a simple (single-pass) call dispatch. Consumes 1 budget."""
         if not await _consume_budget(self.db, force=force):
@@ -517,6 +527,7 @@ class BaseOrchestrator(ABC):
             call_type,
             scope_page_id=question_id,
             parent_call_id=parent_call_id,
+            call_id=call_id,
         )
         cls = registry['default']
         instance = cls(question_id, call, self.db, broadcaster=self.broadcaster)
@@ -536,21 +547,39 @@ class BaseOrchestrator(ABC):
         All dispatches in the sequence are guaranteed to run: if budget
         is exhausted mid-sequence, subsequent dispatches force-consume
         so that trailing calls (e.g. auto-assess) are never skipped.
+
+        Child call IDs are pre-generated so that DispatchExecutedEvents
+        can be recorded before execution begins, making dispatch links
+        clickable in the trace frontend immediately.
         """
-        executed = False
-        for i, dispatch in enumerate(sequence):
-            force = i > 0 and await self.db.budget_remaining() <= 0
-            resolved, child_call_id = await self._execute_dispatch(
-                dispatch, scope_question_id, parent_call_id, force=force,
-            )
-            executed = True
-            if trace:
+        pre_ids = [str(uuid.uuid4()) for _ in sequence]
+        resolves = []
+        headlines = []
+        for dispatch in sequence:
+            resolved = await self.db.resolve_page_id(dispatch.payload.question_id)
+            resolved = resolved or scope_question_id
+            resolves.append(resolved)
+            page = await self.db.get_page(resolved)
+            headlines.append(page.headline if page else '')
+
+        if trace:
+            for i, dispatch in enumerate(sequence):
                 await trace.record(DispatchExecutedEvent(
                     index=base_index + i,
                     child_call_type=dispatch.call_type.value,
-                    question_id=resolved,
-                    child_call_id=child_call_id,
+                    question_id=resolves[i],
+                    question_headline=headlines[i],
+                    child_call_id=pre_ids[i],
                 ))
+
+        executed = False
+        for i, dispatch in enumerate(sequence):
+            force = i > 0 and await self.db.budget_remaining() <= 0
+            await self._execute_dispatch(
+                dispatch, scope_question_id, parent_call_id,
+                force=force, call_id=pre_ids[i],
+            )
+            executed = True
         return executed
 
     async def _execute_dispatch(
@@ -560,11 +589,15 @@ class BaseOrchestrator(ABC):
         parent_call_id: str | None,
         *,
         force: bool = False,
+        call_id: str | None = None,
     ) -> tuple[str, str | None]:
         """Execute a single dispatch.
 
         When *force* is True, budget is expanded if needed so the call
         always proceeds (used for trailing dispatches in a committed batch).
+
+        When *call_id* is provided, the child call will be created with
+        that ID (for eager link creation in traces).
 
         Returns (resolved_question_id, child_call_id).
         """
@@ -596,6 +629,7 @@ class BaseOrchestrator(ABC):
                 mode=p.mode,
                 broadcaster=self.broadcaster,
                 force=force,
+                call_id=call_id,
             )
             child_call_id = child_ids[0] if child_ids else None
 
@@ -608,6 +642,7 @@ class BaseOrchestrator(ABC):
                 context_page_ids=p.context_page_ids,
                 broadcaster=self.broadcaster,
                 force=force,
+                call_id=call_id,
             )
 
         elif isinstance(p, ScoutSubquestionsDispatchPayload):
@@ -615,7 +650,7 @@ class BaseOrchestrator(ABC):
             child_call_id = await self._run_simple_call_dispatch(
                 resolved, CallType.SCOUT_SUBQUESTIONS,
                 SCOUT_SUBQUESTIONS_CALL_CLASSES, parent_call_id,
-                force=force,
+                force=force, call_id=call_id,
             )
 
         elif isinstance(p, ScoutEstimatesDispatchPayload):
@@ -623,7 +658,7 @@ class BaseOrchestrator(ABC):
             child_call_id = await self._run_simple_call_dispatch(
                 resolved, CallType.SCOUT_ESTIMATES,
                 SCOUT_ESTIMATES_CALL_CLASSES, parent_call_id,
-                force=force,
+                force=force, call_id=call_id,
             )
 
         elif isinstance(p, ScoutHypothesesDispatchPayload):
@@ -631,7 +666,7 @@ class BaseOrchestrator(ABC):
             child_call_id = await self._run_simple_call_dispatch(
                 resolved, CallType.SCOUT_HYPOTHESES,
                 SCOUT_HYPOTHESES_CALL_CLASSES, parent_call_id,
-                force=force,
+                force=force, call_id=call_id,
             )
 
         elif isinstance(p, ScoutAnalogiesDispatchPayload):
@@ -639,7 +674,7 @@ class BaseOrchestrator(ABC):
             child_call_id = await self._run_simple_call_dispatch(
                 resolved, CallType.SCOUT_ANALOGIES,
                 SCOUT_ANALOGIES_CALL_CLASSES, parent_call_id,
-                force=force,
+                force=force, call_id=call_id,
             )
 
         elif isinstance(p, ScoutParadigmCasesDispatchPayload):
@@ -647,7 +682,7 @@ class BaseOrchestrator(ABC):
             child_call_id = await self._run_simple_call_dispatch(
                 resolved, CallType.SCOUT_PARADIGM_CASES,
                 SCOUT_PARADIGM_CASES_CALL_CLASSES, parent_call_id,
-                force=force,
+                force=force, call_id=call_id,
             )
 
         elif isinstance(p, ScoutFactsToCheckDispatchPayload):
@@ -655,7 +690,7 @@ class BaseOrchestrator(ABC):
             child_call_id = await self._run_simple_call_dispatch(
                 resolved, CallType.SCOUT_FACTS_TO_CHECK,
                 SCOUT_FACTS_TO_CHECK_CALL_CLASSES, parent_call_id,
-                force=force,
+                force=force, call_id=call_id,
             )
 
         elif isinstance(p, WebResearchDispatchPayload):
@@ -665,6 +700,7 @@ class BaseOrchestrator(ABC):
                 parent_call_id=parent_call_id,
                 broadcaster=self.broadcaster,
                 force=force,
+                call_id=call_id,
             )
 
         return resolved, child_call_id
@@ -907,6 +943,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         self._budget_cap: int | None = budget_cap
         self._consumed: int = 0
         self._initial_call: Call | None = None
+        self._parent_call_id: str | None = None
 
     def _effective_budget(self, global_remaining: int) -> int:
         if self._budget_cap is not None:
@@ -924,7 +961,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         before ``run()`` begins. ``_phase1`` reuses the pre-created call.
         """
         budget = self._effective_budget(await self.db.budget_remaining())
-        phase1_budget = min(budget - 3, 4)
+        phase1_budget = min(budget - 3, MIN_TWOPHASE_BUDGET)
         p_call = await self.db.create_call(
             CallType.PRIORITIZATION,
             scope_page_id=question_id,
@@ -934,10 +971,18 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         )
         self._call_id = p_call.id
         self._initial_call = p_call
+        self._parent_call_id = parent_call_id
         return p_call.id
 
     async def run(self, root_question_id: str) -> None:
         await self._setup()
+        remaining = await self.db.budget_remaining()
+        effective = self._effective_budget(remaining)
+        if effective < MIN_TWOPHASE_BUDGET:
+            raise ValueError(
+                f'TwoPhaseOrchestrator requires a budget of at least '
+                f'{MIN_TWOPHASE_BUDGET}, got {effective}'
+            )
         try:
             while True:
                 remaining = await self.db.budget_remaining()
@@ -1016,7 +1061,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
 
         self._executed_since_last_plan = False
         self._invocation += 1
-        return await self._phase2(question_id, budget, parent_call_id)
+        return await self._phase2(question_id, budget, self._parent_call_id)
 
     async def _phase1(
         self,
@@ -1024,7 +1069,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         budget: int,
         parent_call_id: str | None,
     ) -> PrioritizationResult:
-        phase1_budget = min(budget - 3, 4)
+        phase1_budget = min(budget - 3, MIN_TWOPHASE_BUDGET)
         log.info(
             'TwoPhaseOrchestrator phase1: question=%s, budget=%d, phase1_budget=%d',
             question_id[:8], budget, phase1_budget,
@@ -1242,12 +1287,17 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             'exploration that can be based purely on your trained knowledge and does not require web research, '
             'dispatch_web_research for web-based evidence, or '
             'recurse_into_subquestion to recursively investigate a child '
-            'question with its own prioritization cycle (minimum budget: 4). '
+            f'question with its own prioritization cycle (minimum budget: {MIN_TWOPHASE_BUDGET}). '
             'You can target the parent question or any child question.\n\n'
             'You may create subquestions before dispatching. '
             'You must make all your dispatch calls now — this is your only turn. '
-            'Each recurse call must have a budget of at least 4.'
+            f'Each recurse call must have a budget of at least {MIN_TWOPHASE_BUDGET}.'
         )
+        if get_settings().force_twophase_recurse:
+            task += (
+                '\n\nCRITICAL: You MUST dispatch two recurse calls '
+                'if you have enough budget to do so.'
+            )
 
         result = await run_prioritization_call(
             task, context_text, p_call, self.db,
@@ -1309,10 +1359,12 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             child_call_id = await child.create_initial_call(
                 child_qid, parent_call_id=p_call.id,
             )
+            child_page = await self.db.get_page(child_qid)
             await trace.record(DispatchExecutedEvent(
                 index=recurse_base + ci,
                 child_call_type='recurse',
                 question_id=child_qid,
+                question_headline=child_page.headline if child_page else '',
                 child_call_id=child_call_id,
             ))
 

@@ -154,7 +154,7 @@ export type CallTraceOut = {
 /**
  * CallType
  */
-export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_concepts' | 'assess_concept' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'web_research';
+export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_concepts' | 'assess_concept' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_facts_to_check' | 'web_research';
 
 /**
  * ConsiderationDirection
@@ -227,6 +227,10 @@ export type DispatchExecutedEventOut = {
      * Question Id
      */
     question_id: string;
+    /**
+     * Question Headline
+     */
+    question_headline?: string;
     /**
      * Child Call Id
      */

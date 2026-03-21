@@ -105,6 +105,7 @@ class DispatchExecutedEvent(BaseModel):
     index: int
     child_call_type: str
     question_id: str
+    question_headline: str = ""
     child_call_id: str | None = None
 
 

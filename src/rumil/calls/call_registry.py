@@ -7,7 +7,7 @@ callers can look up the concrete class by a short string name stored in settings
 from rumil.calls.assess import AssessCall, EmbeddingAssessCall
 from rumil.calls.assess_concept import AssessConceptCall
 from rumil.calls.ingest import EmbeddingIngestCall, IngestCall
-from rumil.calls.find_considerations import EmbeddingScoutCall, ScoutCall
+from rumil.calls.find_considerations import EmbeddingFindConsiderationsCall, FindConsiderationsCall
 from rumil.calls.scout_analogies import ScoutAnalogiesCall
 from rumil.calls.scout_facts_to_check import ScoutFactsToCheckCall
 from rumil.calls.scout_paradigm_cases import ScoutParadigmCasesCall
@@ -17,9 +17,9 @@ from rumil.calls.scout_estimates import ScoutEstimatesCall
 from rumil.calls.scout_hypotheses import ScoutHypothesesCall
 from rumil.calls.scout_subquestions import ScoutSubquestionsCall
 
-FIND_CONSIDERATIONS_CALL_CLASSES: dict[str, type[ScoutCall]] = {
-    "default": ScoutCall,
-    "embedding": EmbeddingScoutCall,
+FIND_CONSIDERATIONS_CALL_CLASSES: dict[str, type[FindConsiderationsCall]] = {
+    "default": FindConsiderationsCall,
+    "embedding": EmbeddingFindConsiderationsCall,
 }
 
 ASSESS_CALL_CLASSES: dict[str, type[AssessCall]] = {

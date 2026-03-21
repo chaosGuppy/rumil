@@ -8,9 +8,9 @@ from rumil.models import (
     DISPATCHABLE_CALL_TYPES,
     PrioritizationDispatchPayload,
     ScoutDispatchPayload,
-    ScoutMode,
+    FindConsiderationsMode,
 )
-from rumil.calls.find_considerations import _resolve_round_mode
+from rumil.calls.page_creators import _resolve_round_mode
 
 
 def test_dispatchable_types_include_expected():
@@ -36,28 +36,28 @@ def test_dispatch_holds_typed_payload():
 
 def test_scout_payload_has_defaults():
     p = ScoutDispatchPayload(question_id="abc")
-    assert p.mode == ScoutMode.ALTERNATE
+    assert p.mode == FindConsiderationsMode.ALTERNATE
     assert p.fruit_threshold == 4
     assert p.max_rounds == 5
 
 
 def test_scout_payload_accepts_mode():
-    p = ScoutDispatchPayload(question_id="abc", mode=ScoutMode.CONCRETE)
-    assert p.mode == ScoutMode.CONCRETE
+    p = ScoutDispatchPayload(question_id="abc", mode=FindConsiderationsMode.CONCRETE)
+    assert p.mode == FindConsiderationsMode.CONCRETE
 
 
 def test_resolve_round_mode_alternate():
-    assert _resolve_round_mode(ScoutMode.ALTERNATE, 0) == ScoutMode.ABSTRACT
-    assert _resolve_round_mode(ScoutMode.ALTERNATE, 1) == ScoutMode.CONCRETE
-    assert _resolve_round_mode(ScoutMode.ALTERNATE, 2) == ScoutMode.ABSTRACT
-    assert _resolve_round_mode(ScoutMode.ALTERNATE, 3) == ScoutMode.CONCRETE
+    assert _resolve_round_mode(FindConsiderationsMode.ALTERNATE, 0) == FindConsiderationsMode.ABSTRACT
+    assert _resolve_round_mode(FindConsiderationsMode.ALTERNATE, 1) == FindConsiderationsMode.CONCRETE
+    assert _resolve_round_mode(FindConsiderationsMode.ALTERNATE, 2) == FindConsiderationsMode.ABSTRACT
+    assert _resolve_round_mode(FindConsiderationsMode.ALTERNATE, 3) == FindConsiderationsMode.CONCRETE
 
 
 def test_resolve_round_mode_fixed():
-    assert _resolve_round_mode(ScoutMode.ABSTRACT, 0) == ScoutMode.ABSTRACT
-    assert _resolve_round_mode(ScoutMode.ABSTRACT, 1) == ScoutMode.ABSTRACT
-    assert _resolve_round_mode(ScoutMode.CONCRETE, 0) == ScoutMode.CONCRETE
-    assert _resolve_round_mode(ScoutMode.CONCRETE, 1) == ScoutMode.CONCRETE
+    assert _resolve_round_mode(FindConsiderationsMode.ABSTRACT, 0) == FindConsiderationsMode.ABSTRACT
+    assert _resolve_round_mode(FindConsiderationsMode.ABSTRACT, 1) == FindConsiderationsMode.ABSTRACT
+    assert _resolve_round_mode(FindConsiderationsMode.CONCRETE, 0) == FindConsiderationsMode.CONCRETE
+    assert _resolve_round_mode(FindConsiderationsMode.CONCRETE, 1) == FindConsiderationsMode.CONCRETE
 
 
 def test_assess_payload_has_no_extras():

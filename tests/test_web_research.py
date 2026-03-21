@@ -57,7 +57,7 @@ async def test_web_research_creates_sourced_claims(
     assert refreshed.completed_at is not None
     assert 'Web research complete' in refreshed.result_summary
 
-    created_ids = wrc.state.created_page_ids
+    created_ids = wrc.infra.state.created_page_ids
     assert len(created_ids) >= 1, 'Expected at least one page created'
 
     claim_ids = []

@@ -11,7 +11,7 @@ import pytest_asyncio
 from rumil.calls.assess import AssessCall
 from rumil.calls.common import mark_call_completed, run_closing_review
 from rumil.calls.ingest import IngestCall
-from rumil.calls.find_considerations import ScoutCall
+from rumil.calls.find_considerations import FindConsiderationsCall
 from rumil.models import (
     Call,
     CallStatus,
@@ -19,7 +19,7 @@ from rumil.models import (
     Page,
     PageLayer,
     PageType,
-    ScoutMode,
+    FindConsiderationsMode,
     Workspace,
 )
 
@@ -101,13 +101,13 @@ async def test_ingest_lifecycle(tmp_db, question_page, ingest_call, source_page)
 async def test_scout_lifecycle(tmp_db, question_page, scout_call):
     """Scout session runs rounds, checks fruit, and completes."""
     await tmp_db.init_budget(2)
-    scout = ScoutCall(
+    scout = FindConsiderationsCall(
         question_page.id,
         scout_call,
         tmp_db,
         max_rounds=2,
         fruit_threshold=4,
-        mode=ScoutMode.ALTERNATE,
+        mode=FindConsiderationsMode.ALTERNATE,
     )
     await scout.run()
 
@@ -130,7 +130,7 @@ async def test_scout_lifecycle(tmp_db, question_page, scout_call):
 async def test_scout_stops_on_budget_exhaustion(tmp_db, question_page, scout_call):
     """Scout session stops when budget runs out mid-loop."""
     await tmp_db.init_budget(1)
-    scout = ScoutCall(
+    scout = FindConsiderationsCall(
         question_page.id,
         scout_call,
         tmp_db,

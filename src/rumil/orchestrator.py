@@ -60,7 +60,7 @@ from rumil.models import (
     ScoutAnalogiesDispatchPayload,
     ScoutDispatchPayload,
     ScoutFactsToCheckDispatchPayload,
-    ScoutMode,
+    FindConsiderationsMode,
     ScoutParadigmCasesDispatchPayload,
     ScoutEstimatesDispatchPayload,
     ScoutHypothesesDispatchPayload,
@@ -184,7 +184,7 @@ async def find_considerations_until_done(
     fruit_threshold: int = DEFAULT_FRUIT_THRESHOLD,
     parent_call_id: str | None = None,
     context_page_ids: list | None = None,
-    mode: ScoutMode = ScoutMode.ALTERNATE,
+    mode: FindConsiderationsMode = FindConsiderationsMode.ALTERNATE,
     broadcaster=None,
     force: bool = False,
     call_id: str | None = None,
@@ -193,7 +193,7 @@ async def find_considerations_until_done(
 ) -> tuple[int, list[str]]:
     """Run a cache-aware find-considerations session.
 
-    Creates one Call and delegates to the ScoutCall class, which handles
+    Creates one Call and delegates to the FindConsiderationsCall class, which handles
     multi-round looping with conversation resumption, lightweight fruit
     checks, and a single closing review at the end.
 
@@ -945,7 +945,7 @@ class LLMOrchestrator(BaseOrchestrator):
                     call_type=CallType.FIND_CONSIDERATIONS,
                     payload=ScoutDispatchPayload(
                         question_id=question_id,
-                        mode=ScoutMode.ALTERNATE,
+                        mode=FindConsiderationsMode.ALTERNATE,
                         fruit_threshold=DEFAULT_FRUIT_THRESHOLD,
                         max_rounds=DEFAULT_MAX_ROUNDS,
                         reason="fallback"

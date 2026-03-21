@@ -4,6 +4,7 @@ Supabase database layer for the research workspace.
 
 import logging
 import uuid
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from typing import Any, cast
 
@@ -740,7 +741,7 @@ class DB:
 
     async def get_sequences_for_call(
         self, parent_call_id: str,
-    ) -> list[CallSequence]:
+    ) -> Sequence[CallSequence]:
         """Fetch sequences for a parent call, ordered by position_in_batch."""
         rows = _rows(
             await self.client.table("call_sequences")
@@ -753,7 +754,7 @@ class DB:
 
     async def get_calls_for_sequence(
         self, sequence_id: str,
-    ) -> list[Call]:
+    ) -> Sequence[Call]:
         """Fetch calls in a sequence, ordered by sequence_position."""
         rows = _rows(
             await self.client.table("calls")

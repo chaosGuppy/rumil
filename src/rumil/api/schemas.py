@@ -5,6 +5,7 @@ Composite response types and trace event envelope types. Core models
 (Page, PageLink, Call, Project) live in rumil.models.
 """
 
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Annotated
 
@@ -126,7 +127,7 @@ class LLMExchangeOut(BaseModel):
 class CallSequenceOut(BaseModel):
     id: str
     position_in_batch: int
-    calls: list['CallTraceOut']
+    calls: Sequence['CallTraceOut']
 
 
 class CallTraceOut(BaseModel):
@@ -134,7 +135,7 @@ class CallTraceOut(BaseModel):
     scope_page_summary: str | None = None
     events: list[TraceEventOut]
     children: list['CallTraceOut']
-    sequences: list[CallSequenceOut] | None = None
+    sequences: Sequence[CallSequenceOut] | None = None
     cost_usd: float | None = None
 
 

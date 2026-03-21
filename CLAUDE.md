@@ -50,8 +50,8 @@ Always use the supabase cli to create new migrations: `supabase migration new`.
 
 Architecture:
 - `CallRunner` (`stages.py`) — base class for all call types. Owns `run()` orchestration via `CallInfra` (bundles `CallTrace`, `MoveState`, DB, call). Subclasses set class-level `context_builder_cls`, `page_creator_cls`, `closing_reviewer_cls`, and `call_type` attributes, plus override `_make_*()` factory methods for parameterized stages and `task_description()`.
-- `ContextBuilder` ABC — `build_context(infra) -> ContextResult`. Implementations in `context_builders.py`: `GraphContextWithPhase1`, `EmbeddingContext`, `IngestGraphContext`, `IngestEmbeddingContext`, `ScoutGraphContext`, `ScoutEmbeddingContext`, `ConceptScoutContext`, `ConceptAssessContext`, `WebResearchEmbeddingContext`.
-- `PageCreator` ABC — `create_pages(infra, context) -> CreationResult`. Implementations in `page_creators.py`: `SimpleAgentLoop` (single-pass), `MultiRoundScoutLoop` (multi-round with fruit checks), `WebResearchLoop` (server tools + scraping).
+- `ContextBuilder` ABC — `build_context(infra) -> ContextResult`. Implementations in `context_builders.py`: `GraphContextWithPhase1`, `EmbeddingContext`, `IngestGraphContext`, `IngestEmbeddingContext`, `FindConsiderationsGraphContext`, `ScoutEmbeddingContext`, `ConceptScoutContext`, `ConceptAssessContext`, `WebResearchEmbeddingContext`.
+- `PageCreator` ABC — `create_pages(infra, context) -> CreationResult`. Implementations in `page_creators.py`: `SimpleAgentLoop` (single-pass), `MultiRoundLoop` (multi-round with fruit checks), `WebResearchLoop` (server tools + scraping).
 - `ClosingReviewer` ABC — `closing_review(infra, context, creation) -> None` (persists all results as side effects). Implementations in `closing_reviewers.py`: `StandardClosingReview`, `IngestClosingReview`, `WebResearchClosingReview`, `TwoPhaseScoutReview`, `SinglePhaseScoutReview`, `ConceptAssessReview`.
 - Data types (`stages.py`): `CallInfra` (shared infra), `ContextResult` (context output), `CreationResult` (page creation output).
 
@@ -91,7 +91,7 @@ To add a new call type: subclass `CallRunner`. Set `call_type`, override `_make_
 - Always use absolute imports: `from rumil.module import name` (no relative imports)
 - Always put imports at the top of the file, not inside functions
 - Use modern type syntax: `X | None` not `Optional[X]`, `list[str]` not `List[str]`, etc. No `from typing import Optional, List, Dict`.
-- Prefer `Sequence` over `list` in type hints for parameters and return types. Only use `list` where mutation (e.g. `.append()`) is actually needed.
+- Prefer `Sequence` over `list` in type hints for parameters and return types. Only use `list` where mutation (e.g. `.append()`) is actually needed. If you find yourself needing to convert sequences to lists at runtime in order to follow this rule, check whether the consuming function really needs to be annotated with a list in its signature; if not, convert the consuming arg it a `Sequence` instead of converting to a list at runtime.
 - Multiline strings use parenthesized concatenation of single-quoted lines (`"line 1 " "line 2"`), not triple-quoted strings (`"""`). Only use `f""` on lines that actually contain `{placeholder}` expressions.
 - Do not add section divider comments (e.g. `# ----------` banners). Use blank lines between logical sections; the code should speak for itself.
 - When adding new user-facing CLI flags or commands to `main.py`, always update `README.md` with corresponding documentation.

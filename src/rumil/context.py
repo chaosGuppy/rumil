@@ -717,7 +717,7 @@ def assemble_call_context(
 
 
 async def format_preloaded_pages(
-    page_ids: list[str],
+    page_ids: Sequence[str],
     db: DB,
     graph: PageGraph | None = None,
 ) -> str:

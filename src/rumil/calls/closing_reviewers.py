@@ -3,8 +3,15 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 
+from rumil.calls.assess_concept_types import (
+    ConceptAssessmentReview,
+    REVIEW_SYSTEM_PROMPT,
+    VALIDATION_PHASE,
+)
 from rumil.calls.common import (
+    ReviewResponse,
     prepare_tools,
     format_moves_for_review,
     log_page_ratings,
@@ -14,8 +21,9 @@ from rumil.calls.common import (
 )
 from rumil.calls.stages import CallInfra, ClosingReviewer, ContextResult, CreationResult
 from rumil.embeddings import embed_and_store_page
-from rumil.llm import LLMExchangeMetadata, build_system_prompt, structured_call
+from rumil.llm import LLMExchangeMetadata, build_system_prompt, build_user_message, structured_call
 from rumil.models import CallType, MoveType
+from rumil.moves.load_page import LoadPagePayload
 from rumil.moves.registry import MOVES
 from rumil.tracing.trace_events import ReviewCompleteEvent
 
@@ -150,12 +158,11 @@ async def _build_link_inventory(
 async def _self_assessment(
     infra: CallInfra,
     system_prompt: str,
-    tool_defs: list[dict],
-    prior_messages: list[dict],
-    loaded_summaries: list[tuple[str, str]],
+    tool_defs: Sequence[dict],
+    prior_messages: Sequence[dict],
+    loaded_summaries: Sequence[tuple[str, str]],
 ) -> dict:
     """Structured self-assessment appended to a message history."""
-    from rumil.calls.common import ReviewResponse
 
     page_rating_note = ''
     if loaded_summaries:
@@ -193,9 +200,7 @@ async def _self_assessment(
         + page_rating_note
         + page_summary_note
     )
-    assessment_messages = prior_messages + [
-        {'role': 'user', 'content': assessment_msg},
-    ]
+    assessment_messages = [*prior_messages, {'role': 'user', 'content': assessment_msg}]
     meta = LLMExchangeMetadata(
         call_id=infra.call.id, phase='closing_review', trace=infra.trace,
         user_message=assessment_msg,
@@ -252,9 +257,8 @@ async def _self_assessment(
 
 async def _collect_all_loaded_summaries(
     infra: CallInfra,
-    preloaded_ids: list[str],
+    preloaded_ids: Sequence[str],
 ) -> list[tuple[str, str]]:
-    from rumil.moves.load_page import LoadPagePayload
 
     summaries: list[tuple[str, str]] = []
     seen: set[str] = set()
@@ -404,8 +408,6 @@ class ConceptAssessReview(ClosingReviewer):
         context: ContextResult,
         creation: CreationResult,
     ) -> None:
-        from rumil.calls.assess_concept import ConceptAssessmentReview, REVIEW_SYSTEM_PROMPT
-
         review_context = format_moves_for_review(creation.moves)
         review_task = (
             f'You have just completed an assess_concept call ({self._phase} phase).\n\n'
@@ -413,7 +415,6 @@ class ConceptAssessReview(ClosingReviewer):
             'Please review your assessment and provide structured feedback.'
         )
 
-        from rumil.llm import build_user_message
         user_message = build_user_message(context.context_text, review_task)
         meta = LLMExchangeMetadata(
             call_id=infra.call.id, phase='closing_review',
@@ -477,8 +478,6 @@ class ConceptAssessReview(ClosingReviewer):
     async def _persist_assessment_round(
         self, infra: CallInfra, review: dict,
     ) -> None:
-        from rumil.calls.assess_concept import VALIDATION_PHASE
-
         concept = await infra.db.get_page(infra.question_id)
         if not concept:
             return

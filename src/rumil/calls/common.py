@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
@@ -590,7 +591,7 @@ async def extract_loaded_page_ids(result: RunCallResult, db: DB) -> list[str]:
     return loaded
 
 
-async def resolve_page_refs(page_ids: list[str], db: DB) -> list[PageRef]:
+async def resolve_page_refs(page_ids: Sequence[str], db: DB) -> list[PageRef]:
     """Resolve a list of page IDs to PageRef objects with headlines."""
     refs = []
     for pid in page_ids:

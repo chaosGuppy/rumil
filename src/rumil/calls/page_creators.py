@@ -8,6 +8,7 @@ from collections.abc import Sequence
 
 import anthropic
 from anthropic.types import ServerToolUseBlock, ToolUseBlock
+from pydantic import BaseModel, Field
 
 from rumil.calls.common import (
     RunCallResult,
@@ -95,7 +96,7 @@ class SimpleAgentLoop(PageCreator):
         phase2_loaded = await extract_loaded_page_ids(result, infra.db)
         all_loaded_ids = list(
             dict.fromkeys(
-                context.preloaded_ids + context.phase1_ids + phase2_loaded
+                [*context.preloaded_ids, *context.phase1_ids, *phase2_loaded]
             )
         )
 
@@ -139,6 +140,20 @@ def _resolve_round_mode(mode: FindConsiderationsMode, round_index: int) -> FindC
     return mode
 
 
+class _FruitCheck(BaseModel):
+    remaining_fruit: int = Field(
+        description=(
+            '0-10 integer: how much useful work remains on this scope. '
+            '0 = nothing more to add; 1-2 = close to exhausted; '
+            '3-4 = most angles covered; 5-6 = diminishing but real returns; '
+            '7-8 = substantial work remains; 9-10 = barely started'
+        )
+    )
+    brief_reasoning: str = Field(
+        description='One sentence explaining why you chose this score'
+    )
+
+
 class MultiRoundLoop(PageCreator):
     """Multi-round loop with fruit checking and conversation resumption."""
 
@@ -155,21 +170,6 @@ class MultiRoundLoop(PageCreator):
     async def create_pages(
         self, infra: CallInfra, context: ContextResult,
     ) -> CreationResult:
-        from pydantic import BaseModel, Field
-
-        class FruitCheck(BaseModel):
-            remaining_fruit: int = Field(
-                description=(
-                    '0-10 integer: how much useful work remains on this scope. '
-                    '0 = nothing more to add; 1-2 = close to exhausted; '
-                    '3-4 = most angles covered; 5-6 = diminishing but real returns; '
-                    '7-8 = substantial work remains; 9-10 = barely started'
-                )
-            )
-            brief_reasoning: str = Field(
-                description='One sentence explaining why you chose this score'
-            )
-
         tools = [MOVES[mt].bind(infra.state) for mt in MoveType]
         tool_defs, _ = prepare_tools(tools)
         system_prompt = build_system_prompt(CallType.FIND_CONSIDERATIONS.value)
@@ -180,7 +180,7 @@ class MultiRoundLoop(PageCreator):
         )
         task = (
             f'Scout for missing considerations on this question.{mode_instruction}\n\n'
-            f'Question ID (use this when linking considerations): '
+            'Question ID (use this when linking considerations): '
             f'`{infra.question_id}`'
         )
         user_message = build_user_message(context.context_text, task)
@@ -236,7 +236,7 @@ class MultiRoundLoop(PageCreator):
             resume_messages = list(agent_result.messages)
 
             last_fruit_score = await self._run_fruit_check(
-                infra, system_prompt, resume_messages, tool_defs, FruitCheck,
+                infra, system_prompt, resume_messages, tool_defs, _FruitCheck,
             )
             if last_fruit_score <= self._fruit_threshold:
                 log.info(
@@ -314,7 +314,7 @@ class WebResearchLoop(PageCreator):
         task = (
             'Search the web for evidence relevant to this question and create '
             'source-grounded claims.\n\n'
-            f'Question ID (use this when linking considerations): '
+            'Question ID (use this when linking considerations): '
             f'`{infra.question_id}`'
         )
         user_message = build_user_message(context.context_text, task)

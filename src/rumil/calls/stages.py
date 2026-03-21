@@ -34,7 +34,7 @@ class ContextResult:
 
     context_text: str
     working_page_ids: list[str]
-    preloaded_ids: list[str] = field(default_factory=list)
+    preloaded_ids: Sequence[str] = field(default_factory=list)
     phase1_ids: list[str] = field(default_factory=list)
     messages: list[dict] = field(default_factory=list)
 
@@ -74,7 +74,7 @@ class ClosingReviewer(ABC):
     ) -> None: ...
 
 
-class CallRunner:
+class CallRunner(ABC):
     """Base class for all call types using composition over inheritance.
 
     Subclasses set class-level stage class attributes and override

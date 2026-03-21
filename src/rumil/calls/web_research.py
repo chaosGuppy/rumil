@@ -48,6 +48,6 @@ class WebResearchCall(CallRunner):
         return (
             'Search the web for evidence relevant to this question and create '
             'source-grounded claims.\n\n'
-            f'Question ID (use this when linking considerations): '
+            'Question ID (use this when linking considerations): '
             f'`{self.infra.question_id}`'
         )

@@ -14,6 +14,14 @@ from dataclasses import dataclass
 from pydantic import BaseModel, Field
 
 from rumil.calls import run_prioritization
+from rumil.calls.assess_concept_types import (
+    SCREENING_FRUIT_THRESHOLD,
+    SCREENING_MAX_ROUNDS,
+    SCREENING_PHASE,
+    VALIDATION_FRUIT_THRESHOLD,
+    VALIDATION_MAX_ROUNDS,
+    VALIDATION_PHASE,
+)
 from rumil.calls.common import mark_call_completed
 from rumil.calls.dispatches import DISPATCH_DEFS, RECURSE_DISPATCH_DEF
 from rumil.calls.prioritization import run_prioritization_call
@@ -343,7 +351,6 @@ async def _run_assess_concept_loop(
 
     Returns the review dict from the final round.
     """
-    from rumil.calls.assess_concept import SCREENING_PHASE, VALIDATION_PHASE
     log.info(
         "_run_assess_concept_loop: concept=%s, phase=%s, max_rounds=%d, threshold=%d",
         concept_id[:8], phase, max_rounds, fruit_threshold,
@@ -387,14 +394,7 @@ async def run_concept_session(
     2. For each proposal: run stage-1 screening.
     3. If screening passes: automatically run stage-2 validation.
     """
-    from rumil.calls.assess_concept import (
-        SCREENING_PHASE,
-        SCREENING_FRUIT_THRESHOLD,
-        SCREENING_MAX_ROUNDS,
-        VALIDATION_PHASE,
-        VALIDATION_FRUIT_THRESHOLD,
-        VALIDATION_MAX_ROUNDS,
-    )
+
     log.info("run_concept_session: question=%s", question_id[:8])
 
     scout_call = await db.create_call(

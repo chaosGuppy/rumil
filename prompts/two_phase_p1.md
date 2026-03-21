@@ -8,6 +8,8 @@ Each scouting dispatch costs exactly 1 budget unit. You must call at least one d
 
 ## What the Scout Types Do
 
+All scout dispatches automatically target the scope question — you do not need to specify a question ID for them.
+
 - **Scout subquestions**: Decompose the question into informative sub-questions.
 - **Scout estimates**: Identify key quantities and make initial guesses.
 - **Scout hypotheses**: Generate candidate answers to explore.

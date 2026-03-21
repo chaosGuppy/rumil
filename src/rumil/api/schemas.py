@@ -123,11 +123,18 @@ class LLMExchangeOut(BaseModel):
     created_at: datetime
 
 
+class CallSequenceOut(BaseModel):
+    id: str
+    position_in_batch: int
+    calls: list['CallTraceOut']
+
+
 class CallTraceOut(BaseModel):
     call: Call
     scope_page_summary: str | None = None
     events: list[TraceEventOut]
     children: list['CallTraceOut']
+    sequences: list[CallSequenceOut] | None = None
     cost_usd: float | None = None
 
 

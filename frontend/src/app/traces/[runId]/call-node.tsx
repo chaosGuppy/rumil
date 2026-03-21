@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import type {
   Call,
+  CallSequenceOut,
   CallTraceOut,
   DispatchExecutedEventOut,
   DispatchesPlannedEventOut,
@@ -567,6 +568,53 @@ function EventSection({ event }: { event: TraceEvent }) {
   );
 }
 
+const SEQUENCE_COLORS = [
+  "#5b8def", "#a07cdf", "#4dab6f", "#c4884d", "#c46b6b",
+  "#3d8cb5", "#d4943a", "#8a9e7a", "#6b9fd4", "#b48ad4",
+];
+
+function SequenceGroup({
+  sequences,
+  depth,
+}: {
+  sequences: CallSequenceOut[];
+  depth: number;
+}) {
+  const sorted = [...sequences].sort(
+    (a, b) => a.position_in_batch - b.position_in_batch,
+  );
+  const isMulti = sorted.length > 1;
+
+  return (
+    <div className={`trace-sequences${isMulti ? " trace-sequences-multi" : ""}`}>
+      {sorted.map((seq, si) => {
+        const seqColor = SEQUENCE_COLORS[si % SEQUENCE_COLORS.length];
+        return (
+          <div
+            key={seq.id}
+            className="trace-sequence-lane"
+            style={{
+              borderLeftColor: seqColor,
+            }}
+          >
+            <div className="trace-sequence-header" style={{ color: seqColor }}>
+              <span className="trace-sequence-label">
+                sequence{isMulti ? ` ${si + 1}` : ""}
+              </span>
+              <span className="trace-sequence-meta">
+                {seq.calls.length} call{seq.calls.length !== 1 ? "s" : ""}
+              </span>
+            </div>
+            {seq.calls.map((callTrace) => (
+              <CallNode key={callTrace.call.id} trace={callTrace} depth={depth + 1} />
+            ))}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function CallNode({
   trace,
   depth,
@@ -725,13 +773,15 @@ export function CallNode({
             </div>
           )}
 
-          {children.length > 0 && (
+          {trace.sequences && trace.sequences.length > 0 ? (
+            <SequenceGroup sequences={trace.sequences} depth={depth} />
+          ) : children.length > 0 ? (
             <div className="trace-children">
               {children.map((child) => (
                 <CallNode key={child.call.id} trace={child} depth={depth + 1} />
               ))}
             </div>
-          )}
+          ) : null}
         </div>
       )}
     </div>

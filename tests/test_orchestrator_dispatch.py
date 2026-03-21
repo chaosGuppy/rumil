@@ -98,11 +98,9 @@ async def test_budget_exhaustion_limits_dispatches(tmp_db, question_page):
     """Only dispatches that fit within the budget should execute."""
     await tmp_db.init_budget(1)
     orch = ScriptedOrchestrator(tmp_db, batches=[
-        [
-            _scout_dispatch(question_page.id, max_rounds=1),
-            _scout_dispatch(question_page.id, max_rounds=1),
-            _scout_dispatch(question_page.id, max_rounds=1),
-        ],
+        [_scout_dispatch(question_page.id, max_rounds=1)],
+        [_scout_dispatch(question_page.id, max_rounds=1)],
+        [_scout_dispatch(question_page.id, max_rounds=1)],
     ])
     await orch.run(question_page.id)
 

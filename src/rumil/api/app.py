@@ -18,6 +18,7 @@ from rumil.settings import get_settings
 from rumil.api.schemas import (
     ABRunArmOut,
     ABRunTraceOut,
+    CallSequenceOut,
     CallTraceOut,
     LinkedPageOut,
     LLMExchangeOut,
@@ -213,6 +214,20 @@ async def _build_call_trace(db: DB, call_id: str) -> CallTraceOut:
             scope_page_summary = scope_page.headline
     children = await db.get_child_calls(call_id)
     child_traces = [await _build_call_trace(db, c.id) for c in children]
+
+    sequences_out: list[CallSequenceOut] | None = None
+    db_sequences = await db.get_sequences_for_call(call_id)
+    if db_sequences:
+        sequences_out = []
+        for seq in db_sequences:
+            seq_calls = await db.get_calls_for_sequence(seq.id)
+            seq_traces = [await _build_call_trace(db, sc.id) for sc in seq_calls]
+            sequences_out.append(CallSequenceOut(
+                id=seq.id,
+                position_in_batch=seq.position_in_batch,
+                calls=seq_traces,
+            ))
+
     exchange_costs = [
         e.cost_usd for e in events
         if hasattr(e, "cost_usd") and e.cost_usd is not None
@@ -227,6 +242,7 @@ async def _build_call_trace(db: DB, call_id: str) -> CallTraceOut:
         scope_page_summary=scope_page_summary,
         events=events,
         children=child_traces,
+        sequences=sequences_out,
         cost_usd=total if total > 0 else None,
     )
 

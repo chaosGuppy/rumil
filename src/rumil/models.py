@@ -297,6 +297,16 @@ class PageLink(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
+class CallSequence(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    parent_call_id: str | None = None
+    run_id: str = ""
+    scope_question_id: str | None = None
+    position_in_batch: int = 0
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
 class Call(BaseModel):
     model_config = ConfigDict(json_schema_extra=_all_fields_required)
     call_type: CallType
@@ -314,3 +324,5 @@ class Call(BaseModel):
     call_params: dict | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     completed_at: datetime | None = None
+    sequence_id: str | None = None
+    sequence_position: int | None = None

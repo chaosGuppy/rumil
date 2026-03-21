@@ -103,6 +103,32 @@ export type Call = {
      * Completed At
      */
     completed_at: string | null;
+    /**
+     * Sequence Id
+     */
+    sequence_id: string | null;
+    /**
+     * Sequence Position
+     */
+    sequence_position: number | null;
+};
+
+/**
+ * CallSequenceOut
+ */
+export type CallSequenceOut = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Position In Batch
+     */
+    position_in_batch: number;
+    /**
+     * Calls
+     */
+    calls: Array<CallTraceOut>;
 };
 
 /**
@@ -145,6 +171,10 @@ export type CallTraceOut = {
      * Children
      */
     children: Array<CallTraceOut>;
+    /**
+     * Sequences
+     */
+    sequences?: Array<CallSequenceOut> | null;
     /**
      * Cost Usd
      */

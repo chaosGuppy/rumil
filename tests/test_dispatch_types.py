@@ -7,8 +7,10 @@ from rumil.models import (
     Dispatch,
     DISPATCHABLE_CALL_TYPES,
     PrioritizationDispatchPayload,
+    ScopeOnlyDispatchPayload,
     ScoutDispatchPayload,
     ScoutMode,
+    ScoutSubquestionsDispatchPayload,
 )
 from rumil.calls.find_considerations import _resolve_round_mode
 
@@ -71,7 +73,20 @@ def test_prioritization_payload_requires_budget():
     assert p.budget == 10
 
 
-def test_each_dispatch_def_schema_has_question_id():
-    for ddef in DISPATCH_DEFS.values():
+def test_targeted_dispatch_defs_have_question_id():
+    for ct, ddef in DISPATCH_DEFS.items():
         schema = ddef.schema.model_json_schema()
-        assert "question_id" in schema["properties"]
+        if issubclass(ddef.schema, ScopeOnlyDispatchPayload):
+            assert "question_id" not in schema.get("properties", {}), (
+                f"{ct.value} is scope-only but exposes question_id in schema"
+            )
+        else:
+            assert "question_id" in schema["properties"], (
+                f"{ct.value} should expose question_id in schema"
+            )
+
+
+def test_scope_only_payload_accepts_no_question_id():
+    p = ScoutSubquestionsDispatchPayload(reason="test")
+    assert p.question_id == ''
+    assert "question_id" not in p.model_json_schema().get("properties", {})

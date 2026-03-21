@@ -71,7 +71,10 @@ async def run_prioritization_call(
     if extra_dispatch_defs:
         selected_defs.extend(extra_dispatch_defs)
     for ddef in selected_defs:
-        tools.append(ddef.bind(state, subtree_ids, short_id_map))
+        tools.append(ddef.bind(
+            state, subtree_ids, short_id_map,
+            scope_question_id=call.scope_page_id,
+        ))
 
     user_message = build_user_message(context_text, task_description)
 

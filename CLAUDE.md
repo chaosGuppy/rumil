@@ -117,3 +117,5 @@ To add a new call type: subclass `SimpleCall` (for single-pass calls) or `BaseCa
 - Multiline strings use parenthesized concatenation of single-quoted lines (`"line 1 " "line 2"`), not triple-quoted strings (`"""`). Only use `f""` on lines that actually contain `{placeholder}` expressions.
 - Do not add section divider comments (e.g. `# ----------` banners). Use blank lines between logical sections; the code should speak for itself.
 - When adding new user-facing CLI flags or commands to `main.py`, always update `README.md` with corresponding documentation.
+
+Whenever you run a script that prints a trace url, please report that trace url to the user immediately so they can follow along.

@@ -119,3 +119,12 @@ To add a new call type: subclass `SimpleCall` (for single-pass calls) or `BaseCa
 - When adding new user-facing CLI flags or commands to `main.py`, always update `README.md` with corresponding documentation.
 
 Whenever you run a script that prints a trace url, please report that trace url to the user immediately so they can follow along.
+
+## Hooks
+
+PostToolUse hooks in `.claude/settings.json` run automatically after file edits. Do not manually invoke these — they fire on every Edit/Write/MultiEdit:
+
+- **Python lint+format:** `ruff check --fix` and `ruff format` on edited `.py` files.
+- **Python type-check:** `uv run pyright` (project-wide) on any `.py` edit.
+- **TypeScript type-check:** `npx tsc --noEmit` in `frontend/` on any `.ts`/`.tsx` edit.
+- **Frontend type regeneration:** `./scripts/generate-api-types.sh` when `schemas.py` or `models.py` is edited. Do not manually run the type generation script after editing these files — the hook handles it.

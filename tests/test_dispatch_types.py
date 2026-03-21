@@ -42,7 +42,7 @@ def test_scout_payload_has_defaults():
 
 
 def test_scout_payload_accepts_mode():
-    p = ScoutDispatchPayload(question_id="abc", mode="concrete")
+    p = ScoutDispatchPayload(question_id="abc", mode=ScoutMode.CONCRETE)
     assert p.mode == ScoutMode.CONCRETE
 
 

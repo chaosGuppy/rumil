@@ -6,7 +6,7 @@ Composite response types and trace event envelope types. Core models
 """
 
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated
 
 from pydantic import BaseModel, Field
 
@@ -46,39 +46,39 @@ class _TraceEnvelopeMixin(BaseModel):
 
 
 class ContextBuiltEventOut(ContextBuiltEvent, _TraceEnvelopeMixin):
-    event: Literal["context_built"]
+    pass
 
 
 class MovesExecutedEventOut(MovesExecutedEvent, _TraceEnvelopeMixin):
-    event: Literal["moves_executed"]
+    pass
 
 
 class ReviewCompleteEventOut(ReviewCompleteEvent, _TraceEnvelopeMixin):
-    event: Literal["review_complete"]
+    pass
 
 
 class LLMExchangeEventOut(LLMExchangeEvent, _TraceEnvelopeMixin):
-    event: Literal["llm_exchange"]
+    pass
 
 
 class WarningEventOut(WarningEvent, _TraceEnvelopeMixin):
-    event: Literal["warning"]
+    pass
 
 
 class ErrorEventOut(ErrorEvent, _TraceEnvelopeMixin):
-    event: Literal["error"]
+    pass
 
 
 class ScoringCompletedEventOut(ScoringCompletedEvent, _TraceEnvelopeMixin):
-    event: Literal["scoring_completed"]
+    pass
 
 
 class DispatchesPlannedEventOut(DispatchesPlannedEvent, _TraceEnvelopeMixin):
-    event: Literal["dispatches_planned"]
+    pass
 
 
 class DispatchExecutedEventOut(DispatchExecutedEvent, _TraceEnvelopeMixin):
-    event: Literal["dispatch_executed"]
+    pass
 
 
 TraceEventOut = Annotated[

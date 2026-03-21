@@ -8,10 +8,11 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import Field
+from pydantic.config import JsonDict
 from pydantic_settings import BaseSettings
 
 
-_CAPTURE = {"capture": True}
+_CAPTURE: JsonDict = {"capture": True}
 
 
 def _capture_field(**kwargs: Any) -> Any:
@@ -94,7 +95,7 @@ class Settings(BaseSettings):
     @classmethod
     def from_env_files(cls, *env_files: str | Path) -> "Settings":
         """Create a Settings instance loading from the given env files."""
-        return cls(_env_file=env_files)
+        return cls(_env_file=env_files)  # type: ignore[call-arg]
 
     def capture_config(self) -> dict:
         """Collect fields marked with capture=True plus derived model."""

@@ -132,7 +132,7 @@ async def run(args: argparse.Namespace) -> None:
         if not page:
             print(f"Question {question_id} not found.")
             return
-        question_text = page.summary
+        question_text = page.headline
         print(f"Using existing question: {question_text}")
     elif args.question_text:
         question_text = args.question_text

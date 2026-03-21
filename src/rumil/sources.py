@@ -17,7 +17,7 @@ def read_file_content(path: Path) -> str:
     """Extract text from a file. Supports plain text and PDF."""
     if path.suffix.lower() == ".pdf":
         try:
-            import pypdf
+            import pypdf  # type: ignore[reportMissingImports]
         except ImportError:
             raise RuntimeError(
                 "pypdf is required for PDF ingestion: python -m pip install pypdf"

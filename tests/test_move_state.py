@@ -1,12 +1,18 @@
 """Tests for MoveState.take_new_moves drain behaviour."""
 
+from pydantic import BaseModel
+
 from rumil.models import Move, MoveType
 from rumil.moves.base import MoveState
 
 
+class _StubPayload(BaseModel):
+    pass
+
+
 def _append_move(state: MoveState, move_type: MoveType = MoveType.LOAD_PAGE):
     """Simulate what MoveDef.bind does when a tool executes."""
-    state.moves.append(Move(move_type=move_type, payload={}))
+    state.moves.append(Move(move_type=move_type, payload=_StubPayload()))
     state.move_created_ids.append([])
     state.move_trace_extras.append({})
 

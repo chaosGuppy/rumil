@@ -144,7 +144,7 @@ class ConsiderationDirection(str, Enum):
 
 
 class _DispatchBase(BaseModel):
-    reason: str = Field("", description="Why this dispatch is a good use of budget")
+    reason: str = Field(default="", description="Why this dispatch is a good use of budget")
     context_page_ids: list[str] = Field(
         default_factory=list,
         description=(
@@ -160,17 +160,17 @@ class BaseDispatchPayload(_DispatchBase):
 
 class _ScoutFields(BaseModel):
     mode: ScoutMode = Field(
-        ScoutMode.ALTERNATE,
+        default=ScoutMode.ALTERNATE,
         description=(
             "Scout mode: 'alternate' (default) alternates abstract and concrete "
             "each round; 'abstract' for all-abstract; 'concrete' for all-concrete."
         ),
     )
     fruit_threshold: int = Field(
-        4, description="Remaining fruit threshold for stopping"
+        default=4, description="Remaining fruit threshold for stopping"
     )
     max_rounds: int = Field(
-        5, description="Maximum scouting rounds (each round costs 1 budget)"
+        default=5, description="Maximum scouting rounds (each round costs 1 budget)"
     )
 
 

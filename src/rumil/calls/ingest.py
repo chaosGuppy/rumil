@@ -1,19 +1,20 @@
 """Ingest call: extract considerations from a source document."""
 
-import logging
-
-from rumil.calls.base import SimpleCall
-from rumil.context import build_call_context, build_embedding_based_context
+from rumil.calls.closing_reviewers import IngestClosingReview
+from rumil.calls.context_builders import IngestEmbeddingContext, IngestGraphContext
+from rumil.calls.page_creators import SimpleAgentLoop
+from rumil.calls.stages import CallRunner, ClosingReviewer, ContextBuilder, PageCreator
 from rumil.database import DB
 from rumil.models import Call, CallStage, CallType, Page
-from rumil.models import Call, CallType, Page
-from rumil.page_graph import PageGraph
-
-log = logging.getLogger(__name__)
 
 
-class IngestCall(SimpleCall):
+class IngestCall(CallRunner):
     """Ingest a source document: extract considerations for a question."""
+
+    context_builder_cls = IngestGraphContext
+    page_creator_cls = SimpleAgentLoop
+    closing_reviewer_cls = IngestClosingReview
+    call_type = CallType.INGEST
 
     def __init__(
         self,
@@ -25,70 +26,34 @@ class IngestCall(SimpleCall):
         broadcaster=None,
         up_to_stage: CallStage | None = None,
     ):
-        super().__init__(question_id, call, db, broadcaster=broadcaster, up_to_stage=up_to_stage)
-        self.source_page = source_page
+        self._source_page = source_page
         extra = source_page.extra or {}
-        self.filename = extra.get("filename", source_page.id[:8])
+        self._filename = extra.get('filename', source_page.id[:8])
+        super().__init__(question_id, call, db, broadcaster=broadcaster, up_to_stage=up_to_stage)
 
-    def call_type(self) -> CallType:
-        return CallType.INGEST
+    def _make_context_builder(self) -> ContextBuilder:
+        return IngestGraphContext(self._source_page)
+
+    def _make_page_creator(self) -> PageCreator:
+        return SimpleAgentLoop(
+            self.call_type, self.task_description(),
+        )
+
+    def _make_closing_reviewer(self) -> ClosingReviewer:
+        return IngestClosingReview(self.call_type, self._filename)
 
     def task_description(self) -> str:
         return (
-            "Extract considerations from the source document above for this question.\n\n"
-            f"Question ID: `{self.question_id}`\n"
-            f"Source page ID: `{self.source_page.id}`"
-        )
-
-    def result_summary(self) -> str:
-        return (
-            f"Ingest complete. Created {len(self.result.created_page_ids)} "
-            f"pages from '{self.filename}'."
-        )
-
-    async def build_context(self) -> None:
-        graph = await PageGraph.load(self.db)
-        question_context, _, self.working_page_ids = await build_call_context(
-            self.question_id, self.db, extra_page_ids=self.preloaded_ids,
-            graph=graph,
-        )
-        await self._record_context_built(source_page_id=self.source_page.id)
-
-        source_section = (
-            "\n\n---\n\n## Source Document\n\n"
-            f"**File:** {self.filename}  \n"
-            f"**Source page ID:** `{self.source_page.id}`\n\n"
-            f"{self.source_page.content}"
-        )
-        self.context_text = question_context + source_section
-        await self._load_phase1_pages()
-
-    def _log_review(self, review: dict) -> None:
-        log.info(
-            "Ingest review: confidence=%s, remaining_fruit=%s",
-            review.get("confidence_in_output", "?"),
-            review.get("remaining_fruit", "?"),
+            'Extract considerations from the source document above for this question.\n\n'
+            f'Question ID: `{self.infra.question_id}`\n'
+            f'Source page ID: `{self._source_page.id}`'
         )
 
 
 class EmbeddingIngestCall(IngestCall):
     """Ingest call that builds context via embedding similarity search."""
 
-    async def build_context(self) -> None:
-        question = await self.db.get_page(self.question_id)
-        query = question.headline if question else self.question_id
-        result = await build_embedding_based_context(
-            query, self.db, scope_question_id=self.question_id,
-        )
-        self.working_page_ids = result.page_ids
-        await self._record_context_built(source_page_id=self.source_page.id)
+    context_builder_cls = IngestEmbeddingContext
 
-        source_section = (
-            '\n\n---\n\n## Source Document\n\n'
-            f'**File:** {self.filename}  \n'
-            f'**Source page ID:** `{self.source_page.id}`\n\n'
-            f'{self.source_page.content}'
-        )
-        self.context_text = result.context_text + source_section
-
-
+    def _make_context_builder(self) -> ContextBuilder:
+        return IngestEmbeddingContext(self._source_page)

@@ -46,23 +46,23 @@ Always use the supabase cli to create new migrations: `supabase migration new`.
 
 **Orchestrators** (`src/rumil/orchestrator.py`): Orchestrators determine the sequence of calls to dispatch. Each represents a different way of prioritizing and executing research. 
 
-**Call types** (`src/rumil/calls/`): Polymorphic class hierarchy using a template method pattern. `BaseCall` defines `run()` which orchestrates three abstract phases: `build_context()`, `create_pages()`, `closing_review()`. Each call type lives in its own module (`scout.py` for find_considerations, `assess.py`, `prioritization.py`, `ingest.py`). `common.py` has shared utilities (`run_agent_loop()`, `run_single_call()`, closing reviews, dispatch tool). Public API re-exported from `__init__.py`.
+**Call types** (`src/rumil/calls/`): Composition-based architecture using three pluggable stage ABCs. `CallRunner` (in `stages.py`) orchestrates the three phases by delegating to `ContextBuilder`, `PageCreator`, and `ClosingReviewer` instances. Each call type lives in its own module (`find_considerations.py`, `assess.py`, `ingest.py`, etc.) as a thin `CallRunner` subclass. `common.py` has shared utilities (`run_agent_loop()`, `run_single_call()`, closing reviews). Public API re-exported from `__init__.py`.
 
-Class hierarchy:
-- `BaseCall` (abstract) — owns `run()` orchestration, `CallTrace`, `MoveState`, shared finalization. Accepts `up_to_stage: CallStage | None` to truncate the pipeline (e.g. stop after `build_context`). Subclasses implement the three phase methods plus `result_summary()`.
-- `SimpleCall(BaseCall)` — concrete `create_pages()` (single `run_agent_loop` pass) and `closing_review()` (structured review producing `remaining_fruit`, `confidence_in_output`, `page_ratings`). Also provides `_load_phase1_pages()` for a free preliminary LLM call where the model can only `load_page` to preload relevant pages into context. Subclasses override `build_context()`, `call_type()`, `task_description()`, and `result_summary()`.
-- `AssessCall(SimpleCall)` / `IngestCall(SimpleCall)` — minimal overrides; build context via `build_call_context()`, then call `_load_phase1_pages()`.
-- `ScoutCall(BaseCall)` — implements the find_considerations call type. All three phases directly. Multi-round `create_pages()` with conversation resumption and fruit-check stopping. Two-phase `closing_review()` (link review via `run_session_review()` → `_self_assessment()`).
-- Embedding variants (`EmbeddingAssessCall`, `EmbeddingIngestCall`, `EmbeddingScoutCall`) — subclass the above, override `build_context()` to use `build_embedding_based_context()` as the sole context source. `EmbeddingScoutCall` also skips `link_new_pages()` and the link review phase in closing (overrides `run_session_review()` to go straight to `_self_assessment()`).
+Architecture:
+- `CallRunner` (`stages.py`) — base class for all call types. Owns `run()` orchestration via `CallInfra` (bundles `CallTrace`, `MoveState`, DB, call). Subclasses set class-level `context_builder_cls`, `page_creator_cls`, `closing_reviewer_cls`, and `call_type` attributes, plus override `_make_*()` factory methods for parameterized stages and `task_description()`.
+- `ContextBuilder` ABC — `build_context(infra) -> ContextResult`. Implementations in `context_builders.py`: `GraphContextWithPhase1`, `EmbeddingContext`, `IngestGraphContext`, `IngestEmbeddingContext`, `FindConsiderationsGraphContext`, `ScoutEmbeddingContext`, `ConceptScoutContext`, `ConceptAssessContext`, `WebResearchEmbeddingContext`.
+- `PageCreator` ABC — `create_pages(infra, context) -> CreationResult`. Implementations in `page_creators.py`: `SimpleAgentLoop` (single-pass), `MultiRoundLoop` (multi-round with fruit checks), `WebResearchLoop` (server tools + scraping).
+- `ClosingReviewer` ABC — `closing_review(infra, context, creation) -> None` (persists all results as side effects). Implementations in `closing_reviewers.py`: `StandardClosingReview`, `IngestClosingReview`, `WebResearchClosingReview`, `TwoPhaseScoutReview`, `SinglePhaseScoutReview`, `ConceptAssessReview`.
+- Data types (`stages.py`): `CallInfra` (shared infra), `ContextResult` (context output), `CreationResult` (page creation output).
 
 The three phases:
-1. **build_context**
-2. **create_pages**
-3. **closing_review**
+1. **build_context** — `ContextBuilder.build_context()` returns `ContextResult`
+2. **create_pages** — `PageCreator.create_pages()` returns `CreationResult`
+3. **closing_review** — `ClosingReviewer.closing_review()` persists results and calls `mark_call_completed()`
 
-To add a new call type: subclass `SimpleCall` (for single-pass calls) or `BaseCall` (for custom loop logic). Implement `build_context()`, `call_type()`, `task_description()`, `result_summary()`. Register the class in the appropriate registry in `call_registry.py` and export from `__init__.py`.
+To add a new call type: subclass `CallRunner`. Set `call_type`, override `_make_context_builder()`, `_make_page_creator()`, `_make_closing_reviewer()`, and `task_description()`. For simple calls, reuse `SimpleAgentLoop` + `StandardClosingReview` + an existing context builder. Register the class in `call_registry.py` and export from `__init__.py`.
 
-**Call variant registries** (`src/rumil/calls/call_registry.py`): Each call type (find_considerations, assess, ingest) has a registry dict mapping string names to concrete classes (e.g. `FIND_CONSIDERATIONS_CALL_CLASSES = {"default": ScoutCall, "embedding": EmbeddingScoutCall}`). The orchestrator looks up the active variant from settings (`find_considerations_call_variant`, `assess_call_variant`, `ingest_call_variant`) and instantiates directly.
+**Call variant registries** (`src/rumil/calls/call_registry.py`): Each call type (find_considerations, assess, ingest) has a registry dict mapping string names to concrete classes (e.g. `FIND_CONSIDERATIONS_CALL_CLASSES = {"default": FindConsiderationsCall, "embedding": EmbeddingFindConsiderationsCall}`). The orchestrator looks up the active variant from settings (`find_considerations_call_variant`, `assess_call_variant`, `ingest_call_variant`) and instantiates directly.
 
 **LLM interface** (`src/rumil/llm.py`): Wraps the Anthropic API. Provides `call_api()` (single API call with tool handling), `structured_call()` (structured output), and `text_call()`. The multi-turn agent loop lives in `calls/common.py` (`run_agent_loop()`). For single-turn tool-calling use `run_single_call()` — do NOT use `run_agent_loop` with `max_rounds=1`. Both support `messages` for conversation resumption and `cache=True` for prompt caching. When multiple LLM calls share a conversation prefix, pass the same tools to all of them (even if the prompt only asks the model to use a subset) so the cache prefix matches. Builds prompts from `prompts/` directory: system = preamble.md + call-type-specific .md file, user = context + task. Has retry logic for transient errors.
 
@@ -91,7 +91,7 @@ To add a new call type: subclass `SimpleCall` (for single-pass calls) or `BaseCa
 - Always use absolute imports: `from rumil.module import name` (no relative imports)
 - Always put imports at the top of the file, not inside functions
 - Use modern type syntax: `X | None` not `Optional[X]`, `list[str]` not `List[str]`, etc. No `from typing import Optional, List, Dict`.
-- Prefer `Sequence` over `list` in type hints for parameters and return types. Only use `list` where mutation (e.g. `.append()`) is actually needed.
+- Prefer `Sequence` over `list` in type hints for parameters and return types. Only use `list` where mutation (e.g. `.append()`) is actually needed. If you find yourself needing to convert sequences to lists at runtime in order to follow this rule, check whether the consuming function really needs to be annotated with a list in its signature; if not, convert the consuming arg it a `Sequence` instead of converting to a list at runtime.
 - Multiline strings use parenthesized concatenation of single-quoted lines (`"line 1 " "line 2"`), not triple-quoted strings (`"""`). Only use `f""` on lines that actually contain `{placeholder}` expressions.
 - Do not add section divider comments (e.g. `# ----------` banners). Use blank lines between logical sections; the code should speak for itself.
 - When adding new user-facing CLI flags or commands to `main.py`, always update `README.md` with corresponding documentation.

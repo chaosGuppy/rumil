@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 
 import anthropic
 from anthropic.types import MessageParam, ServerToolUseBlock, TextBlock, ToolUseBlock
@@ -272,7 +272,7 @@ async def call_api(
     model: str,
     system_prompt: str,
     messages: list[dict],
-    tools: list[dict] | None = None,
+    tools: Sequence[dict] | None = None,
     warnings: list[str] | None = None,
     metadata: LLMExchangeMetadata | None = None,
     db: DB | None = None,
@@ -412,7 +412,7 @@ async def _structured_call_cached(
     response_model: type[BaseModel],
     msg_list: list[dict],
     *,
-    tools: list[dict] | None = None,
+    tools: Sequence[dict] | None = None,
     metadata: LLMExchangeMetadata | None = None,
     db: DB | None = None,
 ) -> StructuredCallResult:
@@ -516,7 +516,7 @@ async def _structured_call_parse(
     response_model: type[BaseModel] | None,
     msg_list: list[dict],
     *,
-    tools: list[dict] | None = None,
+    tools: Sequence[dict] | None = None,
     tool_choice: dict | None = None,
     metadata: LLMExchangeMetadata | None = None,
     db: DB | None = None,
@@ -618,7 +618,7 @@ async def structured_call(
     response_model: type[BaseModel] | None = None,
     *,
     messages: list[dict] | None = None,
-    tools: list[dict] | None = None,
+    tools: Sequence[dict] | None = None,
     tool_choice: dict | None = None,
     metadata: LLMExchangeMetadata | None = None,
     db: DB | None = None,

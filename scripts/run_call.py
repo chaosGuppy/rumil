@@ -44,7 +44,7 @@ from rumil.calls.call_registry import (
 )
 from rumil.calls.prioritization import run_prioritization
 from rumil.database import DB
-from rumil.models import CallStage, CallType, ScoutMode
+from rumil.models import CallStage, CallType, FindConsiderationsMode
 from rumil.orchestrator import create_root_question
 from rumil.settings import Settings, get_settings, _settings_var
 
@@ -58,7 +58,7 @@ async def run_call(args: argparse.Namespace, db: DB, question_id: str) -> None:
     up_to_stage = CallStage(args.up_to_stage) if args.up_to_stage else None
 
     if call_type == "find-considerations":
-        mode = ScoutMode(args.mode)
+        mode = FindConsiderationsMode(args.mode)
         call = await db.create_call(
             CallType.FIND_CONSIDERATIONS, scope_page_id=question_id,
         )

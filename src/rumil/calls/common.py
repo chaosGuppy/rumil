@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
@@ -68,7 +69,7 @@ PHASE1_TASK = (
 )
 
 
-async def _execute_tool_uses(
+async def execute_tool_uses(
     tool_uses: list[ToolUseBlock],
     tool_fns: dict,
 ) -> tuple[list[ToolCall], list[dict]]:
@@ -114,7 +115,7 @@ async def _execute_tool_uses(
     return tool_calls, tool_results
 
 
-async def _record_round_moves(
+async def record_round_moves(
     *,
     trace: CallTrace,
     state: MoveState,
@@ -128,7 +129,7 @@ async def _record_round_moves(
         )
 
 
-def _prepare_tools(tools: list[Tool]) -> tuple[list[dict], dict]:
+def prepare_tools(tools: list[Tool]) -> tuple[list[dict], dict]:
     """Build API tool definitions and function lookup from Tool list."""
     tool_defs = [
         {"name": t.name, "description": t.description, "input_schema": t.input_schema}
@@ -164,7 +165,7 @@ async def run_single_call(
     settings = get_settings()
     client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
     if tools is not None:
-        tool_defs, tool_fns = _prepare_tools(tools)
+        tool_defs, tool_fns = prepare_tools(tools)
     else:
         tool_defs = []
         tool_fns = {}
@@ -198,7 +199,7 @@ async def run_single_call(
         elif isinstance(block, ToolUseBlock):
             tool_uses.append(block)
 
-    all_tool_calls, tool_results = await _execute_tool_uses(tool_uses, tool_fns)
+    all_tool_calls, tool_results = await execute_tool_uses(tool_uses, tool_fns)
 
     rr = RoundRecord(
         round=0,
@@ -210,7 +211,7 @@ async def run_single_call(
     )
 
     if trace:
-        await _record_round_moves(trace=trace, state=state, db=db)
+        await record_round_moves(trace=trace, state=state, db=db)
     for w in all_warnings:
         if trace:
             await trace.record(WarningEvent(message=w))
@@ -263,7 +264,7 @@ async def run_agent_loop(
     )
     client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
     if tools is not None:
-        tool_defs, tool_fns = _prepare_tools(tools)
+        tool_defs, tool_fns = prepare_tools(tools)
     else:
         tool_defs = []
         tool_fns = {}
@@ -327,7 +328,7 @@ async def run_agent_loop(
             round_num + 1, len(tool_uses), [tu.name for tu in tool_uses],
         )
 
-        round_tool_calls, tool_results = await _execute_tool_uses(tool_uses, tool_fns)
+        round_tool_calls, tool_results = await execute_tool_uses(tool_uses, tool_fns)
         all_tool_calls.extend(round_tool_calls)
 
         rr = RoundRecord(
@@ -340,7 +341,7 @@ async def run_agent_loop(
         )
         all_rounds.append(rr)
         if trace:
-            await _record_round_moves(trace=trace, state=state, db=db)
+            await record_round_moves(trace=trace, state=state, db=db)
 
         remaining = effective_rounds - round_num
         if remaining == 1:
@@ -590,7 +591,7 @@ async def extract_loaded_page_ids(result: RunCallResult, db: DB) -> list[str]:
     return loaded
 
 
-async def resolve_page_refs(page_ids: list[str], db: DB) -> list[PageRef]:
+async def resolve_page_refs(page_ids: Sequence[str], db: DB) -> list[PageRef]:
     """Resolve a list of page IDs to PageRef objects with headlines."""
     refs = []
     for pid in page_ids:

@@ -126,7 +126,7 @@ class CallStage(str, Enum):
     CLOSING_REVIEW = "closing_review"
 
 
-class ScoutMode(str, Enum):
+class FindConsiderationsMode(str, Enum):
     ALTERNATE = "alternate"
     ABSTRACT = "abstract"
     CONCRETE = "concrete"
@@ -159,8 +159,8 @@ class BaseDispatchPayload(_DispatchBase):
 
 
 class _ScoutFields(BaseModel):
-    mode: ScoutMode = Field(
-        default=ScoutMode.ALTERNATE,
+    mode: FindConsiderationsMode = Field(
+        default=FindConsiderationsMode.ALTERNATE,
         description=(
             "Scout mode: 'alternate' (default) alternates abstract and concrete "
             "each round; 'abstract' for all-abstract; 'concrete' for all-concrete."

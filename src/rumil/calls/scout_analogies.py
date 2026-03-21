@@ -1,19 +1,39 @@
 """Scout Analogies call: identify informative analogies for the question."""
 
-import logging
-
-from rumil.calls.base import SimpleCall
-from rumil.context import build_embedding_based_context
+from rumil.calls.closing_reviewers import StandardClosingReview
+from rumil.calls.context_builders import EmbeddingContext
+from rumil.calls.page_creators import SimpleAgentLoop
+from rumil.calls.stages import CallRunner, ClosingReviewer, ContextBuilder, PageCreator
 from rumil.models import CallType, MoveType
 
-log = logging.getLogger(__name__)
 
-
-class ScoutAnalogiesCall(SimpleCall):
+class ScoutAnalogiesCall(CallRunner):
     """Identify analogies that may be informative about the question."""
 
-    def call_type(self) -> CallType:
-        return CallType.SCOUT_ANALOGIES
+    context_builder_cls = EmbeddingContext
+    page_creator_cls = SimpleAgentLoop
+    closing_reviewer_cls = StandardClosingReview
+    call_type = CallType.SCOUT_ANALOGIES
+    available_moves = [
+        MoveType.CREATE_CLAIM,
+        MoveType.CREATE_QUESTION,
+        MoveType.LINK_CONSIDERATION,
+        MoveType.LINK_CHILD_QUESTION,
+        MoveType.LINK_RELATED,
+        MoveType.LOAD_PAGE,
+    ]
+
+    def _make_context_builder(self) -> ContextBuilder:
+        return EmbeddingContext(self.call_type)
+
+    def _make_page_creator(self) -> PageCreator:
+        return SimpleAgentLoop(
+            self.call_type, self.task_description(),
+            available_moves=self.available_moves,
+        )
+
+    def _make_closing_reviewer(self) -> ClosingReviewer:
+        return StandardClosingReview(self.call_type)
 
     def task_description(self) -> str:
         return (
@@ -21,35 +41,5 @@ class ScoutAnalogiesCall(SimpleCall):
             'question. For each analogy, create claims describing it and its '
             'relevance, and generate subquestions asking about the details '
             'and limits of the analogy.\n\n'
-            f'Question ID: `{self.question_id}`'
+            f'Question ID: `{self.infra.question_id}`'
         )
-
-    def result_summary(self) -> str:
-        return (
-            f'Scout analogies complete. '
-            f'Created {len(self.result.created_page_ids)} pages.'
-        )
-
-    async def build_context(self) -> None:
-        question = await self.db.get_page(self.question_id)
-        query = question.headline if question else self.question_id
-        result = await build_embedding_based_context(
-            query, self.db, scope_question_id=self.question_id,
-        )
-        self.context_text = result.context_text
-        self.working_page_ids = result.page_ids
-        await self._record_context_built()
-
-    def _get_available_moves(self) -> list[MoveType]:
-        return [
-            MoveType.CREATE_CLAIM,
-            MoveType.CREATE_QUESTION,
-            MoveType.LINK_CONSIDERATION,
-            MoveType.LINK_CHILD_QUESTION,
-            MoveType.LINK_RELATED,
-            MoveType.LOAD_PAGE,
-        ]
-
-    async def create_pages(self) -> None:
-        self.available_moves = self._get_available_moves()
-        await super().create_pages()

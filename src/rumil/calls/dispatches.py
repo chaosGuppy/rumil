@@ -1,11 +1,14 @@
 """Dispatch definitions: tool schemas and registry for prioritization dispatches."""
 
+import copy
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Generic, TypeVar
 
 from rumil.llm import Tool
 from rumil.models import (
+    FindConsiderationsMode,
     AssessDispatchPayload,
     BaseDispatchPayload,
     CallType,
@@ -44,11 +47,20 @@ class DispatchDef(Generic[S]):
         subtree_ids: set[str] | None = None,
         short_id_map: dict[str, str] | None = None,
         scope_question_id: str | None = None,
+        allowed_modes: Sequence[FindConsiderationsMode] | None = None,
     ) -> Tool:
         """Return a Tool bound to a call's mutable state."""
 
         async def fn(inp: dict) -> str:
             validated = self.schema(**inp)
+
+            if allowed_modes and hasattr(validated, 'mode'):
+                if validated.mode not in allowed_modes:
+                    allowed_str = ', '.join(m.value for m in allowed_modes)
+                    return (
+                        f"Invalid mode '{validated.mode.value}'. "
+                        f"Allowed modes: {allowed_str}"
+                    )
 
             if isinstance(validated, ScopeOnlyDispatchPayload) and scope_question_id:
                 validated.question_id = scope_question_id
@@ -63,12 +75,47 @@ class DispatchDef(Generic[S]):
             )
             return "Dispatch recorded."
 
+        schema = self.schema.model_json_schema()
+        if allowed_modes is not None:
+            schema = _filter_mode_schema(schema, allowed_modes)
+
         return Tool(
             name=self.name,
             description=self.description,
-            input_schema=self.schema.model_json_schema(),
+            input_schema=schema,
             fn=fn,
         )
+
+
+def _filter_mode_schema(
+    schema: dict,
+    allowed_modes: Sequence[FindConsiderationsMode],
+) -> dict:
+    """Deep-copy schema and restrict the mode enum to only allowed values."""
+    schema = copy.deepcopy(schema)
+    allowed_values = [m.value for m in allowed_modes]
+
+    mode_def_key = 'FindConsiderationsMode'
+    defs = schema.get('$defs', {})
+    if mode_def_key in defs:
+        filtered_def = dict(defs[mode_def_key])
+        filtered_def['enum'] = [v for v in filtered_def.get('enum', []) if v in allowed_values]
+        if 'properties' in schema and 'mode' in schema['properties']:
+            mode_prop = schema['properties']['mode']
+            mode_prop.pop('$ref', None)
+            mode_prop.update(filtered_def)
+            if mode_prop.get('default') not in allowed_values:
+                mode_prop['default'] = allowed_values[0]
+            mode_prop['description'] = (
+                'Scout mode. Available: '
+                + ', '.join(f"'{v}'" for v in allowed_values)
+                + '.'
+            )
+        del defs[mode_def_key]
+        if not defs:
+            del schema['$defs']
+
+    return schema
 
 
 DISPATCH_DEFS: dict[CallType, DispatchDef] = {

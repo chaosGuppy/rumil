@@ -18,6 +18,7 @@ from rumil.models import Call, CallStatus, CallType, MoveType
 from rumil.moves.base import MoveState
 from rumil.moves.create_question import PRIORITIZATION_MOVE
 from rumil.moves.registry import MOVES
+from rumil.settings import get_settings
 from rumil.tracing.trace_events import ContextBuiltEvent, DispatchTraceItem, DispatchesPlannedEvent
 from rumil.tracing.tracer import CallTrace
 
@@ -71,10 +72,14 @@ async def run_prioritization_call(
     if extra_dispatch_defs:
         selected_defs.extend(extra_dispatch_defs)
     for ddef in selected_defs:
-        tools.append(ddef.bind(
-            state, subtree_ids, short_id_map,
+        bind_kwargs: dict = dict(
+            subtree_ids=subtree_ids,
+            short_id_map=short_id_map,
             scope_question_id=call.scope_page_id,
-        ))
+        )
+        if ddef.call_type == CallType.FIND_CONSIDERATIONS:
+            bind_kwargs['allowed_modes'] = get_settings().allowed_find_considerations_modes
+        tools.append(ddef.bind(state, **bind_kwargs))
 
     user_message = build_user_message(context_text, task_description)
 

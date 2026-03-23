@@ -1,5 +1,7 @@
 """Tests for dispatch type validation."""
 
+import pytest
+
 from rumil.calls.dispatches import DISPATCH_DEFS
 from rumil.models import (
     AssessDispatchPayload,
@@ -13,6 +15,8 @@ from rumil.models import (
     ScoutSubquestionsDispatchPayload,
 )
 from rumil.calls.page_creators import _resolve_round_mode
+from rumil.moves.base import MoveState
+from rumil.settings import get_settings, override_settings
 
 
 def test_dispatchable_types_include_expected():
@@ -90,3 +94,61 @@ def test_scope_only_payload_accepts_no_question_id():
     p = ScoutSubquestionsDispatchPayload(reason="test")
     assert p.question_id == ''
     assert "question_id" not in p.model_json_schema().get("properties", {})
+
+
+def test_bind_allowed_modes_filters_schema():
+    """bind() with allowed_modes restricts the mode enum in the tool schema."""
+    ddef = DISPATCH_DEFS[CallType.FIND_CONSIDERATIONS]
+    state = MoveState.__new__(MoveState)
+    state.dispatches = []
+    state.moves = []
+    state.created_page_ids = []
+
+    tool = ddef.bind(
+        state,
+        allowed_modes=[FindConsiderationsMode.CONCRETE],
+    )
+    schema = tool.input_schema
+    mode_prop = schema['properties']['mode']
+    assert mode_prop['enum'] == ['concrete']
+    assert mode_prop['default'] == 'concrete'
+    assert '$defs' not in schema
+
+
+@pytest.mark.asyncio
+async def test_bind_allowed_modes_rejects_disallowed():
+    """The callback rejects a mode not in allowed_modes."""
+    ddef = DISPATCH_DEFS[CallType.FIND_CONSIDERATIONS]
+    state = MoveState.__new__(MoveState)
+    state.dispatches = []
+    state.moves = []
+    state.created_page_ids = []
+
+    tool = ddef.bind(
+        state,
+        allowed_modes=[FindConsiderationsMode.CONCRETE],
+    )
+    result = await tool.fn({
+        'question_id': 'abc',
+        'mode': 'abstract',
+        'reason': 'test',
+    })
+    assert 'Invalid mode' in result
+    assert len(state.dispatches) == 0
+
+
+def test_allowed_find_considerations_modes_property():
+    """Settings property parses comma-separated modes correctly."""
+    with override_settings(find_considerations_modes='concrete,abstract'):
+        modes = get_settings().allowed_find_considerations_modes
+        assert list(modes) == [
+            FindConsiderationsMode.CONCRETE,
+            FindConsiderationsMode.ABSTRACT,
+        ]
+
+
+def test_allowed_find_considerations_modes_single():
+    """Settings property handles a single mode."""
+    with override_settings(find_considerations_modes='alternate'):
+        modes = get_settings().allowed_find_considerations_modes
+        assert list(modes) == [FindConsiderationsMode.ALTERNATE]

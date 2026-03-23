@@ -24,8 +24,8 @@ from typing import TYPE_CHECKING
 from collections.abc import Awaitable, Callable, Sequence
 
 import anthropic
+
 from anthropic.types import (
-    MessageParam,
     ServerToolUseBlock,
     TextBlock,
     ToolUseBlock,
@@ -96,13 +96,16 @@ def _add_cache_breakpoint(messages: list[dict]) -> list[dict]:
         if isinstance(last_block, dict):
             content[-1] = {**last_block, "cache_control": _CACHE_BREAKPOINT}
         else:
-            content[-1] = {**last_block.model_dump(), "cache_control": _CACHE_BREAKPOINT}
+            content[-1] = {
+                **last_block.model_dump(),
+                "cache_control": _CACHE_BREAKPOINT,
+            }
         last["content"] = content
     msgs[-1] = last
     return msgs
 
 
-_JSON_BLOCK_RE = re.compile(r'```(?:json)?\s*\n(.*?)\n```', re.DOTALL)
+_JSON_BLOCK_RE = re.compile(r"```(?:json)?\s*\n(.*?)\n```", re.DOTALL)
 
 
 def _extract_json(text: str) -> dict:
@@ -114,32 +117,32 @@ def _extract_json(text: str) -> dict:
     if m:
         return json.loads(m.group(1))
     stripped = text.strip()
-    start = stripped.find('{')
+    start = stripped.find("{")
     if start != -1:
-        return json.loads(stripped[start:stripped.rfind('}') + 1])
-    raise ValueError(f'No JSON found in response: {text[:200]}')
+        return json.loads(stripped[start : stripped.rfind("}") + 1])
+    raise ValueError(f"No JSON found in response: {text[:200]}")
 
 
 def _serialize_messages(messages: list[dict]) -> list[dict]:
     """Serialize messages for JSON storage, converting SDK objects to dicts."""
     result = []
     for msg in messages:
-        out: dict = {'role': msg['role']}
-        content = msg.get('content')
+        out: dict = {"role": msg["role"]}
+        content = msg.get("content")
         if isinstance(content, str):
-            out['content'] = content
+            out["content"] = content
         elif isinstance(content, list):
             blocks = []
             for block in content:
                 if isinstance(block, dict):
                     blocks.append(block)
-                elif hasattr(block, 'model_dump'):
+                elif hasattr(block, "model_dump"):
                     blocks.append(block.model_dump())
                 else:
                     blocks.append(str(block))
-            out['content'] = blocks
+            out["content"] = blocks
         else:
-            out['content'] = str(content) if content is not None else None
+            out["content"] = str(content) if content is not None else None
         result.append(out)
     return result
 
@@ -148,9 +151,8 @@ def _schema_instruction(response_model: type[BaseModel]) -> str:
     """Build a JSON schema instruction block for the model."""
     schema = response_model.model_json_schema()
     return (
-        '\n\nRespond with ONLY a JSON object matching this schema '
-        '(no other text, no markdown fences):\n'
-        + json.dumps(schema, indent=2)
+        "\n\nRespond with ONLY a JSON object matching this schema "
+        "(no other text, no markdown fences):\n" + json.dumps(schema, indent=2)
     )
 
 
@@ -261,17 +263,19 @@ async def _save_exchange(
         cache_read_input_tokens=cache_read_input_tokens,
     )
     if metadata.trace:
-        await metadata.trace.record(LLMExchangeEvent(
-            exchange_id=exchange_id,
-            phase=metadata.phase,
-            round=metadata.round_num,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            cache_creation_input_tokens=cache_creation_input_tokens or None,
-            cache_read_input_tokens=cache_read_input_tokens or None,
-            duration_ms=duration_ms,
-            cost_usd=cost_usd or None,
-        ))
+        await metadata.trace.record(
+            LLMExchangeEvent(
+                exchange_id=exchange_id,
+                phase=metadata.phase,
+                round=metadata.round_num,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                cache_creation_input_tokens=cache_creation_input_tokens or None,
+                cache_read_input_tokens=cache_read_input_tokens or None,
+                duration_ms=duration_ms,
+                cost_usd=cost_usd or None,
+            )
+        )
 
 
 async def call_api(
@@ -304,7 +308,10 @@ async def call_api(
     n_tools = len(tools) if tools else 0
     log.debug(
         "API call: model=%s, tools=%d, system_prompt_len=%d, messages=%d",
-        model, n_tools, len(system_prompt), len(messages),
+        model,
+        n_tools,
+        len(system_prompt),
+        len(messages),
     )
 
     for attempt in range(MAX_API_RETRIES):
@@ -332,11 +339,13 @@ async def call_api(
                             {"name": block.name, "input": block.input}
                         )
                     elif isinstance(block, WebSearchToolResultBlock):
-                        tool_call_data.append({
-                            "type": "web_search_tool_result",
-                            "tool_use_id": block.tool_use_id,
-                            "content": block.model_dump(mode="json")["content"],
-                        })
+                        tool_call_data.append(
+                            {
+                                "type": "web_search_tool_result",
+                                "tool_use_id": block.tool_use_id,
+                                "content": block.model_dump(mode="json")["content"],
+                            }
+                        )
                 if metadata.user_messages is None and len(messages) > 1:
                     metadata.user_messages = _serialize_messages(messages)
                 await _save_exchange(
@@ -349,8 +358,14 @@ async def call_api(
                     input_tokens=response.usage.input_tokens,
                     output_tokens=response.usage.output_tokens,
                     duration_ms=elapsed_ms,
-                    cache_creation_input_tokens=getattr(response.usage, "cache_creation_input_tokens", 0) or 0,
-                    cache_read_input_tokens=getattr(response.usage, "cache_read_input_tokens", 0) or 0,
+                    cache_creation_input_tokens=getattr(
+                        response.usage, "cache_creation_input_tokens", 0
+                    )
+                    or 0,
+                    cache_read_input_tokens=getattr(
+                        response.usage, "cache_read_input_tokens", 0
+                    )
+                    or 0,
                 )
             return APIResponse(message=response, duration_ms=elapsed_ms)
         except Exception as e:
@@ -443,11 +458,16 @@ async def _structured_call_cached(
     max_parse_attempts = 2
     for parse_attempt in range(max_parse_attempts):
         api_resp = await call_api(
-            client, settings.model, system_prompt, inject_msgs,
+            client,
+            settings.model,
+            system_prompt,
+            inject_msgs,
             tools=tools,
-            metadata=metadata, db=db, cache=True,
+            metadata=metadata,
+            db=db,
+            cache=True,
         )
-        response_text = ''
+        response_text = ""
         for block in api_resp.message.content:
             if isinstance(block, TextBlock):
                 response_text += block.text
@@ -457,7 +477,7 @@ async def _structured_call_cached(
             parsed = response_model.model_validate(raw)
             model_name = response_model.__name__
             log.debug(
-                'structured_call (cached) success: %s, usage=%d/%d tokens',
+                "structured_call (cached) success: %s, usage=%d/%d tokens",
                 model_name,
                 api_resp.message.usage.input_tokens,
                 api_resp.message.usage.output_tokens,
@@ -472,25 +492,31 @@ async def _structured_call_cached(
         except (json.JSONDecodeError, ValueError, ValidationError) as exc:
             if parse_attempt < max_parse_attempts - 1:
                 log.warning(
-                    'structured_call (cached): parse attempt %d failed (%s), retrying',
-                    parse_attempt + 1, exc,
+                    "structured_call (cached): parse attempt %d failed (%s), retrying",
+                    parse_attempt + 1,
+                    exc,
                 )
                 inject_msgs = list(inject_msgs)
-                inject_msgs.append({
-                    'role': 'assistant', 'content': response_text,
-                })
-                inject_msgs.append({
-                    'role': 'user',
-                    'content': (
-                        'Your previous response could not be parsed as valid JSON '
-                        'matching the schema. Please try again, responding with ONLY '
-                        'the JSON object.'
-                    ),
-                })
+                inject_msgs.append(
+                    {
+                        "role": "assistant",
+                        "content": response_text,
+                    }
+                )
+                inject_msgs.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "Your previous response could not be parsed as valid JSON "
+                            "matching the schema. Please try again, responding with ONLY "
+                            "the JSON object."
+                        ),
+                    }
+                )
                 continue
             log.warning(
-                'structured_call (cached): all parse attempts failed (%s), '
-                'returning empty result',
+                "structured_call (cached): all parse attempts failed (%s), "
+                "returning empty result",
                 exc,
             )
             return StructuredCallResult(
@@ -500,27 +526,28 @@ async def _structured_call_cached(
                 duration_ms=api_resp.duration_ms,
             )
 
-    raise RuntimeError('Unreachable: parse retry loop exhausted')
+    raise RuntimeError("Unreachable: parse retry loop exhausted")
 
 
 def _inject_into_last_user_message(
-    messages: list[dict], extra_text: str,
+    messages: list[dict],
+    extra_text: str,
 ) -> list[dict]:
     """Append extra_text to the last user message's content."""
     msgs = list(messages)
     for i in range(len(msgs) - 1, -1, -1):
-        if msgs[i].get('role') == 'user':
+        if msgs[i].get("role") == "user":
             last = dict(msgs[i])
-            content = last.get('content')
+            content = last.get("content")
             if isinstance(content, str):
-                last['content'] = content + extra_text
+                last["content"] = content + extra_text
             elif isinstance(content, list):
                 content = list(content)
-                content.append({'type': 'text', 'text': extra_text})
-                last['content'] = content
+                content.append({"type": "text", "text": extra_text})
+                last["content"] = content
             msgs[i] = last
             return msgs
-    msgs.append({'role': 'user', 'content': extra_text})
+    msgs.append({"role": "user", "content": extra_text})
     return msgs
 
 
@@ -543,20 +570,20 @@ async def _structured_call_parse(
         try:
             t0 = time.monotonic()
             parse_kwargs: dict = {
-                'model': model,
-                'max_tokens': DEFAULT_MAX_TOKENS,
-                'system': system_prompt,
-                'messages': msg_list,
+                "model": model,
+                "max_tokens": DEFAULT_MAX_TOKENS,
+                "system": system_prompt,
+                "messages": msg_list,
             }
             if response_model is not None:
-                parse_kwargs['output_format'] = response_model
+                parse_kwargs["output_format"] = response_model
             if tools is not None:
-                parse_kwargs['tools'] = tools
+                parse_kwargs["tools"] = tools
             if tool_choice is not None:
-                parse_kwargs['tool_choice'] = tool_choice
+                parse_kwargs["tool_choice"] = tool_choice
             response = await client.messages.parse(**parse_kwargs)
             elapsed_ms = int((time.monotonic() - t0) * 1000)
-            response_text = ''
+            response_text = ""
             for block in response.content:
                 if isinstance(block, TextBlock):
                     response_text += block.text
@@ -571,13 +598,19 @@ async def _structured_call_parse(
                     input_tokens=response.usage.input_tokens,
                     output_tokens=response.usage.output_tokens,
                     duration_ms=elapsed_ms,
-                    cache_creation_input_tokens=getattr(response.usage, 'cache_creation_input_tokens', 0) or 0,
-                    cache_read_input_tokens=getattr(response.usage, 'cache_read_input_tokens', 0) or 0,
+                    cache_creation_input_tokens=getattr(
+                        response.usage, "cache_creation_input_tokens", 0
+                    )
+                    or 0,
+                    cache_read_input_tokens=getattr(
+                        response.usage, "cache_read_input_tokens", 0
+                    )
+                    or 0,
                 )
             if response.parsed_output is not None:
                 log.debug(
-                    'structured_call success: %s, usage=%d/%d tokens',
-                    response_model.__name__ if response_model else 'unknown',
+                    "structured_call success: %s, usage=%d/%d tokens",
+                    response_model.__name__ if response_model else "unknown",
                     response.usage.input_tokens,
                     response.usage.output_tokens,
                 )
@@ -589,8 +622,9 @@ async def _structured_call_parse(
                     duration_ms=elapsed_ms,
                 )
             log.warning(
-                'Structured output was empty (stop_reason=%s, usage=%d tokens)',
-                response.stop_reason, response.usage.output_tokens,
+                "Structured output was empty (stop_reason=%s, usage=%d tokens)",
+                response.stop_reason,
+                response.usage.output_tokens,
             )
             return StructuredCallResult(
                 response_text=response_text or None,
@@ -599,35 +633,40 @@ async def _structured_call_parse(
                 duration_ms=elapsed_ms,
             )
         except Exception as e:
-            status = getattr(e, 'status_code', None)
+            status = getattr(e, "status_code", None)
             name = type(e).__name__.lower()
             retryable = (
                 status in (429, 500, 529)
-                or 'overloaded' in name
-                or 'ratelimit' in name
-                or 'internalserver' in name
-                or 'overloaded' in str(e).lower()
+                or "overloaded" in name
+                or "ratelimit" in name
+                or "internalserver" in name
+                or "overloaded" in str(e).lower()
             )
             if not retryable or attempt == MAX_API_RETRIES - 1:
                 log.error(
-                    'structured_call failed (non-retryable): %s', e, exc_info=True,
+                    "structured_call failed (non-retryable): %s",
+                    e,
+                    exc_info=True,
                 )
                 raise
             wait = 2**attempt
-            label = f'HTTP {status}' if status else name
+            label = f"HTTP {status}" if status else name
             log.warning(
-                'structured_call: API temporarily unavailable (%s), '
-                'retrying in %ds (attempt %d/%d)',
-                label, wait, attempt + 1, MAX_API_RETRIES,
+                "structured_call: API temporarily unavailable (%s), "
+                "retrying in %ds (attempt %d/%d)",
+                label,
+                wait,
+                attempt + 1,
+                MAX_API_RETRIES,
             )
             await asyncio.sleep(wait)
 
-    raise RuntimeError('Unreachable: retry loop exhausted without raising')
+    raise RuntimeError("Unreachable: retry loop exhausted without raising")
 
 
 async def structured_call(
     system_prompt: str,
-    user_message: str = '',
+    user_message: str = "",
     response_model: type[BaseModel] | None = None,
     *,
     messages: list[dict] | None = None,
@@ -647,28 +686,37 @@ async def structured_call(
     Pass `tools` to share cache prefix with agent calls.
     """
     if bool(metadata) != bool(db):
-        raise ValueError('metadata and db must be provided together')
+        raise ValueError("metadata and db must be provided together")
     if not user_message and not messages:
-        raise ValueError('Either user_message or messages must be provided')
+        raise ValueError("Either user_message or messages must be provided")
 
     raw_msgs = (
-        messages if messages is not None
-        else [{'role': 'user', 'content': user_message}]
+        messages
+        if messages is not None
+        else [{"role": "user", "content": user_message}]
     )
-    model_name = response_model.__name__ if response_model else 'None'
+    model_name = response_model.__name__ if response_model else "None"
     log.debug(
-        'structured_call: response_model=%s, cache=%s',
-        model_name, cache,
+        "structured_call: response_model=%s, cache=%s",
+        model_name,
+        cache,
     )
 
     if cache and response_model is not None:
         return await _structured_call_cached(
-            system_prompt, response_model, raw_msgs,
+            system_prompt,
+            response_model,
+            raw_msgs,
             tools=tools,
-            metadata=metadata, db=db,
+            metadata=metadata,
+            db=db,
         )
     return await _structured_call_parse(
-        system_prompt, response_model, raw_msgs,
-        tools=tools, tool_choice=tool_choice,
-        metadata=metadata, db=db,
+        system_prompt,
+        response_model,
+        raw_msgs,
+        tools=tools,
+        tool_choice=tool_choice,
+        metadata=metadata,
+        db=db,
     )

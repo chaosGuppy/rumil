@@ -5,6 +5,7 @@ from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Generic, TypeVar
+import re
 
 from pydantic import BaseModel, Field
 
@@ -262,12 +263,88 @@ async def create_page(
         page_type.value, page.id[:8], page.headline[:70],
     )
 
+    try:
+        cited_ids = await extract_and_link_citations(
+            page.id, page.content, db, citing_page_type=page_type,
+        )
+        if cited_ids:
+            log.info(
+                "Auto-linked %d citations from page %s",
+                len(cited_ids), page.id[:8],
+            )
+    except Exception:
+        log.warning(
+            "Citation extraction failed for page %s", page.id[:8], exc_info=True,
+        )
+
     message = (
         f"Created [{page.id[:8]}]: {payload.headline}"
         if payload.headline
         else f"Created [{page.id[:8]}]"
     )
     return MoveResult(message=message, created_page_id=page.id)
+
+
+_CITATION_RE = re.compile(r'\[([a-f0-9]{8})\]')
+
+
+async def extract_and_link_citations(
+    page_id: str,
+    content: str,
+    db: DB,
+    citing_page_type: PageType | None = None,
+) -> set[str]:
+    """Extract [shortid] citations from content and create page links.
+
+    Link type depends on both citing and cited page types:
+    - Cited SOURCE → CITES
+    - Citing QUESTION/JUDGEMENT + cited CLAIM → CONSIDERATION (direction flipped:
+      from=cited claim, to=citing page, since "claim bears on question/judgement")
+    - Otherwise → RELATED
+
+    Returns the set of full UUIDs that were successfully linked.
+    """
+    matches = set(_CITATION_RE.findall(content))
+    own_short_id = page_id[:8]
+    matches.discard(own_short_id)
+    if not matches:
+        return set()
+
+    linked: set[str] = set()
+    for short_id in matches:
+        resolved = await db.resolve_page_id(short_id)
+        if not resolved:
+            log.debug("Citation [%s] did not resolve to a page", short_id)
+            continue
+
+        cited_page = await db.get_page(resolved)
+        if not cited_page:
+            continue
+
+        from_id, to_id = page_id, resolved
+        if cited_page.page_type == PageType.SOURCE:
+            link_type = LinkType.CITES
+        elif (
+            citing_page_type in (PageType.QUESTION, PageType.JUDGEMENT)
+            and cited_page.page_type == PageType.CLAIM
+        ):
+            link_type = LinkType.CONSIDERATION
+            from_id, to_id = resolved, page_id
+        else:
+            link_type = LinkType.RELATED
+
+        await db.save_link(PageLink(
+            from_page_id=from_id,
+            to_page_id=to_id,
+            link_type=link_type,
+        ))
+        log.info(
+            "Citation linked: %s -> %s (%s)",
+            from_id[:8], to_id[:8], link_type.value,
+        )
+        linked.add(resolved)
+
+    return linked
 
 
 async def link_pages(

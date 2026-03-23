@@ -63,6 +63,7 @@ class CallType(str, Enum):
     SCOUT_HYPOTHESES = "scout_hypotheses"
     SCOUT_ANALOGIES = "scout_analogies"
     SCOUT_PARADIGM_CASES = "scout_paradigm_cases"
+    SCOUT_FACTCHECKS = "scout_factchecks"
     WEB_RESEARCH = "web_research"
 
 
@@ -76,6 +77,7 @@ DISPATCHABLE_CALL_TYPES: set[CallType] = {
     CallType.SCOUT_HYPOTHESES,
     CallType.SCOUT_ANALOGIES,
     CallType.SCOUT_PARADIGM_CASES,
+    CallType.SCOUT_FACTCHECKS,
     CallType.WEB_RESEARCH,
 }
 
@@ -154,19 +156,22 @@ class BaseDispatchPayload(_DispatchBase):
     question_id: str = Field(description="Page ID of the question to investigate")
 
 
-class _ScoutFields(BaseModel):
+class _MultiRoundFields(BaseModel):
+    fruit_threshold: int = Field(
+        4, description="Remaining fruit threshold for stopping"
+    )
+    max_rounds: int = Field(
+        5, description="Maximum scouting rounds (each round costs 1 budget)"
+    )
+
+
+class _ScoutFields(_MultiRoundFields):
     mode: ScoutMode = Field(
         ScoutMode.ALTERNATE,
         description=(
             "Scout mode: 'alternate' (default) alternates abstract and concrete "
             "each round; 'abstract' for all-abstract; 'concrete' for all-concrete."
         ),
-    )
-    fruit_threshold: int = Field(
-        4, description="Remaining fruit threshold for stopping"
-    )
-    max_rounds: int = Field(
-        5, description="Maximum scouting rounds (each round costs 1 budget)"
     )
 
 
@@ -186,23 +191,27 @@ class PrioritizationDispatchPayload(BaseDispatchPayload, _PrioritizationFields):
     pass
 
 
-class ScoutSubquestionsDispatchPayload(BaseDispatchPayload):
+class ScoutSubquestionsDispatchPayload(BaseDispatchPayload, _MultiRoundFields):
     pass
 
 
-class ScoutEstimatesDispatchPayload(BaseDispatchPayload):
+class ScoutEstimatesDispatchPayload(BaseDispatchPayload, _MultiRoundFields):
     pass
 
 
-class ScoutHypothesesDispatchPayload(BaseDispatchPayload):
+class ScoutHypothesesDispatchPayload(BaseDispatchPayload, _MultiRoundFields):
     pass
 
 
-class ScoutAnalogiesDispatchPayload(BaseDispatchPayload):
+class ScoutAnalogiesDispatchPayload(BaseDispatchPayload, _MultiRoundFields):
     pass
 
 
-class ScoutParadigmCasesDispatchPayload(BaseDispatchPayload):
+class ScoutParadigmCasesDispatchPayload(BaseDispatchPayload, _MultiRoundFields):
+    pass
+
+
+class ScoutFactchecksDispatchPayload(BaseDispatchPayload, _MultiRoundFields):
     pass
 
 

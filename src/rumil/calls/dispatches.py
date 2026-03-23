@@ -14,6 +14,7 @@ from rumil.models import (
     RecurseDispatchPayload,
     ScoutAnalogiesDispatchPayload,
     ScoutDispatchPayload,
+    ScoutFactchecksDispatchPayload,
     ScoutParadigmCasesDispatchPayload,
     ScoutEstimatesDispatchPayload,
     ScoutHypothesesDispatchPayload,
@@ -123,7 +124,9 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
         name="dispatch_scout_subquestions",
         description=(
             "Dispatch a specialized scout that identifies informative subquestions "
-            "for a question. Budget cost: exactly 1."
+            "for a question. Runs up to max_rounds rounds, stopping early when "
+            "remaining fruit falls below fruit_threshold. "
+            "Budget cost: between 1 and max_rounds (inclusive)."
         ),
         schema=ScoutSubquestionsDispatchPayload,
     ),
@@ -132,7 +135,9 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
         name="dispatch_scout_estimates",
         description=(
             "Dispatch a specialized scout that generates quantitative estimates "
-            "bearing on a question. Budget cost: exactly 1."
+            "bearing on a question. Runs up to max_rounds rounds, stopping early "
+            "when remaining fruit falls below fruit_threshold. "
+            "Budget cost: between 1 and max_rounds (inclusive)."
         ),
         schema=ScoutEstimatesDispatchPayload,
     ),
@@ -141,7 +146,9 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
         name="dispatch_scout_hypotheses",
         description=(
             "Dispatch a specialized scout that proposes competing hypotheses "
-            "for a question. Budget cost: exactly 1."
+            "for a question. Runs up to max_rounds rounds, stopping early "
+            "when remaining fruit falls below fruit_threshold. "
+            "Budget cost: between 1 and max_rounds (inclusive)."
         ),
         schema=ScoutHypothesesDispatchPayload,
     ),
@@ -150,7 +157,9 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
         name="dispatch_scout_analogies",
         description=(
             "Dispatch a specialized scout that finds illuminating analogies "
-            "for a question. Budget cost: exactly 1."
+            "for a question. Runs up to max_rounds rounds, stopping early "
+            "when remaining fruit falls below fruit_threshold. "
+            "Budget cost: between 1 and max_rounds (inclusive)."
         ),
         schema=ScoutAnalogiesDispatchPayload,
     ),
@@ -159,9 +168,22 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
         name="dispatch_scout_paradigm_cases",
         description=(
             "Dispatch a specialized scout that identifies concrete paradigm "
-            "cases illuminating a question. Budget cost: exactly 1."
+            "cases illuminating a question. Runs up to max_rounds rounds, "
+            "stopping early when remaining fruit falls below fruit_threshold. "
+            "Budget cost: between 1 and max_rounds (inclusive)."
         ),
         schema=ScoutParadigmCasesDispatchPayload,
+    ),
+    CallType.SCOUT_FACTCHECKS: DispatchDef(
+        call_type=CallType.SCOUT_FACTCHECKS,
+        name="dispatch_scout_factchecks",
+        description=(
+            "Dispatch a specialized scout that identifies factual claims needing "
+            "web-based verification. Runs up to max_rounds rounds, stopping early "
+            "when remaining fruit falls below fruit_threshold. "
+            "Budget cost: between 1 and max_rounds (inclusive)."
+        ),
+        schema=ScoutFactchecksDispatchPayload,
     ),
     CallType.WEB_RESEARCH: DispatchDef(
         call_type=CallType.WEB_RESEARCH,

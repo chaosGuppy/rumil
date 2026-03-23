@@ -36,7 +36,7 @@ if TYPE_CHECKING:
     from rumil.database import DB
     from rumil.tracing.tracer import CallTrace
 
-DEFAULT_MAX_TOKENS = 20_000
+DEFAULT_MAX_TOKENS = 50_000
 
 PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts"
 

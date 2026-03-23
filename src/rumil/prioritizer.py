@@ -19,6 +19,7 @@ from rumil.models import (
     CallType,
     Dispatch,
     MoveType,
+    Page,
     PrioritizationDispatchPayload,
     RecurseDispatchPayload,
     ScoutDispatchPayload,
@@ -53,10 +54,16 @@ PHASE1_SCOUT_TYPES: Sequence[CallType] = [
     CallType.SCOUT_HYPOTHESES,
     CallType.SCOUT_ANALOGIES,
     CallType.SCOUT_PARADIGM_CASES,
+    CallType.SCOUT_FACTCHECKS,
 ]
 
 PHASE2_DISPATCH_TYPES: Sequence[CallType] = [
-    CallType.FIND_CONSIDERATIONS,
+    CallType.SCOUT_SUBQUESTIONS,
+    CallType.SCOUT_ESTIMATES,
+    CallType.SCOUT_HYPOTHESES,
+    CallType.SCOUT_ANALOGIES,
+    CallType.SCOUT_PARADIGM_CASES,
+    CallType.SCOUT_FACTCHECKS,
     CallType.WEB_RESEARCH,
 ]
 
@@ -76,6 +83,37 @@ class SubquestionScoringResult(BaseModel):
 class FruitResult(BaseModel):
     fruit: int = Field(description='0-10: how much useful investigation remains')
     reasoning: str = Field(description='Brief explanation')
+
+
+async def _count_subtree_questions(question_id: str, graph: PageGraph) -> int:
+    """Count all descendant questions (not including the question itself)."""
+    children = await graph.get_child_questions(question_id)
+    count = len(children)
+    for child in children:
+        count += await _count_subtree_questions(child.id, graph)
+    return count
+
+
+async def _describe_child_questions(
+    children: Sequence[Page], graph: PageGraph,
+) -> str:
+    """Build enriched descriptions of child questions with research stats."""
+    lines = []
+    for c in children:
+        considerations = await graph.get_considerations_for_question(c.id)
+        judgements = await graph.get_judgements_for_question(c.id)
+        subtree_count = await _count_subtree_questions(c.id, graph)
+
+        parts = []
+        parts.append(f'{len(considerations)} considerations')
+        if judgements:
+            parts.append(f'{len(judgements)} judgement{"s" if len(judgements) != 1 else ""}')
+        if subtree_count:
+            parts.append(f'{subtree_count} subquestion{"s" if subtree_count != 1 else ""}')
+
+        stats = ', '.join(parts) if parts else 'no research yet'
+        lines.append(f'- `{c.id}` — {c.headline} ({stats})')
+    return '\n'.join(lines)
 
 
 @dataclass
@@ -289,6 +327,7 @@ class TwoPhasePrioritizer(Prioritizer):
         self._executed_since_last_plan: bool = False
         self._pending_children: list[tuple['TwoPhasePrioritizer', str, int]] = []
         self._active_child: tuple['TwoPhasePrioritizer', str, int, int] | None = None
+        self._needs_scope_assess: bool = False
 
     async def get_calls(
         self,
@@ -300,6 +339,23 @@ class TwoPhasePrioritizer(Prioritizer):
         if child_result is not None:
             return child_result
 
+        if self._needs_scope_assess:
+            self._needs_scope_assess = False
+            self._executed_since_last_plan = True
+            return PrioritizationResult(
+                dispatch_sequences=[[
+                    Dispatch(
+                        call_type=CallType.ASSESS,
+                        payload=AssessDispatchPayload(
+                            question_id=question_id,
+                            reason='Assess scope question after phase-2 investigation',
+                        ),
+                    ),
+                ]],
+                call_id=self._call_id,
+                trace=self._trace,
+            )
+
         if self._invocation == 0:
             self._invocation += 1
             return await self._phase1(question_id, budget, parent_call_id)
@@ -309,7 +365,14 @@ class TwoPhasePrioritizer(Prioritizer):
 
         self._executed_since_last_plan = False
         self._invocation += 1
-        return await self._phase2(question_id, budget, parent_call_id)
+        result = await self._phase2(question_id, budget, parent_call_id)
+
+        if not result.dispatch_sequences and self._pending_children:
+            child_result = await self._service_children(budget, parent_call_id)
+            if child_result is not None:
+                return child_result
+
+        return result
 
     def mark_executed(self) -> None:
         if self._active_child:
@@ -370,7 +433,7 @@ class TwoPhasePrioritizer(Prioritizer):
         budget: int,
         parent_call_id: str | None,
     ) -> PrioritizationResult:
-        phase1_budget = min(budget - 1, 4)
+        phase1_budget = budget
         log.info(
             'NewQuestionPrioritizer phase1: question=%s, budget=%d, phase1_budget=%d',
             question_id[:8], budget, phase1_budget,
@@ -482,18 +545,16 @@ class TwoPhasePrioritizer(Prioritizer):
         trace = CallTrace(p_call.id, self._db, broadcaster=self._broadcaster)
         await trace.record(ContextBuiltEvent(budget=budget))
 
-        children = await self._db.get_child_questions(question_id)
-        parent_question = await self._db.get_page(question_id)
+        graph = await PageGraph.load(self._db)
+        children = await graph.get_child_questions(question_id)
+        parent_question = await graph.get_page(question_id)
         parent_headline = parent_question.headline if parent_question else question_id[:8]
 
         scoring_system = build_system_prompt('score_subquestions')
 
         scoring_tasks = []
         if children:
-            child_descriptions = '\n'.join(
-                f'- `{c.id}` — {c.headline}'
-                for c in children
-            )
+            child_descriptions = await _describe_child_questions(children, graph)
             subq_user_msg = build_user_message(
                 f'Parent question: {parent_headline}\n\n'
                 f'Subquestions to score:\n{child_descriptions}',
@@ -555,7 +616,7 @@ class TwoPhasePrioritizer(Prioritizer):
             lines = ['## Subquestion Scores', '']
             for s in subq_scores:
                 lines.append(
-                    f'- `{s["question_id"][:8]}` — {s["headline"]}: '
+                    f'- `{s["question_id"]}` — {s["headline"]}: '
                     f'impact={s["impact"]}, fruit={s["fruit"]} '
                     f'({s["reasoning"]})'
                 )
@@ -567,32 +628,25 @@ class TwoPhasePrioritizer(Prioritizer):
             f'Remaining fruit on parent: {parent_fruit}/10\n'
         )
 
-        graph = await PageGraph.load(self._db)
         context_text, short_id_map = await build_prioritization_context(
             self._db, scope_question_id=question_id, graph=graph,
         )
         subtree_ids = await collect_subtree_ids(question_id, self._db, graph=graph)
 
         task = (
-            f'You have a budget of **{budget} research calls** to allocate during this rollout.\n\n'
-            'You do not need to allocate your entire budget during this call (although you can, especially if it seems low). '
+            f'You have a budget of **{budget} budget units** to allocate.\n\n'
             f'Scope question ID: `{question_id}`\n\n'
-            'Phase 1 (specialized scouts + assess) is complete. Now plan '
-            'targeted follow-up based on what was discovered.\n\n'
             f'{scores_text}\n\n'
-            'Dispatch further investigation: use dispatch_find_considerations for general '
-            'exploration that can be based purely on your trained knowledge and does not require web research, '
-            'dispatch_web_research for web-based evidence, or '
-            'recurse_into_subquestion to recursively investigate a child '
-            'question with its own prioritization cycle. '
-            'You can target the parent question or any child question.\n\n'
-            'You may create subquestions before dispatching. '
+            'Use `recurse_into_subquestion` to investigate high-impact, high-fruit '
+            'subquestions listed above. Use specialized scout dispatches if the '
+            'scope question itself needs more exploration. Use `dispatch_web_research` '
+            'only on fact-check questions.\n\n'
             'You must make all your dispatch calls now — this is your only turn.'
         )
 
         result = await run_prioritization_call(
             task, context_text, p_call, self._db,
-            available_moves=PRIORITIZATION_MOVES,
+            available_moves=[],
             subtree_ids=subtree_ids,
             short_id_map=short_id_map,
             trace=trace,
@@ -619,14 +673,10 @@ class TwoPhasePrioritizer(Prioritizer):
                     resolved[:8], d.payload.budget, d.payload.reason,
                 )
             else:
-                assess = Dispatch(
-                    call_type=CallType.ASSESS,
-                    payload=AssessDispatchPayload(
-                        question_id=d.payload.question_id,
-                        reason='Auto-assess after phase-2 dispatch',
-                    ),
-                )
-                sequences.append([d, assess])
+                sequences.append([d])
+
+        if sequences or self._pending_children:
+            self._needs_scope_assess = True
 
         all_dispatches = [d for seq in sequences for d in seq]
         await trace.record(DispatchesPlannedEvent(

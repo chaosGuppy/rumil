@@ -11,6 +11,7 @@ from rumil.calls.find_considerations import EmbeddingScoutCall, ScoutCall
 from rumil.calls.scout_analogies import ScoutAnalogiesCall
 from rumil.calls.scout_paradigm_cases import ScoutParadigmCasesCall
 from rumil.calls.scout_concepts import ScoutConceptsCall
+from rumil.calls.scout_factchecks import ScoutFactchecksCall
 from rumil.calls.web_research import WebResearchCall
 from rumil.calls.scout_estimates import ScoutEstimatesCall
 from rumil.calls.scout_hypotheses import ScoutHypothesesCall
@@ -61,4 +62,8 @@ SCOUT_ANALOGIES_CALL_CLASSES: dict[str, type[ScoutAnalogiesCall]] = {
 
 SCOUT_PARADIGM_CASES_CALL_CLASSES: dict[str, type[ScoutParadigmCasesCall]] = {
     "default": ScoutParadigmCasesCall,
+}
+
+SCOUT_FACTCHECKS_CALL_CLASSES: dict[str, type[ScoutFactchecksCall]] = {
+    "default": ScoutFactchecksCall,
 }

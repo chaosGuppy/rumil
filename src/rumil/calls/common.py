@@ -431,7 +431,7 @@ class ReviewResponse(BaseModel):
     page_summaries: list[PageSummaryItem] = Field(
         default_factory=list,
         description=(
-            "Short and medium summaries for each page you created during this call. "
+            "Abstract for each page you created during this call. "
             "Provide one entry per created page."
         ),
     )

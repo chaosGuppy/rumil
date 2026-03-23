@@ -1,5 +1,5 @@
 """
-Backfill summary_short and summary_medium for existing pages that don't have them.
+Backfill abstracts for existing pages that don't have them.
 
 Usage:
     uv run python scripts/backfill_summaries.py [--prod] [--dry-run] [--limit N] [--concurrency N]

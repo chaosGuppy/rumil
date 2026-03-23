@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[[ \"$CLAUDE_TOOL_INPUT_FILE_PATH\" != *.py ]] && exit 0; uv run ruff check --fix \"$CLAUDE_TOOL_INPUT_FILE_PATH\" && uv run ruff format \"$CLAUDE_TOOL_INPUT_FILE_PATH\""
+            "command": "jq -r '.tool_input.file_path' | { read -r f; [[ \"$f\" != *.py ]] && exit 0; uv run ruff check --fix \"$f\" && uv run ruff format \"$f\"; }"
           }
         ]
       },
@@ -26,7 +26,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[[ \"$CLAUDE_TOOL_INPUT_FILE_PATH\" != *.py ]] && exit 0; uv run pyright"
+            "command": "jq -r '.tool_input.file_path' | { read -r f; [[ \"$f\" != *.py ]] && exit 0; OUTPUT=$(uv run pyright 2>&1); EXIT_CODE=$?; if [ $EXIT_CODE -ne 0 ]; then jq -n --arg msg \"$(echo \"$OUTPUT\" | tail -20)\" '{systemMessage: (\"Pyright errors:\\n\" + $msg), hookSpecificOutput: {hookEventName: \"PostToolUse\", additionalContext: (\"Pyright errors:\\n\" + $msg)}}'; exit 2; fi; }"
           }
         ]
       },
@@ -35,7 +35,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "case \"$CLAUDE_TOOL_INPUT_FILE_PATH\" in *.ts|*.tsx) cd frontend && npx tsc --noEmit;; *) exit 0;; esac"
+            "command": "jq -r '.tool_input.file_path' | { read -r f; case \"$f\" in *.ts|*.tsx) cd frontend && npx tsc --noEmit;; *) exit 0;; esac; }"
           }
         ]
       },
@@ -44,7 +44,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "case \"$CLAUDE_TOOL_INPUT_FILE_PATH\" in */schemas.py|*/models.py) ./scripts/generate-api-types.sh;; *) exit 0;; esac"
+            "command": "jq -r '.tool_input.file_path' | { read -r f; case \"$f\" in */schemas.py|*/models.py) ./scripts/generate-api-types.sh;; *) exit 0;; esac; }"
           }
         ]
       }

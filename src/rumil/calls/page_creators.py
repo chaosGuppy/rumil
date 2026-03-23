@@ -349,7 +349,7 @@ class WebResearchLoop(PageCreator):
             api_resp = await call_api(
                 client, settings.model, system_prompt, messages,
                 all_tool_defs,
-                metadata=meta, db=infra.db,
+                metadata=meta, db=infra.db, cache=True,
             )
             response = api_resp.message
 
@@ -394,19 +394,12 @@ class WebResearchLoop(PageCreator):
         web_search: dict = {
             'type': 'web_search_20250305',
             'name': 'web_search',
+            'max_uses': 5,
         }
         if self._allowed_domains:
             web_search['allowed_domains'] = list(self._allowed_domains)
 
-        web_fetch: dict = {
-            'type': 'web_fetch_20250910',
-            'name': 'web_fetch',
-            'max_content_tokens': 20000,
-        }
-        if self._allowed_domains:
-            web_fetch['allowed_domains'] = list(self._allowed_domains)
-
-        return [web_search, web_fetch]
+        return [web_search]
 
     async def _ensure_source_page(self, infra: CallInfra, url: str) -> str | None:
         if url in self.source_page_ids:

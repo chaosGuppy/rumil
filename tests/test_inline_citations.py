@@ -9,6 +9,7 @@ from rumil.models import (
     Call,
     CallStatus,
     CallType,
+    ConsiderationDirection,
     LinkType,
     Page,
     PageLayer,
@@ -269,7 +270,7 @@ async def test_assess_produces_inline_citations(tmp_db, question_page):
             link_type=LinkType.CONSIDERATION,
             strength=3.5,
             reasoning=headline,
-            direction=direction,
+            direction=ConsiderationDirection(direction),
         ))
         claims.append(claim)
 

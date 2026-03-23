@@ -1127,6 +1127,8 @@
           "scout_estimates",
           "scout_hypotheses",
           "scout_analogies",
+          "scout_paradigm_cases",
+          "scout_factchecks",
           "web_research"
         ],
         "title": "CallType"

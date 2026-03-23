@@ -249,6 +249,36 @@ function MoveRow({
 
 import { CLIENT_API_BASE as API_BASE } from "@/api-config";
 
+function TextOverlay({
+  label,
+  content,
+  onClose,
+}: {
+  label: string;
+  content: string;
+  onClose: () => void;
+}) {
+  return (
+    <div className="trace-overlay-backdrop" onClick={onClose}>
+      <div
+        className="trace-overlay-panel"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="trace-overlay-header">
+          <span className="trace-overlay-label">{label}</span>
+          <span className="trace-overlay-meta">
+            {content.length.toLocaleString()} chars
+          </span>
+          <button className="trace-overlay-close" onClick={onClose}>
+            {"\u2715"}
+          </button>
+        </div>
+        <pre className="trace-overlay-content">{content}</pre>
+      </div>
+    </div>
+  );
+}
+
 function CollapsiblePre({
   label,
   content,
@@ -257,6 +287,7 @@ function CollapsiblePre({
   content: string | null;
 }) {
   const [open, setOpen] = useState(false);
+  const [overlayOpen, setOverlayOpen] = useState(false);
   if (!content) return null;
 
   return (
@@ -270,6 +301,19 @@ function CollapsiblePre({
         <span className="trace-collapsible-meta">
           {content.length.toLocaleString()} chars
         </span>
+        {open && (
+          <span
+            className="trace-expand-btn"
+            role="button"
+            title="Expand to full view"
+            onClick={(e) => {
+              e.stopPropagation();
+              setOverlayOpen(true);
+            }}
+          >
+            {"\u2922"}
+          </span>
+        )}
       </button>
       {open && (
         <pre className="trace-collapsible-content">{content}</pre>
@@ -278,6 +322,13 @@ function CollapsiblePre({
         <pre className="trace-collapsible-preview">
           {content.slice(0, 200)}...
         </pre>
+      )}
+      {overlayOpen && (
+        <TextOverlay
+          label={label}
+          content={content}
+          onClose={() => setOverlayOpen(false)}
+        />
       )}
     </div>
   );
@@ -302,24 +353,48 @@ function formatMessageContent(content: unknown): string {
   return String(content ?? "");
 }
 
+function MessageTurn({ msg, index }: { msg: Record<string, unknown>; index: number }) {
+  const [overlayOpen, setOverlayOpen] = useState(false);
+  const role = String(msg.role ?? "unknown");
+  const text = formatMessageContent(msg.content);
+  return (
+    <details key={index} className="trace-message-turn">
+      <summary className={`trace-message-role trace-role-${role}`}>
+        {role}
+        <span className="trace-collapsible-meta">
+          {" "}{text.length.toLocaleString()} chars
+        </span>
+        <span
+          className="trace-expand-btn"
+          role="button"
+          title="Expand to full view"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setOverlayOpen(true);
+          }}
+        >
+          {"\u2922"}
+        </span>
+      </summary>
+      <pre className="trace-collapsible-content">{text}</pre>
+      {overlayOpen && (
+        <TextOverlay
+          label={`${role} message`}
+          content={text}
+          onClose={() => setOverlayOpen(false)}
+        />
+      )}
+    </details>
+  );
+}
+
 function MessageThread({ messages }: { messages: Array<Record<string, unknown>> }) {
   return (
     <div className="trace-message-thread">
-      {messages.map((msg, i) => {
-        const role = String(msg.role ?? "unknown");
-        const text = formatMessageContent(msg.content);
-        return (
-          <details key={i} className="trace-message-turn">
-            <summary className={`trace-message-role trace-role-${role}`}>
-              {role}
-              <span className="trace-collapsible-meta">
-                {" "}{text.length.toLocaleString()} chars
-              </span>
-            </summary>
-            <pre className="trace-collapsible-content">{text}</pre>
-          </details>
-        );
-      })}
+      {messages.map((msg, i) => (
+        <MessageTurn key={i} msg={msg} index={i} />
+      ))}
     </div>
   );
 }

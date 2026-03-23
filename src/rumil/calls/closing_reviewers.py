@@ -189,8 +189,8 @@ async def _self_assessment(
             page_summary_note = (
                 '\n\nYou created the following pages during this call:\n'
                 + '\n'.join(created_lines)
-                + '\n\nFor each, provide a headline (~30 words, fully self-contained) '
-                'and an abstract (~200 words, fully self-contained) in your page_summaries. '
+                + '\n\nFor each, provide an abstract (~200 words, fully self-contained) '
+                'in your page_summaries. '
                 'These will be read by other LLM instances with no prior context, so do not '
                 'assume any background knowledge.'
             )
@@ -233,9 +233,8 @@ async def _self_assessment(
         for s in review_data.get('page_summaries', []):
             pid = await infra.db.resolve_page_id(s.get('page_id', ''))
             if pid:
-                await infra.db.update_page_summaries(
+                await infra.db.update_page_abstract(
                     pid,
-                    s.get('headline', ''),
                     s.get('abstract', ''),
                 )
                 abstract_text = s.get('abstract', '')

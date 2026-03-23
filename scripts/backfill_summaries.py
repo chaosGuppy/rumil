@@ -35,30 +35,22 @@ SYSTEM = (
 )
 
 PROMPT_TEMPLATE = (
-    'Produce two summaries of the research page below.\n\n'
-    'SHORT (~30 words): State the core topic and conclusion in a single self-contained '
-    'sentence or two. Include the highest-priority finding and the main caveat. '
-    'Must make sense with zero prior context.\n\n'
-    'MEDIUM (~200 words): Include the core conclusion, the main supporting reasoning or '
+    'Produce an abstract (~200 words) of the research page below.\n\n'
+    'Include the core conclusion, the main supporting reasoning or '
     'evidence, key counter-arguments and why they were discounted, and the critical '
     'uncertainties or dependencies. Preserve epistemic qualifications and confidence levels. '
     'Must be self-contained.\n\n'
     'Format your response exactly as:\n'
-    'SHORT: <text>\n\n'
-    'MEDIUM: <text>\n\n'
+    'ABSTRACT: <text>\n\n'
     'Research page:\n'
     '{content}'
 )
 
 
-def _parse_response(text: str) -> tuple[str, str]:
-    if "SHORT:" in text and "MEDIUM:" in text:
-        short_start = text.index("SHORT:") + len("SHORT:")
-        medium_start = text.index("MEDIUM:")
-        short = text[short_start:medium_start].strip()
-        medium = text[medium_start + len("MEDIUM:"):].strip()
-        return short, medium
-    return "", ""
+def _parse_response(text: str) -> str:
+    if "ABSTRACT:" in text:
+        return text[text.index("ABSTRACT:") + len("ABSTRACT:"):].strip()
+    return ""
 
 
 async def _fetch_all_needing_summaries(db: DB) -> list[dict]:
@@ -69,7 +61,7 @@ async def _fetch_all_needing_summaries(db: DB) -> list[dict]:
         rows = (
             await db.client.table("pages")
             .select("id, page_type, headline, content")
-            .or_("headline.eq.,abstract.eq.")
+            .eq("abstract", "")
             .eq("is_superseded", False)
             .order("created_at", desc=False)
             .range(offset, offset + CHUNK_SIZE - 1)
@@ -107,16 +99,16 @@ async def _process_page(
                 log.warning("[%d/%d] Non-text response for %s", idx, total, page_id[:8])
                 counters["failed"] += 1
                 return
-            short, medium = _parse_response(block.text.strip())
-            if not short or not medium:
+            abstract = _parse_response(block.text.strip())
+            if not abstract:
                 log.warning(
                     "[%d/%d] Parse failed for %s — raw: %s",
                     idx, total, page_id[:8], block.text[:120],
                 )
                 counters["failed"] += 1
                 return
-            await db.update_page_summaries(page_id, short, medium)
-            log.info("[%d/%d] %s: %s", idx, total, page_id[:8], short[:80])
+            await db.update_page_abstract(page_id, abstract)
+            log.info("[%d/%d] %s: %s", idx, total, page_id[:8], abstract[:80])
             counters["ok"] += 1
         except Exception as e:
             log.error("[%d/%d] Failed for %s: %s", idx, total, page_id[:8], e)

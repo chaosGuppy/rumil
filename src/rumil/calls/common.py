@@ -382,13 +382,6 @@ async def run_agent_loop(
 
 class PageSummaryItem(BaseModel):
     page_id: str = Field(description="Full or short ID of the page")
-    headline: str = Field(
-        description=(
-            "Self-contained summary of ~30 words. State the core topic and conclusion "
-            "so a reader with no prior context understands what the page is about and "
-            "what it concludes. Include the key finding and main caveat if space allows."
-        )
-    )
     abstract: str = Field(
         description=(
             "Self-contained summary of ~200 words. Include: the core conclusion, "
@@ -712,8 +705,8 @@ async def run_closing_review(
             page_summary_note = (
                 '\n\nYou created the following pages during this call:\n'
                 + '\n'.join(created_lines)
-                + '\n\nFor each, provide a headline (~30 words, fully self-contained) '
-                'and an abstract (~200 words, fully self-contained) in your page_summaries. '
+                + '\n\nFor each, provide an abstract (~200 words, fully self-contained) '
+                'in your page_summaries. '
                 'These will be read by other LLM instances with no prior context, so do not '
                 'assume any background knowledge.'
             )
@@ -761,9 +754,8 @@ async def run_closing_review(
                 for s in review.get("page_summaries", []):
                     pid = await db.resolve_page_id(s.get("page_id", ""))
                     if pid:
-                        await db.update_page_summaries(
+                        await db.update_page_abstract(
                             pid,
-                            s.get("headline", ""),
                             s.get("abstract", ""),
                         )
                         abstract_text = s.get("abstract", "")

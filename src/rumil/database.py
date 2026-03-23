@@ -55,7 +55,7 @@ def _row_to_page(row: dict[str, Any]) -> Page:
         layer=PageLayer(row["layer"]),
         workspace=Workspace(row["workspace"]),
         content=row.get("content") or "",
-        headline=row.get("headline") or "",
+        headline=row["headline"],
         project_id=row.get("project_id") or "",
         epistemic_status=row.get("epistemic_status") or 0.0,
         epistemic_type=row.get("epistemic_type") or "",
@@ -244,11 +244,11 @@ class DB:
             active_only=False,
         )
 
-    async def update_page_summaries(
-        self, page_id: str, headline: str, abstract: str
+    async def update_page_abstract(
+        self, page_id: str, abstract: str
     ) -> None:
         await self.client.table("pages").update(
-            {"headline": headline, "abstract": abstract}
+            {"abstract": abstract}
         ).eq("id", page_id).execute()
 
     async def get_page(self, page_id: str) -> Page | None:

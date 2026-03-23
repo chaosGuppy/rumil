@@ -39,6 +39,15 @@ Always express epistemic status as a 0–5 float (subjective confidence, not a p
 
 Accompany every epistemic_status with an epistemic_type: a brief description of the nature of the uncertainty (e.g. "empirical, depends on data we don't have", "conceptual, contested definition", "value-laden").
 
+## Headlines
+
+Every page has a headline — the primary label seen throughout the workspace. Write headlines that are **self-contained**: a reader with no prior context should understand what the page is about.
+
+- **10–15 words** (20-word ceiling). Sharp label, not a truncated sentence.
+- **Questions must be phrased as questions.** e.g. "How sensitive is the 2028 timeline to regulatory delays?"
+- **Claims and judgements should name the actual position**, e.g. "Solar payback periods have fallen below 7 years in most climates". Avoid vague openings like "There are several factors…".
+- **Include the key finding or main caveat** if space allows.
+
 ## Key Principles
 
 - **Use tools for all output.** The only way to modify the workspace is through tool calls. Non-tool-call text is not recorded and serves no purpose. Keep text output to an absolute minimum — ideally empty. Never narrate, summarize, or explain what you are about to do or just did. Just make tool calls.

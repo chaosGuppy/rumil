@@ -11,7 +11,9 @@ from rumil.models import (
     Call,
     CallType,
     Dispatch,
+    FindConsiderationsMode,
     InlineDispatch,
+    InlineScoutDispatch,
     LinkType,
     MoveType,
     PageLayer,
@@ -21,6 +23,7 @@ from rumil.models import (
     ScoutDispatchPayload,
 )
 from rumil.moves.base import CreatePagePayload, MoveDef, MoveResult, create_page
+from rumil.settings import get_settings
 from rumil.moves.link_child_question import ChildQuestionLinkFields
 
 log = logging.getLogger(__name__)
@@ -91,6 +94,20 @@ def _inline_to_dispatch(
     return Dispatch(call_type=call_type, payload=payload_cls(**fields))
 
 
+def _coerce_inline_mode(inline: InlineDispatch) -> InlineDispatch:
+    """Coerce inline scout dispatch mode to an allowed value."""
+    if not isinstance(inline, InlineScoutDispatch):
+        return inline
+    allowed = get_settings().allowed_find_considerations_modes
+    if inline.mode not in allowed:
+        log.info(
+            "Coercing inline dispatch mode from %s to %s",
+            inline.mode.value, allowed[0].value,
+        )
+        inline.mode = allowed[0]
+    return inline
+
+
 async def execute_subquestion(
     payload: CreateSubquestionPayload, call: Call, db: DB,
 ) -> MoveResult:
@@ -98,7 +115,7 @@ async def execute_subquestion(
     if not result.created_page_id or not payload.dispatches:
         return result
     dispatches = [
-        _inline_to_dispatch(d, result.created_page_id)
+        _inline_to_dispatch(_coerce_inline_mode(d), result.created_page_id)
         for d in payload.dispatches
     ]
     return MoveResult(

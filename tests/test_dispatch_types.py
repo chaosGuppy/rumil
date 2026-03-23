@@ -2,7 +2,7 @@
 
 import pytest
 
-from rumil.calls.dispatches import DISPATCH_DEFS
+from rumil.calls.dispatches import DISPATCH_DEFS, filter_mode_schema
 from rumil.models import (
     AssessDispatchPayload,
     CallType,
@@ -109,10 +109,10 @@ def test_bind_allowed_modes_filters_schema():
         allowed_modes=[FindConsiderationsMode.CONCRETE],
     )
     schema = tool.input_schema
+    mode_enum = schema['$defs']['FindConsiderationsMode']['enum']
+    assert mode_enum == ['concrete']
     mode_prop = schema['properties']['mode']
-    assert mode_prop['enum'] == ['concrete']
     assert mode_prop['default'] == 'concrete'
-    assert '$defs' not in schema
 
 
 @pytest.mark.asyncio
@@ -152,3 +152,27 @@ def test_allowed_find_considerations_modes_single():
     with override_settings(find_considerations_modes='alternate'):
         modes = get_settings().allowed_find_considerations_modes
         assert list(modes) == [FindConsiderationsMode.ALTERNATE]
+
+
+def test_filter_mode_schema_nested():
+    """filter_mode_schema restricts FindConsiderationsMode in nested $defs."""
+    from rumil.moves.create_question import CreateSubquestionPayload
+
+    schema = CreateSubquestionPayload.model_json_schema()
+    filtered = filter_mode_schema(schema, [FindConsiderationsMode.ABSTRACT])
+
+    mode_enum = filtered['$defs']['FindConsiderationsMode']['enum']
+    assert mode_enum == ['abstract']
+    inline_scout = filtered['$defs']['InlineScoutDispatch']
+    assert inline_scout['properties']['mode']['default'] == 'abstract'
+
+
+def test_inline_dispatch_mode_coercion():
+    """Inline scout dispatches have disallowed modes coerced."""
+    from rumil.models import InlineScoutDispatch
+    from rumil.moves.create_question import _coerce_inline_mode
+
+    inline = InlineScoutDispatch(mode=FindConsiderationsMode.CONCRETE, reason='test')
+    with override_settings(find_considerations_modes='abstract'):
+        coerced = _coerce_inline_mode(inline)
+        assert coerced.mode == FindConsiderationsMode.ABSTRACT

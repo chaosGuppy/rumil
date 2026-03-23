@@ -9,7 +9,7 @@ from rumil.calls.common import (
 )
 from collections.abc import Sequence
 
-from rumil.calls.dispatches import DISPATCH_DEFS, DispatchDef
+from rumil.calls.dispatches import DISPATCH_DEFS, DispatchDef, filter_mode_schema
 from rumil.context import build_prioritization_context, collect_subtree_ids
 from rumil.database import DB
 from rumil.page_graph import PageGraph
@@ -57,10 +57,13 @@ async def run_prioritization_call(
     state = MoveState(call, db)
     system_prompt = system_prompt_override or build_system_prompt(CallType.PRIORITIZATION.value)
 
+    allowed_fc_modes = get_settings().allowed_find_considerations_modes
     tools = []
     for mt in available_moves:
         if mt == MoveType.CREATE_QUESTION:
-            tools.append(PRIORITIZATION_MOVE.bind(state))
+            tool = PRIORITIZATION_MOVE.bind(state)
+            tool.input_schema = filter_mode_schema(tool.input_schema, allowed_fc_modes)
+            tools.append(tool)
         else:
             tools.append(MOVES[mt].bind(state))
     if dispatch_types is not None:
@@ -78,7 +81,7 @@ async def run_prioritization_call(
             scope_question_id=call.scope_page_id,
         )
         if ddef.call_type == CallType.FIND_CONSIDERATIONS:
-            bind_kwargs['allowed_modes'] = get_settings().allowed_find_considerations_modes
+            bind_kwargs['allowed_modes'] = allowed_fc_modes
         tools.append(ddef.bind(state, **bind_kwargs))
 
     user_message = build_user_message(context_text, task_description)

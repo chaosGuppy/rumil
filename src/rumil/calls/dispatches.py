@@ -77,7 +77,7 @@ class DispatchDef(Generic[S]):
 
         schema = self.schema.model_json_schema()
         if allowed_modes is not None:
-            schema = _filter_mode_schema(schema, allowed_modes)
+            schema = filter_mode_schema(schema, allowed_modes)
 
         return Tool(
             name=self.name,
@@ -87,33 +87,45 @@ class DispatchDef(Generic[S]):
         )
 
 
-def _filter_mode_schema(
+def filter_mode_schema(
     schema: dict,
     allowed_modes: Sequence[FindConsiderationsMode],
 ) -> dict:
-    """Deep-copy schema and restrict the mode enum to only allowed values."""
+    """Deep-copy schema and restrict the FindConsiderationsMode enum to allowed values.
+
+    Works for both top-level mode properties (dispatch tools) and nested
+    schemas that reference FindConsiderationsMode via $defs (inline dispatches).
+    """
     schema = copy.deepcopy(schema)
     allowed_values = [m.value for m in allowed_modes]
 
     mode_def_key = 'FindConsiderationsMode'
     defs = schema.get('$defs', {})
-    if mode_def_key in defs:
-        filtered_def = dict(defs[mode_def_key])
-        filtered_def['enum'] = [v for v in filtered_def.get('enum', []) if v in allowed_values]
-        if 'properties' in schema and 'mode' in schema['properties']:
-            mode_prop = schema['properties']['mode']
-            mode_prop.pop('$ref', None)
-            mode_prop.update(filtered_def)
-            if mode_prop.get('default') not in allowed_values:
-                mode_prop['default'] = allowed_values[0]
-            mode_prop['description'] = (
-                'Scout mode. Available: '
-                + ', '.join(f"'{v}'" for v in allowed_values)
-                + '.'
-            )
-        del defs[mode_def_key]
-        if not defs:
-            del schema['$defs']
+    if mode_def_key not in defs:
+        return schema
+
+    defs[mode_def_key]['enum'] = [
+        v for v in defs[mode_def_key].get('enum', []) if v in allowed_values
+    ]
+
+    def _patch_mode_props(obj: dict) -> None:
+        """Patch any 'mode' property that refs FindConsiderationsMode."""
+        props = obj.get('properties', {})
+        if 'mode' in props:
+            mode_prop = props['mode']
+            if mode_prop.get('$ref', '').endswith(f'/{mode_def_key}'):
+                if mode_prop.get('default') not in allowed_values:
+                    mode_prop['default'] = allowed_values[0]
+                mode_prop['description'] = (
+                    'Scout mode. Available: '
+                    + ', '.join(f"'{v}'" for v in allowed_values)
+                    + '.'
+                )
+
+    _patch_mode_props(schema)
+    for def_val in defs.values():
+        if isinstance(def_val, dict):
+            _patch_mode_props(def_val)
 
     return schema
 

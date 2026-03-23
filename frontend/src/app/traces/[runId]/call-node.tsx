@@ -583,10 +583,8 @@ function SequenceGroup({
   const sorted = [...sequences].sort(
     (a, b) => a.position_in_batch - b.position_in_batch,
   );
-  const isMulti = sorted.length > 1;
-
   return (
-    <div className={`trace-sequences${isMulti ? " trace-sequences-multi" : ""}`}>
+    <div className="trace-sequences">
       {sorted.map((seq, si) => {
         const seqColor = SEQUENCE_COLORS[si % SEQUENCE_COLORS.length];
         return (
@@ -599,7 +597,7 @@ function SequenceGroup({
           >
             <div className="trace-sequence-header" style={{ color: seqColor }}>
               <span className="trace-sequence-label">
-                sequence{isMulti ? ` ${si + 1}` : ""}
+                sequence {si + 1}
               </span>
               <span className="trace-sequence-meta">
                 {seq.calls.length} call{seq.calls.length !== 1 ? "s" : ""}

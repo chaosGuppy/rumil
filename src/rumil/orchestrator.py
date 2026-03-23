@@ -144,13 +144,20 @@ class PrioritizationResult:
     children: Sequence[tuple['TwoPhaseOrchestrator', str]] = ()
 
 
-async def create_root_question(question_text: str, db: DB) -> str:
+async def create_root_question(
+    question_text: str,
+    db: DB,
+    *,
+    abstract: str = "",
+    content: str = "",
+) -> str:
     page = Page(
         page_type=PageType.QUESTION,
         layer=PageLayer.SQUIDGY,
         workspace=Workspace.RESEARCH,
-        content=question_text,
+        content=content or abstract or question_text,
         headline=question_text[:120],
+        abstract=abstract,
         epistemic_status=2.5,
         epistemic_type="open question",
         provenance_model="human",

@@ -11,6 +11,7 @@ Set ANTHROPIC_API_KEY in your environment before running.
 
 import argparse
 import asyncio
+import dataclasses
 import json
 import logging
 import sys
@@ -29,6 +30,38 @@ from rumil.settings import Settings, get_settings, _settings_var
 
 PAGES_DIR = Path(__file__).parent / "pages"
 
+
+@dataclasses.dataclass
+class QuestionInput:
+    headline: str
+    abstract: str = ""
+    content: str = ""
+
+
+def parse_question_input(value: str) -> QuestionInput:
+    """Parse a question from plain text or a JSON file path.
+
+    If *value* ends with ``.json`` and the file exists, it is read as JSON with
+    required ``headline`` and optional ``abstract`` / ``content`` fields.
+    Otherwise *value* is treated as plain headline text (used for both headline
+    and content, matching legacy behaviour).
+    """
+    path = Path(value)
+    if path.suffix == '.json' and path.exists():
+        with open(path) as f:
+            data = json.load(f)
+        if not isinstance(data, dict) or 'headline' not in data:
+            sys.exit('Error: JSON file must contain at least a "headline" field.')
+        unknown = set(data) - {'headline', 'abstract', 'content'}
+        if unknown:
+            sys.exit(f'Error: unknown fields in question JSON: {", ".join(sorted(unknown))}')
+        return QuestionInput(
+            headline=data['headline'],
+            abstract=data.get('abstract', ''),
+            content=data.get('content', ''),
+        )
+    return QuestionInput(headline=value[:120], content=value)
+
 NORMAL_BUDGET_DEFAULT = 10
 
 
@@ -44,14 +77,15 @@ def _default_budget(budget: int | None, fallback: int = NORMAL_BUDGET_DEFAULT) -
 
 
 async def cmd_add_question(
-    question_text: str, parent_id: str | None, budget: int | None, db: DB
+    q: QuestionInput, parent_id: str | None, budget: int | None, db: DB
 ) -> None:
     page = Page(
         page_type=PageType.QUESTION,
         layer=PageLayer.SQUIDGY,
         workspace=Workspace.RESEARCH,
-        content=question_text,
-        headline=question_text[:120],
+        content=q.content or q.abstract or q.headline,
+        headline=q.headline,
+        abstract=q.abstract,
         epistemic_status=2.5,
         epistemic_type="open question",
         provenance_model="human",
@@ -78,7 +112,7 @@ async def cmd_add_question(
             print(f"\nAdded as sub-question of: {parent.headline[:70]}")
 
     print(f"\nQuestion added: {page.id}")
-    print(f"Text:           {question_text}")
+    print(f"Headline:       {q.headline}")
 
     effective_budget = _default_budget(budget, fallback=5)
     if effective_budget > 0:
@@ -208,7 +242,7 @@ async def cmd_list_workspaces(db: DB) -> None:
 
 
 async def cmd_new(
-    question_text: str,
+    q: QuestionInput,
     budget: int | None,
     db: DB,
     ingest_files: list[str] | None = None,
@@ -216,16 +250,18 @@ async def cmd_new(
 ) -> None:
     budget = _default_budget(budget)
     await db.init_budget(budget)
-    question_id = await create_root_question(question_text, db)
+    question_id = await create_root_question(
+        q.headline, db, abstract=q.abstract, content=q.content,
+    )
     await db.create_run(
-        name=name or question_text[:120],
+        name=name or q.headline,
         question_id=question_id,
         config=get_settings().capture_config(),
     )
 
     frontend = get_settings().frontend_url.rstrip("/")
     print(f"\nNew question: {question_id}")
-    print(f"Question:     {question_text}")
+    print(f"Headline:     {q.headline}")
     print(f"Budget:       {budget} research calls")
     print(f"Trace:        {frontend}/traces/{db.run_id}")
 
@@ -267,7 +303,8 @@ async def _run_one_batch_entry(
     if "continue" in entry:
         await cmd_continue(entry["continue"], budget, db)
     else:
-        await cmd_new(entry["question"], budget, db, ingest_files=entry.get("ingest"))
+        q = parse_question_input(entry["question"])
+        await cmd_new(q, budget, db, ingest_files=entry.get("ingest"))
 
     print(f"\n[{index + 1}/{total}] Done: {label}")
 
@@ -315,7 +352,7 @@ async def cmd_batch(batch_file: str, db: DB) -> None:
 
 
 async def cmd_ab(
-    question_text: str,
+    q: QuestionInput,
     budget: int | None,
     db: DB,
     name: str = "",
@@ -324,12 +361,14 @@ async def cmd_ab(
     ab_run_id = str(uuid.uuid4())
     budget = _default_budget(budget)
 
-    question_id = await create_root_question(question_text, db)
-    await db.create_ab_run(ab_run_id, name or question_text[:120], question_id)
+    question_id = await create_root_question(
+        q.headline, db, abstract=q.abstract, content=q.content,
+    )
+    await db.create_ab_run(ab_run_id, name or q.headline, question_id)
 
     frontend = get_settings().frontend_url.rstrip("/")
     print(f'\nAB test: {ab_run_id}')
-    print(f'Question: {question_text}')
+    print(f'Headline: {q.headline}')
     print(f'Budget per arm: {budget}')
     print(f'Trace: {frontend}/ab-traces/{ab_run_id}')
 
@@ -352,7 +391,7 @@ async def cmd_ab(
         )
         config = arm_settings.capture_config()
         await arm_db.create_run(
-            name=f'{name or question_text[:100]} (arm {arm_label})',
+            name=f'{name or q.headline[:100]} (arm {arm_label})',
             question_id=question_id,
             config=config,
             ab_arm=arm_label,
@@ -450,7 +489,11 @@ async def async_main():
             "  python main.py --continue abc12345-... --budget 10"
         ),
     )
-    parser.add_argument("question", nargs="?", help="Question to investigate (new run)")
+    parser.add_argument(
+        "question", nargs="?",
+        help="Question to investigate (new run). Plain text or path to a .json file "
+        "with headline (required), abstract, and content fields.",
+    )
     parser.add_argument(
         "--budget",
         type=int,
@@ -510,8 +553,9 @@ async def async_main():
     parser.add_argument(
         "--add-question",
         dest="add_question",
-        metavar="TEXT",
-        help="Add a question to the workspace without investigating it yet",
+        metavar="TEXT_OR_JSON",
+        help="Add a question to the workspace without investigating it yet. "
+        "Pass plain text or a .json file with headline, abstract, content fields.",
     )
     parser.add_argument(
         "--parent",
@@ -641,7 +685,8 @@ async def async_main():
     elif args.chat_id:
         await run_chat(args.chat_id, db)
     elif args.add_question:
-        await cmd_add_question(args.add_question, args.parent_id, args.budget, db)
+        q = parse_question_input(args.add_question)
+        await cmd_add_question(q, args.parent_id, args.budget, db)
     elif args.map_id:
         await cmd_map(args.map_id, db)
     elif args.summary_id:
@@ -657,10 +702,12 @@ async def async_main():
     elif args.ingest_files and not args.question:
         await cmd_ingest(args.ingest_files, args.for_question_id, args.budget, db)
     elif args.question and args.ab_test:
-        await cmd_ab(args.question, args.budget, db, name=args.run_name)
+        q = parse_question_input(args.question)
+        await cmd_ab(q, args.budget, db, name=args.run_name)
     elif args.question:
+        q = parse_question_input(args.question)
         await cmd_new(
-            args.question, args.budget, db,
+            q, args.budget, db,
             ingest_files=args.ingest_files, name=args.run_name,
         )
     else:

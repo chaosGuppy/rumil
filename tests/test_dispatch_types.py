@@ -2,7 +2,7 @@
 
 import pytest
 
-from rumil.calls.dispatches import DISPATCH_DEFS, filter_mode_schema
+from rumil.calls.dispatches import DISPATCH_DEFS, filter_mode_schema, make_mode_validator
 from rumil.models import (
     AssessDispatchPayload,
     CallType,
@@ -96,19 +96,13 @@ def test_scope_only_payload_accepts_no_question_id():
     assert "question_id" not in p.model_json_schema().get("properties", {})
 
 
-def test_bind_allowed_modes_filters_schema():
-    """bind() with allowed_modes restricts the mode enum in the tool schema."""
+def test_filter_mode_schema_dispatch_tool():
+    """filter_mode_schema restricts the mode enum in a dispatch tool schema."""
     ddef = DISPATCH_DEFS[CallType.FIND_CONSIDERATIONS]
-    state = MoveState.__new__(MoveState)
-    state.dispatches = []
-    state.moves = []
-    state.created_page_ids = []
-
-    tool = ddef.bind(
-        state,
-        allowed_modes=[FindConsiderationsMode.CONCRETE],
+    schema = filter_mode_schema(
+        ddef.schema.model_json_schema(),
+        [FindConsiderationsMode.CONCRETE],
     )
-    schema = tool.input_schema
     mode_enum = schema['$defs']['FindConsiderationsMode']['enum']
     assert mode_enum == ['concrete']
     mode_prop = schema['properties']['mode']
@@ -116,25 +110,44 @@ def test_bind_allowed_modes_filters_schema():
 
 
 @pytest.mark.asyncio
-async def test_bind_allowed_modes_rejects_disallowed():
-    """The callback rejects a mode not in allowed_modes."""
-    ddef = DISPATCH_DEFS[CallType.FIND_CONSIDERATIONS]
+async def test_mode_validator_rejects_disallowed():
+    """The mode validator rejects a dispatch with a disallowed mode."""
     state = MoveState.__new__(MoveState)
     state.dispatches = []
-    state.moves = []
-    state.created_page_ids = []
+    state._dispatch_validators = [
+        make_mode_validator([FindConsiderationsMode.CONCRETE]),
+    ]
 
-    tool = ddef.bind(
-        state,
-        allowed_modes=[FindConsiderationsMode.CONCRETE],
+    dispatch = Dispatch(
+        call_type=CallType.FIND_CONSIDERATIONS,
+        payload=ScoutDispatchPayload(
+            question_id='abc', mode=FindConsiderationsMode.ABSTRACT, reason='test',
+        ),
     )
-    result = await tool.fn({
-        'question_id': 'abc',
-        'mode': 'abstract',
-        'reason': 'test',
-    })
-    assert 'Invalid mode' in result
+    error = state.record_dispatch(dispatch)
+    assert error is not None
+    assert 'Invalid mode' in error
     assert len(state.dispatches) == 0
+
+
+@pytest.mark.asyncio
+async def test_mode_validator_accepts_allowed():
+    """The mode validator accepts a dispatch with an allowed mode."""
+    state = MoveState.__new__(MoveState)
+    state.dispatches = []
+    state._dispatch_validators = [
+        make_mode_validator([FindConsiderationsMode.CONCRETE]),
+    ]
+
+    dispatch = Dispatch(
+        call_type=CallType.FIND_CONSIDERATIONS,
+        payload=ScoutDispatchPayload(
+            question_id='abc', mode=FindConsiderationsMode.CONCRETE, reason='test',
+        ),
+    )
+    error = state.record_dispatch(dispatch)
+    assert error is None
+    assert len(state.dispatches) == 1
 
 
 def test_allowed_find_considerations_modes_property():
@@ -167,12 +180,18 @@ def test_filter_mode_schema_nested():
     assert inline_scout['properties']['mode']['default'] == 'abstract'
 
 
-def test_inline_dispatch_mode_coercion():
-    """Inline scout dispatches have disallowed modes coerced."""
-    from rumil.models import InlineScoutDispatch
-    from rumil.moves.create_question import _coerce_inline_mode
+def test_mode_validator_passes_through_non_fc_dispatches():
+    """The mode validator ignores non-find_considerations dispatches."""
+    state = MoveState.__new__(MoveState)
+    state.dispatches = []
+    state._dispatch_validators = [
+        make_mode_validator([FindConsiderationsMode.CONCRETE]),
+    ]
 
-    inline = InlineScoutDispatch(mode=FindConsiderationsMode.CONCRETE, reason='test')
-    with override_settings(find_considerations_modes='abstract'):
-        coerced = _coerce_inline_mode(inline)
-        assert coerced.mode == FindConsiderationsMode.ABSTRACT
+    dispatch = Dispatch(
+        call_type=CallType.ASSESS,
+        payload=AssessDispatchPayload(question_id='abc', reason='test'),
+    )
+    error = state.record_dispatch(dispatch)
+    assert error is None
+    assert len(state.dispatches) == 1

@@ -8,11 +8,11 @@ from typing import Generic, TypeVar
 
 from rumil.llm import Tool
 from rumil.models import (
-    FindConsiderationsMode,
     AssessDispatchPayload,
     BaseDispatchPayload,
     CallType,
     Dispatch,
+    FindConsiderationsMode,
     PrioritizationDispatchPayload,
     RecurseDispatchPayload,
     ScopeOnlyDispatchPayload,
@@ -25,7 +25,7 @@ from rumil.models import (
     ScoutSubquestionsDispatchPayload,
     WebResearchDispatchPayload,
 )
-from rumil.moves.base import MoveState
+from rumil.moves.base import DispatchValidator, MoveState
 
 log = logging.getLogger(__name__)
 
@@ -47,27 +47,20 @@ class DispatchDef(Generic[S]):
         subtree_ids: set[str] | None = None,
         short_id_map: dict[str, str] | None = None,
         scope_question_id: str | None = None,
-        allowed_modes: Sequence[FindConsiderationsMode] | None = None,
     ) -> Tool:
         """Return a Tool bound to a call's mutable state."""
 
         async def fn(inp: dict) -> str:
             validated = self.schema(**inp)
 
-            if allowed_modes and hasattr(validated, 'mode'):
-                if validated.mode not in allowed_modes:
-                    allowed_str = ', '.join(m.value for m in allowed_modes)
-                    return (
-                        f"Invalid mode '{validated.mode.value}'. "
-                        f"Allowed modes: {allowed_str}"
-                    )
-
             if isinstance(validated, ScopeOnlyDispatchPayload) and scope_question_id:
                 validated.question_id = scope_question_id
 
-            state.dispatches.append(
-                Dispatch(call_type=self.call_type, payload=validated)
-            )
+            dispatch = Dispatch(call_type=self.call_type, payload=validated)
+            error = state.record_dispatch(dispatch)
+            if error:
+                return error
+
             log.debug(
                 "Dispatch recorded: type=%s, question=%s",
                 self.call_type.value,
@@ -75,14 +68,10 @@ class DispatchDef(Generic[S]):
             )
             return "Dispatch recorded."
 
-        schema = self.schema.model_json_schema()
-        if allowed_modes is not None:
-            schema = filter_mode_schema(schema, allowed_modes)
-
         return Tool(
             name=self.name,
             description=self.description,
-            input_schema=schema,
+            input_schema=self.schema.model_json_schema(),
             fn=fn,
         )
 
@@ -128,6 +117,26 @@ def filter_mode_schema(
             _patch_mode_props(def_val)
 
     return schema
+
+
+def make_mode_validator(
+    allowed_modes: Sequence[FindConsiderationsMode],
+) -> DispatchValidator:
+    """Create a dispatch validator that rejects disallowed find-considerations modes."""
+
+    def validate(dispatch: Dispatch) -> Dispatch | str:
+        if dispatch.call_type != CallType.FIND_CONSIDERATIONS:
+            return dispatch
+        mode = getattr(dispatch.payload, 'mode', None)
+        if mode is not None and mode not in allowed_modes:
+            allowed_str = ', '.join(m.value for m in allowed_modes)
+            return (
+                f"Invalid mode '{mode.value}'. "
+                f"Allowed modes: {allowed_str}"
+            )
+        return dispatch
+
+    return validate
 
 
 DISPATCH_DEFS: dict[CallType, DispatchDef] = {

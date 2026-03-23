@@ -6,24 +6,17 @@ from pydantic import Field
 
 from rumil.database import DB
 from rumil.models import (
-    AssessDispatchPayload,
-    BaseDispatchPayload,
     Call,
     CallType,
     Dispatch,
-    FindConsiderationsMode,
     InlineDispatch,
-    InlineScoutDispatch,
     LinkType,
     MoveType,
     PageLayer,
     PageLink,
     PageType,
-    PrioritizationDispatchPayload,
-    ScoutDispatchPayload,
 )
 from rumil.moves.base import CreatePagePayload, MoveDef, MoveResult, create_page
-from rumil.settings import get_settings
 from rumil.moves.link_child_question import ChildQuestionLinkFields
 
 log = logging.getLogger(__name__)
@@ -78,34 +71,16 @@ class CreateSubquestionPayload(CreateQuestionPayload):
     )
 
 
-_INLINE_DISPATCH_TO_PAYLOAD = {
-    "find_considerations": (CallType.FIND_CONSIDERATIONS, ScoutDispatchPayload),
-    "assess": (CallType.ASSESS, AssessDispatchPayload),
-    "prioritization": (CallType.PRIORITIZATION, PrioritizationDispatchPayload),
-}
-
-
 def _inline_to_dispatch(
     inline: InlineDispatch, question_id: str,
 ) -> Dispatch:
-    call_type, payload_cls = _INLINE_DISPATCH_TO_PAYLOAD[inline.call_type]
+    from rumil.calls.dispatches import DISPATCH_DEFS
+
+    call_type = CallType(inline.call_type)
+    ddef = DISPATCH_DEFS[call_type]
     fields = inline.model_dump(exclude={"call_type"})
     fields["question_id"] = question_id
-    return Dispatch(call_type=call_type, payload=payload_cls(**fields))
-
-
-def _coerce_inline_mode(inline: InlineDispatch) -> InlineDispatch:
-    """Coerce inline scout dispatch mode to an allowed value."""
-    if not isinstance(inline, InlineScoutDispatch):
-        return inline
-    allowed = get_settings().allowed_find_considerations_modes
-    if inline.mode not in allowed:
-        log.info(
-            "Coercing inline dispatch mode from %s to %s",
-            inline.mode.value, allowed[0].value,
-        )
-        inline.mode = allowed[0]
-    return inline
+    return Dispatch(call_type=call_type, payload=ddef.schema(**fields))
 
 
 async def execute_subquestion(
@@ -115,7 +90,7 @@ async def execute_subquestion(
     if not result.created_page_id or not payload.dispatches:
         return result
     dispatches = [
-        _inline_to_dispatch(_coerce_inline_mode(d), result.created_page_id)
+        _inline_to_dispatch(d, result.created_page_id)
         for d in payload.dispatches
     ]
     return MoveResult(

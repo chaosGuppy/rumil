@@ -9,7 +9,7 @@ from rumil.calls.common import (
 )
 from collections.abc import Sequence
 
-from rumil.calls.dispatches import DISPATCH_DEFS, DispatchDef, filter_mode_schema
+from rumil.calls.dispatches import DISPATCH_DEFS, DispatchDef, filter_mode_schema, make_mode_validator
 from rumil.context import build_prioritization_context, collect_subtree_ids
 from rumil.database import DB
 from rumil.page_graph import PageGraph
@@ -58,6 +58,8 @@ async def run_prioritization_call(
     system_prompt = system_prompt_override or build_system_prompt(CallType.PRIORITIZATION.value)
 
     allowed_fc_modes = get_settings().allowed_find_considerations_modes
+    state._dispatch_validators.append(make_mode_validator(allowed_fc_modes))
+
     tools = []
     for mt in available_moves:
         if mt == MoveType.CREATE_QUESTION:
@@ -75,14 +77,13 @@ async def run_prioritization_call(
     if extra_dispatch_defs:
         selected_defs.extend(extra_dispatch_defs)
     for ddef in selected_defs:
-        bind_kwargs: dict = dict(
-            subtree_ids=subtree_ids,
-            short_id_map=short_id_map,
+        tool = ddef.bind(
+            state, subtree_ids, short_id_map,
             scope_question_id=call.scope_page_id,
         )
         if ddef.call_type == CallType.FIND_CONSIDERATIONS:
-            bind_kwargs['allowed_modes'] = allowed_fc_modes
-        tools.append(ddef.bind(state, **bind_kwargs))
+            tool.input_schema = filter_mode_schema(tool.input_schema, allowed_fc_modes)
+        tools.append(tool)
 
     user_message = build_user_message(context_text, task_description)
 

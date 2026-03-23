@@ -53,10 +53,11 @@ def _load_file(name: str) -> str:
 
 
 def build_system_prompt(call_type: str) -> str:
-    """Combine preamble + call-type instructions into one system prompt."""
+    """Combine preamble + call-type instructions + citations into one system prompt."""
     preamble = _load_file("preamble.md")
     instructions = _load_file(f"{call_type}.md")
-    return f"{preamble}\n\n---\n\n{instructions}"
+    citations = _load_file("citations.md")
+    return f"{preamble}\n\n---\n\n{instructions}\n\n---\n\n{citations}"
 
 
 def build_user_message(context_text: str, task_description: str) -> str:

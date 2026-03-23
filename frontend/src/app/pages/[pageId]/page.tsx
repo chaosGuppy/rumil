@@ -58,6 +58,37 @@ function pageHref(page: Page): string {
   return `/pages/${page.id}`;
 }
 
+function buildCitationMap(
+  links_from: LinkedPageOut[],
+  links_to: LinkedPageOut[],
+): Map<string, { fullId: string; pageType: string }> {
+  const map = new Map<string, { fullId: string; pageType: string }>();
+  for (const lp of [...links_from, ...links_to]) {
+    const short = lp.page.id.slice(0, 8);
+    map.set(short, { fullId: lp.page.id, pageType: lp.page.page_type });
+  }
+  return map;
+}
+
+const CITATION_RE = /\[([a-f0-9]{8})\]/g;
+
+function injectCitationLinks(
+  content: string,
+  citationMap: Map<string, { fullId: string; pageType: string }>,
+): string {
+  const orderMap = new Map<string, number>();
+  let nextNum = 1;
+  return content.replace(CITATION_RE, (_match, shortId: string) => {
+    const entry = citationMap.get(shortId);
+    if (!entry) return `[${shortId}]`;
+    if (!orderMap.has(shortId)) {
+      orderMap.set(shortId, nextNum++);
+    }
+    const num = orderMap.get(shortId)!;
+    return `[${num}](/pages/${entry.fullId}?cite=${entry.pageType})`;
+  });
+}
+
 async function getPageRun(pageId: string): Promise<RunSummaryOut | null> {
   const res = await fetch(
     `${API_BASE}/api/pages/${pageId}/run`,
@@ -181,6 +212,8 @@ export default async function PageDetailPage({
 
   const { page, links_from, links_to } = detail;
   const cfg = TYPE_CONFIG[page.page_type] || TYPE_CONFIG.source;
+  const citationMap = buildCitationMap(links_from, links_to);
+  const processedContent = injectCitationLinks(page.content, citationMap);
 
   return (
     <main className="page-detail">
@@ -217,7 +250,30 @@ export default async function PageDetailPage({
         </header>
 
         <div className="page-content">
-          <Markdown>{page.content}</Markdown>
+          <Markdown
+            components={{
+              a: ({ href, children }) => {
+                if (href && href.startsWith("/pages/") && href.includes("?cite=")) {
+                  const url = new URL(href, "http://x");
+                  const pageType = url.searchParams.get("cite") || "claim";
+                  const typeCfg = TYPE_CONFIG[pageType] || TYPE_CONFIG.source;
+                  const cleanHref = url.pathname;
+                  return (
+                    <Link href={cleanHref} className="citation-chip" style={{
+                      color: typeCfg.accent,
+                      borderColor: typeCfg.border,
+                      background: typeCfg.bg,
+                    }}>
+                      {children}
+                    </Link>
+                  );
+                }
+                return <a href={href}>{children}</a>;
+              },
+            }}
+          >
+            {processedContent}
+          </Markdown>
         </div>
 
         <div className="page-meta-row">
@@ -418,6 +474,28 @@ const styles = `
   .page-content a {
     color: var(--color-accent);
     text-decoration: underline;
+  }
+  .page-content .citation-chip {
+    display: inline;
+    font-size: 0.78em;
+    font-family: var(--font-geist-mono), monospace;
+    font-weight: 500;
+    padding: 0.1em 0.4em;
+    border: 1px solid;
+    text-decoration: none;
+    letter-spacing: 0.01em;
+    transition: background 0.12s ease, border-color 0.12s ease;
+    cursor: pointer;
+    vertical-align: baseline;
+  }
+  .page-content .citation-chip:hover {
+    filter: brightness(0.92);
+    text-decoration: none;
+  }
+  @media (prefers-color-scheme: dark) {
+    .page-content .citation-chip:hover {
+      filter: brightness(1.3);
+    }
   }
 
   .page-meta-row {

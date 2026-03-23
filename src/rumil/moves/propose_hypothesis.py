@@ -15,7 +15,7 @@ from rumil.models import (
     PageType,
     Workspace,
 )
-from rumil.moves.base import MoveDef, MoveResult, write_page_file
+from rumil.moves.base import MoveDef, MoveResult, extract_and_link_citations, write_page_file
 
 log = logging.getLogger(__name__)
 
@@ -63,6 +63,12 @@ async def execute(payload: ProposeHypothesisPayload, call: Call, db: DB) -> Move
     )
     await db.save_page(claim)
     write_page_file(claim)
+    try:
+        await extract_and_link_citations(
+            claim.id, claim.content, db, citing_page_type=PageType.CLAIM,
+        )
+    except Exception:
+        log.warning("Citation extraction failed for page %s", claim.id[:8], exc_info=True)
     log.info("Hypothesis claim created: %s", claim.id[:8])
 
     await db.save_link(
@@ -96,6 +102,12 @@ async def execute(payload: ProposeHypothesisPayload, call: Call, db: DB) -> Move
     )
     await db.save_page(question)
     write_page_file(question)
+    try:
+        await extract_and_link_citations(
+            question.id, question.content, db, citing_page_type=PageType.QUESTION,
+        )
+    except Exception:
+        log.warning("Citation extraction failed for page %s", question.id[:8], exc_info=True)
     log.info("Hypothesis question created: %s", question.id[:8])
 
     await db.save_link(

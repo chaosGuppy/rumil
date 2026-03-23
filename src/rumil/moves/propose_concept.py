@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 
 from rumil.database import DB
 from rumil.models import Call, MoveType, Page, PageLayer, PageType, Workspace
-from rumil.moves.base import MoveDef, MoveResult, write_page_file
+from rumil.moves.base import MoveDef, MoveResult, extract_and_link_citations, write_page_file
 
 
 class ProposeConceptPayload(BaseModel):
@@ -47,6 +47,12 @@ async def execute(payload: ProposeConceptPayload, call: Call, db: DB) -> MoveRes
     )
     await db.save_page(page)
     write_page_file(page)
+    try:
+        await extract_and_link_citations(
+            page.id, page.content, db, citing_page_type=PageType.CONCEPT,
+        )
+    except Exception:
+        pass
     return MoveResult(
         message=f"Proposed concept [{page.id[:8]}]: {payload.headline}",
         created_page_id=page.id,

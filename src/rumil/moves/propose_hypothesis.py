@@ -86,7 +86,7 @@ async def execute(payload: ProposeHypothesisPayload, call: Call, db: DB) -> Move
         layer=PageLayer.SQUIDGY,
         workspace=Workspace.RESEARCH,
         content=q_text,
-        headline=q_text[:120],
+        headline=q_text,
         epistemic_status=2.5,
         epistemic_type="open question",
         provenance_model="claude-opus-4-6",

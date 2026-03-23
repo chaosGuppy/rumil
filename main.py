@@ -47,7 +47,9 @@ def parse_question_input(value: str) -> QuestionInput:
     and content, matching legacy behaviour).
     """
     path = Path(value)
-    if path.suffix == '.json' and path.exists():
+    if path.suffix == '.json':
+        if not path.exists():
+            sys.exit(f'Error: question JSON file not found: {value}')
         with open(path) as f:
             data = json.load(f)
         if not isinstance(data, dict) or 'headline' not in data:

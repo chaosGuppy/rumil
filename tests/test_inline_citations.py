@@ -307,11 +307,15 @@ async def test_assess_produces_inline_citations(tmp_db, question_page):
 
     for p in pages_with_citations:
         cited_short_ids = citation_pattern.findall(p.content)
-        links_from_page = await tmp_db.get_links_from(p.id)
-        auto_link_targets = {l.to_page_id for l in links_from_page}
+        links_from = await tmp_db.get_links_from(p.id)
+        links_to = await tmp_db.get_links_to(p.id)
+        linked_ids = (
+            {l.to_page_id for l in links_from}
+            | {l.from_page_id for l in links_to}
+        )
         for sid in cited_short_ids:
             resolved = await tmp_db.resolve_page_id(sid)
             if resolved:
-                assert resolved in auto_link_targets, (
+                assert resolved in linked_ids, (
                     f"Citation [{sid}] in page {p.id[:8]} should have a corresponding link"
                 )

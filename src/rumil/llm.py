@@ -24,7 +24,13 @@ from typing import TYPE_CHECKING
 from collections.abc import Awaitable, Callable, Sequence
 
 import anthropic
-from anthropic.types import MessageParam, ServerToolUseBlock, TextBlock, ToolUseBlock
+from anthropic.types import (
+    MessageParam,
+    ServerToolUseBlock,
+    TextBlock,
+    ToolUseBlock,
+    WebSearchToolResultBlock,
+)
 from pydantic import BaseModel, ValidationError
 
 from rumil.pricing import compute_cost
@@ -325,6 +331,12 @@ async def call_api(
                         tool_call_data.append(
                             {"name": block.name, "input": block.input}
                         )
+                    elif isinstance(block, WebSearchToolResultBlock):
+                        tool_call_data.append({
+                            "type": "web_search_tool_result",
+                            "tool_use_id": block.tool_use_id,
+                            "content": block.model_dump(mode="json")["content"],
+                        })
                 if metadata.user_messages is None and len(messages) > 1:
                     metadata.user_messages = _serialize_messages(messages)
                 await _save_exchange(

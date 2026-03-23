@@ -334,35 +334,140 @@ function CollapsiblePre({
   );
 }
 
-function formatBlockContent(block: Record<string, unknown>): string {
-  if (block.type === "text") return String(block.text ?? "");
-  if (block.type === "tool_use")
-    return `[tool_use: ${block.name}]\n${JSON.stringify(block.input, null, 2)}`;
-  if (block.type === "tool_result") {
-    const content = block.content;
-    const text = typeof content === "string" ? content : JSON.stringify(content);
-    return `[tool_result: ${block.tool_use_id}]\n${text}`;
+function blockLabel(block: Record<string, unknown>): string {
+  const t = String(block.type ?? "unknown");
+  if (t === "text") return "text";
+  if (t === "tool_use") return `tool_use: ${block.name}`;
+  if (t === "tool_result") return `tool_result`;
+  if (t === "server_tool_use") return `server: ${block.name}`;
+  if (t === "web_search_tool_result") return "web_search_result";
+  return t;
+}
+
+function blockContent(block: Record<string, unknown>): string {
+  const t = String(block.type ?? "");
+  if (t === "text") return String(block.text ?? "");
+  if (t === "tool_use")
+    return JSON.stringify(block.input, null, 2);
+  if (t === "tool_result") {
+    const c = block.content;
+    return typeof c === "string" ? c : JSON.stringify(c, null, 2);
   }
+  if (t === "server_tool_use")
+    return JSON.stringify(block.input, null, 2);
+  if (t === "web_search_tool_result")
+    return JSON.stringify(block.content, null, 2);
   return JSON.stringify(block, null, 2);
+}
+
+function blockTypeClass(block: Record<string, unknown>): string {
+  const t = String(block.type ?? "");
+  if (t === "text") return "trace-block-text";
+  if (t === "tool_use") return "trace-block-tool-use";
+  if (t === "tool_result") return "trace-block-tool-result";
+  if (t === "server_tool_use") return "trace-block-server-tool";
+  if (t === "web_search_tool_result") return "trace-block-web-result";
+  return "trace-block-default";
+}
+
+function ContentBlock({ block }: { block: Record<string, unknown> }) {
+  const [open, setOpen] = useState(false);
+  const [overlayOpen, setOverlayOpen] = useState(false);
+  const label = blockLabel(block);
+  const content = blockContent(block);
+  const chars = content.length;
+  const approxTokens = Math.round(chars / 4);
+  const typeClass = blockTypeClass(block);
+
+  return (
+    <div className={`trace-content-block ${typeClass}`}>
+      <button
+        className="trace-block-toggle"
+        onClick={() => setOpen(!open)}
+      >
+        <span className="trace-block-chevron">{open ? "\u25BC" : "\u25B6"}</span>
+        <span className="trace-block-label">{label}</span>
+        <span className="trace-block-size">
+          {chars.toLocaleString()} chars
+          <span className="trace-block-tokens">~{compactTokens(approxTokens)} tok</span>
+        </span>
+        {chars > 10000 && (
+          <span
+            className="trace-block-size-bar"
+            title={`${chars.toLocaleString()} chars`}
+          >
+            <span
+              className="trace-block-size-fill"
+              style={{ width: `${Math.min(100, chars / 1000)}%` }}
+            />
+          </span>
+        )}
+        {open && (
+          <span
+            className="trace-expand-btn"
+            role="button"
+            title="Expand to full view"
+            onClick={(e) => {
+              e.stopPropagation();
+              setOverlayOpen(true);
+            }}
+          >
+            {"\u2922"}
+          </span>
+        )}
+      </button>
+      {open && (
+        <pre className="trace-collapsible-content">{content}</pre>
+      )}
+      {!open && chars > 200 && (
+        <pre className="trace-collapsible-preview">
+          {content.slice(0, 200)}...
+        </pre>
+      )}
+      {overlayOpen && (
+        <TextOverlay
+          label={label}
+          content={content}
+          onClose={() => setOverlayOpen(false)}
+        />
+      )}
+    </div>
+  );
 }
 
 function formatMessageContent(content: unknown): string {
   if (typeof content === "string") return content;
   if (Array.isArray(content))
-    return content.map((b) => formatBlockContent(b as Record<string, unknown>)).join("\n");
+    return content.map((b) => {
+      const block = b as Record<string, unknown>;
+      return blockContent(block);
+    }).join('\n');
   return String(content ?? "");
+}
+
+function totalChars(content: unknown): number {
+  if (typeof content === "string") return content.length;
+  if (Array.isArray(content))
+    return content.reduce((sum, b) => sum + blockContent(b as Record<string, unknown>).length, 0);
+  return String(content ?? "").length;
 }
 
 function MessageTurn({ msg, index }: { msg: Record<string, unknown>; index: number }) {
   const [overlayOpen, setOverlayOpen] = useState(false);
   const role = String(msg.role ?? "unknown");
-  const text = formatMessageContent(msg.content);
+  const content = msg.content;
+  const blocks = Array.isArray(content) ? content as Array<Record<string, unknown>> : null;
+  const chars = totalChars(content);
+  const approxTokens = Math.round(chars / 4);
+
   return (
     <details key={index} className="trace-message-turn">
       <summary className={`trace-message-role trace-role-${role}`}>
         {role}
         <span className="trace-collapsible-meta">
-          {" "}{text.length.toLocaleString()} chars
+          {chars.toLocaleString()} chars
+          <span className="trace-block-tokens">~{compactTokens(approxTokens)} tok</span>
+          {blocks && <span className="trace-block-count">{blocks.length} blocks</span>}
         </span>
         <span
           className="trace-expand-btn"
@@ -377,11 +482,21 @@ function MessageTurn({ msg, index }: { msg: Record<string, unknown>; index: numb
           {"\u2922"}
         </span>
       </summary>
-      <pre className="trace-collapsible-content">{text}</pre>
+      {blocks ? (
+        <div className="trace-block-list">
+          {blocks.map((block, i) => (
+            <ContentBlock key={i} block={block} />
+          ))}
+        </div>
+      ) : (
+        <pre className="trace-collapsible-content">
+          {typeof content === "string" ? content : JSON.stringify(content, null, 2)}
+        </pre>
+      )}
       {overlayOpen && (
         <TextOverlay
-          label={`${role} message`}
-          content={text}
+          label={`${role} message (all blocks)`}
+          content={formatMessageContent(content)}
           onClose={() => setOverlayOpen(false)}
         />
       )}
@@ -399,6 +514,96 @@ function MessageThread({ messages }: { messages: Array<Record<string, unknown>> 
   );
 }
 
+function WebSearchResultEntry({ tc }: { tc: Record<string, unknown> }) {
+  const [open, setOpen] = useState(false);
+  const [overlayOpen, setOverlayOpen] = useState(false);
+  const contentJson = JSON.stringify(tc.content, null, 2);
+  const chars = contentJson.length;
+  const approxTokens = Math.round(chars / 4);
+
+  return (
+    <div className="trace-content-block trace-block-web-result">
+      <button className="trace-block-toggle" onClick={() => setOpen(!open)}>
+        <span className="trace-block-chevron">{open ? "\u25BC" : "\u25B6"}</span>
+        <span className="trace-block-label">web_search_result</span>
+        <span className="trace-block-size">
+          {chars.toLocaleString()} chars
+          <span className="trace-block-tokens">~{compactTokens(approxTokens)} tok</span>
+        </span>
+        {chars > 10000 && (
+          <span className="trace-block-size-bar" title={`${chars.toLocaleString()} chars`}>
+            <span
+              className="trace-block-size-fill"
+              style={{ width: `${Math.min(100, chars / 1000)}%` }}
+            />
+          </span>
+        )}
+        {open && (
+          <span
+            className="trace-expand-btn"
+            role="button"
+            title="Expand to full view"
+            onClick={(e) => { e.stopPropagation(); setOverlayOpen(true); }}
+          >
+            {"\u2922"}
+          </span>
+        )}
+      </button>
+      {open && <pre className="trace-collapsible-content">{contentJson}</pre>}
+      {!open && chars > 200 && (
+        <pre className="trace-collapsible-preview">{contentJson.slice(0, 200)}...</pre>
+      )}
+      {overlayOpen && (
+        <TextOverlay
+          label="web_search_result"
+          content={contentJson}
+          onClose={() => setOverlayOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function ToolCallsList({ toolCalls }: { toolCalls: Array<Record<string, unknown>> }) {
+  const serverToolUses = toolCalls.filter((tc) => !tc.type);
+  const webResults = toolCalls.filter((tc) => tc.type === "web_search_tool_result");
+  const totalResultChars = webResults.reduce(
+    (sum, tc) => sum + JSON.stringify(tc.content).length, 0,
+  );
+
+  return (
+    <div className="trace-tool-calls">
+      <div className="trace-tool-calls-label">
+        Tool calls ({serverToolUses.length})
+        {webResults.length > 0 && (
+          <span className="trace-block-size" style={{ marginLeft: 8 }}>
+            + {webResults.length} web results ({totalResultChars.toLocaleString()} chars,{" "}
+            ~{compactTokens(Math.round(totalResultChars / 4))} tok)
+          </span>
+        )}
+      </div>
+      {serverToolUses.map((tc, i) => (
+        <details key={i} className="trace-tool-call">
+          <summary className="trace-tool-call-name">
+            {tc.name as string}
+          </summary>
+          <pre className="trace-tool-call-input">
+            {JSON.stringify(tc.input, null, 2)}
+          </pre>
+          {tc.result ? (
+            <pre className="trace-tool-call-output">
+              {String(tc.result)}
+            </pre>
+          ) : null}
+        </details>
+      ))}
+      {webResults.map((tc, i) => (
+        <WebSearchResultEntry key={`wr-${i}`} tc={tc} />
+      ))}
+    </div>
+  );
+}
+
 function ExchangeDetail({ detail }: { detail: LlmExchangeOut }) {
   return (
     <div className="trace-exchange-detail">
@@ -410,26 +615,7 @@ function ExchangeDetail({ detail }: { detail: LlmExchangeOut }) {
       )}
       <CollapsiblePre label="Response" content={detail.response_text} />
       {detail.tool_calls.length > 0 && (
-        <div className="trace-tool-calls">
-          <div className="trace-tool-calls-label">
-            Tool calls ({detail.tool_calls.length})
-          </div>
-          {detail.tool_calls.map((tc, i) => (
-            <details key={i} className="trace-tool-call">
-              <summary className="trace-tool-call-name">
-                {tc.name as string}
-              </summary>
-              <pre className="trace-tool-call-input">
-                {JSON.stringify(tc.input, null, 2)}
-              </pre>
-              {tc.result ? (
-                <pre className="trace-tool-call-output">
-                  {String(tc.result)}
-                </pre>
-              ) : null}
-            </details>
-          ))}
-        </div>
+        <ToolCallsList toolCalls={detail.tool_calls} />
       )}
       {detail.error && (
         <div className="trace-exchange-error-detail">

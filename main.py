@@ -60,7 +60,7 @@ def parse_question_input(value: str) -> QuestionInput:
             abstract=data.get('abstract', ''),
             content=data.get('content', ''),
         )
-    return QuestionInput(headline=value[:120], content=value)
+    return QuestionInput(headline=value, content=value)
 
 NORMAL_BUDGET_DEFAULT = 10
 

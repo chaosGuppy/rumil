@@ -156,7 +156,7 @@ async def create_root_question(
         layer=PageLayer.SQUIDGY,
         workspace=Workspace.RESEARCH,
         content=content or abstract or question_text,
-        headline=question_text[:120],
+        headline=question_text,
         abstract=abstract,
         epistemic_status=2.5,
         epistemic_type="open question",

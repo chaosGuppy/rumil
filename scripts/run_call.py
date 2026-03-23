@@ -149,7 +149,7 @@ async def run(args: argparse.Namespace) -> None:
     print(f"Trace: {frontend}/traces/{db.run_id}\n")
     await db.init_budget(args.budget)
 
-    name = args.name or question_text[:120]
+    name = args.name or question_text
     config = settings.capture_config()
     await db.create_run(
         name=name,
@@ -171,7 +171,7 @@ async def _run_ab(
 ) -> None:
     """Run an A/B test: two concurrent calls with different configs."""
     ab_run_id = str(uuid.uuid4())
-    name = args.name or question_text[:120]
+    name = args.name or question_text
 
     await db.create_ab_run(ab_run_id, name, question_id)
 

@@ -247,6 +247,9 @@ export default async function PageDetailPage({
             )}
           </div>
           <h1 className="page-summary">{page.headline}</h1>
+          {page.abstract && (
+            <div className="page-abstract">{page.abstract}</div>
+          )}
         </header>
 
         <div className="page-content">
@@ -413,6 +416,17 @@ const styles = `
     letter-spacing: -0.02em;
     line-height: 1.3;
     margin: 0;
+  }
+
+  .page-abstract {
+    max-width: 36rem;
+    margin: 0.75rem auto 0;
+    padding: 0 1.5rem;
+    font-size: 0.82rem;
+    font-style: italic;
+    line-height: 1.55;
+    color: var(--color-foreground);
+    opacity: 0.65;
   }
 
   .page-content {

@@ -6,8 +6,6 @@ from pydantic import Field
 
 from rumil.database import DB
 from rumil.models import (
-    AssessDispatchPayload,
-    BaseDispatchPayload,
     Call,
     CallType,
     Dispatch,
@@ -17,8 +15,6 @@ from rumil.models import (
     PageLayer,
     PageLink,
     PageType,
-    PrioritizationDispatchPayload,
-    ScoutDispatchPayload,
 )
 from rumil.moves.base import CreatePagePayload, MoveDef, MoveResult, create_page
 from rumil.moves.link_child_question import ChildQuestionLinkFields
@@ -75,20 +71,16 @@ class CreateSubquestionPayload(CreateQuestionPayload):
     )
 
 
-_INLINE_DISPATCH_TO_PAYLOAD = {
-    "find_considerations": (CallType.FIND_CONSIDERATIONS, ScoutDispatchPayload),
-    "assess": (CallType.ASSESS, AssessDispatchPayload),
-    "prioritization": (CallType.PRIORITIZATION, PrioritizationDispatchPayload),
-}
-
-
 def _inline_to_dispatch(
     inline: InlineDispatch, question_id: str,
 ) -> Dispatch:
-    call_type, payload_cls = _INLINE_DISPATCH_TO_PAYLOAD[inline.call_type]
+    from rumil.calls.dispatches import DISPATCH_DEFS
+
+    call_type = CallType(inline.call_type)
+    ddef = DISPATCH_DEFS[call_type]
     fields = inline.model_dump(exclude={"call_type"})
     fields["question_id"] = question_id
-    return Dispatch(call_type=call_type, payload=payload_cls(**fields))
+    return Dispatch(call_type=call_type, payload=ddef.schema(**fields))
 
 
 async def execute_subquestion(

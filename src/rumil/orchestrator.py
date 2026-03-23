@@ -952,7 +952,7 @@ class LLMOrchestrator(BaseOrchestrator):
                     call_type=CallType.FIND_CONSIDERATIONS,
                     payload=ScoutDispatchPayload(
                         question_id=question_id,
-                        mode=FindConsiderationsMode.ALTERNATE,
+                        mode=get_settings().allowed_find_considerations_modes[0],
                         fruit_threshold=DEFAULT_FRUIT_THRESHOLD,
                         max_rounds=DEFAULT_MAX_ROUNDS,
                         reason="fallback"

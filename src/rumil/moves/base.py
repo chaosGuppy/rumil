@@ -1,11 +1,11 @@
 """Base types and shared helpers for moves."""
 
 import logging
-import re
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Generic, TypeVar
+import re
 
 from pydantic import BaseModel, Field
 
@@ -25,6 +25,8 @@ from rumil.models import (
     PageType,
     Workspace,
 )
+
+DispatchValidator = Callable[[Dispatch], Dispatch | str]
 
 log = logging.getLogger(__name__)
 
@@ -57,7 +59,25 @@ class MoveState:
         self.move_created_ids: list[list[str]] = []
         self.move_trace_extras: list[dict[str, Any]] = []
         self.dispatches: list[Dispatch] = []
+        self._dispatch_validators: list[DispatchValidator] = []
         self._move_cursor: int = 0
+
+    def record_dispatch(self, dispatch: Dispatch) -> str | None:
+        """Validate and record a dispatch. Returns an error string if rejected."""
+        for validator in self._dispatch_validators:
+            result = validator(dispatch)
+            if isinstance(result, str):
+                return result
+            dispatch = result
+        self.dispatches.append(dispatch)
+        return None
+
+    def record_dispatches(self, dispatches: Sequence[Dispatch]) -> None:
+        """Validate and record multiple dispatches, logging any rejections."""
+        for d in dispatches:
+            error = self.record_dispatch(d)
+            if error:
+                log.warning("Dispatch rejected: %s", error)
 
     def take_new_moves(self) -> tuple[list[Move], list[list[str]], list[dict[str, Any]]]:
         """Return moves, created-ID lists, and trace extras added since the last call."""
@@ -104,7 +124,7 @@ class MoveDef(Generic[S]):
             result = await self.execute(validated, state.call, state.db)
             state.moves.append(Move(move_type=self.move_type, payload=validated))
             if result.dispatches:
-                state.dispatches.extend(result.dispatches)
+                state.record_dispatches(result.dispatches)
             move_page_ids: list[str] = []
             if result.created_page_id:
                 state.created_page_ids.append(result.created_page_id)

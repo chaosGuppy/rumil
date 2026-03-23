@@ -1,6 +1,8 @@
 """Dispatch definitions: tool schemas and registry for prioritization dispatches."""
 
+import copy
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Generic, TypeVar
 
@@ -10,6 +12,7 @@ from rumil.models import (
     BaseDispatchPayload,
     CallType,
     Dispatch,
+    FindConsiderationsMode,
     PrioritizationDispatchPayload,
     RecurseDispatchPayload,
     ScopeOnlyDispatchPayload,
@@ -22,7 +25,7 @@ from rumil.models import (
     ScoutSubquestionsDispatchPayload,
     WebResearchDispatchPayload,
 )
-from rumil.moves.base import MoveState
+from rumil.moves.base import DispatchValidator, MoveState
 
 log = logging.getLogger(__name__)
 
@@ -53,9 +56,11 @@ class DispatchDef(Generic[S]):
             if isinstance(validated, ScopeOnlyDispatchPayload) and scope_question_id:
                 validated.question_id = scope_question_id
 
-            state.dispatches.append(
-                Dispatch(call_type=self.call_type, payload=validated)
-            )
+            dispatch = Dispatch(call_type=self.call_type, payload=validated)
+            error = state.record_dispatch(dispatch)
+            if error:
+                return error
+
             log.debug(
                 "Dispatch recorded: type=%s, question=%s",
                 self.call_type.value,
@@ -69,6 +74,69 @@ class DispatchDef(Generic[S]):
             input_schema=self.schema.model_json_schema(),
             fn=fn,
         )
+
+
+def filter_mode_schema(
+    schema: dict,
+    allowed_modes: Sequence[FindConsiderationsMode],
+) -> dict:
+    """Deep-copy schema and restrict the FindConsiderationsMode enum to allowed values.
+
+    Works for both top-level mode properties (dispatch tools) and nested
+    schemas that reference FindConsiderationsMode via $defs (inline dispatches).
+    """
+    schema = copy.deepcopy(schema)
+    allowed_values = [m.value for m in allowed_modes]
+
+    mode_def_key = 'FindConsiderationsMode'
+    defs = schema.get('$defs', {})
+    if mode_def_key not in defs:
+        return schema
+
+    defs[mode_def_key]['enum'] = [
+        v for v in defs[mode_def_key].get('enum', []) if v in allowed_values
+    ]
+
+    def _patch_mode_props(obj: dict) -> None:
+        """Patch any 'mode' property that refs FindConsiderationsMode."""
+        props = obj.get('properties', {})
+        if 'mode' in props:
+            mode_prop = props['mode']
+            if mode_prop.get('$ref', '').endswith(f'/{mode_def_key}'):
+                if mode_prop.get('default') not in allowed_values:
+                    mode_prop['default'] = allowed_values[0]
+                mode_prop['description'] = (
+                    'Scout mode. Available: '
+                    + ', '.join(f"'{v}'" for v in allowed_values)
+                    + '.'
+                )
+
+    _patch_mode_props(schema)
+    for def_val in defs.values():
+        if isinstance(def_val, dict):
+            _patch_mode_props(def_val)
+
+    return schema
+
+
+def make_mode_validator(
+    allowed_modes: Sequence[FindConsiderationsMode],
+) -> DispatchValidator:
+    """Create a dispatch validator that rejects disallowed find-considerations modes."""
+
+    def validate(dispatch: Dispatch) -> Dispatch | str:
+        if dispatch.call_type != CallType.FIND_CONSIDERATIONS:
+            return dispatch
+        mode = getattr(dispatch.payload, 'mode', None)
+        if mode is not None and mode not in allowed_modes:
+            allowed_str = ', '.join(m.value for m in allowed_modes)
+            return (
+                f"Invalid mode '{mode.value}'. "
+                f"Allowed modes: {allowed_str}"
+            )
+        return dispatch
+
+    return validate
 
 
 DISPATCH_DEFS: dict[CallType, DispatchDef] = {

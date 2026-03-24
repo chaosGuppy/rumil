@@ -40,7 +40,7 @@ from rumil.calls.call_registry import (
     SCOUT_SUBQUESTIONS_CALL_CLASSES,
     WEB_RESEARCH_CALL_CLASSES,
 )
-from rumil.context import build_prioritization_context, collect_subtree_ids
+from rumil.context import build_prioritization_context
 from rumil.database import DB
 from rumil.embeddings import embed_and_store_page
 from rumil.llm import LLMExchangeMetadata, build_system_prompt, build_user_message, structured_call
@@ -91,6 +91,37 @@ from rumil.tracing.trace_events import (
 
 
 log = logging.getLogger(__name__)
+
+
+async def _count_subtree_questions(question_id: str, graph: PageGraph) -> int:
+    """Count all descendant questions (not including the question itself)."""
+    children = await graph.get_child_questions(question_id)
+    count = len(children)
+    for child in children:
+        count += await _count_subtree_questions(child.id, graph)
+    return count
+
+
+async def _describe_child_questions(
+    children: Sequence[Page], graph: PageGraph,
+) -> str:
+    """Build enriched descriptions of child questions with research stats."""
+    lines = []
+    for c in children:
+        considerations = await graph.get_considerations_for_question(c.id)
+        judgements = await graph.get_judgements_for_question(c.id)
+        subtree_count = await _count_subtree_questions(c.id, graph)
+
+        parts = []
+        parts.append(f'{len(considerations)} considerations')
+        if judgements:
+            parts.append(f'{len(judgements)} judgement{"s" if len(judgements) != 1 else ""}')
+        if subtree_count:
+            parts.append(f'{subtree_count} subquestion{"s" if subtree_count != 1 else ""}')
+
+        stats = ', '.join(parts) if parts else 'no research yet'
+        lines.append(f'- `{c.id}` — {c.headline} ({stats})')
+    return '\n'.join(lines)
 
 
 PRIORITIZATION_MOVES: list[MoveType] = [
@@ -1148,8 +1179,6 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         context_text, short_id_map = await build_prioritization_context(
             self.db, scope_question_id=question_id, graph=graph,
         )
-        subtree_ids = await collect_subtree_ids(question_id, self.db, graph=graph)
-
         if self._initial_call is not None:
             p_call = self._initial_call
             self._initial_call = None
@@ -1182,7 +1211,6 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         result = await run_prioritization_call(
             task, context_text, p_call, self.db,
             available_moves=PRIORITIZATION_MOVES,
-            subtree_ids=subtree_ids,
             short_id_map=short_id_map,
             trace=trace,
             dispatch_types=list(PHASE1_SCOUT_TYPES),
@@ -1255,18 +1283,16 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         trace = CallTrace(p_call.id, self.db, broadcaster=self.broadcaster)
         await trace.record(ContextBuiltEvent(budget=budget))
 
-        child_questions = await self.db.get_child_questions(question_id)
-        parent_question = await self.db.get_page(question_id)
+        graph = await PageGraph.load(self.db)
+        child_questions = await graph.get_child_questions(question_id)
+        parent_question = await graph.get_page(question_id)
         parent_headline = parent_question.headline if parent_question else question_id[:8]
 
         scoring_system = build_system_prompt('score_subquestions')
 
         scoring_tasks = []
         if child_questions:
-            child_descriptions = '\n'.join(
-                f'- `{c.id}` — {c.headline}'
-                for c in child_questions
-            )
+            child_descriptions = await _describe_child_questions(child_questions, graph)
             subq_user_msg = build_user_message(
                 f'Parent question: {parent_headline}\n\n'
                 f'Subquestions to score:\n{child_descriptions}',
@@ -1328,7 +1354,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             lines = ['## Subquestion Scores', '']
             for s in subq_scores:
                 lines.append(
-                    f'- `{s["question_id"][:8]}` — {s["headline"]}: '
+                    f'- `{s["question_id"]}` — {s["headline"]}: '
                     f'impact={s["impact"]}, fruit={s["fruit"]} '
                     f'({s["reasoning"]})'
                 )
@@ -1340,27 +1366,14 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             f'Remaining fruit on parent: {parent_fruit}/10\n'
         )
 
-        graph = await PageGraph.load(self.db)
         context_text, short_id_map = await build_prioritization_context(
             self.db, scope_question_id=question_id, graph=graph,
         )
-        subtree_ids = await collect_subtree_ids(question_id, self.db, graph=graph)
 
         task = (
-            f'You have a budget of **{budget} research calls** to allocate during this rollout.\n\n'
-            'You do not need to allocate your entire budget during this call (although you can, especially if it seems low). '
+            f'You have a budget of **{budget} budget units** to allocate.\n\n'
             f'Scope question ID: `{question_id}`\n\n'
-            'Phase 1 (specialized scouts + assess) is complete. Now plan '
-            'targeted follow-up based on what was discovered.\n\n'
             f'{scores_text}\n\n'
-            'Dispatch further investigation: use dispatch_find_considerations for general '
-            'exploration that can be based purely on your trained knowledge and does not require web research, '
-            'dispatch_web_research for web-based evidence, or '
-            'recurse_into_subquestion to recursively investigate a child '
-            f'question with its own prioritization cycle (minimum budget: {MIN_TWOPHASE_BUDGET}). '
-            'For find_considerations, web_research, and recurse you can target the parent question '
-            'or any child question. Scout dispatches always target the scope question automatically.\n\n'
-            'You may create subquestions before dispatching. '
             'You must make all your dispatch calls now — this is your only turn. '
             f'Each recurse call must have a budget of at least {MIN_TWOPHASE_BUDGET}.'
         )
@@ -1372,12 +1385,12 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
 
         result = await run_prioritization_call(
             task, context_text, p_call, self.db,
-            available_moves=PRIORITIZATION_MOVES,
-            subtree_ids=subtree_ids,
+            available_moves=[],
             short_id_map=short_id_map,
             trace=trace,
             dispatch_types=list(PHASE2_DISPATCH_TYPES),
             extra_dispatch_defs=[RECURSE_DISPATCH_DEF],
+            system_prompt_override=build_system_prompt('two_phase_p2'),
         )
 
         sequences: list[list[Dispatch]] = []

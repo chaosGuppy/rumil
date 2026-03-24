@@ -318,7 +318,14 @@ export default async function PageDetailPage({
         {run && (
           <>
             <span className="footer-sep" />
-            <Link href={`/traces/${run.run_id}`} className="footer-run-link">
+            <Link
+              href={
+                run.provenance_call_id
+                  ? `/traces/${run.run_id}#call-${run.provenance_call_id.slice(0, 8)}`
+                  : `/traces/${run.run_id}`
+              }
+              className="footer-run-link"
+            >
               run {run.run_id.slice(0, 8)}
             </Link>
           </>

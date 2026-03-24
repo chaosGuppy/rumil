@@ -61,6 +61,7 @@ async def _get_db(project_id: str = "") -> DB:
 
 # --- Projects ---
 
+
 @app.get("/api/projects", response_model=list[Project])
 async def list_projects():
     db = await _get_db()
@@ -74,6 +75,7 @@ async def list_project_runs(project_id: str):
 
 
 # --- Pages ---
+
 
 @app.get("/api/projects/{project_id}/pages", response_model=list[Page])
 async def list_pages(
@@ -141,6 +143,7 @@ async def get_page_counts(page_id: str):
 
 # --- Questions ---
 
+
 @app.get(
     "/api/projects/{project_id}/questions",
     response_model=list[Page],
@@ -155,6 +158,7 @@ async def list_root_questions(
 
 # --- Calls ---
 
+
 @app.get(
     "/api/projects/{project_id}/calls",
     response_model=list[Call],
@@ -167,6 +171,7 @@ async def list_calls(
     if question_id:
         return await db.get_root_calls_for_question(question_id)
     from rumil.database import _rows, _row_to_call
+
     rows = _rows(
         await db.client.table("calls")
         .select("*")
@@ -222,20 +227,18 @@ async def _build_call_trace(db: DB, call_id: str) -> CallTraceOut:
         for seq in db_sequences:
             seq_calls = await db.get_calls_for_sequence(seq.id)
             seq_traces = [await _build_call_trace(db, sc.id) for sc in seq_calls]
-            sequences_out.append(CallSequenceOut(
-                id=seq.id,
-                position_in_batch=seq.position_in_batch,
-                calls=seq_traces,
-            ))
+            sequences_out.append(
+                CallSequenceOut(
+                    id=seq.id,
+                    position_in_batch=seq.position_in_batch,
+                    calls=seq_traces,
+                )
+            )
 
     exchange_costs = [
-        e.cost_usd for e in events
-        if hasattr(e, "cost_usd") and e.cost_usd is not None
+        e.cost_usd for e in events if hasattr(e, "cost_usd") and e.cost_usd is not None
     ]
-    child_costs = [
-        ct.cost_usd for ct in child_traces
-        if ct.cost_usd is not None
-    ]
+    child_costs = [ct.cost_usd for ct in child_traces if ct.cost_usd is not None]
     total = sum(exchange_costs) + sum(child_costs)
     return CallTraceOut(
         call=call,
@@ -277,11 +280,9 @@ async def get_call_trace(call_id: str):
 async def get_ab_run_trace(ab_run_id: str):
     db = await _get_db()
     from rumil.database import _rows
+
     ab_rows = _rows(
-        await db.client.table("ab_runs")
-        .select("*")
-        .eq("id", ab_run_id)
-        .execute()
+        await db.client.table("ab_runs").select("*").eq("id", ab_run_id).execute()
     )
     if not ab_rows:
         raise HTTPException(status_code=404, detail="AB run not found")
@@ -315,12 +316,14 @@ async def get_ab_run_trace(ab_run_id: str):
             root_calls=root_traces,
             cost_usd=run_total if run_total > 0 else None,
         )
-        arms.append(ABRunArmOut(
-            run_id=run_id,
-            name=arm_row.get("name", ""),
-            config=arm_row.get("config", {}),
-            trace=trace,
-        ))
+        arms.append(
+            ABRunArmOut(
+                run_id=run_id,
+                name=arm_row.get("name", ""),
+                config=arm_row.get("config", {}),
+                trace=trace,
+            )
+        )
     return ABRunTraceOut(
         ab_run_id=ab_run_id,
         name=ab_row.get("name", ""),
@@ -392,4 +395,8 @@ async def get_page_run(page_id: str):
     run = await db.get_run_for_page(page_id)
     if not run:
         return None
-    return RunSummaryOut(run_id=run["run_id"], created_at=run["created_at"])
+    return RunSummaryOut(
+        run_id=run["run_id"],
+        created_at=run["created_at"],
+        provenance_call_id=run.get("provenance_call_id", ""),
+    )

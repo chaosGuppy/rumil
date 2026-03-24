@@ -967,6 +967,7 @@ class DB:
                 return {
                     "run_id": rows[0]["run_id"],
                     "created_at": rows[0]["created_at"],
+                    "provenance_call_id": page.provenance_call_id,
                 }
         rows = _rows(
             await self.client.table("calls")

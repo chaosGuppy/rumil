@@ -1219,7 +1219,8 @@
           "event": {
             "type": "string",
             "const": "context_built",
-            "title": "Event"
+            "title": "Event",
+            "default": "context_built"
           },
           "working_context_page_ids": {
             "items": {
@@ -1275,7 +1276,12 @@
         "required": [
           "ts",
           "call_id",
-          "event"
+          "event",
+          "working_context_page_ids",
+          "preloaded_page_ids",
+          "source_page_id",
+          "budget",
+          "scout_mode"
         ],
         "title": "ContextBuiltEventOut"
       },
@@ -1292,7 +1298,8 @@
           "event": {
             "type": "string",
             "const": "dispatch_executed",
-            "title": "Event"
+            "title": "Event",
+            "default": "dispatch_executed"
           },
           "index": {
             "type": "integer",
@@ -1330,7 +1337,9 @@
           "event",
           "index",
           "child_call_type",
-          "question_id"
+          "question_id",
+          "question_headline",
+          "child_call_id"
         ],
         "title": "DispatchExecutedEventOut"
       },
@@ -1361,7 +1370,8 @@
           "event": {
             "type": "string",
             "const": "dispatches_planned",
-            "title": "Event"
+            "title": "Event",
+            "default": "dispatches_planned"
           },
           "dispatches": {
             "items": {
@@ -1376,7 +1386,8 @@
         "required": [
           "ts",
           "call_id",
-          "event"
+          "event",
+          "dispatches"
         ],
         "title": "DispatchesPlannedEventOut"
       },
@@ -1393,7 +1404,8 @@
           "event": {
             "type": "string",
             "const": "error",
-            "title": "Event"
+            "title": "Event",
+            "default": "error"
           },
           "message": {
             "type": "string",
@@ -1435,7 +1447,8 @@
           "event": {
             "type": "string",
             "const": "llm_exchange",
-            "title": "Event"
+            "title": "Event",
+            "default": "llm_exchange"
           },
           "exchange_id": {
             "type": "string",
@@ -1529,7 +1542,14 @@
           "call_id",
           "event",
           "exchange_id",
-          "phase"
+          "phase",
+          "round",
+          "input_tokens",
+          "output_tokens",
+          "cache_creation_input_tokens",
+          "cache_read_input_tokens",
+          "duration_ms",
+          "cost_usd"
         ],
         "title": "LLMExchangeEventOut"
       },
@@ -1842,7 +1862,8 @@
           "event": {
             "type": "string",
             "const": "moves_executed",
-            "title": "Event"
+            "title": "Event",
+            "default": "moves_executed"
           },
           "moves": {
             "items": {
@@ -1857,7 +1878,8 @@
         "required": [
           "ts",
           "call_id",
-          "event"
+          "event",
+          "moves"
         ],
         "title": "MovesExecutedEventOut"
       },
@@ -2169,7 +2191,8 @@
           "event": {
             "type": "string",
             "const": "review_complete",
-            "title": "Event"
+            "title": "Event",
+            "default": "review_complete"
           },
           "remaining_fruit": {
             "anyOf": [
@@ -2198,7 +2221,9 @@
         "required": [
           "ts",
           "call_id",
-          "event"
+          "event",
+          "remaining_fruit",
+          "confidence"
         ],
         "title": "ReviewCompleteEventOut"
       },
@@ -2286,6 +2311,11 @@
           "created_at": {
             "type": "string",
             "title": "Created At"
+          },
+          "provenance_call_id": {
+            "type": "string",
+            "title": "Provenance Call Id",
+            "default": ""
           }
         },
         "type": "object",
@@ -2351,7 +2381,8 @@
           "event": {
             "type": "string",
             "const": "scoring_completed",
-            "title": "Event"
+            "title": "Event",
+            "default": "scoring_completed"
           },
           "subquestion_scores": {
             "items": {
@@ -2382,7 +2413,10 @@
         "required": [
           "ts",
           "call_id",
-          "event"
+          "event",
+          "subquestion_scores",
+          "parent_fruit",
+          "parent_fruit_reasoning"
         ],
         "title": "ScoringCompletedEventOut"
       },
@@ -2472,7 +2506,8 @@
           "event": {
             "type": "string",
             "const": "warning",
-            "title": "Event"
+            "title": "Event",
+            "default": "warning"
           },
           "message": {
             "type": "string",

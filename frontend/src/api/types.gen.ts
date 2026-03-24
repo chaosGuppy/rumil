@@ -210,23 +210,23 @@ export type ContextBuiltEventOut = {
     /**
      * Working Context Page Ids
      */
-    working_context_page_ids?: Array<PageRef>;
+    working_context_page_ids: Array<PageRef>;
     /**
      * Preloaded Page Ids
      */
-    preloaded_page_ids?: Array<PageRef>;
+    preloaded_page_ids: Array<PageRef>;
     /**
      * Source Page Id
      */
-    source_page_id?: string | null;
+    source_page_id: string | null;
     /**
      * Budget
      */
-    budget?: number | null;
+    budget: number | null;
     /**
      * Scout Mode
      */
-    scout_mode?: string | null;
+    scout_mode: string | null;
 };
 
 /**
@@ -260,11 +260,11 @@ export type DispatchExecutedEventOut = {
     /**
      * Question Headline
      */
-    question_headline?: string;
+    question_headline: string;
     /**
      * Child Call Id
      */
-    child_call_id?: string | null;
+    child_call_id: string | null;
 };
 
 /**
@@ -297,7 +297,7 @@ export type DispatchesPlannedEventOut = {
     /**
      * Dispatches
      */
-    dispatches?: Array<DispatchTraceItem>;
+    dispatches: Array<DispatchTraceItem>;
 };
 
 /**
@@ -359,31 +359,31 @@ export type LlmExchangeEventOut = {
     /**
      * Round
      */
-    round?: number | null;
+    round: number | null;
     /**
      * Input Tokens
      */
-    input_tokens?: number | null;
+    input_tokens: number | null;
     /**
      * Output Tokens
      */
-    output_tokens?: number | null;
+    output_tokens: number | null;
     /**
      * Cache Creation Input Tokens
      */
-    cache_creation_input_tokens?: number | null;
+    cache_creation_input_tokens: number | null;
     /**
      * Cache Read Input Tokens
      */
-    cache_read_input_tokens?: number | null;
+    cache_read_input_tokens: number | null;
     /**
      * Duration Ms
      */
-    duration_ms?: number | null;
+    duration_ms: number | null;
     /**
      * Cost Usd
      */
-    cost_usd?: number | null;
+    cost_usd: number | null;
 };
 
 /**
@@ -546,7 +546,7 @@ export type MovesExecutedEventOut = {
     /**
      * Moves
      */
-    moves?: Array<MoveTraceItem>;
+    moves: Array<MoveTraceItem>;
 };
 
 /**
@@ -753,11 +753,11 @@ export type ReviewCompleteEventOut = {
     /**
      * Remaining Fruit
      */
-    remaining_fruit?: number | null;
+    remaining_fruit: number | null;
     /**
      * Confidence
      */
-    confidence?: number | null;
+    confidence: number | null;
 };
 
 /**
@@ -810,6 +810,10 @@ export type RunSummaryOut = {
      * Created At
      */
     created_at: string;
+    /**
+     * Provenance Call Id
+     */
+    provenance_call_id?: string;
 };
 
 /**
@@ -850,15 +854,15 @@ export type ScoringCompletedEventOut = {
     /**
      * Subquestion Scores
      */
-    subquestion_scores?: Array<SubquestionScoreItem>;
+    subquestion_scores: Array<SubquestionScoreItem>;
     /**
      * Parent Fruit
      */
-    parent_fruit?: number | null;
+    parent_fruit: number | null;
     /**
      * Parent Fruit Reasoning
      */
-    parent_fruit_reasoning?: string;
+    parent_fruit_reasoning: string;
 };
 
 /**

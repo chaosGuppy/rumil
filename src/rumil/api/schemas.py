@@ -9,9 +9,9 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import Annotated
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
-from rumil.models import Call, Page, PageLink
+from rumil.models import Call, Page, PageLink, _all_fields_required
 from rumil.tracing.trace_events import (
     ContextBuiltEvent,
     DispatchesPlannedEvent,
@@ -42,6 +42,8 @@ class PageCountsOut(BaseModel):
 
 
 class _TraceEnvelopeMixin(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
     ts: str
     call_id: str
 
@@ -127,14 +129,14 @@ class LLMExchangeOut(BaseModel):
 class CallSequenceOut(BaseModel):
     id: str
     position_in_batch: int
-    calls: Sequence['CallTraceOut']
+    calls: Sequence["CallTraceOut"]
 
 
 class CallTraceOut(BaseModel):
     call: Call
     scope_page_summary: str | None = None
     events: list[TraceEventOut]
-    children: list['CallTraceOut']
+    children: list["CallTraceOut"]
     sequences: Sequence[CallSequenceOut] | None = None
     cost_usd: float | None = None
 
@@ -149,6 +151,7 @@ class RunTraceOut(BaseModel):
 class RunSummaryOut(BaseModel):
     run_id: str
     created_at: str
+    provenance_call_id: str = ""
 
 
 class RunListItemOut(BaseModel):

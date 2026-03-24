@@ -47,22 +47,25 @@ def parse_question_input(value: str) -> QuestionInput:
     and content, matching legacy behaviour).
     """
     path = Path(value)
-    if path.suffix == '.json':
+    if path.suffix == ".json":
         if not path.exists():
-            sys.exit(f'Error: question JSON file not found: {value}')
+            sys.exit(f"Error: question JSON file not found: {value}")
         with open(path) as f:
             data = json.load(f)
-        if not isinstance(data, dict) or 'headline' not in data:
+        if not isinstance(data, dict) or "headline" not in data:
             sys.exit('Error: JSON file must contain at least a "headline" field.')
-        unknown = set(data) - {'headline', 'abstract', 'content'}
+        unknown = set(data) - {"headline", "abstract", "content"}
         if unknown:
-            sys.exit(f'Error: unknown fields in question JSON: {", ".join(sorted(unknown))}')
+            sys.exit(
+                f"Error: unknown fields in question JSON: {', '.join(sorted(unknown))}"
+            )
         return QuestionInput(
-            headline=data['headline'],
-            abstract=data.get('abstract', ''),
-            content=data.get('content', ''),
+            headline=data["headline"],
+            abstract=data.get("abstract", ""),
+            content=data.get("content", ""),
         )
     return QuestionInput(headline=value, content=value)
+
 
 NORMAL_BUDGET_DEFAULT = 10
 
@@ -72,7 +75,7 @@ def _default_budget(budget: int | None, fallback: int = NORMAL_BUDGET_DEFAULT) -
         return budget
     settings = get_settings()
     if settings.is_smoke_test:
-        if settings.prioritizer_variant == 'two_phase':
+        if settings.prioritizer_variant == "two_phase":
             return MIN_TWOPHASE_BUDGET
         return 1
     return fallback
@@ -253,7 +256,10 @@ async def cmd_new(
     budget = _default_budget(budget)
     await db.init_budget(budget)
     question_id = await create_root_question(
-        q.headline, db, abstract=q.abstract, content=q.content,
+        q.headline,
+        db,
+        abstract=q.abstract,
+        content=q.content,
     )
     await db.create_run(
         name=name or q.headline,
@@ -364,22 +370,25 @@ async def cmd_ab(
     budget = _default_budget(budget)
 
     question_id = await create_root_question(
-        q.headline, db, abstract=q.abstract, content=q.content,
+        q.headline,
+        db,
+        abstract=q.abstract,
+        content=q.content,
     )
     await db.create_ab_run(ab_run_id, name or q.headline, question_id)
 
     frontend = get_settings().frontend_url.rstrip("/")
-    print(f'\nAB test: {ab_run_id}')
-    print(f'Headline: {q.headline}')
-    print(f'Budget per arm: {budget}')
-    print(f'Trace: {frontend}/ab-traces/{ab_run_id}')
+    print(f"\nAB test: {ab_run_id}")
+    print(f"Headline: {q.headline}")
+    print(f"Budget per arm: {budget}")
+    print(f"Trace: {frontend}/ab-traces/{ab_run_id}")
 
     async def run_arm(arm_label: str, env_file: str) -> None:
-        arm_settings = Settings.from_env_files('.env', env_file)
+        arm_settings = Settings.from_env_files(".env", env_file)
         if get_settings().is_smoke_test:
-            arm_settings.rumil_smoke_test = '1'
+            arm_settings.rumil_smoke_test = "1"
         if get_settings().is_prod_db:
-            arm_settings.use_prod_db = '1'
+            arm_settings.use_prod_db = "1"
         if not get_settings().tracing_enabled:
             arm_settings.tracing_enabled = False
         _settings_var.set(arm_settings)
@@ -393,7 +402,7 @@ async def cmd_ab(
         )
         config = arm_settings.capture_config()
         await arm_db.create_run(
-            name=f'{name or q.headline[:100]} (arm {arm_label})',
+            name=f"{name or q.headline[:100]} (arm {arm_label})",
             question_id=question_id,
             config=config,
             ab_arm=arm_label,
@@ -401,13 +410,13 @@ async def cmd_ab(
         await arm_db.init_budget(budget)
         await Orchestrator(arm_db).run(question_id)
         total, used = await arm_db.get_budget()
-        print(f'\nArm {arm_label} complete: {used}/{total} budget used')
+        print(f"\nArm {arm_label} complete: {used}/{total} budget used")
 
     async with asyncio.TaskGroup() as tg:
-        tg.create_task(run_arm('a', '.a.env'))
-        tg.create_task(run_arm('b', '.b.env'))
+        tg.create_task(run_arm("a", ".a.env"))
+        tg.create_task(run_arm("b", ".b.env"))
 
-    print(f'\nAB test complete: {frontend}/ab-traces/{ab_run_id}')
+    print(f"\nAB test complete: {frontend}/ab-traces/{ab_run_id}")
 
 
 async def cmd_continue(
@@ -416,9 +425,7 @@ async def cmd_continue(
     db: DB,
     name: str = "",
 ) -> None:
-    additional_budget = additional_budget if additional_budget is not None else (
-        1 if get_settings().is_smoke_test else 10
-    )
+    additional_budget = _default_budget(additional_budget)
     question = await db.get_page(question_id)
     if not question:
         print(
@@ -434,7 +441,7 @@ async def cmd_continue(
     counts = await db.count_pages_for_question(question_id)
     await db.init_budget(additional_budget)
     await db.create_run(
-        name=name or f'continue: {question.headline[:100]}',
+        name=name or f"continue: {question.headline[:100]}",
         question_id=question_id,
         config=get_settings().capture_config(),
     )
@@ -465,7 +472,7 @@ async def cmd_concepts(question_id: str, db: DB) -> None:
     await run_concept_session(question_id, db)
     registry = await db.get_concept_registry()
     promoted = [p for p in registry if p.extra.get("promoted")]
-    print(f"\nConcept session complete.")
+    print("\nConcept session complete.")
     print(f"Registry: {len(registry)} total proposals, {len(promoted)} promoted.")
     if promoted:
         print("\nPromoted concepts:")
@@ -492,7 +499,8 @@ async def async_main():
         ),
     )
     parser.add_argument(
-        "question", nargs="?",
+        "question",
+        nargs="?",
         help="Question to investigate (new run). Plain text or path to a .json file "
         "with headline (required), abstract, and content fields.",
     )
@@ -634,7 +642,8 @@ async def async_main():
         help="Use production Supabase (requires SUPABASE_PROD_URL and SUPABASE_PROD_KEY)",
     )
     parser.add_argument(
-        "-q", "--quiet",
+        "-q",
+        "--quiet",
         action="store_true",
         help="Suppress info-level logging (only show warnings and errors)",
     )
@@ -693,7 +702,8 @@ async def async_main():
         await cmd_map(args.map_id, db)
     elif args.summary_id:
         await cmd_summary(
-            args.summary_id, db,
+            args.summary_id,
+            db,
             max_depth=args.max_depth,
             summary_cutoff=args.summarize_after_depth,
         )
@@ -709,8 +719,11 @@ async def async_main():
     elif args.question:
         q = parse_question_input(args.question)
         await cmd_new(
-            q, args.budget, db,
-            ingest_files=args.ingest_files, name=args.run_name,
+            q,
+            args.budget,
+            db,
+            ingest_files=args.ingest_files,
+            name=args.run_name,
         )
     else:
         parser.print_help()

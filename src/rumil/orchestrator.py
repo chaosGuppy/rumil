@@ -23,7 +23,7 @@ from rumil.calls.assess_concept_types import (
     VALIDATION_PHASE,
 )
 from rumil.calls.common import mark_call_completed
-from rumil.calls.dispatches import DISPATCH_DEFS, RECURSE_DISPATCH_DEF
+from rumil.calls.dispatches import DISPATCH_DEFS, DispatchDef, RECURSE_DISPATCH_DEF
 from rumil.calls.prioritization import run_prioritization_call
 from rumil.calls.summarize import summarize_question
 from rumil.calls.call_registry import (
@@ -213,6 +213,8 @@ async def find_considerations_until_done(
             SMOKE_TEST_MAX_ROUNDS if get_settings().is_smoke_test
             else DEFAULT_MAX_ROUNDS
         )
+    elif get_settings().is_smoke_test:
+        max_rounds = min(max_rounds, SMOKE_TEST_MAX_ROUNDS)
     log.info(
         "find_considerations_until_done: question=%s, max_rounds=%d, fruit_threshold=%d, mode=%s",
         question_id[:8], max_rounds, fruit_threshold, mode.value,
@@ -541,6 +543,9 @@ class BaseOrchestrator(ABC):
         Budget consumption is handled internally by MultiRoundLoop
         (one unit per round), matching how find_considerations works.
         """
+        if get_settings().is_smoke_test:
+            max_rounds = min(max_rounds, SMOKE_TEST_MAX_ROUNDS)
+
         if force and await self.db.budget_remaining() <= 0:
             await self.db.add_budget(1)
 
@@ -1364,6 +1369,10 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                 'if you have enough budget to do so.'
             )
 
+        extra_defs: list[DispatchDef] = []
+        if budget >= MIN_TWOPHASE_BUDGET:
+            extra_defs.append(RECURSE_DISPATCH_DEF)
+
         result = await run_prioritization_call(
             task, context_text, p_call, self.db,
 
@@ -1371,7 +1380,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             short_id_map=short_id_map,
             trace=trace,
             dispatch_types=list(PHASE2_DISPATCH_TYPES),
-            extra_dispatch_defs=[RECURSE_DISPATCH_DEF],
+            extra_dispatch_defs=extra_defs or None,
         )
 
         sequences: list[list[Dispatch]] = []

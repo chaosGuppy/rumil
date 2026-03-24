@@ -173,9 +173,8 @@ class _MultiRoundFields(BaseModel):
 
 class _ScoutFields(_MultiRoundFields):
     mode: FindConsiderationsMode = Field(
-        default=FindConsiderationsMode.ALTERNATE,
         description=(
-            "Scout mode: 'alternate' (default) alternates abstract and concrete "
+            "Scout mode: 'alternate' alternates abstract and concrete "
             "each round; 'abstract' for all-abstract; 'concrete' for all-concrete."
         ),
     )

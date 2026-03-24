@@ -8,6 +8,7 @@ from rumil.models import (
     AssessDispatchPayload,
     CallType,
     Dispatch,
+    FindConsiderationsMode,
     ScoutDispatchPayload,
 )
 from rumil.orchestrator import BaseOrchestrator
@@ -30,14 +31,17 @@ class ScriptedOrchestrator(BaseOrchestrator):
             if remaining <= 0 or not self._sequences:
                 return
             await self._run_sequences(
-                self._sequences, root_question_id,
-                self._call_id, self._trace,
+                self._sequences,
+                root_question_id,
+                self._call_id,
+                self._trace,
             )
         finally:
             await self._teardown()
 
 
 def _scout(qid, **kw):
+    kw.setdefault("mode", FindConsiderationsMode.ALTERNATE)
     return Dispatch(
         call_type=CallType.FIND_CONSIDERATIONS,
         payload=ScoutDispatchPayload(question_id=qid, max_rounds=1, **kw),
@@ -188,7 +192,9 @@ async def test_single_element_sequences_skip_sequence_creation(tmp_db, question_
 
 
 @pytest.mark.integration
-async def test_multi_step_sequence_creates_record_and_assigns_positions(tmp_db, question_page):
+async def test_multi_step_sequence_creates_record_and_assigns_positions(
+    tmp_db, question_page
+):
     """A sequence with [scout, assess] should create one CallSequence and
     assign sequence_position 0 and 1 to the child calls."""
     p_call = await tmp_db.create_call(

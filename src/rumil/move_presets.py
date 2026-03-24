@@ -7,10 +7,30 @@ from rumil.settings import get_settings
 
 MovePreset = dict[CallType, Sequence[MoveType]]
 
-_ALL_MOVES_EXCEPT_JUDGEMENT = [m for m in MoveType if m != MoveType.CREATE_JUDGEMENT]
-
 PRESETS: dict[str, MovePreset] = {
     "default": {
+        CallType.FIND_CONSIDERATIONS: [
+            MoveType.CREATE_CLAIM,
+            MoveType.CREATE_QUESTION,
+            MoveType.LINK_CONSIDERATION,
+            MoveType.LINK_CHILD_QUESTION,
+            MoveType.LOAD_PAGE,
+        ],
+        CallType.ASSESS: [
+            MoveType.CREATE_CLAIM,
+            MoveType.CREATE_QUESTION,
+            MoveType.CREATE_JUDGEMENT,
+            MoveType.LINK_CONSIDERATION,
+            MoveType.LINK_CHILD_QUESTION,
+            MoveType.LOAD_PAGE,
+        ],
+        CallType.INGEST: [
+            MoveType.CREATE_CLAIM,
+            MoveType.CREATE_QUESTION,
+            MoveType.LINK_CONSIDERATION,
+            MoveType.LINK_CHILD_QUESTION,
+            MoveType.LOAD_PAGE,
+        ],
         CallType.PRIORITIZATION: [
             MoveType.CREATE_SUBQUESTION,
             MoveType.LINK_CHILD_QUESTION,
@@ -70,8 +90,28 @@ PRESETS: dict[str, MovePreset] = {
         ],
     },
     "judge-on-assess": {
-        CallType.FIND_CONSIDERATIONS: _ALL_MOVES_EXCEPT_JUDGEMENT,
-        CallType.INGEST: _ALL_MOVES_EXCEPT_JUDGEMENT,
+        CallType.ASSESS: [
+            MoveType.CREATE_CLAIM,
+            MoveType.CREATE_QUESTION,
+            MoveType.CREATE_JUDGEMENT,
+            MoveType.LINK_CONSIDERATION,
+            MoveType.LINK_CHILD_QUESTION,
+            MoveType.LOAD_PAGE,
+        ],
+        CallType.FIND_CONSIDERATIONS: [
+            MoveType.CREATE_CLAIM,
+            MoveType.CREATE_QUESTION,
+            MoveType.LINK_CONSIDERATION,
+            MoveType.LINK_CHILD_QUESTION,
+            MoveType.LOAD_PAGE,
+        ],
+        CallType.INGEST: [
+            MoveType.CREATE_CLAIM,
+            MoveType.CREATE_QUESTION,
+            MoveType.LINK_CONSIDERATION,
+            MoveType.LINK_CHILD_QUESTION,
+            MoveType.LOAD_PAGE,
+        ],
         CallType.PRIORITIZATION: [
             MoveType.CREATE_SUBQUESTION,
             MoveType.LINK_CHILD_QUESTION,
@@ -133,13 +173,8 @@ PRESETS: dict[str, MovePreset] = {
 }
 
 
-def get_moves_for_call(call_type: CallType) -> Sequence[MoveType] | None:
-    """Look up available moves for a call type from the active preset.
-
-    Returns the move list if the preset has an entry for this call type,
-    or None if the call type is not in the preset (meaning "use all moves"
-    or whatever the call type's own default is).
-    """
+def get_moves_for_call(call_type: CallType) -> Sequence[MoveType]:
+    """Look up available moves for a call type from the active preset."""
     preset_name = get_settings().moves_preset
     preset = PRESETS.get(preset_name)
     if preset is None:
@@ -147,4 +182,10 @@ def get_moves_for_call(call_type: CallType) -> Sequence[MoveType] | None:
             f"Unknown move preset: {preset_name!r}. "
             f"Available presets: {', '.join(sorted(PRESETS))}"
         )
-    return preset.get(call_type)
+    moves = preset.get(call_type)
+    if moves is None:
+        raise ValueError(
+            f"Preset {preset_name!r} has no entry for call type {call_type.value!r}. "
+            f"Add an entry to the {preset_name!r} preset in move_presets.py."
+        )
+    return moves

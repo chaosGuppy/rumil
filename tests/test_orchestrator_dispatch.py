@@ -8,6 +8,7 @@ from rumil.models import (
     AssessDispatchPayload,
     CallType,
     Dispatch,
+    FindConsiderationsMode,
     ScoutDispatchPayload,
 )
 from rumil.orchestrator import BaseOrchestrator
@@ -36,14 +37,17 @@ class ScriptedOrchestrator(BaseOrchestrator):
                 if not batch:
                     break
                 await self._run_sequences(
-                    [batch], root_question_id,
-                    self._call_id, self._trace,
+                    [batch],
+                    root_question_id,
+                    self._call_id,
+                    self._trace,
                 )
         finally:
             await self._teardown()
 
 
 def _scout_dispatch(question_id: str, **kwargs) -> Dispatch:
+    kwargs.setdefault("mode", FindConsiderationsMode.ALTERNATE)
     return Dispatch(
         call_type=CallType.FIND_CONSIDERATIONS,
         payload=ScoutDispatchPayload(question_id=question_id, **kwargs),
@@ -60,9 +64,12 @@ def _assess_dispatch(question_id: str, **kwargs) -> Dispatch:
 @pytest.mark.integration
 async def test_scout_dispatch_creates_scout_call(tmp_db, question_page):
     """A scout dispatch should produce a scout call in the DB."""
-    orch = ScriptedOrchestrator(tmp_db, batches=[
-        [_scout_dispatch(question_page.id, max_rounds=1)],
-    ])
+    orch = ScriptedOrchestrator(
+        tmp_db,
+        batches=[
+            [_scout_dispatch(question_page.id, max_rounds=1)],
+        ],
+    )
     await orch.run(question_page.id)
 
     rows = (
@@ -78,9 +85,12 @@ async def test_scout_dispatch_creates_scout_call(tmp_db, question_page):
 @pytest.mark.integration
 async def test_assess_dispatch_creates_assess_call(tmp_db, question_page):
     """An assess dispatch should produce an assess call in the DB."""
-    orch = ScriptedOrchestrator(tmp_db, batches=[
-        [_assess_dispatch(question_page.id)],
-    ])
+    orch = ScriptedOrchestrator(
+        tmp_db,
+        batches=[
+            [_assess_dispatch(question_page.id)],
+        ],
+    )
     await orch.run(question_page.id)
 
     rows = (
@@ -97,11 +107,14 @@ async def test_assess_dispatch_creates_assess_call(tmp_db, question_page):
 async def test_budget_exhaustion_limits_dispatches(tmp_db, question_page):
     """Only dispatches that fit within the budget should execute."""
     await tmp_db.init_budget(1)
-    orch = ScriptedOrchestrator(tmp_db, batches=[
-        [_scout_dispatch(question_page.id, max_rounds=1)],
-        [_scout_dispatch(question_page.id, max_rounds=1)],
-        [_scout_dispatch(question_page.id, max_rounds=1)],
-    ])
+    orch = ScriptedOrchestrator(
+        tmp_db,
+        batches=[
+            [_scout_dispatch(question_page.id, max_rounds=1)],
+            [_scout_dispatch(question_page.id, max_rounds=1)],
+            [_scout_dispatch(question_page.id, max_rounds=1)],
+        ],
+    )
     await orch.run(question_page.id)
 
     rows = (
@@ -134,10 +147,13 @@ async def test_empty_dispatches_exits_loop(tmp_db, question_page):
 async def test_reprioritization_on_leftover_budget(tmp_db, question_page):
     """Orchestrator should process multiple batches when budget remains."""
     await tmp_db.init_budget(5)
-    orch = ScriptedOrchestrator(tmp_db, batches=[
-        [_scout_dispatch(question_page.id, max_rounds=1)],
-        [_assess_dispatch(question_page.id)],
-    ])
+    orch = ScriptedOrchestrator(
+        tmp_db,
+        batches=[
+            [_scout_dispatch(question_page.id, max_rounds=1)],
+            [_assess_dispatch(question_page.id)],
+        ],
+    )
     await orch.run(question_page.id)
 
     assert orch.get_calls_count >= 2
@@ -146,9 +162,12 @@ async def test_reprioritization_on_leftover_budget(tmp_db, question_page):
 async def test_no_infinite_loop_when_nothing_spent(tmp_db, question_page):
     """If budget is 0 the loop should exit immediately, not spin."""
     await tmp_db.init_budget(0)
-    orch = ScriptedOrchestrator(tmp_db, batches=[
-        [_scout_dispatch(question_page.id, max_rounds=1)],
-    ])
+    orch = ScriptedOrchestrator(
+        tmp_db,
+        batches=[
+            [_scout_dispatch(question_page.id, max_rounds=1)],
+        ],
+    )
     await orch.run(question_page.id)
 
     assert orch.get_calls_count == 0
@@ -158,9 +177,12 @@ async def test_no_infinite_loop_when_nothing_spent(tmp_db, question_page):
 async def test_unresolvable_question_id_falls_back_to_root(tmp_db, question_page):
     """When a dispatch references a non-existent page, the root question is used."""
     fake_id = str(uuid.uuid4())
-    orch = ScriptedOrchestrator(tmp_db, batches=[
-        [_assess_dispatch(fake_id)],
-    ])
+    orch = ScriptedOrchestrator(
+        tmp_db,
+        batches=[
+            [_assess_dispatch(fake_id)],
+        ],
+    )
     await orch.run(question_page.id)
 
     rows = (

@@ -4,7 +4,7 @@ from rumil.calls.closing_reviewers import StandardClosingReview
 from rumil.calls.context_builders import ConceptScoutContext
 from rumil.calls.page_creators import SimpleAgentLoop
 from rumil.calls.stages import CallRunner, ClosingReviewer, ContextBuilder, PageCreator
-from rumil.models import CallType, MoveType
+from rumil.models import CallType
 
 
 class ScoutConceptsCall(CallRunner):
@@ -14,7 +14,6 @@ class ScoutConceptsCall(CallRunner):
     page_creator_cls = SimpleAgentLoop
     closing_reviewer_cls = StandardClosingReview
     call_type = CallType.SCOUT_CONCEPTS
-    available_moves = [MoveType.PROPOSE_CONCEPT, MoveType.LOAD_PAGE]
 
     def _make_context_builder(self) -> ContextBuilder:
         return ConceptScoutContext(self.call_type)

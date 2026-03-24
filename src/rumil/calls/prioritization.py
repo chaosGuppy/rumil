@@ -61,10 +61,7 @@ async def run_prioritization_call(
     await db.update_call_status(call.id, CallStatus.RUNNING)
 
     if available_moves is None:
-        preset_moves = get_moves_for_call(CallType.PRIORITIZATION)
-        available_moves = (
-            list(preset_moves) if preset_moves is not None else list(MoveType)
-        )
+        available_moves = list(get_moves_for_call(CallType.PRIORITIZATION))
 
     state = MoveState(call, db)
     system_prompt = system_prompt_override or build_system_prompt(

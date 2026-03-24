@@ -1,8 +1,7 @@
 """Tests for judgement superseding behaviour.
 
-Tests 1-4 are written against the DESIRED behaviour and will FAIL on the
-current (buggy) code where create_judgement uses LinkType.CONSIDERATION
-instead of LinkType.RELATED. Tests 5-7 cover already-working paths.
+Judgements auto-link to the call's scope question and supersede any prior
+judgement on that question.
 """
 
 from rumil.models import LinkType, MoveType, Page, PageLayer, PageLink, PageType, Workspace
@@ -10,32 +9,29 @@ from rumil.moves import MOVES
 from rumil.moves.base import MoveState
 
 
-def _judgement_payload(question_page, **overrides):
+def _judgement_payload(**overrides):
     base = {
         "headline": "The sky is blue",
         "content": "Based on evidence, the sky is blue.",
-        "links": [{
-            "question_id": question_page.id[:8],
-            "strength": 3.5,
-            "reasoning": "Bears on question",
-        }],
     }
     base.update(overrides)
     return base
 
 
-async def _create_linked_judgement(tmp_db, scout_call, question_page, headline="Judgement"):
-    """Create a judgement with an inline link to question_page, return its ID."""
+async def _create_judgement(tmp_db, scout_call, **overrides):
+    """Create a judgement via the CREATE_JUDGEMENT move, return its ID."""
     state = MoveState(scout_call, tmp_db)
     tool = MOVES[MoveType.CREATE_JUDGEMENT].bind(state)
-    await tool.fn(_judgement_payload(question_page, headline=headline))
+    await tool.fn(_judgement_payload(**overrides))
     assert len(state.created_page_ids) == 1
     return state.created_page_ids[0]
 
 
-async def test_create_judgement_inline_link_is_related(tmp_db, scout_call, question_page):
-    """Inline judgement links should use RELATED, not CONSIDERATION."""
-    jid = await _create_linked_judgement(tmp_db, scout_call, question_page)
+async def test_create_judgement_auto_links_to_scope_question(
+    tmp_db, scout_call, question_page,
+):
+    """Creating a judgement should auto-link it to the call's scope question."""
+    jid = await _create_judgement(tmp_db, scout_call)
 
     links = await tmp_db.get_links_from(jid)
     related_links = [l for l in links if l.to_page_id == question_page.id]
@@ -43,11 +39,11 @@ async def test_create_judgement_inline_link_is_related(tmp_db, scout_call, quest
     assert related_links[0].link_type == LinkType.RELATED
 
 
-async def test_create_judgement_inline_link_found_by_get_judgements(
+async def test_create_judgement_found_by_get_judgements(
     tmp_db, scout_call, question_page,
 ):
-    """A judgement created with inline links should be found by get_judgements_for_question."""
-    jid = await _create_linked_judgement(tmp_db, scout_call, question_page)
+    """A created judgement should be found by get_judgements_for_question."""
+    jid = await _create_judgement(tmp_db, scout_call)
 
     judgements = await tmp_db.get_judgements_for_question(question_page.id)
     assert any(j.id == jid for j in judgements)
@@ -57,11 +53,11 @@ async def test_create_judgement_supersedes_old_judgement(
     tmp_db, scout_call, question_page,
 ):
     """Creating a second judgement on the same question should supersede the first."""
-    j1_id = await _create_linked_judgement(
-        tmp_db, scout_call, question_page, headline="First judgement",
+    j1_id = await _create_judgement(
+        tmp_db, scout_call, headline="First judgement",
     )
-    j2_id = await _create_linked_judgement(
-        tmp_db, scout_call, question_page, headline="Second judgement",
+    j2_id = await _create_judgement(
+        tmp_db, scout_call, headline="Second judgement",
     )
 
     j1 = await tmp_db.get_page(j1_id)
@@ -79,15 +75,9 @@ async def test_create_judgement_supersedes_multiple_old_judgements(
     tmp_db, scout_call, question_page,
 ):
     """Creating three judgements sequentially should leave only the last active."""
-    j1_id = await _create_linked_judgement(
-        tmp_db, scout_call, question_page, headline="First",
-    )
-    j2_id = await _create_linked_judgement(
-        tmp_db, scout_call, question_page, headline="Second",
-    )
-    j3_id = await _create_linked_judgement(
-        tmp_db, scout_call, question_page, headline="Third",
-    )
+    j1_id = await _create_judgement(tmp_db, scout_call, headline="First")
+    j2_id = await _create_judgement(tmp_db, scout_call, headline="Second")
+    j3_id = await _create_judgement(tmp_db, scout_call, headline="Third")
 
     for old_id in (j1_id, j2_id):
         old = await tmp_db.get_page(old_id)
@@ -144,20 +134,30 @@ async def test_link_related_supersedes_old_judgement(tmp_db, scout_call, questio
     assert active[0].id == j2.id
 
 
-async def test_create_judgement_no_links_no_superseding(tmp_db, scout_call):
-    """A judgement created without links should not trigger any superseding."""
-    state = MoveState(scout_call, tmp_db)
+async def test_create_judgement_no_scope_question(tmp_db):
+    """A judgement created without a scope question should not link or supersede."""
+    from rumil.models import Call, CallStatus, CallType
+
+    call = Call(
+        call_type=CallType.FIND_CONSIDERATIONS,
+        workspace=Workspace.RESEARCH,
+        scope_page_id=None,
+        status=CallStatus.PENDING,
+    )
+    await tmp_db.save_call(call)
+
+    state = MoveState(call, tmp_db)
     tool = MOVES[MoveType.CREATE_JUDGEMENT].bind(state)
-    await tool.fn({
-        "headline": "Standalone judgement",
-        "content": "Not linked to any question.",
-    })
+    await tool.fn(_judgement_payload())
 
     assert len(state.created_page_ids) == 1
     page = await tmp_db.get_page(state.created_page_ids[0])
     assert page is not None
     assert page.page_type is PageType.JUDGEMENT
     assert page.is_superseded is False
+
+    links = await tmp_db.get_links_from(state.created_page_ids[0])
+    assert len(links) == 0
 
 
 async def test_get_judgements_excludes_superseded(tmp_db, question_page):

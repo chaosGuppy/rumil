@@ -21,7 +21,6 @@ from rumil.moves.base import (
     create_page,
     supersede_old_judgements,
 )
-from rumil.moves.link_consideration import ConsiderationLinkFields
 
 log = logging.getLogger(__name__)
 
@@ -32,14 +31,6 @@ class CreateJudgementPayload(CreatePagePayload):
     )
     sensitivity_analysis: str | None = Field(
         None, description="What would shift this judgement, and in which direction"
-    )
-    links: list[ConsiderationLinkFields] = Field(
-        default_factory=list,
-        description=(
-            "Question links to create for this judgement. Each entry "
-            "links this judgement to an existing question, with a "
-            "strength rating."
-        ),
     )
 
     def page_extra_fields(self) -> dict[str, Any]:
@@ -53,35 +44,22 @@ class CreateJudgementPayload(CreatePagePayload):
 
 async def execute(payload: CreateJudgementPayload, call: Call, db: DB) -> MoveResult:
     result = await create_page(payload, call, db, PageType.JUDGEMENT, PageLayer.SQUIDGY)
-    if not result.created_page_id or not payload.links:
+    if not result.created_page_id or not call.scope_page_id:
         return result
 
-    for link_spec in payload.links:
-        resolved = await db.resolve_page_id(link_spec.question_id)
-        if not resolved:
-            log.warning(
-                "Inline judgement link skipped: question %s not found",
-                link_spec.question_id,
-            )
-            continue
-
-        await db.save_link(
-            PageLink(
-                from_page_id=result.created_page_id,
-                to_page_id=resolved,
-                link_type=LinkType.RELATED,
-                strength=link_spec.strength,
-                reasoning=link_spec.reasoning,
-                role=link_spec.role,
-            )
+    await db.save_link(
+        PageLink(
+            from_page_id=result.created_page_id,
+            to_page_id=call.scope_page_id,
+            link_type=LinkType.RELATED,
         )
-        await supersede_old_judgements(result.created_page_id, resolved, db)
-        log.info(
-            "Inline judgement linked: %s -> %s (%.1f)",
-            result.created_page_id[:8],
-            resolved[:8],
-            link_spec.strength,
-        )
+    )
+    await supersede_old_judgements(result.created_page_id, call.scope_page_id, db)
+    log.info(
+        "Judgement %s auto-linked to scope question %s",
+        result.created_page_id[:8],
+        call.scope_page_id[:8],
+    )
 
     return result
 
@@ -93,8 +71,8 @@ MOVE = MoveDef(
         "Create a judgement — a considered position synthesising the "
         "considerations bearing on a question. Must engage with "
         "considerations on multiple sides. Include key_dependencies and "
-        "sensitivity_analysis fields. Use the links field to simultaneously "
-        "attach this judgement as a consideration on one or more questions."
+        "sensitivity_analysis fields. The judgement is automatically linked "
+        "to the scope question and supersedes any prior judgement on it."
     ),
     schema=CreateJudgementPayload,
     execute=execute,

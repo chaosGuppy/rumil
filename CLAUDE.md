@@ -110,3 +110,10 @@ PostToolUse hooks in `.claude/settings.json` run automatically after file edits.
 ## User Interaction
 
 Whenever you run a script that prints a trace url, please report that trace url to the user immediately so they can follow along.
+
+## Skills
+
+You must always invoke the relevant skill when doing certain types of work
+- **Writing unit tests** Always invoke the write-tests skill
+- **Writing frontend code** Always invoke the frontend-design skill
+When you write a plan that involes either of these things, always include a reminder to invoke the appropriate skill.

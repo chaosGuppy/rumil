@@ -15,9 +15,7 @@ class ScoutFactsToCheckCall(CallRunner):
     closing_reviewer_cls = StandardClosingReview
     call_type = CallType.SCOUT_FACTS_TO_CHECK
     available_moves = [
-        MoveType.CREATE_CLAIM,
         MoveType.CREATE_QUESTION,
-        MoveType.LINK_CONSIDERATION,
         MoveType.LINK_CHILD_QUESTION,
         MoveType.LOAD_PAGE,
     ]
@@ -37,8 +35,10 @@ class ScoutFactsToCheckCall(CallRunner):
 
     def task_description(self) -> str:
         return (
-            "Identify facts you are uncertain about whose truth value "
-            "could materially affect the answer to the question, and "
-            "create subquestions so they can be verified.\n\n"
+            "Identify factual claims, figures, or examples in the workspace "
+            "that would benefit from web-based verification. For each, create "
+            "a question that a web researcher could answer — either verifying "
+            "a specific assertion, finding the actual value of a quantity, or "
+            "searching for known examples of a type.\n\n"
             f"Question ID: `{self.infra.question_id}`"
         )

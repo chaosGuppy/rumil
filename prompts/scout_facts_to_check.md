@@ -2,27 +2,44 @@
 
 ## Your Task
 
-You are performing a **Scout Facts-to-Check** call — an initial exploration focused on identifying **factual claims or assumptions** that are embedded in or relevant to the parent question, that you are uncertain about, and whose truth value could materially affect the answer. Your job is to surface these checkable facts, state your best current understanding of each, and create subquestions so they can be verified.
+You are performing a **Scout Facts-to-Check** call — your job is to identify factual claims, figures, or examples in the workspace that would benefit from web-based verification, and create research questions targeting them.
+
+These questions will later be dispatched to a web researcher who can search for and cite sources. Your job is to identify the best targets — not to do the checking yourself.
 
 ## What to Produce
 
-For each checkable fact (aim for 2–4):
+For each fact-check target (aim for 1-3):
 
-1. **A claim** stating the factual proposition and your current best guess about its truth value. Be specific: name the fact, say whether you believe it is true or false and why, and flag what makes you uncertain. Set an appropriately low epistemic status — these are beliefs you want checked, not confident assertions.
+1. **A question** that a web researcher could answer. This might be:
+   - **Verification**: "Is it true that [specific claim]?" — for checking a factual assertion that appears in the workspace.
+   - **Lookup**: "What is the actual [quantity/date/figure] for [X]?" — for finding the real value of something estimated or assumed.
+   - **Search**: "Are there known examples of [type of thing]?" — for finding concrete instances of a category or phenomenon mentioned in the workspace.
 
-2. **A subquestion** asking whether the fact is true, linked to the parent question. This creates a research target for later calls (especially web research) to verify or refute.
+2. **Link it as a child** of the parent question using `link_child_question`.
 
 ## How to Proceed
 
-1. Read the parent question and existing context carefully.
-2. Identify factual premises, background assumptions, or empirical claims that the answer depends on — and that you are genuinely uncertain about. Think about: statistics, historical events, scientific findings, legal or regulatory facts, technical specifications, definitions, precedents.
-3. For each fact, create a claim with your current understanding using `create_claim`, then `link_consideration` to the parent question.
-4. Create a corresponding subquestion using `create_question` and `link_child_question` to the parent.
+1. Read the parent question and the workspace context. Look for:
+   - Specific factual claims that could be wrong or outdated
+   - Quantities that are estimated or assumed rather than sourced
+   - Categories or phenomena where real examples would strengthen the analysis
+   - Claims with low epistemic status that could be resolved with evidence
+2. For each target, create a question using `create_question` that is specific enough for a web search to answer.
+3. Link each question as a child of the parent using `link_child_question`.
+
+## What Makes a Good Fact-Check Target
+
+- **Specific and searchable.** The question should be answerable by searching the web. "Is climate change real?" is too broad. "Has global mean temperature risen by more than 1.5C above pre-industrial levels as of 2025?" is searchable.
+- **Load-bearing.** Prioritize claims that matter to the research. A wrong number in a peripheral example is less important than a wrong number in a key estimate.
+- **Checkable.** Some claims are matters of interpretation or prediction and cannot be fact-checked. Focus on claims about past or present facts, published figures, documented events, or the existence of known examples.
+
+## What NOT to Do
+
+- Do not create claims — only questions. The web researcher will create sourced claims later.
+- Do not try to answer the questions yourself. You are identifying targets, not doing the checking.
+- Do not duplicate questions already present in the workspace.
 
 ## Quality Bar
 
-- **Uncertainty is the point.** Only surface facts you are genuinely unsure about. Do not list facts you are confident of just for completeness — the purpose of this call is to identify gaps in your knowledge that could change the answer.
-- **Bearing on the question matters.** A checkable fact that would not change the answer either way is not worth listing. Focus on facts where getting it wrong would lead to a materially different conclusion.
-- **Be specific and verifiable.** "Economic conditions affect the outcome" is not a checkable fact. "US inflation exceeded 5% in 2023" is.
-- **State what you think and why you doubt it.** The claim should include your best guess and the source of your uncertainty — this helps later calls know what to look for.
-- **Do not duplicate** facts or questions already present in the workspace.
+- **Fewer, better targets beat many weak ones.** One question that would resolve a key uncertainty is worth more than five questions about trivial details.
+- **Be precise.** Include enough specifics (names, dates, figures) that the web researcher knows exactly what to search for.

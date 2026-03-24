@@ -539,7 +539,7 @@ class BaseOrchestrator(ABC):
         call_id: str | None = None,
         sequence_id: str | None = None,
         sequence_position: int | None = None,
-        max_rounds: int = 1,
+        max_rounds: int = 5,
         fruit_threshold: int = 4,
     ) -> str | None:
         """Run a call dispatch with optional multi-round support.
@@ -547,6 +547,9 @@ class BaseOrchestrator(ABC):
         Budget consumption is handled internally by MultiRoundLoop
         (one unit per round), matching how find_considerations works.
         """
+        if force and await self.db.budget_remaining() <= 0:
+            await self.db.add_budget(1)
+
         call = await self.db.create_call(
             call_type,
             scope_page_id=question_id,

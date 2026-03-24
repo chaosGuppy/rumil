@@ -98,7 +98,7 @@ class CallRunner(ABC):
         *,
         broadcaster=None,
         up_to_stage: CallStage | None = None,
-        max_rounds: int = 1,
+        max_rounds: int = 5,
         fruit_threshold: int = 4,
     ):
         self.infra = CallInfra(
@@ -113,12 +113,11 @@ class CallRunner(ABC):
         self._fruit_threshold = fruit_threshold
         self.context_result: ContextResult | None = None
         self.creation_result: CreationResult | None = None
-        if max_rounds > 1:
-            call.call_params = {
-                **(call.call_params or {}),
-                "max_rounds": max_rounds,
-                "fruit_threshold": fruit_threshold,
-            }
+        call.call_params = {
+            **(call.call_params or {}),
+            "max_rounds": max_rounds,
+            "fruit_threshold": fruit_threshold,
+        }
 
         self.context_builder = self._make_context_builder()
         self.page_creator = self._make_page_creator()

@@ -28,8 +28,9 @@ class ScoutAnalogiesCall(CallRunner):
 
     def _make_page_creator(self) -> PageCreator:
         return SimpleAgentLoop(
-            self.call_type, self.task_description(),
-            available_moves=self.available_moves,
+            self.call_type,
+            self.task_description(),
+            available_moves=self._resolve_available_moves(),
         )
 
     def _make_closing_reviewer(self) -> ClosingReviewer:
@@ -37,9 +38,9 @@ class ScoutAnalogiesCall(CallRunner):
 
     def task_description(self) -> str:
         return (
-            'Identify analogies that may be informative about the parent '
-            'question. For each analogy, create claims describing it and its '
-            'relevance, and generate subquestions asking about the details '
-            'and limits of the analogy.\n\n'
-            f'Question ID: `{self.infra.question_id}`'
+            "Identify analogies that may be informative about the parent "
+            "question. For each analogy, create claims describing it and its "
+            "relevance, and generate subquestions asking about the details "
+            "and limits of the analogy.\n\n"
+            f"Question ID: `{self.infra.question_id}`"
         )

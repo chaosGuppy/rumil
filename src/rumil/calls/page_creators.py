@@ -181,17 +181,24 @@ class MultiRoundLoop(PageCreator):
         max_rounds: int,
         fruit_threshold: int,
         mode: FindConsiderationsMode,
+        available_moves: Sequence[MoveType] | None = None,
     ) -> None:
         self._max_rounds = max_rounds
         self._fruit_threshold = fruit_threshold
         self._mode = mode
+        self._available_moves = available_moves
 
     async def create_pages(
         self,
         infra: CallInfra,
         context: ContextResult,
     ) -> CreationResult:
-        tools = [MOVES[mt].bind(infra.state) for mt in MoveType]
+        moves_list = (
+            list(self._available_moves)
+            if self._available_moves is not None
+            else list(MoveType)
+        )
+        tools = [MOVES[mt].bind(infra.state) for mt in moves_list]
         tool_defs, _ = prepare_tools(tools)
         system_prompt = build_system_prompt(CallType.FIND_CONSIDERATIONS.value)
 
@@ -325,8 +332,13 @@ class MultiRoundLoop(PageCreator):
 class WebResearchLoop(PageCreator):
     """Multi-round web research loop with server tools."""
 
-    def __init__(self, allowed_domains: Sequence[str] | None = None) -> None:
+    def __init__(
+        self,
+        allowed_domains: Sequence[str] | None = None,
+        available_moves: Sequence[MoveType] | None = None,
+    ) -> None:
         self._allowed_domains = allowed_domains
+        self._available_moves = available_moves
         self.source_page_ids: dict[str, str] = {}
 
     async def create_pages(
@@ -339,7 +351,12 @@ class WebResearchLoop(PageCreator):
         client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
 
         server_tools = self._build_server_tools()
-        custom_tools = [MOVES[mt].bind(infra.state) for mt in WEB_RESEARCH_MOVES]
+        moves_list = (
+            list(self._available_moves)
+            if self._available_moves is not None
+            else list(WEB_RESEARCH_MOVES)
+        )
+        custom_tools = [MOVES[mt].bind(infra.state) for mt in moves_list]
         custom_tools = self._wrap_create_claim(custom_tools, infra)
         custom_tool_defs, custom_tool_fns = prepare_tools(custom_tools)
         all_tool_defs: list = server_tools + custom_tool_defs

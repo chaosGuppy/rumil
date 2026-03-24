@@ -51,7 +51,11 @@ class Settings(BaseSettings):
     web_research_call_variant: str = _capture_field(default="default")
     prioritizer_variant: str = _capture_field(default="two_phase")
 
-    find_considerations_modes: str = _capture_field(default="alternate,abstract,concrete")
+    moves_preset: str = _capture_field(default="default")
+
+    find_considerations_modes: str = _capture_field(
+        default="alternate,abstract,concrete"
+    )
 
     full_page_char_budget: int = _capture_field(default=10_000)
     abstract_page_char_budget: int = _capture_field(default=10_000)
@@ -81,7 +85,7 @@ class Settings(BaseSettings):
     def allowed_find_considerations_modes(self) -> Sequence[FindConsiderationsMode]:
         return [
             FindConsiderationsMode(m.strip())
-            for m in self.find_considerations_modes.split(',')
+            for m in self.find_considerations_modes.split(",")
             if m.strip()
         ]
 

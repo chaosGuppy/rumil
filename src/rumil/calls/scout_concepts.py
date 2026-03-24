@@ -21,8 +21,9 @@ class ScoutConceptsCall(CallRunner):
 
     def _make_page_creator(self) -> PageCreator:
         return SimpleAgentLoop(
-            self.call_type, self.task_description(),
-            available_moves=self.available_moves,
+            self.call_type,
+            self.task_description(),
+            available_moves=self._resolve_available_moves(),
         )
 
     def _make_closing_reviewer(self) -> ClosingReviewer:
@@ -30,7 +31,7 @@ class ScoutConceptsCall(CallRunner):
 
     def task_description(self) -> str:
         return (
-            'Survey the research workspace and the concept registry above. '
-            'Identify 1-3 concepts or distinctions that would meaningfully '
-            'clarify the investigation. Use `propose_concept` to record each proposal.'
+            "Survey the research workspace and the concept registry above. "
+            "Identify 1-3 concepts or distinctions that would meaningfully "
+            "clarify the investigation. Use `propose_concept` to record each proposal."
         )

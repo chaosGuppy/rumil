@@ -27,8 +27,9 @@ class ScoutSubquestionsCall(CallRunner):
 
     def _make_page_creator(self) -> PageCreator:
         return SimpleAgentLoop(
-            self.call_type, self.task_description(),
-            available_moves=self.available_moves,
+            self.call_type,
+            self.task_description(),
+            available_moves=self._resolve_available_moves(),
         )
 
     def _make_closing_reviewer(self) -> ClosingReviewer:
@@ -36,8 +37,8 @@ class ScoutSubquestionsCall(CallRunner):
 
     def task_description(self) -> str:
         return (
-            'Identify subquestions whose answers would be highly informative '
-            'about the parent question, and generate initial considerations '
-            'that bear on the question.\n\n'
-            f'Question ID: `{self.infra.question_id}`'
+            "Identify subquestions whose answers would be highly informative "
+            "about the parent question, and generate initial considerations "
+            "that bear on the question.\n\n"
+            f"Question ID: `{self.infra.question_id}`"
         )

@@ -119,6 +119,9 @@ uv run python main.py "Your question here" --smoke-test
 # Any command can target the production database
 uv run python main.py --prod --list
 
+# Select a move preset (controls which tools are available per call type)
+uv run python main.py "Your question" --moves-preset default --budget 10
+
 # Suppress info-level logging (only warnings and errors)
 uv run python main.py "Your question" --budget 5 -q
 

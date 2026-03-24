@@ -624,6 +624,12 @@ async def async_main():
         help="Optional name for this run (defaults to question text)",
     )
     parser.add_argument(
+        "--moves-preset",
+        dest="moves_preset",
+        default=None,
+        help="Move preset name (default: 'default'). Controls which moves are available per call type.",
+    )
+    parser.add_argument(
         "--smoke-test",
         dest="smoke_test",
         action="store_true",
@@ -668,6 +674,8 @@ async def async_main():
     )
     logging.getLogger("rumil").setLevel(log_level)
 
+    if args.moves_preset is not None:
+        get_settings().moves_preset = args.moves_preset
     if args.smoke_test:
         get_settings().rumil_smoke_test = "1"
     if args.prod_db:

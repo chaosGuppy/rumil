@@ -604,8 +604,16 @@ class DB:
         rows = _rows(await query.execute())
         return [_row_to_link(r) for r in rows]
 
-    async def get_all_links(self) -> list[PageLink]:
-        """Bulk-fetch all links, optionally scoped by project via page membership."""
+    async def get_all_links(
+        self, page_ids: set[str] | None = None,
+    ) -> list[PageLink]:
+        """Bulk-fetch links, scoped to a set of page IDs if provided.
+
+        When *page_ids* is given, only links where at least one endpoint is in
+        the set are returned.  This avoids hitting the row limit on large DBs.
+        """
+        if page_ids is not None:
+            return await self._get_links_for_pages(page_ids)
         rows = _rows(
             await self.client.table("page_links")
             .select("*")
@@ -613,6 +621,31 @@ class DB:
             .execute()
         )
         return [_row_to_link(r) for r in rows]
+
+    async def _get_links_for_pages(
+        self, page_ids: set[str],
+    ) -> list[PageLink]:
+        """Fetch links where at least one endpoint is in *page_ids*.
+
+        Batches into chunks to stay within URL-length limits.
+        """
+        all_links: dict[str, PageLink] = {}
+        id_list = list(page_ids)
+        batch_size = 200
+        for start in range(0, len(id_list), batch_size):
+            batch = id_list[start:start + batch_size]
+            for col in ('from_page_id', 'to_page_id'):
+                rows = _rows(
+                    await self.client.table("page_links")
+                    .select("*")
+                    .in_(col, batch)
+                    .limit(50000)
+                    .execute()
+                )
+                for r in rows:
+                    link = _row_to_link(r)
+                    all_links[link.id] = link
+        return list(all_links.values())
 
     async def delete_link(self, link_id: str) -> None:
         """Delete a page link by ID."""

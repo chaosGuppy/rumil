@@ -27,7 +27,11 @@ from rumil.llm import (
     build_user_message,
     structured_call,
 )
-from rumil.models import Call, CallStage, CallStatus, CallType, MoveType
+from collections.abc import Sequence
+
+from rumil.models import (
+    Call, CallStage, CallStatus, CallType, LinkType, MoveType, PageLink, PageType,
+)
 from rumil.moves.base import MoveState
 from rumil.moves.registry import MOVES
 from rumil.settings import get_settings
@@ -35,6 +39,40 @@ from rumil.tracing.trace_events import ContextBuiltEvent, ReviewCompleteEvent
 from rumil.tracing.tracer import CallTrace
 
 log = logging.getLogger(__name__)
+
+
+async def link_orphaned_questions(
+    created_page_ids: Sequence[str],
+    parent_question_id: str,
+    db: DB,
+) -> None:
+    """Link question pages that have no CHILD_QUESTION parent link.
+
+    Call after any operation that may create question pages (scout calls,
+    prioritization calls, etc.) to ensure they appear in the subtree.
+    """
+    if not created_page_ids:
+        return
+    for pid in created_page_ids:
+        page = await db.get_page(pid)
+        if not page or page.page_type != PageType.QUESTION:
+            continue
+        links_to = await db.get_links_to(pid)
+        has_parent = any(
+            l.link_type == LinkType.CHILD_QUESTION for l in links_to
+        )
+        if has_parent:
+            continue
+        await db.save_link(PageLink(
+            from_page_id=parent_question_id,
+            to_page_id=pid,
+            link_type=LinkType.CHILD_QUESTION,
+            reasoning='auto-linked orphaned question',
+        ))
+        log.info(
+            'Auto-linked orphaned question %s as child of %s',
+            pid[:8], parent_question_id[:8],
+        )
 
 
 class BaseCall(ABC):
@@ -95,7 +133,13 @@ class BaseCall(ABC):
     def result_summary(self) -> str:
         ...
 
+    async def _link_orphaned_questions(self) -> None:
+        await link_orphaned_questions(
+            self.state.created_page_ids, self.question_id, self.db,
+        )
+
     async def _finalize(self) -> None:
+        await self._link_orphaned_questions()
         self.call.review_json = self.review
         await mark_call_completed(self.call, self.db, self.result_summary())
 

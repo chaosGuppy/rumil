@@ -572,6 +572,7 @@ class ScoutCall(BaseCall):
         )
 
     async def _finalize(self) -> None:
+        await self._link_orphaned_questions()
         self.call.review_json = self.review
         await mark_call_completed(self.call, self.db, self.result_summary())
 

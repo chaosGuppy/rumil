@@ -13,7 +13,7 @@ You must make all your dispatch calls now — this is your only turn.
 ### Dispatch tools
 
 - **Specialized scouts** (dispatch_scout_subquestions, dispatch_scout_estimates, dispatch_scout_hypotheses, dispatch_scout_analogies, dispatch_scout_paradigm_cases, dispatch_scout_factchecks): Run additional scouting rounds on the **scope question** if more exploration is needed. Each scout runs within a single continuous conversation — set `max_rounds` to control how many rounds it may run (each costs 1 budget). Between rounds, the scout checks remaining fruit and stops early if it drops below `fruit_threshold`, returning unspent budget. Use these when it seems more useful to have further scouting on the top-level question (perhaps in light of recent investigations of subquestions).
-- **recurse_into_subquestion**: Launch a full two-phase prioritization cycle on a child question, with its own fan-out scouting and follow-up phases. Set `budget` to the number of units to allocate. Use this for subquestions that are substantial enough to warrant their own structured investigation.
+- **recurse_into_subquestion**: Launch a full two-phase prioritization cycle on a child question, with its own fan-out scouting and follow-up phases. Set `budget` to the number of units to allocate. Use this for subquestions that are substantial enough to warrant their own structured investigation. DO NOT use recurse_into_subquestion on the top-level scope question.
 - **dispatch_web_research**: Verify a fact-check question via web search. Use **only** on questions identified by scout_factchecks. Budget cost: exactly 1.
 
 ## How to Decide
@@ -41,6 +41,8 @@ If none of the subquestions have been investigated yet, how much budget to alloc
 If a subquestion has been investigated before, you should generally avoid allocating more than twice the total number of subquestions and considerations it has as budget.
 
 These limits are to ensure that there's enough opportunity for initial findings to be consolidated and considered at the top level before further targeted investigations.
+
+If you are allocating >50 budget, most of that should typically be recursing into subquestions. You should normally split the budget between several questions, although it's OK if some questions get a much larger slice of the budget than others.
 
 
 ## Scout Parameters

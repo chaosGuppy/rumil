@@ -9,15 +9,17 @@ from dataclasses import dataclass
 from pydantic import BaseModel, Field
 
 from rumil.calls import run_prioritization
+from rumil.calls.base import link_orphaned_questions
 from rumil.calls.dispatches import DISPATCH_DEFS, RECURSE_DISPATCH_DEF
 from rumil.calls.prioritization import run_prioritization_call
-from rumil.context import build_prioritization_context, collect_subtree_ids
+from rumil.context import build_prioritization_context
 from rumil.database import DB
 from rumil.llm import LLMExchangeMetadata, build_system_prompt, build_user_message, structured_call
 from rumil.models import (
     AssessDispatchPayload,
     CallType,
     Dispatch,
+    LinkType,
     MoveType,
     Page,
     PrioritizationDispatchPayload,
@@ -321,7 +323,8 @@ class TwoPhasePrioritizer(Prioritizer):
     def __init__(self, db: DB, broadcaster: Broadcaster | None = None):
         self._db = db
         self._broadcaster = broadcaster
-        self._invocation: int = 0
+        self._has_planned: bool = False
+        self._phase1_complete: bool = False
         self._call_id: str | None = None
         self._trace: CallTrace | None = None
         self._executed_since_last_plan: bool = False
@@ -335,6 +338,15 @@ class TwoPhasePrioritizer(Prioritizer):
         budget: int,
         parent_call_id: str | None = None,
     ) -> PrioritizationResult:
+        log.info(
+            'TwoPhasePrioritizer.get_calls: question=%s, budget=%d, '
+            'has_planned=%s, executed_since_last=%s, pending_children=%d, '
+            'active_child=%s, needs_assess=%s',
+            question_id[:8], budget, self._has_planned,
+            self._executed_since_last_plan, len(self._pending_children),
+            bool(self._active_child), self._needs_scope_assess,
+        )
+
         child_result = await self._service_children(budget, parent_call_id)
         if child_result is not None:
             return child_result
@@ -356,23 +368,51 @@ class TwoPhasePrioritizer(Prioritizer):
                 trace=self._trace,
             )
 
-        if self._invocation == 0:
-            self._invocation += 1
-            return await self._phase1(question_id, budget, parent_call_id)
-
-        if not self._executed_since_last_plan:
+        if self._has_planned and not self._executed_since_last_plan:
             return PrioritizationResult(dispatch_sequences=[])
 
+        self._has_planned = True
         self._executed_since_last_plan = False
-        self._invocation += 1
-        result = await self._phase2(question_id, budget, parent_call_id)
 
-        if not result.dispatch_sequences and self._pending_children:
-            child_result = await self._service_children(budget, parent_call_id)
-            if child_result is not None:
-                return child_result
+        graph = await PageGraph.load(self._db)
+        children = await graph.get_child_questions(question_id)
 
-        return result
+        all_links_from = graph._links_from.get(question_id, [])
+        child_q_links = [
+            l for l in all_links_from if l.link_type == LinkType.CHILD_QUESTION
+        ]
+        log.info(
+            'Child question check: question=%s, children_found=%d, '
+            'total_links_from_scope=%d, child_question_links=%d, '
+            'graph_pages=%d',
+            question_id[:8], len(children), len(all_links_from),
+            len(child_q_links), len(graph._pages),
+        )
+        for l in child_q_links:
+            target = graph._pages.get(l.to_page_id)
+            log.info(
+                '  child_question link -> %s: page_found=%s, active=%s',
+                l.to_page_id[:8],
+                target is not None,
+                target.is_active() if target else 'N/A',
+            )
+
+        if self._phase1_complete or children:
+            log.info(
+                'Scope question has %d child questions — running phase 2',
+                len(children),
+            )
+            result = await self._phase2(question_id, budget, parent_call_id)
+
+            if not result.dispatch_sequences and self._pending_children:
+                child_result = await self._service_children(budget, parent_call_id)
+                if child_result is not None:
+                    return child_result
+
+            return result
+
+        log.info('No child questions yet — running phase 1')
+        return await self._phase1(question_id, budget, parent_call_id)
 
     def mark_executed(self) -> None:
         if self._active_child:
@@ -443,7 +483,7 @@ class TwoPhasePrioritizer(Prioritizer):
         context_text, short_id_map = await build_prioritization_context(
             self._db, scope_question_id=question_id, graph=graph,
         )
-        subtree_ids = await collect_subtree_ids(question_id, self._db, graph=graph)
+
 
         p_call = await self._db.create_call(
             CallType.PRIORITIZATION,
@@ -472,11 +512,14 @@ class TwoPhasePrioritizer(Prioritizer):
         result = await run_prioritization_call(
             task, context_text, p_call, self._db,
             available_moves=PRIORITIZATION_MOVES,
-            subtree_ids=subtree_ids,
             short_id_map=short_id_map,
             trace=trace,
             dispatch_types=list(PHASE1_SCOUT_TYPES),
             system_prompt_override=build_system_prompt('two_phase_p1'),
+        )
+
+        await link_orphaned_questions(
+            result.created_page_ids, question_id, self._db,
         )
 
         dispatches = list(result.dispatches)
@@ -511,6 +554,7 @@ class TwoPhasePrioritizer(Prioritizer):
             f'Phase 1 complete. Planned {len(sequences)} concurrent sequences.',
         )
 
+        self._phase1_complete = True
         self._call_id = p_call.id
         self._trace = trace
 
@@ -631,14 +675,15 @@ class TwoPhasePrioritizer(Prioritizer):
         context_text, short_id_map = await build_prioritization_context(
             self._db, scope_question_id=question_id, graph=graph,
         )
-        subtree_ids = await collect_subtree_ids(question_id, self._db, graph=graph)
+
 
         task = (
             f'You have a budget of **{budget} budget units** to allocate.\n\n'
             f'Scope question ID: `{question_id}`\n\n'
             f'{scores_text}\n\n'
             'Use `recurse_into_subquestion` to investigate high-impact, high-fruit '
-            'subquestions listed above. Use specialized scout dispatches if the '
+            'subquestions listed above. You MUST recurse into at least one '
+            'subquestion. Use specialized scout dispatches if the '
             'scope question itself needs more exploration. Use `dispatch_web_research` '
             'only on fact-check questions.\n\n'
             'You must make all your dispatch calls now — this is your only turn.'
@@ -647,7 +692,6 @@ class TwoPhasePrioritizer(Prioritizer):
         result = await run_prioritization_call(
             task, context_text, p_call, self._db,
             available_moves=[],
-            subtree_ids=subtree_ids,
             short_id_map=short_id_map,
             trace=trace,
             dispatch_types=list(PHASE2_DISPATCH_TYPES),

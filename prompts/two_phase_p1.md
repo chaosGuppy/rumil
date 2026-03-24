@@ -37,7 +37,7 @@ Be conscious of the total budget available for the research. As a rule of thumb:
 * If you have a total budget of 1,000, you might spend 20-30 on fan-out scouting
 * If you have a total budget of 10,000, you might spend 30-40 on fan-out scouting
 
-Weight your budget toward scout types that seem most informative for this particular question. Skip scout types that are clearly irrelevant (e.g., scout_estimates on a purely conceptual question). If you're unsure how much budget to allocate to a certain type of scout, you can use fruit_threshold as an extra limiter.
+Weight your budget toward scout types that seem most informative for this particular question. It's normal for one type of scout to get more than half the budget. Skip scout types that are clearly irrelevant (e.g., scout_estimates on a purely conceptual question). If you're unsure how much budget to allocate to a certain type of scout, you can use fruit_threshold as an extra limiter.
 
 ## What NOT to Do
 

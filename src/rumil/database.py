@@ -628,8 +628,17 @@ class DB:
         rows = _rows(await query.execute())
         return [_row_to_link(r) for r in rows]
 
-    async def get_all_links(self) -> list[PageLink]:
-        """Bulk-fetch all links, scoped by project and AB run."""
+    async def get_all_links(
+        self, page_ids: set[str] | None = None,
+    ) -> list[PageLink]:
+        """Bulk-fetch links, scoped to a set of page IDs if provided.
+
+        When *page_ids* is given, only links where at least one endpoint is in
+        the set are returned. This avoids fetching every link in the DB when the
+        caller already knows which pages matter.
+        """
+        if page_ids is not None:
+            return await self._get_links_for_pages(page_ids)
         query = self.client.table("page_links").select("*")
         query = self._ab_filter(query, table="page_links")
         if self.project_id:
@@ -639,14 +648,35 @@ class DB:
                 .eq("project_id", self.project_id)
             )
             page_ids_rows = _rows(await page_ids_query.limit(50000).execute())
-            page_ids = {r["id"] for r in page_ids_rows}
+            proj_page_ids = {r["id"] for r in page_ids_rows}
             rows = _rows(await query.limit(50000).execute())
             return [
                 _row_to_link(r) for r in rows
-                if r["from_page_id"] in page_ids or r["to_page_id"] in page_ids
+                if r["from_page_id"] in proj_page_ids or r["to_page_id"] in proj_page_ids
             ]
         rows = _rows(await query.limit(50000).execute())
         return [_row_to_link(r) for r in rows]
+
+    async def _get_links_for_pages(
+        self, page_ids: set[str],
+    ) -> list[PageLink]:
+        """Fetch links where at least one endpoint is in *page_ids*.
+
+        Batches into chunks to stay within URL-length limits.
+        """
+        all_links: dict[str, PageLink] = {}
+        id_list = list(page_ids)
+        batch_size = 200
+        for start in range(0, len(id_list), batch_size):
+            batch = id_list[start:start + batch_size]
+            for col in ('from_page_id', 'to_page_id'):
+                query = self.client.table("page_links").select("*").in_(col, batch)
+                query = self._ab_filter(query, table="page_links")
+                rows = _rows(await query.limit(50000).execute())
+                for r in rows:
+                    link = _row_to_link(r)
+                    all_links[link.id] = link
+        return list(all_links.values())
 
     async def delete_link(self, link_id: str) -> None:
         """Delete a page link by ID."""

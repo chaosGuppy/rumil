@@ -113,7 +113,8 @@ async def _describe_child_questions(
         subtree_count = await _count_subtree_questions(c.id, graph)
 
         parts = []
-        parts.append(f'{len(considerations)} considerations')
+        if considerations:
+            parts.append(f'{len(considerations)} considerations')
         if judgements:
             parts.append(f'{len(judgements)} judgement{"s" if len(judgements) != 1 else ""}')
         if subtree_count:
@@ -1203,8 +1204,6 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             'your only turn and you will not get another chance. Distribute your budget '
             'among the scouting dispatch tools, weighting towards types that seem most '
             'useful for this question and skipping types that are clearly irrelevant. '
-            'Each dispatch costs 1 budget unit.\n\n'
-            'You may optionally create subquestions before dispatching. '
             'Do not do anything else — just dispatch.'
         )
 

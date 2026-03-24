@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections.abc import Sequence
 
 import anthropic
@@ -42,6 +43,8 @@ from rumil.moves.base import write_page_file
 from rumil.scraper import scrape_url
 
 log = logging.getLogger(__name__)
+
+_URL_CITATION_RE = re.compile(r"\[(https?://[^\]\s]+)\]")
 
 
 class SimpleAgentLoop(PageCreator):
@@ -504,6 +507,40 @@ class WebResearchLoop(PageCreator):
         )
         return page.id
 
+    def _rewrite_url_citations(self, content: str) -> str:
+        """Replace [url] inline citations with [shortid] using source_page_ids.
+
+        Uses slightly-forgiving matching: a trailing slash difference is
+        tolerated (e.g. [https://x.com/foo] matches https://x.com/foo/).
+        Raises ValueError for URLs that don't match any scraped source page.
+        """
+
+        def _normalize(url: str) -> str:
+            return url.rstrip("/")
+
+        normalized_lookup: dict[str, str] = {
+            _normalize(url): page_id for url, page_id in self.source_page_ids.items()
+        }
+
+        unmatched: list[str] = []
+
+        def _replace(m: re.Match) -> str:
+            url = m.group(1)
+            page_id = normalized_lookup.get(_normalize(url))
+            if page_id is not None:
+                return f"[{page_id[:8]}]"
+            unmatched.append(url)
+            return m.group(0)
+
+        rewritten = _URL_CITATION_RE.sub(_replace, content)
+        if unmatched:
+            raise ValueError(
+                "Inline citation URLs do not match any scraped source page: "
+                + ", ".join(unmatched)
+                + ". Only cite URLs that are also listed in source_urls."
+            )
+        return rewritten
+
     def _wrap_create_claim(
         self,
         tools: list[Tool],
@@ -530,9 +567,24 @@ class WebResearchLoop(PageCreator):
                                 )
                                 if page_id:
                                     resolved.append(page_id)
+                                else:
+                                    return (
+                                        f"ERROR: Failed to fetch {sid} — "
+                                        "remove it from source_urls and "
+                                        "inline citations, then retry."
+                                    )
                             else:
                                 resolved.append(sid)
                         inp = {**inp, "source_urls": resolved}
+                    content = inp.get("content", "")
+                    if content:
+                        try:
+                            inp = {
+                                **inp,
+                                "content": self._rewrite_url_citations(content),
+                            }
+                        except ValueError as exc:
+                            return f"ERROR: {exc}"
                     return await _orig(inp)
 
                 wrapped.append(

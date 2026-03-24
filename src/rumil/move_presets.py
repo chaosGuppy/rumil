@@ -11,16 +11,20 @@ _ALL_MOVES_EXCEPT_JUDGEMENT = [m for m in MoveType if m != MoveType.CREATE_JUDGE
 
 PRESETS: dict[str, MovePreset] = {
     "default": {
+        CallType.PRIORITIZATION: [
+            MoveType.CREATE_SUBQUESTION,
+            MoveType.LINK_CHILD_QUESTION,
+        ],
         CallType.SCOUT_SUBQUESTIONS: [
             MoveType.CREATE_CLAIM,
-            MoveType.CREATE_QUESTION,
+            MoveType.CREATE_SCOUT_QUESTION,
             MoveType.LINK_CONSIDERATION,
             MoveType.LINK_CHILD_QUESTION,
             MoveType.LOAD_PAGE,
         ],
         CallType.SCOUT_HYPOTHESES: [
             MoveType.CREATE_CLAIM,
-            MoveType.CREATE_QUESTION,
+            MoveType.CREATE_SCOUT_QUESTION,
             MoveType.PROPOSE_HYPOTHESIS,
             MoveType.LINK_CONSIDERATION,
             MoveType.LINK_CHILD_QUESTION,
@@ -28,14 +32,14 @@ PRESETS: dict[str, MovePreset] = {
         ],
         CallType.SCOUT_ESTIMATES: [
             MoveType.CREATE_CLAIM,
-            MoveType.CREATE_QUESTION,
+            MoveType.CREATE_SCOUT_QUESTION,
             MoveType.LINK_CONSIDERATION,
             MoveType.LINK_CHILD_QUESTION,
             MoveType.LOAD_PAGE,
         ],
         CallType.SCOUT_ANALOGIES: [
             MoveType.CREATE_CLAIM,
-            MoveType.CREATE_QUESTION,
+            MoveType.CREATE_SCOUT_QUESTION,
             MoveType.LINK_CONSIDERATION,
             MoveType.LINK_CHILD_QUESTION,
             MoveType.LINK_RELATED,
@@ -43,14 +47,14 @@ PRESETS: dict[str, MovePreset] = {
         ],
         CallType.SCOUT_PARADIGM_CASES: [
             MoveType.CREATE_CLAIM,
-            MoveType.CREATE_QUESTION,
+            MoveType.CREATE_SCOUT_QUESTION,
             MoveType.LINK_CONSIDERATION,
             MoveType.LINK_CHILD_QUESTION,
             MoveType.LOAD_PAGE,
         ],
         CallType.SCOUT_FACTS_TO_CHECK: [
             MoveType.CREATE_CLAIM,
-            MoveType.CREATE_QUESTION,
+            MoveType.CREATE_SCOUT_QUESTION,
             MoveType.LINK_CONSIDERATION,
             MoveType.LINK_CHILD_QUESTION,
             MoveType.LOAD_PAGE,
@@ -68,17 +72,20 @@ PRESETS: dict[str, MovePreset] = {
     "judge-on-assess": {
         CallType.FIND_CONSIDERATIONS: _ALL_MOVES_EXCEPT_JUDGEMENT,
         CallType.INGEST: _ALL_MOVES_EXCEPT_JUDGEMENT,
-        CallType.PRIORITIZATION: _ALL_MOVES_EXCEPT_JUDGEMENT,
+        CallType.PRIORITIZATION: [
+            MoveType.CREATE_SUBQUESTION,
+            MoveType.LINK_CHILD_QUESTION,
+        ],
         CallType.SCOUT_SUBQUESTIONS: [
             MoveType.CREATE_CLAIM,
-            MoveType.CREATE_QUESTION,
+            MoveType.CREATE_SCOUT_QUESTION,
             MoveType.LINK_CONSIDERATION,
             MoveType.LINK_CHILD_QUESTION,
             MoveType.LOAD_PAGE,
         ],
         CallType.SCOUT_HYPOTHESES: [
             MoveType.CREATE_CLAIM,
-            MoveType.CREATE_QUESTION,
+            MoveType.CREATE_SCOUT_QUESTION,
             MoveType.PROPOSE_HYPOTHESIS,
             MoveType.LINK_CONSIDERATION,
             MoveType.LINK_CHILD_QUESTION,
@@ -86,14 +93,14 @@ PRESETS: dict[str, MovePreset] = {
         ],
         CallType.SCOUT_ESTIMATES: [
             MoveType.CREATE_CLAIM,
-            MoveType.CREATE_QUESTION,
+            MoveType.CREATE_SCOUT_QUESTION,
             MoveType.LINK_CONSIDERATION,
             MoveType.LINK_CHILD_QUESTION,
             MoveType.LOAD_PAGE,
         ],
         CallType.SCOUT_ANALOGIES: [
             MoveType.CREATE_CLAIM,
-            MoveType.CREATE_QUESTION,
+            MoveType.CREATE_SCOUT_QUESTION,
             MoveType.LINK_CONSIDERATION,
             MoveType.LINK_CHILD_QUESTION,
             MoveType.LINK_RELATED,
@@ -101,14 +108,14 @@ PRESETS: dict[str, MovePreset] = {
         ],
         CallType.SCOUT_PARADIGM_CASES: [
             MoveType.CREATE_CLAIM,
-            MoveType.CREATE_QUESTION,
+            MoveType.CREATE_SCOUT_QUESTION,
             MoveType.LINK_CONSIDERATION,
             MoveType.LINK_CHILD_QUESTION,
             MoveType.LOAD_PAGE,
         ],
         CallType.SCOUT_FACTS_TO_CHECK: [
             MoveType.CREATE_CLAIM,
-            MoveType.CREATE_QUESTION,
+            MoveType.CREATE_SCOUT_QUESTION,
             MoveType.LINK_CONSIDERATION,
             MoveType.LINK_CHILD_QUESTION,
             MoveType.LOAD_PAGE,

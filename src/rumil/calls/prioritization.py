@@ -22,7 +22,6 @@ from rumil.page_graph import PageGraph
 from rumil.llm import build_system_prompt, build_user_message
 from rumil.models import Call, CallStatus, CallType, MoveType
 from rumil.moves.base import MoveState
-from rumil.moves.create_question import PRIORITIZATION_MOVE
 from rumil.moves.registry import MOVES
 from rumil.settings import get_settings
 from rumil.tracing.trace_events import (
@@ -77,12 +76,10 @@ async def run_prioritization_call(
 
     tools = []
     for mt in available_moves:
-        if mt == MoveType.CREATE_QUESTION:
-            tool = PRIORITIZATION_MOVE.bind(state)
+        tool = MOVES[mt].bind(state)
+        if mt == MoveType.CREATE_SUBQUESTION:
             tool.input_schema = filter_mode_schema(tool.input_schema, allowed_fc_modes)
-            tools.append(tool)
-        else:
-            tools.append(MOVES[mt].bind(state))
+        tools.append(tool)
     if dispatch_types is not None:
         selected_defs = [
             DISPATCH_DEFS[ct] for ct in dispatch_types if ct in DISPATCH_DEFS

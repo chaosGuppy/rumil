@@ -59,7 +59,6 @@ from rumil.models import (
     CallType,
     Dispatch,
     LinkType,
-    MoveType,
     Page,
     PageLayer,
     PageType,
@@ -92,11 +91,6 @@ from rumil.tracing.trace_events import (
 
 log = logging.getLogger(__name__)
 
-
-PRIORITIZATION_MOVES: list[MoveType] = [
-    MoveType.CREATE_QUESTION,
-    MoveType.LINK_CHILD_QUESTION,
-]
 
 PHASE1_SCOUT_TYPES: Sequence[CallType] = [
     CallType.SCOUT_SUBQUESTIONS,
@@ -1164,7 +1158,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
 
         result = await run_prioritization_call(
             task, context_text, p_call, self.db,
-            available_moves=PRIORITIZATION_MOVES,
+
             subtree_ids=subtree_ids,
             short_id_map=short_id_map,
             trace=trace,
@@ -1355,7 +1349,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
 
         result = await run_prioritization_call(
             task, context_text, p_call, self.db,
-            available_moves=PRIORITIZATION_MOVES,
+
             subtree_ids=subtree_ids,
             short_id_map=short_id_map,
             trace=trace,

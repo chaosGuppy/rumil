@@ -16,7 +16,7 @@ class ScoutAnalogiesCall(CallRunner):
     call_type = CallType.SCOUT_ANALOGIES
     available_moves = [
         MoveType.CREATE_CLAIM,
-        MoveType.CREATE_QUESTION,
+        MoveType.CREATE_SCOUT_QUESTION,
         MoveType.LINK_CONSIDERATION,
         MoveType.LINK_CHILD_QUESTION,
         MoveType.LINK_RELATED,

@@ -16,7 +16,7 @@ class ScoutParadigmCasesCall(CallRunner):
     call_type = CallType.SCOUT_PARADIGM_CASES
     available_moves = [
         MoveType.CREATE_CLAIM,
-        MoveType.CREATE_QUESTION,
+        MoveType.CREATE_SCOUT_QUESTION,
         MoveType.LINK_CONSIDERATION,
         MoveType.LINK_CHILD_QUESTION,
         MoveType.LINK_RELATED,

@@ -20,7 +20,7 @@ def _all_fields_required(schema: dict) -> None:
     (like ``id`` or ``created_at``) are always populated in responses, but
     Pydantic marks them optional in the schema by default.
     """
-    schema['required'] = list(schema.get('properties', {}).keys())
+    schema["required"] = list(schema.get("properties", {}).keys())
 
 
 class PageType(str, Enum):
@@ -103,6 +103,8 @@ class LinkType(str, Enum):
 class MoveType(str, Enum):
     CREATE_CLAIM = "CREATE_CLAIM"
     CREATE_QUESTION = "CREATE_QUESTION"
+    CREATE_SCOUT_QUESTION = "CREATE_SCOUT_QUESTION"
+    CREATE_SUBQUESTION = "CREATE_SUBQUESTION"
     CREATE_JUDGEMENT = "CREATE_JUDGEMENT"
     CREATE_CONCEPT = "CREATE_CONCEPT"
     CREATE_WIKI_PAGE = "CREATE_WIKI_PAGE"
@@ -144,7 +146,9 @@ class ConsiderationDirection(str, Enum):
 
 
 class _DispatchBase(BaseModel):
-    reason: str = Field(default="", description="Why this dispatch is a good use of budget")
+    reason: str = Field(
+        default="", description="Why this dispatch is a good use of budget"
+    )
     context_page_ids: list[str] = Field(
         default_factory=list,
         description=(
@@ -191,11 +195,11 @@ class PrioritizationDispatchPayload(BaseDispatchPayload, _PrioritizationFields):
 
 
 def _hide_question_id(schema: dict) -> None:  # type: ignore[type-arg]
-    props = schema.get('properties', {})
-    props.pop('question_id', None)
-    req = schema.get('required', [])
-    if 'question_id' in req:
-        req.remove('question_id')
+    props = schema.get("properties", {})
+    props.pop("question_id", None)
+    req = schema.get("required", [])
+    if "question_id" in req:
+        req.remove("question_id")
 
 
 class ScopeOnlyDispatchPayload(BaseDispatchPayload):
@@ -206,7 +210,7 @@ class ScopeOnlyDispatchPayload(BaseDispatchPayload):
     """
 
     model_config = ConfigDict(json_schema_extra=_hide_question_id)
-    question_id: str = Field(default='', description='Injected at runtime')
+    question_id: str = Field(default="", description="Injected at runtime")
 
 
 class ScoutSubquestionsDispatchPayload(ScopeOnlyDispatchPayload):
@@ -240,7 +244,7 @@ class WebResearchDispatchPayload(BaseDispatchPayload):
 class RecurseDispatchPayload(BaseDispatchPayload, _PrioritizationFields):
     budget: int = Field(
         ge=MIN_TWOPHASE_BUDGET,
-        description=f'Budget to allocate for the sub-investigation (minimum {MIN_TWOPHASE_BUDGET})',
+        description=f"Budget to allocate for the sub-investigation (minimum {MIN_TWOPHASE_BUDGET})",
     )
 
 

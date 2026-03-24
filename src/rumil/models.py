@@ -162,19 +162,22 @@ class BaseDispatchPayload(_DispatchBase):
     question_id: str = Field(description="Page ID of the question to investigate")
 
 
-class _ScoutFields(BaseModel):
+class _MultiRoundFields(BaseModel):
+    fruit_threshold: int = Field(
+        default=4, description="Remaining fruit threshold for stopping"
+    )
+    max_rounds: int = Field(
+        default=5, description="Maximum scouting rounds (each round costs 1 budget)"
+    )
+
+
+class _ScoutFields(_MultiRoundFields):
     mode: FindConsiderationsMode = Field(
         default=FindConsiderationsMode.ALTERNATE,
         description=(
             "Scout mode: 'alternate' (default) alternates abstract and concrete "
             "each round; 'abstract' for all-abstract; 'concrete' for all-concrete."
         ),
-    )
-    fruit_threshold: int = Field(
-        default=4, description="Remaining fruit threshold for stopping"
-    )
-    max_rounds: int = Field(
-        default=5, description="Maximum scouting rounds (each round costs 1 budget)"
     )
 
 
@@ -213,27 +216,27 @@ class ScopeOnlyDispatchPayload(BaseDispatchPayload):
     question_id: str = Field(default="", description="Injected at runtime")
 
 
-class ScoutSubquestionsDispatchPayload(ScopeOnlyDispatchPayload):
+class ScoutSubquestionsDispatchPayload(ScopeOnlyDispatchPayload, _MultiRoundFields):
     pass
 
 
-class ScoutEstimatesDispatchPayload(ScopeOnlyDispatchPayload):
+class ScoutEstimatesDispatchPayload(ScopeOnlyDispatchPayload, _MultiRoundFields):
     pass
 
 
-class ScoutHypothesesDispatchPayload(ScopeOnlyDispatchPayload):
+class ScoutHypothesesDispatchPayload(ScopeOnlyDispatchPayload, _MultiRoundFields):
     pass
 
 
-class ScoutAnalogiesDispatchPayload(ScopeOnlyDispatchPayload):
+class ScoutAnalogiesDispatchPayload(ScopeOnlyDispatchPayload, _MultiRoundFields):
     pass
 
 
-class ScoutParadigmCasesDispatchPayload(ScopeOnlyDispatchPayload):
+class ScoutParadigmCasesDispatchPayload(ScopeOnlyDispatchPayload, _MultiRoundFields):
     pass
 
 
-class ScoutFactsToCheckDispatchPayload(ScopeOnlyDispatchPayload):
+class ScoutFactsToCheckDispatchPayload(ScopeOnlyDispatchPayload, _MultiRoundFields):
     pass
 
 

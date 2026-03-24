@@ -50,9 +50,12 @@ class PageGraph:
     @classmethod
     async def load(cls, db: "PageSource") -> "PageGraph":
         pages = await db.get_pages_slim(active_only=True)
-        links = await db.get_all_links()
+        page_ids = {p.id for p in pages}
+        links = await db.get_all_links(page_ids=page_ids)
         log.debug(
-            'PageGraph.load: %d pages, %d links', len(pages), len(links),
+            "PageGraph.load: %d pages, %d links",
+            len(pages),
+            len(links),
         )
         return cls(pages, links)
 
@@ -82,7 +85,8 @@ class PageGraph:
         return list(self._links_from.get(page_id, []))
 
     async def get_considerations_for_question(
-        self, question_id: str,
+        self,
+        question_id: str,
     ) -> list[tuple[Page, PageLink]]:
         links = self._links_to.get(question_id, [])
         result = []
@@ -95,7 +99,8 @@ class PageGraph:
         return result
 
     async def get_judgements_for_question(
-        self, question_id: str,
+        self,
+        question_id: str,
     ) -> list[Page]:
         links = self._links_to.get(question_id, [])
         result = []
@@ -128,7 +133,8 @@ class PageGraph:
         return result
 
     async def get_child_questions_with_links(
-        self, parent_id: str,
+        self,
+        parent_id: str,
     ) -> list[tuple[Page, PageLink]]:
         links = self._links_from.get(parent_id, [])
         result = []
@@ -141,7 +147,8 @@ class PageGraph:
         return result
 
     async def get_root_questions(
-        self, workspace: Workspace = Workspace.RESEARCH,
+        self,
+        workspace: Workspace = Workspace.RESEARCH,
     ) -> list[Page]:
         child_ids: set[str] = set()
         for links in self._links_from.values():
@@ -149,7 +156,8 @@ class PageGraph:
                 if link.link_type == LinkType.CHILD_QUESTION:
                     child_ids.add(link.to_page_id)
         return [
-            p for p in self._pages.values()
+            p
+            for p in self._pages.values()
             if p.page_type == PageType.QUESTION
             and p.workspace == workspace
             and p.is_active()
@@ -157,7 +165,8 @@ class PageGraph:
         ]
 
     async def get_last_find_considerations_info(
-        self, question_id: str,
+        self,
+        question_id: str,
     ) -> tuple[str, int | None] | None:
         return None
 

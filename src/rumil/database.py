@@ -633,7 +633,7 @@ class DB:
         query = self.client.table("page_links").select("*")
         query = self._ab_filter(query, table="page_links")
         if self.project_id:
-            page_ids_query = (
+            page_ids_query = self._ab_filter(
                 self.client.table("pages")
                 .select("id")
                 .eq("project_id", self.project_id)

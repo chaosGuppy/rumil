@@ -19,6 +19,7 @@ from rumil.models import (
     PageType,
     Workspace,
 )
+from rumil.page_graph import PageGraph
 from rumil.workspace_map import build_workspace_map
 
 
@@ -233,7 +234,6 @@ async def test_get_pages_slim_isolated(two_workspaces):
 
 
 async def test_page_graph_isolated(two_workspaces):
-    from rumil.page_graph import PageGraph
 
     w = two_workspaces
     graph_alpha = await PageGraph.load(w["db_alpha"])

@@ -471,7 +471,7 @@ class WebResearchLoop(PageCreator):
 
         scraped = await scrape_url(url)
         if scraped is None:
-            log.warning("Scrape failed for URL: %s, skipping citation", url)
+            log.warning("Scrape failed for URL: %s", url)
             return None
 
         page = Page(

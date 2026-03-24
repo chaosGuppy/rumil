@@ -471,7 +471,7 @@ class WebResearchLoop(PageCreator):
 
         scraped = await scrape_url(url)
         if scraped is None:
-            log.warning("Scrape failed for URL: %s, skipping citation", url)
+            log.warning("Scrape failed for URL: %s", url)
             return None
 
         page = Page(
@@ -522,6 +522,7 @@ class WebResearchLoop(PageCreator):
                     source_urls = inp.get("source_urls", [])
                     if source_urls:
                         resolved: list[str] = []
+                        failed_urls: list[str] = []
                         for sid in source_urls:
                             if isinstance(sid, str) and sid.startswith("http"):
                                 page_id = await self._ensure_source_page(
@@ -530,8 +531,18 @@ class WebResearchLoop(PageCreator):
                                 )
                                 if page_id:
                                     resolved.append(page_id)
+                                else:
+                                    failed_urls.append(sid)
                             else:
                                 resolved.append(sid)
+                        if failed_urls:
+                            urls = ", ".join(failed_urls)
+                            raise RuntimeError(
+                                f"Could not fetch the following source(s): {urls}. "
+                                "Find a different, accessible source that supports "
+                                "the same information, or modify the claim so it "
+                                "does not rely on the inaccessible source(s)."
+                            )
                         inp = {**inp, "source_urls": resolved}
                     return await _orig(inp)
 

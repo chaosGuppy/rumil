@@ -14,7 +14,13 @@ from rumil.models import (
     PageLink,
     PageType,
 )
-from rumil.moves.base import CreatePagePayload, MoveDef, MoveResult, create_page
+from rumil.moves.base import (
+    CreatePagePayload,
+    MoveDef,
+    MoveResult,
+    create_page,
+    supersede_old_judgements,
+)
 from rumil.moves.link_consideration import ConsiderationLinkFields
 
 log = logging.getLogger(__name__)
@@ -31,8 +37,8 @@ class CreateJudgementPayload(CreatePagePayload):
         default_factory=list,
         description=(
             "Question links to create for this judgement. Each entry "
-            "links this judgement as a consideration bearing on an "
-            "existing question, with a strength rating."
+            "links this judgement to an existing question, with a "
+            "strength rating."
         ),
     )
 
@@ -59,17 +65,22 @@ async def execute(payload: CreateJudgementPayload, call: Call, db: DB) -> MoveRe
             )
             continue
 
-        await db.save_link(PageLink(
-            from_page_id=result.created_page_id,
-            to_page_id=resolved,
-            link_type=LinkType.CONSIDERATION,
-            strength=link_spec.strength,
-            reasoning=link_spec.reasoning,
-            role=link_spec.role,
-        ))
+        await db.save_link(
+            PageLink(
+                from_page_id=result.created_page_id,
+                to_page_id=resolved,
+                link_type=LinkType.RELATED,
+                strength=link_spec.strength,
+                reasoning=link_spec.reasoning,
+                role=link_spec.role,
+            )
+        )
+        await supersede_old_judgements(result.created_page_id, resolved, db)
         log.info(
             "Inline judgement linked: %s -> %s (%.1f)",
-            result.created_page_id[:8], resolved[:8], link_spec.strength,
+            result.created_page_id[:8],
+            resolved[:8],
+            link_spec.strength,
         )
 
     return result

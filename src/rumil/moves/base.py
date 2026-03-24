@@ -79,11 +79,13 @@ class MoveState:
             if error:
                 log.warning("Dispatch rejected: %s", error)
 
-    def take_new_moves(self) -> tuple[list[Move], list[list[str]], list[dict[str, Any]]]:
+    def take_new_moves(
+        self,
+    ) -> tuple[list[Move], list[list[str]], list[dict[str, Any]]]:
         """Return moves, created-ID lists, and trace extras added since the last call."""
-        new_moves = self.moves[self._move_cursor:]
-        new_created = self.move_created_ids[self._move_cursor:]
-        new_extras = self.move_trace_extras[self._move_cursor:]
+        new_moves = self.moves[self._move_cursor :]
+        new_created = self.move_created_ids[self._move_cursor :]
+        new_extras = self.move_trace_extras[self._move_cursor :]
         self._move_cursor = len(self.moves)
         return new_moves, new_created, new_extras
 
@@ -132,7 +134,8 @@ class MoveDef(Generic[S]):
                 move_page_ids.append(result.created_page_id)
                 log.debug(
                     "Move %s created page: %s",
-                    self.name, result.created_page_id[:8],
+                    self.name,
+                    result.created_page_id[:8],
                 )
             if result.extra_created_ids:
                 move_page_ids.extend(result.extra_created_ids)
@@ -257,24 +260,34 @@ async def create_page(
     try:
         await embed_and_store_page(db, page, field_name="abstract")
     except Exception:
-        log.warning("Failed to create embedding for page %s", page.id[:8], exc_info=True)
+        log.warning(
+            "Failed to create embedding for page %s", page.id[:8], exc_info=True
+        )
     log.info(
         "Page created: type=%s, id=%s, headline=%s",
-        page_type.value, page.id[:8], page.headline[:70],
+        page_type.value,
+        page.id[:8],
+        page.headline[:70],
     )
 
     try:
         cited_ids = await extract_and_link_citations(
-            page.id, page.content, db, citing_page_type=page_type,
+            page.id,
+            page.content,
+            db,
+            citing_page_type=page_type,
         )
         if cited_ids:
             log.info(
                 "Auto-linked %d citations from page %s",
-                len(cited_ids), page.id[:8],
+                len(cited_ids),
+                page.id[:8],
             )
     except Exception:
         log.warning(
-            "Citation extraction failed for page %s", page.id[:8], exc_info=True,
+            "Citation extraction failed for page %s",
+            page.id[:8],
+            exc_info=True,
         )
 
     message = (
@@ -285,7 +298,7 @@ async def create_page(
     return MoveResult(message=message, created_page_id=page.id)
 
 
-_CITATION_RE = re.compile(r'\[([a-f0-9]{8})\]')
+_CITATION_RE = re.compile(r"\[([a-f0-9]{8})\]")
 
 
 async def extract_and_link_citations(
@@ -333,14 +346,18 @@ async def extract_and_link_citations(
         else:
             link_type = LinkType.RELATED
 
-        await db.save_link(PageLink(
-            from_page_id=from_id,
-            to_page_id=to_id,
-            link_type=link_type,
-        ))
+        await db.save_link(
+            PageLink(
+                from_page_id=from_id,
+                to_page_id=to_id,
+                link_type=link_type,
+            )
+        )
         log.info(
             "Citation linked: %s -> %s (%s)",
-            from_id[:8], to_id[:8], link_type.value,
+            from_id[:8],
+            to_id[:8],
+            link_type.value,
         )
         linked.add(resolved)
 
@@ -361,7 +378,9 @@ async def link_pages(
     if not resolved_from or not resolved_to:
         log.warning(
             "Link %s skipped: from_id=%s, to_id=%s — one or both not found",
-            link_type.value, resolved_from, resolved_to,
+            link_type.value,
+            resolved_from,
+            resolved_to,
         )
         return MoveResult("Link skipped — page IDs not found.")
 
@@ -375,6 +394,27 @@ async def link_pages(
     await db.save_link(link)
     log.info(
         "Link created: %s %s -> %s",
-        link_type.value, resolved_from[:8], resolved_to[:8],
+        link_type.value,
+        resolved_from[:8],
+        resolved_to[:8],
     )
     return MoveResult("Done.")
+
+
+async def supersede_old_judgements(
+    new_judgement_id: str,
+    question_id: str,
+    db: DB,
+) -> None:
+    """Supersede any existing active judgements on a question when a new one is linked."""
+    old_judgements = await db.get_judgements_for_question(question_id)
+    for old in old_judgements:
+        if old.id == new_judgement_id:
+            continue
+        await db.supersede_page(old.id, new_judgement_id)
+        log.info(
+            "Superseded old judgement %s with %s on question %s",
+            old.id[:8],
+            new_judgement_id[:8],
+            question_id[:8],
+        )

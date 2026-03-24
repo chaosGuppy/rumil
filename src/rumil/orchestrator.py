@@ -59,6 +59,7 @@ from rumil.models import (
     CallType,
     Dispatch,
     LinkType,
+    MoveType,
     Page,
     PageLayer,
     PageType,
@@ -91,6 +92,43 @@ from rumil.tracing.trace_events import (
 
 log = logging.getLogger(__name__)
 
+
+async def _count_subtree_questions(question_id: str, graph: PageGraph) -> int:
+    """Count all descendant questions (not including the question itself)."""
+    children = await graph.get_child_questions(question_id)
+    count = len(children)
+    for child in children:
+        count += await _count_subtree_questions(child.id, graph)
+    return count
+
+
+async def _describe_child_questions(
+    children: Sequence[Page], graph: PageGraph,
+) -> str:
+    """Build enriched descriptions of child questions with research stats."""
+    lines = []
+    for c in children:
+        considerations = await graph.get_considerations_for_question(c.id)
+        judgements = await graph.get_judgements_for_question(c.id)
+        subtree_count = await _count_subtree_questions(c.id, graph)
+
+        parts = []
+        if considerations:
+            parts.append(f'{len(considerations)} considerations')
+        if judgements:
+            parts.append(f'{len(judgements)} judgement{"s" if len(judgements) != 1 else ""}')
+        if subtree_count:
+            parts.append(f'{subtree_count} subquestion{"s" if subtree_count != 1 else ""}')
+
+        stats = ', '.join(parts) if parts else 'no research yet'
+        lines.append(f'- `{c.id}` — {c.headline} ({stats})')
+    return '\n'.join(lines)
+
+
+PRIORITIZATION_MOVES: list[MoveType] = [
+    MoveType.CREATE_QUESTION,
+    MoveType.LINK_CHILD_QUESTION,
+]
 
 PHASE1_SCOUT_TYPES: Sequence[CallType] = [
     CallType.SCOUT_SUBQUESTIONS,
@@ -1085,6 +1123,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                 if self._invocation > 1:
                     await assess_question(
                         root_question_id, self.db,
+                        parent_call_id=self._parent_call_id,
                         broadcaster=self.broadcaster, force=True,
                     )
         finally:
@@ -1148,7 +1187,6 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             self.db, scope_question_id=question_id, graph=graph,
         )
         subtree_ids = await collect_subtree_ids(question_id, self.db, graph=graph)
-
         if self._initial_call is not None:
             p_call = self._initial_call
             self._initial_call = None
@@ -1173,8 +1211,6 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             'your only turn and you will not get another chance. Distribute your budget '
             'among the scouting dispatch tools, weighting towards types that seem most '
             'useful for this question and skipping types that are clearly irrelevant. '
-            'Each dispatch costs 1 budget unit.\n\n'
-            'You may optionally create subquestions before dispatching. '
             'Do not do anything else — just dispatch.'
         )
 
@@ -1254,18 +1290,16 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         trace = CallTrace(p_call.id, self.db, broadcaster=self.broadcaster)
         await trace.record(ContextBuiltEvent(budget=budget))
 
-        child_questions = await self.db.get_child_questions(question_id)
-        parent_question = await self.db.get_page(question_id)
+        graph = await PageGraph.load(self.db)
+        child_questions = await graph.get_child_questions(question_id)
+        parent_question = await graph.get_page(question_id)
         parent_headline = parent_question.headline if parent_question else question_id[:8]
 
         scoring_system = build_system_prompt('score_subquestions')
 
         scoring_tasks = []
         if child_questions:
-            child_descriptions = '\n'.join(
-                f'- `{c.id}` — {c.headline}'
-                for c in child_questions
-            )
+            child_descriptions = await _describe_child_questions(child_questions, graph)
             subq_user_msg = build_user_message(
                 f'Parent question: {parent_headline}\n\n'
                 f'Subquestions to score:\n{child_descriptions}',
@@ -1327,7 +1361,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             lines = ['## Subquestion Scores', '']
             for s in subq_scores:
                 lines.append(
-                    f'- `{s["question_id"][:8]}` — {s["headline"]}: '
+                    f'- `{s["question_id"]}` — {s["headline"]}: '
                     f'impact={s["impact"]}, fruit={s["fruit"]} '
                     f'({s["reasoning"]})'
                 )
@@ -1339,27 +1373,15 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             f'Remaining fruit on parent: {parent_fruit}/10\n'
         )
 
-        graph = await PageGraph.load(self.db)
         context_text, short_id_map = await build_prioritization_context(
             self.db, scope_question_id=question_id, graph=graph,
         )
         subtree_ids = await collect_subtree_ids(question_id, self.db, graph=graph)
 
         task = (
-            f'You have a budget of **{budget} research calls** to allocate during this rollout.\n\n'
-            'You do not need to allocate your entire budget during this call (although you can, especially if it seems low). '
+            f'You have a budget of **{budget} budget units** to allocate.\n\n'
             f'Scope question ID: `{question_id}`\n\n'
-            'Phase 1 (specialized scouts + assess) is complete. Now plan '
-            'targeted follow-up based on what was discovered.\n\n'
             f'{scores_text}\n\n'
-            'Dispatch further investigation: use dispatch_find_considerations for general '
-            'exploration that can be based purely on your trained knowledge and does not require web research, '
-            'dispatch_web_research for web-based evidence, or '
-            'recurse_into_subquestion to recursively investigate a child '
-            f'question with its own prioritization cycle (minimum budget: {MIN_TWOPHASE_BUDGET}). '
-            'For find_considerations, web_research, and recurse you can target the parent question '
-            'or any child question. Scout dispatches always target the scope question automatically.\n\n'
-            'You may create subquestions before dispatching. '
             'You must make all your dispatch calls now — this is your only turn. '
             f'Each recurse call must have a budget of at least {MIN_TWOPHASE_BUDGET}.'
         )
@@ -1381,6 +1403,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             trace=trace,
             dispatch_types=list(PHASE2_DISPATCH_TYPES),
             extra_dispatch_defs=extra_defs or None,
+            system_prompt_override=build_system_prompt('two_phase_p2'),
         )
 
         sequences: list[list[Dispatch]] = []
@@ -1397,6 +1420,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                 child = TwoPhaseOrchestrator(
                     self.db, self.broadcaster, budget_cap=d.payload.budget,
                 )
+                child._parent_call_id = p_call.id
                 children.append((child, resolved))
                 log.info(
                     'Queued recursive investigation: question=%s, budget=%d — %s',

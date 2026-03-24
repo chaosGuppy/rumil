@@ -629,13 +629,23 @@ class DB:
         return [_row_to_link(r) for r in rows]
 
     async def get_all_links(self) -> list[PageLink]:
-        """Bulk-fetch all links, optionally scoped by project via page membership."""
-        rows = _rows(
-            await self.client.table("page_links")
-            .select("*")
-            .limit(50000)
-            .execute()
-        )
+        """Bulk-fetch all links, scoped by project and AB run."""
+        query = self.client.table("page_links").select("*")
+        query = self._ab_filter(query, table="page_links")
+        if self.project_id:
+            page_ids_query = (
+                self.client.table("pages")
+                .select("id")
+                .eq("project_id", self.project_id)
+            )
+            page_ids_rows = _rows(await page_ids_query.limit(50000).execute())
+            page_ids = {r["id"] for r in page_ids_rows}
+            rows = _rows(await query.limit(50000).execute())
+            return [
+                _row_to_link(r) for r in rows
+                if r["from_page_id"] in page_ids or r["to_page_id"] in page_ids
+            ]
+        rows = _rows(await query.limit(50000).execute())
         return [_row_to_link(r) for r in rows]
 
     async def delete_link(self, link_id: str) -> None:

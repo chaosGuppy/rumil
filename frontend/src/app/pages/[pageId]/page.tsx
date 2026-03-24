@@ -283,6 +283,17 @@ export default async function PageDetailPage({
             )}
           </div>
           <h1 className="page-summary">{page.headline}</h1>
+          {page.page_type === "source" && typeof page.extra?.url === "string" && (
+            <a
+              href={page.extra.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="source-url"
+            >
+              <span className="source-url-text">{page.extra.url}</span>
+              <span className="source-url-arrow">{"\u2197"}</span>
+            </a>
+          )}
           {page.abstract && (
             <div className="page-abstract">{page.abstract}</div>
           )}
@@ -453,6 +464,39 @@ const styles = `
     letter-spacing: -0.02em;
     line-height: 1.3;
     margin: 0;
+  }
+
+  .source-url {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin-top: 0.5rem;
+    max-width: 100%;
+    font-size: 0.72rem;
+    font-family: var(--font-geist-mono), monospace;
+    color: var(--color-muted);
+    text-decoration: none;
+    transition: color 0.15s;
+  }
+  .source-url:hover {
+    color: var(--color-foreground);
+  }
+  .source-url-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .source-url-arrow {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    font-size: 0.8em;
+    opacity: 0.5;
+    transition: opacity 0.15s, transform 0.15s;
+  }
+  .source-url:hover .source-url-arrow {
+    opacity: 1;
+    transform: translate(1px, -1px);
   }
 
   .page-abstract {

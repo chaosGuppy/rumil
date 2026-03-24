@@ -1,18 +1,18 @@
-"""Lightweight URL scraper using httpx + BeautifulSoup."""
+"""URL scraper using Jina Reader API (https://r.jina.ai/)."""
 
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
 import httpx
-from bs4 import BeautifulSoup
-from fake_useragent import UserAgent
+
+from rumil.settings import get_settings
 
 log = logging.getLogger(__name__)
 
+JINA_READER_BASE = "https://r.jina.ai/"
 MAX_CONTENT_CHARS = 50_000
-TIMEOUT_SECONDS = 15
-_ua = UserAgent(browsers=['Chrome', 'Firefox'], min_version=120.0)
+TIMEOUT_SECONDS = 30
 
 
 @dataclass
@@ -24,34 +24,36 @@ class ScrapedPage:
 
 
 async def scrape_url(url: str) -> ScrapedPage | None:
-    """Fetch and extract text content from a URL.
+    """Fetch and extract text content from a URL via Jina Reader.
 
     Returns a ScrapedPage on success, or None on any failure.
     """
     try:
-        async with httpx.AsyncClient(
-            timeout=TIMEOUT_SECONDS,
-            follow_redirects=True,
-            headers={'User-Agent': _ua.random},
-        ) as client:
-            response = await client.get(url)
+        headers: dict[str, str] = {"Accept": "application/json"}
+        api_key = get_settings().jina_api_key
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS) as client:
+            response = await client.get(
+                f"{JINA_READER_BASE}{url}",
+                headers=headers,
+            )
             response.raise_for_status()
 
-        soup = BeautifulSoup(response.text, 'html.parser')
+        data = response.json().get("data")
+        if not data or not data.get("content"):
+            log.warning("Jina Reader returned no content for URL: %s", url)
+            return None
 
-        for tag in soup.find_all(['script', 'style', 'nav', 'footer']):
-            tag.decompose()
-
-        title = soup.title.get_text(strip=True) if soup.title else url
-        content = soup.get_text(separator='\n', strip=True)
-        content = content[:MAX_CONTENT_CHARS]
+        content = data["content"][:MAX_CONTENT_CHARS]
+        title = data.get("title") or url
 
         return ScrapedPage(
-            url=url,
+            url=data.get("url", url),
             title=title,
             content=content,
             fetched_at=datetime.now(UTC).isoformat(),
         )
     except Exception:
-        log.warning('Failed to scrape URL: %s', url, exc_info=True)
+        log.warning("Failed to scrape URL: %s", url, exc_info=True)
         return None

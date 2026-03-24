@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     supabase_prod_url: str = ""
     supabase_prod_key: str = ""
     voyage_ai_api_key: str = ""
+    jina_api_key: str = ""
     frontend_url: str = "http://127.0.0.1:3000"
 
     find_considerations_call_variant: str = _capture_field(default="embedding")

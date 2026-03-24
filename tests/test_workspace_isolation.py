@@ -90,18 +90,14 @@ async def two_workspaces():
     claim_alpha = await _make_claim(
         db_alpha, "The sky is blue due to Rayleigh scattering"
     )
-    await _link_consideration(
-        db_alpha, claim_alpha, q_alpha
-    )
+    await _link_consideration(db_alpha, claim_alpha, q_alpha)
     source_alpha = await _make_source(db_alpha, "sky-paper.pdf")
 
     q_beta = await _make_question(db_beta, "Why is the ocean salty?")
     claim_beta = await _make_claim(
         db_beta, "Rivers carry dissolved salts into the ocean"
     )
-    await _link_consideration(
-        db_beta, claim_beta, q_beta
-    )
+    await _link_consideration(db_beta, claim_beta, q_beta)
 
     yield {
         "db_alpha": db_alpha,
@@ -190,12 +186,8 @@ async def test_call_context_isolated(two_workspaces):
 
 async def test_prioritization_context_isolated(two_workspaces):
     w = two_workspaces
-    ctx_alpha, _ = await build_prioritization_context(
-        w["db_alpha"], w["q_alpha"].id
-    )
-    ctx_beta, _ = await build_prioritization_context(
-        w["db_beta"], w["q_beta"].id
-    )
+    ctx_alpha, _ = await build_prioritization_context(w["db_alpha"], w["q_alpha"].id)
+    ctx_beta, _ = await build_prioritization_context(w["db_beta"], w["q_beta"].id)
 
     assert "sky" in ctx_alpha.lower()
     assert "ocean" not in ctx_alpha.lower()
@@ -203,14 +195,65 @@ async def test_prioritization_context_isolated(two_workspaces):
     assert "sky" not in ctx_beta.lower()
 
 
+async def test_get_all_links_isolated(two_workspaces):
+    w = two_workspaces
+    alpha_links = await w["db_alpha"].get_all_links()
+    beta_links = await w["db_beta"].get_all_links()
+
+    alpha_page_ids = {w["q_alpha"].id, w["claim_alpha"].id, w["source_alpha"].id}
+    beta_page_ids = {w["q_beta"].id, w["claim_beta"].id}
+
+    for link in alpha_links:
+        assert link.from_page_id in alpha_page_ids or link.to_page_id in alpha_page_ids
+        assert (
+            link.from_page_id not in beta_page_ids
+            and link.to_page_id not in beta_page_ids
+        )
+
+    for link in beta_links:
+        assert link.from_page_id in beta_page_ids or link.to_page_id in beta_page_ids
+        assert (
+            link.from_page_id not in alpha_page_ids
+            and link.to_page_id not in alpha_page_ids
+        )
+
+
+async def test_get_pages_slim_isolated(two_workspaces):
+    w = two_workspaces
+    alpha_pages = await w["db_alpha"].get_pages_slim()
+    beta_pages = await w["db_beta"].get_pages_slim()
+
+    alpha_ids = {p.id for p in alpha_pages}
+    beta_ids = {p.id for p in beta_pages}
+
+    assert w["q_alpha"].id in alpha_ids
+    assert w["q_alpha"].id not in beta_ids
+    assert w["q_beta"].id in beta_ids
+    assert w["q_beta"].id not in alpha_ids
+
+
+async def test_page_graph_isolated(two_workspaces):
+    from rumil.page_graph import PageGraph
+
+    w = two_workspaces
+    graph_alpha = await PageGraph.load(w["db_alpha"])
+    graph_beta = await PageGraph.load(w["db_beta"])
+
+    alpha_page = await graph_alpha.get_page(w["q_alpha"].id)
+    beta_leak = await graph_alpha.get_page(w["q_beta"].id)
+    assert alpha_page is not None
+    assert beta_leak is None
+
+    beta_page = await graph_beta.get_page(w["q_beta"].id)
+    alpha_leak = await graph_beta.get_page(w["q_alpha"].id)
+    assert beta_page is not None
+    assert alpha_leak is None
+
+
 async def test_source_in_prioritization_context_isolated(two_workspaces):
     w = two_workspaces
-    ctx_alpha, _ = await build_prioritization_context(
-        w["db_alpha"], w["q_alpha"].id
-    )
-    ctx_beta, _ = await build_prioritization_context(
-        w["db_beta"], w["q_beta"].id
-    )
+    ctx_alpha, _ = await build_prioritization_context(w["db_alpha"], w["q_alpha"].id)
+    ctx_beta, _ = await build_prioritization_context(w["db_beta"], w["q_beta"].id)
 
     assert "sky-paper.pdf" in ctx_alpha
     assert "sky-paper.pdf" not in ctx_beta

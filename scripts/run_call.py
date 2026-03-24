@@ -40,6 +40,12 @@ import uuid
 from rumil.calls.call_registry import (
     ASSESS_CALL_CLASSES,
     FIND_CONSIDERATIONS_CALL_CLASSES,
+    SCOUT_ANALOGIES_CALL_CLASSES,
+    SCOUT_ESTIMATES_CALL_CLASSES,
+    SCOUT_FACTS_TO_CHECK_CALL_CLASSES,
+    SCOUT_HYPOTHESES_CALL_CLASSES,
+    SCOUT_PARADIGM_CASES_CALL_CLASSES,
+    SCOUT_SUBQUESTIONS_CALL_CLASSES,
     WEB_RESEARCH_CALL_CLASSES,
 )
 from rumil.calls.prioritization import run_prioritization
@@ -47,6 +53,25 @@ from rumil.database import DB
 from rumil.models import CallStage, CallType, FindConsiderationsMode
 from rumil.orchestrator import create_root_question
 from rumil.settings import Settings, get_settings, _settings_var
+
+
+_SCOUT_CALL_TYPES: dict[str, tuple[CallType, dict]] = {
+    "scout-subquestions": (
+        CallType.SCOUT_SUBQUESTIONS,
+        SCOUT_SUBQUESTIONS_CALL_CLASSES,
+    ),
+    "scout-estimates": (CallType.SCOUT_ESTIMATES, SCOUT_ESTIMATES_CALL_CLASSES),
+    "scout-hypotheses": (CallType.SCOUT_HYPOTHESES, SCOUT_HYPOTHESES_CALL_CLASSES),
+    "scout-analogies": (CallType.SCOUT_ANALOGIES, SCOUT_ANALOGIES_CALL_CLASSES),
+    "scout-paradigm-cases": (
+        CallType.SCOUT_PARADIGM_CASES,
+        SCOUT_PARADIGM_CASES_CALL_CLASSES,
+    ),
+    "scout-facts-to-check": (
+        CallType.SCOUT_FACTS_TO_CHECK,
+        SCOUT_FACTS_TO_CHECK_CALL_CLASSES,
+    ),
+}
 
 
 async def run_call(args: argparse.Namespace, db: DB, question_id: str) -> None:
@@ -98,6 +123,20 @@ async def run_call(args: argparse.Namespace, db: DB, question_id: str) -> None:
             up_to_stage=up_to_stage,
         )
         await web_research.run()
+
+    elif call_type in _SCOUT_CALL_TYPES:
+        scout_ct, registry = _SCOUT_CALL_TYPES[call_type]
+        call = await db.create_call(scout_ct, scope_page_id=question_id)
+        cls = registry["default"]
+        instance = cls(
+            question_id,
+            call,
+            db,
+            max_rounds=args.max_rounds,
+            fruit_threshold=args.fruit_threshold,
+            up_to_stage=up_to_stage,
+        )
+        await instance.run()
 
     elif call_type == "prioritize":
         if up_to_stage:
@@ -230,7 +269,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run a single call end-to-end.")
     parser.add_argument(
         "call_type",
-        choices=["find-considerations", "assess", "prioritize", "web-research"],
+        choices=[
+            "find-considerations",
+            "assess",
+            "prioritize",
+            "web-research",
+            *_SCOUT_CALL_TYPES,
+        ],
         help="Type of call to run",
     )
     parser.add_argument(

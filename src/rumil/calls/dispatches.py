@@ -64,7 +64,7 @@ class DispatchDef(Generic[S]):
             log.debug(
                 "Dispatch recorded: type=%s, question=%s",
                 self.call_type.value,
-                getattr(validated, 'question_id', '?')[:8],
+                getattr(validated, "question_id", "?")[:8],
             )
             return "Dispatch recorded."
 
@@ -88,27 +88,27 @@ def filter_mode_schema(
     schema = copy.deepcopy(schema)
     allowed_values = [m.value for m in allowed_modes]
 
-    mode_def_key = 'FindConsiderationsMode'
-    defs = schema.get('$defs', {})
+    mode_def_key = "FindConsiderationsMode"
+    defs = schema.get("$defs", {})
     if mode_def_key not in defs:
         return schema
 
-    defs[mode_def_key]['enum'] = [
-        v for v in defs[mode_def_key].get('enum', []) if v in allowed_values
+    defs[mode_def_key]["enum"] = [
+        v for v in defs[mode_def_key].get("enum", []) if v in allowed_values
     ]
 
     def _patch_mode_props(obj: dict) -> None:
         """Patch any 'mode' property that refs FindConsiderationsMode."""
-        props = obj.get('properties', {})
-        if 'mode' in props:
-            mode_prop = props['mode']
-            if mode_prop.get('$ref', '').endswith(f'/{mode_def_key}'):
-                if mode_prop.get('default') not in allowed_values:
-                    mode_prop['default'] = allowed_values[0]
-                mode_prop['description'] = (
-                    'Scout mode. Available: '
-                    + ', '.join(f"'{v}'" for v in allowed_values)
-                    + '.'
+        props = obj.get("properties", {})
+        if "mode" in props:
+            mode_prop = props["mode"]
+            if mode_prop.get("$ref", "").endswith(f"/{mode_def_key}"):
+                if mode_prop.get("default") not in allowed_values:
+                    mode_prop["default"] = allowed_values[0]
+                mode_prop["description"] = (
+                    "Scout mode. Available: "
+                    + ", ".join(f"'{v}'" for v in allowed_values)
+                    + "."
                 )
 
     _patch_mode_props(schema)
@@ -127,13 +127,10 @@ def make_mode_validator(
     def validate(dispatch: Dispatch) -> Dispatch | str:
         if dispatch.call_type != CallType.FIND_CONSIDERATIONS:
             return dispatch
-        mode = getattr(dispatch.payload, 'mode', None)
+        mode = getattr(dispatch.payload, "mode", None)
         if mode is not None and mode not in allowed_modes:
-            allowed_str = ', '.join(m.value for m in allowed_modes)
-            return (
-                f"Invalid mode '{mode.value}'. "
-                f"Allowed modes: {allowed_str}"
-            )
+            allowed_str = ", ".join(m.value for m in allowed_modes)
+            return f"Invalid mode '{mode.value}'. Allowed modes: {allowed_str}"
         return dispatch
 
     return validate
@@ -175,7 +172,9 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
         description=(
             "Dispatch a specialized scout that identifies informative subquestions "
             "for the scope question. Always targets the scope question. "
-            "Budget cost: exactly 1."
+            "Runs up to max_rounds rounds, stopping early when remaining "
+            "fruit falls below fruit_threshold. "
+            "Budget cost: between 1 and max_rounds (inclusive)."
         ),
         schema=ScoutSubquestionsDispatchPayload,
     ),
@@ -185,7 +184,9 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
         description=(
             "Dispatch a specialized scout that generates quantitative estimates "
             "bearing on the scope question. Always targets the scope question. "
-            "Budget cost: exactly 1."
+            "Runs up to max_rounds rounds, stopping early when remaining "
+            "fruit falls below fruit_threshold. "
+            "Budget cost: between 1 and max_rounds (inclusive)."
         ),
         schema=ScoutEstimatesDispatchPayload,
     ),
@@ -195,7 +196,9 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
         description=(
             "Dispatch a specialized scout that proposes competing hypotheses "
             "for the scope question. Always targets the scope question. "
-            "Budget cost: exactly 1."
+            "Runs up to max_rounds rounds, stopping early when remaining "
+            "fruit falls below fruit_threshold. "
+            "Budget cost: between 1 and max_rounds (inclusive)."
         ),
         schema=ScoutHypothesesDispatchPayload,
     ),
@@ -205,7 +208,9 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
         description=(
             "Dispatch a specialized scout that finds illuminating analogies "
             "for the scope question. Always targets the scope question. "
-            "Budget cost: exactly 1."
+            "Runs up to max_rounds rounds, stopping early when remaining "
+            "fruit falls below fruit_threshold. "
+            "Budget cost: between 1 and max_rounds (inclusive)."
         ),
         schema=ScoutAnalogiesDispatchPayload,
     ),
@@ -215,7 +220,9 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
         description=(
             "Dispatch a specialized scout that identifies concrete paradigm "
             "cases illuminating the scope question. Always targets the scope question. "
-            "Budget cost: exactly 1."
+            "Runs up to max_rounds rounds, stopping early when remaining "
+            "fruit falls below fruit_threshold. "
+            "Budget cost: between 1 and max_rounds (inclusive)."
         ),
         schema=ScoutParadigmCasesDispatchPayload,
     ),
@@ -226,7 +233,9 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
             "Dispatch a specialized scout that surfaces uncertain factual "
             "claims whose truth value could materially affect the answer "
             "to the scope question. Always targets the scope question. "
-            "Budget cost: exactly 1."
+            "Runs up to max_rounds rounds, stopping early when remaining "
+            "fruit falls below fruit_threshold. "
+            "Budget cost: between 1 and max_rounds (inclusive)."
         ),
         schema=ScoutFactsToCheckDispatchPayload,
     ),

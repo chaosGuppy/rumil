@@ -58,19 +58,49 @@ function pageHref(page: Page): string {
   return `/pages/${page.id}`;
 }
 
-function buildCitationMap(
+const ALL_CITATIONS_RE = /\[([a-f0-9]{8}(?:,\s*[a-f0-9]{8})*)\]/g;
+
+function extractCitedIds(content: string): Set<string> {
+  const ids = new Set<string>();
+  for (const match of content.matchAll(ALL_CITATIONS_RE)) {
+    for (const id of match[1].split(/,\s*/)) {
+      ids.add(id);
+    }
+  }
+  return ids;
+}
+
+async function buildCitationMap(
   links_from: LinkedPageOut[],
   links_to: LinkedPageOut[],
-): Map<string, { fullId: string; pageType: string }> {
+  content: string,
+): Promise<Map<string, { fullId: string; pageType: string }>> {
   const map = new Map<string, { fullId: string; pageType: string }>();
   for (const lp of [...links_from, ...links_to]) {
     const short = lp.page.id.slice(0, 8);
     map.set(short, { fullId: lp.page.id, pageType: lp.page.page_type });
   }
+  const cited = extractCitedIds(content);
+  const missing = [...cited].filter((id) => !map.has(id));
+  if (missing.length > 0) {
+    const results = await Promise.all(
+      missing.map(async (shortId) => {
+        const res = await fetch(`${API_BASE}/api/pages/short/${shortId}`, {
+          cache: "no-store",
+        });
+        if (!res.ok) return null;
+        const page: Page = await res.json();
+        return { shortId, fullId: page.id, pageType: page.page_type };
+      }),
+    );
+    for (const r of results) {
+      if (r) map.set(r.shortId, { fullId: r.fullId, pageType: r.pageType });
+    }
+  }
   return map;
 }
 
-const CITATION_RE = /\[([a-f0-9]{8})\]/g;
+const CITATION_RE = /\[([a-f0-9]{8}(?:,\s*[a-f0-9]{8})*)\]/g;
 
 function injectCitationLinks(
   content: string,
@@ -78,14 +108,18 @@ function injectCitationLinks(
 ): string {
   const orderMap = new Map<string, number>();
   let nextNum = 1;
-  return content.replace(CITATION_RE, (_match, shortId: string) => {
-    const entry = citationMap.get(shortId);
-    if (!entry) return `[${shortId}]`;
-    if (!orderMap.has(shortId)) {
-      orderMap.set(shortId, nextNum++);
-    }
-    const num = orderMap.get(shortId)!;
-    return `[${num}](/pages/${entry.fullId}?cite=${entry.pageType})`;
+  return content.replace(CITATION_RE, (_match, group: string) => {
+    const ids = group.split(/,\s*/);
+    const parts = ids.map((shortId) => {
+      const entry = citationMap.get(shortId);
+      if (!entry) return `[${shortId}]`;
+      if (!orderMap.has(shortId)) {
+        orderMap.set(shortId, nextNum++);
+      }
+      const num = orderMap.get(shortId)!;
+      return `[${num}](/pages/${entry.fullId}?cite=${entry.pageType})`;
+    });
+    return parts.join(" ");
   });
 }
 
@@ -197,29 +231,31 @@ export default async function PageDetailPage({
 
   if (!detail) {
     return (
-      <main className="page-detail">
+      <>
         <style>{styles}</style>
-        <div className="not-found">
-          <span className="not-found-code">404</span>
-          <span className="not-found-msg">Page not found</span>
-          <Link href="/" className="back-link">
-            &larr; Home
-          </Link>
-        </div>
-      </main>
+        <main className="page-detail">
+          <div className="not-found">
+            <span className="not-found-code">404</span>
+            <span className="not-found-msg">Page not found</span>
+            <Link href="/" className="back-link">
+              &larr; Home
+            </Link>
+          </div>
+        </main>
+      </>
     );
   }
 
   const { page, links_from, links_to } = detail;
   const cfg = TYPE_CONFIG[page.page_type] || TYPE_CONFIG.source;
-  const citationMap = buildCitationMap(links_from, links_to);
+  const citationMap = await buildCitationMap(links_from, links_to, page.content);
   const processedContent = injectCitationLinks(page.content, citationMap);
 
   return (
-    <main className="page-detail">
+    <>
       <style>{styles}</style>
-
-      <Link href={`/projects/${page.project_id}`} className="back-link">
+      <main className="page-detail">
+        <Link href={`/projects/${page.project_id}`} className="back-link">
         &larr; Workspace
       </Link>
 
@@ -324,7 +360,8 @@ export default async function PageDetailPage({
           </>
         )}
       </footer>
-    </main>
+      </main>
+    </>
   );
 }
 

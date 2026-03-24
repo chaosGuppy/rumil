@@ -7,7 +7,6 @@ from rumil.settings import get_settings
 
 MovePreset = dict[CallType, Sequence[MoveType]]
 
-_ALL_MOVES = list(MoveType)
 _ALL_MOVES_EXCEPT_JUDGEMENT = [m for m in MoveType if m != MoveType.CREATE_JUDGEMENT]
 
 PRESETS: dict[str, MovePreset] = {
@@ -134,7 +133,7 @@ def get_moves_for_call(call_type: CallType) -> Sequence[MoveType] | None:
     or None if the call type is not in the preset (meaning "use all moves"
     or whatever the call type's own default is).
     """
-    preset_name = get_settings().move_preset
+    preset_name = get_settings().moves_preset
     preset = PRESETS.get(preset_name)
     if preset is None:
         raise ValueError(

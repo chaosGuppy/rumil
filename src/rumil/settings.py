@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     web_research_call_variant: str = _capture_field(default="default")
     prioritizer_variant: str = _capture_field(default="two_phase")
 
-    move_preset: str = _capture_field(default="default")
+    moves_preset: str = _capture_field(default="default")
 
     find_considerations_modes: str = _capture_field(
         default="alternate,abstract,concrete"

@@ -675,7 +675,7 @@ async def async_main():
     logging.getLogger("rumil").setLevel(log_level)
 
     if args.moves_preset is not None:
-        get_settings().move_preset = args.moves_preset
+        get_settings().moves_preset = args.moves_preset
     if args.smoke_test:
         get_settings().rumil_smoke_test = "1"
     if args.prod_db:

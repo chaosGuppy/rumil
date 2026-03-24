@@ -117,7 +117,7 @@ async def run_call(args: argparse.Namespace, db: DB, question_id: str) -> None:
 async def run(args: argparse.Namespace) -> None:
     settings = get_settings()
     if args.moves_preset is not None:
-        settings.move_preset = args.moves_preset
+        settings.moves_preset = args.moves_preset
     if args.smoke_test:
         settings.rumil_smoke_test = "1"
     if args.force_twophase_recurse:

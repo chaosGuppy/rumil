@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from rumil.context import format_page
 from rumil.database import DB
+from rumil.move_presets import get_moves_for_call
 from rumil.embeddings import embed_and_store_page
 from rumil.settings import get_settings
 from rumil.llm import (
@@ -572,8 +573,6 @@ async def run_call(
     )
 
     if available_moves is None:
-        from rumil.move_presets import get_moves_for_call
-
         preset_moves = get_moves_for_call(call_type)
         available_moves = (
             list(preset_moves) if preset_moves is not None else list(MoveType)

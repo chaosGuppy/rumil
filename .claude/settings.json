@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "jq -r '.tool_input.file_path' | { read -r f; [[ \"$f\" != *.py ]] && exit 0; uv run ruff check --fix \"$f\" && uv run ruff format \"$f\"; }"
+            "command": "jq -r '.tool_input.file_path' | { read -r f; [[ \"$f\" != *.py ]] && exit 0; uv run ruff check --fix --unfixable F401 \"$f\" && uv run ruff format \"$f\"; }"
           }
         ]
       },

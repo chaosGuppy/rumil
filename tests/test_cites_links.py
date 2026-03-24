@@ -48,13 +48,13 @@ async def second_source_page(tmp_db):
 
 
 async def test_cites_link_created_for_source(tmp_db, scout_call, source_page):
-    """A claim with source_ids should get a CITES link and no source_id in extra."""
+    """A claim with source_urls should get a CITES link and no source_id in extra."""
     state = MoveState(scout_call, tmp_db)
     tool = MOVES[MoveType.CREATE_CLAIM].bind(state)
     await tool.fn({
         "headline": "Blue sky from scattering",
         "content": "Rayleigh scattering causes blue sky.",
-        "source_ids": [source_page.id[:8]],
+        "source_urls": [source_page.id[:8]],
     })
 
     assert len(state.created_page_ids) == 1
@@ -69,8 +69,8 @@ async def test_cites_link_created_for_source(tmp_db, scout_call, source_page):
     assert "source_id" not in page.extra
 
 
-async def test_no_cites_link_when_source_ids_empty(tmp_db, scout_call):
-    """A claim without source_ids should have no CITES links."""
+async def test_no_cites_link_when_source_urls_empty(tmp_db, scout_call):
+    """A claim without source_urls should have no CITES links."""
     state = MoveState(scout_call, tmp_db)
     tool = MOVES[MoveType.CREATE_CLAIM].bind(state)
     await tool.fn({
@@ -94,7 +94,7 @@ async def test_multiple_cites_links(
     await tool.fn({
         "headline": "Combined scattering evidence",
         "content": "Multiple sources confirm scattering.",
-        "source_ids": [source_page.id[:8], second_source_page.id[:8]],
+        "source_urls": [source_page.id[:8], second_source_page.id[:8]],
     })
 
     assert len(state.created_page_ids) == 1
@@ -109,13 +109,13 @@ async def test_multiple_cites_links(
 async def test_cites_and_consideration_links_coexist(
     tmp_db, scout_call, question_page, source_page,
 ):
-    """A claim with both source_ids and links should create both link types."""
+    """A claim with both source_urls and links should create both link types."""
     state = MoveState(scout_call, tmp_db)
     tool = MOVES[MoveType.CREATE_CLAIM].bind(state)
     await tool.fn({
         "headline": "Sourced and linked claim",
         "content": "This claim cites a source and bears on a question.",
-        "source_ids": [source_page.id[:8]],
+        "source_urls": [source_page.id[:8]],
         "links": [{
             "question_id": question_page.id[:8],
             "strength": 3.5,

@@ -82,10 +82,10 @@ async def test_inline_citation_of_source_creates_cites_link(
     assert cites[0].to_page_id == source_page.id
 
 
-async def test_inline_citation_of_claim_creates_related_link(
+async def test_inline_citation_of_claim_creates_consideration_link(
     tmp_db, claim_page,
 ):
-    """An inline [shortid] citing a CLAIM page should produce a RELATED link."""
+    """An inline [shortid] citing a CLAIM from a CLAIM should produce a CONSIDERATION link."""
     citing_page = Page(
         page_type=PageType.CLAIM,
         layer=PageLayer.SQUIDGY,
@@ -95,19 +95,23 @@ async def test_inline_citation_of_claim_creates_related_link(
     )
     await tmp_db.save_page(citing_page)
 
-    linked = await extract_and_link_citations(citing_page.id, citing_page.content, tmp_db)
+    linked = await extract_and_link_citations(
+        citing_page.id, citing_page.content, tmp_db,
+        citing_page_type=PageType.CLAIM,
+    )
 
     assert linked == {claim_page.id}
-    links = await tmp_db.get_links_from(citing_page.id)
-    related = [l for l in links if l.link_type == LinkType.RELATED]
-    assert len(related) == 1
-    assert related[0].to_page_id == claim_page.id
+    consideration_links = await tmp_db.get_links_to(citing_page.id)
+    cons = [l for l in consideration_links if l.link_type == LinkType.CONSIDERATION]
+    assert len(cons) == 1
+    assert cons[0].from_page_id == claim_page.id
+    assert cons[0].to_page_id == citing_page.id
 
 
 async def test_multiple_inline_citations(
     tmp_db, claim_page, second_claim_page,
 ):
-    """Content with multiple [shortid] citations creates one link per cited page."""
+    """Content with multiple [shortid] citations creates one CONSIDERATION link per cited claim."""
     citing_page = Page(
         page_type=PageType.CLAIM,
         layer=PageLayer.SQUIDGY,
@@ -120,13 +124,16 @@ async def test_multiple_inline_citations(
     )
     await tmp_db.save_page(citing_page)
 
-    linked = await extract_and_link_citations(citing_page.id, citing_page.content, tmp_db)
+    linked = await extract_and_link_citations(
+        citing_page.id, citing_page.content, tmp_db,
+        citing_page_type=PageType.CLAIM,
+    )
 
     assert linked == {claim_page.id, second_claim_page.id}
-    links = await tmp_db.get_links_from(citing_page.id)
-    related = [l for l in links if l.link_type == LinkType.RELATED]
-    assert len(related) == 2
-    assert {l.to_page_id for l in related} == {claim_page.id, second_claim_page.id}
+    consideration_links = await tmp_db.get_links_to(citing_page.id)
+    cons = [l for l in consideration_links if l.link_type == LinkType.CONSIDERATION]
+    assert len(cons) == 2
+    assert {l.from_page_id for l in cons} == {claim_page.id, second_claim_page.id}
 
 
 async def test_judgement_citing_claim_creates_consideration_link(

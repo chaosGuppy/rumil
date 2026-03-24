@@ -21,9 +21,13 @@ log = logging.getLogger(__name__)
 
 
 class CreateClaimPayload(CreatePagePayload):
-    source_ids: Sequence[str] = Field(
+    source_urls: Sequence[str] = Field(
         default_factory=list,
-        description="Source page IDs this claim cites. Creates citation links.",
+        description=(
+            "URLs of web pages this claim is based on. Only use during web "
+            "research after fetching or searching web pages. Each URL becomes "
+            "a source page with a CITES link to this claim."
+        ),
     )
     links: list[ConsiderationLinkFields] = Field(
         default_factory=list,
@@ -48,35 +52,43 @@ async def execute(payload: CreateClaimPayload, call: Call, db: DB) -> MoveResult
             )
             continue
 
-        await db.save_link(PageLink(
-            from_page_id=result.created_page_id,
-            to_page_id=resolved,
-            link_type=LinkType.CONSIDERATION,
-            strength=link_spec.strength,
-            reasoning=link_spec.reasoning,
-            role=link_spec.role,
-        ))
+        await db.save_link(
+            PageLink(
+                from_page_id=result.created_page_id,
+                to_page_id=resolved,
+                link_type=LinkType.CONSIDERATION,
+                strength=link_spec.strength,
+                reasoning=link_spec.reasoning,
+                role=link_spec.role,
+            )
+        )
         log.info(
             "Inline consideration linked: %s -> %s (%.1f)",
-            result.created_page_id[:8], resolved[:8], link_spec.strength,
+            result.created_page_id[:8],
+            resolved[:8],
+            link_spec.strength,
         )
 
-    for sid in payload.source_ids:
+    for sid in payload.source_urls:
         resolved = await db.resolve_page_id(sid)
         if not resolved:
             log.warning(
-                "Citation link skipped: source %s not found", sid,
+                "Citation link skipped: source %s not found",
+                sid,
             )
             continue
 
-        await db.save_link(PageLink(
-            from_page_id=result.created_page_id,
-            to_page_id=resolved,
-            link_type=LinkType.CITES,
-        ))
+        await db.save_link(
+            PageLink(
+                from_page_id=result.created_page_id,
+                to_page_id=resolved,
+                link_type=LinkType.CITES,
+            )
+        )
         log.info(
             "Citation linked: %s -> %s",
-            result.created_page_id[:8], resolved[:8],
+            result.created_page_id[:8],
+            resolved[:8],
         )
 
     return result

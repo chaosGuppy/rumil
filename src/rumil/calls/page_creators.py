@@ -183,13 +183,17 @@ class MultiRoundLoop(PageCreator):
         self,
         max_rounds: int,
         fruit_threshold: int,
-        mode: FindConsiderationsMode,
+        mode: FindConsiderationsMode | None = None,
         available_moves: Sequence[MoveType] | None = None,
+        call_type: CallType = CallType.FIND_CONSIDERATIONS,
+        task_description: str | None = None,
     ) -> None:
         self._max_rounds = max_rounds
         self._fruit_threshold = fruit_threshold
         self._mode = mode
         self._available_moves = available_moves
+        self._call_type = call_type
+        self._task_description = task_description
 
     async def create_pages(
         self,
@@ -203,19 +207,24 @@ class MultiRoundLoop(PageCreator):
         )
         tools = [MOVES[mt].bind(infra.state) for mt in moves_list]
         tool_defs, _ = prepare_tools(tools)
-        system_prompt = build_system_prompt(CallType.FIND_CONSIDERATIONS.value)
+        system_prompt = build_system_prompt(self._call_type.value)
 
-        round_mode = _resolve_round_mode(self._mode, 0)
-        mode_instruction = (
-            _CONCRETE_INSTRUCTION
-            if round_mode == FindConsiderationsMode.CONCRETE
-            else ""
-        )
-        task = (
-            f"Scout for missing considerations on this question.{mode_instruction}\n\n"
-            "Question ID (use this when linking considerations): "
-            f"`{infra.question_id}`"
-        )
+        if self._task_description is not None:
+            task = self._task_description
+        else:
+            round_mode = _resolve_round_mode(
+                self._mode or FindConsiderationsMode.ALTERNATE, 0
+            )
+            mode_instruction = (
+                _CONCRETE_INSTRUCTION
+                if round_mode == FindConsiderationsMode.CONCRETE
+                else ""
+            )
+            task = (
+                f"Scout for missing considerations on this question.{mode_instruction}\n\n"
+                "Question ID (use this when linking considerations): "
+                f"`{infra.question_id}`"
+            )
         user_message = build_user_message(context.context_text, task)
 
         resume_messages: list[dict] = []
@@ -230,8 +239,6 @@ class MultiRoundLoop(PageCreator):
                 )
                 break
 
-            round_mode = _resolve_round_mode(self._mode, i)
-
             if i == 0:
                 agent_result = await run_agent_loop(
                     system_prompt,
@@ -244,11 +251,15 @@ class MultiRoundLoop(PageCreator):
                     cache=True,
                 )
             else:
-                mi = (
-                    _CONCRETE_INSTRUCTION
-                    if round_mode == FindConsiderationsMode.CONCRETE
-                    else ""
-                )
+                if self._mode is not None:
+                    round_mode = _resolve_round_mode(self._mode, i)
+                    mi = (
+                        _CONCRETE_INSTRUCTION
+                        if round_mode == FindConsiderationsMode.CONCRETE
+                        else ""
+                    )
+                else:
+                    mi = ""
                 continue_msg = _CONTINUE_TEMPLATE.format(
                     mode_instruction=mi,
                     question_id=infra.question_id,
@@ -268,6 +279,8 @@ class MultiRoundLoop(PageCreator):
             rounds_completed += 1
             resume_messages = list(agent_result.messages)
 
+            if i >= self._max_rounds - 1:
+                break
             last_fruit_score = await self._run_fruit_check(
                 infra,
                 system_prompt,

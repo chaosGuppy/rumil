@@ -539,11 +539,14 @@ class BaseOrchestrator(ABC):
         call_id: str | None = None,
         sequence_id: str | None = None,
         sequence_position: int | None = None,
+        max_rounds: int = 1,
+        fruit_threshold: int = 4,
     ) -> str | None:
-        """Run a simple (single-pass) call dispatch. Consumes 1 budget."""
-        if not await _consume_budget(self.db, force=force):
-            return None
+        """Run a call dispatch with optional multi-round support.
 
+        Budget consumption is handled internally by MultiRoundLoop
+        (one unit per round), matching how find_considerations works.
+        """
         call = await self.db.create_call(
             call_type,
             scope_page_id=question_id,
@@ -553,7 +556,12 @@ class BaseOrchestrator(ABC):
             sequence_position=sequence_position,
         )
         cls = registry['default']
-        instance = cls(question_id, call, self.db, broadcaster=self.broadcaster)
+        instance = cls(
+            question_id, call, self.db,
+            broadcaster=self.broadcaster,
+            max_rounds=max_rounds,
+            fruit_threshold=fruit_threshold,
+        )
         await instance.run()
         return call.id
 
@@ -687,57 +695,63 @@ class BaseOrchestrator(ABC):
             )
 
         elif isinstance(p, ScoutSubquestionsDispatchPayload):
-            log.info('Dispatch: scout_subquestions on %s — %s', d_label, p.reason)
+            log.info('Dispatch: scout_subquestions on %s (max_rounds=%d) — %s', d_label, p.max_rounds, p.reason)
             child_call_id = await self._run_simple_call_dispatch(
                 resolved, CallType.SCOUT_SUBQUESTIONS,
                 SCOUT_SUBQUESTIONS_CALL_CLASSES, parent_call_id,
                 force=force, call_id=call_id,
                 sequence_id=sequence_id, sequence_position=sequence_position,
+                max_rounds=p.max_rounds, fruit_threshold=p.fruit_threshold,
             )
 
         elif isinstance(p, ScoutEstimatesDispatchPayload):
-            log.info('Dispatch: scout_estimates on %s — %s', d_label, p.reason)
+            log.info('Dispatch: scout_estimates on %s (max_rounds=%d) — %s', d_label, p.max_rounds, p.reason)
             child_call_id = await self._run_simple_call_dispatch(
                 resolved, CallType.SCOUT_ESTIMATES,
                 SCOUT_ESTIMATES_CALL_CLASSES, parent_call_id,
                 force=force, call_id=call_id,
                 sequence_id=sequence_id, sequence_position=sequence_position,
+                max_rounds=p.max_rounds, fruit_threshold=p.fruit_threshold,
             )
 
         elif isinstance(p, ScoutHypothesesDispatchPayload):
-            log.info('Dispatch: scout_hypotheses on %s — %s', d_label, p.reason)
+            log.info('Dispatch: scout_hypotheses on %s (max_rounds=%d) — %s', d_label, p.max_rounds, p.reason)
             child_call_id = await self._run_simple_call_dispatch(
                 resolved, CallType.SCOUT_HYPOTHESES,
                 SCOUT_HYPOTHESES_CALL_CLASSES, parent_call_id,
                 force=force, call_id=call_id,
                 sequence_id=sequence_id, sequence_position=sequence_position,
+                max_rounds=p.max_rounds, fruit_threshold=p.fruit_threshold,
             )
 
         elif isinstance(p, ScoutAnalogiesDispatchPayload):
-            log.info('Dispatch: scout_analogies on %s — %s', d_label, p.reason)
+            log.info('Dispatch: scout_analogies on %s (max_rounds=%d) — %s', d_label, p.max_rounds, p.reason)
             child_call_id = await self._run_simple_call_dispatch(
                 resolved, CallType.SCOUT_ANALOGIES,
                 SCOUT_ANALOGIES_CALL_CLASSES, parent_call_id,
                 force=force, call_id=call_id,
                 sequence_id=sequence_id, sequence_position=sequence_position,
+                max_rounds=p.max_rounds, fruit_threshold=p.fruit_threshold,
             )
 
         elif isinstance(p, ScoutParadigmCasesDispatchPayload):
-            log.info('Dispatch: scout_paradigm_cases on %s — %s', d_label, p.reason)
+            log.info('Dispatch: scout_paradigm_cases on %s (max_rounds=%d) — %s', d_label, p.max_rounds, p.reason)
             child_call_id = await self._run_simple_call_dispatch(
                 resolved, CallType.SCOUT_PARADIGM_CASES,
                 SCOUT_PARADIGM_CASES_CALL_CLASSES, parent_call_id,
                 force=force, call_id=call_id,
                 sequence_id=sequence_id, sequence_position=sequence_position,
+                max_rounds=p.max_rounds, fruit_threshold=p.fruit_threshold,
             )
 
         elif isinstance(p, ScoutFactsToCheckDispatchPayload):
-            log.info('Dispatch: scout_facts_to_check on %s — %s', d_label, p.reason)
+            log.info('Dispatch: scout_facts_to_check on %s (max_rounds=%d) — %s', d_label, p.max_rounds, p.reason)
             child_call_id = await self._run_simple_call_dispatch(
                 resolved, CallType.SCOUT_FACTS_TO_CHECK,
                 SCOUT_FACTS_TO_CHECK_CALL_CLASSES, parent_call_id,
                 force=force, call_id=call_id,
                 sequence_id=sequence_id, sequence_position=sequence_position,
+                max_rounds=p.max_rounds, fruit_threshold=p.fruit_threshold,
             )
 
         elif isinstance(p, WebResearchDispatchPayload):

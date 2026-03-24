@@ -3,7 +3,10 @@
 from collections.abc import Sequence
 
 from rumil.calls.closing_reviewers import SinglePhaseScoutReview, TwoPhaseScoutReview
-from rumil.calls.context_builders import ScoutEmbeddingContext, FindConsiderationsGraphContext
+from rumil.calls.context_builders import (
+    ScoutEmbeddingContext,
+    FindConsiderationsGraphContext,
+)
 from rumil.calls.page_creators import MultiRoundLoop
 from rumil.calls.stages import CallRunner, ClosingReviewer, ContextBuilder, PageCreator
 from rumil.database import DB
@@ -32,15 +35,17 @@ class FindConsiderationsCall(CallRunner):
         up_to_stage: CallStage | None = None,
     ):
         call.call_params = {
-            'mode': mode.value,
-            'max_rounds': max_rounds,
-            'fruit_threshold': fruit_threshold,
+            "mode": mode.value,
+            "max_rounds": max_rounds,
+            "fruit_threshold": fruit_threshold,
         }
         self._mode = mode
         self._max_rounds = max_rounds
         self._fruit_threshold = fruit_threshold
         self._context_page_ids = context_page_ids
-        super().__init__(question_id, call, db, broadcaster=broadcaster, up_to_stage=up_to_stage)
+        super().__init__(
+            question_id, call, db, broadcaster=broadcaster, up_to_stage=up_to_stage
+        )
 
     @property
     def rounds_completed(self) -> int:
@@ -53,7 +58,10 @@ class FindConsiderationsCall(CallRunner):
 
     def _make_page_creator(self) -> PageCreator:
         return MultiRoundLoop(
-            self._max_rounds, self._fruit_threshold, self._mode,
+            self._max_rounds,
+            self._fruit_threshold,
+            self._mode,
+            available_moves=self._resolve_available_moves(),
         )
 
     def _make_closing_reviewer(self) -> ClosingReviewer:
@@ -61,9 +69,9 @@ class FindConsiderationsCall(CallRunner):
 
     def task_description(self) -> str:
         return (
-            'Scout for missing considerations on this question.\n\n'
-            'Question ID (use this when linking considerations): '
-            f'`{self.infra.question_id}`'
+            "Scout for missing considerations on this question.\n\n"
+            "Question ID (use this when linking considerations): "
+            f"`{self.infra.question_id}`"
         )
 
 

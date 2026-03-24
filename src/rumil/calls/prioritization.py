@@ -9,7 +9,12 @@ from rumil.calls.common import (
 )
 from collections.abc import Sequence
 
-from rumil.calls.dispatches import DISPATCH_DEFS, DispatchDef, filter_mode_schema, make_mode_validator
+from rumil.calls.dispatches import (
+    DISPATCH_DEFS,
+    DispatchDef,
+    filter_mode_schema,
+    make_mode_validator,
+)
 from rumil.context import build_prioritization_context, collect_subtree_ids
 from rumil.database import DB
 from rumil.page_graph import PageGraph
@@ -19,7 +24,11 @@ from rumil.moves.base import MoveState
 from rumil.moves.create_question import PRIORITIZATION_MOVE
 from rumil.moves.registry import MOVES
 from rumil.settings import get_settings
-from rumil.tracing.trace_events import ContextBuiltEvent, DispatchTraceItem, DispatchesPlannedEvent
+from rumil.tracing.trace_events import (
+    ContextBuiltEvent,
+    DispatchTraceItem,
+    DispatchesPlannedEvent,
+)
 from rumil.tracing.tracer import CallTrace
 
 log = logging.getLogger(__name__)
@@ -52,10 +61,17 @@ async def run_prioritization_call(
     await db.update_call_status(call.id, CallStatus.RUNNING)
 
     if available_moves is None:
-        available_moves = list(MoveType)
+        from rumil.move_presets import get_moves_for_call
+
+        preset_moves = get_moves_for_call(CallType.PRIORITIZATION)
+        available_moves = (
+            list(preset_moves) if preset_moves is not None else list(MoveType)
+        )
 
     state = MoveState(call, db)
-    system_prompt = system_prompt_override or build_system_prompt(CallType.PRIORITIZATION.value)
+    system_prompt = system_prompt_override or build_system_prompt(
+        CallType.PRIORITIZATION.value
+    )
 
     allowed_fc_modes = get_settings().allowed_find_considerations_modes
     state._dispatch_validators.append(make_mode_validator(allowed_fc_modes))
@@ -78,7 +94,9 @@ async def run_prioritization_call(
         selected_defs.extend(extra_dispatch_defs)
     for ddef in selected_defs:
         tool = ddef.bind(
-            state, subtree_ids, short_id_map,
+            state,
+            subtree_ids,
+            short_id_map,
             scope_question_id=call.scope_page_id,
         )
         if ddef.call_type == CallType.FIND_CONSIDERATIONS:
@@ -88,7 +106,9 @@ async def run_prioritization_call(
     user_message = build_user_message(context_text, task_description)
 
     agent_result = await run_single_call(
-        system_prompt, user_message, tools,
+        system_prompt,
+        user_message,
+        tools,
         call_id=call.id,
         phase="prioritization",
         db=db,
@@ -99,7 +119,8 @@ async def run_prioritization_call(
     log.info(
         "run_prioritization_call complete: pages_created=%d, dispatches=%d, moves=%d",
         len(state.created_page_ids),
-        len(state.dispatches), len(state.moves),
+        len(state.dispatches),
+        len(state.moves),
     )
     return RunCallResult(
         created_page_ids=state.created_page_ids,
@@ -123,11 +144,15 @@ async def run_prioritization(
     trace = CallTrace(call.id, db, broadcaster=broadcaster)
     log.info(
         "Prioritization starting: call=%s, question=%s, budget=%d",
-        call.id[:8], scope_question_id[:8], budget,
+        call.id[:8],
+        scope_question_id[:8],
+        budget,
     )
     graph = await PageGraph.load(db)
     context_text, short_id_map = await build_prioritization_context(
-        db, scope_question_id=scope_question_id, graph=graph,
+        db,
+        scope_question_id=scope_question_id,
+        graph=graph,
     )
     subtree_ids = await collect_subtree_ids(scope_question_id, db, graph=graph)
     await trace.record(ContextBuiltEvent(budget=budget))
@@ -152,15 +177,17 @@ async def run_prioritization(
         trace=trace,
     )
 
-    await trace.record(DispatchesPlannedEvent(
-        dispatches=[
-            DispatchTraceItem(
-                call_type=d.call_type.value,
-                **d.payload.model_dump(exclude_defaults=True),
-            )
-            for d in result.dispatches
-        ],
-    ))
+    await trace.record(
+        DispatchesPlannedEvent(
+            dispatches=[
+                DispatchTraceItem(
+                    call_type=d.call_type.value,
+                    **d.payload.model_dump(exclude_defaults=True),
+                )
+                for d in result.dispatches
+            ],
+        )
+    )
 
     summary = {
         "dispatches": result.dispatches,
@@ -170,7 +197,9 @@ async def run_prioritization(
 
     log.info(
         "Prioritization complete: call=%s, dispatches=%d, moves=%d",
-        call.id[:8], len(result.dispatches), len(result.moves),
+        call.id[:8],
+        len(result.dispatches),
+        len(result.moves),
     )
     await mark_call_completed(
         call,

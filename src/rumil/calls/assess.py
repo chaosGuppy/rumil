@@ -20,7 +20,9 @@ class AssessCall(CallRunner):
 
     def _make_page_creator(self) -> PageCreator:
         return SimpleAgentLoop(
-            self.call_type, self.task_description(),
+            self.call_type,
+            self.task_description(),
+            available_moves=self._resolve_available_moves(),
         )
 
     def _make_closing_reviewer(self) -> ClosingReviewer:
@@ -28,11 +30,11 @@ class AssessCall(CallRunner):
 
     def task_description(self) -> str:
         return (
-            'Assess this question and render a judgement.\n\n'
-            f'Question ID: `{self.infra.question_id}`\n\n'
-            'Synthesise the considerations, weigh evidence on multiple sides, '
-            'and produce a judgement with structured confidence. '
-            'Even if uncertain, commit to a position.'
+            "Assess this question and render a judgement.\n\n"
+            f"Question ID: `{self.infra.question_id}`\n\n"
+            "Synthesise the considerations, weigh evidence on multiple sides, "
+            "and produce a judgement with structured confidence. "
+            "Even if uncertain, commit to a position."
         )
 
 

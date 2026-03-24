@@ -30,15 +30,21 @@ class WebResearchCall(CallRunner):
     ):
         self._allowed_domains = allowed_domains
         super().__init__(
-            question_id, call, db,
-            broadcaster=broadcaster, up_to_stage=up_to_stage,
+            question_id,
+            call,
+            db,
+            broadcaster=broadcaster,
+            up_to_stage=up_to_stage,
         )
 
     def _make_context_builder(self) -> ContextBuilder:
         return WebResearchEmbeddingContext()
 
     def _make_page_creator(self) -> PageCreator:
-        return WebResearchLoop(allowed_domains=self._allowed_domains)
+        return WebResearchLoop(
+            allowed_domains=self._allowed_domains,
+            available_moves=self._resolve_available_moves(),
+        )
 
     def _make_closing_reviewer(self) -> ClosingReviewer:
         assert isinstance(self.page_creator, WebResearchLoop)
@@ -46,8 +52,8 @@ class WebResearchCall(CallRunner):
 
     def task_description(self) -> str:
         return (
-            'Search the web for evidence relevant to this question and create '
-            'source-grounded claims.\n\n'
-            'Question ID (use this when linking considerations): '
-            f'`{self.infra.question_id}`'
+            "Search the web for evidence relevant to this question and create "
+            "source-grounded claims.\n\n"
+            "Question ID (use this when linking considerations): "
+            f"`{self.infra.question_id}`"
         )

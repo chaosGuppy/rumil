@@ -28,8 +28,9 @@ class ScoutHypothesesCall(CallRunner):
 
     def _make_page_creator(self) -> PageCreator:
         return SimpleAgentLoop(
-            self.call_type, self.task_description(),
-            available_moves=self.available_moves,
+            self.call_type,
+            self.task_description(),
+            available_moves=self._resolve_available_moves(),
         )
 
     def _make_closing_reviewer(self) -> ClosingReviewer:
@@ -37,9 +38,9 @@ class ScoutHypothesesCall(CallRunner):
 
     def task_description(self) -> str:
         return (
-            'Identify hypotheses that should be explored as potential answers '
-            'to the parent question. For each hypothesis, create a subquestion '
+            "Identify hypotheses that should be explored as potential answers "
+            "to the parent question. For each hypothesis, create a subquestion "
             'of the form "What should we make of the hypothesis that ...?" '
-            'and link it to the parent.\n\n'
-            f'Question ID: `{self.infra.question_id}`'
+            "and link it to the parent.\n\n"
+            f"Question ID: `{self.infra.question_id}`"
         )

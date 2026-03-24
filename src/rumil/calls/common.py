@@ -61,11 +61,11 @@ PAGE_ID_FIELDS: dict[MoveType, list[str]] = {
 
 
 PHASE1_TASK = (
-    'Perform your preliminary analysis now. Review the workspace map above and '
-    'load all pages you expect to want during your main task — err on the side of '
-    'loading more rather than fewer. This is your only chance to gather context '
-    'before the main task begins; load everything relevant in one go. '
-    'The main task description will follow in the next turn.'
+    "Perform your preliminary analysis now. Review the workspace map above and "
+    "load all pages you expect to want during your main task — err on the side of "
+    "loading more rather than fewer. This is your only chance to gather context "
+    "before the main task begins; load everything relevant in one go. "
+    "The main task description will follow in the next turn."
 )
 
 
@@ -81,36 +81,46 @@ async def execute_tool_uses(
         if fn is None:
             result_str = f"Unknown tool: {tu.name}"
             log.warning("Unknown tool called by LLM: %s", tu.name)
-            tool_results.append({
-                "type": "tool_result",
-                "tool_use_id": tu.id,
-                "content": result_str,
-                "is_error": True,
-            })
+            tool_results.append(
+                {
+                    "type": "tool_result",
+                    "tool_use_id": tu.id,
+                    "content": result_str,
+                    "is_error": True,
+                }
+            )
         else:
             try:
                 result_str = await fn(tu.input)
             except Exception as e:
                 log.error(
-                    "Tool %s raised an exception: %s", tu.name, e, exc_info=True,
+                    "Tool %s raised an exception: %s",
+                    tu.name,
+                    e,
+                    exc_info=True,
                 )
                 result_str = f"Error: {e}"
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": tu.id,
-                    "content": result_str,
-                    "is_error": True,
-                })
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tu.id,
+                        "content": result_str,
+                        "is_error": True,
+                    }
+                )
             else:
                 log.debug(
                     "Tool %s returned: %s",
-                    tu.name, result_str[:200] if result_str else "(empty)",
+                    tu.name,
+                    result_str[:200] if result_str else "(empty)",
                 )
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": tu.id,
-                    "content": result_str,
-                })
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tu.id,
+                        "content": result_str,
+                    }
+                )
         tool_calls.append(ToolCall(name=tu.name, input=tu.input, result=result_str))
     return tool_calls, tool_results
 
@@ -172,22 +182,33 @@ async def run_single_call(
 
     log.debug(
         "run_single_call: phase=%s, tools=%d, resuming=%s",
-        phase, len(tool_defs), messages is not None,
+        phase,
+        len(tool_defs),
+        messages is not None,
     )
 
     msg_list: list[dict] = (
-        messages if messages is not None
+        messages
+        if messages is not None
         else [{"role": "user", "content": user_message}]
     )
     all_warnings: list[str] = []
     meta = LLMExchangeMetadata(
-        call_id=call_id, phase=phase, trace=trace,
+        call_id=call_id,
+        phase=phase,
+        trace=trace,
         user_message=user_message if user_message else None,
     )
     api_resp = await call_api(
-        client, settings.model, system_prompt, msg_list,
-        tool_defs or None, warnings=all_warnings,
-        metadata=meta, db=db, cache=cache,
+        client,
+        settings.model,
+        system_prompt,
+        msg_list,
+        tool_defs or None,
+        warnings=all_warnings,
+        metadata=meta,
+        db=db,
+        cache=cache,
     )
     response = api_resp.message
 
@@ -222,7 +243,8 @@ async def run_single_call(
 
     log.info(
         "run_single_call complete: %d tool calls, %d text chars",
-        len(all_tool_calls), sum(len(t) for t in text_parts),
+        len(all_tool_calls),
+        sum(len(t) for t in text_parts),
     )
     return AgentResult(
         text="\n".join(text_parts),
@@ -259,8 +281,8 @@ async def run_agent_loop(
     if not user_message and not messages:
         raise ValueError("Either user_message or messages must be provided")
     settings = get_settings()
-    effective_rounds = max_rounds if max_rounds is not None else (
-        2 if settings.is_smoke_test else 3
+    effective_rounds = (
+        max_rounds if max_rounds is not None else (2 if settings.is_smoke_test else 3)
     )
     client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
     if tools is not None:
@@ -270,11 +292,13 @@ async def run_agent_loop(
         tool_fns = {}
     log.debug(
         "run_agent_loop starting: max_rounds=%d, resuming=%s",
-        effective_rounds, messages is not None,
+        effective_rounds,
+        messages is not None,
     )
 
     msg_list: list[dict] = (
-        messages if messages is not None
+        messages
+        if messages is not None
         else [{"role": "user", "content": user_message}]
     )
     text_parts: list[str] = []
@@ -286,14 +310,22 @@ async def run_agent_loop(
     for round_num in range(effective_rounds):
         log.debug("run_agent_loop round %d/%d", round_num + 1, effective_rounds)
         meta = LLMExchangeMetadata(
-            call_id=call_id, phase="inner_loop", trace=trace,
+            call_id=call_id,
+            phase="inner_loop",
+            trace=trace,
             round_num=round_num,
             user_message=user_message if round_num == 0 else None,
         )
         api_resp = await call_api(
-            client, settings.model, system_prompt, msg_list,
-            tool_defs or None, warnings=all_warnings,
-            metadata=meta, db=db, cache=cache,
+            client,
+            settings.model,
+            system_prompt,
+            msg_list,
+            tool_defs or None,
+            warnings=all_warnings,
+            metadata=meta,
+            db=db,
+            cache=cache,
         )
         response = api_resp.message
 
@@ -309,7 +341,9 @@ async def run_agent_loop(
         if response.stop_reason == "end_turn" or not tool_uses:
             log.debug(
                 "run_agent_loop ending: stop_reason=%s, tool_uses=%d, rounds_used=%d",
-                response.stop_reason, len(tool_uses), round_num + 1,
+                response.stop_reason,
+                len(tool_uses),
+                round_num + 1,
             )
             rr = RoundRecord(
                 round=round_num,
@@ -325,7 +359,9 @@ async def run_agent_loop(
 
         log.debug(
             "run_agent_loop round %d: %d tool call(s): %s",
-            round_num + 1, len(tool_uses), [tu.name for tu in tool_uses],
+            round_num + 1,
+            len(tool_uses),
+            [tu.name for tu in tool_uses],
         )
 
         round_tool_calls, tool_results = await execute_tool_uses(tool_uses, tool_fns)
@@ -367,7 +403,9 @@ async def run_agent_loop(
 
     log.info(
         "run_agent_loop complete: %d rounds, %d tool calls, %d text chars",
-        round_num + 1, len(all_tool_calls), sum(len(t) for t in text_parts),
+        round_num + 1,
+        len(all_tool_calls),
+        sum(len(t) for t in text_parts),
     )
     return AgentResult(
         text="\n".join(text_parts),
@@ -454,7 +492,9 @@ async def _format_loaded_pages(page_ids: list[str], db: DB) -> str:
     for pid in page_ids:
         page = await db.get_page(pid)
         if page:
-            parts.append(f"### Page `{pid[:8]}`\n\n{await format_page(page, PageDetail.HEADLINE, db=db)}")
+            parts.append(
+                f"### Page `{pid[:8]}`\n\n{await format_page(page, PageDetail.HEADLINE, db=db)}"
+            )
     return "\n\n---\n\n".join(parts)
 
 
@@ -526,12 +566,18 @@ async def run_call(
 
     log.info(
         "run_call: type=%s, call=%s, scope=%s",
-        call_type.value, call.id[:8],
+        call_type.value,
+        call.id[:8],
         call.scope_page_id[:8] if call.scope_page_id else None,
     )
 
     if available_moves is None:
-        available_moves = list(MoveType)
+        from rumil.move_presets import get_moves_for_call
+
+        preset_moves = get_moves_for_call(call_type)
+        available_moves = (
+            list(preset_moves) if preset_moves is not None else list(MoveType)
+        )
 
     if state is None:
         state = MoveState(call, db)
@@ -539,17 +585,24 @@ async def run_call(
 
     phase1_ids: list[str] = []
     phase1_ids = await _run_phase1(
-        system_prompt, context_text, call.id, state, db, trace=trace,
+        system_prompt,
+        context_text,
+        call.id,
+        state,
+        db,
+        trace=trace,
     )
     if phase1_ids:
         extra_text = await _format_loaded_pages(phase1_ids, db)
-        context_text = context_text + '\n\n## Loaded Pages\n\n' + extra_text
+        context_text = context_text + "\n\n## Loaded Pages\n\n" + extra_text
 
     tools = [MOVES[mt].bind(state) for mt in available_moves]
     user_message = build_user_message(context_text, task_description)
 
     agent_result = await run_agent_loop(
-        system_prompt, user_message, tools,
+        system_prompt,
+        user_message,
+        tools,
         call_id=call.id,
         db=db,
         state=state,
@@ -559,8 +612,10 @@ async def run_call(
 
     log.info(
         "run_call complete: type=%s, pages_created=%d, dispatches=%d, moves=%d",
-        call_type.value, len(state.created_page_ids),
-        len(state.dispatches), len(state.moves),
+        call_type.value,
+        len(state.created_page_ids),
+        len(state.dispatches),
+        len(state.moves),
     )
     return RunCallResult(
         created_page_ids=state.created_page_ids,
@@ -630,12 +685,14 @@ async def moves_to_trace_event(
                 seen.add(pr.id)
         payload_data = m.payload.model_dump(exclude_none=True, exclude_defaults=True)
         extra = trace_extras[i] if trace_extras and i < len(trace_extras) else {}
-        trace_items.append(MoveTraceItem(
-            type=m.move_type.value,
-            page_refs=created_refs,
-            **payload_data,
-            **extra,
-        ))
+        trace_items.append(
+            MoveTraceItem(
+                type=m.move_type.value,
+                page_refs=created_refs,
+                **payload_data,
+                **extra,
+            )
+        )
     return MovesExecutedEvent(moves=trace_items)
 
 
@@ -686,12 +743,12 @@ async def run_closing_review(
                 page_lines.append(f'  - `{pid[:8]}`: "{page.headline[:120]}"')
         if page_lines:
             page_rating_note = (
-                '\n\nThe following pages were loaded into your context beyond the base '
-                'working context:\n'
-                + '\n'.join(page_lines)
-                + '\n\nPlease include a rating for each in your page_ratings. '
-                'Scores: -1 = actively confusing, 0 = didn\'t help, '
-                '1 = helped, 2 = extremely helpful.'
+                "\n\nThe following pages were loaded into your context beyond the base "
+                "working context:\n"
+                + "\n".join(page_lines)
+                + "\n\nPlease include a rating for each in your page_ratings. "
+                "Scores: -1 = actively confusing, 0 = didn't help, "
+                "1 = helped, 2 = extremely helpful."
             )
 
     page_summary_note = ""
@@ -703,12 +760,12 @@ async def run_closing_review(
                 created_lines.append(f'  - `{pid[:8]}`: "{page.headline[:120]}"')
         if created_lines:
             page_summary_note = (
-                '\n\nYou created the following pages during this call:\n'
-                + '\n'.join(created_lines)
-                + '\n\nFor each, provide an abstract (~200 words, fully self-contained) '
-                'in your page_summaries. '
-                'These will be read by other LLM instances with no prior context, so do not '
-                'assume any background knowledge.'
+                "\n\nYou created the following pages during this call:\n"
+                + "\n".join(created_lines)
+                + "\n\nFor each, provide an abstract (~200 words, fully self-contained) "
+                "in your page_summaries. "
+                "These will be read by other LLM instances with no prior context, so do not "
+                "assume any background knowledge."
             )
 
     review_task = (
@@ -721,15 +778,23 @@ async def run_closing_review(
 
     log.debug(
         "Closing review starting: call=%s, type=%s, loaded_pages=%d, created_pages=%d",
-        call.id[:8], call.call_type.value,
-        len(loaded_page_ids or []), len(created_page_ids or []),
+        call.id[:8],
+        call.call_type.value,
+        len(loaded_page_ids or []),
+        len(created_page_ids or []),
     )
     try:
         user_message = build_user_message(context_text, review_task)
-        meta = LLMExchangeMetadata(
-            call_id=call.id, phase="closing_review",
-            trace=trace, user_message=user_message,
-        ) if db else None
+        meta = (
+            LLMExchangeMetadata(
+                call_id=call.id,
+                phase="closing_review",
+                trace=trace,
+                user_message=user_message,
+            )
+            if db
+            else None
+        )
         result = await structured_call(
             system_prompt=REVIEW_SYSTEM_PROMPT,
             user_message=user_message,
@@ -750,7 +815,9 @@ async def run_closing_review(
                     pid = await db.resolve_page_id(r.get("page_id", ""))
                     score = r.get("score")
                     if pid and isinstance(score, int):
-                        await db.save_page_rating(pid, call.id, score, r.get("note", ""))
+                        await db.save_page_rating(
+                            pid, call.id, score, r.get("note", "")
+                        )
                 for s in review.get("page_summaries", []):
                     pid = await db.resolve_page_id(s.get("page_id", ""))
                     if pid:
@@ -764,11 +831,14 @@ async def run_closing_review(
                             if page:
                                 try:
                                     await embed_and_store_page(
-                                        db, page, field_name="abstract",
+                                        db,
+                                        page,
+                                        field_name="abstract",
                                     )
                                 except Exception:
                                     log.warning(
-                                        "Failed to re-embed page %s", pid[:8],
+                                        "Failed to re-embed page %s",
+                                        pid[:8],
                                         exc_info=True,
                                     )
         else:
@@ -776,7 +846,10 @@ async def run_closing_review(
         return review
     except Exception as e:
         log.error(
-            "Closing review failed for call=%s: %s", call.id[:8], e, exc_info=True,
+            "Closing review failed for call=%s: %s",
+            call.id[:8],
+            e,
+            exc_info=True,
         )
         return None
 
@@ -793,4 +866,3 @@ def format_moves_for_review(moves: list[Move]) -> str:
         else:
             parts.append(f"- {m.move_type.value}")
     return "\n".join(parts)
-

@@ -11,6 +11,7 @@ from typing import ClassVar
 from rumil.calls.common import mark_call_completed
 from rumil.database import DB
 from rumil.models import Call, CallStage, CallStatus, CallType, Dispatch, Move, MoveType
+from rumil.move_presets import get_moves_for_call
 from rumil.moves.base import MoveState
 from rumil.tracing.tracer import CallTrace
 
@@ -60,7 +61,9 @@ class ContextBuilder(ABC):
 class PageCreator(ABC):
     @abstractmethod
     async def create_pages(
-        self, infra: CallInfra, context: ContextResult,
+        self,
+        infra: CallInfra,
+        context: ContextResult,
     ) -> CreationResult: ...
 
 
@@ -120,6 +123,13 @@ class CallRunner(ABC):
     def _make_closing_reviewer(self) -> ClosingReviewer:
         return self.closing_reviewer_cls()
 
+    def _resolve_available_moves(self) -> Sequence[MoveType] | None:
+        """Return moves from the active preset, falling back to class-level available_moves."""
+        preset_moves = get_moves_for_call(self.call_type)
+        if preset_moves is not None:
+            return preset_moves
+        return self.available_moves
+
     @property
     def review(self) -> dict:
         """Access the call's review_json for backward compatibility."""
@@ -137,26 +147,34 @@ class CallRunner(ABC):
 
     async def run(self) -> None:
         await self.infra.db.update_call_status(
-            self.infra.call.id, CallStatus.RUNNING,
+            self.infra.call.id,
+            CallStatus.RUNNING,
             call_params=self.infra.call.call_params,
         )
 
         self.context_result = await self.context_builder.build_context(self.infra)
         if self.up_to_stage == CallStage.BUILD_CONTEXT:
             await mark_call_completed(
-                self.infra.call, self.infra.db, 'Stopped after build_context',
+                self.infra.call,
+                self.infra.db,
+                "Stopped after build_context",
             )
             return
 
         self.creation_result = await self.page_creator.create_pages(
-            self.infra, self.context_result,
+            self.infra,
+            self.context_result,
         )
         if self.up_to_stage == CallStage.CREATE_PAGES:
             await mark_call_completed(
-                self.infra.call, self.infra.db, 'Stopped after create_pages',
+                self.infra.call,
+                self.infra.db,
+                "Stopped after create_pages",
             )
             return
 
         await self.closing_reviewer.closing_review(
-            self.infra, self.context_result, self.creation_result,
+            self.infra,
+            self.context_result,
+            self.creation_result,
         )

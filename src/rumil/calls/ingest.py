@@ -28,15 +28,19 @@ class IngestCall(CallRunner):
     ):
         self._source_page = source_page
         extra = source_page.extra or {}
-        self._filename = extra.get('filename', source_page.id[:8])
-        super().__init__(question_id, call, db, broadcaster=broadcaster, up_to_stage=up_to_stage)
+        self._filename = extra.get("filename", source_page.id[:8])
+        super().__init__(
+            question_id, call, db, broadcaster=broadcaster, up_to_stage=up_to_stage
+        )
 
     def _make_context_builder(self) -> ContextBuilder:
         return IngestGraphContext(self._source_page)
 
     def _make_page_creator(self) -> PageCreator:
         return SimpleAgentLoop(
-            self.call_type, self.task_description(),
+            self.call_type,
+            self.task_description(),
+            available_moves=self._resolve_available_moves(),
         )
 
     def _make_closing_reviewer(self) -> ClosingReviewer:
@@ -44,9 +48,9 @@ class IngestCall(CallRunner):
 
     def task_description(self) -> str:
         return (
-            'Extract considerations from the source document above for this question.\n\n'
-            f'Question ID: `{self.infra.question_id}`\n'
-            f'Source page ID: `{self._source_page.id}`'
+            "Extract considerations from the source document above for this question.\n\n"
+            f"Question ID: `{self.infra.question_id}`\n"
+            f"Source page ID: `{self._source_page.id}`"
         )
 
 

@@ -53,18 +53,22 @@ async def run_call(args: argparse.Namespace, db: DB, question_id: str) -> None:
     """Execute a single call (find-considerations/assess/prioritize) against the given DB."""
     settings = get_settings()
 
-
     call_type = args.call_type
     up_to_stage = CallStage(args.up_to_stage) if args.up_to_stage else None
 
     if call_type == "find-considerations":
         mode = FindConsiderationsMode(args.mode)
         call = await db.create_call(
-            CallType.FIND_CONSIDERATIONS, scope_page_id=question_id,
+            CallType.FIND_CONSIDERATIONS,
+            scope_page_id=question_id,
         )
-        cls = FIND_CONSIDERATIONS_CALL_CLASSES[settings.find_considerations_call_variant]
+        cls = FIND_CONSIDERATIONS_CALL_CLASSES[
+            settings.find_considerations_call_variant
+        ]
         scout = cls(
-            question_id, call, db,
+            question_id,
+            call,
+            db,
             max_rounds=args.max_rounds,
             fruit_threshold=args.fruit_threshold,
             mode=mode,
@@ -74,7 +78,8 @@ async def run_call(args: argparse.Namespace, db: DB, question_id: str) -> None:
 
     elif call_type == "assess":
         call = await db.create_call(
-            CallType.ASSESS, scope_page_id=question_id,
+            CallType.ASSESS,
+            scope_page_id=question_id,
         )
         cls = ASSESS_CALL_CLASSES[settings.assess_call_variant]
         assess = cls(question_id, call, db, up_to_stage=up_to_stage)
@@ -82,11 +87,15 @@ async def run_call(args: argparse.Namespace, db: DB, question_id: str) -> None:
 
     elif call_type == "web-research":
         call = await db.create_call(
-            CallType.WEB_RESEARCH, scope_page_id=question_id,
+            CallType.WEB_RESEARCH,
+            scope_page_id=question_id,
         )
         cls = WEB_RESEARCH_CALL_CLASSES[settings.web_research_call_variant]
         web_research = cls(
-            question_id, call, db, up_to_stage=up_to_stage,
+            question_id,
+            call,
+            db,
+            up_to_stage=up_to_stage,
         )
         await web_research.run()
 
@@ -107,6 +116,8 @@ async def run_call(args: argparse.Namespace, db: DB, question_id: str) -> None:
 
 async def run(args: argparse.Namespace) -> None:
     settings = get_settings()
+    if args.moves_preset is not None:
+        settings.move_preset = args.moves_preset
     if args.smoke_test:
         settings.rumil_smoke_test = "1"
     if args.force_twophase_recurse:
@@ -183,9 +194,9 @@ async def _run_ab(
     parent_settings = get_settings()
 
     async def run_arm(arm_label: str, env_file: str) -> None:
-        arm_settings = Settings.from_env_files('.env', env_file)
+        arm_settings = Settings.from_env_files(".env", env_file)
         if parent_settings.is_smoke_test:
-            arm_settings.rumil_smoke_test = '1'
+            arm_settings.rumil_smoke_test = "1"
         _settings_var.set(arm_settings)
 
         arm_db = await DB.create(
@@ -196,7 +207,7 @@ async def _run_ab(
         )
         config = arm_settings.capture_config()
         await arm_db.create_run(
-            name=f'{name} (arm {arm_label})',
+            name=f"{name} (arm {arm_label})",
             question_id=question_id,
             config=config,
             ab_arm=arm_label,
@@ -209,8 +220,8 @@ async def _run_ab(
         print(f"\nArm {arm_label} complete: {used}/{total} budget used")
 
     async with asyncio.TaskGroup() as tg:
-        tg.create_task(run_arm('a', '.a.env'))
-        tg.create_task(run_arm('b', '.b.env'))
+        tg.create_task(run_arm("a", ".a.env"))
+        tg.create_task(run_arm("b", ".b.env"))
 
     print(f"\nAB test complete: {frontend}/ab-traces/{ab_run_id}")
 
@@ -218,47 +229,67 @@ async def _run_ab(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run a single call end-to-end.")
     parser.add_argument(
-        "call_type", choices=["find-considerations", "assess", "prioritize", "web-research"],
+        "call_type",
+        choices=["find-considerations", "assess", "prioritize", "web-research"],
         help="Type of call to run",
     )
     parser.add_argument(
-        "question_text", nargs="?", default=None,
+        "question_text",
+        nargs="?",
+        default=None,
         help="Question text (creates a new question)",
     )
     parser.add_argument("--question-id", help="Existing question UUID")
     parser.add_argument("--budget", type=int, default=5, help="Budget (default: 5)")
     parser.add_argument(
-        "--mode", default="alternate",
+        "--mode",
+        default="alternate",
         choices=["alternate", "abstract", "concrete"],
         help="Find-considerations mode (default: alternate)",
     )
     parser.add_argument(
-        "--max-rounds", type=int, default=5, help="Max rounds (default: 5)",
+        "--max-rounds",
+        type=int,
+        default=5,
+        help="Max rounds (default: 5)",
     )
     parser.add_argument(
-        "--fruit-threshold", type=int, default=4,
+        "--fruit-threshold",
+        type=int,
+        default=4,
         help="Fruit threshold for stopping (default: 4)",
     )
     parser.add_argument(
-        "--smoke-test", action="store_true",
+        "--smoke-test",
+        action="store_true",
         help="Use smoke-test settings (haiku model, reduced rounds)",
     )
     parser.add_argument(
-        "--force-twophase-recurse", action="store_true",
+        "--force-twophase-recurse",
+        action="store_true",
         dest="force_twophase_recurse",
         help="Force the two-phase orchestrator to dispatch two recurse calls",
     )
     parser.add_argument(
-        "--ab", action="store_true",
+        "--ab",
+        action="store_true",
         help="Run the call as an A/B test (requires .a.env and .b.env)",
     )
     parser.add_argument(
-        "--name", default="",
+        "--name",
+        default="",
         help="Optional name for the run (defaults to question text)",
     )
     parser.add_argument(
-        "--workspace", default="test-calls",
+        "--workspace",
+        default="test-calls",
         help="Project workspace name (default: test-calls)",
+    )
+    parser.add_argument(
+        "--moves-preset",
+        dest="moves_preset",
+        default=None,
+        help="Move preset name (default: 'default'). Controls which moves are available per call type.",
     )
     parser.add_argument(
         "--up-to-stage",

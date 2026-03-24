@@ -27,8 +27,9 @@ class ScoutEstimatesCall(CallRunner):
 
     def _make_page_creator(self) -> PageCreator:
         return SimpleAgentLoop(
-            self.call_type, self.task_description(),
-            available_moves=self.available_moves,
+            self.call_type,
+            self.task_description(),
+            available_moves=self._resolve_available_moves(),
         )
 
     def _make_closing_reviewer(self) -> ClosingReviewer:
@@ -36,9 +37,9 @@ class ScoutEstimatesCall(CallRunner):
 
     def task_description(self) -> str:
         return (
-            'Identify quantities whose estimates would be highly informative '
-            'about the parent question. Make initial guesses about their '
-            'values as claims, and generate subquestions asking about those '
-            'values so estimates can be refined.\n\n'
-            f'Question ID: `{self.infra.question_id}`'
+            "Identify quantities whose estimates would be highly informative "
+            "about the parent question. Make initial guesses about their "
+            "values as claims, and generate subquestions asking about those "
+            "values so estimates can be refined.\n\n"
+            f"Question ID: `{self.infra.question_id}`"
         )

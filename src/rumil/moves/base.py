@@ -400,3 +400,22 @@ async def link_pages(
         resolved_to[:8],
     )
     return MoveResult("Done.")
+
+
+async def supersede_old_judgements(
+    new_judgement_id: str,
+    question_id: str,
+    db: DB,
+) -> None:
+    """Supersede any existing active judgements on a question when a new one is linked."""
+    old_judgements = await db.get_judgements_for_question(question_id)
+    for old in old_judgements:
+        if old.id == new_judgement_id:
+            continue
+        await db.supersede_page(old.id, new_judgement_id)
+        log.info(
+            "Superseded old judgement %s with %s on question %s",
+            old.id[:8],
+            new_judgement_id[:8],
+            question_id[:8],
+        )

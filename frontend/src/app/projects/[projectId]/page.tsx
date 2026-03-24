@@ -90,11 +90,13 @@ export default function PagesIndexPage() {
   const [search, setSearch] = useState("");
   const [activeTypes, setActiveTypes] = useState<Set<PageType>>(new Set());
   const [runs, setRuns] = useState<RunListItem[]>([]);
+  const [showSuperseded, setShowSuperseded] = useState(false);
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/projects/${projectId}/pages`, {
-      cache: "no-store",
-    })
+    const url = showSuperseded
+      ? `${API_BASE}/api/projects/${projectId}/pages?active_only=false`
+      : `${API_BASE}/api/projects/${projectId}/pages`;
+    fetch(url, { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : []))
       .then((data: Page[]) => {
         setPages(data);
@@ -105,7 +107,7 @@ export default function PagesIndexPage() {
     })
       .then((res) => (res.ok ? res.json() : []))
       .then((data: RunListItem[]) => setRuns(data));
-  }, [projectId]);
+  }, [projectId, showSuperseded]);
 
   const toggleType = (t: PageType) => {
     setActiveTypes((prev) => {
@@ -143,6 +145,11 @@ export default function PagesIndexPage() {
     for (const p of pages) counts[p.page_type] = (counts[p.page_type] || 0) + 1;
     return counts;
   }, [pages]);
+
+  const supersededCount = useMemo(
+    () => pages.filter((p) => p.is_superseded).length,
+    [pages],
+  );
 
   return (
     <main className="pages-index">
@@ -387,6 +394,28 @@ export default function PagesIndexPage() {
           color: var(--color-dim);
           text-decoration: line-through;
           opacity: 0.6;
+        }
+
+        .superseded-toggle {
+          color: var(--color-muted);
+          border-color: var(--color-border);
+          opacity: 0.5;
+        }
+        .superseded-toggle:hover {
+          opacity: 0.75;
+        }
+        .superseded-toggle.active {
+          background: var(--type-judgement-bg);
+          color: var(--type-judgement);
+          border-color: var(--type-judgement-border);
+          opacity: 1;
+        }
+
+        .page-row.superseded {
+          opacity: 0.4;
+        }
+        .page-row.superseded:hover {
+          opacity: 0.7;
         }
 
         .empty-state {
@@ -637,6 +666,17 @@ export default function PagesIndexPage() {
               </button>
             );
           })}
+          <div className="filter-divider" />
+          <button
+            className={`filter-chip superseded-toggle ${showSuperseded ? "active" : ""}`}
+            onClick={() => setShowSuperseded((prev) => !prev)}
+            title="Show superseded pages"
+          >
+            superseded
+            {showSuperseded && supersededCount > 0 && (
+              <span className="count">{supersededCount}</span>
+            )}
+          </button>
           {activeTypes.size > 0 && (
             <>
               <div className="filter-divider" />
@@ -670,7 +710,7 @@ export default function PagesIndexPage() {
                 <Link
                   key={p.id}
                   href={pageHref(p)}
-                  className="page-row"
+                  className={`page-row${p.is_superseded ? " superseded" : ""}`}
                   style={{ animationDelay: `${Math.min(i * 15, 300)}ms` }}
                 >
                   <span

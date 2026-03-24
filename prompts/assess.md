@@ -8,7 +8,7 @@ Pages you need should already be loaded from the preliminary phase. Proceed dire
 
 ## What to Produce
 
-Produce a **Judgement** and link it to the question. Structure your judgement content as:
+Produce a **Judgement**. It will be automatically linked to the scope question. Structure your judgement content as:
 
 1. **Consideration landscape** — briefly characterise the state of the considerations (what's on each side, what's uncertain)
 2. **Weighing** — explain how you weigh the considerations against each other and why

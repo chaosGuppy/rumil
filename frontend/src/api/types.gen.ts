@@ -1041,6 +1041,36 @@ export type ListPagesApiProjectsProjectIdPagesGetResponses = {
 
 export type ListPagesApiProjectsProjectIdPagesGetResponse = ListPagesApiProjectsProjectIdPagesGetResponses[keyof ListPagesApiProjectsProjectIdPagesGetResponses];
 
+export type GetPageByShortIdApiPagesShortShortIdGetData = {
+    body?: never;
+    path: {
+        /**
+         * Short Id
+         */
+        short_id: string;
+    };
+    query?: never;
+    url: '/api/pages/short/{short_id}';
+};
+
+export type GetPageByShortIdApiPagesShortShortIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetPageByShortIdApiPagesShortShortIdGetError = GetPageByShortIdApiPagesShortShortIdGetErrors[keyof GetPageByShortIdApiPagesShortShortIdGetErrors];
+
+export type GetPageByShortIdApiPagesShortShortIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: Page;
+};
+
+export type GetPageByShortIdApiPagesShortShortIdGetResponse = GetPageByShortIdApiPagesShortShortIdGetResponses[keyof GetPageByShortIdApiPagesShortShortIdGetResponses];
+
 export type GetPageApiPagesPageIdGetData = {
     body?: never;
     path: {

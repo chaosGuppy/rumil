@@ -4,7 +4,7 @@ from rumil.calls.closing_reviewers import StandardClosingReview
 from rumil.calls.context_builders import EmbeddingContext
 from rumil.calls.page_creators import MultiRoundLoop
 from rumil.calls.stages import CallRunner, ClosingReviewer, ContextBuilder, PageCreator
-from rumil.models import CallType, MoveType
+from rumil.models import CallType
 
 
 class ScoutHypothesesCall(CallRunner):
@@ -14,14 +14,6 @@ class ScoutHypothesesCall(CallRunner):
     page_creator_cls = MultiRoundLoop
     closing_reviewer_cls = StandardClosingReview
     call_type = CallType.SCOUT_HYPOTHESES
-    available_moves = [
-        MoveType.CREATE_CLAIM,
-        MoveType.CREATE_QUESTION,
-        MoveType.PROPOSE_HYPOTHESIS,
-        MoveType.LINK_CONSIDERATION,
-        MoveType.LINK_CHILD_QUESTION,
-        MoveType.LOAD_PAGE,
-    ]
 
     def _make_context_builder(self) -> ContextBuilder:
         return EmbeddingContext(self.call_type)

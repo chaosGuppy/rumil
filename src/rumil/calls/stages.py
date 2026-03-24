@@ -88,7 +88,6 @@ class CallRunner(ABC):
     page_creator_cls: ClassVar[type[PageCreator]]
     closing_reviewer_cls: ClassVar[type[ClosingReviewer]]
     call_type: ClassVar[CallType]
-    available_moves: ClassVar[Sequence[MoveType] | None] = None
 
     def __init__(
         self,
@@ -132,12 +131,9 @@ class CallRunner(ABC):
     def _make_closing_reviewer(self) -> ClosingReviewer:
         return self.closing_reviewer_cls()
 
-    def _resolve_available_moves(self) -> Sequence[MoveType] | None:
-        """Return moves from the active preset, falling back to class-level available_moves."""
-        preset_moves = get_moves_for_call(self.call_type)
-        if preset_moves is not None:
-            return preset_moves
-        return self.available_moves
+    def _resolve_available_moves(self) -> Sequence[MoveType]:
+        """Return moves from the active preset."""
+        return get_moves_for_call(self.call_type)
 
     @property
     def review(self) -> dict:

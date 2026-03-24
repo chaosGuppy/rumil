@@ -103,6 +103,8 @@ class LinkType(str, Enum):
 class MoveType(str, Enum):
     CREATE_CLAIM = "CREATE_CLAIM"
     CREATE_QUESTION = "CREATE_QUESTION"
+    CREATE_SCOUT_QUESTION = "CREATE_SCOUT_QUESTION"
+    CREATE_SUBQUESTION = "CREATE_SUBQUESTION"
     CREATE_JUDGEMENT = "CREATE_JUDGEMENT"
     CREATE_CONCEPT = "CREATE_CONCEPT"
     CREATE_WIKI_PAGE = "CREATE_WIKI_PAGE"
@@ -171,9 +173,8 @@ class _MultiRoundFields(BaseModel):
 
 class _ScoutFields(_MultiRoundFields):
     mode: FindConsiderationsMode = Field(
-        default=FindConsiderationsMode.ALTERNATE,
         description=(
-            "Scout mode: 'alternate' (default) alternates abstract and concrete "
+            "Scout mode: 'alternate' alternates abstract and concrete "
             "each round; 'abstract' for all-abstract; 'concrete' for all-concrete."
         ),
     )

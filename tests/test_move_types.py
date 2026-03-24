@@ -47,15 +47,19 @@ async def test_inline_consideration_link(tmp_db, scout_call, question_page):
     """create_claim with links should create the page and consideration links."""
     state = MoveState(scout_call, tmp_db)
     tool = MOVES[MoveType.CREATE_CLAIM].bind(state)
-    await tool.fn({
-        "headline": "Sky scatters blue light",
-        "content": "Rayleigh scattering causes blue wavelengths to dominate.",
-        "links": [{
-            "question_id": question_page.id[:8],
-            "strength": 4.0,
-            "reasoning": "Direct evidence for blue sky",
-        }],
-    })
+    await tool.fn(
+        {
+            "headline": "Sky scatters blue light",
+            "content": "Rayleigh scattering causes blue wavelengths to dominate.",
+            "links": [
+                {
+                    "question_id": question_page.id[:8],
+                    "strength": 4.0,
+                    "reasoning": "Direct evidence for blue sky",
+                }
+            ],
+        }
+    )
 
     assert len(state.created_page_ids) == 1
     claim_id = state.created_page_ids[0]
@@ -70,14 +74,18 @@ async def test_inline_child_question_link(tmp_db, scout_call, question_page):
     """create_question with links should create the page and child_question links."""
     state = MoveState(scout_call, tmp_db)
     tool = MOVES[MoveType.CREATE_QUESTION].bind(state)
-    await tool.fn({
-        "headline": "What wavelengths does the atmosphere scatter?",
-        "content": "Sub-question about atmospheric scattering.",
-        "links": [{
-            "parent_id": question_page.id[:8],
-            "reasoning": "Decomposition of blue sky question",
-        }],
-    })
+    await tool.fn(
+        {
+            "headline": "What wavelengths does the atmosphere scatter?",
+            "content": "Sub-question about atmospheric scattering.",
+            "links": [
+                {
+                    "parent_id": question_page.id[:8],
+                    "reasoning": "Decomposition of blue sky question",
+                }
+            ],
+        }
+    )
 
     assert len(state.created_page_ids) == 1
     child_id = state.created_page_ids[0]
@@ -91,10 +99,12 @@ async def test_no_links_creates_no_links(tmp_db, scout_call):
     """create_claim without links should not create any links."""
     state = MoveState(scout_call, tmp_db)
     tool = MOVES[MoveType.CREATE_CLAIM].bind(state)
-    await tool.fn({
-        "headline": "Unlinked claim",
-        "content": "This claim is not linked.",
-    })
+    await tool.fn(
+        {
+            "headline": "Unlinked claim",
+            "content": "This claim is not linked.",
+        }
+    )
 
     assert len(state.created_page_ids) == 1
     claim_id = state.created_page_ids[0]
@@ -103,24 +113,33 @@ async def test_no_links_creates_no_links(tmp_db, scout_call):
 
 
 async def test_inline_dispatch_on_create_subquestion(
-    tmp_db, prioritization_call, question_page,
+    tmp_db,
+    prioritization_call,
+    question_page,
 ):
     """create_subquestion with dispatches should populate state.dispatches."""
     state = MoveState(prioritization_call, tmp_db)
     tool = PRIORITIZATION_MOVE.bind(state)
-    await tool.fn({
-        "headline": "What causes atmospheric scattering?",
-        "content": "Sub-question about light scattering mechanisms.",
-        "links": [{
-            "parent_id": question_page.id[:8],
-            "reasoning": "Decomposition of main question",
-        }],
-        "dispatches": [{
-            "call_type": "find_considerations",
-            "reason": "Need initial evidence",
-            "max_rounds": 3,
-        }],
-    })
+    await tool.fn(
+        {
+            "headline": "What causes atmospheric scattering?",
+            "content": "Sub-question about light scattering mechanisms.",
+            "links": [
+                {
+                    "parent_id": question_page.id[:8],
+                    "reasoning": "Decomposition of main question",
+                }
+            ],
+            "dispatches": [
+                {
+                    "call_type": "find_considerations",
+                    "reason": "Need initial evidence",
+                    "max_rounds": 3,
+                    "mode": "alternate",
+                }
+            ],
+        }
+    )
 
     assert len(state.created_page_ids) == 1
     assert len(state.dispatches) == 1
@@ -130,23 +149,34 @@ async def test_inline_dispatch_on_create_subquestion(
 
 
 async def test_inline_dispatch_multiple_types(
-    tmp_db, prioritization_call, question_page,
+    tmp_db,
+    prioritization_call,
+    question_page,
 ):
     """create_subquestion with multiple dispatch types should create all."""
     state = MoveState(prioritization_call, tmp_db)
     tool = PRIORITIZATION_MOVE.bind(state)
-    await tool.fn({
-        "headline": "What is the role of wavelength in scattering?",
-        "content": "Investigating wavelength dependence.",
-        "links": [{
-            "parent_id": question_page.id[:8],
-            "reasoning": "Decomposition",
-        }],
-        "dispatches": [
-            {"call_type": "find_considerations", "reason": "Explore", "max_rounds": 2},
-            {"call_type": "assess", "reason": "Evaluate"},
-        ],
-    })
+    await tool.fn(
+        {
+            "headline": "What is the role of wavelength in scattering?",
+            "content": "Investigating wavelength dependence.",
+            "links": [
+                {
+                    "parent_id": question_page.id[:8],
+                    "reasoning": "Decomposition",
+                }
+            ],
+            "dispatches": [
+                {
+                    "call_type": "find_considerations",
+                    "reason": "Explore",
+                    "max_rounds": 2,
+                    "mode": "alternate",
+                },
+                {"call_type": "assess", "reason": "Evaluate"},
+            ],
+        }
+    )
 
     assert len(state.dispatches) == 2
     assert state.dispatches[0].call_type is CallType.FIND_CONSIDERATIONS
@@ -159,10 +189,12 @@ async def test_no_dispatches_creates_no_dispatches(tmp_db, prioritization_call):
     """create_subquestion without dispatches should still create the question."""
     state = MoveState(prioritization_call, tmp_db)
     tool = PRIORITIZATION_MOVE.bind(state)
-    await tool.fn({
-        "headline": "A plain subquestion",
-        "content": "No dispatches here.",
-    })
+    await tool.fn(
+        {
+            "headline": "A plain subquestion",
+            "content": "No dispatches here.",
+        }
+    )
 
     assert len(state.created_page_ids) == 1
     assert len(state.dispatches) == 0

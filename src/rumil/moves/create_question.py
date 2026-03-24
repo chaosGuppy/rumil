@@ -46,16 +46,19 @@ async def execute(payload: CreateQuestionPayload, call: Call, db: DB) -> MoveRes
             )
             continue
 
-        await db.save_link(PageLink(
-            from_page_id=resolved,
-            to_page_id=result.created_page_id,
-            link_type=LinkType.CHILD_QUESTION,
-            reasoning=link_spec.reasoning,
-            role=link_spec.role,
-        ))
+        await db.save_link(
+            PageLink(
+                from_page_id=resolved,
+                to_page_id=result.created_page_id,
+                link_type=LinkType.CHILD_QUESTION,
+                reasoning=link_spec.reasoning,
+                role=link_spec.role,
+            )
+        )
         log.info(
             "Inline child question linked: %s -> %s",
-            resolved[:8], result.created_page_id[:8],
+            resolved[:8],
+            result.created_page_id[:8],
         )
 
     return result
@@ -72,7 +75,8 @@ class CreateSubquestionPayload(CreateQuestionPayload):
 
 
 def _inline_to_dispatch(
-    inline: InlineDispatch, question_id: str,
+    inline: InlineDispatch,
+    question_id: str,
 ) -> Dispatch:
     from rumil.calls.dispatches import DISPATCH_DEFS
 
@@ -84,14 +88,15 @@ def _inline_to_dispatch(
 
 
 async def execute_subquestion(
-    payload: CreateSubquestionPayload, call: Call, db: DB,
+    payload: CreateSubquestionPayload,
+    call: Call,
+    db: DB,
 ) -> MoveResult:
     result = await execute(payload, call, db)
     if not result.created_page_id or not payload.dispatches:
         return result
     dispatches = [
-        _inline_to_dispatch(d, result.created_page_id)
-        for d in payload.dispatches
+        _inline_to_dispatch(d, result.created_page_id) for d in payload.dispatches
     ]
     return MoveResult(
         message=result.message,
@@ -101,7 +106,7 @@ async def execute_subquestion(
 
 
 PRIORITIZATION_MOVE = MoveDef(
-    move_type=MoveType.CREATE_QUESTION,
+    move_type=MoveType.CREATE_SUBQUESTION,
     name="create_subquestion",
     description=(
         "Create a new research sub-question and optionally dispatch research "
@@ -112,6 +117,44 @@ PRIORITIZATION_MOVE = MoveDef(
     ),
     schema=CreateSubquestionPayload,
     execute=execute_subquestion,
+)
+
+
+async def execute_scout_question(
+    payload: CreatePagePayload,
+    call: Call,
+    db: DB,
+) -> MoveResult:
+    """Create a question and auto-link it as a child of the call's scope question."""
+    result = await create_page(payload, call, db, PageType.QUESTION, PageLayer.SQUIDGY)
+    if not result.created_page_id or not call.scope_page_id:
+        return result
+
+    await db.save_link(
+        PageLink(
+            from_page_id=call.scope_page_id,
+            to_page_id=result.created_page_id,
+            link_type=LinkType.CHILD_QUESTION,
+            reasoning="Auto-linked to scope question",
+        )
+    )
+    log.info(
+        "Scout question auto-linked: %s -> %s",
+        call.scope_page_id[:8],
+        result.created_page_id[:8],
+    )
+    return result
+
+
+SCOUT_MOVE = MoveDef(
+    move_type=MoveType.CREATE_SCOUT_QUESTION,
+    name="create_question",
+    description=(
+        "Create a new research question — an open problem for investigation. "
+        "The question is automatically linked as a child of the scope question."
+    ),
+    schema=CreatePagePayload,
+    execute=execute_scout_question,
 )
 
 

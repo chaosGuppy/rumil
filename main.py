@@ -75,6 +75,8 @@ def _default_budget(budget: int | None, fallback: int = NORMAL_BUDGET_DEFAULT) -
         return budget
     settings = get_settings()
     if settings.is_smoke_test:
+        if settings.force_twophase_recurse:
+            return 12
         if settings.prioritizer_variant == "two_phase":
             return MIN_TWOPHASE_BUDGET
         return 1

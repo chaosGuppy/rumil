@@ -23,7 +23,7 @@ from rumil.calls.assess_concept_types import (
     VALIDATION_PHASE,
 )
 from rumil.calls.common import mark_call_completed
-from rumil.calls.dispatches import DISPATCH_DEFS, RECURSE_DISPATCH_DEF
+from rumil.calls.dispatches import DISPATCH_DEFS, DispatchDef, RECURSE_DISPATCH_DEF
 from rumil.calls.prioritization import run_prioritization_call
 from rumil.calls.summarize import summarize_question
 from rumil.calls.call_registry import (
@@ -40,7 +40,7 @@ from rumil.calls.call_registry import (
     SCOUT_SUBQUESTIONS_CALL_CLASSES,
     WEB_RESEARCH_CALL_CLASSES,
 )
-from rumil.context import build_prioritization_context
+from rumil.context import build_prioritization_context, collect_subtree_ids
 from rumil.database import DB
 from rumil.embeddings import embed_and_store_page
 from rumil.llm import LLMExchangeMetadata, build_system_prompt, build_user_message, structured_call
@@ -251,6 +251,8 @@ async def find_considerations_until_done(
             SMOKE_TEST_MAX_ROUNDS if get_settings().is_smoke_test
             else DEFAULT_MAX_ROUNDS
         )
+    elif get_settings().is_smoke_test:
+        max_rounds = min(max_rounds, SMOKE_TEST_MAX_ROUNDS)
     log.info(
         "find_considerations_until_done: question=%s, max_rounds=%d, fruit_threshold=%d, mode=%s",
         question_id[:8], max_rounds, fruit_threshold, mode.value,
@@ -579,6 +581,9 @@ class BaseOrchestrator(ABC):
         Budget consumption is handled internally by MultiRoundLoop
         (one unit per round), matching how find_considerations works.
         """
+        if get_settings().is_smoke_test:
+            max_rounds = min(max_rounds, SMOKE_TEST_MAX_ROUNDS)
+
         if force and await self.db.budget_remaining() <= 0:
             await self.db.add_budget(1)
 
@@ -1118,6 +1123,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                 if self._invocation > 1:
                     await assess_question(
                         root_question_id, self.db,
+                        parent_call_id=self._parent_call_id,
                         broadcaster=self.broadcaster, force=True,
                     )
         finally:
@@ -1180,6 +1186,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         context_text, short_id_map = await build_prioritization_context(
             self.db, scope_question_id=question_id, graph=graph,
         )
+        subtree_ids = await collect_subtree_ids(question_id, self.db, graph=graph)
         if self._initial_call is not None:
             p_call = self._initial_call
             self._initial_call = None
@@ -1209,7 +1216,8 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
 
         result = await run_prioritization_call(
             task, context_text, p_call, self.db,
-            available_moves=PRIORITIZATION_MOVES,
+
+            subtree_ids=subtree_ids,
             short_id_map=short_id_map,
             trace=trace,
             dispatch_types=list(PHASE1_SCOUT_TYPES),
@@ -1368,6 +1376,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         context_text, short_id_map = await build_prioritization_context(
             self.db, scope_question_id=question_id, graph=graph,
         )
+        subtree_ids = await collect_subtree_ids(question_id, self.db, graph=graph)
 
         task = (
             f'You have a budget of **{budget} budget units** to allocate.\n\n'
@@ -1382,13 +1391,18 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                 'if you have enough budget to do so.'
             )
 
+        extra_defs: list[DispatchDef] = []
+        if budget >= MIN_TWOPHASE_BUDGET:
+            extra_defs.append(RECURSE_DISPATCH_DEF)
+
         result = await run_prioritization_call(
             task, context_text, p_call, self.db,
-            available_moves=[],
+
+            subtree_ids=subtree_ids,
             short_id_map=short_id_map,
             trace=trace,
             dispatch_types=list(PHASE2_DISPATCH_TYPES),
-            extra_dispatch_defs=[RECURSE_DISPATCH_DEF],
+            extra_dispatch_defs=extra_defs or None,
             system_prompt_override=build_system_prompt('two_phase_p2'),
         )
 
@@ -1406,6 +1420,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                 child = TwoPhaseOrchestrator(
                     self.db, self.broadcaster, budget_cap=d.payload.budget,
                 )
+                child._parent_call_id = p_call.id
                 children.append((child, resolved))
                 log.info(
                     'Queued recursive investigation: question=%s, budget=%d — %s',

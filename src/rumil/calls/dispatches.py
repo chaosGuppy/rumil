@@ -103,8 +103,7 @@ def filter_mode_schema(
         if "mode" in props:
             mode_prop = props["mode"]
             if mode_prop.get("$ref", "").endswith(f"/{mode_def_key}"):
-                if mode_prop.get("default") not in allowed_values:
-                    mode_prop["default"] = allowed_values[0]
+                mode_prop.pop("default", None)
                 mode_prop["description"] = (
                     "Scout mode. Available: "
                     + ", ".join(f"'{v}'" for v in allowed_values)

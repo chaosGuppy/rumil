@@ -573,10 +573,7 @@ async def run_call(
     )
 
     if available_moves is None:
-        preset_moves = get_moves_for_call(call_type)
-        available_moves = (
-            list(preset_moves) if preset_moves is not None else list(MoveType)
-        )
+        available_moves = list(get_moves_for_call(call_type))
 
     if state is None:
         state = MoveState(call, db)

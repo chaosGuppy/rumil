@@ -2,7 +2,11 @@
 
 import pytest
 
-from rumil.calls.dispatches import DISPATCH_DEFS, filter_mode_schema, make_mode_validator
+from rumil.calls.dispatches import (
+    DISPATCH_DEFS,
+    filter_mode_schema,
+    make_mode_validator,
+)
 from rumil.models import (
     AssessDispatchPayload,
     CallType,
@@ -34,15 +38,18 @@ def test_dispatch_defs_match_dispatchable_types():
 
 
 def test_dispatch_holds_typed_payload():
-    payload = ScoutDispatchPayload(question_id="abc", reason="test")
+    payload = ScoutDispatchPayload(
+        question_id="abc",
+        reason="test",
+        mode=FindConsiderationsMode.ALTERNATE,
+    )
     d = Dispatch(call_type=CallType.FIND_CONSIDERATIONS, payload=payload)
     assert d.call_type is CallType.FIND_CONSIDERATIONS
     assert d.payload.question_id == "abc"
 
 
 def test_scout_payload_has_defaults():
-    p = ScoutDispatchPayload(question_id="abc")
-    assert p.mode == FindConsiderationsMode.ALTERNATE
+    p = ScoutDispatchPayload(question_id="abc", mode=FindConsiderationsMode.ALTERNATE)
     assert p.fruit_threshold == 4
     assert p.max_rounds == 5
 
@@ -53,17 +60,41 @@ def test_scout_payload_accepts_mode():
 
 
 def test_resolve_round_mode_alternate():
-    assert _resolve_round_mode(FindConsiderationsMode.ALTERNATE, 0) == FindConsiderationsMode.ABSTRACT
-    assert _resolve_round_mode(FindConsiderationsMode.ALTERNATE, 1) == FindConsiderationsMode.CONCRETE
-    assert _resolve_round_mode(FindConsiderationsMode.ALTERNATE, 2) == FindConsiderationsMode.ABSTRACT
-    assert _resolve_round_mode(FindConsiderationsMode.ALTERNATE, 3) == FindConsiderationsMode.CONCRETE
+    assert (
+        _resolve_round_mode(FindConsiderationsMode.ALTERNATE, 0)
+        == FindConsiderationsMode.ABSTRACT
+    )
+    assert (
+        _resolve_round_mode(FindConsiderationsMode.ALTERNATE, 1)
+        == FindConsiderationsMode.CONCRETE
+    )
+    assert (
+        _resolve_round_mode(FindConsiderationsMode.ALTERNATE, 2)
+        == FindConsiderationsMode.ABSTRACT
+    )
+    assert (
+        _resolve_round_mode(FindConsiderationsMode.ALTERNATE, 3)
+        == FindConsiderationsMode.CONCRETE
+    )
 
 
 def test_resolve_round_mode_fixed():
-    assert _resolve_round_mode(FindConsiderationsMode.ABSTRACT, 0) == FindConsiderationsMode.ABSTRACT
-    assert _resolve_round_mode(FindConsiderationsMode.ABSTRACT, 1) == FindConsiderationsMode.ABSTRACT
-    assert _resolve_round_mode(FindConsiderationsMode.CONCRETE, 0) == FindConsiderationsMode.CONCRETE
-    assert _resolve_round_mode(FindConsiderationsMode.CONCRETE, 1) == FindConsiderationsMode.CONCRETE
+    assert (
+        _resolve_round_mode(FindConsiderationsMode.ABSTRACT, 0)
+        == FindConsiderationsMode.ABSTRACT
+    )
+    assert (
+        _resolve_round_mode(FindConsiderationsMode.ABSTRACT, 1)
+        == FindConsiderationsMode.ABSTRACT
+    )
+    assert (
+        _resolve_round_mode(FindConsiderationsMode.CONCRETE, 0)
+        == FindConsiderationsMode.CONCRETE
+    )
+    assert (
+        _resolve_round_mode(FindConsiderationsMode.CONCRETE, 1)
+        == FindConsiderationsMode.CONCRETE
+    )
 
 
 def test_assess_payload_has_no_extras():
@@ -92,7 +123,7 @@ def test_targeted_dispatch_defs_have_question_id():
 
 def test_scope_only_payload_accepts_no_question_id():
     p = ScoutSubquestionsDispatchPayload(reason="test")
-    assert p.question_id == ''
+    assert p.question_id == ""
     assert "question_id" not in p.model_json_schema().get("properties", {})
 
 
@@ -103,10 +134,10 @@ def test_filter_mode_schema_dispatch_tool():
         ddef.schema.model_json_schema(),
         [FindConsiderationsMode.CONCRETE],
     )
-    mode_enum = schema['$defs']['FindConsiderationsMode']['enum']
-    assert mode_enum == ['concrete']
-    mode_prop = schema['properties']['mode']
-    assert mode_prop['default'] == 'concrete'
+    mode_enum = schema["$defs"]["FindConsiderationsMode"]["enum"]
+    assert mode_enum == ["concrete"]
+    mode_prop = schema["properties"]["mode"]
+    assert "default" not in mode_prop
 
 
 @pytest.mark.asyncio
@@ -121,12 +152,14 @@ async def test_mode_validator_rejects_disallowed():
     dispatch = Dispatch(
         call_type=CallType.FIND_CONSIDERATIONS,
         payload=ScoutDispatchPayload(
-            question_id='abc', mode=FindConsiderationsMode.ABSTRACT, reason='test',
+            question_id="abc",
+            mode=FindConsiderationsMode.ABSTRACT,
+            reason="test",
         ),
     )
     error = state.record_dispatch(dispatch)
     assert error is not None
-    assert 'Invalid mode' in error
+    assert "Invalid mode" in error
     assert len(state.dispatches) == 0
 
 
@@ -142,7 +175,9 @@ async def test_mode_validator_accepts_allowed():
     dispatch = Dispatch(
         call_type=CallType.FIND_CONSIDERATIONS,
         payload=ScoutDispatchPayload(
-            question_id='abc', mode=FindConsiderationsMode.CONCRETE, reason='test',
+            question_id="abc",
+            mode=FindConsiderationsMode.CONCRETE,
+            reason="test",
         ),
     )
     error = state.record_dispatch(dispatch)
@@ -152,7 +187,7 @@ async def test_mode_validator_accepts_allowed():
 
 def test_allowed_find_considerations_modes_property():
     """Settings property parses comma-separated modes correctly."""
-    with override_settings(find_considerations_modes='concrete,abstract'):
+    with override_settings(find_considerations_modes="concrete,abstract"):
         modes = get_settings().allowed_find_considerations_modes
         assert list(modes) == [
             FindConsiderationsMode.CONCRETE,
@@ -162,7 +197,7 @@ def test_allowed_find_considerations_modes_property():
 
 def test_allowed_find_considerations_modes_single():
     """Settings property handles a single mode."""
-    with override_settings(find_considerations_modes='alternate'):
+    with override_settings(find_considerations_modes="alternate"):
         modes = get_settings().allowed_find_considerations_modes
         assert list(modes) == [FindConsiderationsMode.ALTERNATE]
 
@@ -174,10 +209,10 @@ def test_filter_mode_schema_nested():
     schema = CreateSubquestionPayload.model_json_schema()
     filtered = filter_mode_schema(schema, [FindConsiderationsMode.ABSTRACT])
 
-    mode_enum = filtered['$defs']['FindConsiderationsMode']['enum']
-    assert mode_enum == ['abstract']
-    inline_scout = filtered['$defs']['InlineScoutDispatch']
-    assert inline_scout['properties']['mode']['default'] == 'abstract'
+    mode_enum = filtered["$defs"]["FindConsiderationsMode"]["enum"]
+    assert mode_enum == ["abstract"]
+    inline_scout = filtered["$defs"]["InlineScoutDispatch"]
+    assert "default" not in inline_scout["properties"]["mode"]
 
 
 def test_mode_validator_passes_through_non_fc_dispatches():
@@ -190,7 +225,7 @@ def test_mode_validator_passes_through_non_fc_dispatches():
 
     dispatch = Dispatch(
         call_type=CallType.ASSESS,
-        payload=AssessDispatchPayload(question_id='abc', reason='test'),
+        payload=AssessDispatchPayload(question_id="abc", reason="test"),
     )
     error = state.record_dispatch(dispatch)
     assert error is None

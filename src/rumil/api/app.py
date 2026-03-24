@@ -407,4 +407,8 @@ async def get_page_run(page_id: str):
     run = await db.get_run_for_page(page_id)
     if not run:
         return None
-    return RunSummaryOut(run_id=run["run_id"], created_at=run["created_at"])
+    return RunSummaryOut(
+        run_id=run["run_id"],
+        created_at=run["created_at"],
+        provenance_call_id=run.get("provenance_call_id", ""),
+    )

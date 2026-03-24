@@ -4,7 +4,18 @@ Judgements auto-link to the call's scope question and supersede any prior
 judgement on that question.
 """
 
-from rumil.models import LinkType, MoveType, Page, PageLayer, PageLink, PageType, Workspace
+from rumil.models import (
+    Call,
+    CallStatus,
+    CallType,
+    LinkType,
+    MoveType,
+    Page,
+    PageLayer,
+    PageLink,
+    PageType,
+    Workspace,
+)
 from rumil.moves import MOVES
 from rumil.moves.base import MoveState
 
@@ -136,7 +147,6 @@ async def test_link_related_supersedes_old_judgement(tmp_db, scout_call, questio
 
 async def test_create_judgement_no_scope_question(tmp_db):
     """A judgement created without a scope question should not link or supersede."""
-    from rumil.models import Call, CallStatus, CallType
 
     call = Call(
         call_type=CallType.FIND_CONSIDERATIONS,

@@ -134,9 +134,12 @@ class DB:
         self.client = client
         self.project_id = project_id
         self.ab_run_id = ab_run_id
-        self._semaphore = asyncio.Semaphore(
-            get_settings().db_max_concurrent_queries
-        )
+        settings = get_settings()
+        self._semaphore = asyncio.Semaphore(settings.db_max_concurrent_queries)
+        self._recycle_after: int = settings.db_connection_recycle_after
+        self._query_count: int = 0
+        self._recycle_lock = asyncio.Lock()
+        self._prod: bool = False
 
     @classmethod
     async def create(
@@ -152,15 +155,39 @@ class DB:
             client = await acreate_client(
                 url, key, options=AsyncClientOptions(schema="public")
             )
-        return cls(
+        db = cls(
             run_id=run_id, client=client, project_id=project_id,
             ab_run_id=ab_run_id,
         )
+        db._prod = prod
+        return db
+
+    async def _recycle_connection(self) -> None:
+        """Replace the Supabase client to reset HTTP/2 streams.
+
+        HTTP/2 stream IDs are monotonically increasing and never reused on a
+        connection. Long-running jobs that make thousands of requests on a
+        single connection can exhaust the server's stream limit. Creating a
+        fresh client forces a new TCP connection.
+        """
+        async with self._recycle_lock:
+            if self._query_count < self._recycle_after:
+                return
+            url, key = get_settings().get_supabase_credentials(self._prod)
+            self.client = await acreate_client(
+                url, key, options=AsyncClientOptions(schema="public")
+            )
+            self._query_count = 0
+            log.debug('Recycled Supabase client connection')
 
     async def _execute(self, query: Any) -> Any:
         """Execute a query builder through the concurrency semaphore."""
         async with self._semaphore:
-            return await query.execute()
+            result = await query.execute()
+            self._query_count += 1
+            if self._query_count >= self._recycle_after > 0:
+                await self._recycle_connection()
+            return result
 
     def _ab_filter(self, query: Any, table: str = "pages") -> Any:
         """Apply AB run isolation filter to a query."""

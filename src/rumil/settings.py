@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     voyage_ai_api_key: str = ""
     jina_api_key: str = ""
     frontend_url: str = "http://127.0.0.1:3000"
-    db_max_concurrent_queries: int = 10
+    db_max_concurrent_queries: int = 20
 
     find_considerations_call_variant: str = _capture_field(default="embedding")
     assess_call_variant: str = _capture_field(default="embedding")

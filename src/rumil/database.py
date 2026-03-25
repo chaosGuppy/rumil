@@ -134,11 +134,9 @@ class DB:
         self.client = client
         self.project_id = project_id
         self.ab_run_id = ab_run_id
-        settings = get_settings()
-        self._semaphore = asyncio.Semaphore(settings.db_max_concurrent_queries)
-        self._recycle_after: int = settings.db_connection_recycle_after
-        self._query_count: int = 0
-        self._recycle_lock = asyncio.Lock()
+        self._semaphore = asyncio.Semaphore(
+            get_settings().db_max_concurrent_queries
+        )
         self._prod: bool = False
 
     @classmethod
@@ -162,32 +160,37 @@ class DB:
         db._prod = prod
         return db
 
-    async def _recycle_connection(self) -> None:
-        """Replace the Supabase client to reset HTTP/2 streams.
+    async def fork(self) -> "DB":
+        """Create a new DB instance with a fresh Supabase client.
 
-        HTTP/2 stream IDs are monotonically increasing and never reused on a
-        connection. Long-running jobs that make thousands of requests on a
-        single connection can exhaust the server's stream limit. Creating a
-        fresh client forces a new TCP connection.
+        Shares run_id, project_id, and ab_run_id with the parent but gets
+        its own HTTP connection. Use this to scope connections to a single
+        call, avoiding HTTP/2 stream exhaustion on long-running jobs.
         """
-        async with self._recycle_lock:
-            if self._query_count < self._recycle_after:
-                return
-            url, key = get_settings().get_supabase_credentials(self._prod)
-            self.client = await acreate_client(
-                url, key, options=AsyncClientOptions(schema="public")
-            )
-            self._query_count = 0
-            log.debug('Recycled Supabase client connection')
+        url, key = get_settings().get_supabase_credentials(self._prod)
+        client = await acreate_client(
+            url, key, options=AsyncClientOptions(schema="public")
+        )
+        db = DB(
+            run_id=self.run_id,
+            client=client,
+            project_id=self.project_id,
+            ab_run_id=self.ab_run_id,
+        )
+        db._prod = self._prod
+        return db
+
+    async def close(self) -> None:
+        """Close the underlying HTTP connections."""
+        try:
+            await self.client.postgrest.aclose()
+        except Exception:
+            log.debug('Failed to close postgrest client', exc_info=True)
 
     async def _execute(self, query: Any) -> Any:
         """Execute a query builder through the concurrency semaphore."""
         async with self._semaphore:
-            result = await query.execute()
-            self._query_count += 1
-            if self._query_count >= self._recycle_after > 0:
-                await self._recycle_connection()
-            return result
+            return await query.execute()
 
     def _ab_filter(self, query: Any, table: str = "pages") -> Any:
         """Apply AB run isolation filter to a query."""
@@ -315,7 +318,9 @@ class DB:
             batch = id_list[start:start + batch_size]
             rows = _rows(
                 await self._execute(
-                    self.client.table("pages").select("*").in_("id", batch)
+                    self._ab_filter(
+                        self.client.table("pages").select("*").in_("id", batch)
+                    )
                 )
             )
             for r in rows:

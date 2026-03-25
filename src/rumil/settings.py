@@ -46,7 +46,6 @@ class Settings(BaseSettings):
     jina_api_key: str = ""
     frontend_url: str = "http://127.0.0.1:3000"
     db_max_concurrent_queries: int = 20
-    db_connection_recycle_after: int = 2000
 
     find_considerations_call_variant: str = _capture_field(default="embedding")
     assess_call_variant: str = _capture_field(default="embedding")

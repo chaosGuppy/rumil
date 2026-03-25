@@ -19,8 +19,8 @@ from rumil.models import (
     Workspace,
 )
 from rumil.moves.base import write_page_file
-from rumil.tracing.trace_events import ContextBuiltEvent, PageRef
-from rumil.tracing.tracer import CallTrace, set_trace
+from rumil.tracing.trace_events import ContextBuiltEvent, ErrorEvent, PageRef
+from rumil.tracing.tracer import CallTrace, get_trace, set_trace
 
 log = logging.getLogger(__name__)
 
@@ -321,6 +321,14 @@ async def summarize_question(
         log.error(
             "summarize_question failed for %s: %s", question_id[:8], e, exc_info=True
         )
+        trace = get_trace()
+        if trace:
+            await trace.record(
+                ErrorEvent(
+                    message=f"Summarize failed: {e}",
+                    phase="summarize",
+                )
+            )
         await _fail_call(call, db)
         return None
 

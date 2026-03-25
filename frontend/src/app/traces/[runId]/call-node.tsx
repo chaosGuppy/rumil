@@ -796,6 +796,9 @@ function EventSection({ event }: { event: TraceEvent }) {
 
       {event.event === "error" && (
         <div className="trace-event-body trace-error-text">
+          {event.phase && (
+            <span className="trace-error-phase">{event.phase}</span>
+          )}
           {event.message}
         </div>
       )}

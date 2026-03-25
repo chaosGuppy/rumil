@@ -12,7 +12,11 @@ class PageRef(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _migrate_summary(cls, values: dict) -> dict:
-        if isinstance(values, dict) and "summary" in values and "headline" not in values:
+        if (
+            isinstance(values, dict)
+            and "summary" in values
+            and "headline" not in values
+        ):
             values["headline"] = values.pop("summary")
         return values
 
@@ -78,6 +82,7 @@ class WarningEvent(BaseModel):
 class ErrorEvent(BaseModel):
     event: Literal["error"] = "error"
     message: str
+    phase: str = ""
 
 
 class SubquestionScoreItem(BaseModel):

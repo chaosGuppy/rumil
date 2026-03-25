@@ -18,12 +18,11 @@ from rumil.tracing.tracer import CallTrace
 class ScriptedOrchestrator(BaseOrchestrator):
     """Returns pre-scripted batches of dispatches, one per loop iteration."""
 
-    def __init__(self, db, batches, call_id=None, trace=None):
+    def __init__(self, db, batches, call_id=None):
         super().__init__(db)
         self._batches = list(batches)
         self._index = 0
         self._call_id = call_id
-        self._trace = trace
         self.get_calls_count = 0
 
     async def run(self, root_question_id):
@@ -40,7 +39,6 @@ class ScriptedOrchestrator(BaseOrchestrator):
                     [batch],
                     root_question_id,
                     self._call_id,
-                    self._trace,
                 )
         finally:
             await self._teardown()
@@ -209,7 +207,6 @@ async def test_dispatch_executed_events_recorded(tmp_db, question_page):
         tmp_db,
         batches=[[_assess_dispatch(question_page.id)]],
         call_id=p_call.id,
-        trace=trace,
     )
     await orch.run(question_page.id)
 

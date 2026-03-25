@@ -1449,6 +1449,11 @@
           "message": {
             "type": "string",
             "title": "Message"
+          },
+          "phase": {
+            "type": "string",
+            "title": "Phase",
+            "default": ""
           }
         },
         "type": "object",
@@ -1456,7 +1461,8 @@
           "ts",
           "call_id",
           "event",
-          "message"
+          "message",
+          "phase"
         ],
         "title": "ErrorEventOut"
       },

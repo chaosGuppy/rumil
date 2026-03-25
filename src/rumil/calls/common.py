@@ -40,12 +40,13 @@ from rumil.moves.base import MoveState
 from rumil.moves.load_page import LoadPagePayload
 from rumil.moves.registry import MOVES
 from rumil.tracing.trace_events import (
+    ErrorEvent,
     MoveTraceItem,
     MovesExecutedEvent,
     PageRef,
     WarningEvent,
 )
-from rumil.tracing.tracer import CallTrace
+from rumil.tracing.tracer import get_trace
 
 log = logging.getLogger(__name__)
 
@@ -109,6 +110,14 @@ async def execute_tool_uses(
                         "is_error": True,
                     }
                 )
+                trace = get_trace()
+                if trace:
+                    await trace.record(
+                        ErrorEvent(
+                            message=f"Tool {tu.name} error: {e}",
+                            phase="tool_execution",
+                        )
+                    )
             else:
                 log.debug(
                     "Tool %s returned: %s",
@@ -128,13 +137,13 @@ async def execute_tool_uses(
 
 async def record_round_moves(
     *,
-    trace: CallTrace,
     state: MoveState,
     db: DB,
 ) -> None:
     """Record a trace event for any moves added since the last call."""
+    trace = get_trace()
     round_moves, round_created, round_extras = state.take_new_moves()
-    if round_moves:
+    if round_moves and trace:
         await trace.record(
             await moves_to_trace_event(round_moves, round_created, db, round_extras)
         )
@@ -159,7 +168,6 @@ async def run_single_call(
     phase: str,
     db: DB,
     state: MoveState,
-    trace: "CallTrace | None" = None,
     messages: list[dict] | None = None,
     cache: bool = False,
 ) -> AgentResult:
@@ -197,7 +205,6 @@ async def run_single_call(
     meta = LLMExchangeMetadata(
         call_id=call_id,
         phase=phase,
-        trace=trace,
         user_message=user_message if user_message else None,
     )
     api_resp = await call_api(
@@ -232,8 +239,8 @@ async def run_single_call(
         duration_ms=api_resp.duration_ms,
     )
 
-    if trace:
-        await record_round_moves(trace=trace, state=state, db=db)
+    await record_round_moves(state=state, db=db)
+    trace = get_trace()
     for w in all_warnings:
         if trace:
             await trace.record(WarningEvent(message=w))
@@ -266,7 +273,6 @@ async def run_agent_loop(
     call_id: str,
     db: DB,
     state: MoveState,
-    trace: "CallTrace | None" = None,
     max_rounds: int | None = None,
     messages: list[dict] | None = None,
     cache: bool = False,
@@ -313,7 +319,6 @@ async def run_agent_loop(
         meta = LLMExchangeMetadata(
             call_id=call_id,
             phase="inner_loop",
-            trace=trace,
             round_num=round_num,
             user_message=user_message if round_num == 0 else None,
         )
@@ -377,8 +382,7 @@ async def run_agent_loop(
             duration_ms=api_resp.duration_ms,
         )
         all_rounds.append(rr)
-        if trace:
-            await record_round_moves(trace=trace, state=state, db=db)
+        await record_round_moves(state=state, db=db)
 
         remaining = effective_rounds - round_num
         if remaining == 1:
@@ -398,6 +402,7 @@ async def run_agent_loop(
         msg_list.append({"role": "assistant", "content": response.content})
         msg_list.append({"role": "user", "content": tool_results + [budget_note]})
 
+    trace = get_trace()
     for w in all_warnings:
         if trace:
             await trace.record(WarningEvent(message=w))
@@ -505,7 +510,6 @@ async def _run_phase1(
     call_id: str,
     state: MoveState,
     db: DB,
-    trace: "CallTrace | None" = None,
 ) -> list[str]:
     """Preliminary page loading via single LLM call with load_page tool.
 
@@ -523,7 +527,6 @@ async def _run_phase1(
             phase="initial_page_loads",
             db=db,
             state=state,
-            trace=trace,
         )
         loaded_ids = []
         for tc in result.tool_calls:
@@ -539,6 +542,14 @@ async def _run_phase1(
         return loaded_ids
     except Exception as e:
         log.warning("Phase 1 skipped due to error: %s", e, exc_info=True)
+        trace = get_trace()
+        if trace:
+            await trace.record(
+                ErrorEvent(
+                    message=f"Phase 1 skipped: {e}",
+                    phase="initial_page_loads",
+                )
+            )
         return []
 
 
@@ -551,7 +562,6 @@ async def run_call(
     *,
     available_moves: list[MoveType] | None = None,
     max_rounds: int | None = None,
-    trace: "CallTrace | None" = None,
     state: MoveState | None = None,
 ) -> RunCallResult:
     """Run a workspace call (assess/ingest) with tool use.
@@ -586,7 +596,6 @@ async def run_call(
         call.id,
         state,
         db,
-        trace=trace,
     )
     if phase1_ids:
         extra_text = await _format_loaded_pages(phase1_ids, db)
@@ -602,7 +611,6 @@ async def run_call(
         call_id=call.id,
         db=db,
         state=state,
-        trace=trace,
         max_rounds=max_rounds,
     )
 
@@ -727,7 +735,6 @@ async def run_closing_review(
     loaded_page_ids: list[str] | None = None,
     created_page_ids: list[str] | None = None,
     db: DB | None = None,
-    trace: CallTrace | None = None,
 ) -> dict | None:
     """Run the closing review as a separate call. Free (not counted against budget)."""
     page_rating_note = ""
@@ -785,7 +792,6 @@ async def run_closing_review(
             LLMExchangeMetadata(
                 call_id=call.id,
                 phase="closing_review",
-                trace=trace,
                 user_message=user_message,
             )
             if db
@@ -837,6 +843,14 @@ async def run_closing_review(
                                         pid[:8],
                                         exc_info=True,
                                     )
+                                    trace = get_trace()
+                                    if trace:
+                                        await trace.record(
+                                            ErrorEvent(
+                                                message=f"Failed to re-embed page {pid[:8]}",
+                                                phase="closing_review",
+                                            )
+                                        )
         else:
             log.warning("Closing review returned None for call=%s", call.id[:8])
         return review
@@ -847,6 +861,14 @@ async def run_closing_review(
             e,
             exc_info=True,
         )
+        trace = get_trace()
+        if trace:
+            await trace.record(
+                ErrorEvent(
+                    message=f"Closing review failed: {e}",
+                    phase="closing_review",
+                )
+            )
         return None
 
 

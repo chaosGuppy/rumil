@@ -13,7 +13,8 @@ from rumil.database import DB
 from rumil.models import Call, CallStage, CallStatus, CallType, Dispatch, Move, MoveType
 from rumil.move_presets import get_moves_for_call
 from rumil.moves.base import MoveState
-from rumil.tracing.tracer import CallTrace
+from rumil.tracing.trace_events import ErrorEvent
+from rumil.tracing.tracer import CallTrace, set_trace
 
 log = logging.getLogger(__name__)
 
@@ -159,35 +160,45 @@ class CallRunner(ABC):
             await call_db.close()
 
     async def _run_stages(self) -> None:
-        await self.infra.db.update_call_status(
-            self.infra.call.id,
-            CallStatus.RUNNING,
-            call_params=self.infra.call.call_params,
-        )
-
-        self.context_result = await self.context_builder.build_context(self.infra)
-        if self.up_to_stage == CallStage.BUILD_CONTEXT:
-            await mark_call_completed(
-                self.infra.call,
-                self.infra.db,
-                "Stopped after build_context",
+        set_trace(self.infra.trace)
+        try:
+            await self.infra.db.update_call_status(
+                self.infra.call.id,
+                CallStatus.RUNNING,
+                call_params=self.infra.call.call_params,
             )
-            return
 
-        self.creation_result = await self.page_creator.create_pages(
-            self.infra,
-            self.context_result,
-        )
-        if self.up_to_stage == CallStage.CREATE_PAGES:
-            await mark_call_completed(
-                self.infra.call,
-                self.infra.db,
-                "Stopped after create_pages",
+            self.context_result = await self.context_builder.build_context(self.infra)
+            if self.up_to_stage == CallStage.BUILD_CONTEXT:
+                await mark_call_completed(
+                    self.infra.call,
+                    self.infra.db,
+                    "Stopped after build_context",
+                )
+                return
+
+            self.creation_result = await self.page_creator.create_pages(
+                self.infra,
+                self.context_result,
             )
-            return
+            if self.up_to_stage == CallStage.CREATE_PAGES:
+                await mark_call_completed(
+                    self.infra.call,
+                    self.infra.db,
+                    "Stopped after create_pages",
+                )
+                return
 
-        await self.closing_reviewer.closing_review(
-            self.infra,
-            self.context_result,
-            self.creation_result,
-        )
+            await self.closing_reviewer.closing_review(
+                self.infra,
+                self.context_result,
+                self.creation_result,
+            )
+        except Exception as e:
+            await self.infra.trace.record(
+                ErrorEvent(
+                    message=f"Call failed: {type(e).__name__}: {e}",
+                    phase="run",
+                )
+            )
+            raise

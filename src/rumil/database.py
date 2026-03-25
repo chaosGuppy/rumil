@@ -86,10 +86,18 @@ def _row_to_link(row: dict[str, Any]) -> PageLink:
     )
 
 
-def _row_to_call(row: dict[str, Any]) -> Call:
+def _row_to_call(row: dict[str, Any]) -> Call | None:
+    try:
+        call_type = CallType(row["call_type"])
+    except ValueError:
+        log.warning(
+            "Unknown call_type %r in call %s, skipping",
+            row["call_type"], row["id"],
+        )
+        return None
     return Call(
         id=row["id"],
-        call_type=CallType(row["call_type"]),
+        call_type=call_type,
         workspace=Workspace(row["workspace"]),
         project_id=row.get("project_id") or "",
         status=CallStatus(row["status"]),
@@ -753,7 +761,7 @@ class DB:
             .order("created_at")
             .execute()
         )
-        return [_row_to_call(r) for r in rows]
+        return [c for r in rows if (c := _row_to_call(r)) is not None]
 
     async def create_call_sequence(
         self,
@@ -803,7 +811,7 @@ class DB:
             .order("sequence_position")
             .execute()
         )
-        return [_row_to_call(r) for r in rows]
+        return [c for r in rows if (c := _row_to_call(r)) is not None]
 
     async def get_root_calls_for_question(self, question_id: str) -> list[Call]:
         """Find top-level calls for a question (prioritization calls with no
@@ -816,7 +824,7 @@ class DB:
             .order("created_at")
             .execute()
         )
-        result = [_row_to_call(r) for r in rows]
+        result = [c for r in rows if (c := _row_to_call(r)) is not None]
         if result:
             return result
         # Fallback: return all calls scoped to this question
@@ -827,7 +835,7 @@ class DB:
             .order("created_at")
             .execute()
         )
-        return [_row_to_call(r) for r in rows]
+        return [c for r in rows if (c := _row_to_call(r)) is not None]
 
     async def save_page_rating(
         self,
@@ -971,7 +979,7 @@ class DB:
             .order("created_at")
             .execute()
         )
-        return [_row_to_call(r) for r in rows]
+        return [c for r in rows if (c := _row_to_call(r)) is not None]
 
     async def get_run_question_id(self, run_id: str) -> str | None:
         rows = _rows(

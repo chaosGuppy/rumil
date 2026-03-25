@@ -33,7 +33,7 @@ from rumil.calls.call_registry import (
     FIND_CONSIDERATIONS_CALL_CLASSES,
     SCOUT_CONCEPTS_CALL_CLASSES,
     SCOUT_ANALOGIES_CALL_CLASSES,
-    SCOUT_FACTS_TO_CHECK_CALL_CLASSES,
+    SCOUT_FACTCHECKS_CALL_CLASSES,
     SCOUT_PARADIGM_CASES_CALL_CLASSES,
     SCOUT_ESTIMATES_CALL_CLASSES,
     SCOUT_HYPOTHESES_CALL_CLASSES,
@@ -67,7 +67,7 @@ from rumil.models import (
     RecurseDispatchPayload,
     ScoutAnalogiesDispatchPayload,
     ScoutDispatchPayload,
-    ScoutFactsToCheckDispatchPayload,
+    ScoutFactchecksDispatchPayload,
     FindConsiderationsMode,
     ScoutParadigmCasesDispatchPayload,
     ScoutEstimatesDispatchPayload,
@@ -136,7 +136,7 @@ PHASE1_SCOUT_TYPES: Sequence[CallType] = [
     CallType.SCOUT_HYPOTHESES,
     CallType.SCOUT_ANALOGIES,
     CallType.SCOUT_PARADIGM_CASES,
-    CallType.SCOUT_FACTS_TO_CHECK,
+    CallType.SCOUT_FACTCHECKS,
 ]
 
 PHASE2_DISPATCH_TYPES: Sequence[CallType] = [
@@ -147,7 +147,7 @@ PHASE2_DISPATCH_TYPES: Sequence[CallType] = [
     CallType.SCOUT_HYPOTHESES,
     CallType.SCOUT_ANALOGIES,
     CallType.SCOUT_PARADIGM_CASES,
-    CallType.SCOUT_FACTS_TO_CHECK,
+    CallType.SCOUT_FACTCHECKS,
 ]
 
 
@@ -784,11 +784,11 @@ class BaseOrchestrator(ABC):
                 max_rounds=p.max_rounds, fruit_threshold=p.fruit_threshold,
             )
 
-        elif isinstance(p, ScoutFactsToCheckDispatchPayload):
-            log.info('Dispatch: scout_facts_to_check on %s (max_rounds=%d) — %s', d_label, p.max_rounds, p.reason)
+        elif isinstance(p, ScoutFactchecksDispatchPayload):
+            log.info('Dispatch: scout_factchecks on %s (max_rounds=%d) — %s', d_label, p.max_rounds, p.reason)
             child_call_id = await self._run_simple_call_dispatch(
-                resolved, CallType.SCOUT_FACTS_TO_CHECK,
-                SCOUT_FACTS_TO_CHECK_CALL_CLASSES, parent_call_id,
+                resolved, CallType.SCOUT_FACTCHECKS,
+                SCOUT_FACTCHECKS_CALL_CLASSES, parent_call_id,
                 force=force, call_id=call_id,
                 sequence_id=sequence_id, sequence_position=sequence_position,
                 max_rounds=p.max_rounds, fruit_threshold=p.fruit_threshold,

@@ -5,7 +5,7 @@ from rumil.calls.call_registry import (
     ASSESS_CALL_CLASSES,
     INGEST_CALL_CLASSES,
     SCOUT_ANALOGIES_CALL_CLASSES,
-    SCOUT_FACTS_TO_CHECK_CALL_CLASSES,
+    SCOUT_FACTCHECKS_CALL_CLASSES,
     SCOUT_PARADIGM_CASES_CALL_CLASSES,
     FIND_CONSIDERATIONS_CALL_CLASSES,
     WEB_RESEARCH_CALL_CLASSES,
@@ -15,14 +15,17 @@ from rumil.calls.call_registry import (
 )
 from rumil.calls.ingest import EmbeddingIngestCall, IngestCall
 from rumil.calls.prioritization import run_prioritization
-from rumil.calls.find_considerations import EmbeddingFindConsiderationsCall, FindConsiderationsCall
+from rumil.calls.find_considerations import (
+    EmbeddingFindConsiderationsCall,
+    FindConsiderationsCall,
+)
 from rumil.calls.stages import CallRunner
 from rumil.calls.web_research import WebResearchCall
 from rumil.calls.scout_analogies import ScoutAnalogiesCall
 from rumil.calls.scout_paradigm_cases import ScoutParadigmCasesCall
 from rumil.calls.scout_estimates import ScoutEstimatesCall
 from rumil.calls.scout_hypotheses import ScoutHypothesesCall
-from rumil.calls.scout_facts_to_check import ScoutFactsToCheckCall
+from rumil.calls.scout_factchecks import ScoutFactchecksCall
 from rumil.calls.scout_subquestions import ScoutSubquestionsCall
 
 __all__ = [
@@ -47,8 +50,8 @@ __all__ = [
     "SCOUT_ESTIMATES_CALL_CLASSES",
     "SCOUT_HYPOTHESES_CALL_CLASSES",
     "SCOUT_ANALOGIES_CALL_CLASSES",
-    "SCOUT_FACTS_TO_CHECK_CALL_CLASSES",
+    "SCOUT_FACTCHECKS_CALL_CLASSES",
     "SCOUT_PARADIGM_CASES_CALL_CLASSES",
-    "ScoutFactsToCheckCall",
+    "ScoutFactchecksCall",
     "run_prioritization",
 ]

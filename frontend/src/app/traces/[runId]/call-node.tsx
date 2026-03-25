@@ -30,7 +30,7 @@ const CALL_TYPE_ACCENT: Record<string, string> = {
   scout_hypotheses: "#4d8fba",
   scout_analogies: "#5498c8",
   scout_paradigm_cases: "#3b7fa8",
-  scout_facts_to_check: "#4793bf",
+  scout_factchecks: "#4793bf",
   web_research: "#c4884d",
 };
 

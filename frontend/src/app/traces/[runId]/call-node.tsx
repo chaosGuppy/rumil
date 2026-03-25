@@ -1107,15 +1107,16 @@ export const CallNode = memo(function CallNode({
             </div>
           )}
 
-          {sequences.length > 0 ? (
+          {sequences.length > 0 && (
             <SequenceGroup sequences={sequences} depth={depth} />
-          ) : children.length > 0 ? (
+          )}
+          {children.length > 0 && (
             <div className="trace-children">
               {children.map((child) => (
                 <CallNode key={child.node.call.id} tree={child} depth={depth + 1} />
               ))}
             </div>
-          ) : null}
+          )}
         </div>
       )}
     </div>

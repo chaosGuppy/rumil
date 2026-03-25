@@ -235,6 +235,8 @@ async def summarize_question(
     question_id: str,
     db: DB,
     parent_call_id: str | None = None,
+    sequence_id: str | None = None,
+    sequence_position: int | None = None,
 ) -> str | None:
     """Generate a summary page for a question subtree. Free (not budget-counted).
 
@@ -246,6 +248,8 @@ async def summarize_question(
         CallType.SUMMARIZE,
         scope_page_id=question_id,
         parent_call_id=parent_call_id,
+        sequence_id=sequence_id,
+        sequence_position=sequence_position,
     )
     trace = CallTrace(call.id, db)
     set_trace(trace)

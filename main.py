@@ -440,6 +440,9 @@ async def cmd_continue(
         )
         sys.exit(1)
 
+    if question.project_id and question.project_id != db.project_id:
+        db.project_id = question.project_id
+
     counts = await db.count_pages_for_question(question_id)
     await db.init_budget(additional_budget)
     await db.create_run(

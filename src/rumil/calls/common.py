@@ -725,6 +725,9 @@ async def mark_call_completed(call: Call, db: DB, summary: str) -> None:
     call.status = CallStatus.COMPLETE
     call.completed_at = datetime.now(UTC)
     call.result_summary = summary
+    trace = get_trace()
+    if trace and trace.total_cost_usd > 0:
+        call.cost_usd = trace.total_cost_usd
     await db.save_call(call)
 
 

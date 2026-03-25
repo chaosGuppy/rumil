@@ -12,7 +12,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import TypeAdapter, ValidationError
 
-from rumil.database import DB
+from rumil.database import DB, _row_to_call
 from rumil.models import Call, Page, PageLink, PageType, Project, Workspace
 from rumil.settings import get_settings
 from rumil.api.schemas import (
@@ -27,8 +27,11 @@ from rumil.api.schemas import (
     PageDetailOut,
     RealtimeConfigOut,
     RunListItemOut,
+    CallNodeOut,
+    CallSummary,
     RunSummaryOut,
     RunTraceOut,
+    RunTraceTreeOut,
     TraceEventOut,
 )
 
@@ -182,7 +185,7 @@ async def list_calls(
     db = await _get_db(project_id)
     if question_id:
         return await db.get_root_calls_for_question(question_id)
-    from rumil.database import _rows, _row_to_call
+    from rumil.database import _rows
 
     rows = _rows(
         await db.client.table("calls")
@@ -214,16 +217,7 @@ async def _build_call_trace(db: DB, call_id: str) -> CallTraceOut:
     call = await db.get_call(call_id)
     if not call:
         raise HTTPException(status_code=404, detail="Call not found")
-    trace_events = await db.get_call_trace(call_id)
-    events = []
-    for e in trace_events:
-        if "data" in e and isinstance(e["data"], dict):
-            e = {k: v for k, v in e.items() if k != "data"} | e["data"]
-        e.setdefault("call_id", call_id)
-        try:
-            events.append(_trace_event_adapter.validate_python(e))
-        except ValidationError:
-            log.warning("Skipping unrecognised trace event: %s", e.get("event"))
+    events = await _parse_trace_events(db, call_id)
     scope_page_summary = None
     if call.scope_page_id:
         scope_page = await db.get_page(call.scope_page_id)
@@ -247,11 +241,8 @@ async def _build_call_trace(db: DB, call_id: str) -> CallTraceOut:
                 )
             )
 
-    exchange_costs = [
-        e.cost_usd for e in events if hasattr(e, "cost_usd") and e.cost_usd is not None
-    ]
     child_costs = [ct.cost_usd for ct in child_traces if ct.cost_usd is not None]
-    total = sum(exchange_costs) + sum(child_costs)
+    total = (call.cost_usd or 0) + sum(child_costs)
     return CallTraceOut(
         call=call,
         scope_page_summary=scope_page_summary,
@@ -262,30 +253,75 @@ async def _build_call_trace(db: DB, call_id: str) -> CallTraceOut:
     )
 
 
-@app.get("/api/runs/{run_id}/trace", response_model=RunTraceOut)
-async def get_run_trace(run_id: str):
+async def _parse_trace_events(db: DB, call_id: str) -> list[TraceEventOut]:
+    raw_events = await db.get_call_trace(call_id)
+    events: list[TraceEventOut] = []
+    for e in raw_events:
+        if "data" in e and isinstance(e["data"], dict):
+            e = {k: v for k, v in e.items() if k != "data"} | e["data"]
+        e.setdefault("call_id", call_id)
+        try:
+            events.append(_trace_event_adapter.validate_python(e))
+        except ValidationError:
+            log.warning("Skipping unrecognised trace event: %s", e.get("event"))
+    return events
+
+
+def _count_trace_events(trace_json: list[dict] | None) -> tuple[int, int]:
+    warnings = 0
+    errors = 0
+    for e in trace_json or []:
+        event = e.get("event") or (e.get("data") or {}).get("event")
+        if event == "warning":
+            warnings += 1
+        elif event == "error":
+            errors += 1
+    return warnings, errors
+
+
+@app.get("/api/runs/{run_id}/trace-tree", response_model=RunTraceTreeOut)
+async def get_run_trace_tree(run_id: str):
     db = await _get_db()
     question_id = await db.get_run_question_id(run_id)
     question_page = None
     if question_id:
         question_page = await db.get_page(question_id)
-    calls = await db.get_calls_for_run(run_id)
-    root_calls = [c for c in calls if c.parent_call_id is None]
-    root_traces = [await _build_call_trace(db, c.id) for c in root_calls]
-    run_costs = [ct.cost_usd for ct in root_traces if ct.cost_usd is not None]
-    run_total = sum(run_costs)
-    return RunTraceOut(
+    raw_rows = await db.get_call_rows_for_run(run_id)
+    calls = [_row_to_call(r) for r in raw_rows]
+
+    scope_ids = [c.scope_page_id for c in calls if c.scope_page_id]
+    scope_pages = await db.get_pages_by_ids(scope_ids)
+    scope_summaries = {pid: p.headline for pid, p in scope_pages.items()}
+
+    nodes: list[CallNodeOut] = []
+    for c, row in zip(calls, raw_rows):
+        warn_count, err_count = _count_trace_events(row.get("trace_json"))
+        nodes.append(
+            CallNodeOut(
+                call=CallSummary.model_validate(c, from_attributes=True),
+                scope_page_summary=scope_summaries.get(c.scope_page_id)
+                if c.scope_page_id
+                else None,
+                warning_count=warn_count,
+                error_count=err_count,
+            )
+        )
+    total_cost = sum(c.cost_usd or 0 for c in calls)
+    return RunTraceTreeOut(
         run_id=run_id,
         question=question_page,
-        root_calls=root_traces,
-        cost_usd=run_total if run_total > 0 else None,
+        calls=nodes,
+        cost_usd=total_cost if total_cost > 0 else None,
     )
 
 
-@app.get("/api/calls/{call_id}/trace", response_model=CallTraceOut)
-async def get_call_trace(call_id: str):
+@app.get("/api/calls/{call_id}/events", response_model=list[TraceEventOut])
+async def get_call_events(call_id: str):
     db = await _get_db()
-    return await _build_call_trace(db, call_id)
+    call = await db.get_call(call_id)
+    if not call:
+        raise HTTPException(status_code=404, detail="Call not found")
+    return await _parse_trace_events(db, call_id)
 
 
 @app.get("/api/ab-runs/{ab_run_id}/trace", response_model=ABRunTraceOut)

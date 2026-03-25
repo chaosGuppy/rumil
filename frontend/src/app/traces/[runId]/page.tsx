@@ -1,12 +1,12 @@
 import Link from "next/link";
-import type { RunTraceOut, RealtimeConfigOut } from "@/api/types.gen";
+import type { RunTraceTreeOut, RealtimeConfigOut } from "@/api/types.gen";
 import { TraceViewer } from "./trace-viewer";
 import "./trace.css";
 
 import { API_BASE } from "@/lib/api-base";
 
-async function getRunTrace(runId: string): Promise<RunTraceOut | null> {
-  const res = await fetch(`${API_BASE}/api/runs/${runId}/trace`, {
+async function getRunTraceTree(runId: string): Promise<RunTraceTreeOut | null> {
+  const res = await fetch(`${API_BASE}/api/runs/${runId}/trace-tree`, {
     cache: "no-store",
   });
   if (!res.ok) return null;
@@ -32,7 +32,7 @@ export default async function TracePage({
 }) {
   const { runId } = await params;
   const [trace, realtimeConfig] = await Promise.all([
-    getRunTrace(runId),
+    getRunTraceTree(runId),
     getRealtimeConfig(),
   ]);
 

@@ -1,18 +1,61 @@
 "use client";
 
-import { useState } from "react";
+import { memo, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import type {
-  Call,
-  CallSequenceOut,
+  CallNodeOut,
+  CallSummary,
   CallTraceOut,
   DispatchExecutedEventOut,
   DispatchesPlannedEventOut,
   LlmExchangeOut,
   PageRef,
 } from "@/api/types.gen";
+import { CLIENT_API_BASE as QUERY_API_BASE } from "@/api-config";
+import { traceKeys } from "@/lib/queries";
+import type { SequenceNode } from "./trace-viewer";
 
 type TraceEvent = CallTraceOut["events"][number];
+
+export type TreeNode = {
+  node: CallNodeOut;
+  children: TreeNode[];
+  sequences: SequenceNode[];
+};
+
+export function callTraceToTreeNode(ct: CallTraceOut): TreeNode {
+  const sequences: SequenceNode[] = (ct.sequences ?? []).map((seq) => ({
+    id: seq.id,
+    calls: seq.calls.map(callTraceToTreeNode),
+  }));
+  return {
+    node: {
+      call: { ...ct.call, cost_usd: ct.cost_usd ?? null },
+      scope_page_summary: ct.scope_page_summary ?? null,
+      warning_count: ct.events.filter((e) => e.event === "warning").length,
+      error_count: ct.events.filter((e) => e.event === "error").length,
+    },
+    children: ct.children.map(callTraceToTreeNode),
+    sequences,
+  };
+}
+
+async function fetchCallEvents(callId: string): Promise<TraceEvent[]> {
+  const res = await fetch(`${QUERY_API_BASE}/api/calls/${callId}/events`);
+  if (!res.ok) throw new Error(`Failed to fetch events: ${res.status}`);
+  return res.json();
+}
+
+function useCallEvents(callId: string, enabled: boolean, isComplete: boolean) {
+  return useQuery({
+    queryKey: traceKeys.callEvents(callId),
+    queryFn: () => fetchCallEvents(callId),
+    enabled,
+    staleTime: isComplete ? Infinity : 0,
+    refetchInterval: isComplete ? false : 5000,
+  });
+}
 
 const CALL_TYPE_ACCENT: Record<string, string> = {
   find_considerations: "#5b8def",
@@ -108,7 +151,7 @@ function formatTime(ts: string): string {
   }
 }
 
-function getDuration(call: Call): string | null {
+function getDuration(call: { created_at: string; completed_at?: string | null }): string | null {
   if (!call.created_at || !call.completed_at) return null;
   const start = new Date(call.created_at).getTime();
   const end = new Date(call.completed_at).getTime();
@@ -639,7 +682,7 @@ function StatusDot({ status }: { status: string }) {
   return <span className={`trace-status-dot ${colorClass}`} />;
 }
 
-function EventSection({ event }: { event: TraceEvent }) {
+const EventSection = memo(function EventSection({ event }: { event: TraceEvent }) {
   const isWarning = event.event === "warning";
   const isError = event.event === "error";
   const isExchange = event.event === "llm_exchange";
@@ -830,26 +873,23 @@ function EventSection({ event }: { event: TraceEvent }) {
       )}
     </div>
   );
-}
+});
 
 const SEQUENCE_COLORS = [
   "#5b8def", "#a07cdf", "#4dab6f", "#c4884d", "#c46b6b",
   "#3d8cb5", "#d4943a", "#8a9e7a", "#6b9fd4", "#b48ad4",
 ];
 
-function SequenceGroup({
+const SequenceGroup = memo(function SequenceGroup({
   sequences,
   depth,
 }: {
-  sequences: CallSequenceOut[];
+  sequences: SequenceNode[];
   depth: number;
 }) {
-  const sorted = [...sequences].sort(
-    (a, b) => a.position_in_batch - b.position_in_batch,
-  );
   return (
     <div className="trace-sequences">
-      {sorted.map((seq, si) => {
+      {sequences.map((seq, si) => {
         const seqColor = SEQUENCE_COLORS[si % SEQUENCE_COLORS.length];
         return (
           <div
@@ -867,46 +907,69 @@ function SequenceGroup({
                 {seq.calls.length} call{seq.calls.length !== 1 ? "s" : ""}
               </span>
             </div>
-            {seq.calls.map((callTrace) => (
-              <CallNode key={callTrace.call.id} trace={callTrace} depth={depth + 1} />
+            {seq.calls.map((t) => (
+              <CallNode key={t.node.call.id} tree={t} depth={depth + 1} />
             ))}
           </div>
         );
       })}
     </div>
   );
-}
+});
 
-export function CallNode({
-  trace,
+export const CallNode = memo(function CallNode({
+  tree,
   depth,
 }: {
-  trace: CallTraceOut;
+  tree: TreeNode;
   depth: number;
 }) {
-  const [isOpen, setIsOpen] = useState(depth <= 1);
-  const { call, events, children } = trace;
+  const [isOpen, setIsOpen] = useState(depth === 0);
+  const { node, children, sequences } = tree;
+  const { call } = node;
+  const isComplete = call.status === "complete" || call.status === "failed";
+  const { data: events } = useCallEvents(call.id, isOpen, isComplete);
+
   const shortId = call.id.slice(0, 8);
   const duration = getDuration(call);
   const accent = CALL_TYPE_ACCENT[call.call_type] || "#7a8a9e";
 
-  const warningCount = events.filter((e) => e.event === "warning").length;
-  const errorCount = events.filter((e) => e.event === "error").length;
-
-  const skipEvents = new Set([
-    "dispatches_planned", "dispatch_executed",
-  ]);
-  const displayableEvents = events.filter((e) => !skipEvents.has(e.event));
-
-  const dispatchEvents = events.filter(
-    (e): e is DispatchesPlannedEventOut => e.event === "dispatches_planned",
+  const warningCount = useMemo(
+    () =>
+      events
+        ? events.filter((e) => e.event === "warning").length
+        : (node.warning_count ?? 0),
+    [events, node.warning_count],
   );
-  const executedMap = new Map<number, DispatchExecutedEventOut>();
-  for (const e of events) {
-    if (e.event === "dispatch_executed") {
-      executedMap.set(e.index, e);
+  const errorCount = useMemo(
+    () =>
+      events
+        ? events.filter((e) => e.event === "error").length
+        : (node.error_count ?? 0),
+    [events, node.error_count],
+  );
+
+  const displayableEvents = useMemo(() => {
+    if (!events) return [];
+    const skipEvents = new Set(["dispatches_planned", "dispatch_executed"]);
+    return events.filter((e) => !skipEvents.has(e.event));
+  }, [events]);
+
+  const dispatchEvents = useMemo(
+    () => (events ?? []).filter(
+      (e): e is DispatchesPlannedEventOut => e.event === "dispatches_planned",
+    ),
+    [events],
+  );
+  const executedMap = useMemo(() => {
+    const map = new Map<number, DispatchExecutedEventOut>();
+    for (const e of events ?? []) {
+      if (e.event === "dispatch_executed") {
+        map.set(e.index, e);
+      }
     }
-  }
+    return map;
+  }, [events]);
 
   return (
     <div
@@ -928,16 +991,16 @@ export function CallNode({
         <span className="trace-call-type">
           {call.call_type}
         </span>
-        {trace.scope_page_summary && (
-          <span className="trace-call-scope">{trace.scope_page_summary}</span>
+        {node.scope_page_summary && (
+          <span className="trace-call-scope">{node.scope_page_summary}</span>
         )}
         <span className="trace-call-id">{shortId}</span>
         <span className="trace-call-meta">
           <StatusDot status={call.status} />
           <span className="trace-call-status">{call.status}</span>
           {duration && <span className="trace-call-duration">{duration}</span>}
-          {trace.cost_usd != null && (
-            <span className="trace-call-cost">${trace.cost_usd.toFixed(4)}</span>
+          {call.cost_usd != null && (
+            <span className="trace-call-cost">${call.cost_usd.toFixed(4)}</span>
           )}
         </span>
         {warningCount > 0 && (
@@ -1032,6 +1095,10 @@ export function CallNode({
             </div>
           )}
 
+          {!events && (
+            <div className="trace-events-loading">Loading events...</div>
+          )}
+
           {displayableEvents.length > 0 && (
             <div className="trace-events">
               {displayableEvents.map((ev, i) => (
@@ -1040,12 +1107,12 @@ export function CallNode({
             </div>
           )}
 
-          {trace.sequences && trace.sequences.length > 0 ? (
-            <SequenceGroup sequences={trace.sequences} depth={depth} />
+          {sequences.length > 0 ? (
+            <SequenceGroup sequences={sequences} depth={depth} />
           ) : children.length > 0 ? (
             <div className="trace-children">
               {children.map((child) => (
-                <CallNode key={child.call.id} trace={child} depth={depth + 1} />
+                <CallNode key={child.node.call.id} tree={child} depth={depth + 1} />
               ))}
             </div>
           ) : null}
@@ -1053,4 +1120,4 @@ export function CallNode({
       )}
     </div>
   );
-}
+});

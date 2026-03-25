@@ -591,10 +591,10 @@
         }
       }
     },
-    "/api/runs/{run_id}/trace": {
+    "/api/runs/{run_id}/trace-tree": {
       "get": {
-        "summary": "Get Run Trace",
-        "operationId": "get_run_trace_api_runs__run_id__trace_get",
+        "summary": "Get Run Trace Tree",
+        "operationId": "get_run_trace_tree_api_runs__run_id__trace_tree_get",
         "parameters": [
           {
             "name": "run_id",
@@ -612,7 +612,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RunTraceOut"
+                  "$ref": "#/components/schemas/RunTraceTreeOut"
                 }
               }
             }
@@ -630,10 +630,10 @@
         }
       }
     },
-    "/api/calls/{call_id}/trace": {
+    "/api/calls/{call_id}/events": {
       "get": {
-        "summary": "Get Call Trace",
-        "operationId": "get_call_trace_api_calls__call_id__trace_get",
+        "summary": "Get Call Events",
+        "operationId": "get_call_events_api_calls__call_id__events_get",
         "parameters": [
           {
             "name": "call_id",
@@ -651,7 +651,53 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CallTraceOut"
+                  "type": "array",
+                  "items": {
+                    "oneOf": [
+                      {
+                        "$ref": "#/components/schemas/ContextBuiltEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/MovesExecutedEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/ReviewCompleteEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/LLMExchangeEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/WarningEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/ErrorEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/ScoringCompletedEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/DispatchesPlannedEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/DispatchExecutedEventOut"
+                      }
+                    ],
+                    "discriminator": {
+                      "propertyName": "event",
+                      "mapping": {
+                        "context_built": "#/components/schemas/ContextBuiltEventOut",
+                        "moves_executed": "#/components/schemas/MovesExecutedEventOut",
+                        "review_complete": "#/components/schemas/ReviewCompleteEventOut",
+                        "llm_exchange": "#/components/schemas/LLMExchangeEventOut",
+                        "warning": "#/components/schemas/WarningEventOut",
+                        "error": "#/components/schemas/ErrorEventOut",
+                        "scoring_completed": "#/components/schemas/ScoringCompletedEventOut",
+                        "dispatches_planned": "#/components/schemas/DispatchesPlannedEventOut",
+                        "dispatch_executed": "#/components/schemas/DispatchExecutedEventOut"
+                      }
+                    }
+                  },
+                  "title": "Response Get Call Events Api Calls  Call Id  Events Get"
                 }
               }
             }
@@ -1048,6 +1094,17 @@
               }
             ],
             "title": "Sequence Position"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
           }
         },
         "type": "object",
@@ -1068,9 +1125,43 @@
           "created_at",
           "completed_at",
           "sequence_id",
-          "sequence_position"
+          "sequence_position",
+          "cost_usd"
         ],
         "title": "Call"
+      },
+      "CallNodeOut": {
+        "properties": {
+          "call": {
+            "$ref": "#/components/schemas/CallSummary"
+          },
+          "scope_page_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Page Summary"
+          },
+          "warning_count": {
+            "type": "integer",
+            "title": "Warning Count",
+            "default": 0
+          },
+          "error_count": {
+            "type": "integer",
+            "title": "Error Count",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "call"
+        ],
+        "title": "CallNodeOut"
       },
       "CallSequenceOut": {
         "properties": {
@@ -1107,6 +1198,122 @@
           "failed"
         ],
         "title": "CallStatus"
+      },
+      "CallSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "call_type": {
+            "type": "string",
+            "title": "Call Type"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "parent_call_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Call Id"
+          },
+          "scope_page_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Page Id"
+          },
+          "call_params": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Call Params"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "sequence_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sequence Id"
+          },
+          "sequence_position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sequence Position"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "call_type",
+          "status",
+          "parent_call_id",
+          "scope_page_id",
+          "call_params",
+          "created_at",
+          "completed_at",
+          "sequence_id",
+          "sequence_position",
+          "cost_usd"
+        ],
+        "title": "CallSummary",
+        "description": "Lightweight Call representation for tree views \u2014 excludes bulky fields\nlike review_json, result_summary, and context_page_ids."
       },
       "CallTraceOut": {
         "properties": {
@@ -2412,6 +2619,49 @@
           "root_calls"
         ],
         "title": "RunTraceOut"
+      },
+      "RunTraceTreeOut": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "question": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Page"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "calls": {
+            "items": {
+              "$ref": "#/components/schemas/CallNodeOut"
+            },
+            "type": "array",
+            "title": "Calls"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "question",
+          "calls"
+        ],
+        "title": "RunTraceTreeOut"
       },
       "ScoringCompletedEventOut": {
         "properties": {

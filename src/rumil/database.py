@@ -108,6 +108,7 @@ def _row_to_call(row: dict[str, Any]) -> Call:
         ),
         sequence_id=row.get("sequence_id"),
         sequence_position=row.get("sequence_position"),
+        cost_usd=row.get("cost_usd"),
     )
 
 
@@ -635,6 +636,7 @@ class DB:
                     "run_id": self.run_id,
                     "sequence_id": call.sequence_id,
                     "sequence_position": call.sequence_position,
+                    "cost_usd": call.cost_usd,
                 }
             )
         )
@@ -1108,8 +1110,8 @@ class DB:
         )
         return rows[0] if rows else None
 
-    async def get_calls_for_run(self, run_id: str) -> list[Call]:
-        rows = _rows(
+    async def get_call_rows_for_run(self, run_id: str) -> list[dict]:
+        return _rows(
             await self._execute(
                 self.client.table("calls")
                 .select("*")
@@ -1117,6 +1119,9 @@ class DB:
                 .order("created_at")
             )
         )
+
+    async def get_calls_for_run(self, run_id: str) -> list[Call]:
+        rows = await self.get_call_rows_for_run(run_id)
         return [_row_to_call(r) for r in rows]
 
     async def get_run_question_id(self, run_id: str) -> str | None:

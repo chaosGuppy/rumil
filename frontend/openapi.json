@@ -591,84 +591,6 @@
         }
       }
     },
-    "/api/runs/{run_id}/trace": {
-      "get": {
-        "summary": "Get Run Trace",
-        "operationId": "get_run_trace_api_runs__run_id__trace_get",
-        "parameters": [
-          {
-            "name": "run_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Run Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RunTraceOut"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/calls/{call_id}/trace": {
-      "get": {
-        "summary": "Get Call Trace",
-        "operationId": "get_call_trace_api_calls__call_id__trace_get",
-        "parameters": [
-          {
-            "name": "call_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Call Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CallTraceOut"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/runs/{run_id}/trace-tree": {
       "get": {
         "summary": "Get Run Trace Tree",
@@ -1224,10 +1146,15 @@
             ],
             "title": "Scope Page Summary"
           },
-          "has_children": {
-            "type": "boolean",
-            "title": "Has Children",
-            "default": false
+          "warning_count": {
+            "type": "integer",
+            "title": "Warning Count",
+            "default": 0
+          },
+          "error_count": {
+            "type": "integer",
+            "title": "Error Count",
+            "default": 0
           }
         },
         "type": "object",

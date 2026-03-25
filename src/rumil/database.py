@@ -980,14 +980,17 @@ class DB:
         )
         return rows[0] if rows else None
 
-    async def get_calls_for_run(self, run_id: str) -> list[Call]:
-        rows = _rows(
+    async def get_call_rows_for_run(self, run_id: str) -> list[dict]:
+        return _rows(
             await self.client.table("calls")
             .select("*")
             .eq("run_id", run_id)
             .order("created_at")
             .execute()
         )
+
+    async def get_calls_for_run(self, run_id: str) -> list[Call]:
+        rows = await self.get_call_rows_for_run(run_id)
         return [_row_to_call(r) for r in rows]
 
     async def get_run_question_id(self, run_id: str) -> str | None:

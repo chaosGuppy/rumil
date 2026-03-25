@@ -170,7 +170,8 @@ class CallSummary(BaseModel):
 class CallNodeOut(BaseModel):
     call: CallSummary
     scope_page_summary: str | None = None
-    has_children: bool = False
+    warning_count: int = 0
+    error_count: int = 0
 
 
 class RunTraceTreeOut(BaseModel):

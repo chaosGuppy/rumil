@@ -53,9 +53,24 @@ function buildTree(calls: CallNodeOut[]): TreeNode[] {
       });
     }
 
+    const childTrees = directChildren.map(toTreeNode);
+    const allDescendants = [
+      ...childTrees,
+      ...sequences.flatMap((s) => s.calls),
+    ];
+    const subtreeCost =
+      (node.call.cost_usd ?? 0) +
+      allDescendants.reduce((sum, t) => sum + (t.node.call.cost_usd ?? 0), 0);
+
     return {
-      node,
-      children: directChildren.map(toTreeNode),
+      node: {
+        ...node,
+        call: {
+          ...node.call,
+          cost_usd: subtreeCost > 0 ? subtreeCost : null,
+        },
+      },
+      children: childTrees,
       sequences,
     };
   }

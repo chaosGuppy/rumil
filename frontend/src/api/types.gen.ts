@@ -127,9 +127,13 @@ export type CallNodeOut = {
      */
     scope_page_summary?: string | null;
     /**
-     * Has Children
+     * Warning Count
      */
-    has_children?: boolean;
+    warning_count?: number;
+    /**
+     * Error Count
+     */
+    error_count?: number;
 };
 
 /**
@@ -1454,66 +1458,6 @@ export type GetChildCallsApiCallsCallIdChildrenGetResponses = {
 };
 
 export type GetChildCallsApiCallsCallIdChildrenGetResponse = GetChildCallsApiCallsCallIdChildrenGetResponses[keyof GetChildCallsApiCallsCallIdChildrenGetResponses];
-
-export type GetRunTraceApiRunsRunIdTraceGetData = {
-    body?: never;
-    path: {
-        /**
-         * Run Id
-         */
-        run_id: string;
-    };
-    query?: never;
-    url: '/api/runs/{run_id}/trace';
-};
-
-export type GetRunTraceApiRunsRunIdTraceGetErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type GetRunTraceApiRunsRunIdTraceGetError = GetRunTraceApiRunsRunIdTraceGetErrors[keyof GetRunTraceApiRunsRunIdTraceGetErrors];
-
-export type GetRunTraceApiRunsRunIdTraceGetResponses = {
-    /**
-     * Successful Response
-     */
-    200: RunTraceOut;
-};
-
-export type GetRunTraceApiRunsRunIdTraceGetResponse = GetRunTraceApiRunsRunIdTraceGetResponses[keyof GetRunTraceApiRunsRunIdTraceGetResponses];
-
-export type GetCallTraceApiCallsCallIdTraceGetData = {
-    body?: never;
-    path: {
-        /**
-         * Call Id
-         */
-        call_id: string;
-    };
-    query?: never;
-    url: '/api/calls/{call_id}/trace';
-};
-
-export type GetCallTraceApiCallsCallIdTraceGetErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type GetCallTraceApiCallsCallIdTraceGetError = GetCallTraceApiCallsCallIdTraceGetErrors[keyof GetCallTraceApiCallsCallIdTraceGetErrors];
-
-export type GetCallTraceApiCallsCallIdTraceGetResponses = {
-    /**
-     * Successful Response
-     */
-    200: CallTraceOut;
-};
-
-export type GetCallTraceApiCallsCallIdTraceGetResponse = GetCallTraceApiCallsCallIdTraceGetResponses[keyof GetCallTraceApiCallsCallIdTraceGetResponses];
 
 export type GetRunTraceTreeApiRunsRunIdTraceTreeGetData = {
     body?: never;

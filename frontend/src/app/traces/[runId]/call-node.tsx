@@ -33,7 +33,8 @@ export function callTraceToTreeNode(ct: CallTraceOut): TreeNode {
     node: {
       call: { ...ct.call, cost_usd: ct.cost_usd ?? null },
       scope_page_summary: ct.scope_page_summary ?? null,
-      has_children: ct.children.length > 0 || (ct.sequences ?? []).length > 0,
+      warning_count: ct.events.filter((e) => e.event === "warning").length,
+      error_count: ct.events.filter((e) => e.event === "error").length,
     },
     children: ct.children.map(callTraceToTreeNode),
     sequences,
@@ -934,12 +935,18 @@ export const CallNode = memo(function CallNode({
   const accent = CALL_TYPE_ACCENT[call.call_type] || "#7a8a9e";
 
   const warningCount = useMemo(
-    () => events?.filter((e) => e.event === "warning").length ?? 0,
-    [events],
+    () =>
+      events
+        ? events.filter((e) => e.event === "warning").length
+        : (node.warning_count ?? 0),
+    [events, node.warning_count],
   );
   const errorCount = useMemo(
-    () => events?.filter((e) => e.event === "error").length ?? 0,
-    [events],
+    () =>
+      events
+        ? events.filter((e) => e.event === "error").length
+        : (node.error_count ?? 0),
+    [events, node.error_count],
   );
 
   const displayableEvents = useMemo(() => {

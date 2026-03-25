@@ -1421,6 +1421,8 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                     'Queued recursive investigation: question=%s, budget=%d — %s',
                     resolved[:8], d.payload.budget, d.payload.reason,
                 )
+            elif d.payload.question_id == question_id:
+                sequences.append([d])
             else:
                 assess = Dispatch(
                     call_type=CallType.ASSESS,

@@ -606,6 +606,14 @@ async def _structured_call_parse(
                 if isinstance(block, TextBlock):
                     response_text += block.text
             if metadata and db:
+                if metadata.user_message is None and metadata.user_messages is None:
+                    if len(msg_list) == 1:
+                        content = msg_list[0].get("content", "")
+                        metadata.user_message = (
+                            content if isinstance(content, str) else None
+                        )
+                    if len(msg_list) > 1 or metadata.user_message is None:
+                        metadata.user_messages = _serialize_messages(msg_list)
                 await _save_exchange(
                     metadata,
                     db=db,

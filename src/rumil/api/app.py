@@ -331,10 +331,12 @@ async def get_run_trace_tree(run_id: str):
                 has_children=has_kids,
             )
         )
+    total_cost = sum(c.cost_usd or 0 for c in calls)
     return RunTraceTreeOut(
         run_id=run_id,
         question=question_page,
         calls=nodes,
+        cost_usd=total_cost if total_cost > 0 else None,
     )
 
 

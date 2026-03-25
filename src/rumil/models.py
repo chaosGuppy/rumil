@@ -351,3 +351,4 @@ class Call(BaseModel):
     completed_at: datetime | None = None
     sequence_id: str | None = None
     sequence_position: int | None = None
+    cost_usd: float | None = None

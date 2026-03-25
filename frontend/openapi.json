@@ -1172,6 +1172,17 @@
               }
             ],
             "title": "Sequence Position"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
           }
         },
         "type": "object",
@@ -1192,7 +1203,8 @@
           "created_at",
           "completed_at",
           "sequence_id",
-          "sequence_position"
+          "sequence_position",
+          "cost_usd"
         ],
         "title": "Call"
       },
@@ -1216,22 +1228,6 @@
             "type": "boolean",
             "title": "Has Children",
             "default": false
-          },
-          "event_count": {
-            "type": "integer",
-            "title": "Event Count",
-            "default": 0
-          },
-          "cost_usd": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cost Usd"
           }
         },
         "type": "object",
@@ -1362,6 +1358,17 @@
               }
             ],
             "title": "Sequence Position"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
           }
         },
         "type": "object",
@@ -1375,7 +1382,8 @@
           "created_at",
           "completed_at",
           "sequence_id",
-          "sequence_position"
+          "sequence_position",
+          "cost_usd"
         ],
         "title": "CallSummary",
         "description": "Lightweight Call representation for tree views \u2014 excludes bulky fields\nlike review_json, result_summary, and context_page_ids."

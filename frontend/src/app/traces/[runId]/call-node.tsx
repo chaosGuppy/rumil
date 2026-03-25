@@ -31,11 +31,9 @@ export function callTraceToTreeNode(ct: CallTraceOut): TreeNode {
   }));
   return {
     node: {
-      call: ct.call,
+      call: { ...ct.call, cost_usd: ct.cost_usd ?? null },
       scope_page_summary: ct.scope_page_summary ?? null,
       has_children: ct.children.length > 0 || (ct.sequences ?? []).length > 0,
-      event_count: ct.events.length,
-      cost_usd: ct.cost_usd ?? null,
     },
     children: ct.children.map(callTraceToTreeNode),
     sequences,
@@ -994,8 +992,8 @@ export const CallNode = memo(function CallNode({
           <StatusDot status={call.status} />
           <span className="trace-call-status">{call.status}</span>
           {duration && <span className="trace-call-duration">{duration}</span>}
-          {node.cost_usd != null && (
-            <span className="trace-call-cost">${node.cost_usd.toFixed(4)}</span>
+          {call.cost_usd != null && (
+            <span className="trace-call-cost">${call.cost_usd.toFixed(4)}</span>
           )}
         </span>
         {warningCount > 0 && (

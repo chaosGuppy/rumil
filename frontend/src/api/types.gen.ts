@@ -111,6 +111,10 @@ export type Call = {
      * Sequence Position
      */
     sequence_position: number | null;
+    /**
+     * Cost Usd
+     */
+    cost_usd: number | null;
 };
 
 /**
@@ -126,14 +130,6 @@ export type CallNodeOut = {
      * Has Children
      */
     has_children?: boolean;
-    /**
-     * Event Count
-     */
-    event_count?: number;
-    /**
-     * Cost Usd
-     */
-    cost_usd?: number | null;
 };
 
 /**
@@ -208,6 +204,10 @@ export type CallSummary = {
      * Sequence Position
      */
     sequence_position: number | null;
+    /**
+     * Cost Usd
+     */
+    cost_usd: number | null;
 };
 
 /**

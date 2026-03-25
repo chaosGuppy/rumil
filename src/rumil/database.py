@@ -107,6 +107,7 @@ def _row_to_call(row: dict[str, Any]) -> Call:
         ),
         sequence_id=row.get("sequence_id"),
         sequence_position=row.get("sequence_position"),
+        cost_usd=row.get("cost_usd"),
     )
 
 
@@ -541,6 +542,7 @@ class DB:
                 "run_id": self.run_id,
                 "sequence_id": call.sequence_id,
                 "sequence_position": call.sequence_position,
+                "cost_usd": call.cost_usd,
             }
         ).execute()
 

@@ -164,14 +164,13 @@ class CallSummary(BaseModel):
     completed_at: datetime | None = None
     sequence_id: str | None = None
     sequence_position: int | None = None
+    cost_usd: float | None = None
 
 
 class CallNodeOut(BaseModel):
     call: CallSummary
     scope_page_summary: str | None = None
     has_children: bool = False
-    event_count: int = 0
-    cost_usd: float | None = None
 
 
 class RunTraceTreeOut(BaseModel):

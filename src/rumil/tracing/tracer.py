@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 from rumil.tracing.broadcast import Broadcaster
 from rumil.database import DB
-from rumil.tracing.trace_events import TraceEvent
+from rumil.tracing.trace_events import LLMExchangeEvent, TraceEvent
 from rumil.settings import get_settings
 
 log = logging.getLogger(__name__)
@@ -34,10 +34,13 @@ class CallTrace:
         self.db = db
         self._enabled = get_settings().tracing_enabled
         self._broadcaster = broadcaster
+        self.total_cost_usd: float = 0.0
 
     async def record(self, event_data: TraceEvent) -> None:
         if not self._enabled:
             return
+        if isinstance(event_data, LLMExchangeEvent) and event_data.cost_usd:
+            self.total_cost_usd += event_data.cost_usd
         dumped = event_data.model_dump()
         dumped["ts"] = datetime.now(timezone.utc).isoformat()
         dumped["call_id"] = self.call_id

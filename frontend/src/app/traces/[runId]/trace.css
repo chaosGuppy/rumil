@@ -519,6 +519,18 @@
   font-size: 13px;
 }
 
+.trace-error-phase {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  color: #944;
+  background: #fde8e8;
+  border-radius: 3px;
+  padding: 1px 5px;
+  margin-right: 6px;
+  vertical-align: baseline;
+}
+
 /* Dispatches section */
 
 .trace-dispatches {
@@ -1222,6 +1234,7 @@
   .trace-duration { color: #666; }
   .trace-warning-text { color: #d4a017; }
   .trace-error-text { color: #e55; }
+  .trace-error-phase { background: #3a1c1c; color: #e88; }
 
   .trace-score-headline { color: #ccc; }
   .trace-score-reasoning { color: #777; }

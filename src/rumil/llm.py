@@ -36,11 +36,11 @@ from pydantic import BaseModel, ValidationError
 from rumil.pricing import compute_cost
 
 from rumil.settings import get_settings
-from rumil.tracing.trace_events import LLMExchangeEvent
+from rumil.tracing.trace_events import ErrorEvent, LLMExchangeEvent
+from rumil.tracing.tracer import get_trace
 
 if TYPE_CHECKING:
     from rumil.database import DB
-    from rumil.tracing.tracer import CallTrace
 
 DEFAULT_MAX_TOKENS = 20_000
 
@@ -220,7 +220,6 @@ class LLMExchangeMetadata:
 
     call_id: str
     phase: str
-    trace: CallTrace | None = None
     round_num: int | None = None
     user_message: str | None = None
     user_messages: list[dict] | None = None
@@ -262,8 +261,9 @@ async def _save_exchange(
         cache_creation_input_tokens=cache_creation_input_tokens,
         cache_read_input_tokens=cache_read_input_tokens,
     )
-    if metadata.trace:
-        await metadata.trace.record(
+    trace = get_trace()
+    if trace:
+        await trace.record(
             LLMExchangeEvent(
                 exchange_id=exchange_id,
                 phase=metadata.phase,
@@ -380,6 +380,15 @@ async def call_api(
             )
             if not retryable or attempt == MAX_API_RETRIES - 1:
                 log.error("API call failed (non-retryable): %s", e, exc_info=True)
+                trace = get_trace()
+                if trace:
+                    phase = metadata.phase if metadata else "api_call"
+                    await trace.record(
+                        ErrorEvent(
+                            message=f"API call failed: {type(e).__name__}: {e}",
+                            phase=phase,
+                        )
+                    )
                 raise
             wait = 2**attempt
             label = f"HTTP {status}" if status else name
@@ -519,6 +528,15 @@ async def _structured_call_cached(
                 "returning empty result",
                 exc,
             )
+            trace = get_trace()
+            if trace:
+                phase = metadata.phase if metadata else "structured_call"
+                await trace.record(
+                    ErrorEvent(
+                        message=f"Structured call parse failed: {exc}",
+                        phase=phase,
+                    )
+                )
             return StructuredCallResult(
                 response_text=response_text or None,
                 input_tokens=api_resp.message.usage.input_tokens,

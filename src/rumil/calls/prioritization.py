@@ -29,7 +29,7 @@ from rumil.tracing.trace_events import (
     DispatchTraceItem,
     DispatchesPlannedEvent,
 )
-from rumil.tracing.tracer import CallTrace
+from rumil.tracing.tracer import CallTrace, set_trace
 
 log = logging.getLogger(__name__)
 
@@ -43,7 +43,6 @@ async def run_prioritization_call(
     available_moves: list[MoveType] | None = None,
     subtree_ids: set[str] | None = None,
     short_id_map: dict[str, str] | None = None,
-    trace: CallTrace | None = None,
     dispatch_types: Sequence[CallType] | None = None,
     extra_dispatch_defs: Sequence[DispatchDef] | None = None,
     system_prompt_override: str | None = None,
@@ -106,7 +105,6 @@ async def run_prioritization_call(
         phase="prioritization",
         db=db,
         state=state,
-        trace=trace,
     )
 
     log.info(
@@ -135,6 +133,7 @@ async def run_prioritization(
     Returns a summary dict including the list of dispatches and trace.
     """
     trace = CallTrace(call.id, db, broadcaster=broadcaster)
+    set_trace(trace)
     log.info(
         "Prioritization starting: call=%s, question=%s, budget=%d",
         call.id[:8],
@@ -167,7 +166,6 @@ async def run_prioritization(
         db,
         subtree_ids=subtree_ids,
         short_id_map=short_id_map,
-        trace=trace,
     )
 
     await trace.record(

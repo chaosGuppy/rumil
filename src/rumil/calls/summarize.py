@@ -20,7 +20,7 @@ from rumil.models import (
 )
 from rumil.moves.base import write_page_file
 from rumil.tracing.trace_events import ContextBuiltEvent, PageRef
-from rumil.tracing.tracer import CallTrace
+from rumil.tracing.tracer import CallTrace, set_trace
 
 log = logging.getLogger(__name__)
 
@@ -123,19 +123,25 @@ async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[Pa
                 f"**Consideration{direction}** (strength {link.strength:.1f}): "
                 f"{page.headline}\n\n{page.content}"
             )
-        parts.append(_section("Direct Considerations (full)", "\n\n---\n\n".join(cons_parts)))
+        parts.append(
+            _section("Direct Considerations (full)", "\n\n---\n\n".join(cons_parts))
+        )
 
     if judgements:
         most_recent = max(judgements, key=lambda j: j.created_at)
-        parts.append(_section(
-            "Most Recent Judgement (full)",
-            f"Epistemic status: {most_recent.epistemic_status:.1f} — {most_recent.epistemic_type}\n\n"
-            f"{most_recent.content}",
-        ))
+        parts.append(
+            _section(
+                "Most Recent Judgement (full)",
+                f"Epistemic status: {most_recent.epistemic_status:.1f} — {most_recent.epistemic_type}\n\n"
+                f"{most_recent.content}",
+            )
+        )
         older = [j for j in judgements if j.id != most_recent.id]
         if older:
             older_lines = [f"- [{j.epistemic_status:.1f}] {j.headline}" for j in older]
-            parts.append(_section("Earlier Judgements (summaries)", "\n".join(older_lines)))
+            parts.append(
+                _section("Earlier Judgements (summaries)", "\n".join(older_lines))
+            )
 
     if children:
         child_parts = []
@@ -161,10 +167,7 @@ async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[Pa
             child_considerations = await db.get_considerations_for_question(child.id)
             if child_considerations:
                 page_refs.extend(ref(p) for p, _ in child_considerations)
-                con_lines = [
-                    f"  - {p.headline}"
-                    for p, _ in child_considerations
-                ]
+                con_lines = [f"  - {p.headline}" for p, _ in child_considerations]
                 child_section_parts.append(
                     "**Considerations (short):**\n" + "\n".join(con_lines)
                 )
@@ -183,7 +186,8 @@ async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[Pa
                         page_refs.extend(ref(j) for j in gc_judgements)
                     gc_short_j = (
                         max(gc_judgements, key=lambda j: j.created_at).headline
-                        if gc_judgements else None
+                        if gc_judgements
+                        else None
                     )
                     gc_lines.append(
                         f"  - **{gc.headline}**"
@@ -201,18 +205,30 @@ async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[Pa
     return "\n\n".join(parts), page_refs
 
 
-async def _supersede_old_summaries(question_id: str, new_summary_id: str, db: DB) -> None:
+async def _supersede_old_summaries(
+    question_id: str, new_summary_id: str, db: DB
+) -> None:
     """Mark any existing summary pages for this question as superseded."""
     links = await db.get_links_to(question_id)
     for link in links:
         if link.link_type != LinkType.SUMMARIZES:
             continue
         old = await db.get_page(link.from_page_id)
-        if old and old.is_active() and old.page_type == PageType.SUMMARY and old.id != new_summary_id:
-            await db.client.table("pages").update(
-                {"is_superseded": True, "superseded_by": new_summary_id}
-            ).eq("id", old.id).execute()
-            log.info("Superseded old summary %s with %s", old.id[:8], new_summary_id[:8])
+        if (
+            old
+            and old.is_active()
+            and old.page_type == PageType.SUMMARY
+            and old.id != new_summary_id
+        ):
+            await (
+                db.client.table("pages")
+                .update({"is_superseded": True, "superseded_by": new_summary_id})
+                .eq("id", old.id)
+                .execute()
+            )
+            log.info(
+                "Superseded old summary %s with %s", old.id[:8], new_summary_id[:8]
+            )
 
 
 async def summarize_question(
@@ -232,15 +248,18 @@ async def summarize_question(
         parent_call_id=parent_call_id,
     )
     trace = CallTrace(call.id, db)
+    set_trace(trace)
 
     try:
         context, context_page_ids = await _build_summary_context(question_id, db)
-        await trace.record(ContextBuiltEvent(
-            working_context_page_ids=context_page_ids,
-        ))
+        await trace.record(
+            ContextBuiltEvent(
+                working_context_page_ids=context_page_ids,
+            )
+        )
         user_message = build_user_message(context, TASK)
 
-        meta = LLMExchangeMetadata(call_id=call.id, phase="summarize", trace=trace)
+        meta = LLMExchangeMetadata(call_id=call.id, phase="summarize")
         result = await structured_call(
             system_prompt=SYSTEM_PROMPT,
             user_message=user_message,
@@ -250,7 +269,10 @@ async def summarize_question(
         )
 
         if not result.data:
-            log.warning("summarize_question: structured call returned no data for %s", question_id[:8])
+            log.warning(
+                "summarize_question: structured call returned no data for %s",
+                question_id[:8],
+            )
             await _fail_call(call, db)
             return None
 
@@ -296,7 +318,9 @@ async def summarize_question(
         return page.id
 
     except Exception as e:
-        log.error("summarize_question failed for %s: %s", question_id[:8], e, exc_info=True)
+        log.error(
+            "summarize_question failed for %s: %s", question_id[:8], e, exc_info=True
+        )
         await _fail_call(call, db)
         return None
 

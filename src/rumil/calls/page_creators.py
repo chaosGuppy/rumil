@@ -91,7 +91,6 @@ class SimpleAgentLoop(PageCreator):
             call_id=infra.call.id,
             db=infra.db,
             state=infra.state,
-            trace=infra.trace,
             max_rounds=max_rounds,
         )
 
@@ -247,7 +246,6 @@ class MultiRoundLoop(PageCreator):
                     call_id=infra.call.id,
                     db=infra.db,
                     state=infra.state,
-                    trace=infra.trace,
                     cache=True,
                 )
             else:
@@ -271,7 +269,6 @@ class MultiRoundLoop(PageCreator):
                     call_id=infra.call.id,
                     db=infra.db,
                     state=infra.state,
-                    trace=infra.trace,
                     messages=resume_messages,
                     cache=True,
                 )
@@ -321,7 +318,6 @@ class MultiRoundLoop(PageCreator):
         meta = LLMExchangeMetadata(
             call_id=infra.call.id,
             phase="fruit_check",
-            trace=infra.trace,
             user_message=_FRUIT_CHECK_MESSAGE,
         )
         result = await structured_call(
@@ -415,7 +411,6 @@ class WebResearchLoop(PageCreator):
             meta = LLMExchangeMetadata(
                 call_id=infra.call.id,
                 phase="web_research_loop",
-                trace=infra.trace,
                 round_num=round_num,
                 user_message=user_message if round_num == 0 else None,
             )
@@ -444,7 +439,6 @@ class WebResearchLoop(PageCreator):
                     custom_tool_fns,
                 )
                 await record_round_moves(
-                    trace=infra.trace,
                     state=infra.state,
                     db=infra.db,
                 )

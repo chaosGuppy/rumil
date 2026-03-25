@@ -18,11 +18,10 @@ from rumil.tracing.tracer import CallTrace
 class ScriptedOrchestrator(BaseOrchestrator):
     """Returns pre-scripted batches of dispatch sequences."""
 
-    def __init__(self, db, sequences, call_id=None, trace=None):
+    def __init__(self, db, sequences, call_id=None):
         super().__init__(db)
         self._sequences = list(sequences)
         self._call_id = call_id
-        self._trace = trace
 
     async def run(self, root_question_id):
         await self._setup()
@@ -34,7 +33,6 @@ class ScriptedOrchestrator(BaseOrchestrator):
                 self._sequences,
                 root_question_id,
                 self._call_id,
-                self._trace,
             )
         finally:
             await self._teardown()
@@ -178,7 +176,6 @@ async def test_single_element_sequences_skip_sequence_creation(tmp_db, question_
             [_assess(question_page.id)],
         ],
         call_id=p_call.id,
-        trace=trace,
     )
     await orch.run(question_page.id)
 
@@ -209,7 +206,6 @@ async def test_multi_step_sequence_creates_record_and_assigns_positions(
             [_scout(question_page.id), _assess(question_page.id)],
         ],
         call_id=p_call.id,
-        trace=trace,
     )
     await orch.run(question_page.id)
 
@@ -240,7 +236,6 @@ async def test_mixed_single_and_multi_step_sequences(tmp_db, question_page):
             [_scout(question_page.id), _assess(question_page.id)],
         ],
         call_id=p_call.id,
-        trace=trace,
     )
     await orch.run(question_page.id)
 

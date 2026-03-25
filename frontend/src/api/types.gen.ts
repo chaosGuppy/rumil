@@ -320,6 +320,10 @@ export type ErrorEventOut = {
      * Message
      */
     message: string;
+    /**
+     * Phase
+     */
+    phase: string;
 };
 
 /**

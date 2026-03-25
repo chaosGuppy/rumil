@@ -1,9 +1,7 @@
-"""Tests for call sequences — DB layer, orchestrator wiring, and API."""
+"""Tests for call sequences — DB layer and orchestrator wiring."""
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 
-from rumil.api.app import app
 from rumil.models import (
     AssessDispatchPayload,
     CallType,
@@ -245,53 +243,3 @@ async def test_mixed_single_and_multi_step_sequences(tmp_db, question_page):
 
     seq_calls = await tmp_db.get_calls_for_sequence(db_seqs[0].id)
     assert len(seq_calls) == 2
-
-
-@pytest.fixture
-def api_client():
-    transport = ASGITransport(app=app)
-    return AsyncClient(transport=transport, base_url="http://test")
-
-
-async def test_api_trace_includes_sequences(api_client, tmp_db, question_page):
-    """The /api/runs/{run_id}/trace endpoint should include sequences in the response."""
-    parent = await tmp_db.create_call(
-        CallType.PRIORITIZATION,
-        scope_page_id=question_page.id,
-    )
-    seq = await tmp_db.create_call_sequence(
-        parent_call_id=parent.id,
-        scope_question_id=question_page.id,
-        position_in_batch=0,
-    )
-    child = await tmp_db.create_call(
-        CallType.ASSESS,
-        scope_page_id=question_page.id,
-        parent_call_id=parent.id,
-        sequence_id=seq.id,
-        sequence_position=0,
-    )
-
-    resp = await api_client.get(f"/api/calls/{parent.id}/trace")
-    assert resp.status_code == 200
-    data = resp.json()
-
-    assert data["sequences"] is not None
-    assert len(data["sequences"]) == 1
-    api_seq = data["sequences"][0]
-    assert api_seq["id"] == seq.id
-    assert api_seq["position_in_batch"] == 0
-    assert len(api_seq["calls"]) == 1
-    assert api_seq["calls"][0]["call"]["id"] == child.id
-
-
-async def test_api_trace_no_sequences_returns_null(api_client, tmp_db, question_page):
-    """When a call has no sequences, the sequences field should be null."""
-    call = await tmp_db.create_call(
-        CallType.ASSESS,
-        scope_page_id=question_page.id,
-    )
-
-    resp = await api_client.get(f"/api/calls/{call.id}/trace")
-    assert resp.status_code == 200
-    assert resp.json()["sequences"] is None

@@ -79,7 +79,7 @@ from rumil.models import (
 from rumil.page_graph import PageGraph
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
-from rumil.tracing.tracer import CallTrace
+from rumil.tracing.tracer import CallTrace, get_trace, set_trace
 from rumil.tracing.trace_events import (
     ContextBuiltEvent,
     DispatchExecutedEvent,
@@ -172,7 +172,6 @@ class FruitResult(BaseModel):
 class PrioritizationResult:
     dispatch_sequences: Sequence[Sequence[Dispatch]]
     call_id: str | None = None
-    trace: CallTrace | None = None
     children: Sequence[tuple['TwoPhaseOrchestrator', str]] = ()
 
 
@@ -610,7 +609,6 @@ class BaseOrchestrator(ABC):
         sequence: Sequence[Dispatch],
         scope_question_id: str,
         parent_call_id: str | None,
-        trace: CallTrace | None,
         base_index: int,
         position_in_batch: int = 0,
     ) -> bool:
@@ -644,6 +642,7 @@ class BaseOrchestrator(ABC):
             page = await self.db.get_page(resolved)
             headlines.append(page.headline if page else '')
 
+        trace = get_trace()
         if trace:
             for i, dispatch in enumerate(sequence):
                 await trace.record(DispatchExecutedEvent(
@@ -813,7 +812,6 @@ class BaseOrchestrator(ABC):
         sequences: Sequence[Sequence[Dispatch]],
         scope_question_id: str,
         call_id: str | None,
-        trace: CallTrace | None,
     ) -> bool:
         """Run multiple dispatch sequences concurrently. Returns True if any executed."""
         base_index = 0
@@ -821,7 +819,7 @@ class BaseOrchestrator(ABC):
         for batch_pos, seq in enumerate(sequences):
             tasks.append(self._run_dispatch_sequence(
                 seq, scope_question_id, call_id,
-                trace, base_index,
+                base_index,
                 position_in_batch=batch_pos,
             ))
             base_index += len(seq)
@@ -847,7 +845,7 @@ class LLMOrchestrator(BaseOrchestrator):
         self._plan: list[Dispatch] = []
         self._cursor: int = 0
         self._call_id: str | None = None
-        self._trace: CallTrace | None = None
+
         self._executed_since_last_plan: bool = False
         self._first_call: bool = True
 
@@ -865,7 +863,7 @@ class LLMOrchestrator(BaseOrchestrator):
 
                 executed = await self._run_sequences(
                     result.dispatch_sequences, root_question_id,
-                    result.call_id, result.trace,
+                    result.call_id,
                 )
                 if executed:
                     self._executed_since_last_plan = True
@@ -909,7 +907,6 @@ class LLMOrchestrator(BaseOrchestrator):
         return PrioritizationResult(
             dispatch_sequences=[batch] if batch else [],
             call_id=self._call_id,
-            trace=self._trace,
         )
 
     async def _run_prioritization(
@@ -937,7 +934,7 @@ class LLMOrchestrator(BaseOrchestrator):
         self._plan = list(plan.get('dispatches', []))
         self._cursor = 0
         self._call_id = p_call.id
-        self._trace = plan.get('trace')
+
 
         log.debug(
             'LLMOrchestrator: got %d dispatches for question=%s',
@@ -987,7 +984,7 @@ class LLMOrchestrator(BaseOrchestrator):
         sub_dispatches = list(plan.get('dispatches', []))
         self._plan[self._cursor:self._cursor + 1] = sub_dispatches
         self._call_id = p_call.id
-        self._trace = plan.get('trace')
+
 
         log.debug(
             'Sub-prioritization expanded to %d dispatches',
@@ -1021,7 +1018,6 @@ class LLMOrchestrator(BaseOrchestrator):
                 ),
             ]],
             call_id=self._call_id,
-            trace=self._trace,
         )
 
 
@@ -1042,7 +1038,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         super().__init__(db, broadcaster)
         self._invocation: int = 0
         self._call_id: str | None = None
-        self._trace: CallTrace | None = None
+
         self._executed_since_last_plan: bool = False
         self._budget_cap: int | None = budget_cap
         self._consumed: int = 0
@@ -1102,7 +1098,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                 if result.dispatch_sequences:
                     tasks.append(self._run_sequences(
                         result.dispatch_sequences, root_question_id,
-                        result.call_id, result.trace,
+                        result.call_id,
                     ))
                 for child, child_qid in result.children:
                     tasks.append(child.run(child_qid))
@@ -1134,12 +1130,11 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         sequence: Sequence[Dispatch],
         scope_question_id: str,
         parent_call_id: str | None,
-        trace: CallTrace | None,
         base_index: int,
         position_in_batch: int = 0,
     ) -> bool:
         result = await super()._run_dispatch_sequence(
-            sequence, scope_question_id, parent_call_id, trace, base_index,
+            sequence, scope_question_id, parent_call_id, base_index,
             position_in_batch=position_in_batch,
         )
         if result:
@@ -1199,6 +1194,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                 workspace=Workspace.PRIORITIZATION,
             )
         trace = CallTrace(p_call.id, self.db, broadcaster=self.broadcaster)
+        set_trace(trace)
         await trace.record(ContextBuiltEvent(budget=phase1_budget))
 
         task = (
@@ -1219,7 +1215,6 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
 
             subtree_ids=subtree_ids,
             short_id_map=short_id_map,
-            trace=trace,
             dispatch_types=list(PHASE1_SCOUT_TYPES),
             system_prompt_override=build_system_prompt('two_phase_p1'),
         )
@@ -1257,7 +1252,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         )
 
         self._call_id = p_call.id
-        self._trace = trace
+
 
         log.info(
             'TwoPhaseOrchestrator phase1 complete: %d sequences',
@@ -1266,7 +1261,6 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         return PrioritizationResult(
             dispatch_sequences=sequences,
             call_id=p_call.id,
-            trace=trace,
         )
 
     async def _phase2(
@@ -1288,6 +1282,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             workspace=Workspace.PRIORITIZATION,
         )
         trace = CallTrace(p_call.id, self.db, broadcaster=self.broadcaster)
+        set_trace(trace)
         await trace.record(ContextBuiltEvent(budget=budget))
 
         graph = await PageGraph.load(self.db)
@@ -1312,7 +1307,6 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                 metadata=LLMExchangeMetadata(
                     call_id=p_call.id,
                     phase='score_subquestions',
-                    trace=trace,
                 ),
                 db=self.db,
             ))
@@ -1334,7 +1328,6 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             metadata=LLMExchangeMetadata(
                 call_id=p_call.id,
                 phase='score_parent_fruit',
-                trace=trace,
             ),
             db=self.db,
         ))
@@ -1400,7 +1393,6 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
 
             subtree_ids=subtree_ids,
             short_id_map=short_id_map,
-            trace=trace,
             dispatch_types=list(PHASE2_DISPATCH_TYPES),
             extra_dispatch_defs=extra_defs or None,
             system_prompt_override=build_system_prompt('two_phase_p2'),
@@ -1473,7 +1465,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         )
 
         self._call_id = p_call.id
-        self._trace = trace
+
 
         log.info(
             'TwoPhaseOrchestrator phase2 complete: %d sequences, %d children',
@@ -1482,7 +1474,6 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         return PrioritizationResult(
             dispatch_sequences=sequences,
             call_id=p_call.id,
-            trace=trace,
             children=children,
         )
 

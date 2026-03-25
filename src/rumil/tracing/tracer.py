@@ -1,5 +1,6 @@
 """Execution tracing: capture call events and persist them to the DB."""
 
+import contextvars
 import logging
 from datetime import datetime, timezone
 
@@ -9,6 +10,20 @@ from rumil.tracing.trace_events import TraceEvent
 from rumil.settings import get_settings
 
 log = logging.getLogger(__name__)
+
+_trace_var: contextvars.ContextVar["CallTrace | None"] = contextvars.ContextVar(
+    "rumil_call_trace", default=None
+)
+
+
+def get_trace() -> "CallTrace | None":
+    """Return the current task-local CallTrace, or None if not set."""
+    return _trace_var.get()
+
+
+def set_trace(trace: "CallTrace") -> contextvars.Token:
+    """Set the task-local CallTrace. Returns a token for optional reset."""
+    return _trace_var.set(trace)
 
 
 class CallTrace:

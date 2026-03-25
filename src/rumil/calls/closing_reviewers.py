@@ -31,7 +31,8 @@ from rumil.models import CallType, MoveType
 from rumil.move_presets import get_moves_for_call
 from rumil.moves.load_page import LoadPagePayload
 from rumil.moves.registry import MOVES
-from rumil.tracing.trace_events import ReviewCompleteEvent
+from rumil.tracing.trace_events import ErrorEvent, ReviewCompleteEvent
+from rumil.tracing.tracer import get_trace
 
 log = logging.getLogger(__name__)
 
@@ -56,7 +57,6 @@ class StandardClosingReview(ClosingReviewer):
             creation.all_loaded_ids,
             creation.created_page_ids,
             infra.db,
-            infra.trace,
         )
         if review:
             log.info(
@@ -214,7 +214,6 @@ async def _self_assessment(
     meta = LLMExchangeMetadata(
         call_id=infra.call.id,
         phase="closing_review",
-        trace=infra.trace,
         user_message=assessment_msg,
     )
     review_result = await structured_call(
@@ -346,7 +345,6 @@ class TwoPhaseScoutReview(ClosingReviewer):
             phase="link_review",
             db=infra.db,
             state=infra.state,
-            trace=infra.trace,
             messages=link_messages,
             cache=True,
         )
@@ -451,7 +449,6 @@ class ConceptAssessReview(ClosingReviewer):
         meta = LLMExchangeMetadata(
             call_id=infra.call.id,
             phase="closing_review",
-            trace=infra.trace,
             user_message=user_message,
         )
         try:
@@ -470,6 +467,14 @@ class ConceptAssessReview(ClosingReviewer):
                 e,
                 exc_info=True,
             )
+            trace = get_trace()
+            if trace:
+                await trace.record(
+                    ErrorEvent(
+                        message=f"Concept closing review failed: {e}",
+                        phase="closing_review",
+                    )
+                )
             infra.call.review_json = {}
             await mark_call_completed(
                 infra.call,

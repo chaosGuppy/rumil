@@ -152,6 +152,14 @@ class CallRunner(ABC):
     def task_description(self) -> str: ...
 
     async def run(self) -> None:
+        call_db = await self.infra.db.fork()
+        self.infra.db = call_db
+        try:
+            await self._run_stages()
+        finally:
+            await call_db.close()
+
+    async def _run_stages(self) -> None:
         set_trace(self.infra.trace)
         try:
             await self.infra.db.update_call_status(

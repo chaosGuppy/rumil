@@ -1075,6 +1075,8 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         return p_call.id
 
     async def run(self, root_question_id: str) -> None:
+        own_db = await self.db.fork()
+        self.db = own_db
         await self._setup()
         remaining = await self.db.budget_remaining()
         effective = self._effective_budget(remaining)
@@ -1124,6 +1126,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                     )
         finally:
             await self._teardown()
+            await own_db.close()
 
     async def _run_dispatch_sequence(
         self,

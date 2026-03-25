@@ -20,7 +20,7 @@ from rumil.models import (
     ScoutDispatchPayload,
     ScoutParadigmCasesDispatchPayload,
     ScoutEstimatesDispatchPayload,
-    ScoutFactsToCheckDispatchPayload,
+    ScoutFactchecksDispatchPayload,
     ScoutHypothesesDispatchPayload,
     ScoutSubquestionsDispatchPayload,
     WebResearchDispatchPayload,
@@ -225,9 +225,9 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
         ),
         schema=ScoutParadigmCasesDispatchPayload,
     ),
-    CallType.SCOUT_FACTS_TO_CHECK: DispatchDef(
-        call_type=CallType.SCOUT_FACTS_TO_CHECK,
-        name="dispatch_scout_facts_to_check",
+    CallType.SCOUT_FACTCHECKS: DispatchDef(
+        call_type=CallType.SCOUT_FACTCHECKS,
+        name="dispatch_scout_factchecks",
         description=(
             "Dispatch a specialized scout that surfaces uncertain factual "
             "claims whose truth value could materially affect the answer "
@@ -236,7 +236,7 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
             "fruit falls below fruit_threshold. "
             "Budget cost: between 1 and max_rounds (inclusive)."
         ),
-        schema=ScoutFactsToCheckDispatchPayload,
+        schema=ScoutFactchecksDispatchPayload,
     ),
     CallType.WEB_RESEARCH: DispatchDef(
         call_type=CallType.WEB_RESEARCH,

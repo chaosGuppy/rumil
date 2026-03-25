@@ -7,13 +7,13 @@ from rumil.calls.stages import CallRunner, ClosingReviewer, ContextBuilder, Page
 from rumil.models import CallType
 
 
-class ScoutFactsToCheckCall(CallRunner):
+class ScoutFactchecksCall(CallRunner):
     """Surface checkable facts the model is uncertain about that bear on the question."""
 
     context_builder_cls = EmbeddingContext
     page_creator_cls = MultiRoundLoop
     closing_reviewer_cls = StandardClosingReview
-    call_type = CallType.SCOUT_FACTS_TO_CHECK
+    call_type = CallType.SCOUT_FACTCHECKS
 
     def _make_context_builder(self) -> ContextBuilder:
         return EmbeddingContext(self.call_type)

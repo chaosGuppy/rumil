@@ -12,7 +12,7 @@ All scout dispatches automatically target the scope question — you do not need
 
 * **Scout subquestions**: Decompose the question into informative sub-questions.
 * **Scout estimates**: Identify key quantities and make initial guesses.
-* **Scout facts-to-check**: Identify key factual information to look up.
+* **Scout factchecks**: Identify key factual information to look up.
 * **Scout hypotheses**: Generate candidate answers to explore.
 * **Scout analogies**: Find analogies that might illuminate the question.
 * **Scout paradigm cases**: Identify concrete, real-world cases or examples that illuminate the question.

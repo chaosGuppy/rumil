@@ -1231,7 +1231,7 @@
           "scout_hypotheses",
           "scout_analogies",
           "scout_paradigm_cases",
-          "scout_facts_to_check",
+          "scout_factchecks",
           "web_research"
         ],
         "title": "CallType"

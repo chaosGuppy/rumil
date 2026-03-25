@@ -15,7 +15,7 @@ You must make all your dispatch calls now — this is your only turn.
 - **dispatch_find_considerations**: Run general exploration on a question, based purely on trained knowledge without web research. Runs up to `max_rounds` rounds, stopping early when remaining fruit falls below `fruit_threshold`. Budget cost: between 1 and max_rounds (inclusive).
 - **Specialized scouts** (dispatch_scout_subquestions, dispatch_scout_estimates, dispatch_scout_hypotheses, dispatch_scout_analogies, dispatch_scout_paradigm_cases, dispatch_scout_facts_to_check): Run additional scouting rounds on the **scope question** if more exploration is needed. Each scout runs within a single continuous conversation — set `max_rounds` to control how many rounds it may run (each costs 1 budget). Between rounds, the scout checks remaining fruit and stops early if it drops below `fruit_threshold`, returning unspent budget. Use these when it seems more useful to have further scouting on the top-level question (perhaps in light of recent investigations of subquestions).
 - **recurse_into_subquestion**: Launch a full two-phase prioritization cycle on a child question, with its own fan-out scouting and follow-up phases. Set `budget` to the number of units to allocate. Use this for subquestions that are substantial enough to warrant their own structured investigation. DO NOT use recurse_into_subquestion on the top-level scope question.
-- **dispatch_web_research**: Verify a fact-check question via web search. Use **only** on questions identified by scout_facts_to_check. Budget cost: exactly 1.
+- **dispatch_web_research**: Verify a fact-check question via web search. Use **only** on questions identified by scout_factchecks. Budget cost: exactly 1.
 
 ## How to Decide
 

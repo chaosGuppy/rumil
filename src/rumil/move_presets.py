@@ -67,7 +67,7 @@ PRESETS: dict[str, MovePreset] = {
             MoveType.LINK_CONSIDERATION,
             MoveType.LOAD_PAGE,
         ],
-        CallType.SCOUT_FACTS_TO_CHECK: [
+        CallType.SCOUT_FACTCHECKS: [
             MoveType.CREATE_CLAIM,
             MoveType.CREATE_SCOUT_QUESTION,
             MoveType.LINK_CONSIDERATION,
@@ -142,7 +142,7 @@ PRESETS: dict[str, MovePreset] = {
             MoveType.LINK_CONSIDERATION,
             MoveType.LOAD_PAGE,
         ],
-        CallType.SCOUT_FACTS_TO_CHECK: [
+        CallType.SCOUT_FACTCHECKS: [
             MoveType.CREATE_CLAIM,
             MoveType.CREATE_SCOUT_QUESTION,
             MoveType.LINK_CONSIDERATION,

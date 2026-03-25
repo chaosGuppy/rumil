@@ -361,7 +361,12 @@ async def assess_question(
     if not await _consume_budget(db, force=force):
         return None
 
-    await summarize_question(question_id, db, parent_call_id=parent_call_id)
+    await summarize_question(
+        question_id, db,
+        parent_call_id=parent_call_id,
+        sequence_id=sequence_id,
+        sequence_position=sequence_position,
+    )
 
     call = await db.create_call(
         CallType.ASSESS,
@@ -1291,7 +1296,13 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         graph = await PageGraph.load(self.db)
         child_questions = await graph.get_child_questions(question_id)
         parent_question = await graph.get_page(question_id)
-        parent_headline = parent_question.headline if parent_question else question_id[:8]
+        if not parent_question:
+            raise RuntimeError(
+                f'Parent question {question_id} not found in PageGraph. '
+                f'This usually means the question belongs to a different project '
+                f'than the current DB scope.'
+            )
+        parent_headline = parent_question.headline
 
         scoring_system = build_system_prompt('score_subquestions')
 

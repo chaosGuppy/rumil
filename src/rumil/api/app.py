@@ -28,6 +28,7 @@ from rumil.api.schemas import (
     RealtimeConfigOut,
     RunListItemOut,
     CallNodeOut,
+    CallSummary,
     RunSummaryOut,
     RunTraceOut,
     RunTraceTreeOut,
@@ -314,40 +315,26 @@ async def get_run_trace_tree(run_id: str):
     calls = await db.get_calls_for_run(run_id)
     parent_ids = {c.parent_call_id for c in calls if c.parent_call_id}
 
-    scope_ids = {c.scope_page_id for c in calls if c.scope_page_id}
-    scope_summaries: dict[str, str] = {}
-    for sid in scope_ids:
-        page = await db.get_page(sid)
-        if page:
-            scope_summaries[sid] = page.headline
+    scope_ids = [c.scope_page_id for c in calls if c.scope_page_id]
+    scope_pages = await db.get_pages_by_ids(scope_ids)
+    scope_summaries = {pid: p.headline for pid, p in scope_pages.items()}
 
     nodes: list[CallNodeOut] = []
-    total_cost = 0.0
     for c in calls:
-        raw_events = await db.get_call_trace(c.id)
-        cost = 0.0
-        for e in raw_events:
-            data = e.get("data", e)
-            if isinstance(data, dict) and data.get("cost_usd"):
-                cost += data["cost_usd"]
         has_kids = c.id in parent_ids
         nodes.append(
             CallNodeOut(
-                call=c,
+                call=CallSummary.model_validate(c, from_attributes=True),
                 scope_page_summary=scope_summaries.get(c.scope_page_id)
                 if c.scope_page_id
                 else None,
                 has_children=has_kids,
-                event_count=len(raw_events),
-                cost_usd=cost if cost > 0 else None,
             )
         )
-        total_cost += cost
     return RunTraceTreeOut(
         run_id=run_id,
         question=question_page,
         calls=nodes,
-        cost_usd=total_cost if total_cost > 0 else None,
     )
 
 

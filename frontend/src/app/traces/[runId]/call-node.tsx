@@ -4,8 +4,8 @@ import { memo, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import type {
-  Call,
   CallNodeOut,
+  CallSummary,
   CallTraceOut,
   DispatchExecutedEventOut,
   DispatchesPlannedEventOut,
@@ -152,7 +152,7 @@ function formatTime(ts: string): string {
   }
 }
 
-function getDuration(call: Call): string | null {
+function getDuration(call: { created_at: string; completed_at?: string | null }): string | null {
   if (!call.created_at || !call.completed_at) return null;
   const start = new Date(call.created_at).getTime();
   const end = new Date(call.completed_at).getTime();

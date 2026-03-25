@@ -148,8 +148,26 @@ class RunTraceOut(BaseModel):
     cost_usd: float | None = None
 
 
+class CallSummary(BaseModel):
+    """Lightweight Call representation for tree views — excludes bulky fields
+    like review_json, result_summary, and context_page_ids."""
+
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    id: str
+    call_type: str
+    status: str
+    parent_call_id: str | None = None
+    scope_page_id: str | None = None
+    call_params: dict | None = None
+    created_at: datetime
+    completed_at: datetime | None = None
+    sequence_id: str | None = None
+    sequence_position: int | None = None
+
+
 class CallNodeOut(BaseModel):
-    call: Call
+    call: CallSummary
     scope_page_summary: str | None = None
     has_children: bool = False
     event_count: int = 0

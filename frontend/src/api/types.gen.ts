@@ -117,7 +117,7 @@ export type Call = {
  * CallNodeOut
  */
 export type CallNodeOut = {
-    call: Call;
+    call: CallSummary;
     /**
      * Scope Page Summary
      */
@@ -158,6 +158,57 @@ export type CallSequenceOut = {
  * CallStatus
  */
 export type CallStatus = 'pending' | 'running' | 'complete' | 'failed';
+
+/**
+ * CallSummary
+ *
+ * Lightweight Call representation for tree views — excludes bulky fields
+ * like review_json, result_summary, and context_page_ids.
+ */
+export type CallSummary = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Call Type
+     */
+    call_type: string;
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * Parent Call Id
+     */
+    parent_call_id: string | null;
+    /**
+     * Scope Page Id
+     */
+    scope_page_id: string | null;
+    /**
+     * Call Params
+     */
+    call_params: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Completed At
+     */
+    completed_at: string | null;
+    /**
+     * Sequence Id
+     */
+    sequence_id: string | null;
+    /**
+     * Sequence Position
+     */
+    sequence_position: number | null;
+};
 
 /**
  * CallTraceOut

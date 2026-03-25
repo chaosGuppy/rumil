@@ -1199,7 +1199,7 @@
       "CallNodeOut": {
         "properties": {
           "call": {
-            "$ref": "#/components/schemas/Call"
+            "$ref": "#/components/schemas/CallSummary"
           },
           "scope_page_summary": {
             "anyOf": [
@@ -1275,6 +1275,110 @@
           "failed"
         ],
         "title": "CallStatus"
+      },
+      "CallSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "call_type": {
+            "type": "string",
+            "title": "Call Type"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "parent_call_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Call Id"
+          },
+          "scope_page_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Page Id"
+          },
+          "call_params": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Call Params"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "sequence_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sequence Id"
+          },
+          "sequence_position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sequence Position"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "call_type",
+          "status",
+          "parent_call_id",
+          "scope_page_id",
+          "call_params",
+          "created_at",
+          "completed_at",
+          "sequence_id",
+          "sequence_position"
+        ],
+        "title": "CallSummary",
+        "description": "Lightweight Call representation for tree views \u2014 excludes bulky fields\nlike review_json, result_summary, and context_page_ids."
       },
       "CallTraceOut": {
         "properties": {

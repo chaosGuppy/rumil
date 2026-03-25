@@ -257,6 +257,21 @@ class DB:
         )
         return _row_to_page(rows[0]) if rows else None
 
+    async def get_pages_by_ids(
+        self, page_ids: Sequence[str],
+    ) -> dict[str, Page]:
+        """Fetch multiple pages by ID in a single query. Returns a dict
+        mapping page ID to Page for all found pages."""
+        if not page_ids:
+            return {}
+        rows = _rows(
+            await self.client.table("pages")
+            .select("*")
+            .in_("id", list(page_ids))
+            .execute()
+        )
+        return {r["id"]: _row_to_page(r) for r in rows}
+
     async def resolve_page_id(self, page_id: str) -> str | None:
         """Resolve a page ID to a full UUID. Handles both full UUIDs and
         8-char short IDs. Returns the full UUID if found, or None."""

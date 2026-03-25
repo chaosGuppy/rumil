@@ -114,6 +114,29 @@ export type Call = {
 };
 
 /**
+ * CallNodeOut
+ */
+export type CallNodeOut = {
+    call: Call;
+    /**
+     * Scope Page Summary
+     */
+    scope_page_summary?: string | null;
+    /**
+     * Has Children
+     */
+    has_children?: boolean;
+    /**
+     * Event Count
+     */
+    event_count?: number;
+    /**
+     * Cost Usd
+     */
+    cost_usd?: number | null;
+};
+
+/**
  * CallSequenceOut
  */
 export type CallSequenceOut = {
@@ -840,6 +863,25 @@ export type RunTraceOut = {
 };
 
 /**
+ * RunTraceTreeOut
+ */
+export type RunTraceTreeOut = {
+    /**
+     * Run Id
+     */
+    run_id: string;
+    question: Page | null;
+    /**
+     * Calls
+     */
+    calls: Array<CallNodeOut>;
+    /**
+     * Cost Usd
+     */
+    cost_usd?: number | null;
+};
+
+/**
  * ScoringCompletedEventOut
  */
 export type ScoringCompletedEventOut = {
@@ -1421,6 +1463,86 @@ export type GetCallTraceApiCallsCallIdTraceGetResponses = {
 };
 
 export type GetCallTraceApiCallsCallIdTraceGetResponse = GetCallTraceApiCallsCallIdTraceGetResponses[keyof GetCallTraceApiCallsCallIdTraceGetResponses];
+
+export type GetRunTraceTreeApiRunsRunIdTraceTreeGetData = {
+    body?: never;
+    path: {
+        /**
+         * Run Id
+         */
+        run_id: string;
+    };
+    query?: never;
+    url: '/api/runs/{run_id}/trace-tree';
+};
+
+export type GetRunTraceTreeApiRunsRunIdTraceTreeGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetRunTraceTreeApiRunsRunIdTraceTreeGetError = GetRunTraceTreeApiRunsRunIdTraceTreeGetErrors[keyof GetRunTraceTreeApiRunsRunIdTraceTreeGetErrors];
+
+export type GetRunTraceTreeApiRunsRunIdTraceTreeGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: RunTraceTreeOut;
+};
+
+export type GetRunTraceTreeApiRunsRunIdTraceTreeGetResponse = GetRunTraceTreeApiRunsRunIdTraceTreeGetResponses[keyof GetRunTraceTreeApiRunsRunIdTraceTreeGetResponses];
+
+export type GetCallEventsApiCallsCallIdEventsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Call Id
+         */
+        call_id: string;
+    };
+    query?: never;
+    url: '/api/calls/{call_id}/events';
+};
+
+export type GetCallEventsApiCallsCallIdEventsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetCallEventsApiCallsCallIdEventsGetError = GetCallEventsApiCallsCallIdEventsGetErrors[keyof GetCallEventsApiCallsCallIdEventsGetErrors];
+
+export type GetCallEventsApiCallsCallIdEventsGetResponses = {
+    /**
+     * Response Get Call Events Api Calls  Call Id  Events Get
+     *
+     * Successful Response
+     */
+    200: Array<({
+        event: 'context_built';
+    } & ContextBuiltEventOut) | ({
+        event: 'moves_executed';
+    } & MovesExecutedEventOut) | ({
+        event: 'review_complete';
+    } & ReviewCompleteEventOut) | ({
+        event: 'llm_exchange';
+    } & LlmExchangeEventOut) | ({
+        event: 'warning';
+    } & WarningEventOut) | ({
+        event: 'error';
+    } & ErrorEventOut) | ({
+        event: 'scoring_completed';
+    } & ScoringCompletedEventOut) | ({
+        event: 'dispatches_planned';
+    } & DispatchesPlannedEventOut) | ({
+        event: 'dispatch_executed';
+    } & DispatchExecutedEventOut)>;
+};
+
+export type GetCallEventsApiCallsCallIdEventsGetResponse = GetCallEventsApiCallsCallIdEventsGetResponses[keyof GetCallEventsApiCallsCallIdEventsGetResponses];
 
 export type GetAbRunTraceApiAbRunsAbRunIdTraceGetData = {
     body?: never;

@@ -3,16 +3,16 @@
 import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createClient } from "@supabase/supabase-js";
-import type { RunTraceOut } from "@/api/types.gen";
-import { traceKeys, runTraceOptions } from "./queries";
+import type { RunTraceTreeOut } from "@/api/types.gen";
+import { traceKeys, runTraceTreeOptions } from "./queries";
 
-export function useRunTrace(
+export function useRunTraceTree(
   runId: string,
-  initialData: RunTraceOut,
+  initialData: RunTraceTreeOut,
   realtimeConfig: { url: string; anon_key: string } | null,
-): RunTraceOut {
+): RunTraceTreeOut {
   const queryClient = useQueryClient();
-  const { data } = useQuery(runTraceOptions(runId, initialData));
+  const { data } = useQuery(runTraceTreeOptions(runId, initialData));
 
   useEffect(() => {
     if (!realtimeConfig) return;
@@ -21,12 +21,11 @@ export function useRunTrace(
     const channel = client
       .channel(`trace:${runId}`)
       .on("broadcast", { event: "*" }, () => {
-        queryClient.invalidateQueries({ queryKey: traceKeys.detail(runId) });
+        queryClient.invalidateQueries({ queryKey: traceKeys.tree(runId) });
       })
       .subscribe((status) => {
         if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-          // Force an immediate refetch so polling picks up the slack.
-          queryClient.invalidateQueries({ queryKey: traceKeys.detail(runId) });
+          queryClient.invalidateQueries({ queryKey: traceKeys.tree(runId) });
         }
       });
 
@@ -36,5 +35,5 @@ export function useRunTrace(
     };
   }, [runId, realtimeConfig, queryClient]);
 
-  return data as RunTraceOut;
+  return data as RunTraceTreeOut;
 }

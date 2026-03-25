@@ -1,19 +1,79 @@
 "use client";
 
-import type { RunTraceOut } from "@/api/types.gen";
-import { useRunTrace } from "@/lib/use-run-trace";
-import { CallNode } from "./call-node";
+import { useMemo } from "react";
+import type { RunTraceTreeOut, CallNodeOut } from "@/api/types.gen";
+import { useRunTraceTree } from "@/lib/use-run-trace";
+import { CallNode, type TreeNode } from "./call-node";
+
+export type SequenceNode = {
+  id: string;
+  calls: TreeNode[];
+};
+
+function buildTree(calls: CallNodeOut[]): TreeNode[] {
+  const byId = new Map<string, CallNodeOut>();
+  for (const n of calls) byId.set(n.call.id, n);
+
+  const childrenOf = new Map<string, CallNodeOut[]>();
+  const roots: CallNodeOut[] = [];
+
+  for (const n of calls) {
+    if (!n.call.parent_call_id) {
+      roots.push(n);
+    } else {
+      const list = childrenOf.get(n.call.parent_call_id) ?? [];
+      list.push(n);
+      childrenOf.set(n.call.parent_call_id, list);
+    }
+  }
+
+  function toTreeNode(node: CallNodeOut): TreeNode {
+    const kids = childrenOf.get(node.call.id) ?? [];
+    const directChildren: CallNodeOut[] = [];
+    const seqGroups = new Map<string, CallNodeOut[]>();
+
+    for (const k of kids) {
+      if (k.call.sequence_id) {
+        const list = seqGroups.get(k.call.sequence_id) ?? [];
+        list.push(k);
+        seqGroups.set(k.call.sequence_id, list);
+      } else {
+        directChildren.push(k);
+      }
+    }
+
+    const sequences: SequenceNode[] = [];
+    for (const [seqId, seqCalls] of seqGroups) {
+      const sorted = [...seqCalls].sort(
+        (a, b) => (a.call.sequence_position ?? 0) - (b.call.sequence_position ?? 0),
+      );
+      sequences.push({
+        id: seqId,
+        calls: sorted.map(toTreeNode),
+      });
+    }
+
+    return {
+      node,
+      children: directChildren.map(toTreeNode),
+      sequences,
+    };
+  }
+
+  return roots.map(toTreeNode);
+}
 
 export function TraceViewer({
   initialTrace,
   runId,
   realtimeConfig,
 }: {
-  initialTrace: RunTraceOut;
+  initialTrace: RunTraceTreeOut;
   runId: string;
   realtimeConfig: { url: string; anon_key: string } | null;
 }) {
-  const trace = useRunTrace(runId, initialTrace, realtimeConfig);
+  const trace = useRunTraceTree(runId, initialTrace, realtimeConfig);
+  const tree = useMemo(() => buildTree(trace.calls), [trace.calls]);
 
   return (
     <div className="trace-root">
@@ -22,10 +82,10 @@ export function TraceViewer({
           Total cost: ${trace.cost_usd.toFixed(4)}
         </div>
       )}
-      {trace.root_calls.map((ct) => (
-        <CallNode key={ct.call.id} trace={ct} depth={0} />
+      {tree.map((t) => (
+        <CallNode key={t.node.call.id} tree={t} depth={0} />
       ))}
-      {trace.root_calls.length === 0 && (
+      {tree.length === 0 && (
         <p className="trace-empty">
           No calls recorded for this run yet.
         </p>

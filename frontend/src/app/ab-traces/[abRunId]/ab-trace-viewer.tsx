@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { AbRunTraceOut, AbRunArmOut } from "@/api/types.gen";
-import { CallNode } from "../../traces/[runId]/call-node";
+import { CallNode, callTraceToTreeNode } from "../../traces/[runId]/call-node";
 import "./ab-trace.css";
 
 function ConfigDiff({ arms }: { arms: AbRunArmOut[] }) {
@@ -150,7 +150,7 @@ export function ABTraceViewer({ trace }: { trace: AbRunTraceOut }) {
               >
                 <div className="trace-root">
                   {arm.trace.root_calls.map((ct) => (
-                    <CallNode key={ct.call.id} trace={ct} depth={0} />
+                    <CallNode key={ct.call.id} tree={callTraceToTreeNode(ct)} depth={0} />
                   ))}
                   {arm.trace.root_calls.length === 0 && (
                     <p className="trace-empty">

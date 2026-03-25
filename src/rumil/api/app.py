@@ -27,8 +27,10 @@ from rumil.api.schemas import (
     PageDetailOut,
     RealtimeConfigOut,
     RunListItemOut,
+    CallNodeOut,
     RunSummaryOut,
     RunTraceOut,
+    RunTraceTreeOut,
     TraceEventOut,
 )
 
@@ -286,6 +288,76 @@ async def get_run_trace(run_id: str):
 async def get_call_trace(call_id: str):
     db = await _get_db()
     return await _build_call_trace(db, call_id)
+
+
+async def _parse_trace_events(db: DB, call_id: str) -> list[TraceEventOut]:
+    raw_events = await db.get_call_trace(call_id)
+    events: list[TraceEventOut] = []
+    for e in raw_events:
+        if "data" in e and isinstance(e["data"], dict):
+            e = {k: v for k, v in e.items() if k != "data"} | e["data"]
+        e.setdefault("call_id", call_id)
+        try:
+            events.append(_trace_event_adapter.validate_python(e))
+        except ValidationError:
+            log.warning("Skipping unrecognised trace event: %s", e.get("event"))
+    return events
+
+
+@app.get("/api/runs/{run_id}/trace-tree", response_model=RunTraceTreeOut)
+async def get_run_trace_tree(run_id: str):
+    db = await _get_db()
+    question_id = await db.get_run_question_id(run_id)
+    question_page = None
+    if question_id:
+        question_page = await db.get_page(question_id)
+    calls = await db.get_calls_for_run(run_id)
+    parent_ids = {c.parent_call_id for c in calls if c.parent_call_id}
+
+    scope_ids = {c.scope_page_id for c in calls if c.scope_page_id}
+    scope_summaries: dict[str, str] = {}
+    for sid in scope_ids:
+        page = await db.get_page(sid)
+        if page:
+            scope_summaries[sid] = page.headline
+
+    nodes: list[CallNodeOut] = []
+    total_cost = 0.0
+    for c in calls:
+        raw_events = await db.get_call_trace(c.id)
+        cost = 0.0
+        for e in raw_events:
+            data = e.get("data", e)
+            if isinstance(data, dict) and data.get("cost_usd"):
+                cost += data["cost_usd"]
+        has_kids = c.id in parent_ids
+        nodes.append(
+            CallNodeOut(
+                call=c,
+                scope_page_summary=scope_summaries.get(c.scope_page_id)
+                if c.scope_page_id
+                else None,
+                has_children=has_kids,
+                event_count=len(raw_events),
+                cost_usd=cost if cost > 0 else None,
+            )
+        )
+        total_cost += cost
+    return RunTraceTreeOut(
+        run_id=run_id,
+        question=question_page,
+        calls=nodes,
+        cost_usd=total_cost if total_cost > 0 else None,
+    )
+
+
+@app.get("/api/calls/{call_id}/events", response_model=list[TraceEventOut])
+async def get_call_events(call_id: str):
+    db = await _get_db()
+    call = await db.get_call(call_id)
+    if not call:
+        raise HTTPException(status_code=404, detail="Call not found")
+    return await _parse_trace_events(db, call_id)
 
 
 @app.get("/api/ab-runs/{ab_run_id}/trace", response_model=ABRunTraceOut)

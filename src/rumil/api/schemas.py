@@ -148,6 +148,21 @@ class RunTraceOut(BaseModel):
     cost_usd: float | None = None
 
 
+class CallNodeOut(BaseModel):
+    call: Call
+    scope_page_summary: str | None = None
+    has_children: bool = False
+    event_count: int = 0
+    cost_usd: float | None = None
+
+
+class RunTraceTreeOut(BaseModel):
+    run_id: str
+    question: Page | None
+    calls: list[CallNodeOut]
+    cost_usd: float | None = None
+
+
 class RunSummaryOut(BaseModel):
     run_id: str
     created_at: str

@@ -669,6 +669,130 @@
         }
       }
     },
+    "/api/runs/{run_id}/trace-tree": {
+      "get": {
+        "summary": "Get Run Trace Tree",
+        "operationId": "get_run_trace_tree_api_runs__run_id__trace_tree_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunTraceTreeOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/calls/{call_id}/events": {
+      "get": {
+        "summary": "Get Call Events",
+        "operationId": "get_call_events_api_calls__call_id__events_get",
+        "parameters": [
+          {
+            "name": "call_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Call Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "oneOf": [
+                      {
+                        "$ref": "#/components/schemas/ContextBuiltEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/MovesExecutedEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/ReviewCompleteEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/LLMExchangeEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/WarningEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/ErrorEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/ScoringCompletedEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/DispatchesPlannedEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/DispatchExecutedEventOut"
+                      }
+                    ],
+                    "discriminator": {
+                      "propertyName": "event",
+                      "mapping": {
+                        "context_built": "#/components/schemas/ContextBuiltEventOut",
+                        "moves_executed": "#/components/schemas/MovesExecutedEventOut",
+                        "review_complete": "#/components/schemas/ReviewCompleteEventOut",
+                        "llm_exchange": "#/components/schemas/LLMExchangeEventOut",
+                        "warning": "#/components/schemas/WarningEventOut",
+                        "error": "#/components/schemas/ErrorEventOut",
+                        "scoring_completed": "#/components/schemas/ScoringCompletedEventOut",
+                        "dispatches_planned": "#/components/schemas/DispatchesPlannedEventOut",
+                        "dispatch_executed": "#/components/schemas/DispatchExecutedEventOut"
+                      }
+                    }
+                  },
+                  "title": "Response Get Call Events Api Calls  Call Id  Events Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/ab-runs/{ab_run_id}/trace": {
       "get": {
         "summary": "Get Ab Run Trace",
@@ -1071,6 +1195,50 @@
           "sequence_position"
         ],
         "title": "Call"
+      },
+      "CallNodeOut": {
+        "properties": {
+          "call": {
+            "$ref": "#/components/schemas/Call"
+          },
+          "scope_page_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Page Summary"
+          },
+          "has_children": {
+            "type": "boolean",
+            "title": "Has Children",
+            "default": false
+          },
+          "event_count": {
+            "type": "integer",
+            "title": "Event Count",
+            "default": 0
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          }
+        },
+        "type": "object",
+        "required": [
+          "call"
+        ],
+        "title": "CallNodeOut"
       },
       "CallSequenceOut": {
         "properties": {
@@ -2412,6 +2580,49 @@
           "root_calls"
         ],
         "title": "RunTraceOut"
+      },
+      "RunTraceTreeOut": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "question": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Page"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "calls": {
+            "items": {
+              "$ref": "#/components/schemas/CallNodeOut"
+            },
+            "type": "array",
+            "title": "Calls"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "question",
+          "calls"
+        ],
+        "title": "RunTraceTreeOut"
       },
       "ScoringCompletedEventOut": {
         "properties": {

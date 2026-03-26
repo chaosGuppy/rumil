@@ -44,7 +44,15 @@ class CallTrace:
         dumped = event_data.model_dump()
         dumped["ts"] = datetime.now(timezone.utc).isoformat()
         dumped["call_id"] = self.call_id
-        await self.db.save_call_trace(self.call_id, [dumped])
+        try:
+            await self.db.save_call_trace(self.call_id, [dumped])
+        except Exception as e:
+            log.error(
+                "Failed to persist trace event %s for call %s: %s",
+                dumped.get("event"),
+                self.call_id[:8],
+                e,
+            )
         if self._broadcaster:
             try:
                 await self._broadcaster.send(dumped["event"], dumped)

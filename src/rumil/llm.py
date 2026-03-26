@@ -357,25 +357,44 @@ async def call_api(
                         )
                 if metadata.user_messages is None and len(messages) > 1:
                     metadata.user_messages = _serialize_messages(messages)
-                await _save_exchange(
-                    metadata,
-                    db=db,
-                    model=model,
-                    system_prompt=system_prompt,
-                    response_text="\n".join(text_parts) or None,
-                    tool_calls=tool_call_data,
-                    input_tokens=response.usage.input_tokens,
-                    output_tokens=response.usage.output_tokens,
-                    duration_ms=elapsed_ms,
-                    cache_creation_input_tokens=getattr(
-                        response.usage, "cache_creation_input_tokens", 0
+                try:
+                    await _save_exchange(
+                        metadata,
+                        db=db,
+                        model=model,
+                        system_prompt=system_prompt,
+                        response_text="\n".join(text_parts) or None,
+                        tool_calls=tool_call_data,
+                        input_tokens=response.usage.input_tokens,
+                        output_tokens=response.usage.output_tokens,
+                        duration_ms=elapsed_ms,
+                        cache_creation_input_tokens=getattr(
+                            response.usage, "cache_creation_input_tokens", 0
+                        )
+                        or 0,
+                        cache_read_input_tokens=getattr(
+                            response.usage, "cache_read_input_tokens", 0
+                        )
+                        or 0,
                     )
-                    or 0,
-                    cache_read_input_tokens=getattr(
-                        response.usage, "cache_read_input_tokens", 0
+                except Exception as exc:
+                    log.error(
+                        "Failed to save exchange for call %s: %s",
+                        metadata.call_id[:8],
+                        exc,
+                        exc_info=True,
                     )
-                    or 0,
-                )
+                    trace = get_trace()
+                    if trace:
+                        await trace.record(
+                            ErrorEvent(
+                                message=(
+                                    f"Failed to save exchange: "
+                                    f"{type(exc).__name__}: {exc}"
+                                ),
+                                phase=metadata.phase,
+                            )
+                        )
             return APIResponse(message=response, duration_ms=elapsed_ms)
         except Exception as e:
             status = getattr(e, "status_code", None)

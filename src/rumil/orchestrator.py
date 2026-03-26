@@ -89,6 +89,7 @@ from rumil.tracing.trace_events import (
     DispatchExecutedEvent,
     DispatchesPlannedEvent,
     DispatchTraceItem,
+    ErrorEvent,
     ScoringCompletedEvent,
     SubquestionScoreItem,
 )
@@ -1140,6 +1141,18 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                 for r in results:
                     if isinstance(r, Exception):
                         log.error('Concurrent dispatch failed: %s', r, exc_info=r)
+                        if result.call_id:
+                            trace = CallTrace(
+                                result.call_id, self.db,
+                                broadcaster=self.broadcaster,
+                            )
+                            await trace.record(ErrorEvent(
+                                message=(
+                                    f"Concurrent dispatch failed: "
+                                    f"{type(r).__name__}: {r}"
+                                ),
+                                phase="dispatch",
+                            ))
 
                 if not any(not isinstance(r, Exception) for r in results):
                     break

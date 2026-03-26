@@ -130,25 +130,7 @@ PRIORITIZATION_MOVES: list[MoveType] = [
     MoveType.LINK_CHILD_QUESTION,
 ]
 
-PHASE1_SCOUT_TYPES: Sequence[CallType] = [
-    CallType.SCOUT_SUBQUESTIONS,
-    CallType.SCOUT_ESTIMATES,
-    CallType.SCOUT_HYPOTHESES,
-    CallType.SCOUT_ANALOGIES,
-    CallType.SCOUT_PARADIGM_CASES,
-    CallType.SCOUT_FACTCHECKS,
-]
-
-PHASE2_DISPATCH_TYPES: Sequence[CallType] = [
-    CallType.FIND_CONSIDERATIONS,
-    CallType.WEB_RESEARCH,
-    CallType.SCOUT_SUBQUESTIONS,
-    CallType.SCOUT_ESTIMATES,
-    CallType.SCOUT_HYPOTHESES,
-    CallType.SCOUT_ANALOGIES,
-    CallType.SCOUT_PARADIGM_CASES,
-    CallType.SCOUT_FACTCHECKS,
-]
+from rumil.available_calls import get_available_calls_preset
 
 
 class SubquestionScore(BaseModel):
@@ -1223,7 +1205,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
 
             subtree_ids=subtree_ids,
             short_id_map=short_id_map,
-            dispatch_types=list(PHASE1_SCOUT_TYPES),
+            dispatch_types=list(get_available_calls_preset().phase1_scouts),
             system_prompt_override=build_system_prompt('two_phase_p1'),
         )
 
@@ -1233,7 +1215,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                 'Phase 1 produced no dispatches, synthesizing default scouts '
                 'for question=%s', question_id[:8],
             )
-            for ct in PHASE1_SCOUT_TYPES[:phase1_budget]:
+            for ct in get_available_calls_preset().phase1_scouts[:phase1_budget]:
                 ddef = DISPATCH_DEFS[ct]
                 dispatches.append(Dispatch(
                     call_type=ct,
@@ -1407,7 +1389,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
 
             subtree_ids=subtree_ids,
             short_id_map=short_id_map,
-            dispatch_types=list(PHASE2_DISPATCH_TYPES),
+            dispatch_types=list(get_available_calls_preset().phase2_dispatch),
             extra_dispatch_defs=extra_defs or None,
             system_prompt_override=build_system_prompt('two_phase_p2'),
         )

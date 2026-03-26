@@ -131,6 +131,10 @@ uv run python main.py --prod --list
 # Select a move preset (controls which tools are available per call type)
 uv run python main.py "Your question" --moves-preset default --budget 10
 
+# Select an available-calls preset (controls which scouts/dispatches the two-phase orchestrator uses)
+# 'default' = standard scouts, 'multi-subquestion' = replaces generic subquestions scout with web-questions and deep-questions scouts
+uv run python main.py "Your question" --available-calls multi-subquestion --budget 20
+
 # Suppress info-level logging (only warnings and errors)
 uv run python main.py "Your question" --budget 5 -q
 

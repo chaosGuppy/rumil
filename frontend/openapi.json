@@ -1516,6 +1516,8 @@
           "scout_analogies",
           "scout_paradigm_cases",
           "scout_factchecks",
+          "scout_web_questions",
+          "scout_deep_questions",
           "web_research",
           "evaluate"
         ],

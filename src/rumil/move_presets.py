@@ -73,6 +73,18 @@ PRESETS: dict[str, MovePreset] = {
             MoveType.LINK_CONSIDERATION,
             MoveType.LOAD_PAGE,
         ],
+        CallType.SCOUT_WEB_QUESTIONS: [
+            MoveType.CREATE_CLAIM,
+            MoveType.CREATE_SCOUT_QUESTION,
+            MoveType.LINK_CONSIDERATION,
+            MoveType.LOAD_PAGE,
+        ],
+        CallType.SCOUT_DEEP_QUESTIONS: [
+            MoveType.CREATE_CLAIM,
+            MoveType.CREATE_SCOUT_QUESTION,
+            MoveType.LINK_CONSIDERATION,
+            MoveType.LOAD_PAGE,
+        ],
         CallType.SCOUT_CONCEPTS: [
             MoveType.PROPOSE_CONCEPT,
             MoveType.LOAD_PAGE,
@@ -143,6 +155,18 @@ PRESETS: dict[str, MovePreset] = {
             MoveType.LOAD_PAGE,
         ],
         CallType.SCOUT_FACTCHECKS: [
+            MoveType.CREATE_CLAIM,
+            MoveType.CREATE_SCOUT_QUESTION,
+            MoveType.LINK_CONSIDERATION,
+            MoveType.LOAD_PAGE,
+        ],
+        CallType.SCOUT_WEB_QUESTIONS: [
+            MoveType.CREATE_CLAIM,
+            MoveType.CREATE_SCOUT_QUESTION,
+            MoveType.LINK_CONSIDERATION,
+            MoveType.LOAD_PAGE,
+        ],
+        CallType.SCOUT_DEEP_QUESTIONS: [
             MoveType.CREATE_CLAIM,
             MoveType.CREATE_SCOUT_QUESTION,
             MoveType.LINK_CONSIDERATION,

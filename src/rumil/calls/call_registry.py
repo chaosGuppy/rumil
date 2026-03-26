@@ -14,6 +14,8 @@ from rumil.calls.find_considerations import (
 from rumil.calls.scout_analogies import ScoutAnalogiesCall
 from rumil.calls.scout_factchecks import ScoutFactchecksCall
 from rumil.calls.scout_paradigm_cases import ScoutParadigmCasesCall
+from rumil.calls.scout_deep_questions import ScoutDeepQuestionsCall
+from rumil.calls.scout_web_questions import ScoutWebQuestionsCall
 from rumil.calls.scout_concepts import ScoutConceptsCall
 from rumil.calls.web_research import WebResearchCall
 from rumil.calls.scout_estimates import ScoutEstimatesCall
@@ -69,4 +71,12 @@ SCOUT_PARADIGM_CASES_CALL_CLASSES: dict[str, type[ScoutParadigmCasesCall]] = {
 
 SCOUT_FACTCHECKS_CALL_CLASSES: dict[str, type[ScoutFactchecksCall]] = {
     "default": ScoutFactchecksCall,
+}
+
+SCOUT_WEB_QUESTIONS_CALL_CLASSES: dict[str, type[ScoutWebQuestionsCall]] = {
+    "default": ScoutWebQuestionsCall,
+}
+
+SCOUT_DEEP_QUESTIONS_CALL_CLASSES: dict[str, type[ScoutDeepQuestionsCall]] = {
+    "default": ScoutDeepQuestionsCall,
 }

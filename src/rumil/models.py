@@ -66,6 +66,8 @@ class CallType(str, Enum):
     SCOUT_ANALOGIES = "scout_analogies"
     SCOUT_PARADIGM_CASES = "scout_paradigm_cases"
     SCOUT_FACTCHECKS = "scout_factchecks"
+    SCOUT_WEB_QUESTIONS = "scout_web_questions"
+    SCOUT_DEEP_QUESTIONS = "scout_deep_questions"
     WEB_RESEARCH = "web_research"
     EVALUATE = "evaluate"
 
@@ -81,6 +83,8 @@ DISPATCHABLE_CALL_TYPES: set[CallType] = {
     CallType.SCOUT_ANALOGIES,
     CallType.SCOUT_PARADIGM_CASES,
     CallType.SCOUT_FACTCHECKS,
+    CallType.SCOUT_WEB_QUESTIONS,
+    CallType.SCOUT_DEEP_QUESTIONS,
     CallType.WEB_RESEARCH,
 }
 
@@ -237,6 +241,14 @@ class ScoutParadigmCasesDispatchPayload(ScopeOnlyDispatchPayload, _MultiRoundFie
 
 
 class ScoutFactchecksDispatchPayload(ScopeOnlyDispatchPayload, _MultiRoundFields):
+    pass
+
+
+class ScoutWebQuestionsDispatchPayload(ScopeOnlyDispatchPayload, _MultiRoundFields):
+    pass
+
+
+class ScoutDeepQuestionsDispatchPayload(ScopeOnlyDispatchPayload, _MultiRoundFields):
     pass
 
 

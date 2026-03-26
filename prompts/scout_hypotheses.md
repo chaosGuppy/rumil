@@ -12,7 +12,7 @@ For each hypothesis (aim for 2–4):
 
 2. Optionally, **a claim** summarising the core assertion of the hypothesis and your initial assessment of its plausibility, linked as a consideration to the parent question or to the hypothesis subquestion.
 
-Use `create_question` to create the hypothesis subquestion. The question text must always take the form "What should we make of the hypothesis that [X]?" where X is the specific assertive statement. Then use `link_child_question` to link it to the parent.
+Use `create_question` to create the hypothesis subquestion. The question text must always take the form "What should we make of the hypothesis that [X]?" where X is the specific assertive statement. The question will be automatically linked to the parent.
 
 ## How to Proceed
 

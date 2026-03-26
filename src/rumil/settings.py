@@ -62,7 +62,7 @@ class Settings(BaseSettings):
     evaluate_content_hops: int = _capture_field(default=0)
     evaluate_abstract_hops: int = _capture_field(default=1)
     evaluate_headline_hops: int = _capture_field(default=2)
-    evaluate_max_turns: int = _capture_field(default=20)
+    evaluate_max_turns: int = _capture_field(default=200)
 
     full_page_char_budget: int = _capture_field(default=10_000)
     abstract_page_char_budget: int = _capture_field(default=10_000)

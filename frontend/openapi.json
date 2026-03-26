@@ -691,6 +691,9 @@
                         "$ref": "#/components/schemas/SubagentCompletedEventOut"
                       },
                       {
+                        "$ref": "#/components/schemas/AgentStartedEventOut"
+                      },
+                      {
                         "$ref": "#/components/schemas/EvaluationCompleteEventOut"
                       }
                     ],
@@ -709,6 +712,7 @@
                         "explore_page": "#/components/schemas/ExplorePageEventOut",
                         "subagent_started": "#/components/schemas/SubagentStartedEventOut",
                         "subagent_completed": "#/components/schemas/SubagentCompletedEventOut",
+                        "agent_started": "#/components/schemas/AgentStartedEventOut",
                         "evaluation_complete": "#/components/schemas/EvaluationCompleteEventOut"
                       }
                     }
@@ -983,6 +987,43 @@
           "arms"
         ],
         "title": "ABRunTraceOut"
+      },
+      "AgentStartedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "agent_started",
+            "title": "Event",
+            "default": "agent_started"
+          },
+          "system_prompt": {
+            "type": "string",
+            "title": "System Prompt",
+            "default": ""
+          },
+          "user_message": {
+            "type": "string",
+            "title": "User Message",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "system_prompt",
+          "user_message"
+        ],
+        "title": "AgentStartedEventOut"
       },
       "Call": {
         "properties": {
@@ -1387,12 +1428,16 @@
                   "$ref": "#/components/schemas/SubagentCompletedEventOut"
                 },
                 {
+                  "$ref": "#/components/schemas/AgentStartedEventOut"
+                },
+                {
                   "$ref": "#/components/schemas/EvaluationCompleteEventOut"
                 }
               ],
               "discriminator": {
                 "propertyName": "event",
                 "mapping": {
+                  "agent_started": "#/components/schemas/AgentStartedEventOut",
                   "context_built": "#/components/schemas/ContextBuiltEventOut",
                   "dispatch_executed": "#/components/schemas/DispatchExecutedEventOut",
                   "dispatches_planned": "#/components/schemas/DispatchesPlannedEventOut",

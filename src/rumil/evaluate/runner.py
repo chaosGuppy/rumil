@@ -27,10 +27,12 @@ from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
 from rumil.tracing.tracer import CallTrace
 from rumil.tracing.trace_events import (
+    AgentStartedEvent,
     EvaluationCompleteEvent,
     ExplorePageEvent,
     SubagentCompletedEvent,
     SubagentStartedEvent,
+    WarningEvent,
 )
 
 log = logging.getLogger(__name__)
@@ -43,6 +45,7 @@ async def run_evaluation(
     question_id: str,
     db: DB,
     *,
+    eval_type: str = "default",
     broadcaster: Broadcaster | None = None,
 ) -> Call:
     """Run the evaluation agent against *question_id* and return the Call record."""
@@ -65,7 +68,7 @@ async def run_evaluation(
 
     initial_context = await explore_page_impl(resolved_id, db)
 
-    system_prompt = build_evaluation_prompt()
+    system_prompt = build_evaluation_prompt(eval_type)
     investigator_prompt = build_investigator_prompt()
 
     explore_tool_def = _make_explore_tool(db)
@@ -217,6 +220,10 @@ async def run_evaluation(
         f"Here is the local graph around the question:\n\n{initial_context}"
     )
 
+    await trace.record(
+        AgentStartedEvent(system_prompt=system_prompt, user_message=user_prompt)
+    )
+
     last_assistant_text: list[str] = []
     try:
         async with ClaudeSDKClient(options=options) as client:
@@ -233,11 +240,19 @@ async def run_evaluation(
                 elif isinstance(message, ResultMessage):
                     if not last_assistant_text and message.result:
                         last_assistant_text = [message.result]
+                    if message.stop_reason == "max_turns":
+                        log.warning("Evaluation agent hit max_turns limit")
+                        await trace.record(
+                            WarningEvent(
+                                message="Agent hit max_turns limit — "
+                                "evaluation may be incomplete"
+                            )
+                        )
 
         result_text = "\n\n".join(last_assistant_text)
         await trace.record(EvaluationCompleteEvent(evaluation=result_text))
         call.review_json = {"evaluation": result_text}
-        call.result_summary = result_text[:2000]
+        call.result_summary = result_text
         call.status = CallStatus.COMPLETE
         await db.save_call(call)
     except Exception:

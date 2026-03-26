@@ -136,6 +136,12 @@ class SubagentCompletedEvent(BaseModel):
     summary: str = ""
 
 
+class AgentStartedEvent(BaseModel):
+    event: Literal["agent_started"] = "agent_started"
+    system_prompt: str = ""
+    user_message: str = ""
+
+
 class EvaluationCompleteEvent(BaseModel):
     event: Literal["evaluation_complete"] = "evaluation_complete"
     evaluation: str = ""
@@ -154,6 +160,7 @@ TraceEvent = Annotated[
     | ExplorePageEvent
     | SubagentStartedEvent
     | SubagentCompletedEvent
+    | AgentStartedEvent
     | EvaluationCompleteEvent,
     Field(discriminator="event"),
 ]

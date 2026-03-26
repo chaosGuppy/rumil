@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from rumil.models import Call, Page, PageLink, _all_fields_required
 from rumil.tracing.trace_events import (
+    AgentStartedEvent,
     ContextBuiltEvent,
     DispatchesPlannedEvent,
     DispatchExecutedEvent,
@@ -100,6 +101,10 @@ class SubagentCompletedEventOut(SubagentCompletedEvent, _TraceEnvelopeMixin):
     pass
 
 
+class AgentStartedEventOut(AgentStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
 class EvaluationCompleteEventOut(EvaluationCompleteEvent, _TraceEnvelopeMixin):
     pass
 
@@ -117,6 +122,7 @@ TraceEventOut = Annotated[
     | ExplorePageEventOut
     | SubagentStartedEventOut
     | SubagentCompletedEventOut
+    | AgentStartedEventOut
     | EvaluationCompleteEventOut,
     Field(discriminator="event"),
 ]

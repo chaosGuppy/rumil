@@ -180,7 +180,7 @@ async def cmd_ingest(
     print("\nRun --map or --chat to explore the results.")
 
 
-async def cmd_evaluate(question_id: str, db: DB) -> None:
+async def cmd_evaluate(question_id: str, db: DB, *, eval_type: str = "default") -> None:
     from rumil.evaluate import run_evaluation
 
     question = await db.get_page(question_id)
@@ -201,7 +201,7 @@ async def cmd_evaluate(question_id: str, db: DB) -> None:
     print(f"\nEvaluating judgement for: {question.headline[:80]}")
     print(f"Trace: {frontend}/traces/{db.run_id}\n")
 
-    call = await run_evaluation(question.id, db)
+    call = await run_evaluation(question.id, db, eval_type=eval_type)
     print(f"\nEvaluation complete (call {call.id}).\n")
     _print_evaluation(call)
 
@@ -617,6 +617,12 @@ async def async_main():
         help="Evaluate the judgement quality for a question",
     )
     parser.add_argument(
+        "--eval-type",
+        dest="eval_type",
+        default="default",
+        help="Evaluation prompt type (default: default). Options: default, grounding",
+    )
+    parser.add_argument(
         "--show-evaluation",
         dest="show_evaluation_id",
         metavar="CALL_ID",
@@ -774,7 +780,7 @@ async def async_main():
         await cmd_list(db, args.workspace_name)
         return
     elif args.evaluate_id:
-        await cmd_evaluate(args.evaluate_id, db)
+        await cmd_evaluate(args.evaluate_id, db, eval_type=args.eval_type)
         return
     elif args.show_evaluation_id:
         await cmd_show_evaluation(args.show_evaluation_id, db)

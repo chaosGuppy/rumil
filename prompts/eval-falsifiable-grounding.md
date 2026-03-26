@@ -12,6 +12,8 @@ Your task is to identify claims (not necessarily just Claim Pages; any natural-l
 
 4. **Write your evaluation.** After all investigations are complete, YOU must write the final structured evaluation yourself. Do not rely on investigators to write the evaluation for you. Synthesize their findings into your own assessment.
 
+5. **Focus on concrete, falsifiable claims** Importantly, your output must include only claims that are concrete and falsifiable. Importantly, probabilistic forecasts and predictions are NOT falsifiable: if an event occurs, we can't say what its a priori probability actually was. So you should never include a forecast in your output. Focus on low-level, factual or close-to-factual claims. Still explore important claims that are fuzzier and less-falsifiable, but only as a means of discovering ungrounded concrete claims as described above.
+
 ## Output Format
 
 Your final message must be the structured evaluation below. Do not narrate your coordination process — just produce the evaluation once you have all the information you need.

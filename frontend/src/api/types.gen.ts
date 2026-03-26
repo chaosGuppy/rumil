@@ -45,6 +45,32 @@ export type AbRunTraceOut = {
 };
 
 /**
+ * AgentStartedEventOut
+ */
+export type AgentStartedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'agent_started';
+    /**
+     * System Prompt
+     */
+    system_prompt: string;
+    /**
+     * User Message
+     */
+    user_message: string;
+};
+
+/**
  * Call
  */
 export type Call = {
@@ -251,6 +277,8 @@ export type CallTraceOut = {
     } & SubagentStartedEventOut) | ({
         event: 'subagent_completed';
     } & SubagentCompletedEventOut) | ({
+        event: 'agent_started';
+    } & AgentStartedEventOut) | ({
         event: 'evaluation_complete';
     } & EvaluationCompleteEventOut)>;
     /**
@@ -1665,6 +1693,8 @@ export type GetCallEventsApiCallsCallIdEventsGetResponses = {
     } & SubagentStartedEventOut) | ({
         event: 'subagent_completed';
     } & SubagentCompletedEventOut) | ({
+        event: 'agent_started';
+    } & AgentStartedEventOut) | ({
         event: 'evaluation_complete';
     } & EvaluationCompleteEventOut)>;
 };

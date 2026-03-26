@@ -923,14 +923,15 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
           )}
         </div>
       )}
+      {event.event === "agent_started" && (
+        <div className="trace-event-body">
+          <CollapsiblePre label="System prompt" content={event.system_prompt} />
+          <CollapsiblePre label="User message" content={event.user_message} />
+        </div>
+      )}
       {event.event === "evaluation_complete" && (
         <div className="trace-event-body">
-          {event.evaluation && (
-            <div className="trace-kv trace-kv-block">
-              <span className="trace-kv-key">evaluation</span>
-              <span className="trace-kv-value trace-kv-pre">{event.evaluation}</span>
-            </div>
-          )}
+          <CollapsiblePre label="Evaluation" content={event.evaluation} />
         </div>
       )}
     </div>

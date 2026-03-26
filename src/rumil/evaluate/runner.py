@@ -185,8 +185,8 @@ async def run_evaluation(
     options = ClaudeAgentOptions(
         system_prompt=system_prompt,
         mcp_servers={_TOOL_SERVER_NAME: server},
-        allowed_tools=[_EXPLORE_TOOL_FQNAME, "Read", "Agent"],
-        disallowed_tools=["Write", "Edit", "Bash", "Glob", "Grep"],
+        allowed_tools=[_EXPLORE_TOOL_FQNAME, "Read", "Grep", "Agent"],
+        disallowed_tools=["Write", "Edit", "Bash", "Glob"],
         agents={
             "investigator": AgentDefinition(
                 description=(
@@ -194,7 +194,7 @@ async def run_evaluation(
                     "workspace to assess its evidential grounding."
                 ),
                 prompt=investigator_prompt,
-                tools=[_EXPLORE_TOOL_FQNAME, "Read"],
+                tools=[_EXPLORE_TOOL_FQNAME, "Read", "Grep"],
             ),
         },
         hooks={

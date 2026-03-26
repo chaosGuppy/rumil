@@ -15,7 +15,7 @@ You must make all your dispatch calls now — this is your only turn.
 - **dispatch_find_considerations**: Run general exploration on a question, based purely on trained knowledge without web research. Runs up to `max_rounds` rounds, stopping early when remaining fruit falls below `fruit_threshold`. Budget cost: between 1 and max_rounds (inclusive).
 - **Specialized scouts** (dispatch_scout_subquestions, dispatch_scout_estimates, dispatch_scout_hypotheses, dispatch_scout_analogies, dispatch_scout_paradigm_cases, dispatch_scout_facts_to_check): Run additional scouting rounds on the **scope question** if more exploration is needed. Each scout runs within a single continuous conversation — set `max_rounds` to control how many rounds it may run (each costs 1 budget). Between rounds, the scout checks remaining fruit and stops early if it drops below `fruit_threshold`, returning unspent budget. Use these when it seems more useful to have further scouting on the top-level question (perhaps in light of recent investigations of subquestions).
 - **recurse_into_subquestion**: Launch a full two-phase prioritization cycle on a child question, with its own fan-out scouting and follow-up phases. Set `budget` to the number of units to allocate. Use this for subquestions that are substantial enough to warrant their own structured investigation. DO NOT use recurse_into_subquestion on the top-level scope question.
-- **dispatch_web_research**: Verify a fact-check question via web search. Use **only** on questions identified by scout_factchecks. Budget cost: exactly 1.
+- **dispatch_web_research**: Verify a factual claim via web search. Use only on questions that are specific, concrete fact-checks — verifying a particular claim ("Is it true that X?"), looking up a specific figure or date ("What is the actual value of Y?"), or searching for known examples of a well-defined category ("Are there known examples of Z?"). The question must be precise enough that a web search could answer it. Do not dispatch web research on broad analytical or interpretive questions. Budget cost: exactly 1.
 
 ## How to Decide
 
@@ -28,7 +28,7 @@ You will be shown scoring data from a preliminary assessment:
 
 - **Use the scores.** High-impact, high-fruit subquestions should get the most budget. Low-fruit questions may not need further investigation regardless of impact.
 - **Do not create subquestions directly.** Subquestion creation happens inside scouts. Use only the dispatch tools.
-- **Web research is for fact-checks only.** Only dispatch `dispatch_web_research` on questions that were created by the facts-to-check scout.
+- **Web research is for concrete fact-checks only.** Only dispatch `dispatch_web_research` on questions that target a specific, searchable factual claim — verification of an assertion, lookup of a figure or date, or search for known examples. Do not use it on broad or interpretive questions.
 
 ### Guidance on how much budget to use
 Generally budgets of 5-20 mean "try to answer this question quickly", and budgets of 40-80 mean "this is worth a significant investigation to cover all the major angles", and budgets of 100+ mean "this is a major question which will involve deep dives into subquestions of its own".

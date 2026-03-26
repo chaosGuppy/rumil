@@ -881,6 +881,12 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
               <PageChip page={{ id: event.page_id, headline: event.page_headline }} />
             </span>
           </div>
+          {event.response && (
+            <div className="trace-kv trace-kv-block">
+              <span className="trace-kv-key">response</span>
+              <span className="trace-kv-value trace-kv-pre">{event.response}</span>
+            </div>
+          )}
         </div>
       )}
 
@@ -913,6 +919,16 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
             <div className="trace-kv trace-kv-block">
               <span className="trace-kv-key">summary</span>
               <span className="trace-kv-value trace-kv-pre">{event.summary}</span>
+            </div>
+          )}
+        </div>
+      )}
+      {event.event === "evaluation_complete" && (
+        <div className="trace-event-body">
+          {event.evaluation && (
+            <div className="trace-kv trace-kv-block">
+              <span className="trace-kv-key">evaluation</span>
+              <span className="trace-kv-value trace-kv-pre">{event.evaluation}</span>
             </div>
           )}
         </div>

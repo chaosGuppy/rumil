@@ -250,7 +250,9 @@ export type CallTraceOut = {
         event: 'subagent_started';
     } & SubagentStartedEventOut) | ({
         event: 'subagent_completed';
-    } & SubagentCompletedEventOut)>;
+    } & SubagentCompletedEventOut) | ({
+        event: 'evaluation_complete';
+    } & EvaluationCompleteEventOut)>;
     /**
      * Children
      */
@@ -411,6 +413,28 @@ export type ErrorEventOut = {
 };
 
 /**
+ * EvaluationCompleteEventOut
+ */
+export type EvaluationCompleteEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'evaluation_complete';
+    /**
+     * Evaluation
+     */
+    evaluation: string;
+};
+
+/**
  * ExplorePageEventOut
  */
 export type ExplorePageEventOut = {
@@ -434,6 +458,10 @@ export type ExplorePageEventOut = {
      * Page Headline
      */
     page_headline: string;
+    /**
+     * Response
+     */
+    response: string;
 };
 
 /**
@@ -1636,7 +1664,9 @@ export type GetCallEventsApiCallsCallIdEventsGetResponses = {
         event: 'subagent_started';
     } & SubagentStartedEventOut) | ({
         event: 'subagent_completed';
-    } & SubagentCompletedEventOut)>;
+    } & SubagentCompletedEventOut) | ({
+        event: 'evaluation_complete';
+    } & EvaluationCompleteEventOut)>;
 };
 
 export type GetCallEventsApiCallsCallIdEventsGetResponse = GetCallEventsApiCallsCallIdEventsGetResponses[keyof GetCallEventsApiCallsCallIdEventsGetResponses];

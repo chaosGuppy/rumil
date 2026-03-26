@@ -27,6 +27,7 @@ from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
 from rumil.tracing.tracer import CallTrace
 from rumil.tracing.trace_events import (
+    EvaluationCompleteEvent,
     ExplorePageEvent,
     SubagentCompletedEvent,
     SubagentStartedEvent,
@@ -108,9 +109,22 @@ async def run_evaluation(
                 if page:
                     page_id = resolved
                     headline = page.headline
+            response = ""
+            tool_response = input_data.get("tool_response", None)  # type: ignore[call-overload]
+            if isinstance(tool_response, dict):
+                for block in tool_response.get("content", []):
+                    if isinstance(block, dict) and block.get("type") == "text":
+                        response = block["text"]
+                        break
+            elif isinstance(tool_response, str):
+                response = tool_response
             target_trace = _trace_for_agent(agent_id)
             await target_trace.record(
-                ExplorePageEvent(page_id=page_id, page_headline=headline)
+                ExplorePageEvent(
+                    page_id=page_id,
+                    page_headline=headline,
+                    response=response,
+                )
             )
         return SyncHookJSONOutput()
 
@@ -221,6 +235,7 @@ async def run_evaluation(
                         last_assistant_text = [message.result]
 
         result_text = "\n\n".join(last_assistant_text)
+        await trace.record(EvaluationCompleteEvent(evaluation=result_text))
         call.review_json = {"evaluation": result_text}
         call.result_summary = result_text[:2000]
         call.status = CallStatus.COMPLETE

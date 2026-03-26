@@ -100,6 +100,10 @@ class SubagentCompletedEventOut(SubagentCompletedEvent, _TraceEnvelopeMixin):
     pass
 
 
+class EvaluationCompleteEventOut(EvaluationCompleteEvent, _TraceEnvelopeMixin):
+    pass
+
+
 TraceEventOut = Annotated[
     ContextBuiltEventOut
     | MovesExecutedEventOut
@@ -112,7 +116,8 @@ TraceEventOut = Annotated[
     | DispatchExecutedEventOut
     | ExplorePageEventOut
     | SubagentStartedEventOut
-    | SubagentCompletedEventOut,
+    | SubagentCompletedEventOut
+    | EvaluationCompleteEventOut,
     Field(discriminator="event"),
 ]
 

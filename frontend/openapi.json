@@ -689,6 +689,9 @@
                       },
                       {
                         "$ref": "#/components/schemas/SubagentCompletedEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/EvaluationCompleteEventOut"
                       }
                     ],
                     "discriminator": {
@@ -705,7 +708,8 @@
                         "dispatch_executed": "#/components/schemas/DispatchExecutedEventOut",
                         "explore_page": "#/components/schemas/ExplorePageEventOut",
                         "subagent_started": "#/components/schemas/SubagentStartedEventOut",
-                        "subagent_completed": "#/components/schemas/SubagentCompletedEventOut"
+                        "subagent_completed": "#/components/schemas/SubagentCompletedEventOut",
+                        "evaluation_complete": "#/components/schemas/EvaluationCompleteEventOut"
                       }
                     }
                   },
@@ -1381,6 +1385,9 @@
                 },
                 {
                   "$ref": "#/components/schemas/SubagentCompletedEventOut"
+                },
+                {
+                  "$ref": "#/components/schemas/EvaluationCompleteEventOut"
                 }
               ],
               "discriminator": {
@@ -1390,6 +1397,7 @@
                   "dispatch_executed": "#/components/schemas/DispatchExecutedEventOut",
                   "dispatches_planned": "#/components/schemas/DispatchesPlannedEventOut",
                   "error": "#/components/schemas/ErrorEventOut",
+                  "evaluation_complete": "#/components/schemas/EvaluationCompleteEventOut",
                   "explore_page": "#/components/schemas/ExplorePageEventOut",
                   "llm_exchange": "#/components/schemas/LLMExchangeEventOut",
                   "moves_executed": "#/components/schemas/MovesExecutedEventOut",
@@ -1698,6 +1706,37 @@
         ],
         "title": "ErrorEventOut"
       },
+      "EvaluationCompleteEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "evaluation_complete",
+            "title": "Event",
+            "default": "evaluation_complete"
+          },
+          "evaluation": {
+            "type": "string",
+            "title": "Evaluation",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "evaluation"
+        ],
+        "title": "EvaluationCompleteEventOut"
+      },
       "ExplorePageEventOut": {
         "properties": {
           "ts": {
@@ -1722,6 +1761,11 @@
             "type": "string",
             "title": "Page Headline",
             "default": ""
+          },
+          "response": {
+            "type": "string",
+            "title": "Response",
+            "default": ""
           }
         },
         "type": "object",
@@ -1730,7 +1774,8 @@
           "call_id",
           "event",
           "page_id",
-          "page_headline"
+          "page_headline",
+          "response"
         ],
         "title": "ExplorePageEventOut"
       },

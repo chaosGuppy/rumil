@@ -118,6 +118,7 @@ class ExplorePageEvent(BaseModel):
     event: Literal["explore_page"] = "explore_page"
     page_id: str
     page_headline: str = ""
+    response: str = ""
 
 
 class SubagentStartedEvent(BaseModel):

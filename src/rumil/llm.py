@@ -23,6 +23,8 @@ from typing import TYPE_CHECKING
 
 from collections.abc import Awaitable, Callable, Sequence
 
+from datetime import date
+
 import anthropic
 
 from anthropic.types import (
@@ -103,6 +105,12 @@ def _add_cache_breakpoint(messages: list[dict]) -> list[dict]:
         last["content"] = content
     msgs[-1] = last
     return msgs
+
+
+def _with_date_suffix(system_prompt: str) -> str:
+    """Append today's date to the system prompt."""
+    today = date.today().strftime("%Y-%m-%d")
+    return system_prompt + f"\n\nIMPORTANT: Today's date is {today}\n"
 
 
 _JSON_BLOCK_RE = re.compile(r"```(?:json)?\s*\n(.*?)\n```", re.DOTALL)
@@ -296,6 +304,7 @@ async def call_api(
     """
     if bool(metadata) != bool(db):
         raise ValueError("metadata and db must be provided together")
+    system_prompt = _with_date_suffix(system_prompt)
     kwargs: dict = {
         "model": model,
         "max_tokens": DEFAULT_MAX_TOKENS,
@@ -583,6 +592,7 @@ async def _structured_call_parse(
     settings = get_settings()
     client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
     model = settings.model
+    system_prompt = _with_date_suffix(system_prompt)
 
     for attempt in range(MAX_API_RETRIES):
         try:

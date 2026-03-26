@@ -28,4 +28,5 @@ To make this practical:
 - **Assert only on basic structural outcomes** that should hold as long as the LLM does something remotely reasonable: e.g. "at least one claim was created", "the call completed", "a judgement page exists". Don't assert on specific wording or exact counts.
 - **Keep budgets tiny** (1–2 calls) so tests stay fast.
 - **Mark LLM-calling tests** with `@pytest.mark.llm` so they can be skipped in CI or fast-feedback loops (`pytest -m "not llm"`).
+- **Time LLM tests when first written.** Run the test in isolation and check wall-clock time. If it takes longer than 15 seconds, mark it `@pytest.mark.integration` instead of `@pytest.mark.llm` (integration tests require `--integration` to run, which implies `--llm`).
 - If a test truly cannot call an LLM (e.g. testing pure parsing logic), mocking is fine — but mock at the highest boundary possible and use `mocker` from pytest-mock.

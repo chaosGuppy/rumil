@@ -45,6 +45,32 @@ export type AbRunTraceOut = {
 };
 
 /**
+ * AgentStartedEventOut
+ */
+export type AgentStartedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'agent_started';
+    /**
+     * System Prompt
+     */
+    system_prompt: string;
+    /**
+     * User Message
+     */
+    user_message: string;
+};
+
+/**
  * Call
  */
 export type Call = {
@@ -244,7 +270,17 @@ export type CallTraceOut = {
         event: 'dispatches_planned';
     } & DispatchesPlannedEventOut) | ({
         event: 'dispatch_executed';
-    } & DispatchExecutedEventOut)>;
+    } & DispatchExecutedEventOut) | ({
+        event: 'explore_page';
+    } & ExplorePageEventOut) | ({
+        event: 'subagent_started';
+    } & SubagentStartedEventOut) | ({
+        event: 'subagent_completed';
+    } & SubagentCompletedEventOut) | ({
+        event: 'agent_started';
+    } & AgentStartedEventOut) | ({
+        event: 'evaluation_complete';
+    } & EvaluationCompleteEventOut)>;
     /**
      * Children
      */
@@ -262,7 +298,7 @@ export type CallTraceOut = {
 /**
  * CallType
  */
-export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_concepts' | 'assess_concept' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'web_research';
+export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_concepts' | 'assess_concept' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'web_research' | 'evaluate';
 
 /**
  * ConsiderationDirection
@@ -402,6 +438,58 @@ export type ErrorEventOut = {
      * Phase
      */
     phase: string;
+};
+
+/**
+ * EvaluationCompleteEventOut
+ */
+export type EvaluationCompleteEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'evaluation_complete';
+    /**
+     * Evaluation
+     */
+    evaluation: string;
+};
+
+/**
+ * ExplorePageEventOut
+ */
+export type ExplorePageEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'explore_page';
+    /**
+     * Page Id
+     */
+    page_id: string;
+    /**
+     * Page Headline
+     */
+    page_headline: string;
+    /**
+     * Response
+     */
+    response: string;
 };
 
 /**
@@ -964,6 +1052,70 @@ export type ScoringCompletedEventOut = {
      * Parent Fruit Reasoning
      */
     parent_fruit_reasoning: string;
+};
+
+/**
+ * SubagentCompletedEventOut
+ */
+export type SubagentCompletedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'subagent_completed';
+    /**
+     * Agent Id
+     */
+    agent_id: string;
+    /**
+     * Child Call Id
+     */
+    child_call_id: string;
+    /**
+     * Summary
+     */
+    summary: string;
+};
+
+/**
+ * SubagentStartedEventOut
+ */
+export type SubagentStartedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'subagent_started';
+    /**
+     * Agent Id
+     */
+    agent_id: string;
+    /**
+     * Agent Type
+     */
+    agent_type: string;
+    /**
+     * Child Call Id
+     */
+    child_call_id: string;
+    /**
+     * Prompt
+     */
+    prompt: string;
 };
 
 /**
@@ -1534,7 +1686,17 @@ export type GetCallEventsApiCallsCallIdEventsGetResponses = {
         event: 'dispatches_planned';
     } & DispatchesPlannedEventOut) | ({
         event: 'dispatch_executed';
-    } & DispatchExecutedEventOut)>;
+    } & DispatchExecutedEventOut) | ({
+        event: 'explore_page';
+    } & ExplorePageEventOut) | ({
+        event: 'subagent_started';
+    } & SubagentStartedEventOut) | ({
+        event: 'subagent_completed';
+    } & SubagentCompletedEventOut) | ({
+        event: 'agent_started';
+    } & AgentStartedEventOut) | ({
+        event: 'evaluation_complete';
+    } & EvaluationCompleteEventOut)>;
 };
 
 export type GetCallEventsApiCallsCallIdEventsGetResponse = GetCallEventsApiCallsCallIdEventsGetResponses[keyof GetCallEventsApiCallsCallIdEventsGetResponses];

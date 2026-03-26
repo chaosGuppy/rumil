@@ -86,6 +86,15 @@ uv run python main.py --summary QUESTION_ID
 # Run a concept-generation session (propose and assess conceptual tools for the research)
 uv run python main.py --concepts QUESTION_ID
 
+# Evaluate the judgement quality for a question
+uv run python main.py --evaluate QUESTION_ID
+
+# Use a specific evaluation prompt type (default: "default")
+uv run python main.py --evaluate QUESTION_ID --eval-type grounding
+
+# Display the full output of a completed evaluation
+uv run python main.py --show-evaluation CALL_ID
+
 # Control how deep the summary traverses and where it switches to compact mode.
 # --max-depth N        How many levels of sub-questions to include (default: 4).
 # --summarize-after-depth N  Levels 0..N-1 show full claim/judgement content;

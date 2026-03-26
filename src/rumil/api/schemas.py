@@ -13,14 +13,19 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from rumil.models import Call, Page, PageLink, _all_fields_required
 from rumil.tracing.trace_events import (
+    AgentStartedEvent,
     ContextBuiltEvent,
     DispatchesPlannedEvent,
     DispatchExecutedEvent,
     ErrorEvent,
+    EvaluationCompleteEvent,
+    ExplorePageEvent,
     LLMExchangeEvent,
     MovesExecutedEvent,
     ReviewCompleteEvent,
     ScoringCompletedEvent,
+    SubagentCompletedEvent,
+    SubagentStartedEvent,
     WarningEvent,
 )
 
@@ -84,6 +89,26 @@ class DispatchExecutedEventOut(DispatchExecutedEvent, _TraceEnvelopeMixin):
     pass
 
 
+class ExplorePageEventOut(ExplorePageEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class SubagentStartedEventOut(SubagentStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class SubagentCompletedEventOut(SubagentCompletedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class AgentStartedEventOut(AgentStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class EvaluationCompleteEventOut(EvaluationCompleteEvent, _TraceEnvelopeMixin):
+    pass
+
+
 TraceEventOut = Annotated[
     ContextBuiltEventOut
     | MovesExecutedEventOut
@@ -93,7 +118,12 @@ TraceEventOut = Annotated[
     | ErrorEventOut
     | ScoringCompletedEventOut
     | DispatchesPlannedEventOut
-    | DispatchExecutedEventOut,
+    | DispatchExecutedEventOut
+    | ExplorePageEventOut
+    | SubagentStartedEventOut
+    | SubagentCompletedEventOut
+    | AgentStartedEventOut
+    | EvaluationCompleteEventOut,
     Field(discriminator="event"),
 ]
 

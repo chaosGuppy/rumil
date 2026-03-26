@@ -33,8 +33,10 @@ from rumil.calls.call_registry import (
     FIND_CONSIDERATIONS_CALL_CLASSES,
     SCOUT_CONCEPTS_CALL_CLASSES,
     SCOUT_ANALOGIES_CALL_CLASSES,
+    SCOUT_DEEP_QUESTIONS_CALL_CLASSES,
     SCOUT_FACTCHECKS_CALL_CLASSES,
     SCOUT_PARADIGM_CASES_CALL_CLASSES,
+    SCOUT_WEB_QUESTIONS_CALL_CLASSES,
     SCOUT_ESTIMATES_CALL_CLASSES,
     SCOUT_HYPOTHESES_CALL_CLASSES,
     SCOUT_SUBQUESTIONS_CALL_CLASSES,
@@ -67,8 +69,10 @@ from rumil.models import (
     RecurseDispatchPayload,
     ScoutAnalogiesDispatchPayload,
     ScoutDispatchPayload,
+    ScoutDeepQuestionsDispatchPayload,
     ScoutFactchecksDispatchPayload,
     FindConsiderationsMode,
+    ScoutWebQuestionsDispatchPayload,
     ScoutParadigmCasesDispatchPayload,
     ScoutEstimatesDispatchPayload,
     ScoutHypothesesDispatchPayload,
@@ -130,25 +134,7 @@ PRIORITIZATION_MOVES: list[MoveType] = [
     MoveType.LINK_CHILD_QUESTION,
 ]
 
-PHASE1_SCOUT_TYPES: Sequence[CallType] = [
-    CallType.SCOUT_SUBQUESTIONS,
-    CallType.SCOUT_ESTIMATES,
-    CallType.SCOUT_HYPOTHESES,
-    CallType.SCOUT_ANALOGIES,
-    CallType.SCOUT_PARADIGM_CASES,
-    CallType.SCOUT_FACTCHECKS,
-]
-
-PHASE2_DISPATCH_TYPES: Sequence[CallType] = [
-    CallType.FIND_CONSIDERATIONS,
-    CallType.WEB_RESEARCH,
-    CallType.SCOUT_SUBQUESTIONS,
-    CallType.SCOUT_ESTIMATES,
-    CallType.SCOUT_HYPOTHESES,
-    CallType.SCOUT_ANALOGIES,
-    CallType.SCOUT_PARADIGM_CASES,
-    CallType.SCOUT_FACTCHECKS,
-]
+from rumil.available_calls import get_available_calls_preset
 
 
 class SubquestionScore(BaseModel):
@@ -806,6 +792,26 @@ class BaseOrchestrator(ABC):
                 max_rounds=p.max_rounds, fruit_threshold=p.fruit_threshold,
             )
 
+        elif isinstance(p, ScoutWebQuestionsDispatchPayload):
+            log.info('Dispatch: scout_web_questions on %s (max_rounds=%d) — %s', d_label, p.max_rounds, p.reason)
+            child_call_id = await self._run_simple_call_dispatch(
+                resolved, CallType.SCOUT_WEB_QUESTIONS,
+                SCOUT_WEB_QUESTIONS_CALL_CLASSES, parent_call_id,
+                force=force, call_id=call_id,
+                sequence_id=sequence_id, sequence_position=sequence_position,
+                max_rounds=p.max_rounds, fruit_threshold=p.fruit_threshold,
+            )
+
+        elif isinstance(p, ScoutDeepQuestionsDispatchPayload):
+            log.info('Dispatch: scout_deep_questions on %s (max_rounds=%d) — %s', d_label, p.max_rounds, p.reason)
+            child_call_id = await self._run_simple_call_dispatch(
+                resolved, CallType.SCOUT_DEEP_QUESTIONS,
+                SCOUT_DEEP_QUESTIONS_CALL_CLASSES, parent_call_id,
+                force=force, call_id=call_id,
+                sequence_id=sequence_id, sequence_position=sequence_position,
+                max_rounds=p.max_rounds, fruit_threshold=p.fruit_threshold,
+            )
+
         elif isinstance(p, WebResearchDispatchPayload):
             log.info('Dispatch: web_research on %s — %s', d_label, p.reason)
             child_call_id = await web_research_question(
@@ -1253,7 +1259,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
 
             subtree_ids=subtree_ids,
             short_id_map=short_id_map,
-            dispatch_types=list(PHASE1_SCOUT_TYPES),
+            dispatch_types=list(get_available_calls_preset().phase1_scouts),
             system_prompt_override=build_system_prompt('two_phase_p1'),
         )
 
@@ -1263,7 +1269,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                 'Phase 1 produced no dispatches, synthesizing default scouts '
                 'for question=%s', question_id[:8],
             )
-            for ct in PHASE1_SCOUT_TYPES[:phase1_budget]:
+            for ct in get_available_calls_preset().phase1_scouts[:phase1_budget]:
                 ddef = DISPATCH_DEFS[ct]
                 dispatches.append(Dispatch(
                     call_type=ct,
@@ -1441,7 +1447,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
 
             subtree_ids=subtree_ids,
             short_id_map=short_id_map,
-            dispatch_types=list(PHASE2_DISPATCH_TYPES),
+            dispatch_types=list(get_available_calls_preset().phase2_dispatch),
             extra_dispatch_defs=extra_defs or None,
             system_prompt_override=build_system_prompt('two_phase_p2'),
         )

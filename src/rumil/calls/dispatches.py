@@ -22,6 +22,8 @@ from rumil.models import (
     ScoutEstimatesDispatchPayload,
     ScoutFactchecksDispatchPayload,
     ScoutHypothesesDispatchPayload,
+    ScoutDeepQuestionsDispatchPayload,
+    ScoutWebQuestionsDispatchPayload,
     ScoutSubquestionsDispatchPayload,
     WebResearchDispatchPayload,
 )
@@ -237,6 +239,33 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
             "Budget cost: between 1 and max_rounds (inclusive)."
         ),
         schema=ScoutFactchecksDispatchPayload,
+    ),
+    CallType.SCOUT_WEB_QUESTIONS: DispatchDef(
+        call_type=CallType.SCOUT_WEB_QUESTIONS,
+        name="dispatch_scout_web_questions",
+        description=(
+            "Dispatch a specialized scout that identifies concrete factual "
+            "questions answerable via web research, where the LLM does not "
+            "already know the answer. Always targets the scope question. "
+            "Runs up to max_rounds rounds, stopping early when remaining "
+            "fruit falls below fruit_threshold. "
+            "Budget cost: between 1 and max_rounds (inclusive)."
+        ),
+        schema=ScoutWebQuestionsDispatchPayload,
+    ),
+    CallType.SCOUT_DEEP_QUESTIONS: DispatchDef(
+        call_type=CallType.SCOUT_DEEP_QUESTIONS,
+        name="dispatch_scout_deep_questions",
+        description=(
+            "Dispatch a specialized scout that identifies important questions "
+            "requiring judgement, interpretation, or involved reasoning — "
+            "questions that cannot be resolved by simply looking something up. "
+            "Always targets the scope question. "
+            "Runs up to max_rounds rounds, stopping early when remaining "
+            "fruit falls below fruit_threshold. "
+            "Budget cost: between 1 and max_rounds (inclusive)."
+        ),
+        schema=ScoutDeepQuestionsDispatchPayload,
     ),
     CallType.WEB_RESEARCH: DispatchDef(
         call_type=CallType.WEB_RESEARCH,

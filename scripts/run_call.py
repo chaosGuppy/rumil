@@ -41,9 +41,11 @@ from rumil.calls.call_registry import (
     ASSESS_CALL_CLASSES,
     FIND_CONSIDERATIONS_CALL_CLASSES,
     SCOUT_ANALOGIES_CALL_CLASSES,
+    SCOUT_DEEP_QUESTIONS_CALL_CLASSES,
     SCOUT_ESTIMATES_CALL_CLASSES,
     SCOUT_FACTCHECKS_CALL_CLASSES,
     SCOUT_HYPOTHESES_CALL_CLASSES,
+    SCOUT_WEB_QUESTIONS_CALL_CLASSES,
     SCOUT_PARADIGM_CASES_CALL_CLASSES,
     SCOUT_SUBQUESTIONS_CALL_CLASSES,
     WEB_RESEARCH_CALL_CLASSES,
@@ -70,6 +72,14 @@ _SCOUT_CALL_TYPES: dict[str, tuple[CallType, dict]] = {
     "scout-factchecks": (
         CallType.SCOUT_FACTCHECKS,
         SCOUT_FACTCHECKS_CALL_CLASSES,
+    ),
+    "scout-web-questions": (
+        CallType.SCOUT_WEB_QUESTIONS,
+        SCOUT_WEB_QUESTIONS_CALL_CLASSES,
+    ),
+    "scout-deep-questions": (
+        CallType.SCOUT_DEEP_QUESTIONS,
+        SCOUT_DEEP_QUESTIONS_CALL_CLASSES,
     ),
 }
 
@@ -157,6 +167,8 @@ async def run(args: argparse.Namespace) -> None:
     settings = get_settings()
     if args.moves_preset is not None:
         settings.moves_preset = args.moves_preset
+    if args.available_calls is not None:
+        settings.available_calls = args.available_calls
     if args.smoke_test:
         settings.rumil_smoke_test = "1"
     if args.force_twophase_recurse:
@@ -335,6 +347,12 @@ def main() -> None:
         dest="moves_preset",
         default=None,
         help="Move preset name (default: 'default'). Controls which moves are available per call type.",
+    )
+    parser.add_argument(
+        "--available-calls",
+        dest="available_calls",
+        default=None,
+        help="Available-calls preset name (default: 'default'). Controls which scout/dispatch types the two-phase orchestrator uses.",
     )
     parser.add_argument(
         "--up-to-stage",

@@ -710,6 +710,12 @@ async def async_main():
         help="Move preset name (default: 'default'). Controls which moves are available per call type.",
     )
     parser.add_argument(
+        "--available-calls",
+        dest="available_calls",
+        default=None,
+        help="Available-calls preset name (default: 'default'). Controls which scout/dispatch types the two-phase orchestrator uses.",
+    )
+    parser.add_argument(
         "--smoke-test",
         dest="smoke_test",
         action="store_true",
@@ -756,6 +762,8 @@ async def async_main():
 
     if args.moves_preset is not None:
         get_settings().moves_preset = args.moves_preset
+    if args.available_calls is not None:
+        get_settings().available_calls = args.available_calls
     if args.smoke_test:
         get_settings().rumil_smoke_test = "1"
     if args.prod_db:

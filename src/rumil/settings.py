@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     prioritizer_variant: str = _capture_field(default="two_phase")
 
     moves_preset: str = _capture_field(default="default")
+    available_calls: str = _capture_field(default="default")
 
     find_considerations_modes: str = _capture_field(
         default="alternate,abstract,concrete"

@@ -83,6 +83,9 @@ uv run python main.py --map QUESTION_ID
 # Generate executive summary
 uv run python main.py --summary QUESTION_ID
 
+# Generate a multi-section research report
+uv run python main.py --report QUESTION_ID
+
 # Run a concept-generation session (propose and assess conceptual tools for the research)
 uv run python main.py --concepts QUESTION_ID
 

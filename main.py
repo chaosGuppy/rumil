@@ -26,6 +26,7 @@ from rumil.sources import create_source_page, run_ingest_calls
 from rumil.chat import run_chat
 from rumil.mapper import generate_map
 from rumil.summary import generate_summary, save_summary
+from rumil.report import generate_report, save_report
 from rumil.settings import Settings, get_settings, _settings_var
 
 PAGES_DIR = Path(__file__).parent / "pages"
@@ -273,6 +274,28 @@ async def cmd_summary(
 
     print(summary_text)
     print(f"\n---\nSummary saved to: {path}")
+
+
+async def cmd_report(
+    question_id: str,
+    db: DB,
+    max_depth: int = 4,
+) -> None:
+    question = await db.get_page(question_id)
+    if not question:
+        print(
+            f"Error: question '{question_id}' not found. Run --list to see existing questions."
+        )
+        sys.exit(1)
+
+    print(f"\nGenerating report for: {question.headline[:80]}")
+    print("(This will use multiple LLM calls but does not count against research budget)\n")
+
+    report_text = await generate_report(question_id, db, max_depth=max_depth)
+    path = save_report(report_text, question.headline)
+
+    print(report_text)
+    print(f"\n---\nReport saved to: {path}")
 
 
 async def cmd_list(db: DB, workspace_name: str) -> None:
@@ -590,6 +613,12 @@ async def async_main():
         help="Generate an executive summary for a question",
     )
     parser.add_argument(
+        "--report",
+        dest="report_id",
+        metavar="QUESTION_ID",
+        help="Generate a multi-section research report for a question",
+    )
+    parser.add_argument(
         "--max-depth",
         type=int,
         default=4,
@@ -808,6 +837,12 @@ async def async_main():
             db,
             max_depth=args.max_depth,
             summary_cutoff=args.summarize_after_depth,
+        )
+    elif args.report_id:
+        await cmd_report(
+            args.report_id,
+            db,
+            max_depth=args.max_depth,
         )
     elif args.continue_id:
         await cmd_continue(args.continue_id, args.budget, db, name=args.run_name)

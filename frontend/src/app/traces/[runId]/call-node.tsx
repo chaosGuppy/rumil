@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import type {
   CallNodeOut,
@@ -1072,7 +1072,16 @@ export const CallNode = memo(function CallNode({
   const [isOpen, setIsOpen] = useState(depth === 0 || isHashTarget || hasTargetDescendant);
   const nodeRef = useRef<HTMLDivElement>(null);
   const isComplete = call.status === "complete" || call.status === "failed";
+  const queryClient = useQueryClient();
+  const prevCompleteRef = useRef(isComplete);
   const { data: events } = useCallEvents(call.id, isOpen, isComplete);
+
+  useEffect(() => {
+    if (isComplete && !prevCompleteRef.current) {
+      queryClient.invalidateQueries({ queryKey: traceKeys.callEvents(call.id) });
+    }
+    prevCompleteRef.current = isComplete;
+  }, [isComplete, call.id, queryClient]);
 
   useEffect(() => {
     if (hasTargetDescendant) {

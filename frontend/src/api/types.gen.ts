@@ -430,6 +430,10 @@ export type ExplorePageEventOut = {
      * Page Id
      */
     page_id: string;
+    /**
+     * Page Headline
+     */
+    page_headline: string;
 };
 
 /**
@@ -1052,6 +1056,10 @@ export type SubagentStartedEventOut = {
      * Child Call Id
      */
     child_call_id: string;
+    /**
+     * Prompt
+     */
+    prompt: string;
 };
 
 /**

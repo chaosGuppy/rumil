@@ -19,7 +19,7 @@ import uuid
 from pathlib import Path
 
 from rumil.database import DB
-from rumil.models import Page, PageLayer, PageLink, PageType, LinkType, Workspace
+from rumil.models import Call, Page, PageLayer, PageLink, PageType, LinkType, Workspace
 from rumil.constants import MIN_TWOPHASE_BUDGET
 from rumil.orchestrator import Orchestrator, create_root_question, run_concept_session
 from rumil.sources import create_source_page, run_ingest_calls
@@ -194,14 +194,47 @@ async def cmd_evaluate(question_id: str, db: DB) -> None:
         )
         sys.exit(1)
 
+    if question.project_id and question.project_id != db.project_id:
+        db.project_id = question.project_id
+
     frontend = get_settings().frontend_url.rstrip("/")
     print(f"\nEvaluating judgement for: {question.headline[:80]}")
     print(f"Trace: {frontend}/traces/{db.run_id}\n")
 
     call = await run_evaluation(question.id, db)
-    print(f"\nEvaluation complete (call {call.id[:8]}).")
-    if call.result_summary:
-        print(f"\n{call.result_summary}")
+    print(f"\nEvaluation complete (call {call.id}).\n")
+    _print_evaluation(call)
+
+
+def _print_evaluation(call: Call) -> None:
+    evaluation_text = (call.review_json or {}).get("evaluation", "")
+    if evaluation_text:
+        print(evaluation_text)
+    elif call.result_summary:
+        print(call.result_summary)
+    else:
+        print("(no evaluation output)")
+
+
+async def cmd_show_evaluation(call_id: str, db: DB) -> None:
+    from rumil.models import CallType
+
+    call = await db.get_call(call_id)
+    if not call:
+        print(f"Error: call '{call_id}' not found.")
+        sys.exit(1)
+
+    if call.call_type != CallType.EVALUATE:
+        print(
+            f"Error: call '{call_id}' is a {call.call_type.value} call, not an evaluation."
+        )
+        sys.exit(1)
+
+    scope = await db.get_page(call.scope_page_id) if call.scope_page_id else None
+    if scope:
+        print(f"Evaluation for: {scope.headline[:80]}")
+    print(f"Call: {call.id[:8]}  Status: {call.status.value}\n")
+    _print_evaluation(call)
 
 
 async def cmd_map(question_id: str, db: DB) -> None:
@@ -584,6 +617,12 @@ async def async_main():
         help="Evaluate the judgement quality for a question",
     )
     parser.add_argument(
+        "--show-evaluation",
+        dest="show_evaluation_id",
+        metavar="CALL_ID",
+        help="Display the full output of a completed evaluation call",
+    )
+    parser.add_argument(
         "--chat",
         dest="chat_id",
         metavar="QUESTION_ID",
@@ -736,6 +775,9 @@ async def async_main():
         return
     elif args.evaluate_id:
         await cmd_evaluate(args.evaluate_id, db)
+        return
+    elif args.show_evaluation_id:
+        await cmd_show_evaluation(args.show_evaluation_id, db)
         return
     elif args.concepts_id:
         await cmd_concepts(args.concepts_id, db)

@@ -1717,6 +1717,11 @@
           "page_id": {
             "type": "string",
             "title": "Page Id"
+          },
+          "page_headline": {
+            "type": "string",
+            "title": "Page Headline",
+            "default": ""
           }
         },
         "type": "object",
@@ -1724,7 +1729,8 @@
           "ts",
           "call_id",
           "event",
-          "page_id"
+          "page_id",
+          "page_headline"
         ],
         "title": "ExplorePageEventOut"
       },
@@ -2838,6 +2844,11 @@
           "child_call_id": {
             "type": "string",
             "title": "Child Call Id"
+          },
+          "prompt": {
+            "type": "string",
+            "title": "Prompt",
+            "default": ""
           }
         },
         "type": "object",
@@ -2847,7 +2858,8 @@
           "event",
           "agent_id",
           "agent_type",
-          "child_call_id"
+          "child_call_id",
+          "prompt"
         ],
         "title": "SubagentStartedEventOut"
       },

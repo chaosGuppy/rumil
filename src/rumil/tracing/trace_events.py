@@ -117,6 +117,7 @@ class DispatchExecutedEvent(BaseModel):
 class ExplorePageEvent(BaseModel):
     event: Literal["explore_page"] = "explore_page"
     page_id: str
+    page_headline: str = ""
 
 
 class SubagentStartedEvent(BaseModel):
@@ -124,6 +125,7 @@ class SubagentStartedEvent(BaseModel):
     agent_id: str
     agent_type: str
     child_call_id: str
+    prompt: str = ""
 
 
 class SubagentCompletedEvent(BaseModel):
@@ -131,6 +133,11 @@ class SubagentCompletedEvent(BaseModel):
     agent_id: str
     child_call_id: str
     summary: str = ""
+
+
+class EvaluationCompleteEvent(BaseModel):
+    event: Literal["evaluation_complete"] = "evaluation_complete"
+    evaluation: str = ""
 
 
 TraceEvent = Annotated[
@@ -145,6 +152,7 @@ TraceEvent = Annotated[
     | DispatchExecutedEvent
     | ExplorePageEvent
     | SubagentStartedEvent
-    | SubagentCompletedEvent,
+    | SubagentCompletedEvent
+    | EvaluationCompleteEvent,
     Field(discriminator="event"),
 ]

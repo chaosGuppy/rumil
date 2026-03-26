@@ -17,6 +17,7 @@ from rumil.tracing.trace_events import (
     DispatchesPlannedEvent,
     DispatchExecutedEvent,
     ErrorEvent,
+    EvaluationCompleteEvent,
     ExplorePageEvent,
     LLMExchangeEvent,
     MovesExecutedEvent,

@@ -877,7 +877,9 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
         <div className="trace-event-body">
           <div className="trace-kv">
             <span className="trace-kv-key">page</span>
-            <span className="trace-kv-value"><code>{event.page_id.slice(0, 8)}</code></span>
+            <span className="trace-kv-value">
+              <PageChip page={{ id: event.page_id, headline: event.page_headline }} />
+            </span>
           </div>
         </div>
       )}
@@ -892,6 +894,12 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
             <span className="trace-kv-key">child call</span>
             <span className="trace-kv-value"><code>{event.child_call_id.slice(0, 8)}</code></span>
           </div>
+          {event.prompt && (
+            <div className="trace-kv trace-kv-block">
+              <span className="trace-kv-key">prompt</span>
+              <span className="trace-kv-value trace-kv-pre">{event.prompt}</span>
+            </div>
+          )}
         </div>
       )}
 
@@ -902,9 +910,9 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
             <span className="trace-kv-value"><code>{event.child_call_id.slice(0, 8)}</code></span>
           </div>
           {event.summary && (
-            <div className="trace-kv">
+            <div className="trace-kv trace-kv-block">
               <span className="trace-kv-key">summary</span>
-              <span className="trace-kv-value">{event.summary}</span>
+              <span className="trace-kv-value trace-kv-pre">{event.summary}</span>
             </div>
           )}
         </div>

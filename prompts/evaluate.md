@@ -12,18 +12,13 @@ Identify the important claims made within the judgement and assess whether each 
 
 2. **Trace each claim's support.** Use the `explore_page` tool to navigate the graph and find the considerations, sub-questions, and sources that justify each claim. Follow links outward to understand the depth of evidence.
 
-3. **Delegate deep investigations.** When tracing a claim requires navigating many hops through the graph, delegate to the `investigator` subagent. Give it a specific page ID to start from and a clear question about what evidence it should look for. The investigator will explore the graph and report back.
+3. **Delegate deep investigations.** When tracing a claim requires navigating many hops through the graph, delegate to the `investigator` subagent. Give it a specific page ID to start from and a clear question about what evidence it should look for. The investigator will explore the graph and report back with findings — it is your job to interpret those findings, not the investigator's.
 
-4. **Assess grounding quality.** For each claim, consider:
-   - Is there a direct consideration supporting it?
-   - Does that consideration cite sources?
-   - Are the sources relevant and credible?
-   - Are there intermediate claims that are themselves unsupported?
-   - Is counter-evidence acknowledged?
+4. **Write your evaluation.** After all investigations are complete, YOU must write the final structured evaluation yourself. Do not rely on investigators to write the evaluation for you. Synthesize their findings into your own assessment.
 
 ## Output Format
 
-Produce a structured evaluation with the following sections:
+Your final message must be the structured evaluation below. Do not narrate your coordination process — just produce the evaluation once you have all the information you need.
 
 ### Claims Assessment
 
@@ -44,3 +39,4 @@ A brief summary of the judgement's overall evidential quality: how many claims a
 - Page IDs can be short (first 8 characters) or full UUIDs. The tool accepts either form.
 - Focus on substantive claims. Skip trivial observations or framing language.
 - Be specific about evidence gaps — name the missing links, not just that something is missing.
+- Keep intermediate commentary to a minimum. Your value is in the final structured evaluation, not in narrating what you are doing.

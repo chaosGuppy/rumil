@@ -349,6 +349,21 @@
   color: #333;
 }
 
+.trace-kv-block {
+  flex-direction: column;
+  gap: 4px;
+}
+
+.trace-kv-pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 120px;
+  overflow-y: auto;
+  font-size: 11px;
+  line-height: 1.5;
+  opacity: 0.85;
+}
+
 /* Page chips */
 
 .trace-page-list {

@@ -8,7 +8,9 @@ Unlike the facts-to-check scout (which verifies claims already present in the wo
 
 ## What to Produce
 
-For each web question target (aim for 1-3):
+### Questions (1-3)
+
+For each web question target:
 
 1. **A question** that a web researcher could answer. Good forms include:
    - **Lookup**: "What is the [quantity/rate/date/status] of [X]?" — for finding a specific fact or figure.
@@ -17,6 +19,10 @@ For each web question target (aim for 1-3):
    - **Current state**: "What is the current [policy/status/approach] of [entity] regarding [X]?" — for establishing present-day facts.
 
 2. **Link it as a child** of the parent question using `link_child_question`.
+
+### Factual claims (1-3)
+
+Alongside your questions, produce claims about concrete facts that you are confident in, that are both non-obvious and important for the parent question. These should be specific factual statements — not vague generalities — where you have high confidence (epistemic status 4-5). The value is in surfacing facts you know well that a reader might not, and that bear on the parent question. Use `create_claim` and `link_consideration` to attach each to the parent question.
 
 ## How to Proceed
 
@@ -27,6 +33,7 @@ For each web question target (aim for 1-3):
    - Areas where the current state of affairs (policies, technologies, markets) matters but hasn't been established
 2. For each target, create a question using `create_question` that is specific enough for a web search to answer.
 3. Link each question as a child of the parent using `link_child_question`.
+4. Create factual claims you are confident in that are non-obvious and important for the parent question. Use `create_claim` and `link_consideration`.
 
 ## What Makes a Good Web Question
 
@@ -37,7 +44,6 @@ For each web question target (aim for 1-3):
 
 ## What NOT to Do
 
-- Do not create claims — only questions. The web researcher will create sourced claims later.
 - Do not try to answer the questions yourself. You are identifying targets, not doing the research.
 - Do not duplicate questions already present in the workspace.
 - Do not pose questions you can already answer confidently — the value is in surfacing unknowns.

@@ -8,7 +8,9 @@ This is the complement of the web-questions scout, which targets concrete factua
 
 ## What to Produce
 
-For each deep question target (aim for 1-3):
+### Questions (1-3)
+
+For each deep question target:
 
 1. **A question** that requires substantive reasoning. Good forms include:
    - **Evaluative**: "How significant is [X] relative to [Y] for [outcome]?" — for questions that require weighing factors.
@@ -18,6 +20,10 @@ For each deep question target (aim for 1-3):
    - **Normative**: "What should [actor] prioritize given [constraints]?" — for questions that require value judgements or multi-criteria reasoning.
 
 2. **Link it as a child** of the parent question using `link_child_question`.
+
+### High-level claims (1-3)
+
+Alongside your questions, produce claims about high-level insights, structural observations, or analytical judgements that you are confident in, that are both non-obvious and important for the parent question. These should be the kind of observations that require thought to arrive at — not surface-level restatements of the obvious — but where you have high confidence once you've reasoned it through (epistemic status 4-5). Use `create_claim` and `link_consideration` to attach each to the parent question.
 
 ## How to Proceed
 
@@ -29,6 +35,7 @@ For each deep question target (aim for 1-3):
    - Important "so what" questions that connect evidence to conclusions
 2. For each target, create a question using `create_question` that makes the required reasoning clear.
 3. Link each question as a child of the parent using `link_child_question`.
+4. Create high-level claims you are confident in that are non-obvious and important for the parent question. Use `create_claim` and `link_consideration`.
 
 ## What Makes a Good Deep Question
 
@@ -39,7 +46,7 @@ For each deep question target (aim for 1-3):
 
 ## What NOT to Do
 
-- Do not create claims or attempt to answer the questions. You are identifying targets for deeper investigation.
+- Do not attempt to answer the questions. You are identifying targets for deeper investigation.
 - Do not duplicate questions already present in the workspace.
 - Do not pose questions that are really just factual lookups dressed up as deep questions. If a web search could resolve it, it doesn't belong here.
 - Do not pose questions so broad they can't be meaningfully investigated.

@@ -36,6 +36,7 @@ class ScoutDeepQuestionsCall(CallRunner):
             "require judgement, interpretation, or involved reasoning to answer "
             "— questions that cannot be resolved by simply looking something up. "
             "For each, create a question and link it as a child of the scope "
-            "question.\n\n"
+            "question. Also produce confident, non-obvious high-level claims "
+            "that bear on the scope question.\n\n"
             f"Question ID: `{self.infra.question_id}`"
         )

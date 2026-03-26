@@ -269,10 +269,14 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
     ),
     CallType.WEB_RESEARCH: DispatchDef(
         call_type=CallType.WEB_RESEARCH,
-        name="dispatch_web_research",
+        name="dispatch_web_factcheck",
         description=(
-            "Dispatch web research for a question. Searches the web and extracts "
-            "relevant claims. Budget cost: exactly 1."
+            "Verify a specific factual claim via web search. Use ONLY on "
+            "questions that target a concrete, searchable fact — verifying "
+            "an assertion, looking up a figure or date, or finding known "
+            "examples of a well-defined category. Do NOT use on broad, "
+            "interpretive, hypothesis, or judgement questions. "
+            "Budget cost: exactly 1."
         ),
         schema=WebResearchDispatchPayload,
     ),

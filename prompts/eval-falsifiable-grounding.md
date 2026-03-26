@@ -33,6 +33,14 @@ For each important claim in the judgement:
 
 A brief summary of the judgement's overall evidential quality: how many claims are well-grounded vs. not, what the most significant gaps are, and what further investigation would be most valuable.
 
+## Handling Large Outputs
+
+Tool outputs (especially `explore_page` on densely-connected pages) sometimes exceed the Read tool's size limit and get saved to a file. When this happens:
+
+- **Use `Read` with `offset` and `limit` parameters** to read the file in sections rather than attempting to read it all at once. Start with the beginning (no offset), then read further sections as needed.
+- **Use `Grep`** to search within the saved file for specific page IDs, headlines, or keywords rather than reading the entire file. This is much more efficient for locating specific evidence in large outputs.
+- **Do not give up on large outputs.** The information you need is still accessible — you just need to retrieve it in parts.
+
 ## Important Notes
 
 - You can only navigate the workspace via `explore_page`. You do not have access to files, web, or shell.

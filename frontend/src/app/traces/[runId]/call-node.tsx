@@ -202,7 +202,6 @@ function MoveRow({
   const isCreate = moveType.startsWith("CREATE_");
   const isLink = moveType.startsWith("LINK_");
   const isSupersede = moveType === "SUPERSEDE_PAGE";
-  const isHypothesis = moveType === "PROPOSE_HYPOTHESIS";
   const isLoad = moveType === "LOAD_PAGE";
   const isChange = moveType === "CHANGE_LINK_ROLE";
   const isRemove = moveType === "REMOVE_LINK";
@@ -213,9 +212,7 @@ function MoveRow({
       ? "trace-move-link"
       : isSupersede
         ? "trace-move-supersede"
-        : isHypothesis
-          ? "trace-move-hypothesis"
-          : isLoad
+        : isLoad
             ? "trace-move-load"
             : isChange
               ? "trace-move-change"

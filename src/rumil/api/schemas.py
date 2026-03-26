@@ -17,10 +17,13 @@ from rumil.tracing.trace_events import (
     DispatchesPlannedEvent,
     DispatchExecutedEvent,
     ErrorEvent,
+    ExplorePageEvent,
     LLMExchangeEvent,
     MovesExecutedEvent,
     ReviewCompleteEvent,
     ScoringCompletedEvent,
+    SubagentCompletedEvent,
+    SubagentStartedEvent,
     WarningEvent,
 )
 
@@ -84,6 +87,18 @@ class DispatchExecutedEventOut(DispatchExecutedEvent, _TraceEnvelopeMixin):
     pass
 
 
+class ExplorePageEventOut(ExplorePageEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class SubagentStartedEventOut(SubagentStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class SubagentCompletedEventOut(SubagentCompletedEvent, _TraceEnvelopeMixin):
+    pass
+
+
 TraceEventOut = Annotated[
     ContextBuiltEventOut
     | MovesExecutedEventOut
@@ -93,7 +108,10 @@ TraceEventOut = Annotated[
     | ErrorEventOut
     | ScoringCompletedEventOut
     | DispatchesPlannedEventOut
-    | DispatchExecutedEventOut,
+    | DispatchExecutedEventOut
+    | ExplorePageEventOut
+    | SubagentStartedEventOut
+    | SubagentCompletedEventOut,
     Field(discriminator="event"),
 ]
 

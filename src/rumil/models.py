@@ -67,6 +67,7 @@ class CallType(str, Enum):
     SCOUT_PARADIGM_CASES = "scout_paradigm_cases"
     SCOUT_FACTCHECKS = "scout_factchecks"
     WEB_RESEARCH = "web_research"
+    EVALUATE = "evaluate"
 
 
 # The subset of CallTypes that prioritization can dispatch.

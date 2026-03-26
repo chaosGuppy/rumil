@@ -75,6 +75,7 @@ const CALL_TYPE_ACCENT: Record<string, string> = {
   scout_paradigm_cases: "#3b7fa8",
   scout_factchecks: "#4793bf",
   web_research: "#c4884d",
+  evaluate: "#d46b9f",
 };
 
 function compactTokens(n: number): string {
@@ -869,6 +870,43 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
               </div>
             );
           })}
+        </div>
+      )}
+
+      {event.event === "explore_page" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">page</span>
+            <span className="trace-kv-value"><code>{event.page_id.slice(0, 8)}</code></span>
+          </div>
+        </div>
+      )}
+
+      {event.event === "subagent_started" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">agent type</span>
+            <span className="trace-kv-value">{event.agent_type}</span>
+          </div>
+          <div className="trace-kv">
+            <span className="trace-kv-key">child call</span>
+            <span className="trace-kv-value"><code>{event.child_call_id.slice(0, 8)}</code></span>
+          </div>
+        </div>
+      )}
+
+      {event.event === "subagent_completed" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">child call</span>
+            <span className="trace-kv-value"><code>{event.child_call_id.slice(0, 8)}</code></span>
+          </div>
+          {event.summary && (
+            <div className="trace-kv">
+              <span className="trace-kv-key">summary</span>
+              <span className="trace-kv-value">{event.summary}</span>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -180,6 +180,30 @@ async def cmd_ingest(
     print("\nRun --map or --chat to explore the results.")
 
 
+async def cmd_evaluate(question_id: str, db: DB) -> None:
+    from rumil.evaluate import run_evaluation
+
+    question = await db.get_page(question_id)
+    if not question:
+        resolved = await db.resolve_page_id(question_id)
+        if resolved:
+            question = await db.get_page(resolved)
+    if not question:
+        print(
+            f"Error: question '{question_id}' not found. Run --list to see existing questions."
+        )
+        sys.exit(1)
+
+    frontend = get_settings().frontend_url.rstrip("/")
+    print(f"\nEvaluating judgement for: {question.headline[:80]}")
+    print(f"Trace: {frontend}/traces/{db.run_id}\n")
+
+    call = await run_evaluation(question.id, db)
+    print(f"\nEvaluation complete (call {call.id[:8]}).")
+    if call.result_summary:
+        print(f"\n{call.result_summary}")
+
+
 async def cmd_map(question_id: str, db: DB) -> None:
     question = await db.get_page(question_id)
     if not question:
@@ -554,6 +578,12 @@ async def async_main():
         help="Generate a visual HTML map of the research tree",
     )
     parser.add_argument(
+        "--evaluate",
+        dest="evaluate_id",
+        metavar="QUESTION_ID",
+        help="Evaluate the judgement quality for a question",
+    )
+    parser.add_argument(
         "--chat",
         dest="chat_id",
         metavar="QUESTION_ID",
@@ -703,6 +733,9 @@ async def async_main():
 
     if args.list:
         await cmd_list(db, args.workspace_name)
+        return
+    elif args.evaluate_id:
+        await cmd_evaluate(args.evaluate_id, db)
         return
     elif args.concepts_id:
         await cmd_concepts(args.concepts_id, db)

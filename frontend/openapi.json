@@ -680,6 +680,15 @@
                       },
                       {
                         "$ref": "#/components/schemas/DispatchExecutedEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/ExplorePageEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/SubagentStartedEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/SubagentCompletedEventOut"
                       }
                     ],
                     "discriminator": {
@@ -693,7 +702,10 @@
                         "error": "#/components/schemas/ErrorEventOut",
                         "scoring_completed": "#/components/schemas/ScoringCompletedEventOut",
                         "dispatches_planned": "#/components/schemas/DispatchesPlannedEventOut",
-                        "dispatch_executed": "#/components/schemas/DispatchExecutedEventOut"
+                        "dispatch_executed": "#/components/schemas/DispatchExecutedEventOut",
+                        "explore_page": "#/components/schemas/ExplorePageEventOut",
+                        "subagent_started": "#/components/schemas/SubagentStartedEventOut",
+                        "subagent_completed": "#/components/schemas/SubagentCompletedEventOut"
                       }
                     }
                   },
@@ -1360,6 +1372,15 @@
                 },
                 {
                   "$ref": "#/components/schemas/DispatchExecutedEventOut"
+                },
+                {
+                  "$ref": "#/components/schemas/ExplorePageEventOut"
+                },
+                {
+                  "$ref": "#/components/schemas/SubagentStartedEventOut"
+                },
+                {
+                  "$ref": "#/components/schemas/SubagentCompletedEventOut"
                 }
               ],
               "discriminator": {
@@ -1369,10 +1390,13 @@
                   "dispatch_executed": "#/components/schemas/DispatchExecutedEventOut",
                   "dispatches_planned": "#/components/schemas/DispatchesPlannedEventOut",
                   "error": "#/components/schemas/ErrorEventOut",
+                  "explore_page": "#/components/schemas/ExplorePageEventOut",
                   "llm_exchange": "#/components/schemas/LLMExchangeEventOut",
                   "moves_executed": "#/components/schemas/MovesExecutedEventOut",
                   "review_complete": "#/components/schemas/ReviewCompleteEventOut",
                   "scoring_completed": "#/components/schemas/ScoringCompletedEventOut",
+                  "subagent_completed": "#/components/schemas/SubagentCompletedEventOut",
+                  "subagent_started": "#/components/schemas/SubagentStartedEventOut",
                   "warning": "#/components/schemas/WarningEventOut"
                 }
               }
@@ -1439,7 +1463,8 @@
           "scout_analogies",
           "scout_paradigm_cases",
           "scout_factchecks",
-          "web_research"
+          "web_research",
+          "evaluate"
         ],
         "title": "CallType"
       },
@@ -1672,6 +1697,36 @@
           "phase"
         ],
         "title": "ErrorEventOut"
+      },
+      "ExplorePageEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "explore_page",
+            "title": "Event",
+            "default": "explore_page"
+          },
+          "page_id": {
+            "type": "string",
+            "title": "Page Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "page_id"
+        ],
+        "title": "ExplorePageEventOut"
       },
       "HTTPValidationError": {
         "properties": {
@@ -2714,6 +2769,87 @@
           "parent_fruit_reasoning"
         ],
         "title": "ScoringCompletedEventOut"
+      },
+      "SubagentCompletedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "subagent_completed",
+            "title": "Event",
+            "default": "subagent_completed"
+          },
+          "agent_id": {
+            "type": "string",
+            "title": "Agent Id"
+          },
+          "child_call_id": {
+            "type": "string",
+            "title": "Child Call Id"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "agent_id",
+          "child_call_id",
+          "summary"
+        ],
+        "title": "SubagentCompletedEventOut"
+      },
+      "SubagentStartedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "subagent_started",
+            "title": "Event",
+            "default": "subagent_started"
+          },
+          "agent_id": {
+            "type": "string",
+            "title": "Agent Id"
+          },
+          "agent_type": {
+            "type": "string",
+            "title": "Agent Type"
+          },
+          "child_call_id": {
+            "type": "string",
+            "title": "Child Call Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "agent_id",
+          "agent_type",
+          "child_call_id"
+        ],
+        "title": "SubagentStartedEventOut"
       },
       "SubquestionScoreItem": {
         "properties": {

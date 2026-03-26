@@ -62,6 +62,45 @@
   position: relative;
 }
 
+.trace-call-targeted {
+  animation: trace-target-flash 2s ease-out;
+}
+
+@keyframes trace-target-flash {
+  0% { background-color: rgba(91, 141, 239, 0.15); }
+  100% { background-color: transparent; }
+}
+
+.trace-call-header-row {
+  display: flex;
+  align-items: center;
+}
+
+.trace-copy-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  color: #bbb;
+  cursor: pointer;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, background-color 0.15s;
+}
+
+.trace-call-header-row:hover .trace-copy-link {
+  opacity: 1;
+}
+
+.trace-copy-link:hover {
+  color: #555;
+  background-color: rgba(0, 0, 0, 0.06);
+}
+
 .trace-call-header {
   display: flex;
   align-items: center;

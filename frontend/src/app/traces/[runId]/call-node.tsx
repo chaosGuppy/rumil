@@ -973,9 +973,7 @@ function treeContainsAnchor(tree: TreeNode, hash: string): boolean {
 const HashTargetContext = createContext("");
 
 export function HashTargetProvider({ children }: { children: React.ReactNode }) {
-  const [hash, setHash] = useState(() =>
-    typeof window !== "undefined" ? window.location.hash.slice(1) : "",
-  );
+  const [hash, setHash] = useState("");
 
   useEffect(() => {
     setHash(window.location.hash.slice(1));

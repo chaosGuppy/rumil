@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import type {
@@ -970,26 +970,25 @@ function treeContainsAnchor(tree: TreeNode, hash: string): boolean {
   return false;
 }
 
-function useHashTarget(anchor: string, tree: TreeNode) {
-  const getHash = () =>
-    typeof window !== "undefined" ? window.location.hash.slice(1) : "";
+const HashTargetContext = createContext("");
 
-  const [hash, setHash] = useState(getHash);
+export function HashTargetProvider({ children }: { children: React.ReactNode }) {
+  const [hash, setHash] = useState(() =>
+    typeof window !== "undefined" ? window.location.hash.slice(1) : "",
+  );
 
   useEffect(() => {
-    setHash(getHash());
-    const onHashChange = () => setHash(getHash());
+    setHash(window.location.hash.slice(1));
+    const onHashChange = () => setHash(window.location.hash.slice(1));
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
 
-  const isTarget = hash === anchor;
-  const hasTargetDescendant = useMemo(
-    () => !isTarget && hash !== "" && treeContainsAnchor(tree, hash),
-    [isTarget, hash, tree],
+  return (
+    <HashTargetContext.Provider value={hash}>
+      {children}
+    </HashTargetContext.Provider>
   );
-
-  return { isTarget, hasTargetDescendant };
 }
 
 export const CallNode = memo(function CallNode({
@@ -1003,7 +1002,12 @@ export const CallNode = memo(function CallNode({
   const { call } = node;
   const shortId = call.id.slice(0, 8);
   const anchor = `call-${shortId}`;
-  const { isTarget: isHashTarget, hasTargetDescendant } = useHashTarget(anchor, tree);
+  const hash = useContext(HashTargetContext);
+  const isHashTarget = hash === anchor;
+  const hasTargetDescendant = useMemo(
+    () => !isHashTarget && hash !== "" && treeContainsAnchor(tree, hash),
+    [isHashTarget, hash, tree],
+  );
   const [isOpen, setIsOpen] = useState(depth === 0 || isHashTarget || hasTargetDescendant);
   const nodeRef = useRef<HTMLDivElement>(null);
   const isComplete = call.status === "complete" || call.status === "failed";

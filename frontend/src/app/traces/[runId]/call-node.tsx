@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useMemo, useState } from "react";
+import { createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import type {
@@ -917,6 +917,80 @@ const SequenceGroup = memo(function SequenceGroup({
   );
 });
 
+function CopyLinkButton({ anchor }: { anchor: string }) {
+  const [copied, setCopied] = useState(false);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout>>(null);
+
+  const handleCopy = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      const url = `${window.location.origin}${window.location.pathname}#${anchor}`;
+      navigator.clipboard.writeText(url).then(() => {
+        setCopied(true);
+        if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        timeoutRef.current = setTimeout(() => setCopied(false), 1500);
+      });
+    },
+    [anchor],
+  );
+
+  return (
+    <button
+      onClick={handleCopy}
+      className="trace-copy-link"
+      title="Copy link to call"
+      aria-label="Copy link to call"
+      data-testid={`copy-link-${anchor}`}
+    >
+      {copied ? (
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="3.5 8.5 6.5 11.5 12.5 4.5" />
+        </svg>
+      ) : (
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M6.5 9.5a3 3 0 0 0 4.24 0l2-2a3 3 0 0 0-4.24-4.24l-1 1" />
+          <path d="M9.5 6.5a3 3 0 0 0-4.24 0l-2 2a3 3 0 0 0 4.24 4.24l1-1" />
+        </svg>
+      )}
+    </button>
+  );
+}
+
+function treeContainsAnchor(tree: TreeNode, hash: string): boolean {
+  const shortId = tree.node.call.id.slice(0, 8);
+  if (`call-${shortId}` === hash) return true;
+  for (const child of tree.children) {
+    if (treeContainsAnchor(child, hash)) return true;
+  }
+  for (const seq of tree.sequences) {
+    for (const seqCall of seq.calls) {
+      if (treeContainsAnchor(seqCall, hash)) return true;
+    }
+  }
+  return false;
+}
+
+const HashTargetContext = createContext("");
+
+export function HashTargetProvider({ children }: { children: React.ReactNode }) {
+  const [hash, setHash] = useState(() =>
+    typeof window !== "undefined" ? window.location.hash.slice(1) : "",
+  );
+
+  useEffect(() => {
+    setHash(window.location.hash.slice(1));
+    const onHashChange = () => setHash(window.location.hash.slice(1));
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
+  return (
+    <HashTargetContext.Provider value={hash}>
+      {children}
+    </HashTargetContext.Provider>
+  );
+}
+
 export const CallNode = memo(function CallNode({
   tree,
   depth,
@@ -924,13 +998,35 @@ export const CallNode = memo(function CallNode({
   tree: TreeNode;
   depth: number;
 }) {
-  const [isOpen, setIsOpen] = useState(depth === 0);
   const { node, children, sequences } = tree;
   const { call } = node;
+  const shortId = call.id.slice(0, 8);
+  const anchor = `call-${shortId}`;
+  const hash = useContext(HashTargetContext);
+  const isHashTarget = hash === anchor;
+  const hasTargetDescendant = useMemo(
+    () => !isHashTarget && hash !== "" && treeContainsAnchor(tree, hash),
+    [isHashTarget, hash, tree],
+  );
+  const [isOpen, setIsOpen] = useState(depth === 0 || isHashTarget || hasTargetDescendant);
+  const nodeRef = useRef<HTMLDivElement>(null);
   const isComplete = call.status === "complete" || call.status === "failed";
   const { data: events } = useCallEvents(call.id, isOpen, isComplete);
 
-  const shortId = call.id.slice(0, 8);
+  useEffect(() => {
+    if (hasTargetDescendant) {
+      setIsOpen(true);
+    }
+  }, [hasTargetDescendant]);
+
+  useEffect(() => {
+    if (isHashTarget && nodeRef.current) {
+      setIsOpen(true);
+      requestAnimationFrame(() => {
+        nodeRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    }
+  }, [isHashTarget]);
   const duration = getDuration(call);
   const accent = CALL_TYPE_ACCENT[call.call_type] || "#7a8a9e";
 
@@ -973,8 +1069,9 @@ export const CallNode = memo(function CallNode({
 
   return (
     <div
-      id={`call-${shortId}`}
-      className="trace-call-node"
+      ref={nodeRef}
+      id={anchor}
+      className={`trace-call-node${isHashTarget ? " trace-call-targeted" : ""}`}
       style={
         {
           "--call-accent": accent,
@@ -984,37 +1081,40 @@ export const CallNode = memo(function CallNode({
         } as React.CSSProperties
       }
     >
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="trace-call-header"
-      >
-        <span className="trace-call-type">
-          {call.call_type}
-        </span>
-        {node.scope_page_summary && (
-          <span className="trace-call-scope">{node.scope_page_summary}</span>
-        )}
-        <span className="trace-call-id">{shortId}</span>
-        <span className="trace-call-meta">
-          <StatusDot status={call.status} />
-          <span className="trace-call-status">{call.status}</span>
-          {duration && <span className="trace-call-duration">{duration}</span>}
-          {call.cost_usd != null && (
-            <span className="trace-call-cost">${call.cost_usd.toFixed(4)}</span>
+      <div className="trace-call-header-row">
+        <button
+          onClick={() => setIsOpen(!isOpen)}
+          className="trace-call-header"
+        >
+          <span className="trace-call-type">
+            {call.call_type}
+          </span>
+          {node.scope_page_summary && (
+            <span className="trace-call-scope">{node.scope_page_summary}</span>
           )}
-        </span>
-        {warningCount > 0 && (
-          <span className="trace-badge-warning">
-            {warningCount} warn
+          <span className="trace-call-id">{shortId}</span>
+          <span className="trace-call-meta">
+            <StatusDot status={call.status} />
+            <span className="trace-call-status">{call.status}</span>
+            {duration && <span className="trace-call-duration">{duration}</span>}
+            {call.cost_usd != null && (
+              <span className="trace-call-cost">${call.cost_usd.toFixed(4)}</span>
+            )}
           </span>
-        )}
-        {errorCount > 0 && (
-          <span className="trace-badge-error">
-            {errorCount} err
-          </span>
-        )}
-        <span className="trace-call-chevron">{isOpen ? "\u2013" : "+"}</span>
-      </button>
+          {warningCount > 0 && (
+            <span className="trace-badge-warning">
+              {warningCount} warn
+            </span>
+          )}
+          {errorCount > 0 && (
+            <span className="trace-badge-error">
+              {errorCount} err
+            </span>
+          )}
+          <span className="trace-call-chevron">{isOpen ? "\u2013" : "+"}</span>
+        </button>
+        <CopyLinkButton anchor={anchor} />
+      </div>
 
       {isOpen && (
         <div className="trace-call-body">

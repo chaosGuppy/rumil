@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import type { RunTraceTreeOut, CallNodeOut } from "@/api/types.gen";
 import { useRunTraceTree } from "@/lib/use-run-trace";
-import { CallNode, type TreeNode } from "./call-node";
+import { CallNode, HashTargetProvider, type TreeNode } from "./call-node";
 
 export type SequenceNode = {
   id: string;
@@ -91,20 +91,22 @@ export function TraceViewer({
   const tree = useMemo(() => buildTree(trace.calls), [trace.calls]);
 
   return (
-    <div className="trace-root">
-      {trace.cost_usd != null && (
-        <div className="trace-run-cost">
-          Total cost: ${trace.cost_usd.toFixed(4)}
-        </div>
-      )}
-      {tree.map((t) => (
-        <CallNode key={t.node.call.id} tree={t} depth={0} />
-      ))}
-      {tree.length === 0 && (
-        <p className="trace-empty">
-          No calls recorded for this run yet.
-        </p>
-      )}
-    </div>
+    <HashTargetProvider>
+      <div className="trace-root">
+        {trace.cost_usd != null && (
+          <div className="trace-run-cost">
+            Total cost: ${trace.cost_usd.toFixed(4)}
+          </div>
+        )}
+        {tree.map((t) => (
+          <CallNode key={t.node.call.id} tree={t} depth={0} />
+        ))}
+        {tree.length === 0 && (
+          <p className="trace-empty">
+            No calls recorded for this run yet.
+          </p>
+        )}
+      </div>
+    </HashTargetProvider>
   );
 }

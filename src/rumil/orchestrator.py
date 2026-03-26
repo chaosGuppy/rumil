@@ -356,7 +356,12 @@ async def assess_question(
     sequence_id: str | None = None,
     sequence_position: int | None = None,
 ) -> str | None:
-    """Run one Assess call on a question. Returns call ID, or None if no budget."""
+    """Run one Assess call on a question. Returns call ID, or None if no budget.
+
+    When ``sequence_id`` is provided, the summarise call is placed at
+    ``sequence_position`` and the assess call at ``sequence_position + 1``.
+    Callers should account for two positions being consumed.
+    """
     log.info("assess_question: question=%s", question_id[:8])
     if not await _consume_budget(db, force=force):
         return None
@@ -368,6 +373,9 @@ async def assess_question(
         sequence_position=sequence_position,
     )
 
+    assess_position = (
+        sequence_position + 1 if sequence_position is not None else None
+    )
     call = await db.create_call(
         CallType.ASSESS,
         scope_page_id=question_id,
@@ -375,7 +383,7 @@ async def assess_question(
         context_page_ids=context_page_ids,
         call_id=call_id,
         sequence_id=sequence_id,
-        sequence_position=sequence_position,
+        sequence_position=assess_position,
     )
     cls = ASSESS_CALL_CLASSES[get_settings().assess_call_variant]
     assess = cls(question_id, call, db, broadcaster=broadcaster)
@@ -1049,6 +1057,8 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         self._consumed: int = 0
         self._initial_call: Call | None = None
         self._parent_call_id: str | None = None
+        self._sequence_id: str | None = None
+        self._seq_position: int = 0
 
     def _effective_budget(self, global_remaining: int) -> int:
         if self._budget_cap is not None:
@@ -1090,6 +1100,13 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                 f'TwoPhaseOrchestrator requires a budget of at least '
                 f'{MIN_TWOPHASE_BUDGET}, got {effective}'
             )
+        if self._parent_call_id:
+            seq = await self.db.create_call_sequence(
+                parent_call_id=self._parent_call_id,
+                scope_question_id=root_question_id,
+            )
+            self._sequence_id = seq.id
+            self._seq_position = 0
         try:
             while True:
                 remaining = await self.db.budget_remaining()
@@ -1128,7 +1145,11 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                         root_question_id, self.db,
                         parent_call_id=self._parent_call_id,
                         broadcaster=self.broadcaster, force=True,
+                        sequence_id=self._sequence_id,
+                        sequence_position=self._seq_position,
                     )
+                    if self._sequence_id is not None:
+                        self._seq_position += 2
         finally:
             await self._teardown()
             await own_db.close()
@@ -1193,6 +1214,11 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         if self._initial_call is not None:
             p_call = self._initial_call
             self._initial_call = None
+            if self._sequence_id is not None:
+                p_call.sequence_id = self._sequence_id
+                p_call.sequence_position = self._seq_position
+                await self.db.save_call(p_call)
+                self._seq_position += 1
         else:
             p_call = await self.db.create_call(
                 CallType.PRIORITIZATION,
@@ -1200,7 +1226,11 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                 parent_call_id=parent_call_id,
                 budget_allocated=phase1_budget,
                 workspace=Workspace.PRIORITIZATION,
+                sequence_id=self._sequence_id,
+                sequence_position=self._seq_position if self._sequence_id else None,
             )
+            if self._sequence_id is not None:
+                self._seq_position += 1
         trace = CallTrace(p_call.id, self.db, broadcaster=self.broadcaster)
         set_trace(trace)
         await trace.record(ContextBuiltEvent(budget=phase1_budget))
@@ -1288,7 +1318,11 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             parent_call_id=parent_call_id,
             budget_allocated=budget,
             workspace=Workspace.PRIORITIZATION,
+            sequence_id=self._sequence_id,
+            sequence_position=self._seq_position if self._sequence_id else None,
         )
+        if self._sequence_id is not None:
+            self._seq_position += 1
         trace = CallTrace(p_call.id, self.db, broadcaster=self.broadcaster)
         set_trace(trace)
         await trace.record(ContextBuiltEvent(budget=budget))

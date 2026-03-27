@@ -2,7 +2,7 @@
 
 ## Your Task
 
-You are performing prioritization on a research question that has already had some investigation. At minimum, phase 1 has already run fan-out scouting (subquestions, estimates, hypotheses, analogies, paradigm cases, facts-to-check) on the scope question. You now have scoring data on each subquestion (impact and remaining fruit) and per-type fruit scores for each kind of investigative action. There may also be further investigation of subquestions.
+You are performing prioritization on a research question that has already had some investigation. At minimum, phase 1 has already run fan-out scouting (subquestions, estimates, hypotheses, analogies, paradigm cases, facts-to-check) on the scope question. You now have scoring data on each subquestion (impact and remaining fruit) and per-scout-type fruit scores. There may also be further investigation of subquestions.
 
 Your job is to allocate your remaining budget to targeted follow-up, based on what the scouting discovered. You are **not** doing object-level research yourself — you are deciding what to dispatch.
 
@@ -22,8 +22,8 @@ You must make all your dispatch calls now — this is your only turn.
 You will be shown scoring data from a preliminary assessment:
 
 - **Subquestion scores**: Each subquestion has an `impact` (0-10: how much answering it helps the parent) and `fruit` (0-10: how much useful investigation remains). Each subquestion also shows research stats: how many considerations, judgements, and sub-subquestions it already has.
-- **Per-type fruit scores**: Remaining fruit broken out by call type — `development` (investigating existing subquestions via find_considerations, web_research, recurse) and each scout type separately (scout_subquestions, scout_estimates, etc.). These tell you where the most productive avenues lie.
-- **Dispatch guidance**: A computed recommendation based on the per-type fruit scores. This guidance is advisory — follow it unless you have clear reason not to. It indicates whether to focus on development, scouting, or a balance of both.
+- **Per-scout-type fruit scores**: These scores inform you how much useful remaining work there is along two dimensions. First, **scouting**: there are various types of angle and subquestion that can be scouted for (new subquestions, estimates, hypotheses, analogies, paradigm cases, facts to check, etc.), and we assess remaining potential for each type independently — a high score means that type of scouting is likely to surface valuable new angles, while a low score means most of what it can find has already been found. Second, **development**: alongside the per-scout scores, we assess overall useful remaining work from developing investigation of angles and subquestions already identified (via find_considerations, web_research, and recursion into subquestions) — a high development score means many identified subquestions and angles remain under-investigated.
+- **Dispatch guidance**: A computed recommendation based on the per-scout-type fruit scores. This guidance is advisory — follow it unless you have clear reason not to. It indicates whether to focus on development, scouting, or a balance of both.
 
 ### Allocation principles
 

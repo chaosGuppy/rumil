@@ -184,7 +184,7 @@ _HIGH = 6
 def compute_dispatch_guidance(
     fruit_scores: Sequence[CallTypeFruitScore],
 ) -> str:
-    """Produce dispatch guidance text from per-type fruit scores."""
+    """Produce dispatch guidance text from per-scout-type fruit scores."""
     dev_score: int | None = None
     scout_scores: dict[str, int] = {}
     for s in fruit_scores:
@@ -1560,7 +1560,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             lines.append('')
             scores_text = '\n'.join(lines)
 
-        fruit_lines = ['## Per-Type Fruit Scores', '']
+        fruit_lines = ['## Per-Scout-Type Fruit Scores', '']
         for s in per_type_scores:
             fruit_lines.append(
                 f'- **{s.call_type}**: {s.fruit}/10 — {s.reasoning}'

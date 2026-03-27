@@ -22,7 +22,8 @@ You must make all your dispatch calls now — this is your only turn.
 You will be shown scoring data from a preliminary assessment:
 
 - **Subquestion scores**: Each subquestion has an `impact` (0-10: how much answering it helps the parent) and `fruit` (0-10: how much useful investigation remains). Each subquestion also shows research stats: how many considerations, judgements, and sub-subquestions it already has.
-- **Parent question fruit**: How much useful investigation remains on the parent question directly (as opposed to through subquestions).
+- **Per-type fruit scores**: Remaining fruit broken out by call type — `development` (investigating existing subquestions via find_considerations, web_research, recurse) and each scout type separately (scout_subquestions, scout_estimates, etc.). These tell you where the most productive avenues lie.
+- **Dispatch guidance**: A computed recommendation based on the per-type fruit scores. This guidance is advisory — follow it unless you have clear reason not to. It indicates whether to focus on development, scouting, or a balance of both.
 
 ### Allocation principles
 

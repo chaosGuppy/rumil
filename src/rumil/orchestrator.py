@@ -85,6 +85,7 @@ from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
 from rumil.tracing.tracer import CallTrace, get_trace, set_trace
 from rumil.tracing.trace_events import (
+    CallTypeFruitScoreItem,
     ContextBuiltEvent,
     DispatchExecutedEvent,
     DispatchesPlannedEvent,
@@ -159,8 +160,84 @@ class SubquestionScoringResult(BaseModel):
 
 
 class FruitResult(BaseModel):
+    """Deprecated: kept for reference. Use PerTypeFruitResult instead."""
     fruit: int = Field(description='0-10: how much useful investigation remains')
     reasoning: str = Field(description='Brief explanation')
+
+
+class CallTypeFruitScore(BaseModel):
+    call_type: str = Field(
+        description='e.g. development, scout_subquestions, scout_estimates'
+    )
+    fruit: int = Field(description='0-10: how much useful work of this type remains')
+    reasoning: str = Field(description='Brief explanation')
+
+
+class PerTypeFruitResult(BaseModel):
+    scores: list[CallTypeFruitScore]
+
+
+_LOW = 2
+_HIGH = 6
+
+
+def compute_dispatch_guidance(
+    fruit_scores: Sequence[CallTypeFruitScore],
+) -> str:
+    """Produce dispatch guidance text from per-type fruit scores."""
+    dev_score: int | None = None
+    scout_scores: dict[str, int] = {}
+    for s in fruit_scores:
+        if s.call_type == 'development':
+            dev_score = s.fruit
+        else:
+            scout_scores[s.call_type] = s.fruit
+
+    if dev_score is None:
+        dev_score = 5
+
+    high_scouts = [k for k, v in scout_scores.items() if v >= _HIGH]
+    low_scouts = [k for k, v in scout_scores.items() if v <= _LOW]
+    exhausted_scouts = [k for k, v in scout_scores.items() if v <= 1]
+    all_scouts_low = len(low_scouts) == len(scout_scores) and len(scout_scores) > 0
+    any_scouts_moderate_or_high = any(
+        v > _LOW for v in scout_scores.values()
+    )
+
+    lines: list[str] = []
+
+    if dev_score <= _LOW and high_scouts:
+        lines.append(
+            'Development avenues are well-explored. Focus budget on scouting: '
+            + ', '.join(high_scouts) + '.'
+        )
+    elif dev_score >= _HIGH and all_scouts_low:
+        lines.append(
+            'Scouting is largely exhausted. Focus budget on developing '
+            'existing subquestions via find_considerations and recurse.'
+        )
+    elif dev_score >= _HIGH and high_scouts:
+        lines.append(
+            'Both development and scouting have significant remaining fruit. '
+            'Allocate broadly across development and high-fruit scouts: '
+            + ', '.join(high_scouts) + '.'
+        )
+    elif dev_score > _LOW and any_scouts_moderate_or_high:
+        names = [k for k, v in scout_scores.items() if v > _LOW]
+        lines.append(
+            'Balance budget between development calls and high-fruit scouts: '
+            + ', '.join(names) + '.'
+        )
+    elif dev_score <= _LOW and all_scouts_low:
+        lines.append(
+            'Remaining fruit is low across the board. '
+            'Consider allocating conservatively.'
+        )
+
+    for name in exhausted_scouts:
+        lines.append(f'{name} appears exhausted — avoid dispatching.')
+
+    return '\n'.join(lines)
 
 
 @dataclass
@@ -1390,19 +1467,35 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                 return type('R', (), {'data': {'scores': []}})()
             scoring_tasks.append(_empty_scores())
 
+        preset = get_available_calls_preset()
+        scout_types = [
+            ct for ct in preset.phase2_dispatch
+            if ct.value.startswith('scout_')
+        ]
+        types_to_score = ['development'] + [ct.value for ct in scout_types]
+
+        call_counts = await self.db.get_call_counts_by_type(question_id)
+        history_lines = [f'- {ct}: {n} call(s)' for ct, n in call_counts.items()]
+        history_text = (
+            'Prior completed calls on this question:\n'
+            + ('\n'.join(history_lines) if history_lines else '(none)')
+        )
+
         fruit_user_msg = build_user_message(
             f'Question: {parent_headline}\n\n'
-            f'Question ID: `{question_id}`',
-            'Score the remaining fruit on this question only. '
-            'Respond with the fruit score and reasoning.',
+            f'Question ID: `{question_id}`\n\n'
+            f'{history_text}\n\n'
+            f'Call types to score: {", ".join(types_to_score)}',
+            'Score the remaining fruit for each call type listed. '
+            'Return one score per call type.',
         )
         scoring_tasks.append(structured_call(
             scoring_system,
             user_message=fruit_user_msg,
-            response_model=FruitResult,
+            response_model=PerTypeFruitResult,
             metadata=LLMExchangeMetadata(
                 call_id=p_call.id,
-                phase='score_parent_fruit',
+                phase='score_per_type_fruit',
             ),
             db=self.db,
         ))
@@ -1412,16 +1505,22 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         fruit_result = scoring_results[1]
 
         subq_scores = subq_result.data.get('scores', []) if subq_result.data else []
-        parent_fruit = fruit_result.data.get('fruit', 5) if fruit_result.data else 5
+        raw_fruit_scores = fruit_result.data.get('scores', []) if fruit_result.data else []
+        per_type_scores = [CallTypeFruitScore(**s) for s in raw_fruit_scores]
+
+        guidance = compute_dispatch_guidance(per_type_scores)
 
         await trace.record(ScoringCompletedEvent(
             subquestion_scores=[
                 SubquestionScoreItem(**s) for s in subq_scores
             ],
-            parent_fruit=parent_fruit,
-            parent_fruit_reasoning=(
-                fruit_result.data.get('reasoning', '') if fruit_result.data else ''
-            ),
+            per_type_fruit=[
+                CallTypeFruitScoreItem(
+                    call_type=s.call_type, fruit=s.fruit, reasoning=s.reasoning,
+                )
+                for s in per_type_scores
+            ],
+            dispatch_guidance=guidance,
         ))
 
         scores_text = ''
@@ -1436,10 +1535,16 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             lines.append('')
             scores_text = '\n'.join(lines)
 
-        scores_text += (
-            f'\n## Parent Question Fruit\n\n'
-            f'Remaining fruit on parent: {parent_fruit}/10\n'
-        )
+        fruit_lines = ['## Per-Type Fruit Scores', '']
+        for s in per_type_scores:
+            fruit_lines.append(
+                f'- **{s.call_type}**: {s.fruit}/10 — {s.reasoning}'
+            )
+        fruit_lines.append('')
+        scores_text += '\n'.join(fruit_lines)
+
+        if guidance:
+            scores_text += f'\n## Dispatch Guidance\n\n{guidance}\n'
 
         context_text, short_id_map = await build_prioritization_context(
             self.db, scope_question_id=question_id, graph=graph,

@@ -1523,6 +1523,29 @@
         ],
         "title": "CallType"
       },
+      "CallTypeFruitScoreItem": {
+        "properties": {
+          "call_type": {
+            "type": "string",
+            "title": "Call Type"
+          },
+          "fruit": {
+            "type": "integer",
+            "title": "Fruit",
+            "default": 0
+          },
+          "reasoning": {
+            "type": "string",
+            "title": "Reasoning",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "call_type"
+        ],
+        "title": "CallTypeFruitScoreItem"
+      },
       "ConsiderationDirection": {
         "type": "string",
         "enum": [
@@ -2855,6 +2878,19 @@
             "type": "string",
             "title": "Parent Fruit Reasoning",
             "default": ""
+          },
+          "per_type_fruit": {
+            "items": {
+              "$ref": "#/components/schemas/CallTypeFruitScoreItem"
+            },
+            "type": "array",
+            "title": "Per Type Fruit",
+            "default": []
+          },
+          "dispatch_guidance": {
+            "type": "string",
+            "title": "Dispatch Guidance",
+            "default": ""
           }
         },
         "type": "object",
@@ -2864,7 +2900,9 @@
           "event",
           "subquestion_scores",
           "parent_fruit",
-          "parent_fruit_reasoning"
+          "parent_fruit_reasoning",
+          "per_type_fruit",
+          "dispatch_guidance"
         ],
         "title": "ScoringCompletedEventOut"
       },

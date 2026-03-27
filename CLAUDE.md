@@ -84,6 +84,10 @@ To add a new call type: subclass `CallRunner`. Set `call_type`, override `_make_
 
 **Frontend** (`frontend/`): Next.js TypeScript app with Tailwind. Uses pnpm. Run with `cd frontend && pnpm dev`. The frontend port mirrors the API port: if the API is on `localhost:800X`, the frontend will be on `localhost:300X` (Next.js auto-increments when the default port is taken). Use this to find and stop the frontend process. TypeScript types in `frontend/src/api/` are auto-generated from the API's OpenAPI schema — **never create or edit these files by hand**. When API schemas change, theese need to be regenerated with `./scripts/generate-api-types.sh` (or `cd frontend && pnpm generate-api`). This is the only mechanism for sharing types between backend and frontend; do not manually duplicate type definitions. When `schemas.py` or `models.py` is edited, `./scripts/generate-api-types.sh` is automaticaly run via a hook.
 
+## Worktrees and localhost URLs
+
+When the user pastes a `localhost:<port>` URL, do NOT use that port literally. Instead, map it to this worktree's port. The frontend port is derived from `frontend/.env.local`: if the API URL there is `localhost:800X`, the frontend is on `localhost:300X`. Always read `frontend/.env.local` to determine the correct port and rewrite any user-provided localhost URL accordingly. Edits must go into the current worktree, not the main repo or other worktrees.
+
 ## Key Conventions
 
 - **NEVER pass `--prod` when running `main.py` unless the user explicitly asks you to.** The production database contains real research data. Default to the local database for all testing, development, and exploratory runs.

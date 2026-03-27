@@ -841,6 +841,25 @@ class DB:
         fruit = review.get("remaining_fruit") if isinstance(review, dict) else None
         return row["completed_at"], fruit
 
+    async def get_call_counts_by_type(
+        self,
+        question_id: str,
+    ) -> dict[str, int]:
+        """Count completed calls by call_type for a question."""
+        rows = _rows(
+            await self._execute(
+                self.client.table("calls")
+                .select("call_type")
+                .eq("scope_page_id", question_id)
+                .eq("status", "complete")
+            )
+        )
+        counts: dict[str, int] = {}
+        for row in rows:
+            ct = row["call_type"]
+            counts[ct] = counts.get(ct, 0) + 1
+        return counts
+
     async def get_ingest_history(self) -> dict[str, list[str]]:
         """Return {source_id: [question_id, ...]} based on considerations
         created by ingest calls."""

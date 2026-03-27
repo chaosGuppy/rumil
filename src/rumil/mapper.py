@@ -123,7 +123,18 @@ def _render_judgement(j: Page, index: int, total: int) -> str:
 </div>"""
 
 
-async def _render_question(question_id: str, db: DB, depth: int = 0) -> str:
+async def _render_question(
+    question_id: str,
+    db: DB,
+    depth: int = 0,
+    _visited: set[str] | None = None,
+) -> str:
+    if _visited is None:
+        _visited = set()
+    if question_id in _visited:
+        return ""
+    _visited = _visited | {question_id}
+
     question = await db.get_page(question_id)
     if not question:
         return ""
@@ -173,7 +184,7 @@ async def _render_question(question_id: str, db: DB, depth: int = 0) -> str:
     if children:
         ch_html = '<div class="section"><h4>Sub-questions</h4>'
         for child in children:
-            ch_html += await _render_question(child.id, db, depth=depth + 1)
+            ch_html += await _render_question(child.id, db, depth=depth + 1, _visited=_visited)
         ch_html += "</div>"
 
     q_sel_id = f"qb-{question_id[:8]}"

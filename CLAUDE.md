@@ -2,6 +2,8 @@
 
 An LLM-powered research workspace. Users pose questions, and the system investigates them by making structured LLM calls (find_considerations, assess, prioritize, ingest) that produce "pages" (claims, questions, judgements, concepts). Pages link together into a research graph with considerations bearing on questions. The codebase is optimised for experimentation, containing multiple implementations of pluggable abstractions, rather than being a monolithic application where there's only one way of achieving things.
 
+**The page graph can be cyclic.** Any code that traverses page links (parent/child questions, considerations, etc.) must track visited nodes to avoid infinite recursion. Use a `_visited: set[str]` parameter — see `context.py` for the standard pattern.
+
 ## Running
 
 Environment managed with `uv`.

@@ -23,6 +23,7 @@ async def build_research_tree(
     depth: int = 0,
     max_depth: int = 4,
     summary_cutoff: int | None = None,
+    _visited: set[str] | None = None,
 ) -> str:
     """
     Recursively build a full picture of the research on a question.
@@ -31,6 +32,12 @@ async def build_research_tree(
     reasoning, judgement bodies). Deeper levels render only page summaries
     to keep total context size manageable. Defaults to max_depth // 2.
     """
+    if _visited is None:
+        _visited = set()
+    if question_id in _visited:
+        return ""
+    _visited = _visited | {question_id}
+
     question = await db.get_page(question_id)
     if not question:
         return ""
@@ -109,6 +116,7 @@ async def build_research_tree(
                         depth=depth + 1,
                         max_depth=max_depth,
                         summary_cutoff=summary_cutoff,
+                        _visited=_visited,
                     )
                 )
 

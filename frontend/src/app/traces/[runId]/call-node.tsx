@@ -929,6 +929,20 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
           <CollapsiblePre label="User message" content={event.user_message} />
         </div>
       )}
+      {event.event === "tool_call" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">tool</span>
+            <span className="trace-kv-value"><code>{event.tool_name}</code></span>
+          </div>
+          {event.tool_input && Object.keys(event.tool_input).length > 0 && (
+            <CollapsiblePre label="Input" content={JSON.stringify(event.tool_input, null, 2)} />
+          )}
+          {event.response && (
+            <CollapsiblePre label="Response" content={event.response} />
+          )}
+        </div>
+      )}
       {event.event === "evaluation_complete" && (
         <div className="trace-event-body">
           <CollapsiblePre label="Evaluation" content={event.evaluation} />

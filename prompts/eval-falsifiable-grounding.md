@@ -26,7 +26,7 @@ For each important claim in the judgement:
 - **Importance:** high | moderate | low
 - **Falsifiability:** high | moderate | low
 - **Grounding:** well-grounded | weakly-grounded | ungrounded
-- **Evidence chain:** [brief description of the supporting evidence you found, with page headlines (not IDs)]
+- **Evidence chain:** [brief description of the supporting evidence you found, with page headlines and their 8-char short IDs, e.g. `[abcd1234] "Solar payback periods..."`. Always include both the ID and headline for every page you reference.]
 - **Gaps:** [what's missing — unsupported links, absent sources, unaddressed counter-evidence]
 
 ### Overall Assessment

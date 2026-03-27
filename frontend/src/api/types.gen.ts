@@ -280,7 +280,9 @@ export type CallTraceOut = {
         event: 'agent_started';
     } & AgentStartedEventOut) | ({
         event: 'evaluation_complete';
-    } & EvaluationCompleteEventOut)>;
+    } & EvaluationCompleteEventOut) | ({
+        event: 'tool_call';
+    } & ToolCallEventOut)>;
     /**
      * Children
      */
@@ -298,7 +300,7 @@ export type CallTraceOut = {
 /**
  * CallType
  */
-export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_concepts' | 'assess_concept' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'web_research' | 'evaluate';
+export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_concepts' | 'assess_concept' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'web_research' | 'evaluate' | 'grounding_feedback';
 
 /**
  * ConsiderationDirection
@@ -1145,6 +1147,38 @@ export type SubquestionScoreItem = {
 };
 
 /**
+ * ToolCallEventOut
+ */
+export type ToolCallEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'tool_call';
+    /**
+     * Tool Name
+     */
+    tool_name: string;
+    /**
+     * Tool Input
+     */
+    tool_input: {
+        [key: string]: unknown;
+    };
+    /**
+     * Response
+     */
+    response: string;
+};
+
+/**
  * ValidationError
  */
 export type ValidationError = {
@@ -1696,7 +1730,9 @@ export type GetCallEventsApiCallsCallIdEventsGetResponses = {
         event: 'agent_started';
     } & AgentStartedEventOut) | ({
         event: 'evaluation_complete';
-    } & EvaluationCompleteEventOut)>;
+    } & EvaluationCompleteEventOut) | ({
+        event: 'tool_call';
+    } & ToolCallEventOut)>;
 };
 
 export type GetCallEventsApiCallsCallIdEventsGetResponse = GetCallEventsApiCallsCallIdEventsGetResponses[keyof GetCallEventsApiCallsCallIdEventsGetResponses];

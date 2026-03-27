@@ -70,6 +70,7 @@ class CallType(str, Enum):
     SCOUT_DEEP_QUESTIONS = "scout_deep_questions"
     WEB_RESEARCH = "web_research"
     EVALUATE = "evaluate"
+    GROUNDING_FEEDBACK = "grounding_feedback"
 
 
 # The subset of CallTypes that prioritization can dispatch.

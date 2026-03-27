@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from collections.abc import Sequence
 
 import anthropic
@@ -32,19 +31,16 @@ from rumil.models import (
     CallType,
     MoveType,
     FindConsiderationsMode,
-    Page,
-    PageLayer,
-    PageType,
-    Workspace,
+)
+from rumil.moves.create_claim import (
+    ensure_source_page,
+    execute_with_source_creation,
+    rewrite_url_citations,
 )
 from rumil.moves.registry import MOVES
 from rumil.settings import get_settings
-from rumil.moves.base import write_page_file
-from rumil.scraper import scrape_url
 
 log = logging.getLogger(__name__)
-
-_URL_CITATION_RE = re.compile(r"\[(https?://[^\]\s]+)\]")
 
 
 class SimpleAgentLoop(PageCreator):
@@ -475,79 +471,6 @@ class WebResearchLoop(PageCreator):
 
         return [web_search]
 
-    async def _ensure_source_page(self, infra: CallInfra, url: str) -> str | None:
-        if url in self.source_page_ids:
-            return self.source_page_ids[url]
-
-        scraped = await scrape_url(url)
-        if scraped is None:
-            log.warning("Scrape failed for URL: %s", url)
-            return None
-
-        page = Page(
-            page_type=PageType.SOURCE,
-            layer=PageLayer.SQUIDGY,
-            workspace=Workspace.RESEARCH,
-            content=scraped.content,
-            headline=scraped.title[:120],
-            epistemic_status=2.5,
-            epistemic_type="web source",
-            provenance_model="scraper",
-            provenance_call_type=CallType.WEB_RESEARCH.value,
-            provenance_call_id=infra.call.id,
-            extra={
-                "url": url,
-                "fetched_at": scraped.fetched_at,
-                "char_count": len(scraped.content),
-            },
-        )
-        await infra.db.save_page(page)
-        write_page_file(page)
-
-        self.source_page_ids[url] = page.id
-        infra.state.created_page_ids.append(page.id)
-        log.info(
-            "Source page created: %s -> %s (%s)",
-            url[:60],
-            page.id[:8],
-            scraped.title[:60],
-        )
-        return page.id
-
-    def _rewrite_url_citations(self, content: str) -> str:
-        """Replace [url] inline citations with [shortid] using source_page_ids.
-
-        Uses slightly-forgiving matching: a trailing slash difference is
-        tolerated (e.g. [https://x.com/foo] matches https://x.com/foo/).
-        Raises ValueError for URLs that don't match any scraped source page.
-        """
-
-        def _normalize(url: str) -> str:
-            return url.rstrip("/")
-
-        normalized_lookup: dict[str, str] = {
-            _normalize(url): page_id for url, page_id in self.source_page_ids.items()
-        }
-
-        unmatched: list[str] = []
-
-        def _replace(m: re.Match) -> str:
-            url = m.group(1)
-            page_id = normalized_lookup.get(_normalize(url))
-            if page_id is not None:
-                return f"[{page_id[:8]}]"
-            unmatched.append(url)
-            return m.group(0)
-
-        rewritten = _URL_CITATION_RE.sub(_replace, content)
-        if unmatched:
-            raise ValueError(
-                "Inline citation URLs do not match any scraped source page: "
-                + ", ".join(unmatched)
-                + ". Only cite URLs that are also listed in source_urls."
-            )
-        return rewritten
-
     def _wrap_create_claim(
         self,
         tools: list[Tool],
@@ -556,48 +479,17 @@ class WebResearchLoop(PageCreator):
         wrapped: list[Tool] = []
         for tool in tools:
             if tool.name == "create_claim":
-                original_fn = tool.fn
 
                 async def wrapped_fn(
                     inp: dict,
-                    _orig=original_fn,
                     _infra=infra,
                 ) -> str:
-                    source_urls = inp.get("source_urls", [])
-                    if source_urls:
-                        resolved: list[str] = []
-                        failed_urls: list[str] = []
-                        for sid in source_urls:
-                            if isinstance(sid, str) and sid.startswith("http"):
-                                page_id = await self._ensure_source_page(
-                                    _infra,
-                                    sid,
-                                )
-                                if page_id:
-                                    resolved.append(page_id)
-                                else:
-                                    failed_urls.append(sid)
-                            else:
-                                resolved.append(sid)
-                        if failed_urls:
-                            urls = ", ".join(failed_urls)
-                            raise RuntimeError(
-                                f"Could not fetch the following source(s): {urls}. "
-                                "Find a different, accessible source that supports "
-                                "the same information, or modify the claim so it "
-                                "does not rely on the inaccessible source(s)."
-                            )
-                        inp = {**inp, "source_urls": resolved}
-                    content = inp.get("content", "")
-                    if content:
-                        try:
-                            inp = {
-                                **inp,
-                                "content": self._rewrite_url_citations(content),
-                            }
-                        except ValueError as exc:
-                            return f"ERROR: {exc}"
-                    return await _orig(inp)
+                    result = await execute_with_source_creation(
+                        inp, _infra.call, _infra.db, self.source_page_ids
+                    )
+                    if result.created_page_id:
+                        _infra.state.created_page_ids.append(result.created_page_id)
+                    return result.message
 
                 wrapped.append(
                     Tool(

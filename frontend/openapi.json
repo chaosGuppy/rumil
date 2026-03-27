@@ -695,6 +695,9 @@
                       },
                       {
                         "$ref": "#/components/schemas/EvaluationCompleteEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/ToolCallEventOut"
                       }
                     ],
                     "discriminator": {
@@ -713,7 +716,8 @@
                         "subagent_started": "#/components/schemas/SubagentStartedEventOut",
                         "subagent_completed": "#/components/schemas/SubagentCompletedEventOut",
                         "agent_started": "#/components/schemas/AgentStartedEventOut",
-                        "evaluation_complete": "#/components/schemas/EvaluationCompleteEventOut"
+                        "evaluation_complete": "#/components/schemas/EvaluationCompleteEventOut",
+                        "tool_call": "#/components/schemas/ToolCallEventOut"
                       }
                     }
                   },
@@ -1432,6 +1436,9 @@
                 },
                 {
                   "$ref": "#/components/schemas/EvaluationCompleteEventOut"
+                },
+                {
+                  "$ref": "#/components/schemas/ToolCallEventOut"
                 }
               ],
               "discriminator": {
@@ -1450,6 +1457,7 @@
                   "scoring_completed": "#/components/schemas/ScoringCompletedEventOut",
                   "subagent_completed": "#/components/schemas/SubagentCompletedEventOut",
                   "subagent_started": "#/components/schemas/SubagentStartedEventOut",
+                  "tool_call": "#/components/schemas/ToolCallEventOut",
                   "warning": "#/components/schemas/WarningEventOut"
                 }
               }
@@ -1519,7 +1527,8 @@
           "scout_web_questions",
           "scout_deep_questions",
           "web_research",
-          "evaluate"
+          "evaluate",
+          "grounding_feedback"
         ],
         "title": "CallType"
       },
@@ -2987,6 +2996,49 @@
           "question_id"
         ],
         "title": "SubquestionScoreItem"
+      },
+      "ToolCallEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "tool_call",
+            "title": "Event",
+            "default": "tool_call"
+          },
+          "tool_name": {
+            "type": "string",
+            "title": "Tool Name"
+          },
+          "tool_input": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Tool Input",
+            "default": {}
+          },
+          "response": {
+            "type": "string",
+            "title": "Response",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "tool_name",
+          "tool_input",
+          "response"
+        ],
+        "title": "ToolCallEventOut"
       },
       "ValidationError": {
         "properties": {

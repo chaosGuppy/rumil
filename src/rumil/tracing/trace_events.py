@@ -147,6 +147,13 @@ class EvaluationCompleteEvent(BaseModel):
     evaluation: str = ""
 
 
+class ToolCallEvent(BaseModel):
+    event: Literal["tool_call"] = "tool_call"
+    tool_name: str
+    tool_input: dict = {}
+    response: str = ""
+
+
 TraceEvent = Annotated[
     ContextBuiltEvent
     | MovesExecutedEvent
@@ -161,6 +168,7 @@ TraceEvent = Annotated[
     | SubagentStartedEvent
     | SubagentCompletedEvent
     | AgentStartedEvent
-    | EvaluationCompleteEvent,
+    | EvaluationCompleteEvent
+    | ToolCallEvent,
     Field(discriminator="event"),
 ]

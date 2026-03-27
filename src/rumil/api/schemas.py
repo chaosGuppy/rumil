@@ -26,6 +26,7 @@ from rumil.tracing.trace_events import (
     ScoringCompletedEvent,
     SubagentCompletedEvent,
     SubagentStartedEvent,
+    ToolCallEvent,
     WarningEvent,
 )
 
@@ -109,6 +110,10 @@ class EvaluationCompleteEventOut(EvaluationCompleteEvent, _TraceEnvelopeMixin):
     pass
 
 
+class ToolCallEventOut(ToolCallEvent, _TraceEnvelopeMixin):
+    pass
+
+
 TraceEventOut = Annotated[
     ContextBuiltEventOut
     | MovesExecutedEventOut
@@ -123,7 +128,8 @@ TraceEventOut = Annotated[
     | SubagentStartedEventOut
     | SubagentCompletedEventOut
     | AgentStartedEventOut
-    | EvaluationCompleteEventOut,
+    | EvaluationCompleteEventOut
+    | ToolCallEventOut,
     Field(discriminator="event"),
 ]
 

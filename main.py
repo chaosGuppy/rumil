@@ -216,6 +216,54 @@ def _print_evaluation(call: Call) -> None:
         print("(no evaluation output)")
 
 
+async def cmd_ground(eval_call_id: str, db: DB) -> None:
+    from rumil.clean import run_grounding_feedback
+    from rumil.models import CallStatus, CallType
+
+    call = await db.get_call(eval_call_id)
+    if not call:
+        print(f"Error: call '{eval_call_id}' not found.")
+        sys.exit(1)
+    if call.call_type != CallType.EVALUATE:
+        print(
+            f"Error: call '{eval_call_id}' is a {call.call_type.value} call, "
+            "not an evaluation. Pass the ID of a completed evaluation call."
+        )
+        sys.exit(1)
+    if call.status != CallStatus.COMPLETE:
+        print(
+            f"Error: evaluation call '{eval_call_id}' has status "
+            f"'{call.status.value}'. It must be complete."
+        )
+        sys.exit(1)
+
+    evaluation_text = (call.review_json or {}).get("evaluation", "")
+    if not evaluation_text:
+        print("Error: evaluation call has no evaluation output.")
+        sys.exit(1)
+
+    if not call.scope_page_id:
+        print("Error: evaluation call has no scope question.")
+        sys.exit(1)
+
+    question = await db.get_page(call.scope_page_id)
+    if not question:
+        print(f"Error: scope question '{call.scope_page_id}' not found.")
+        sys.exit(1)
+
+    if question.project_id and question.project_id != db.project_id:
+        db.project_id = question.project_id
+
+    frontend = get_settings().frontend_url.rstrip("/")
+    print(f"\nRunning grounding feedback for: {question.headline[:80]}")
+    print(f"Trace: {frontend}/traces/{db.run_id}\n")
+
+    result = await run_grounding_feedback(call.scope_page_id, evaluation_text, db)
+    print(f"\nGrounding feedback complete (call {result.id}).")
+    if result.result_summary:
+        print(result.result_summary)
+
+
 async def cmd_show_evaluation(call_id: str, db: DB) -> None:
     from rumil.models import CallType
 
@@ -623,6 +671,12 @@ async def async_main():
         help="Evaluation prompt type (default: default). Options: default, grounding",
     )
     parser.add_argument(
+        "--ground",
+        dest="ground_call_id",
+        metavar="EVAL_CALL_ID",
+        help="Run grounding feedback pipeline on a completed evaluation call",
+    )
+    parser.add_argument(
         "--show-evaluation",
         dest="show_evaluation_id",
         metavar="CALL_ID",
@@ -789,6 +843,9 @@ async def async_main():
         return
     elif args.evaluate_id:
         await cmd_evaluate(args.evaluate_id, db, eval_type=args.eval_type)
+        return
+    elif args.ground_call_id:
+        await cmd_ground(args.ground_call_id, db)
         return
     elif args.show_evaluation_id:
         await cmd_show_evaluation(args.show_evaluation_id, db)

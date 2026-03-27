@@ -98,12 +98,20 @@ from rumil.tracing.trace_events import (
 log = logging.getLogger(__name__)
 
 
-async def _count_subtree_questions(question_id: str, graph: PageGraph) -> int:
+async def _count_subtree_questions(
+    question_id: str, graph: PageGraph, visited: set[str] | None = None,
+) -> int:
     """Count all descendant questions (not including the question itself)."""
+    if visited is None:
+        visited = set()
+    visited.add(question_id)
     children = await graph.get_child_questions(question_id)
-    count = len(children)
+    count = 0
     for child in children:
-        count += await _count_subtree_questions(child.id, graph)
+        if child.id in visited:
+            continue
+        count += 1
+        count += await _count_subtree_questions(child.id, graph, visited)
     return count
 
 

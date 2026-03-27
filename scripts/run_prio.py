@@ -37,13 +37,17 @@ async def run(args: argparse.Namespace) -> None:
     logging.getLogger('httpx').setLevel(logging.WARNING)
 
     db = await DB.create(run_id=str(uuid.uuid4()))
-    project = await db.get_or_create_project(args.workspace)
-    db.project_id = project.id
 
     page = await db.get_page(args.question_id)
     if not page:
         print(f'Question {args.question_id} not found.')
         return
+
+    if page.project_id:
+        db.project_id = page.project_id
+    elif args.workspace:
+        project = await db.get_or_create_project(args.workspace)
+        db.project_id = project.id
 
     frontend = settings.frontend_url
     print(f'Trace: {frontend}/traces/{db.run_id}\n')
@@ -91,8 +95,8 @@ def main() -> None:
     )
     parser.add_argument(
         '--workspace',
-        default='test-calls',
-        help='Project workspace name (default: test-calls)',
+        default=None,
+        help='Project workspace name (inferred from question if omitted)',
     )
     parser.add_argument(
         '--available-calls',

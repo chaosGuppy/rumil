@@ -1437,8 +1437,8 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         if not parent_question:
             raise RuntimeError(
                 f'Parent question {question_id} not found in PageGraph. '
-                f'This usually means the question belongs to a different project '
-                f'than the current DB scope.'
+                'This usually means the question belongs to a different project '
+                'than the current DB scope.'
             )
         parent_headline = parent_question.headline
 
@@ -1474,6 +1474,16 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         ]
         types_to_score = ['development'] + [ct.value for ct in scout_types]
 
+        type_desc_lines = [
+            '- **development**: Deeper investigation of existing subquestions '
+            'via find_considerations, web_research, and recursion.',
+        ]
+        for ct in scout_types:
+            ddef = DISPATCH_DEFS.get(ct)
+            if ddef:
+                type_desc_lines.append(f'- **{ct.value}**: {ddef.description}')
+        type_descriptions = '\n'.join(type_desc_lines)
+
         call_counts = await self.db.get_call_counts_by_type(question_id)
         history_lines = [f'- {ct}: {n} call(s)' for ct, n in call_counts.items()]
         history_text = (
@@ -1481,16 +1491,17 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             + ('\n'.join(history_lines) if history_lines else '(none)')
         )
 
+        fruit_system = build_system_prompt('score_per_type_fruit')
         fruit_user_msg = build_user_message(
             f'Question: {parent_headline}\n\n'
             f'Question ID: `{question_id}`\n\n'
             f'{history_text}\n\n'
-            f'Call types to score: {", ".join(types_to_score)}',
+            f'## Call types to score\n\n{type_descriptions}',
             'Score the remaining fruit for each call type listed. '
             'Return one score per call type.',
         )
         scoring_tasks.append(structured_call(
-            scoring_system,
+            fruit_system,
             user_message=fruit_user_msg,
             response_model=PerTypeFruitResult,
             metadata=LLMExchangeMetadata(

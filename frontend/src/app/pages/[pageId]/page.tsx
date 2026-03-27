@@ -542,7 +542,12 @@ const styles = `
   .page-content h4, .page-content h5, .page-content h6 {
     margin: 1em 0 0.5em;
     line-height: 1.3;
+    font-weight: 600;
   }
+  .page-content h1 { font-size: 1.4em; }
+  .page-content h2 { font-size: 1.2em; }
+  .page-content h3 { font-size: 1.05em; }
+  .page-content h4 { font-size: 1em; }
   .page-content h1:first-child, .page-content h2:first-child,
   .page-content h3:first-child {
     margin-top: 0;

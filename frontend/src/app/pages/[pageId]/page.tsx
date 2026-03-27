@@ -1,6 +1,7 @@
 import Link from "next/link";
 import Markdown from "react-markdown";
-import type { PageDetailOut, LinkedPageOut, Page, PageLink, RunSummaryOut } from "@/api";
+import type { PageDetailOut, LinkedPageOut, Page, RunSummaryOut } from "@/api";
+import LinksContainer from "./links-container";
 
 import { API_BASE } from "@/lib/api-base";
 
@@ -151,73 +152,6 @@ function EpistemicGauge({ value }: { value: number }) {
   );
 }
 
-function LinkMeta({ link }: { link: PageLink }) {
-  return (
-    <div className="link-meta">
-      <span className="link-type-label">{link.link_type.replace("_", " ")}</span>
-      {link.strength > 0 && (
-        <span className="link-strength">
-          <span className="link-strength-bar">
-            <span
-              className="link-strength-fill"
-              style={{ width: `${(link.strength / 5) * 100}%` }}
-            />
-          </span>
-          {link.strength.toFixed(1)}
-        </span>
-      )}
-    </div>
-  );
-}
-
-function LinkedCard({ lp }: { lp: LinkedPageOut }) {
-  const cfg = TYPE_CONFIG[lp.page.page_type] || TYPE_CONFIG.source;
-  return (
-    <Link href={pageHref(lp.page)} className="linked-card">
-      <div className="linked-card-accent" style={{ background: cfg.accent }} />
-      <div className="linked-card-body">
-        <LinkMeta link={lp.link} />
-        <div className="linked-card-header">
-          <span
-            className="linked-card-type"
-            style={{ color: cfg.accent, background: cfg.bg }}
-          >
-            {lp.page.page_type}
-          </span>
-          <span className="linked-card-id">{lp.page.id.slice(0, 8)}</span>
-        </div>
-        <div className="linked-card-summary">{lp.page.headline}</div>
-        {lp.link.reasoning && (
-          <div className="linked-card-reasoning">{lp.link.reasoning}</div>
-        )}
-      </div>
-    </Link>
-  );
-}
-
-function LinkSection({
-  title,
-  links,
-}: {
-  title: string;
-  links: LinkedPageOut[];
-}) {
-  if (links.length === 0) return null;
-  return (
-    <div className="link-section">
-      <div className="link-section-header">
-        <span className="link-section-title">{title}</span>
-        <span className="link-section-count">{links.length}</span>
-      </div>
-      <div className="link-grid">
-        {links.map((lp) => (
-          <LinkedCard key={lp.link.id} lp={lp} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
 export default async function PageDetailPage({
   params,
 }: {
@@ -351,10 +285,7 @@ export default async function PageDetailPage({
         </div>
       </article>
 
-      <div className="links-container">
-        <LinkSection title="Outgoing" links={links_from} />
-        <LinkSection title="Incoming" links={links_to} />
-      </div>
+      <LinksContainer links_from={links_from} links_to={links_to} />
 
       <footer className="page-footer">
         <span>{new Date(page.created_at).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}</span>
@@ -671,6 +602,55 @@ const styles = `
     display: flex;
     flex-direction: column;
     gap: 2rem;
+  }
+
+  .links-filter-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .links-superseded-toggle {
+    font-size: 0.7rem;
+    font-family: var(--font-geist-mono), monospace;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    padding: 0.25rem 0.6rem;
+    border: 1px solid var(--color-border);
+    background: transparent;
+    color: var(--color-muted);
+    cursor: pointer;
+    opacity: 0.5;
+    transition: opacity 0.15s, background 0.15s, color 0.15s, border-color 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  .links-superseded-toggle:hover {
+    opacity: 0.75;
+  }
+  .links-superseded-toggle.active {
+    background: var(--type-judgement-bg);
+    color: var(--type-judgement);
+    border-color: var(--type-judgement-border);
+    opacity: 1;
+  }
+  .links-superseded-count {
+    font-size: 0.65rem;
+    opacity: 0.7;
+  }
+
+  .linked-card-superseded {
+    opacity: 0.4;
+  }
+  .linked-card-superseded:hover {
+    opacity: 0.7;
+  }
+  .linked-card-superseded-badge {
+    font-size: 0.6rem;
+    font-family: var(--font-geist-mono), monospace;
+    color: var(--color-dim);
+    text-decoration: line-through;
+    opacity: 0.6;
   }
 
   .link-section-header {

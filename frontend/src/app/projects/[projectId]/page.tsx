@@ -131,12 +131,18 @@ export default function PagesIndexPage() {
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
-    return pages.filter((p) => {
-      if (activeTypes.size > 0 && !activeTypes.has(p.page_type)) return false;
-      if (q && !p.headline.toLowerCase().includes(q) && !p.content.toLowerCase().includes(q))
-        return false;
-      return true;
-    });
+    return pages
+      .filter((p) => {
+        if (activeTypes.size > 0 && !activeTypes.has(p.page_type)) return false;
+        if (q && !p.headline.toLowerCase().includes(q) && !p.content.toLowerCase().includes(q))
+          return false;
+        return true;
+      })
+      .sort((a, b) => {
+        const aHuman = a.provenance_model === "human" ? 0 : 1;
+        const bHuman = b.provenance_model === "human" ? 0 : 1;
+        return aHuman - bHuman;
+      });
   }, [pages, search, activeTypes]);
 
   const typeCounts = useMemo(() => {
@@ -409,6 +415,22 @@ export default function PagesIndexPage() {
           color: var(--type-judgement);
           border-color: var(--type-judgement-border);
           opacity: 1;
+        }
+
+        .human-icon {
+          width: 0.8rem;
+          height: 0.8rem;
+          color: rgba(230, 180, 80, 0.7);
+          vertical-align: -1px;
+          margin-right: 0.25rem;
+        }
+
+        .page-row.human-created {
+          border-left: 2px solid rgba(230, 180, 80, 0.7);
+          background: rgba(230, 180, 80, 0.07);
+        }
+        .page-row.human-created:hover {
+          background: rgba(230, 180, 80, 0.12);
         }
 
         .page-row.superseded {
@@ -710,7 +732,7 @@ export default function PagesIndexPage() {
                 <Link
                   key={p.id}
                   href={pageHref(p)}
-                  className={`page-row${p.is_superseded ? " superseded" : ""}`}
+                  className={`page-row${p.provenance_model === "human" ? " human-created" : ""}${p.is_superseded ? " superseded" : ""}`}
                   style={{ animationDelay: `${Math.min(i * 15, 300)}ms` }}
                 >
                   <span
@@ -728,7 +750,15 @@ export default function PagesIndexPage() {
                     <div className="row-content">{p.content}</div>
                   </div>
                   <div className="row-meta">
-                    <span className="row-id">{p.id.slice(0, 8)}</span>
+                    <span className="row-id">
+                      {p.provenance_model === "human" && (
+                        <svg className="human-icon" viewBox="0 0 16 16" fill="currentColor">
+                          <circle cx="8" cy="4.5" r="2.5" />
+                          <path d="M3 14c0-2.8 2.2-5 5-5s5 2.2 5 5" />
+                        </svg>
+                      )}
+                      {p.id.slice(0, 8)}
+                    </span>
                     {epistemicBar(p.epistemic_status)}
                     {p.is_superseded && (
                       <span className="superseded-badge">superseded</span>

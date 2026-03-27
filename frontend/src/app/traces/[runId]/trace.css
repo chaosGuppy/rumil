@@ -493,6 +493,16 @@
   margin-bottom: 6px;
 }
 
+.trace-fruit-type-row {
+  padding: 2px 0;
+}
+
+.trace-fruit-type-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
 /* Exchange info (inline in events) */
 
 .trace-exchange-info {

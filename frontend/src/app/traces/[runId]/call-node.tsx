@@ -823,11 +823,13 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
                 <span className="trace-kv-key">per-scout-type fruit</span>
               </div>
               {(event.per_type_fruit ?? []).map((s, i) => (
-                <div key={i} className="trace-score-row">
-                  <span className="trace-score-headline">{s.call_type}</span>
-                  <span className="trace-kv-value">{s.fruit}/10</span>
+                <div key={i} className="trace-fruit-type-row">
+                  <div className="trace-fruit-type-header">
+                    <span className="trace-score-headline">{s.call_type}</span>
+                    <span className="trace-kv-value">{s.fruit}/10</span>
+                  </div>
                   {s.reasoning && (
-                    <span className="trace-score-reasoning">{s.reasoning}</span>
+                    <div className="trace-score-reasoning">{s.reasoning}</div>
                   )}
                 </div>
               ))}

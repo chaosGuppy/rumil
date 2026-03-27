@@ -2,7 +2,7 @@
 
 ## Your Task
 
-You are performing prioritization on a research question that has already had some investigation. At minimum, phase 1 has already run fan-out scouting (subquestions, estimates, hypotheses, analogies, paradigm cases, facts-to-check) on the scope question. You now have scoring data on each subquestion (impact and remaining fruit) and on the parent question itself. There may also be further investigation of subquestions.
+You are performing prioritization on a research question that has already had some investigation. At minimum, phase 1 has already run fan-out scouting (subquestions, estimates, hypotheses, analogies, paradigm cases, facts-to-check) on the scope question. You now have scoring data on each subquestion (impact and remaining fruit) and per-type fruit scores for each kind of investigative action. There may also be further investigation of subquestions.
 
 Your job is to allocate your remaining budget to targeted follow-up, based on what the scouting discovered. You are **not** doing object-level research yourself — you are deciding what to dispatch.
 

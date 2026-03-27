@@ -228,14 +228,20 @@ def compute_dispatch_guidance(
             'Balance budget between development calls and high-fruit scouts: '
             + ', '.join(names) + '.'
         )
+    elif dev_score > _LOW and all_scouts_low:
+        lines.append(
+            'Scouting is largely exhausted but development has moderate fruit. '
+            'Focus budget on developing existing subquestions.'
+        )
     elif dev_score <= _LOW and all_scouts_low:
         lines.append(
             'Remaining fruit is low across the board. '
             'Consider allocating conservatively.'
         )
 
-    for name in exhausted_scouts:
-        lines.append(f'{name} appears exhausted — avoid dispatching.')
+    if not all_scouts_low:
+        for name in exhausted_scouts:
+            lines.append(f'{name} appears exhausted — avoid dispatching.')
 
     return '\n'.join(lines)
 
@@ -1472,8 +1478,6 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             ct for ct in preset.phase2_dispatch
             if ct.value.startswith('scout_')
         ]
-        types_to_score = ['development'] + [ct.value for ct in scout_types]
-
         type_desc_lines = [
             '- **development**: Deeper investigation of existing subquestions '
             'via find_considerations, web_research, and recursion.',
@@ -1518,6 +1522,16 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         subq_scores = subq_result.data.get('scores', []) if subq_result.data else []
         raw_fruit_scores = fruit_result.data.get('scores', []) if fruit_result.data else []
         per_type_scores = [CallTypeFruitScore(**s) for s in raw_fruit_scores]
+
+        has_dev_score = any(s.call_type == 'development' for s in per_type_scores)
+        if not has_dev_score:
+            log.warning(
+                'LLM did not return a development fruit score; defaulting to 5'
+            )
+            await trace.record(ErrorEvent(
+                message='LLM omitted development fruit score; defaulting to 5',
+                phase='score_per_type_fruit',
+            ))
 
         guidance = compute_dispatch_guidance(per_type_scores)
 

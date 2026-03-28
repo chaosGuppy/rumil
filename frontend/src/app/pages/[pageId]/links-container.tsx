@@ -106,9 +106,11 @@ function LinkSection({
   links: LinkedPageOut[];
   showSuperseded: boolean;
 }) {
-  const visible = showSuperseded
-    ? links
-    : links.filter((lp) => !lp.page.is_superseded);
+  const visible = (
+    showSuperseded ? links : links.filter((lp) => !lp.page.is_superseded)
+  ).toSorted(
+    (a, b) => new Date(b.page.created_at).getTime() - new Date(a.page.created_at).getTime(),
+  );
   if (visible.length === 0) return null;
   return (
     <div className="link-section">

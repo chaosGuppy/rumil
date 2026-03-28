@@ -18,7 +18,7 @@ import uuid
 
 from rumil.database import DB
 from rumil.models import Dispatch
-from rumil.orchestrator import TwoPhaseOrchestrator
+from rumil.orchestrators import TwoPhaseOrchestrator
 from rumil.settings import get_settings
 
 

@@ -21,7 +21,7 @@ from pathlib import Path
 from rumil.database import DB
 from rumil.models import Call, Page, PageLayer, PageLink, PageType, LinkType, Workspace
 from rumil.constants import MIN_TWOPHASE_BUDGET
-from rumil.orchestrator import Orchestrator, create_root_question, run_concept_session
+from rumil.orchestrators import Orchestrator, create_root_question, run_concept_session
 from rumil.sources import create_source_page, run_ingest_calls
 from rumil.chat import run_chat
 from rumil.mapper import generate_map

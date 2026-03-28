@@ -12,7 +12,7 @@ from rumil.models import (
     FindConsiderationsMode,
     ScoutDispatchPayload,
 )
-from rumil.orchestrator import (
+from rumil.orchestrators import (
     BaseOrchestrator,
     PrioritizationResult,
     TwoPhaseOrchestrator,

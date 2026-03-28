@@ -8,7 +8,7 @@ from collections.abc import Sequence
 
 from rumil.available_calls import get_available_calls_preset
 from rumil.calls.common import mark_call_completed
-from rumil.calls.dispatches import DISPATCH_DEFS, RECURSE_DISPATCH_DEF
+from rumil.calls.dispatches import DISPATCH_DEFS, DispatchDef, RECURSE_DISPATCH_DEF
 from rumil.calls.prioritization import run_prioritization_call
 from rumil.constants import MIN_TWOPHASE_BUDGET
 from rumil.context import build_prioritization_context, collect_subtree_ids
@@ -508,7 +508,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                 'if you have enough budget to do so.'
             )
 
-        extra_defs: list = []
+        extra_defs: list[DispatchDef] = []
         if budget >= MIN_TWOPHASE_BUDGET:
             extra_defs.append(RECURSE_DISPATCH_DEF)
 

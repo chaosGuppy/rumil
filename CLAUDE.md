@@ -2,6 +2,8 @@
 
 An LLM-powered research workspace. Users pose questions, and the system investigates them by making structured LLM calls (find_considerations, assess, prioritize, ingest) that produce "pages" (claims, questions, judgements, concepts). Pages link together into a research graph with considerations bearing on questions. The codebase is optimised for experimentation, containing multiple implementations of pluggable abstractions, rather than being a monolithic application where there's only one way of achieving things.
 
+**The page graph can be cyclic.** Any code that traverses page links (parent/child questions, considerations, etc.) must track visited nodes to avoid infinite recursion. Use a `_visited: set[str]` parameter — see `context.py` for the standard pattern.
+
 ## Running
 
 Environment managed with `uv`.
@@ -83,6 +85,10 @@ To add a new call type: subclass `CallRunner`. Set `call_type`, override `_make_
 **API** (`src/rumil/api/`): FastAPI read-only API for the frontend. Core models from `models.py` are used directly as response types. `schemas.py` defines composite response types (e.g. `CallTraceOut`) and trace event envelope types. `app.py` defines endpoints. Run with `./scripts/dev-api.sh` — this reads the API port from `frontend/.env.local` so it matches what the frontend expects. To stop the server, read the port from `frontend/.env.local` (`NEXT_PUBLIC_API_URL`) and kill the process on that port.
 
 **Frontend** (`frontend/`): Next.js TypeScript app with Tailwind. Uses pnpm. Run with `cd frontend && pnpm dev`. The frontend port mirrors the API port: if the API is on `localhost:800X`, the frontend will be on `localhost:300X` (Next.js auto-increments when the default port is taken). Use this to find and stop the frontend process. TypeScript types in `frontend/src/api/` are auto-generated from the API's OpenAPI schema — **never create or edit these files by hand**. When API schemas change, theese need to be regenerated with `./scripts/generate-api-types.sh` (or `cd frontend && pnpm generate-api`). This is the only mechanism for sharing types between backend and frontend; do not manually duplicate type definitions. When `schemas.py` or `models.py` is edited, `./scripts/generate-api-types.sh` is automaticaly run via a hook.
+
+## Worktrees and localhost URLs
+
+When the user pastes a `localhost:<port>` URL, do NOT use that port literally. Instead, map it to this worktree's port. The frontend port is derived from `frontend/.env.local`: if the API URL there is `localhost:800X`, the frontend is on `localhost:300X`. Always read `frontend/.env.local` to determine the correct port and rewrite any user-provided localhost URL accordingly. Edits must go into the current worktree, not the main repo or other worktrees.
 
 ## Key Conventions
 

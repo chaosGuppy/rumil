@@ -416,7 +416,6 @@
 .trace-move-create { color: #2d8a4e; }
 .trace-move-link { color: #4272c4; }
 .trace-move-supersede { color: #b33; }
-.trace-move-hypothesis { color: #b87c1e; }
 .trace-move-load { color: #5b9ea6; }
 .trace-move-change { color: #8b6cc1; }
 .trace-move-remove { color: #b33; }
@@ -492,6 +491,16 @@
 
 .trace-scoring-section {
   margin-bottom: 6px;
+}
+
+.trace-fruit-type-row {
+  padding: 2px 0;
+}
+
+.trace-fruit-type-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
 }
 
 /* Exchange info (inline in events) */
@@ -1259,7 +1268,6 @@
   .trace-move-create { color: #3dba6e; }
   .trace-move-link { color: #6b9fd8; }
   .trace-move-supersede { color: #e55; }
-  .trace-move-hypothesis { color: #d4a030; }
   .trace-move-load { color: #7bbec6; }
   .trace-move-change { color: #b49ae0; }
   .trace-move-remove { color: #e55; }

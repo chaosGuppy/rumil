@@ -303,6 +303,24 @@ export type CallTraceOut = {
 export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_concepts' | 'assess_concept' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'web_research' | 'evaluate' | 'grounding_feedback';
 
 /**
+ * CallTypeFruitScoreItem
+ */
+export type CallTypeFruitScoreItem = {
+    /**
+     * Call Type
+     */
+    call_type: string;
+    /**
+     * Fruit
+     */
+    fruit?: number;
+    /**
+     * Reasoning
+     */
+    reasoning?: string;
+};
+
+/**
  * ConsiderationDirection
  */
 export type ConsiderationDirection = 'supports' | 'opposes' | 'neutral';
@@ -1054,6 +1072,14 @@ export type ScoringCompletedEventOut = {
      * Parent Fruit Reasoning
      */
     parent_fruit_reasoning: string;
+    /**
+     * Per Type Fruit
+     */
+    per_type_fruit: Array<CallTypeFruitScoreItem>;
+    /**
+     * Dispatch Guidance
+     */
+    dispatch_guidance: string;
 };
 
 /**

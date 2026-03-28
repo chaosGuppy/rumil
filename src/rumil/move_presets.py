@@ -44,7 +44,6 @@ PRESETS: dict[str, MovePreset] = {
         CallType.SCOUT_HYPOTHESES: [
             MoveType.CREATE_CLAIM,
             MoveType.CREATE_SCOUT_QUESTION,
-            MoveType.PROPOSE_HYPOTHESIS,
             MoveType.LINK_CONSIDERATION,
             MoveType.LOAD_PAGE,
         ],
@@ -131,7 +130,6 @@ PRESETS: dict[str, MovePreset] = {
         CallType.SCOUT_HYPOTHESES: [
             MoveType.CREATE_CLAIM,
             MoveType.CREATE_SCOUT_QUESTION,
-            MoveType.PROPOSE_HYPOTHESIS,
             MoveType.LINK_CONSIDERATION,
             MoveType.LOAD_PAGE,
         ],

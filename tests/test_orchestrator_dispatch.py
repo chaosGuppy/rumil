@@ -4,6 +4,7 @@ import uuid
 
 import pytest
 
+from rumil.database import DB
 from rumil.models import (
     AssessDispatchPayload,
     CallType,
@@ -11,7 +12,11 @@ from rumil.models import (
     FindConsiderationsMode,
     ScoutDispatchPayload,
 )
-from rumil.orchestrator import BaseOrchestrator
+from rumil.orchestrator import (
+    BaseOrchestrator,
+    PrioritizationResult,
+    TwoPhaseOrchestrator,
+)
 from rumil.tracing.tracer import CallTrace
 
 
@@ -224,3 +229,50 @@ async def test_dispatch_executed_events_recorded(tmp_db, question_page):
     assert evt["child_call_type"] == "assess"
     assert evt["question_id"] == question_page.id
     assert evt["child_call_id"] is not None
+
+
+async def test_concurrent_dispatch_failure_recorded_in_trace(
+    tmp_db, question_page, mocker,
+):
+    """When a dispatch raises during the TwoPhaseOrchestrator's concurrent
+    gather, an ErrorEvent should be recorded on the prioritization call's trace.
+    """
+    p_call = await tmp_db.create_call(
+        CallType.PRIORITIZATION,
+        scope_page_id=question_page.id,
+    )
+
+    orch = TwoPhaseOrchestrator(tmp_db)
+    orch._call_id = p_call.id
+
+    dispatches = [[_assess_dispatch(question_page.id)]]
+    call_count = 0
+
+    async def fake_get_next_batch(question_id, budget, parent_call_id=None):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return PrioritizationResult(
+                dispatch_sequences=dispatches,
+                call_id=p_call.id,
+            )
+        return PrioritizationResult(dispatch_sequences=[])
+
+    mocker.patch.object(orch, "_get_next_batch", side_effect=fake_get_next_batch)
+    mocker.patch.object(
+        DB, "resolve_page_id",
+        side_effect=ConnectionError("Simulated connection failure"),
+    )
+
+    await orch.run(question_page.id)
+
+    rows = (
+        await tmp_db.client.table("calls")
+        .select("trace_json")
+        .eq("id", p_call.id)
+        .execute()
+    )
+    trace_json = rows.data[0]["trace_json"]
+    error_events = [e for e in trace_json if e.get("event") == "error"]
+    assert len(error_events) >= 1
+    assert "Simulated connection failure" in error_events[0]["message"]

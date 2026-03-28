@@ -58,7 +58,6 @@ PAGE_ID_FIELDS: dict[MoveType, list[str]] = {
     MoveType.SUPERSEDE_PAGE: ["old_page_id"],
     MoveType.FLAG_FUNNINESS: ["page_id"],
     MoveType.REPORT_DUPLICATE: ["page_id_a", "page_id_b"],
-    MoveType.PROPOSE_HYPOTHESIS: ["parent_question_id"],
 }
 
 

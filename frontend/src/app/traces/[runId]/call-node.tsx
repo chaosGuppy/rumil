@@ -202,7 +202,6 @@ function MoveRow({
   const isCreate = moveType.startsWith("CREATE_");
   const isLink = moveType.startsWith("LINK_");
   const isSupersede = moveType === "SUPERSEDE_PAGE";
-  const isHypothesis = moveType === "PROPOSE_HYPOTHESIS";
   const isLoad = moveType === "LOAD_PAGE";
   const isChange = moveType === "CHANGE_LINK_ROLE";
   const isRemove = moveType === "REMOVE_LINK";
@@ -213,9 +212,7 @@ function MoveRow({
       ? "trace-move-link"
       : isSupersede
         ? "trace-move-supersede"
-        : isHypothesis
-          ? "trace-move-hypothesis"
-          : isLoad
+        : isLoad
             ? "trace-move-load"
             : isChange
               ? "trace-move-change"
@@ -820,7 +817,30 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
               ))}
             </div>
           )}
-          {event.parent_fruit != null && (
+          {(event.per_type_fruit ?? []).length > 0 ? (
+            <div className="trace-scoring-section">
+              <div className="trace-kv">
+                <span className="trace-kv-key">per-scout-type fruit</span>
+              </div>
+              {(event.per_type_fruit ?? []).map((s, i) => (
+                <div key={i} className="trace-fruit-type-row">
+                  <div className="trace-fruit-type-header">
+                    <span className="trace-score-headline">{s.call_type}</span>
+                    <span className="trace-kv-value">{s.fruit}/10</span>
+                  </div>
+                  {s.reasoning && (
+                    <div className="trace-score-reasoning">{s.reasoning}</div>
+                  )}
+                </div>
+              ))}
+              {event.dispatch_guidance && (
+                <div className="trace-kv trace-kv-block" style={{ marginTop: 6 }}>
+                  <span className="trace-kv-key">dispatch guidance</span>
+                  <span className="trace-kv-value" style={{ whiteSpace: 'pre-wrap' }}>{event.dispatch_guidance}</span>
+                </div>
+              )}
+            </div>
+          ) : event.parent_fruit != null && (
             <div className="trace-kv">
               <span className="trace-kv-key">parent fruit</span>
               <span className="trace-kv-value">{event.parent_fruit}/10</span>

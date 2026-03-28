@@ -93,11 +93,20 @@ class SubquestionScoreItem(BaseModel):
     reasoning: str = ""
 
 
+class CallTypeFruitScoreItem(BaseModel):
+    call_type: str
+    fruit: int = 0
+    reasoning: str = ""
+
+
 class ScoringCompletedEvent(BaseModel):
     event: Literal["scoring_completed"] = "scoring_completed"
     subquestion_scores: list[SubquestionScoreItem] = []
+    # Deprecated: kept for backward compat with old traces.
     parent_fruit: int | None = None
     parent_fruit_reasoning: str = ""
+    per_type_fruit: list[CallTypeFruitScoreItem] = []
+    dispatch_guidance: str = ""
 
 
 class DispatchesPlannedEvent(BaseModel):

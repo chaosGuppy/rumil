@@ -165,8 +165,8 @@ async def search_pages_by_vector(
         results.append((page, similarity))
     if db.staged:
         pages = await db._apply_page_events([p for p, _ in results])
-        active_ids = {p.id for p in pages if p.is_active()}
-        results = [(p, s) for p, s in results if p.id in active_ids]
+        scores = {p.id: s for p, s in results}
+        results = [(p, scores[p.id]) for p in pages if p.is_active()]
     return results
 
 

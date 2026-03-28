@@ -399,12 +399,13 @@ class DB:
         )
 
     async def get_page(self, page_id: str) -> Page | None:
-        rows = _rows(
-            await self._execute(
-                self.client.table("pages").select("*").eq("id", page_id)
-            )
-        )
-        return _row_to_page(rows[0]) if rows else None
+        query = self.client.table("pages").select("*").eq("id", page_id)
+        query = self._staged_filter(query)
+        rows = _rows(await self._execute(query))
+        if not rows:
+            return None
+        pages = await self._apply_page_events([_row_to_page(rows[0])])
+        return pages[0] if pages else None
 
     async def get_pages_by_ids(self, page_ids: Sequence[str]) -> dict[str, Page]:
         """Bulk-fetch pages by ID. Returns {id: Page} for pages that exist."""
@@ -566,14 +567,13 @@ class DB:
         )
 
     async def get_link(self, link_id: str) -> PageLink | None:
-        rows = _rows(
-            await self._execute(
-                self.client.table("page_links")
-                .select("*")
-                .eq("id", link_id)
-            )
-        )
-        return _row_to_link(rows[0]) if rows else None
+        query = self.client.table("page_links").select("*").eq("id", link_id)
+        query = self._staged_filter(query)
+        rows = _rows(await self._execute(query))
+        if not rows:
+            return None
+        links = await self._apply_link_events([_row_to_link(rows[0])])
+        return links[0] if links else None
 
     async def get_links_to(self, page_id: str) -> list[PageLink]:
         query = self.client.table("page_links").select("*").eq("to_page_id", page_id)

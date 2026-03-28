@@ -337,7 +337,9 @@ async def cmd_report(
         sys.exit(1)
 
     print(f"\nGenerating report for: {question.headline[:80]}")
-    print("(This will use multiple LLM calls but does not count against research budget)\n")
+    print(
+        "(This will use multiple LLM calls but does not count against research budget)\n"
+    )
 
     report_text = await generate_report(question_id, db, max_depth=max_depth)
     path = save_report(report_text, question.headline)
@@ -528,6 +530,7 @@ async def cmd_ab(
             prod=arm_settings.is_prod_db,
             client=db.client,
             project_id=db.project_id,
+            staged=True,
             ab_run_id=ab_run_id,
         )
         config = arm_settings.capture_config()

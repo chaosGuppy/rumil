@@ -80,15 +80,19 @@ async def store_embedding(
     embedding: Sequence[float],
 ) -> None:
     """Store an embedding vector for a page field (upsert)."""
-    embedding_str = '[' + ','.join(str(x) for x in embedding) + ']'
-    await db.client.table("page_embeddings").upsert(
-        {
-            "page_id": page_id,
-            "field_name": field_name,
-            "embedding": embedding_str,
-        },
-        on_conflict="page_id,field_name",
-    ).execute()
+    embedding_str = "[" + ",".join(str(x) for x in embedding) + "]"
+    await (
+        db.client.table("page_embeddings")
+        .upsert(
+            {
+                "page_id": page_id,
+                "field_name": field_name,
+                "embedding": embedding_str,
+            },
+            on_conflict="page_id,field_name",
+        )
+        .execute()
+    )
     log.debug("Stored %s embedding for page %s", field_name, page_id[:8])
 
 
@@ -139,7 +143,7 @@ async def search_pages_by_vector(
     Returns (page, similarity_score) pairs sorted by descending similarity.
     Optionally filter to embeddings of a specific field_name.
     """
-    embedding_str = '[' + ','.join(str(x) for x in query_embedding) + ']'
+    embedding_str = "[" + ",".join(str(x) for x in query_embedding) + "]"
     params: dict[str, Any] = {
         "query_embedding": embedding_str,
         "match_threshold": match_threshold,
@@ -151,14 +155,18 @@ async def search_pages_by_vector(
         params["filter_project_id"] = db.project_id
     if field_name:
         params["filter_field_name"] = field_name
-    if db.ab_run_id:
-        params["filter_ab_run_id"] = db.ab_run_id
+    if db.staged:
+        params["filter_staged_run_id"] = db.run_id
     rows: _Rows = _rows(await db.client.rpc("match_pages", params).execute())
-    results = []
+    results: list[tuple[Page, float]] = []
     for row in rows:
         page = _row_to_page(row)
         similarity = row["similarity"]
         results.append((page, similarity))
+    if db.staged:
+        pages = await db._apply_page_events([p for p, _ in results])
+        scores = {p.id: s for p, s in results}
+        results = [(p, scores[p.id]) for p in pages if p.is_active()]
     return results
 
 

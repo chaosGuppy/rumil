@@ -745,13 +745,19 @@ class BaseOrchestrator(ABC):
                 ))
 
         executed = False
+        seq_pos = 0
         for i, dispatch in enumerate(sequence):
             force = i > 0 and await self.db.budget_remaining() <= 0
             await self._execute_dispatch(
                 dispatch, scope_question_id, parent_call_id,
                 force=force, call_id=pre_ids[i],
-                sequence_id=seq_id, sequence_position=i if is_multi_step else None,
+                sequence_id=seq_id,
+                sequence_position=seq_pos if is_multi_step else None,
             )
+            if isinstance(dispatch.payload, AssessDispatchPayload):
+                seq_pos += 2
+            else:
+                seq_pos += 1
             executed = True
         return executed
 

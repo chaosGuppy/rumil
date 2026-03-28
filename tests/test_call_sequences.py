@@ -9,7 +9,7 @@ from rumil.models import (
     FindConsiderationsMode,
     ScoutDispatchPayload,
 )
-from rumil.orchestrator import BaseOrchestrator
+from rumil.orchestrators import BaseOrchestrator
 from rumil.tracing.tracer import CallTrace
 
 

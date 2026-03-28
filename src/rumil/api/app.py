@@ -86,8 +86,18 @@ async def list_pages(
     page_type: PageType | None = None,
     workspace: Workspace | None = None,
     active_only: bool = True,
+    staged_run_id: str | None = None,
 ):
-    db = await _get_db(project_id)
+    if staged_run_id:
+        prod = get_settings().is_prod_db
+        db = await DB.create(
+            run_id=staged_run_id,
+            prod=prod,
+            project_id=project_id,
+            staged=True,
+        )
+    else:
+        db = await _get_db(project_id)
     return await db.get_pages(
         workspace=workspace,
         page_type=page_type,

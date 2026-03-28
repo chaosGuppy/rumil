@@ -984,6 +984,10 @@ export type RunListItemOut = {
     arms?: {
         [key: string]: unknown;
     } | null;
+    /**
+     * Staged
+     */
+    staged?: boolean;
 };
 
 /**

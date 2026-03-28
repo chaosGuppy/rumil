@@ -254,6 +254,7 @@ async def _run_ab(
             run_id=str(uuid.uuid4()),
             client=db.client,
             project_id=db.project_id,
+            staged=True,
             ab_run_id=ab_run_id,
         )
         config = arm_settings.capture_config()

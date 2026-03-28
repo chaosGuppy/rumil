@@ -123,22 +123,36 @@ def _row_to_call_sequence(row: dict[str, Any]) -> CallSequence:
     )
 
 
+class MutationState:
+    """Cached mutation events for a staged run, keyed by target_id."""
+
+    __slots__ = ("superseded_pages", "deleted_links", "link_role_overrides")
+
+    def __init__(self) -> None:
+        self.superseded_pages: dict[str, str] = {}
+        self.deleted_links: set[str] = set()
+        self.link_role_overrides: dict[str, LinkRole] = {}
+
+
 class DB:
     def __init__(
         self,
         run_id: str,
         client: AsyncClient,
         project_id: str = "",
+        staged: bool = False,
         ab_run_id: str | None = None,
     ):
         self.run_id = run_id
         self.client = client
         self.project_id = project_id
+        self.staged = staged
         self.ab_run_id = ab_run_id
         self._semaphore = asyncio.Semaphore(
             get_settings().db_max_concurrent_queries
         )
         self._prod: bool = False
+        self._mutation_cache: MutationState | None = None
 
     @classmethod
     async def create(
@@ -147,6 +161,7 @@ class DB:
         prod: bool = False,
         project_id: str = "",
         client: AsyncClient | None = None,
+        staged: bool = False,
         ab_run_id: str | None = None,
     ) -> "DB":
         if client is None:
@@ -156,7 +171,7 @@ class DB:
             )
         db = cls(
             run_id=run_id, client=client, project_id=project_id,
-            ab_run_id=ab_run_id,
+            staged=staged, ab_run_id=ab_run_id,
         )
         db._prod = prod
         return db
@@ -164,7 +179,7 @@ class DB:
     async def fork(self) -> "DB":
         """Create a new DB instance with a fresh Supabase client.
 
-        Shares run_id, project_id, and ab_run_id with the parent but gets
+        Shares run_id, project_id, and staged flag with the parent but gets
         its own HTTP connection. Use this to scope connections to a single
         call, avoiding HTTP/2 stream exhaustion on long-running jobs.
         """
@@ -176,6 +191,7 @@ class DB:
             run_id=self.run_id,
             client=client,
             project_id=self.project_id,
+            staged=self.staged,
             ab_run_id=self.ab_run_id,
         )
         db._prod = self._prod
@@ -193,11 +209,93 @@ class DB:
         async with self._semaphore:
             return await query.execute()
 
-    def _ab_filter(self, query: Any, table: str = "pages") -> Any:
-        """Apply AB run isolation filter to a query."""
-        if self.ab_run_id:
-            return query.or_(f"ab_run_id.is.null,ab_run_id.eq.{self.ab_run_id}")
-        return query.is_("ab_run_id", "null")
+    def _staged_filter(self, query: Any) -> Any:
+        """Apply staged-run visibility filter to a query.
+
+        Staged runs see baseline (staged=false) + their own rows.
+        Non-staged runs see only baseline rows.
+        """
+        if self.staged:
+            return query.or_(f"staged.eq.false,run_id.eq.{self.run_id}")
+        return query.eq("staged", False)
+
+    async def _load_mutation_state(self) -> MutationState:
+        """Fetch and cache mutation events for this staged run."""
+        if self._mutation_cache is not None:
+            return self._mutation_cache
+        if not self.staged:
+            self._mutation_cache = MutationState()
+            return self._mutation_cache
+        rows = _rows(
+            await self._execute(
+                self.client.table("mutation_events")
+                .select("event_type, target_id, payload")
+                .eq("run_id", self.run_id)
+                .order("created_at")
+            )
+        )
+        state = MutationState()
+        for row in rows:
+            et = row["event_type"]
+            tid = row["target_id"]
+            payload = row.get("payload") or {}
+            if et == "supersede_page":
+                state.superseded_pages[tid] = payload.get("new_page_id", "")
+            elif et == "delete_link":
+                state.deleted_links.add(tid)
+            elif et == "change_link_role":
+                state.link_role_overrides[tid] = LinkRole(payload["new_role"])
+        self._mutation_cache = state
+        return state
+
+    def _invalidate_mutation_cache(self) -> None:
+        self._mutation_cache = None
+
+    async def _apply_page_events(self, pages: Sequence[Page]) -> list[Page]:
+        """Overlay mutation events onto a batch of pages."""
+        state = await self._load_mutation_state()
+        if not state.superseded_pages:
+            return list(pages)
+        result: list[Page] = []
+        for p in pages:
+            if p.id in state.superseded_pages:
+                p = p.model_copy(update={
+                    "is_superseded": True,
+                    "superseded_by": state.superseded_pages[p.id],
+                })
+            result.append(p)
+        return result
+
+    async def _apply_link_events(self, links: Sequence[PageLink]) -> list[PageLink]:
+        """Overlay mutation events onto a batch of links."""
+        state = await self._load_mutation_state()
+        if not state.deleted_links and not state.link_role_overrides:
+            return list(links)
+        result: list[PageLink] = []
+        for link in links:
+            if link.id in state.deleted_links:
+                continue
+            if link.id in state.link_role_overrides:
+                link = link.model_copy(update={
+                    "role": state.link_role_overrides[link.id],
+                })
+            result.append(link)
+        return result
+
+    async def record_mutation_event(
+        self, event_type: str, target_id: str, payload: dict,
+    ) -> None:
+        """Record a mutation event (staged runs only)."""
+        await self._execute(
+            self.client.table("mutation_events").insert({
+                "id": str(uuid.uuid4()),
+                "run_id": self.run_id,
+                "event_type": event_type,
+                "target_id": target_id,
+                "payload": payload,
+            })
+        )
+        self._invalidate_mutation_cache()
 
     async def get_or_create_project(self, name: str) -> Project:
         rows = _rows(
@@ -269,7 +367,7 @@ class DB:
                     "is_superseded": page.is_superseded,
                     "extra": page.extra,
                     "run_id": self.run_id,
-                    "ab_run_id": self.ab_run_id,
+                    "staged": self.staged,
                     "abstract": page.abstract,
                 }
             )
@@ -301,12 +399,13 @@ class DB:
         )
 
     async def get_page(self, page_id: str) -> Page | None:
-        rows = _rows(
-            await self._execute(
-                self.client.table("pages").select("*").eq("id", page_id)
-            )
-        )
-        return _row_to_page(rows[0]) if rows else None
+        query = self.client.table("pages").select("*").eq("id", page_id)
+        query = self._staged_filter(query)
+        rows = _rows(await self._execute(query))
+        if not rows:
+            return None
+        pages = await self._apply_page_events([_row_to_page(rows[0])])
+        return pages[0] if pages else None
 
     async def get_pages_by_ids(self, page_ids: Sequence[str]) -> dict[str, Page]:
         """Bulk-fetch pages by ID. Returns {id: Page} for pages that exist."""
@@ -319,7 +418,7 @@ class DB:
             batch = id_list[start:start + batch_size]
             rows = _rows(
                 await self._execute(
-                    self._ab_filter(
+                    self._staged_filter(
                         self.client.table("pages").select("*").in_("id", batch)
                     )
                 )
@@ -327,7 +426,8 @@ class DB:
             for r in rows:
                 page = _row_to_page(r)
                 result[page.id] = page
-        return result
+        pages = await self._apply_page_events(list(result.values()))
+        return {p.id: p for p in pages}
 
     async def resolve_page_id(self, page_id: str) -> str | None:
         """Resolve a page ID to a full UUID. Handles both full UUIDs and
@@ -383,8 +483,8 @@ class DB:
             query = query.eq("project_id", self.project_id)
         if active_only:
             query = query.eq("is_superseded", False)
-        query = self._ab_filter(query)
-        return [
+        query = self._staged_filter(query)
+        pages = [
             _row_to_page(r)
             for r in _rows(
                 await self._execute(
@@ -392,6 +492,10 @@ class DB:
                 )
             )
         ]
+        pages = await self._apply_page_events(pages)
+        if active_only:
+            pages = [p for p in pages if p.is_active()]
+        return pages
 
     async def get_pages(
         self,
@@ -408,8 +512,8 @@ class DB:
             query = query.eq("page_type", page_type.value)
         if active_only:
             query = query.eq("is_superseded", False)
-        query = self._ab_filter(query)
-        return [
+        query = self._staged_filter(query)
+        pages = [
             _row_to_page(r)
             for r in _rows(
                 await self._execute(
@@ -417,8 +521,17 @@ class DB:
                 )
             )
         ]
+        pages = await self._apply_page_events(pages)
+        if active_only:
+            pages = [p for p in pages if p.is_active()]
+        return pages
 
     async def supersede_page(self, old_id: str, new_id: str) -> None:
+        if self.staged:
+            await self.record_mutation_event(
+                "supersede_page", old_id, {"new_page_id": new_id},
+            )
+            return
         await self._execute(
             self.client.table("pages").update(
                 {
@@ -448,32 +561,31 @@ class DB:
                     "role": link.role.value,
                     "created_at": link.created_at.isoformat(),
                     "run_id": self.run_id,
-                    "ab_run_id": self.ab_run_id,
+                    "staged": self.staged,
                 }
             )
         )
 
     async def get_link(self, link_id: str) -> PageLink | None:
-        rows = _rows(
-            await self._execute(
-                self.client.table("page_links")
-                .select("*")
-                .eq("id", link_id)
-            )
-        )
-        return _row_to_link(rows[0]) if rows else None
+        query = self.client.table("page_links").select("*").eq("id", link_id)
+        query = self._staged_filter(query)
+        rows = _rows(await self._execute(query))
+        if not rows:
+            return None
+        links = await self._apply_link_events([_row_to_link(rows[0])])
+        return links[0] if links else None
 
     async def get_links_to(self, page_id: str) -> list[PageLink]:
         query = self.client.table("page_links").select("*").eq("to_page_id", page_id)
-        query = self._ab_filter(query, table="page_links")
+        query = self._staged_filter(query)
         rows = _rows(await self._execute(query))
-        return [_row_to_link(r) for r in rows]
+        return await self._apply_link_events([_row_to_link(r) for r in rows])
 
     async def get_links_from(self, page_id: str) -> list[PageLink]:
         query = self.client.table("page_links").select("*").eq("from_page_id", page_id)
-        query = self._ab_filter(query, table="page_links")
+        query = self._staged_filter(query)
         rows = _rows(await self._execute(query))
-        return [_row_to_link(r) for r in rows]
+        return await self._apply_link_events([_row_to_link(r) for r in rows])
 
     async def get_latest_summary_for_question(self, question_id: str) -> "Page | None":
         """Return the most recent active SUMMARY page linked to a question."""
@@ -749,9 +861,9 @@ class DB:
             .eq("from_page_id", from_page_id)
             .eq("to_page_id", to_page_id)
         )
-        query = self._ab_filter(query, table="page_links")
+        query = self._staged_filter(query)
         rows = _rows(await self._execute(query))
-        return [_row_to_link(r) for r in rows]
+        return await self._apply_link_events([_row_to_link(r) for r in rows])
 
     async def get_all_links(
         self, page_ids: set[str] | None = None,
@@ -765,9 +877,9 @@ class DB:
         if page_ids is not None:
             return await self._get_links_for_pages(page_ids)
         query = self.client.table("page_links").select("*")
-        query = self._ab_filter(query, table="page_links")
+        query = self._staged_filter(query)
         if self.project_id:
-            page_ids_query = self._ab_filter(
+            page_ids_query = self._staged_filter(
                 self.client.table("pages")
                 .select("id")
                 .eq("project_id", self.project_id)
@@ -775,12 +887,14 @@ class DB:
             page_ids_rows = _rows(await self._execute(page_ids_query.limit(50000)))
             proj_page_ids = {r["id"] for r in page_ids_rows}
             rows = _rows(await self._execute(query.limit(50000)))
-            return [
+            links = [
                 _row_to_link(r) for r in rows
                 if r["from_page_id"] in proj_page_ids or r["to_page_id"] in proj_page_ids
             ]
-        rows = _rows(await self._execute(query.limit(50000)))
-        return [_row_to_link(r) for r in rows]
+        else:
+            rows = _rows(await self._execute(query.limit(50000)))
+            links = [_row_to_link(r) for r in rows]
+        return await self._apply_link_events(links)
 
     async def _get_links_for_pages(
         self, page_ids: set[str],
@@ -796,21 +910,31 @@ class DB:
             batch = id_list[start:start + batch_size]
             for col in ('from_page_id', 'to_page_id'):
                 query = self.client.table("page_links").select("*").in_(col, batch)
-                query = self._ab_filter(query, table="page_links")
+                query = self._staged_filter(query)
                 rows = _rows(await self._execute(query.limit(50000)))
                 for r in rows:
                     link = _row_to_link(r)
                     all_links[link.id] = link
-        return list(all_links.values())
+        return await self._apply_link_events(list(all_links.values()))
 
     async def delete_link(self, link_id: str) -> None:
         """Delete a page link by ID."""
+        if self.staged:
+            await self.record_mutation_event(
+                "delete_link", link_id, {},
+            )
+            return
         await self._execute(
             self.client.table("page_links").delete().eq("id", link_id)
         )
 
     async def update_link_role(self, link_id: str, role: LinkRole) -> None:
         """Update a link's role."""
+        if self.staged:
+            await self.record_mutation_event(
+                "change_link_role", link_id, {"new_role": role.value},
+            )
+            return
         await self._execute(
             self.client.table("page_links").update(
                 {"role": role.value}
@@ -1042,8 +1166,8 @@ class DB:
         params: dict[str, Any] = {"ws": workspace.value}
         if self.project_id:
             params["pid"] = self.project_id
-        if self.ab_run_id:
-            params["p_ab_run_id"] = self.ab_run_id
+        if self.staged:
+            params["p_staged_run_id"] = self.run_id
         rows = _rows(
             await self._execute(self.client.rpc("get_root_questions", params))
         )
@@ -1211,6 +1335,7 @@ class DB:
                     "project_id": self.project_id,
                     "question_id": question_id,
                     "config": config or {},
+                    "staged": self.staged,
                     "ab_run_id": self.ab_run_id,
                     "ab_arm": ab_arm,
                 }
@@ -1331,6 +1456,11 @@ class DB:
 
     async def delete_run_data(self, delete_project: bool = False) -> None:
         """Delete all data for this run_id. Used by test teardown."""
+        await self._execute(
+            self.client.table("mutation_events").delete().eq(
+                "run_id", self.run_id
+            )
+        )
         await self._execute(
             self.client.table("call_llm_exchanges").delete().eq(
                 "run_id", self.run_id

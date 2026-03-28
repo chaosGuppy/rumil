@@ -33,11 +33,13 @@ from rumil.moves.link_consideration import LinkConsiderationPayload
 from rumil.moves.link_consideration import execute as execute_link_consideration
 from rumil.moves.remove_link import RemoveLinkPayload
 from rumil.moves.remove_link import execute as execute_remove_link
-from rumil.moves.supersede_page import SupersedePagePayload
-from rumil.moves.supersede_page import execute as execute_supersede_page
 from rumil.sdk_agent import SdkAgentConfig, make_explore_tool, run_sdk_agent
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
+from rumil.tracing.trace_events import (
+    GroundingTasksGeneratedEvent,
+    WebResearchCompleteEvent,
+)
 from rumil.tracing.tracer import CallTrace
 
 log = logging.getLogger(__name__)
@@ -88,6 +90,13 @@ async def run_grounding_feedback(
         tasks = await _generate_tasks(evaluation_text, question.headline, call, db)
         log.info("Stage 1 complete: %d tasks generated", len(tasks))
 
+        await trace.record(
+            GroundingTasksGeneratedEvent(
+                task_count=len(tasks),
+                tasks=[t.model_dump() for t in tasks],
+            )
+        )
+
         if not tasks:
             call.result_summary = (
                 "No grounding tasks generated — evaluation found no actionable gaps."
@@ -99,6 +108,16 @@ async def run_grounding_feedback(
         log.info("Stage 2: running web research for %d tasks", len(tasks))
         findings = await _run_web_research(tasks, call, db)
         log.info("Stage 2 complete: %d findings collected", len(findings))
+
+        await trace.record(
+            WebResearchCompleteEvent(
+                task_count=len(findings),
+                findings=[
+                    {"claim": task.claim, "findings_length": len(text)}
+                    for task, text in findings
+                ],
+            )
+        )
 
         log.info("Stage 3: updating workspace")
         await _run_workspace_update(
@@ -288,18 +307,27 @@ async def _build_update_user_message(
     findings_text_parts: list[str] = []
     for i, (task, task_findings) in enumerate(findings, 1):
         findings_text_parts.append(
-            f"### Claim {i}: {task.claim}\n"
+            f"<claim_findings index=\"{i}\" claim=\"{task.claim}\">\n"
             f"Search task: {task.search_task}\n\n"
-            f"Findings:\n{task_findings}"
+            f"{task_findings}\n"
+            f"</claim_findings>"
         )
     findings_text = "\n\n".join(findings_text_parts)
 
     return (
-        f"{briefing}\n\n"
-        f"## Web Research Findings\n\n"
-        f"The following findings were returned by web research agents. "
-        f"Use the URLs in `source_urls` when creating or superseding claims.\n\n"
-        f"{findings_text}"
+        f"<briefing>\n"
+        f"The following briefing was prepared from an evaluation of the "
+        f"workspace's evidential grounding. It identifies claims with "
+        f"grounding issues and lists the relevant workspace page IDs "
+        f"you will need to navigate the graph.\n\n"
+        f"{briefing}\n"
+        f"</briefing>\n\n"
+        f"<web_research_findings>\n"
+        f"Web research agents were tasked with investigating the issues "
+        f"outlined in the briefing above. Here is what they found. Use "
+        f"the URLs in `source_urls` when creating claims.\n\n"
+        f"{findings_text}\n"
+        f"</web_research_findings>"
     )
 
 
@@ -322,17 +350,6 @@ def _make_grounding_tools(db: DB, call: Call) -> list:
         result = await execute_with_source_creation(
             args, call, db, source_page_cache
         )
-        return {"content": [{"type": "text", "text": result.message}]}
-
-    @tool(
-        "supersede_page",
-        "Replace an existing page with an improved version. The old page is "
-        "marked as superseded. Use to update claims with better-sourced versions.",
-        SupersedePagePayload.model_json_schema(),
-    )
-    async def supersede_page(args: dict) -> dict:
-        payload = SupersedePagePayload(**args)
-        result = await execute_supersede_page(payload, call, db)
         return {"content": [{"type": "text", "text": result.message}]}
 
     @tool(
@@ -371,7 +388,6 @@ def _make_grounding_tools(db: DB, call: Call) -> list:
     return [
         explore_page,
         create_claim,
-        supersede_page,
         link_consideration,
         remove_link,
         create_judgement_for_question,
@@ -393,6 +409,8 @@ async def _run_workspace_update(
         (_PROMPTS_DIR / "preamble.md").read_text()
         + "\n\n"
         + (_PROMPTS_DIR / "grounding-feedback.md").read_text()
+        + "\n\n"
+        + (_PROMPTS_DIR / "citations.md").read_text()
     )
 
     tools = _make_grounding_tools(db, call)
@@ -402,6 +420,8 @@ async def _run_workspace_update(
         (_PROMPTS_DIR / "preamble.md").read_text()
         + "\n\n"
         + (_PROMPTS_DIR / "grounding-feedback.md").read_text()
+        + "\n\n"
+        + (_PROMPTS_DIR / "citations.md").read_text()
         + "\n\nYou are a grounding worker subagent. Complete the specific "
         "task assigned to you by the parent agent, then stop."
     )
@@ -421,7 +441,7 @@ async def _run_workspace_update(
         db=db,
         trace=trace,
         broadcaster=broadcaster,
-        disallowed_tools=("Write", "Edit", "Bash", "Glob", "Read", "Grep"),
+        disallowed_tools=("Write", "Edit", "Glob"),
         agents={
             "grounding_worker": AgentDefinition(
                 description=(
@@ -430,7 +450,7 @@ async def _run_workspace_update(
                     "updates to this agent."
                 ),
                 prompt=worker_prompt,
-                tools=tool_fqnames,
+                tools=tool_fqnames + ["Read", "Bash", "Grep"],
             ),
         },
     )

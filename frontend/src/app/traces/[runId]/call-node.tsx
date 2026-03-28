@@ -201,7 +201,6 @@ function MoveRow({
 }) {
   const isCreate = moveType.startsWith("CREATE_");
   const isLink = moveType.startsWith("LINK_");
-  const isSupersede = moveType === "SUPERSEDE_PAGE";
   const isLoad = moveType === "LOAD_PAGE";
   const isChange = moveType === "CHANGE_LINK_ROLE";
   const isRemove = moveType === "REMOVE_LINK";
@@ -210,15 +209,13 @@ function MoveRow({
     ? "trace-move-create"
     : isLink
       ? "trace-move-link"
-      : isSupersede
-        ? "trace-move-supersede"
-        : isLoad
-            ? "trace-move-load"
-            : isChange
-              ? "trace-move-change"
-              : isRemove
-                ? "trace-move-remove"
-                : "trace-move-default";
+      : isLoad
+          ? "trace-move-load"
+          : isChange
+            ? "trace-move-change"
+            : isRemove
+              ? "trace-move-remove"
+              : "trace-move-default";
 
   const hasRefs = pageRefs && pageRefs.length > 0;
 
@@ -966,6 +963,36 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
       {event.event === "evaluation_complete" && (
         <div className="trace-event-body">
           <CollapsiblePre label="Evaluation" content={event.evaluation} />
+        </div>
+      )}
+      {event.event === "grounding_tasks_generated" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">tasks</span>
+            <span className="trace-kv-value">{event.task_count}</span>
+          </div>
+          {(event.tasks ?? []).map((t: Record<string, unknown>, i: number) => (
+            <div key={i} className="trace-score-row">
+              <span className="trace-score-headline">{String(t.claim ?? "")}</span>
+              {t.grounding_issue ? (
+                <span className="trace-score-reasoning">{String(t.grounding_issue)}</span>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      )}
+      {event.event === "web_research_complete" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">findings</span>
+            <span className="trace-kv-value">{event.task_count}</span>
+          </div>
+          {(event.findings ?? []).map((f: Record<string, unknown>, i: number) => (
+            <div key={i} className="trace-score-row">
+              <span className="trace-score-headline">{String(f.claim ?? "")}</span>
+              <span className="trace-kv-value">{String(f.findings_length ?? 0)} chars</span>
+            </div>
+          ))}
         </div>
       )}
     </div>

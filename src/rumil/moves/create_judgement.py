@@ -3,6 +3,7 @@
 import logging
 from typing import Any
 
+
 from pydantic import Field
 
 from rumil.database import DB
@@ -40,6 +41,27 @@ class CreateJudgementPayload(CreatePagePayload):
         if self.sensitivity_analysis is not None:
             extra["sensitivity_analysis"] = self.sensitivity_analysis
         return extra
+
+    @classmethod
+    def model_json_schema(
+        cls,
+        by_alias: bool = True,
+        ref_template: str = "#/$defs/{model}",
+        schema_generator: Any = None,
+        mode: str = "validation",
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        kw: dict[str, Any] = {
+            "by_alias": by_alias,
+            "ref_template": ref_template,
+            "mode": mode,
+            **kwargs,
+        }
+        if schema_generator is not None:
+            kw["schema_generator"] = schema_generator
+        schema = super().model_json_schema(**kw)
+        schema.get("properties", {}).pop("supersedes", None)
+        return schema
 
 
 class CreateJudgementForQuestionPayload(CreateJudgementPayload):

@@ -820,6 +820,12 @@ async def async_main():
         help="Use production Supabase (requires SUPABASE_PROD_URL and SUPABASE_PROD_KEY)",
     )
     parser.add_argument(
+        "--staged",
+        action="store_true",
+        help="Run in staged mode: page mutations are recorded as events instead "
+        "of modifying the database directly",
+    )
+    parser.add_argument(
         "-q",
         "--quiet",
         action="store_true",
@@ -861,7 +867,9 @@ async def async_main():
 
     PAGES_DIR.mkdir(parents=True, exist_ok=True)
 
-    db = await DB.create(run_id=str(uuid.uuid4()), prod=args.prod_db)
+    db = await DB.create(
+        run_id=str(uuid.uuid4()), prod=args.prod_db, staged=args.staged
+    )
 
     if args.list_workspaces:
         await cmd_list_workspaces(db)

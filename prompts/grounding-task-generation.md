@@ -6,12 +6,12 @@ You will receive the output of an evaluation agent that assessed the grounding q
 
 ## Filtering Criteria
 
-Filter to claims that are:
+A claim must meet ALL four of the following criteria to be included. Skip any claim that fails even one.
 
-1. Of at least moderate importance
-2. High falsifiability
-3. Weakly-grounded or ungrounded
-4. The core issue is lack of external sources in the workspace overall (not just missing links between existing pages)
+1. **Importance:** At least moderate. Exclude low-importance claims even if they are poorly grounded.
+2. **Falsifiability:** High. Exclude claims rated moderate or low falsifiability — these are not worth verifying via web search.
+3. **Grounding:** Weakly-grounded or ungrounded. Exclude claims already rated as well-grounded.
+4. **Gap type:** The core issue is lack of external sources in the workspace overall, not just missing links between existing pages.
 
 ## Output Fields
 

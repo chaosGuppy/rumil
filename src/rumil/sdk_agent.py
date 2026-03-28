@@ -187,7 +187,7 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
                 agent_id=agent_id,
                 agent_type=agent_type,
                 child_call_id=child_call.id,
-                prompt=prompt[:2000],
+                prompt=prompt,
             )
         )
         log.info("Subagent %s started -> child call %s", agent_id, child_call.id)
@@ -249,7 +249,7 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
         disallowed_tools=list(config.disallowed_tools),
         agents=config.agents,
         hooks=hooks,
-        max_turns=settings.evaluate_max_turns,
+        max_turns=settings.sdk_agent_max_turns,
         model=settings.model,
     )
 

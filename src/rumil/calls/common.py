@@ -55,7 +55,6 @@ PAGE_ID_FIELDS: dict[MoveType, list[str]] = {
     MoveType.LINK_CONSIDERATION: ["claim_id", "question_id"],
     MoveType.LINK_CHILD_QUESTION: ["child_id", "parent_id"],
     MoveType.LINK_RELATED: ["from_page_id", "to_page_id"],
-    MoveType.SUPERSEDE_PAGE: ["old_page_id"],
     MoveType.FLAG_FUNNINESS: ["page_id"],
     MoveType.REPORT_DUPLICATE: ["page_id_a", "page_id_b"],
 }

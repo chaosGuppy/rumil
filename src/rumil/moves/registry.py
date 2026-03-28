@@ -14,7 +14,6 @@ from rumil.moves.create_wiki_page import MOVE as _create_wiki_page
 from rumil.moves.link_consideration import MOVE as _link_consideration
 from rumil.moves.link_child_question import MOVE as _link_child_question
 from rumil.moves.link_related import MOVE as _link_related
-from rumil.moves.supersede_page import MOVE as _supersede_page
 from rumil.moves.flag_funniness import MOVE as _flag_funniness
 from rumil.moves.report_duplicate import MOVE as _report_duplicate
 from rumil.moves.load_page import MOVE as _load_page
@@ -36,7 +35,6 @@ MOVES: dict[MoveType, MoveDef] = {
         _link_consideration,
         _link_child_question,
         _link_related,
-        _supersede_page,
         _flag_funniness,
         _report_duplicate,
         _load_page,

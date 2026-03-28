@@ -698,6 +698,12 @@
                       },
                       {
                         "$ref": "#/components/schemas/ToolCallEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/GroundingTasksGeneratedEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/WebResearchCompleteEventOut"
                       }
                     ],
                     "discriminator": {
@@ -717,7 +723,9 @@
                         "subagent_completed": "#/components/schemas/SubagentCompletedEventOut",
                         "agent_started": "#/components/schemas/AgentStartedEventOut",
                         "evaluation_complete": "#/components/schemas/EvaluationCompleteEventOut",
-                        "tool_call": "#/components/schemas/ToolCallEventOut"
+                        "tool_call": "#/components/schemas/ToolCallEventOut",
+                        "grounding_tasks_generated": "#/components/schemas/GroundingTasksGeneratedEventOut",
+                        "web_research_complete": "#/components/schemas/WebResearchCompleteEventOut"
                       }
                     }
                   },
@@ -1439,6 +1447,12 @@
                 },
                 {
                   "$ref": "#/components/schemas/ToolCallEventOut"
+                },
+                {
+                  "$ref": "#/components/schemas/GroundingTasksGeneratedEventOut"
+                },
+                {
+                  "$ref": "#/components/schemas/WebResearchCompleteEventOut"
                 }
               ],
               "discriminator": {
@@ -1451,6 +1465,7 @@
                   "error": "#/components/schemas/ErrorEventOut",
                   "evaluation_complete": "#/components/schemas/EvaluationCompleteEventOut",
                   "explore_page": "#/components/schemas/ExplorePageEventOut",
+                  "grounding_tasks_generated": "#/components/schemas/GroundingTasksGeneratedEventOut",
                   "llm_exchange": "#/components/schemas/LLMExchangeEventOut",
                   "moves_executed": "#/components/schemas/MovesExecutedEventOut",
                   "review_complete": "#/components/schemas/ReviewCompleteEventOut",
@@ -1458,7 +1473,8 @@
                   "subagent_completed": "#/components/schemas/SubagentCompletedEventOut",
                   "subagent_started": "#/components/schemas/SubagentStartedEventOut",
                   "tool_call": "#/components/schemas/ToolCallEventOut",
-                  "warning": "#/components/schemas/WarningEventOut"
+                  "warning": "#/components/schemas/WarningEventOut",
+                  "web_research_complete": "#/components/schemas/WebResearchCompleteEventOut"
                 }
               }
             },
@@ -1857,6 +1873,47 @@
           "response"
         ],
         "title": "ExplorePageEventOut"
+      },
+      "GroundingTasksGeneratedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "grounding_tasks_generated",
+            "title": "Event",
+            "default": "grounding_tasks_generated"
+          },
+          "task_count": {
+            "type": "integer",
+            "title": "Task Count",
+            "default": 0
+          },
+          "tasks": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Tasks",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "task_count",
+          "tasks"
+        ],
+        "title": "GroundingTasksGeneratedEventOut"
       },
       "HTTPValidationError": {
         "properties": {
@@ -3147,6 +3204,47 @@
           "message"
         ],
         "title": "WarningEventOut"
+      },
+      "WebResearchCompleteEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "web_research_complete",
+            "title": "Event",
+            "default": "web_research_complete"
+          },
+          "task_count": {
+            "type": "integer",
+            "title": "Task Count",
+            "default": 0
+          },
+          "findings": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Findings",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "task_count",
+          "findings"
+        ],
+        "title": "WebResearchCompleteEventOut"
       },
       "Workspace": {
         "type": "string",

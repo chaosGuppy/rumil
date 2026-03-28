@@ -282,7 +282,11 @@ export type CallTraceOut = {
         event: 'evaluation_complete';
     } & EvaluationCompleteEventOut) | ({
         event: 'tool_call';
-    } & ToolCallEventOut)>;
+    } & ToolCallEventOut) | ({
+        event: 'grounding_tasks_generated';
+    } & GroundingTasksGeneratedEventOut) | ({
+        event: 'web_research_complete';
+    } & WebResearchCompleteEventOut)>;
     /**
      * Children
      */
@@ -510,6 +514,34 @@ export type ExplorePageEventOut = {
      * Response
      */
     response: string;
+};
+
+/**
+ * GroundingTasksGeneratedEventOut
+ */
+export type GroundingTasksGeneratedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'grounding_tasks_generated';
+    /**
+     * Task Count
+     */
+    task_count: number;
+    /**
+     * Tasks
+     */
+    tasks: Array<{
+        [key: string]: unknown;
+    }>;
 };
 
 /**
@@ -1255,6 +1287,34 @@ export type WarningEventOut = {
 };
 
 /**
+ * WebResearchCompleteEventOut
+ */
+export type WebResearchCompleteEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'web_research_complete';
+    /**
+     * Task Count
+     */
+    task_count: number;
+    /**
+     * Findings
+     */
+    findings: Array<{
+        [key: string]: unknown;
+    }>;
+};
+
+/**
  * Workspace
  */
 export type Workspace = 'research' | 'prioritization' | 'concept_staging';
@@ -1758,7 +1818,11 @@ export type GetCallEventsApiCallsCallIdEventsGetResponses = {
         event: 'evaluation_complete';
     } & EvaluationCompleteEventOut) | ({
         event: 'tool_call';
-    } & ToolCallEventOut)>;
+    } & ToolCallEventOut) | ({
+        event: 'grounding_tasks_generated';
+    } & GroundingTasksGeneratedEventOut) | ({
+        event: 'web_research_complete';
+    } & WebResearchCompleteEventOut)>;
 };
 
 export type GetCallEventsApiCallsCallIdEventsGetResponse = GetCallEventsApiCallsCallIdEventsGetResponses[keyof GetCallEventsApiCallsCallIdEventsGetResponses];

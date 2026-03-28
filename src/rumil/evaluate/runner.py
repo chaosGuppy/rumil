@@ -99,7 +99,7 @@ async def run_evaluation(
         db=db,
         trace=trace,
         broadcaster=broadcaster,
-        allowed_tools=[_EXPLORE_TOOL_FQNAME, "Read", "Grep"],
+        allowed_tools=[_EXPLORE_TOOL_FQNAME, "Read", "Grep", "Bash"],
         agents={
             "investigator": AgentDefinition(
                 description=(
@@ -107,7 +107,7 @@ async def run_evaluation(
                     "workspace to assess its evidential grounding."
                 ),
                 prompt=investigator_prompt,
-                tools=[_EXPLORE_TOOL_FQNAME, "Read", "Grep"],
+                tools=[_EXPLORE_TOOL_FQNAME, "Read", "Grep", "Bash"],
             ),
         },
         extra_hooks={

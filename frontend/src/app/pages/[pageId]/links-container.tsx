@@ -151,7 +151,7 @@ export default function LinksContainer({
             onClick={() => setShowSuperseded((prev) => !prev)}
             title="Show superseded pages"
           >
-            superseded
+            {showSuperseded ? "hide" : "show"} superseded
             {showSuperseded && supersededCount > 0 && (
               <span className="links-superseded-count">{supersededCount}</span>
             )}

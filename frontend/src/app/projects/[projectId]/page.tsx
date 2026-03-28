@@ -694,7 +694,7 @@ export default function PagesIndexPage() {
             onClick={() => setShowSuperseded((prev) => !prev)}
             title="Show superseded pages"
           >
-            superseded
+            {showSuperseded ? "hide" : "show"} superseded
             {showSuperseded && supersededCount > 0 && (
               <span className="count">{supersededCount}</span>
             )}

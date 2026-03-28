@@ -245,6 +245,7 @@ class RunListItemOut(BaseModel):
     question_summary: str | None = None
     ab_run_id: str | None = None
     arms: dict | None = None
+    staged: bool = False
 
 
 class ABRunArmOut(BaseModel):

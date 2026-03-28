@@ -2722,6 +2722,11 @@
               }
             ],
             "title": "Arms"
+          },
+          "staged": {
+            "type": "boolean",
+            "title": "Staged",
+            "default": false
           }
         },
         "type": "object",

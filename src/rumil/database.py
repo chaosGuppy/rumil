@@ -1370,7 +1370,7 @@ class DB:
         run_rows = _rows(
             await self._execute(
                 self.client.table("runs")
-                .select("id, name, question_id, config, ab_run_id, ab_arm, created_at")
+                .select("id, name, question_id, config, ab_run_id, ab_arm, created_at, staged")
                 .eq("project_id", project_id)
                 .order("created_at", desc=True)
                 .limit(limit * 2)
@@ -1409,6 +1409,7 @@ class DB:
                     "name": row.get("name", ""),
                     "config": row.get("config", {}),
                     "question_summary": question_summary,
+                    "staged": row.get("staged", False),
                 })
                 seen_run_ids.add(row["id"])
         for ab_group in ab_groups.values():

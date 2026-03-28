@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState, useMemo } from "react";
-import type { Page, PageType } from "@/api";
+import type { Page, PageType, RunListItemOut } from "@/api";
 
 import { CLIENT_API_BASE as API_BASE } from "@/api-config";
 
@@ -71,16 +71,6 @@ function epistemicBar(value: number) {
   );
 }
 
-type RunListItem = {
-  run_id?: string | null;
-  created_at: string;
-  name?: string;
-  config?: Record<string, unknown> | null;
-  question_summary: string | null;
-  ab_run_id?: string | null;
-  arms?: Record<string, { run_id: string; config: Record<string, unknown> }> | null;
-};
-
 export default function PagesIndexPage() {
   const params = useParams<{ projectId: string }>();
   const projectId = params.projectId;
@@ -89,13 +79,16 @@ export default function PagesIndexPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [activeTypes, setActiveTypes] = useState<Set<PageType>>(new Set());
-  const [runs, setRuns] = useState<RunListItem[]>([]);
+  const [runs, setRuns] = useState<RunListItemOut[]>([]);
   const [showSuperseded, setShowSuperseded] = useState(false);
+  const [activeStagedRunId, setActiveStagedRunId] = useState<string | null>(null);
 
   useEffect(() => {
-    const url = showSuperseded
-      ? `${API_BASE}/api/projects/${projectId}/pages?active_only=false`
-      : `${API_BASE}/api/projects/${projectId}/pages`;
+    const params = new URLSearchParams();
+    if (showSuperseded) params.set("active_only", "false");
+    if (activeStagedRunId) params.set("staged_run_id", activeStagedRunId);
+    const qs = params.toString();
+    const url = `${API_BASE}/api/projects/${projectId}/pages${qs ? "?" + qs : ""}`;
     fetch(url, { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : []))
       .then((data: Page[]) => {
@@ -106,8 +99,8 @@ export default function PagesIndexPage() {
       cache: "no-store",
     })
       .then((res) => (res.ok ? res.json() : []))
-      .then((data: RunListItem[]) => setRuns(data));
-  }, [projectId, showSuperseded]);
+      .then((data: RunListItemOut[]) => setRuns(data));
+  }, [projectId, showSuperseded, activeStagedRunId]);
 
   const toggleType = (t: PageType) => {
     setActiveTypes((prev) => {
@@ -516,6 +509,108 @@ export default function PagesIndexPage() {
           flex-shrink: 0;
         }
 
+        .run-staged-badge {
+          font-size: 0.65rem;
+          font-weight: 700;
+          font-family: var(--font-geist-mono), monospace;
+          letter-spacing: 0.06em;
+          color: #5a8a7a;
+          background: rgba(90, 138, 122, 0.1);
+          padding: 0.15rem 0.4rem;
+          border-radius: 2px;
+          flex-shrink: 0;
+        }
+        .run-staged-link {
+          text-decoration: none;
+          color: inherit;
+        }
+        .run-staged-link:hover {
+          text-decoration: underline;
+          text-underline-offset: 2px;
+          text-decoration-color: var(--color-muted);
+        }
+        .run-staged-toggle {
+          font-size: 0.6rem;
+          font-weight: 700;
+          font-family: var(--font-geist-mono), monospace;
+          letter-spacing: 0.06em;
+          padding: 0.2rem 0.45rem;
+          border-radius: 2px;
+          border: 1px solid var(--color-border);
+          background: transparent;
+          color: var(--color-muted);
+          cursor: pointer;
+          flex-shrink: 0;
+          transition: all 0.12s ease;
+        }
+        .run-staged-toggle:hover {
+          border-color: #5a8a7a;
+          color: #5a8a7a;
+        }
+        .run-staged-toggle.active {
+          background: #5a8a7a;
+          border-color: #5a8a7a;
+          color: #fff;
+        }
+        .run-staged-toggle.active:hover {
+          background: #4a7a6a;
+          border-color: #4a7a6a;
+        }
+        .run-staged-active {
+          background: rgba(90, 138, 122, 0.04);
+          border-left: 2px solid #5a8a7a;
+        }
+
+        .staged-banner {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          padding: 0.45rem 0.75rem;
+          margin-bottom: 1rem;
+          background: rgba(90, 138, 122, 0.06);
+          border: 1px solid rgba(90, 138, 122, 0.2);
+          font-family: var(--font-geist-mono), monospace;
+          font-size: 0.75rem;
+          color: #5a8a7a;
+          animation: bannerSlideIn 0.2s ease both;
+        }
+        @keyframes bannerSlideIn {
+          from { opacity: 0; transform: translateY(-4px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .staged-banner-indicator {
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+          background: #5a8a7a;
+          flex-shrink: 0;
+          animation: indicatorPulse 2s ease infinite;
+        }
+        @keyframes indicatorPulse {
+          0%, 100% { opacity: 0.5; }
+          50% { opacity: 1; }
+        }
+        .staged-banner-text {
+          flex: 1;
+          letter-spacing: 0.02em;
+        }
+        .staged-banner-clear {
+          font-size: 0.7rem;
+          font-family: var(--font-geist-mono), monospace;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
+          color: #5a8a7a;
+          background: none;
+          border: none;
+          cursor: pointer;
+          padding: 0.2rem 0.4rem;
+          opacity: 0.7;
+          transition: opacity 0.12s ease;
+        }
+        .staged-banner-clear:hover {
+          opacity: 1;
+        }
+
         .loading-state {
           padding: 4rem 1rem;
           text-align: center;
@@ -606,6 +701,38 @@ export default function PagesIndexPage() {
             --type-wiki-bg-hover: #111d14;
             --type-wiki-border: #1a2e1f;
           }
+          .run-staged-badge {
+            color: #6aaa9f;
+            background: rgba(106, 170, 159, 0.12);
+          }
+          .run-staged-toggle:hover {
+            border-color: #6aaa9f;
+            color: #6aaa9f;
+          }
+          .run-staged-toggle.active {
+            background: #6aaa9f;
+            border-color: #6aaa9f;
+            color: #0b1413;
+          }
+          .run-staged-toggle.active:hover {
+            background: #5a9a8f;
+            border-color: #5a9a8f;
+          }
+          .run-staged-active {
+            background: rgba(106, 170, 159, 0.04);
+            border-left-color: #6aaa9f;
+          }
+          .staged-banner {
+            color: #6aaa9f;
+            background: rgba(106, 170, 159, 0.05);
+            border-color: rgba(106, 170, 159, 0.15);
+          }
+          .staged-banner-indicator {
+            background: #6aaa9f;
+          }
+          .staged-banner-clear {
+            color: #6aaa9f;
+          }
         }
       `}</style>
 
@@ -624,13 +751,43 @@ export default function PagesIndexPage() {
           <div className="runs-list">
             {runs.map((r, i) => {
               const isAB = !!r.ab_run_id;
+              const isStaged = !!r.staged;
+              const isActive = activeStagedRunId === r.run_id;
+              const displayId = isAB
+                ? r.ab_run_id!.slice(0, 8)
+                : r.run_id?.slice(0, 8) ?? "\u2014";
+              const label = r.name || r.question_summary || "(no question)";
+
+              if (isStaged && r.run_id) {
+                return (
+                  <div
+                    key={r.run_id}
+                    className={`run-row run-row-staged${isActive ? " run-staged-active" : ""}`}
+                  >
+                    <span className="run-staged-badge">STAGED</span>
+                    <Link href={`/traces/${r.run_id}`} className="run-question run-staged-link">
+                      {label}
+                    </Link>
+                    <div className="run-meta">
+                      <span className="run-date">
+                        {new Date(r.created_at).toLocaleString()}
+                      </span>
+                      <span className="run-id">{displayId}</span>
+                    </div>
+                    <button
+                      className={`run-staged-toggle${isActive ? " active" : ""}`}
+                      onClick={() => setActiveStagedRunId(isActive ? null : r.run_id!)}
+                      title={isActive ? "Hide staged outputs" : "Show staged outputs"}
+                    >
+                      {isActive ? "hide result" : "show result"}
+                    </button>
+                  </div>
+                );
+              }
+
               const href = isAB
                 ? `/ab-traces/${r.ab_run_id}`
                 : `/traces/${r.run_id}`;
-              const displayId = isAB
-                ? r.ab_run_id!.slice(0, 8)
-                : r.run_id?.slice(0, 8) ?? "—";
-              const label = r.name || r.question_summary || "(no question)";
               return (
                 <Link key={r.ab_run_id || r.run_id || i} href={href} className="run-row">
                   {isAB && (
@@ -647,6 +804,21 @@ export default function PagesIndexPage() {
               );
             })}
           </div>
+        </div>
+      )}
+
+      {activeStagedRunId && (
+        <div className="staged-banner">
+          <span className="staged-banner-indicator" />
+          <span className="staged-banner-text">
+            Viewing staged run {activeStagedRunId.slice(0, 8)}
+          </span>
+          <button
+            className="staged-banner-clear"
+            onClick={() => setActiveStagedRunId(null)}
+          >
+            Clear
+          </button>
         </div>
       )}
 

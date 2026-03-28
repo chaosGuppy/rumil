@@ -220,12 +220,7 @@ async def _supersede_old_summaries(
             and old.page_type == PageType.SUMMARY
             and old.id != new_summary_id
         ):
-            await (
-                db.client.table("pages")
-                .update({"is_superseded": True, "superseded_by": new_summary_id})
-                .eq("id", old.id)
-                .execute()
-            )
+            await db.supersede_page(old.id, new_summary_id)
             log.info(
                 "Superseded old summary %s with %s", old.id[:8], new_summary_id[:8]
             )

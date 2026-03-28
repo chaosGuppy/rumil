@@ -17,7 +17,7 @@ from rumil.orchestrator import (
     PrioritizationResult,
     TwoPhaseOrchestrator,
 )
-from rumil.tracing.tracer import CallTrace
+from rumil.tracing.tracer import CallTrace, set_trace
 
 
 class ScriptedOrchestrator(BaseOrchestrator):
@@ -207,6 +207,7 @@ async def test_dispatch_executed_events_recorded(tmp_db, question_page):
         scope_page_id=question_page.id,
     )
     trace = CallTrace(p_call.id, tmp_db)
+    set_trace(trace)
 
     orch = ScriptedOrchestrator(
         tmp_db,
@@ -232,7 +233,9 @@ async def test_dispatch_executed_events_recorded(tmp_db, question_page):
 
 
 async def test_concurrent_dispatch_failure_recorded_in_trace(
-    tmp_db, question_page, mocker,
+    tmp_db,
+    question_page,
+    mocker,
 ):
     """When a dispatch raises during the TwoPhaseOrchestrator's concurrent
     gather, an ErrorEvent should be recorded on the prioritization call's trace.
@@ -260,7 +263,8 @@ async def test_concurrent_dispatch_failure_recorded_in_trace(
 
     mocker.patch.object(orch, "_get_next_batch", side_effect=fake_get_next_batch)
     mocker.patch.object(
-        DB, "resolve_page_id",
+        DB,
+        "resolve_page_id",
         side_effect=ConnectionError("Simulated connection failure"),
     )
 

@@ -141,7 +141,8 @@ export default function PagesIndexPage() {
       .sort((a, b) => {
         const aHuman = a.provenance_model === "human" ? 0 : 1;
         const bHuman = b.provenance_model === "human" ? 0 : 1;
-        return aHuman - bHuman;
+        if (aHuman !== bHuman) return aHuman - bHuman;
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
       });
   }, [pages, search, activeTypes]);
 

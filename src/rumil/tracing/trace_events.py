@@ -163,6 +163,31 @@ class ToolCallEvent(BaseModel):
     response: str = ""
 
 
+class ReassessTriggeredEvent(BaseModel):
+    event: Literal["reassess_triggered"] = "reassess_triggered"
+    question_id: str
+    question_headline: str = ""
+    child_call_id: str | None = None
+
+
+class AffectedPagesIdentifiedEvent(BaseModel):
+    event: Literal["affected_pages_identified"] = "affected_pages_identified"
+    affected_pages: list[dict] = []
+
+
+class UpdateSubgraphComputedEvent(BaseModel):
+    event: Literal["update_subgraph_computed"] = "update_subgraph_computed"
+    node_count: int = 0
+    nodes: list[dict] = []
+
+
+class ClaimReassessedEvent(BaseModel):
+    event: Literal["claim_reassessed"] = "claim_reassessed"
+    old_page_id: str
+    new_page_id: str
+    headline: str = ""
+
+
 class GroundingTasksGeneratedEvent(BaseModel):
     event: Literal["grounding_tasks_generated"] = "grounding_tasks_generated"
     task_count: int = 0
@@ -191,6 +216,10 @@ TraceEvent = Annotated[
     | AgentStartedEvent
     | EvaluationCompleteEvent
     | ToolCallEvent
+    | ReassessTriggeredEvent
+    | AffectedPagesIdentifiedEvent
+    | UpdateSubgraphComputedEvent
+    | ClaimReassessedEvent
     | GroundingTasksGeneratedEvent
     | WebResearchCompleteEvent,
     Field(discriminator="event"),

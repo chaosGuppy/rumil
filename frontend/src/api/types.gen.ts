@@ -45,6 +45,30 @@ export type AbRunTraceOut = {
 };
 
 /**
+ * AffectedPagesIdentifiedEventOut
+ */
+export type AffectedPagesIdentifiedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'affected_pages_identified';
+    /**
+     * Affected Pages
+     */
+    affected_pages: Array<{
+        [key: string]: unknown;
+    }>;
+};
+
+/**
  * AgentStartedEventOut
  */
 export type AgentStartedEventOut = {
@@ -283,6 +307,14 @@ export type CallTraceOut = {
     } & EvaluationCompleteEventOut) | ({
         event: 'tool_call';
     } & ToolCallEventOut) | ({
+        event: 'reassess_triggered';
+    } & ReassessTriggeredEventOut) | ({
+        event: 'affected_pages_identified';
+    } & AffectedPagesIdentifiedEventOut) | ({
+        event: 'update_subgraph_computed';
+    } & UpdateSubgraphComputedEventOut) | ({
+        event: 'claim_reassessed';
+    } & ClaimReassessedEventOut) | ({
         event: 'grounding_tasks_generated';
     } & GroundingTasksGeneratedEventOut) | ({
         event: 'web_research_complete';
@@ -322,6 +354,36 @@ export type CallTypeFruitScoreItem = {
      * Reasoning
      */
     reasoning?: string;
+};
+
+/**
+ * ClaimReassessedEventOut
+ */
+export type ClaimReassessedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'claim_reassessed';
+    /**
+     * Old Page Id
+     */
+    old_page_id: string;
+    /**
+     * New Page Id
+     */
+    new_page_id: string;
+    /**
+     * Headline
+     */
+    headline: string;
 };
 
 /**
@@ -957,6 +1019,36 @@ export type RealtimeConfigOut = {
 };
 
 /**
+ * ReassessTriggeredEventOut
+ */
+export type ReassessTriggeredEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'reassess_triggered';
+    /**
+     * Question Id
+     */
+    question_id: string;
+    /**
+     * Question Headline
+     */
+    question_headline: string;
+    /**
+     * Child Call Id
+     */
+    child_call_id: string | null;
+};
+
+/**
  * ReviewCompleteEventOut
  */
 export type ReviewCompleteEventOut = {
@@ -1241,6 +1333,34 @@ export type ToolCallEventOut = {
 };
 
 /**
+ * UpdateSubgraphComputedEventOut
+ */
+export type UpdateSubgraphComputedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'update_subgraph_computed';
+    /**
+     * Node Count
+     */
+    node_count: number;
+    /**
+     * Nodes
+     */
+    nodes: Array<{
+        [key: string]: unknown;
+    }>;
+};
+
+/**
  * ValidationError
  */
 export type ValidationError = {
@@ -1394,6 +1514,10 @@ export type ListPagesApiProjectsProjectIdPagesGetData = {
          * Active Only
          */
         active_only?: boolean;
+        /**
+         * Staged Run Id
+         */
+        staged_run_id?: string | null;
     };
     url: '/api/projects/{project_id}/pages';
 };
@@ -1426,7 +1550,12 @@ export type GetPageByShortIdApiPagesShortShortIdGetData = {
          */
         short_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Staged Run Id
+         */
+        staged_run_id?: string | null;
+    };
     url: '/api/pages/short/{short_id}';
 };
 
@@ -1456,7 +1585,12 @@ export type GetPageApiPagesPageIdGetData = {
          */
         page_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Staged Run Id
+         */
+        staged_run_id?: string | null;
+    };
     url: '/api/pages/{page_id}';
 };
 
@@ -1550,7 +1684,12 @@ export type GetPageDetailApiPagesPageIdDetailGetData = {
          */
         page_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Staged Run Id
+         */
+        staged_run_id?: string | null;
+    };
     url: '/api/pages/{page_id}/detail';
 };
 
@@ -1823,6 +1962,14 @@ export type GetCallEventsApiCallsCallIdEventsGetResponses = {
     } & EvaluationCompleteEventOut) | ({
         event: 'tool_call';
     } & ToolCallEventOut) | ({
+        event: 'reassess_triggered';
+    } & ReassessTriggeredEventOut) | ({
+        event: 'affected_pages_identified';
+    } & AffectedPagesIdentifiedEventOut) | ({
+        event: 'update_subgraph_computed';
+    } & UpdateSubgraphComputedEventOut) | ({
+        event: 'claim_reassessed';
+    } & ClaimReassessedEventOut) | ({
         event: 'grounding_tasks_generated';
     } & GroundingTasksGeneratedEventOut) | ({
         event: 'web_research_complete';

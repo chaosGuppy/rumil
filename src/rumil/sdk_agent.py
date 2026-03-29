@@ -4,6 +4,7 @@ import json
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from typing import Any
 from pathlib import Path
 
 from claude_agent_sdk import (
@@ -74,6 +75,7 @@ class SdkAgentConfig:
     disallowed_tools: Sequence[str] = ("Write", "Edit", "Bash", "Glob")
     agents: dict[str, AgentDefinition] = field(default_factory=dict)
     extra_hooks: dict[HookEvent, list[HookMatcher]] = field(default_factory=dict)
+    output_format: dict[str, Any] | None = None
 
 
 @dataclass
@@ -81,6 +83,7 @@ class SdkAgentResult:
     """Result from running a Claude Agent SDK agent."""
 
     last_assistant_text: Sequence[str]
+    structured_output: Any = None
 
 
 def _read_subagent_summary(transcript_path: str, max_len: int = 500) -> str:
@@ -251,6 +254,7 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
         hooks=hooks,
         max_turns=settings.sdk_agent_max_turns,
         model=settings.model,
+        output_format=config.output_format,
     )
 
     await config.trace.record(
@@ -261,6 +265,7 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
     )
 
     last_assistant_text: list[str] = []
+    structured_output: Any = None
     async with ClaudeSDKClient(options=options) as client:
         await client.query(config.user_prompt)
         async for message in client.receive_response():
@@ -275,6 +280,8 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
             elif isinstance(message, ResultMessage):
                 if not last_assistant_text and message.result:
                     last_assistant_text = [message.result]
+                if message.structured_output is not None:
+                    structured_output = message.structured_output
                 if message.stop_reason == "max_turns":
                     log.warning("Agent hit max_turns limit")
                     await config.trace.record(
@@ -284,4 +291,7 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
                         )
                     )
 
-    return SdkAgentResult(last_assistant_text=last_assistant_text)
+    return SdkAgentResult(
+        last_assistant_text=last_assistant_text,
+        structured_output=structured_output,
+    )

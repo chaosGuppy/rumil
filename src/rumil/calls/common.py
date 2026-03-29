@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -442,20 +443,26 @@ async def save_page_abstracts(
 ) -> None:
     """Persist abstracts and re-embed pages. Shared by closing reviewers
     and the grounding feedback pipeline."""
-    for s in summaries:
-        pid = await db.resolve_page_id(s.page_id)
-        if not pid:
-            continue
-        await db.update_page_abstract(pid, s.abstract)
-        if not s.abstract.strip():
-            continue
-        page = await db.get_page(pid)
-        if not page:
-            continue
-        try:
-            await embed_and_store_page(db, page, field_name="abstract")
-        except Exception:
-            log.warning("Failed to re-embed page %s", pid[:8], exc_info=True)
+
+    sem = asyncio.Semaphore(10)
+
+    async def _save_one(s: PageSummaryItem) -> None:
+        async with sem:
+            pid = await db.resolve_page_id(s.page_id)
+            if not pid:
+                return
+            await db.update_page_abstract(pid, s.abstract)
+            if not s.abstract.strip():
+                return
+            page = await db.get_page(pid)
+            if not page:
+                return
+            try:
+                await embed_and_store_page(db, page, field_name="abstract")
+            except Exception:
+                log.warning("Failed to re-embed page %s", pid[:8], exc_info=True)
+
+    await asyncio.gather(*(_save_one(s) for s in summaries))
 
 
 class PageRating(BaseModel):

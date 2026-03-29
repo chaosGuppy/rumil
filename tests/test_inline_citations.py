@@ -97,7 +97,7 @@ async def test_inline_citation_of_claim_creates_consideration_link(
 
     linked = await extract_and_link_citations(
         citing_page.id, citing_page.content, tmp_db,
-        citing_page_type=PageType.CLAIM,
+
     )
 
     assert linked == {claim_page.id}
@@ -126,7 +126,7 @@ async def test_multiple_inline_citations(
 
     linked = await extract_and_link_citations(
         citing_page.id, citing_page.content, tmp_db,
-        citing_page_type=PageType.CLAIM,
+
     )
 
     assert linked == {claim_page.id, second_claim_page.id}
@@ -151,7 +151,6 @@ async def test_judgement_citing_claim_creates_consideration_link(
 
     linked = await extract_and_link_citations(
         judgement.id, judgement.content, tmp_db,
-        citing_page_type=PageType.JUDGEMENT,
     )
 
     assert linked == {claim_page.id}
@@ -177,7 +176,6 @@ async def test_question_citing_claim_creates_consideration_link(
 
     linked = await extract_and_link_citations(
         question.id, question.content, tmp_db,
-        citing_page_type=PageType.QUESTION,
     )
 
     assert linked == {claim_page.id}

@@ -8,7 +8,7 @@ from pathlib import Path
 from rumil.database import DB
 from rumil.llm import text_call
 from rumil.models import Page, PageLayer, PageType, Workspace
-from rumil.orchestrator import ingest_until_done
+from rumil.orchestrators import ingest_until_done
 
 log = logging.getLogger(__name__)
 
@@ -36,14 +36,14 @@ async def generate_source_summary(content: str, filename: str) -> str:
     try:
         result = await text_call(
             system_prompt=(
-                'You summarize documents for a research workspace. '
-                'Be concise and factual.'
+                "You summarize documents for a research workspace. "
+                "Be concise and factual."
             ),
             user_message=(
-                'Summarize this document in 2-3 sentences: what type of document is it, '
-                'what is it about, and what would be its main relevance for research?\n\n'
-                f'Filename: {filename}\n\n'
-                f'{excerpt}'
+                "Summarize this document in 2-3 sentences: what type of document is it, "
+                "what is it about, and what would be its main relevance for research?\n\n"
+                f"Filename: {filename}\n\n"
+                f"{excerpt}"
             ),
         )
         return result.strip()
@@ -88,9 +88,7 @@ async def create_source_page(filepath: str, db: DB) -> Page | None:
     return page
 
 
-async def run_ingest_calls(
-    source_pages: list[Page], question_id: str, db: DB
-) -> int:
+async def run_ingest_calls(source_pages: list[Page], question_id: str, db: DB) -> int:
     """Run ingest extraction calls for each source against a question. Returns calls made."""
     made = 0
     for source_page in source_pages:

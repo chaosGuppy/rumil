@@ -484,9 +484,13 @@ class WebResearchLoop(PageCreator):
                     inp: dict,
                     _infra=infra,
                 ) -> str:
+                    known_before = set(self.source_page_ids.values())
                     result = await execute_with_source_creation(
                         inp, _infra.call, _infra.db, self.source_page_ids
                     )
+                    for sid in self.source_page_ids.values():
+                        if sid not in known_before:
+                            _infra.state.created_page_ids.append(sid)
                     if result.created_page_id:
                         _infra.state.created_page_ids.append(result.created_page_id)
                     return result.message

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useStagedRun } from "@/lib/staged-run-context";
 
@@ -12,6 +13,10 @@ export default function StagedBanner({
 }) {
   const { setActiveStagedRunId } = useStagedRun();
   const router = useRouter();
+
+  useEffect(() => {
+    setActiveStagedRunId(runId);
+  }, [runId, setActiveStagedRunId]);
 
   return (
     <div className="staged-banner">

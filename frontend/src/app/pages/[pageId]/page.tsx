@@ -55,6 +55,17 @@ async function getPageDetail(pageId: string): Promise<PageDetailOut | null> {
   return res.json();
 }
 
+async function getPageHeadline(
+  pageId: string,
+): Promise<{ headline: string; page_type: string } | null> {
+  const res = await fetch(`${API_BASE}/api/pages/${pageId}/detail`, {
+    cache: "no-store",
+  });
+  if (!res.ok) return null;
+  const data = (await res.json()) as PageDetailOut;
+  return { headline: data.page.headline, page_type: data.page.page_type };
+}
+
 function pageHref(page: Page): string {
   return `/pages/${page.id}`;
 }
@@ -182,7 +193,10 @@ export default async function PageDetailPage({
 
   const { page, links_from, links_to } = detail;
   const cfg = TYPE_CONFIG[page.page_type] || TYPE_CONFIG.source;
-  const citationMap = await buildCitationMap(links_from, links_to, page.content);
+  const [citationMap, supersedingPage] = await Promise.all([
+    buildCitationMap(links_from, links_to, page.content),
+    page.superseded_by ? getPageHeadline(page.superseded_by) : null,
+  ]);
   const processedContent = injectCitationLinks(page.content, citationMap);
 
   return (
@@ -212,9 +226,21 @@ export default async function PageDetailPage({
               {page.page_type}
             </span>
             <span className="page-id">{page.id.slice(0, 8)}</span>
-            {page.is_superseded && (
+            {page.is_superseded && page.superseded_by && supersedingPage ? (
+              <Link
+                href={`/pages/${page.superseded_by}`}
+                className="superseded-link"
+                title={supersedingPage.headline}
+              >
+                <span className="superseded-link-label">superseded by</span>
+                <span className="superseded-link-headline">
+                  {supersedingPage.headline}
+                </span>
+                <span className="superseded-link-arrow">{"\u2192"}</span>
+              </Link>
+            ) : page.is_superseded ? (
               <span className="superseded-tag">superseded</span>
-            )}
+            ) : null}
           </div>
           <h1 className="page-summary">{page.headline}</h1>
           {page.page_type === "source" && typeof page.extra?.url === "string" && (
@@ -269,17 +295,6 @@ export default async function PageDetailPage({
             <div className="meta-block">
               <span className="meta-label">uncertainty</span>
               <span className="meta-value">{page.epistemic_type}</span>
-            </div>
-          )}
-          {page.superseded_by && (
-            <div className="meta-block">
-              <span className="meta-label">superseded by</span>
-              <Link
-                href={`/pages/${page.superseded_by}`}
-                className="meta-link"
-              >
-                {page.superseded_by.slice(0, 8)}
-              </Link>
             </div>
           )}
         </div>
@@ -394,6 +409,43 @@ const styles = `
     color: var(--dir-opposes);
     text-decoration: line-through;
     opacity: 0.8;
+  }
+  .superseded-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--dir-opposes) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--dir-opposes) 20%, transparent);
+    text-decoration: none;
+    max-width: 340px;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .superseded-link:hover {
+    background: color-mix(in srgb, var(--dir-opposes) 14%, transparent);
+    border-color: color-mix(in srgb, var(--dir-opposes) 35%, transparent);
+  }
+  .superseded-link-label {
+    font-size: 0.6rem;
+    font-family: var(--font-geist-mono), monospace;
+    color: var(--dir-opposes);
+    opacity: 0.7;
+    flex-shrink: 0;
+  }
+  .superseded-link-headline {
+    font-size: 0.65rem;
+    color: var(--color-fg);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    opacity: 0.85;
+  }
+  .superseded-link-arrow {
+    font-size: 0.6rem;
+    color: var(--dir-opposes);
+    opacity: 0.6;
+    flex-shrink: 0;
   }
 
   .page-summary {

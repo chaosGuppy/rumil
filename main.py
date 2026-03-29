@@ -221,7 +221,11 @@ async def cmd_ground(eval_call_id: str, db: DB) -> None:
     from rumil.clean import run_grounding_feedback
     from rumil.models import CallStatus, CallType
 
-    call = await db.get_call(eval_call_id)
+    resolved_id = await db.resolve_call_id(eval_call_id)
+    if not resolved_id:
+        print(f"Error: call '{eval_call_id}' not found.")
+        sys.exit(1)
+    call = await db.get_call(resolved_id)
     if not call:
         print(f"Error: call '{eval_call_id}' not found.")
         sys.exit(1)
@@ -254,6 +258,12 @@ async def cmd_ground(eval_call_id: str, db: DB) -> None:
 
     if question.project_id and question.project_id != db.project_id:
         db.project_id = question.project_id
+
+    await db.create_run(
+        name=f"grounding: {question.headline[:80]}",
+        question_id=call.scope_page_id,
+        config=get_settings().capture_config(),
+    )
 
     frontend = get_settings().frontend_url.rstrip("/")
     print(f"\nRunning grounding feedback for: {question.headline[:80]}")

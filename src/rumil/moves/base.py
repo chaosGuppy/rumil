@@ -169,12 +169,19 @@ class CreatePagePayload(BaseModel):
         "", description="Nature of uncertainty, e.g. empirical, conceptual, contested"
     )
     workspace: str = Field("research", description="research or prioritization")
+    supersedes: str | None = Field(
+        None,
+        description=(
+            "Page ID of an existing page this one replaces. The old page "
+            "is marked as superseded."
+        ),
+    )
 
     def page_extra_fields(self) -> dict[str, Any]:
         """Return type-specific metadata fields to store in page.extra.
 
         Subclasses override to opt in their own fields. Structural fields
-        like `links` or `old_page_id` should NOT be included here — only
+        like `links`, `supersedes`, etc. should NOT be included here — only
         metadata that should be persisted on the page itself.
         """
         return {}
@@ -289,6 +296,14 @@ async def create_page(
             page.id[:8],
             exc_info=True,
         )
+
+    if payload.supersedes:
+        old_id = await db.resolve_page_id(payload.supersedes)
+        if old_id:
+            await db.supersede_page(old_id, page.id)
+            log.info("Superseded %s -> %s", old_id[:8], page.id[:8])
+        else:
+            log.warning("Supersede target %s not found", payload.supersedes)
 
     message = (
         f"Created [{page.id[:8]}]: {payload.headline}"

@@ -55,7 +55,6 @@ PAGE_ID_FIELDS: dict[MoveType, list[str]] = {
     MoveType.LINK_CONSIDERATION: ["claim_id", "question_id"],
     MoveType.LINK_CHILD_QUESTION: ["child_id", "parent_id"],
     MoveType.LINK_RELATED: ["from_page_id", "to_page_id"],
-    MoveType.SUPERSEDE_PAGE: ["old_page_id"],
     MoveType.FLAG_FUNNINESS: ["page_id"],
     MoveType.REPORT_DUPLICATE: ["page_id_a", "page_id_b"],
 }
@@ -423,17 +422,40 @@ async def run_agent_loop(
     )
 
 
+ABSTRACT_INSTRUCTION = (
+    "Self-contained summary of ~200 words. Include: the core conclusion, "
+    "the main supporting reasoning or evidence, key counter-arguments and why "
+    "they were discounted, and the critical uncertainties or dependencies. "
+    "Preserve epistemic qualifications, confidence levels, and priority orderings. "
+    "Must make sense with zero prior context."
+)
+
+
 class PageSummaryItem(BaseModel):
     page_id: str = Field(description="Full or short ID of the page")
-    abstract: str = Field(
-        description=(
-            "Self-contained summary of ~200 words. Include: the core conclusion, "
-            "the main supporting reasoning or evidence, key counter-arguments and why "
-            "they were discounted, and the critical uncertainties or dependencies. "
-            "Preserve epistemic qualifications, confidence levels, and priority orderings. "
-            "Must make sense with zero prior context."
-        )
-    )
+    abstract: str = Field(description=ABSTRACT_INSTRUCTION)
+
+
+async def save_page_abstracts(
+    summaries: Sequence[PageSummaryItem],
+    db: DB,
+) -> None:
+    """Persist abstracts and re-embed pages. Shared by closing reviewers
+    and the grounding feedback pipeline."""
+    for s in summaries:
+        pid = await db.resolve_page_id(s.page_id)
+        if not pid:
+            continue
+        await db.update_page_abstract(pid, s.abstract)
+        if not s.abstract.strip():
+            continue
+        page = await db.get_page(pid)
+        if not page:
+            continue
+        try:
+            await embed_and_store_page(db, page, field_name="abstract")
+        except Exception:
+            log.warning("Failed to re-embed page %s", pid[:8], exc_info=True)
 
 
 class PageRating(BaseModel):
@@ -822,37 +844,13 @@ async def run_closing_review(
                         await db.save_page_rating(
                             pid, call.id, score, r.get("note", "")
                         )
-                for s in review.get("page_summaries", []):
-                    pid = await db.resolve_page_id(s.get("page_id", ""))
-                    if pid:
-                        await db.update_page_abstract(
-                            pid,
-                            s.get("abstract", ""),
-                        )
-                        abstract_text = s.get("abstract", "")
-                        if abstract_text.strip():
-                            page = await db.get_page(pid)
-                            if page:
-                                try:
-                                    await embed_and_store_page(
-                                        db,
-                                        page,
-                                        field_name="abstract",
-                                    )
-                                except Exception:
-                                    log.warning(
-                                        "Failed to re-embed page %s",
-                                        pid[:8],
-                                        exc_info=True,
-                                    )
-                                    trace = get_trace()
-                                    if trace:
-                                        await trace.record(
-                                            ErrorEvent(
-                                                message=f"Failed to re-embed page {pid[:8]}",
-                                                phase="closing_review",
-                                            )
-                                        )
+                raw_summaries = review.get("page_summaries", [])
+                items = [
+                    PageSummaryItem(**s)
+                    for s in raw_summaries
+                    if isinstance(s, dict) and s.get("page_id")
+                ]
+                await save_page_abstracts(items, db)
         else:
             log.warning("Closing review returned None for call=%s", call.id[:8])
         return review

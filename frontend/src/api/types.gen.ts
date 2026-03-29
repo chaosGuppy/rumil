@@ -280,7 +280,13 @@ export type CallTraceOut = {
         event: 'agent_started';
     } & AgentStartedEventOut) | ({
         event: 'evaluation_complete';
-    } & EvaluationCompleteEventOut)>;
+    } & EvaluationCompleteEventOut) | ({
+        event: 'tool_call';
+    } & ToolCallEventOut) | ({
+        event: 'grounding_tasks_generated';
+    } & GroundingTasksGeneratedEventOut) | ({
+        event: 'web_research_complete';
+    } & WebResearchCompleteEventOut)>;
     /**
      * Children
      */
@@ -298,7 +304,7 @@ export type CallTraceOut = {
 /**
  * CallType
  */
-export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_concepts' | 'assess_concept' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'web_research' | 'evaluate';
+export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_concepts' | 'assess_concept' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'web_research' | 'evaluate' | 'grounding_feedback';
 
 /**
  * CallTypeFruitScoreItem
@@ -508,6 +514,34 @@ export type ExplorePageEventOut = {
      * Response
      */
     response: string;
+};
+
+/**
+ * GroundingTasksGeneratedEventOut
+ */
+export type GroundingTasksGeneratedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'grounding_tasks_generated';
+    /**
+     * Task Count
+     */
+    task_count: number;
+    /**
+     * Tasks
+     */
+    tasks: Array<{
+        [key: string]: unknown;
+    }>;
 };
 
 /**
@@ -1175,6 +1209,38 @@ export type SubquestionScoreItem = {
 };
 
 /**
+ * ToolCallEventOut
+ */
+export type ToolCallEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'tool_call';
+    /**
+     * Tool Name
+     */
+    tool_name: string;
+    /**
+     * Tool Input
+     */
+    tool_input: {
+        [key: string]: unknown;
+    };
+    /**
+     * Response
+     */
+    response: string;
+};
+
+/**
  * ValidationError
  */
 export type ValidationError = {
@@ -1222,6 +1288,34 @@ export type WarningEventOut = {
      * Message
      */
     message: string;
+};
+
+/**
+ * WebResearchCompleteEventOut
+ */
+export type WebResearchCompleteEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'web_research_complete';
+    /**
+     * Task Count
+     */
+    task_count: number;
+    /**
+     * Findings
+     */
+    findings: Array<{
+        [key: string]: unknown;
+    }>;
 };
 
 /**
@@ -1726,7 +1820,13 @@ export type GetCallEventsApiCallsCallIdEventsGetResponses = {
         event: 'agent_started';
     } & AgentStartedEventOut) | ({
         event: 'evaluation_complete';
-    } & EvaluationCompleteEventOut)>;
+    } & EvaluationCompleteEventOut) | ({
+        event: 'tool_call';
+    } & ToolCallEventOut) | ({
+        event: 'grounding_tasks_generated';
+    } & GroundingTasksGeneratedEventOut) | ({
+        event: 'web_research_complete';
+    } & WebResearchCompleteEventOut)>;
 };
 
 export type GetCallEventsApiCallsCallIdEventsGetResponse = GetCallEventsApiCallsCallIdEventsGetResponses[keyof GetCallEventsApiCallsCallIdEventsGetResponses];

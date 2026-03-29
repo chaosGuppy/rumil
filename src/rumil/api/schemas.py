@@ -20,13 +20,16 @@ from rumil.tracing.trace_events import (
     ErrorEvent,
     EvaluationCompleteEvent,
     ExplorePageEvent,
+    GroundingTasksGeneratedEvent,
     LLMExchangeEvent,
     MovesExecutedEvent,
     ReviewCompleteEvent,
     ScoringCompletedEvent,
     SubagentCompletedEvent,
     SubagentStartedEvent,
+    ToolCallEvent,
     WarningEvent,
+    WebResearchCompleteEvent,
 )
 
 
@@ -109,6 +112,20 @@ class EvaluationCompleteEventOut(EvaluationCompleteEvent, _TraceEnvelopeMixin):
     pass
 
 
+class ToolCallEventOut(ToolCallEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class GroundingTasksGeneratedEventOut(
+    GroundingTasksGeneratedEvent, _TraceEnvelopeMixin
+):
+    pass
+
+
+class WebResearchCompleteEventOut(WebResearchCompleteEvent, _TraceEnvelopeMixin):
+    pass
+
+
 TraceEventOut = Annotated[
     ContextBuiltEventOut
     | MovesExecutedEventOut
@@ -123,7 +140,10 @@ TraceEventOut = Annotated[
     | SubagentStartedEventOut
     | SubagentCompletedEventOut
     | AgentStartedEventOut
-    | EvaluationCompleteEventOut,
+    | EvaluationCompleteEventOut
+    | ToolCallEventOut
+    | GroundingTasksGeneratedEventOut
+    | WebResearchCompleteEventOut,
     Field(discriminator="event"),
 ]
 

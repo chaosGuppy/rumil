@@ -469,6 +469,36 @@ class DB:
         log.debug("resolve_page_id: no match for %s", page_id[:8])
         return None
 
+    async def resolve_call_id(self, call_id: str) -> str | None:
+        """Resolve a call ID to a full UUID. Handles both full UUIDs and
+        8-char short IDs. Returns the full UUID if found, or None."""
+        if not call_id:
+            return None
+        rows = _rows(
+            await self._execute(
+                self.client.table("calls").select("id").eq("id", call_id)
+            )
+        )
+        if rows:
+            return rows[0]["id"]
+        if len(call_id) <= 8:
+            rows = _rows(
+                await self._execute(
+                    self.client.table("calls")
+                    .select("id")
+                    .like("id", f"{call_id}%")
+                )
+            )
+            if len(rows) == 1:
+                return rows[0]["id"]
+            if len(rows) > 1:
+                log.warning(
+                    "Ambiguous short ID '%s' matches %d calls",
+                    call_id,
+                    len(rows),
+                )
+        return None
+
     async def page_label(self, page_id: str) -> str:
         """Return a human-readable label like '"Summary text" [short_id]'."""
         page = await self.get_page(page_id)

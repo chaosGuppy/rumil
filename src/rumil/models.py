@@ -70,6 +70,7 @@ class CallType(str, Enum):
     SCOUT_DEEP_QUESTIONS = "scout_deep_questions"
     WEB_RESEARCH = "web_research"
     EVALUATE = "evaluate"
+    GROUNDING_FEEDBACK = "grounding_feedback"
 
 
 # The subset of CallTypes that prioritization can dispatch.
@@ -116,7 +117,6 @@ class MoveType(str, Enum):
     LINK_CONSIDERATION = "LINK_CONSIDERATION"
     LINK_CHILD_QUESTION = "LINK_CHILD_QUESTION"
     LINK_RELATED = "LINK_RELATED"
-    SUPERSEDE_PAGE = "SUPERSEDE_PAGE"
     FLAG_FUNNINESS = "FLAG_FUNNINESS"
     REPORT_DUPLICATE = "REPORT_DUPLICATE"
     LOAD_PAGE = "LOAD_PAGE"

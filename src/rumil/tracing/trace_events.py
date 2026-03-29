@@ -156,6 +156,25 @@ class EvaluationCompleteEvent(BaseModel):
     evaluation: str = ""
 
 
+class ToolCallEvent(BaseModel):
+    event: Literal["tool_call"] = "tool_call"
+    tool_name: str
+    tool_input: dict = {}
+    response: str = ""
+
+
+class GroundingTasksGeneratedEvent(BaseModel):
+    event: Literal["grounding_tasks_generated"] = "grounding_tasks_generated"
+    task_count: int = 0
+    tasks: list[dict] = []
+
+
+class WebResearchCompleteEvent(BaseModel):
+    event: Literal["web_research_complete"] = "web_research_complete"
+    task_count: int = 0
+    findings: list[dict] = []
+
+
 TraceEvent = Annotated[
     ContextBuiltEvent
     | MovesExecutedEvent
@@ -170,6 +189,9 @@ TraceEvent = Annotated[
     | SubagentStartedEvent
     | SubagentCompletedEvent
     | AgentStartedEvent
-    | EvaluationCompleteEvent,
+    | EvaluationCompleteEvent
+    | ToolCallEvent
+    | GroundingTasksGeneratedEvent
+    | WebResearchCompleteEvent,
     Field(discriminator="event"),
 ]

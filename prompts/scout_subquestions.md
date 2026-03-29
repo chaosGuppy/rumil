@@ -8,7 +8,7 @@ You are performing a **Scout Subquestions** call — an initial exploration of a
 
 1. **Subquestions (2–4).** Each should decompose the parent question into a piece that, if answered well, would substantially advance understanding of the whole. Avoid subquestions that merely restate the parent in different words, or that address marginal aspects. Think about what you would *most want to know* if you were trying to answer the parent question — those are your subquestions.
 
-2. **Initial considerations (1–3).** Claims that bear directly on the parent question. These may be tentative — the point is to plant stakes that later investigation can refine or refute. Where you have a provisional answer to one of the subquestions you are posing, state it as a claim with an appropriately low epistemic status.
+2. **Initial considerations (1–3).** Claims that bear directly on the parent question. These may be tentative — the point is to plant stakes that later investigation can refine or refute. Where you have a provisional answer to one of the subquestions you are posing, state it as a claim with appropriately low credence and robustness.
 
 ## How to Proceed
 
@@ -21,5 +21,5 @@ You are performing a **Scout Subquestions** call — an initial exploration of a
 
 - **Informative decomposition over exhaustive coverage.** Two subquestions that cut to the heart of the matter beat five that nibble at the edges.
 - **Subquestions should be substantially independent.** If answering one would largely answer another, merge them or drop the weaker one.
-- **Tentative claims are valuable.** A provisional answer with epistemic status 1–2 gives later calls something concrete to evaluate. Do not shy away from stating a view just because you are uncertain — flag the uncertainty in the epistemic status and type.
+- **Tentative claims are valuable.** A provisional answer with robustness 1–2 gives later calls something concrete to evaluate. Do not shy away from stating a view just because you are uncertain — flag the uncertainty in the credence and robustness scores.
 - **Do not duplicate** subquestions or considerations already present in the workspace.

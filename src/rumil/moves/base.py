@@ -164,9 +164,19 @@ class CreatePagePayload(BaseModel):
     content: str = Field(
         description="Full explanation with reasoning. Be specific and substantive."
     )
-    epistemic_status: float = Field(2.5, description="0-5 subjective confidence")
-    epistemic_type: str = Field(
-        "", description="Nature of uncertainty, e.g. empirical, conceptual, contested"
+    credence: int = Field(
+        5,
+        description=(
+            "1-9 credence scale. 1=virtually impossible, 5=genuinely uncertain, "
+            "9=completely uncontroversial. See preamble for full rubric."
+        ),
+    )
+    robustness: int = Field(
+        1,
+        description=(
+            "1-5 robustness scale. 1=wild guess, 3=considered view, "
+            "5=highly robust. See preamble for full rubric."
+        ),
     )
     workspace: str = Field("research", description="research or prioritization")
     supersedes: str | None = Field(
@@ -219,9 +229,10 @@ def write_page_file(page: Page) -> None:
         f"**Layer:** {page.layer.value}  ",
         f"**ID:** `{page.id}`  ",
         f"**Created:** {page.created_at.strftime('%Y-%m-%d %H:%M:%S')} UTC  ",
-        f"**Epistemic status:** {page.epistemic_status:.2f} — {page.epistemic_type}  ",
         f"**Provenance:** {page.provenance_call_type} call `{page.provenance_call_id[:8]}`  ",
     ]
+    if page.credence is not None:
+        lines.insert(-1, f"**Credence:** {page.credence}/9 | **Robustness:** {page.robustness}/5  ")
 
     if page.is_superseded:
         lines.append(f"**SUPERSEDED by:** `{page.superseded_by}`  ")
@@ -254,8 +265,8 @@ async def create_page(
         workspace=workspace,
         content=payload.content,
         headline=payload.headline,
-        epistemic_status=payload.epistemic_status,
-        epistemic_type=payload.epistemic_type,
+        credence=None if page_type == PageType.QUESTION else payload.credence,
+        robustness=None if page_type == PageType.QUESTION else payload.robustness,
         provenance_model="claude-opus-4-6",
         provenance_call_type=call.call_type.value,
         provenance_call_id=call.id,

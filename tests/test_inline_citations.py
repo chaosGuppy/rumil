@@ -267,8 +267,8 @@ async def test_assess_produces_inline_citations(tmp_db, question_page):
             workspace=Workspace.RESEARCH,
             content=content,
             headline=headline,
-            epistemic_status=3.5,
-            epistemic_type="empirical",
+            credence=6,
+            robustness=3,
         )
         await tmp_db.save_page(claim)
         await tmp_db.save_link(PageLink(

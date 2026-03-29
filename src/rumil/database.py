@@ -44,7 +44,7 @@ def _rows(response: Any) -> _Rows:
 
 _SLIM_PAGE_COLUMNS = (
     'id,page_type,layer,workspace,headline,abstract,'
-    'epistemic_status,epistemic_type,extra,is_superseded,'
+    'epistemic_status,epistemic_type,credence,robustness,extra,is_superseded,'
     'project_id,created_at,superseded_by,run_id'
 )
 
@@ -60,6 +60,8 @@ def _row_to_page(row: dict[str, Any]) -> Page:
         project_id=row.get("project_id") or "",
         epistemic_status=row.get("epistemic_status") or 0.0,
         epistemic_type=row.get("epistemic_type") or "",
+        credence=row.get("credence"),
+        robustness=row.get("robustness"),
         provenance_model=row.get("provenance_model") or "",
         provenance_call_type=row.get("provenance_call_type") or "",
         provenance_call_id=row.get("provenance_call_id") or "",
@@ -359,6 +361,8 @@ class DB:
                     "project_id": page.project_id,
                     "epistemic_status": page.epistemic_status,
                     "epistemic_type": page.epistemic_type,
+                    "credence": page.credence,
+                    "robustness": page.robustness,
                     "provenance_model": page.provenance_model,
                     "provenance_call_type": page.provenance_call_type,
                     "provenance_call_id": page.provenance_call_id,
@@ -405,7 +409,10 @@ class DB:
         if not rows:
             return None
         pages = await self._apply_page_events([_row_to_page(rows[0])])
-        return pages[0] if pages else None
+        if not pages:
+            return None
+        await self.apply_epistemic_overrides(pages)
+        return pages[0]
 
     async def get_pages_by_ids(self, page_ids: Sequence[str]) -> dict[str, Page]:
         """Bulk-fetch pages by ID. Returns {id: Page} for pages that exist."""
@@ -427,6 +434,7 @@ class DB:
                 page = _row_to_page(r)
                 result[page.id] = page
         pages = await self._apply_page_events(list(result.values()))
+        await self.apply_epistemic_overrides(pages)
         return {p.id: p for p in pages}
 
     async def resolve_page_id(self, page_id: str) -> str | None:
@@ -523,6 +531,7 @@ class DB:
             )
         ]
         pages = await self._apply_page_events(pages)
+        await self.apply_epistemic_overrides(pages)
         if active_only:
             pages = [p for p in pages if p.is_active()]
         return pages
@@ -552,6 +561,7 @@ class DB:
             )
         ]
         pages = await self._apply_page_events(pages)
+        await self.apply_epistemic_overrides(pages)
         if active_only:
             pages = [p for p in pages if p.is_active()]
         return pages
@@ -1188,6 +1198,54 @@ class DB:
             )
         )
 
+    async def save_epistemic_score(
+        self,
+        page_id: str,
+        call_id: str,
+        credence: int,
+        robustness: int,
+        reasoning: str = "",
+    ) -> None:
+        await self._execute(
+            self.client.table("epistemic_scores").insert(
+                {
+                    "id": str(uuid.uuid4()),
+                    "page_id": page_id,
+                    "call_id": call_id,
+                    "credence": credence,
+                    "robustness": robustness,
+                    "reasoning": reasoning,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "run_id": self.run_id,
+                }
+            )
+        )
+
+    async def apply_epistemic_overrides(self, pages: Sequence[Page]) -> None:
+        """Override credence/robustness on pages with latest epistemic_scores."""
+        if not pages:
+            return
+        page_ids = [p.id for p in pages]
+        rows = _rows(
+            await self._execute(
+                self.client.table("epistemic_scores")
+                .select("page_id,credence,robustness,created_at")
+                .in_("page_id", page_ids)
+                .eq("run_id", self.run_id)
+                .order("created_at", desc=True)
+            )
+        )
+        seen: set[str] = set()
+        overrides: dict[str, tuple[int, int]] = {}
+        for row in rows:
+            pid = row["page_id"]
+            if pid not in seen:
+                seen.add(pid)
+                overrides[pid] = (row["credence"], row["robustness"])
+        for page in pages:
+            if page.id in overrides:
+                page.credence, page.robustness = overrides[page.id]
+
     async def get_root_questions(
         self,
         workspace: Workspace = Workspace.RESEARCH,
@@ -1201,7 +1259,9 @@ class DB:
         rows = _rows(
             await self._execute(self.client.rpc("get_root_questions", params))
         )
-        return [_row_to_page(r) for r in rows]
+        pages = [_row_to_page(r) for r in rows]
+        await self.apply_epistemic_overrides(pages)
+        return pages
 
     async def count_pages_for_question(self, question_id: str) -> dict:
         """Count pages linked to or created in context of a question."""

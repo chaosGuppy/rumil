@@ -15,6 +15,7 @@ PRESETS: dict[str, MovePreset] = {
             MoveType.LINK_CONSIDERATION,
             MoveType.LINK_CHILD_QUESTION,
             MoveType.LOAD_PAGE,
+            MoveType.UPDATE_EPISTEMIC,
         ],
         CallType.ASSESS: [
             MoveType.CREATE_CLAIM,
@@ -23,6 +24,7 @@ PRESETS: dict[str, MovePreset] = {
             MoveType.LINK_CONSIDERATION,
             MoveType.LINK_CHILD_QUESTION,
             MoveType.LOAD_PAGE,
+            MoveType.UPDATE_EPISTEMIC,
         ],
         CallType.INGEST: [
             MoveType.CREATE_CLAIM,
@@ -102,6 +104,7 @@ PRESETS: dict[str, MovePreset] = {
             MoveType.LINK_CONSIDERATION,
             MoveType.LINK_CHILD_QUESTION,
             MoveType.LOAD_PAGE,
+            MoveType.UPDATE_EPISTEMIC,
         ],
         CallType.FIND_CONSIDERATIONS: [
             MoveType.CREATE_CLAIM,
@@ -109,6 +112,7 @@ PRESETS: dict[str, MovePreset] = {
             MoveType.LINK_CONSIDERATION,
             MoveType.LINK_CHILD_QUESTION,
             MoveType.LOAD_PAGE,
+            MoveType.UPDATE_EPISTEMIC,
         ],
         CallType.INGEST: [
             MoveType.CREATE_CLAIM,

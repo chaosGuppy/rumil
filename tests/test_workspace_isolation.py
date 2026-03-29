@@ -49,8 +49,8 @@ async def _make_claim(db: DB, text: str) -> Page:
         workspace=Workspace.RESEARCH,
         content=text,
         headline=text[:120],
-        epistemic_status=4.5,
-        epistemic_type="well-established",
+        credence=8,
+        robustness=4,
     )
     await db.save_page(page)
     return page

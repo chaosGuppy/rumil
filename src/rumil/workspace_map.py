@@ -57,7 +57,7 @@ async def _build_question_lines(
     for j in judgements:
         j_sid = _short_id(j.id)
         short_id_map[j_sid] = j.id
-        lines.append(f"{prefix}  [J {j.epistemic_status:.1f}] `{j_sid}` — {j.headline}")
+        lines.append(f"{prefix}  [J C{j.credence}/R{j.robustness}] `{j_sid}` — {j.headline}")
 
     for child in children:
         lines.extend(await _build_question_lines(
@@ -104,7 +104,7 @@ async def build_workspace_map(
             c_sid = _short_id(claim.id)
             short_id_map[c_sid] = claim.id
             parts.append(
-                f"[C {claim.epistemic_status:.1f}] `{c_sid}` — {claim.headline}"
+                f"[C C{claim.credence}/R{claim.robustness}] `{c_sid}` — {claim.headline}"
             )
         parts.append("")
 

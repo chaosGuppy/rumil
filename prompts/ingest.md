@@ -17,7 +17,7 @@ Before extracting, consider:
 - **Perspective and incentives:** Does the author or institution have a stake in the question? Does the framing suggest a particular agenda?
 - **Evidence quality:** Are claims supported by data, argument, or assertion? Primary evidence or secondary?
 
-Calibrate your `epistemic_status` and `epistemic_type` accordingly. A well-evidenced finding from a peer-reviewed paper might warrant 3.5–4.0. A claim from an industry-funded report should be lower, with an `epistemic_type` like `"industry-funded report, potential bias"`.
+Calibrate your `credence` and `robustness` accordingly. A well-evidenced finding from a peer-reviewed paper might warrant credence 7 and robustness 3–4. A claim from an industry-funded report should have lower robustness, reflecting the potential for bias.
 
 ## What to Produce
 

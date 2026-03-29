@@ -110,7 +110,7 @@ async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[Pa
             direction = f" [{link.direction.value}]" if link.direction else ""
             index_lines.append(f"- [consideration{direction}] {page.headline}")
         for j in judgements:
-            index_lines.append(f"- [judgement {j.epistemic_status:.1f}] {j.headline}")
+            index_lines.append(f"- [judgement C{j.credence}/R{j.robustness}] {j.headline}")
         for child in children:
             index_lines.append(f"- [child question] {child.headline}")
         parts.append(_section("Index", "\n".join(index_lines)))
@@ -119,8 +119,9 @@ async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[Pa
         cons_parts = []
         for page, link in considerations:
             direction = f" [{link.direction.value}]" if link.direction else ""
+            cr = f" C{page.credence}/R{page.robustness}" if page.credence is not None else ""
             cons_parts.append(
-                f"**Consideration{direction}** (strength {link.strength:.1f}): "
+                f"**Consideration{direction}**{cr}: "
                 f"{page.headline}\n\n{page.content}"
             )
         parts.append(
@@ -132,13 +133,13 @@ async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[Pa
         parts.append(
             _section(
                 "Most Recent Judgement (full)",
-                f"Epistemic status: {most_recent.epistemic_status:.1f} — {most_recent.epistemic_type}\n\n"
+                f"Credence: {most_recent.credence}/9 | Robustness: {most_recent.robustness}/5\n\n"
                 f"{most_recent.content}",
             )
         )
         older = [j for j in judgements if j.id != most_recent.id]
         if older:
-            older_lines = [f"- [{j.epistemic_status:.1f}] {j.headline}" for j in older]
+            older_lines = [f"- [C{j.credence}/R{j.robustness}] {j.headline}" for j in older]
             parts.append(
                 _section("Earlier Judgements (summaries)", "\n".join(older_lines))
             )
@@ -289,8 +290,8 @@ async def summarize_question(
             content=data.get("content", ""),
             headline=data.get("headline") or page_headline,
             abstract=data.get("abstract", ""),
-            epistemic_status=0.0,
-            epistemic_type="derived",
+            credence=5,
+            robustness=2,
             provenance_model="claude-sonnet-4-6",
             provenance_call_type=CallType.SUMMARIZE.value,
             provenance_call_id=call.id,

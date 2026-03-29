@@ -124,6 +124,7 @@ class MoveType(str, Enum):
     CHANGE_LINK_ROLE = "CHANGE_LINK_ROLE"
     PROPOSE_CONCEPT = "PROPOSE_CONCEPT"
     PROMOTE_CONCEPT = "PROMOTE_CONCEPT"
+    UPDATE_EPISTEMIC = "UPDATE_EPISTEMIC"
 
 
 class CallStage(str, Enum):
@@ -306,8 +307,10 @@ class Page(BaseModel):
     headline: str
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     project_id: str = ""
-    epistemic_status: float = 2.5  # 0-5 subjective confidence
-    epistemic_type: str = ""  # description of uncertainty type
+    epistemic_status: float = 2.5  # DEPRECATED — kept for backward compat
+    epistemic_type: str = ""  # DEPRECATED — kept for backward compat
+    credence: int | None = None  # 1-9 probability bucket (claims/judgements only)
+    robustness: int | None = None  # 1-5 resilience of view (claims/judgements only)
     provenance_model: str = ""
     provenance_call_type: str = ""
     provenance_call_id: str = ""

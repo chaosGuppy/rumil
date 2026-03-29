@@ -23,7 +23,7 @@ For each fact-check target (aim for 1-3):
    - Specific factual claims that could be wrong or outdated
    - Quantities that are estimated or assumed rather than sourced
    - Categories or phenomena where real examples would strengthen the analysis
-   - Claims with low epistemic status that could be resolved with evidence
+   - Claims with low credence or low robustness that could be resolved with evidence
 2. For each target, create a question using `create_question` that is specific enough for a web search to answer.
 3. Link each question as a child of the parent using `link_child_question`.
 

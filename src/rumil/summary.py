@@ -93,7 +93,7 @@ async def build_research_tree(
             jid = j.id[:8]
             if full_detail:
                 parts.append(
-                    f"{indent}**{label}** [id: {jid}] (confidence {j.epistemic_status:.2f} — {j.epistemic_type}):\n"
+                    f"{indent}**{label}** [id: {jid}] (C{j.credence}/R{j.robustness}):\n"
                 )
                 parts.append(j.content)
                 extra = j.extra or {}
@@ -103,8 +103,8 @@ async def build_research_tree(
                     parts.append(f"\n*Sensitivity: {extra['sensitivity_analysis']}*")
             else:
                 parts.append(
-                    f"{indent}**{label}** [id: {jid}] (confidence {j.epistemic_status:.2f} — "
-                    f"{j.epistemic_type}): {j.headline}"
+                    f"{indent}**{label}** [id: {jid}] (C{j.credence}/R{j.robustness}): "
+                    f"{j.headline}"
                 )
             parts.append("")
 

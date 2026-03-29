@@ -17,8 +17,8 @@ def _make_page(headline: str, content: str, page_type: PageType = PageType.CLAIM
         workspace=Workspace.RESEARCH,
         content=content,
         headline=headline,
-        epistemic_status=3.0,
-        epistemic_type='estimate',
+        credence=6,
+        robustness=2,
     )
 
 
@@ -111,16 +111,14 @@ async def test_section_headers_present(mock_embeddings, mock_db):
         full_page_char_budget=10_000,
     )
 
-    assert '## Relevant Pages (Full)' in result.context_text
-    if result.summary_page_ids:
-        assert '## Relevant Pages (Summaries)' in result.context_text
+    assert '## Credence' in result.context_text
 
 
 async def test_format_page_headline():
     """format_page with HEADLINE detail produces the expected compact line."""
     page = _make_page('Test summary', 'content')
     line = await format_page(page, PageDetail.HEADLINE)
-    assert '[CLAIM 3/5]' in line
+    assert '[CLAIM C6/R2]' in line
     assert page.id[:8] in line
     assert 'Test summary' in line
 

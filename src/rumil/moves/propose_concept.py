@@ -4,7 +4,12 @@ from pydantic import BaseModel, Field
 
 from rumil.database import DB
 from rumil.models import Call, MoveType, Page, PageLayer, PageType, Workspace
-from rumil.moves.base import MoveDef, MoveResult, extract_and_link_citations, write_page_file
+from rumil.moves.base import (
+    MoveDef,
+    MoveResult,
+    extract_and_link_citations,
+    write_page_file,
+)
 
 
 class ProposeConceptPayload(BaseModel):
@@ -21,8 +26,12 @@ class ProposeConceptPayload(BaseModel):
             "investigation it might clarify."
         )
     )
-    epistemic_status: float = Field(2.5, description="0-5 confidence that this concept is useful")
-    epistemic_type: str = Field("", description="Nature of uncertainty about this concept's value")
+    epistemic_status: float = Field(
+        2.5, description="0-5 confidence that this concept is useful"
+    )
+    epistemic_type: str = Field(
+        "", description="Nature of uncertainty about this concept's value"
+    )
 
 
 async def execute(payload: ProposeConceptPayload, call: Call, db: DB) -> MoveResult:
@@ -49,7 +58,9 @@ async def execute(payload: ProposeConceptPayload, call: Call, db: DB) -> MoveRes
     write_page_file(page)
     try:
         await extract_and_link_citations(
-            page.id, page.content, db, citing_page_type=PageType.CONCEPT,
+            page.id,
+            page.content,
+            db,
         )
     except Exception:
         pass

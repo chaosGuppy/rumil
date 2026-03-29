@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
-    from rumil.orchestrators.two_phase import TwoPhaseOrchestrator
+    from rumil.orchestrators.base import BaseOrchestrator
 
 from rumil.calls import run_prioritization
 from rumil.calls.assess_concept_types import (
@@ -208,7 +208,7 @@ def compute_dispatch_guidance(
 class PrioritizationResult:
     dispatch_sequences: Sequence[Sequence[Dispatch]]
     call_id: str | None = None
-    children: Sequence[tuple['TwoPhaseOrchestrator', str]] = ()
+    children: Sequence[tuple['BaseOrchestrator', str]] = ()
 
 
 async def create_root_question(

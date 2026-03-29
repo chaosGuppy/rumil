@@ -11,6 +11,11 @@ from anthropic.types import ServerToolUseBlock, TextBlock
 from claude_agent_sdk import AgentDefinition, tool
 from pydantic import BaseModel, Field
 
+from rumil.calls.common import (
+    ABSTRACT_INSTRUCTION,
+    PageSummaryItem,
+    save_page_abstracts,
+)
 from rumil.database import DB
 from rumil.evaluate.explore import explore_page_impl
 from rumil.llm import (
@@ -132,6 +137,10 @@ async def run_grounding_feedback(
             broadcaster=broadcaster,
         )
         log.info("Stage 3 complete")
+
+        log.info("Stage 4: generating abstracts and embeddings")
+        await _generate_abstracts(call, db)
+        log.info("Stage 4 complete")
 
         call.result_summary = (
             f"Grounding feedback complete: {len(tasks)} claims investigated, "
@@ -461,3 +470,59 @@ async def _run_workspace_update(
     except Exception:
         log.exception("Stage 3 workspace update agent failed")
         raise
+
+
+class _PageAbstractList(BaseModel):
+    summaries: list[PageSummaryItem]
+
+
+async def _generate_abstracts(call: Call, db: DB) -> None:
+    """Stage 4: generate abstracts and embeddings for pages created in this call."""
+    rows = (
+        await db._execute(
+            db.client.table("pages")
+            .select("id, headline, content")
+            .eq("provenance_call_id", call.id)
+        )
+    )
+    pages = [r for r in (rows.data or []) if r.get("id")]
+    if not pages:
+        log.info("Stage 4: no pages to abstract")
+        return
+
+    page_lines = "\n".join(
+        f'- `{p["id"][:8]}`: "{p["headline"][:120]}"'
+        for p in pages
+    )
+    user_message = (
+        "Generate an abstract for each of the following pages.\n\n"
+        f"{page_lines}\n\n"
+        f"Abstract requirements: {ABSTRACT_INSTRUCTION}\n\n"
+        "For each page, return its page_id and abstract."
+    )
+
+    page_contents = "\n\n---\n\n".join(
+        f'Page `{p["id"][:8]}` — {p["headline"]}\n\n{p["content"]}'
+        for p in pages
+    )
+    system_prompt = (
+        "You are generating abstracts for workspace pages. "
+        "You will be given page contents and must produce a self-contained "
+        "abstract for each.\n\n"
+        f"Page contents:\n\n{page_contents}"
+    )
+
+    meta = LLMExchangeMetadata(
+        call_id=call.id,
+        phase="abstract_generation",
+    )
+    result = await structured_call(
+        system_prompt,
+        user_message=user_message,
+        response_model=_PageAbstractList,
+        metadata=meta,
+        db=db,
+    )
+    if result.data:
+        parsed = _PageAbstractList(**result.data)
+        await save_page_abstracts(parsed.summaries, db)

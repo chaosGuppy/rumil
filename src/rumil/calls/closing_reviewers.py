@@ -11,6 +11,7 @@ from rumil.calls.assess_concept_types import (
     VALIDATION_PHASE,
 )
 from rumil.calls.common import (
+    PageSummaryItem,
     ReviewResponse,
     format_moves_for_review,
     log_page_ratings,
@@ -18,9 +19,9 @@ from rumil.calls.common import (
     prepare_tools,
     run_closing_review,
     run_single_call,
+    save_page_abstracts,
 )
 from rumil.calls.stages import CallInfra, ClosingReviewer, ContextResult, CreationResult
-from rumil.embeddings import embed_and_store_page
 from rumil.llm import (
     LLMExchangeMetadata,
     build_system_prompt,
@@ -244,29 +245,13 @@ async def _self_assessment(
                     score,
                     r.get("note", ""),
                 )
-        for s in review_data.get("page_summaries", []):
-            pid = await infra.db.resolve_page_id(s.get("page_id", ""))
-            if pid:
-                await infra.db.update_page_abstract(
-                    pid,
-                    s.get("abstract", ""),
-                )
-                abstract_text = s.get("abstract", "")
-                if abstract_text.strip():
-                    page = await infra.db.get_page(pid)
-                    if page:
-                        try:
-                            await embed_and_store_page(
-                                infra.db,
-                                page,
-                                field_name="abstract",
-                            )
-                        except Exception:
-                            log.warning(
-                                "Failed to re-embed page %s",
-                                pid[:8],
-                                exc_info=True,
-                            )
+        raw_summaries = review_data.get("page_summaries", [])
+        items = [
+            PageSummaryItem(**s)
+            for s in raw_summaries
+            if isinstance(s, dict) and s.get("page_id")
+        ]
+        await save_page_abstracts(items, infra.db)
 
     return review_data
 

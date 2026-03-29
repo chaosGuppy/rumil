@@ -12,7 +12,7 @@ from pathlib import Path
 from rumil.database import DB
 from rumil.llm import text_call
 from rumil.models import Page, PageLayer, PageLink, PageType, LinkType, Workspace
-from rumil.orchestrator import Orchestrator
+from rumil.orchestrators import Orchestrator
 from rumil.summary import build_research_tree
 
 log = logging.getLogger(__name__)

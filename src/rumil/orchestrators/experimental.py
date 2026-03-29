@@ -209,6 +209,21 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         links = await self.db.get_links_to(question_id)
         return all(l.link_type == LinkType.CHILD_QUESTION for l in links)
 
+    async def _cancel_initial_call(self) -> None:
+        """Mark the eagerly-created phase-1 call as complete when phase 1 is skipped."""
+        if self._initial_call is None:
+            return
+        call = self._initial_call
+        self._initial_call = None
+        if self._sequence_id is not None:
+            call.sequence_id = self._sequence_id
+            call.sequence_position = self._seq_position
+            await self.db.save_call(call)
+            self._seq_position += 1
+        await mark_call_completed(
+            call, self.db, 'Phase 1 skipped — question already has research.',
+        )
+
     async def _get_next_batch(
         self,
         question_id: str,
@@ -219,6 +234,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             self._invocation += 1
             if await self._is_new_question(question_id):
                 return await self._phase1(question_id, budget, parent_call_id)
+            await self._cancel_initial_call()
             self._executed_since_last_plan = True
 
         if not self._executed_since_last_plan:

@@ -62,6 +62,21 @@ async def _get_db(project_id: str = "") -> DB:
     )
 
 
+async def _get_db_maybe_staged(
+    staged_run_id: str | None = None,
+    project_id: str = "",
+) -> DB:
+    if staged_run_id:
+        prod = get_settings().is_prod_db
+        return await DB.create(
+            run_id=staged_run_id,
+            prod=prod,
+            project_id=project_id,
+            staged=True,
+        )
+    return await _get_db(project_id)
+
+
 # --- Projects ---
 
 
@@ -88,16 +103,7 @@ async def list_pages(
     active_only: bool = True,
     staged_run_id: str | None = None,
 ):
-    if staged_run_id:
-        prod = get_settings().is_prod_db
-        db = await DB.create(
-            run_id=staged_run_id,
-            prod=prod,
-            project_id=project_id,
-            staged=True,
-        )
-    else:
-        db = await _get_db(project_id)
+    db = await _get_db_maybe_staged(staged_run_id, project_id)
     return await db.get_pages(
         workspace=workspace,
         page_type=page_type,
@@ -106,8 +112,8 @@ async def list_pages(
 
 
 @app.get("/api/pages/short/{short_id}", response_model=Page)
-async def get_page_by_short_id(short_id: str):
-    db = await _get_db()
+async def get_page_by_short_id(short_id: str, staged_run_id: str | None = None):
+    db = await _get_db_maybe_staged(staged_run_id)
     full_id = await db.resolve_page_id(short_id)
     if not full_id:
         raise HTTPException(status_code=404, detail="Page not found")
@@ -118,8 +124,8 @@ async def get_page_by_short_id(short_id: str):
 
 
 @app.get("/api/pages/{page_id}", response_model=Page)
-async def get_page(page_id: str):
-    db = await _get_db()
+async def get_page(page_id: str, staged_run_id: str | None = None):
+    db = await _get_db_maybe_staged(staged_run_id)
     page = await db.get_page(page_id)
     if not page:
         raise HTTPException(status_code=404, detail="Page not found")
@@ -139,8 +145,8 @@ async def get_links_to(page_id: str):
 
 
 @app.get("/api/pages/{page_id}/detail", response_model=PageDetailOut)
-async def get_page_detail(page_id: str):
-    db = await _get_db()
+async def get_page_detail(page_id: str, staged_run_id: str | None = None):
+    db = await _get_db_maybe_staged(staged_run_id)
     page = await db.get_page(page_id)
     if not page:
         raise HTTPException(status_code=404, detail="Page not found")

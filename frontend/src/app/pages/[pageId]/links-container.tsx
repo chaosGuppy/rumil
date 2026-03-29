@@ -65,12 +65,15 @@ function LinkMeta({ link }: { link: PageLink }) {
   );
 }
 
-function LinkedCard({ lp }: { lp: LinkedPageOut }) {
+function LinkedCard({ lp, stagedRunId }: { lp: LinkedPageOut; stagedRunId?: string }) {
   const cfg = TYPE_CONFIG[lp.page.page_type] || TYPE_CONFIG.source;
   const isSuperseded = lp.page.is_superseded;
+  const href = stagedRunId
+    ? `/pages/${lp.page.id}?staged_run_id=${stagedRunId}`
+    : `/pages/${lp.page.id}`;
   return (
     <Link
-      href={`/pages/${lp.page.id}`}
+      href={href}
       className={`linked-card${isSuperseded ? " linked-card-superseded" : ""}`}
     >
       <div className="linked-card-accent" style={{ background: cfg.accent }} />
@@ -101,10 +104,12 @@ function LinkSection({
   title,
   links,
   showSuperseded,
+  stagedRunId,
 }: {
   title: string;
   links: LinkedPageOut[];
   showSuperseded: boolean;
+  stagedRunId?: string;
 }) {
   const visible = (
     showSuperseded ? links : links.filter((lp) => !lp.page.is_superseded)
@@ -120,7 +125,7 @@ function LinkSection({
       </div>
       <div className="link-grid">
         {visible.map((lp) => (
-          <LinkedCard key={lp.link.id} lp={lp} />
+          <LinkedCard key={lp.link.id} lp={lp} stagedRunId={stagedRunId} />
         ))}
       </div>
     </div>
@@ -130,9 +135,11 @@ function LinkSection({
 export default function LinksContainer({
   links_from,
   links_to,
+  stagedRunId,
 }: {
   links_from: LinkedPageOut[];
   links_to: LinkedPageOut[];
+  stagedRunId?: string;
 }) {
   const [showSuperseded, setShowSuperseded] = useState(false);
 
@@ -160,8 +167,8 @@ export default function LinksContainer({
           </button>
         </div>
       )}
-      <LinkSection title="Outgoing" links={links_from} showSuperseded={showSuperseded} />
-      <LinkSection title="Incoming" links={links_to} showSuperseded={showSuperseded} />
+      <LinkSection title="Outgoing" links={links_from} showSuperseded={showSuperseded} stagedRunId={stagedRunId} />
+      <LinkSection title="Incoming" links={links_to} showSuperseded={showSuperseded} stagedRunId={stagedRunId} />
     </div>
   );
 }

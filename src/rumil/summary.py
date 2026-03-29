@@ -49,29 +49,31 @@ async def build_research_tree(
     parts = []
 
     # Question heading
+    short_id = question.id[:8]
     if depth == 0:
-        parts.append(f"# Research Question\n\n{question.content}\n")
+        parts.append(f"# Research Question [id: {short_id}]\n\n{question.content}\n")
     elif full_detail:
         parts.append(
-            f"{'#' * (depth + 2)} Sub-question: {question.headline}\n\n{question.content}\n"
+            f"{'#' * (depth + 2)} Sub-question [id: {short_id}]: {question.headline}\n\n{question.content}\n"
         )
     else:
         parts.append(
-            f"{'#' * (depth + 2)} Sub-question: {question.headline}\n"
+            f"{'#' * (depth + 2)} Sub-question [id: {short_id}]: {question.headline}\n"
         )
 
     # Considerations
     considerations = await db.get_considerations_for_question(question_id)
     if considerations:
         def format_consideration(claim, link) -> str:
+            cid = claim.id[:8]
             strength_note = f" (strength {link.strength:.1f})" if link.strength else ""
             if full_detail:
-                lines = [f"- **{claim.headline}**{strength_note}"]
+                lines = [f"- **{claim.headline}** [id: {cid}]{strength_note}"]
                 lines.append(f"  {claim.content}")
                 if link.reasoning:
                     lines.append(f"  *Bearing on question: {link.reasoning}*")
                 return '\n'.join(lines)
-            return f"- {claim.headline}{strength_note}"
+            return f"- {claim.headline} [id: {cid}]{strength_note}"
 
         parts.append(f"{indent}**Considerations:**\n")
         for p, l in sorted(considerations, key=lambda x: x[1].strength, reverse=True):
@@ -88,9 +90,10 @@ async def build_research_tree(
                 if len(ordered) > 1
                 else "Judgement"
             )
+            jid = j.id[:8]
             if full_detail:
                 parts.append(
-                    f"{indent}**{label}** (confidence {j.epistemic_status:.2f} — {j.epistemic_type}):\n"
+                    f"{indent}**{label}** [id: {jid}] (confidence {j.epistemic_status:.2f} — {j.epistemic_type}):\n"
                 )
                 parts.append(j.content)
                 extra = j.extra or {}
@@ -100,7 +103,7 @@ async def build_research_tree(
                     parts.append(f"\n*Sensitivity: {extra['sensitivity_analysis']}*")
             else:
                 parts.append(
-                    f"{indent}**{label}** (confidence {j.epistemic_status:.2f} — "
+                    f"{indent}**{label}** [id: {jid}] (confidence {j.epistemic_status:.2f} — "
                     f"{j.epistemic_type}): {j.headline}"
                 )
             parts.append("")

@@ -186,6 +186,38 @@ async def test_question_citing_claim_creates_consideration_link(
     assert cons[0].to_page_id == question.id
 
 
+async def test_citing_question_creates_related_link_cited_to_citing(tmp_db):
+    """Citing a QUESTION should produce a RELATED link from the cited question to the citing page."""
+    question = Page(
+        page_type=PageType.QUESTION,
+        layer=PageLayer.SQUIDGY,
+        workspace=Workspace.RESEARCH,
+        content="Why is the sky blue?",
+        headline="Why is the sky blue?",
+    )
+    await tmp_db.save_page(question)
+
+    judgement = Page(
+        page_type=PageType.JUDGEMENT,
+        layer=PageLayer.SQUIDGY,
+        workspace=Workspace.RESEARCH,
+        content=f"This relates to [{question.id[:8]}] but approaches it differently.",
+        headline="Alternative approach to sky color",
+    )
+    await tmp_db.save_page(judgement)
+
+    linked = await extract_and_link_citations(
+        judgement.id, judgement.content, tmp_db,
+    )
+
+    assert linked == {question.id}
+    links_to_judgement = await tmp_db.get_links_to(judgement.id)
+    related = [l for l in links_to_judgement if l.link_type == LinkType.RELATED]
+    assert len(related) == 1
+    assert related[0].from_page_id == question.id
+    assert related[0].to_page_id == judgement.id
+
+
 async def test_unresolvable_short_ids_skipped(tmp_db):
     """Citations referencing nonexistent pages are silently skipped."""
     page = Page(

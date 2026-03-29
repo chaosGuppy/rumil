@@ -63,7 +63,7 @@ class SdkAgentConfig:
     system_prompt: str
     user_prompt: str
     server_name: str
-    mcp_tools: list
+    mcp_tools: Sequence
     call: Call
     call_type: CallType
     scope_page_id: str
@@ -80,7 +80,7 @@ class SdkAgentConfig:
 class SdkAgentResult:
     """Result from running a Claude Agent SDK agent."""
 
-    last_assistant_text: list[str]
+    last_assistant_text: Sequence[str]
 
 
 def _read_subagent_summary(transcript_path: str, max_len: int = 500) -> str:
@@ -126,7 +126,7 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
     tool call tracing for all tools, and the client response loop.
     """
     settings = get_settings()
-    server = create_sdk_mcp_server(config.server_name, tools=config.mcp_tools)
+    server = create_sdk_mcp_server(config.server_name, tools=list(config.mcp_tools))
     tool_fqnames = [f"mcp__{config.server_name}__{t.name}" for t in config.mcp_tools]
 
     subagent_calls: dict[str, str] = {}

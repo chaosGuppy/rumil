@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from collections.abc import Sequence
 from pathlib import Path
 
 import anthropic
@@ -151,7 +152,7 @@ async def _generate_tasks(
     question_headline: str,
     call: Call,
     db: DB,
-) -> list[GroundingTask]:
+) -> Sequence[GroundingTask]:
     """Stage 1: parse evaluation output and produce web research tasks."""
     system_prompt = (_PROMPTS_DIR / "grounding-task-generation.md").read_text()
     user_message = (
@@ -239,10 +240,10 @@ async def _run_web_search_task(
 
 
 async def _run_web_research(
-    tasks: list[GroundingTask],
+    tasks: Sequence[GroundingTask],
     call: Call,
     db: DB,
-) -> list[tuple[GroundingTask, str]]:
+) -> Sequence[tuple[GroundingTask, str]]:
     """Stage 2: run web research for all tasks concurrently."""
 
     async def _run_one(task: GroundingTask, index: int) -> tuple[GroundingTask, str]:
@@ -256,8 +257,8 @@ async def _run_web_research(
 async def _build_update_user_message(
     question: Page,
     evaluation_text: str,
-    tasks: list[GroundingTask],
-    findings: list[tuple[GroundingTask, str]],
+    tasks: Sequence[GroundingTask],
+    findings: Sequence[tuple[GroundingTask, str]],
     call: Call,
     db: DB,
 ) -> str:
@@ -331,7 +332,7 @@ async def _build_update_user_message(
     )
 
 
-def _make_grounding_tools(db: DB, call: Call) -> list:
+def _make_grounding_tools(db: DB, call: Call) -> Sequence:
     """Create MCP tool definitions for the grounding feedback agent."""
     source_page_cache: dict[str, str] = {}
 
@@ -397,8 +398,8 @@ def _make_grounding_tools(db: DB, call: Call) -> list:
 async def _run_workspace_update(
     question: Page,
     evaluation_text: str,
-    tasks: list[GroundingTask],
-    findings: list[tuple[GroundingTask, str]],
+    tasks: Sequence[GroundingTask],
+    findings: Sequence[tuple[GroundingTask, str]],
     call: Call,
     db: DB,
     trace: CallTrace,

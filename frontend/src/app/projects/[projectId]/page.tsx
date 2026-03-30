@@ -64,12 +64,10 @@ function pageHref(page: Page, stagedRunId?: string | null): string {
   return `/pages/${page.id}`;
 }
 
-function epistemicBar(value: number) {
-  const pct = (value / 5) * 100;
+function epistemicLabel(page: Page) {
+  if (page.credence == null) return null;
   return (
-    <div className="ep-bar">
-      <div className="ep-bar-fill" style={{ width: `${pct}%` }} />
-    </div>
+    <span className="ep-label">C{page.credence}/R{page.robustness}</span>
   );
 }
 
@@ -377,18 +375,10 @@ export default function PagesIndexPage() {
           opacity: 0.7;
         }
 
-        .ep-bar {
-          width: 2.5rem;
-          height: 2px;
-          background: var(--color-border);
-          border-radius: 0;
-          overflow: hidden;
-        }
-        .ep-bar-fill {
-          height: 100%;
-          background: var(--color-muted);
-          border-radius: 0;
-          transition: width 0.2s ease;
+        .ep-label {
+          font-size: 0.7rem;
+          font-family: var(--font-geist-mono), monospace;
+          color: var(--color-muted);
         }
 
         .superseded-badge {
@@ -934,7 +924,7 @@ export default function PagesIndexPage() {
                       )}
                       {p.id.slice(0, 8)}
                     </span>
-                    {epistemicBar(p.epistemic_status)}
+                    {epistemicLabel(p)}
                     {p.is_superseded && (
                       <span className="superseded-badge">superseded</span>
                     )}

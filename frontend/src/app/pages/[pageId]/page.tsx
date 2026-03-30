@@ -161,21 +161,13 @@ async function getPageRun(pageId: string): Promise<RunSummaryOut | null> {
   return res.json();
 }
 
-function EpistemicGauge({ value }: { value: number }) {
-  const segments = 5;
+function SegmentGauge({ value, max, label }: { value: number; max: number; label: string }) {
   return (
     <div className="ep-gauge">
-      {Array.from({ length: segments }, (_, i) => {
-        const filled = value >= i + 1;
-        const partial = !filled && value > i;
-        const pct = partial ? (value - i) * 100 : filled ? 100 : 0;
-        return (
-          <div key={i} className="ep-segment">
-            <div className="ep-segment-fill" style={{ width: `${pct}%` }} />
-          </div>
-        );
-      })}
-      <span className="ep-value">{value.toFixed(1)}</span>
+      {Array.from({ length: max }, (_, i) => (
+        <div key={i} className={`ep-segment ${i < value ? "ep-segment-active" : ""}`} />
+      ))}
+      <span className="ep-value">{label}{value}/{max}</span>
     </div>
   );
 }
@@ -313,18 +305,18 @@ export default async function PageDetailPage({
           </Markdown>
         </div>
 
-        <div className="page-meta-row">
-          <div className="meta-block">
-            <span className="meta-label">epistemic status</span>
-            <EpistemicGauge value={page.epistemic_status} />
-          </div>
-          {page.epistemic_type && (
+        {page.credence != null && (
+          <div className="page-meta-row">
             <div className="meta-block">
-              <span className="meta-label">uncertainty</span>
-              <span className="meta-value">{page.epistemic_type}</span>
+              <span className="meta-label">credence</span>
+              <SegmentGauge value={page.credence} max={9} label="C" />
             </div>
-          )}
-        </div>
+            <div className="meta-block">
+              <span className="meta-label">robustness</span>
+              <SegmentGauge value={page.robustness ?? 0} max={5} label="R" />
+            </div>
+          </div>
+        )}
       </article>
 
       <LinksContainer links_from={links_from} links_to={links_to} stagedRunId={stagedRunId} />
@@ -658,16 +650,13 @@ const styles = `
     gap: 2px;
   }
   .ep-segment {
-    width: 1rem;
+    width: 0.75rem;
     height: 4px;
     background: var(--color-border);
-    overflow: hidden;
   }
-  .ep-segment-fill {
-    height: 100%;
+  .ep-segment-active {
     background: var(--color-foreground);
     opacity: 0.5;
-    transition: width 0.3s ease;
   }
   .ep-value {
     font-size: 0.75rem;

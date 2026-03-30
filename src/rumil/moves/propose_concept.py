@@ -26,12 +26,8 @@ class ProposeConceptPayload(BaseModel):
             "investigation it might clarify."
         )
     )
-    epistemic_status: float = Field(
-        2.5, description="0-5 confidence that this concept is useful"
-    )
-    epistemic_type: str = Field(
-        "", description="Nature of uncertainty about this concept's value"
-    )
+    credence: int = Field(5, description="1-9 credence that this concept is useful")
+    robustness: int = Field(1, description="1-5 robustness of the concept's value assessment")
 
 
 async def execute(payload: ProposeConceptPayload, call: Call, db: DB) -> MoveResult:
@@ -41,8 +37,8 @@ async def execute(payload: ProposeConceptPayload, call: Call, db: DB) -> MoveRes
         workspace=Workspace.CONCEPT_STAGING,
         content=payload.content,
         headline=payload.headline,
-        epistemic_status=payload.epistemic_status,
-        epistemic_type=payload.epistemic_type,
+        credence=payload.credence,
+        robustness=payload.robustness,
         provenance_model="claude-opus-4-6",
         provenance_call_type=call.call_type.value,
         provenance_call_id=call.id,

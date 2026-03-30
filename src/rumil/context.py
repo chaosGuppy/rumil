@@ -17,6 +17,47 @@ from rumil.settings import get_settings
 
 log = logging.getLogger(__name__)
 
+CREDENCE_LABELS: dict[int, str] = {
+    9: "Completely uncontroversial (>99.99%)",
+    8: "Almost certain (99–99.99%)",
+    7: "Very likely (90–99%)",
+    6: "Likely (70–90%)",
+    5: "Genuinely uncertain (30–70%)",
+    4: "Plausible but doubtful (10–30%)",
+    3: "Unlikely (1–10%)",
+    2: "Extremely unlikely (0.01–1%)",
+    1: "Virtually impossible (<0.01%)",
+}
+
+
+def group_by_credence(
+    items: Sequence[tuple[str, Page]],
+    heading_level: str = "###",
+    separator: str = "\n\n",
+) -> str:
+    """Group pre-formatted page strings by descending credence.
+
+    Items with credence=None (questions) go in a "Questions" group first.
+    Empty groups are skipped.
+    """
+    questions: list[str] = []
+    by_credence: dict[int, list[str]] = {}
+    for text, page in items:
+        if page.credence is None:
+            questions.append(text)
+        else:
+            by_credence.setdefault(page.credence, []).append(text)
+
+    parts: list[str] = []
+    if questions:
+        parts.append(f"{heading_level} Questions")
+        parts.append(separator.join(questions))
+    for c in range(9, 0, -1):
+        if c in by_credence:
+            parts.append(f"{heading_level} Credence {c} — {CREDENCE_LABELS[c]}")
+            parts.append(separator.join(by_credence[c]))
+    return "\n\n".join(parts)
+
 
 @dataclass
 class EmbeddingBasedContextResult:
@@ -197,42 +238,30 @@ async def build_scout_context(
             child_judgements.append((child, j))
 
     if considerations or children or child_judgements:
+        direct_items: list[tuple[str, Page]] = []
+        for claim, link in considerations:
+            direction = f' **({link.direction.value})**\n' if link.direction else ''
+            formatted = direction + await format_page(claim, PageDetail.ABSTRACT, db=db, linked_detail=None)
+            direct_items.append((formatted, claim))
+            all_page_ids.append(claim.id)
+            structural_ids.add(claim.id)
+        for child in children:
+            formatted = await format_page(child, PageDetail.ABSTRACT, db=db, linked_detail=None)
+            direct_items.append((formatted, child))
+            all_page_ids.append(child.id)
+            structural_ids.add(child.id)
+        for child, j in child_judgements:
+            formatted = (
+                f'*On: {child.headline} (`{child.id[:8]}`)*\n'
+                + await format_page(j, PageDetail.ABSTRACT, db=db, linked_detail=None)
+            )
+            direct_items.append((formatted, j))
+            all_page_ids.append(j.id)
+            structural_ids.add(j.id)
+
         parts.append('# Direct Context')
         parts.append('')
-
-        if considerations:
-            parts.append('## Considerations on Scope Question')
-            parts.append('')
-            for claim, link in considerations:
-                direction = f' ({link.direction.value})' if link.direction else ''
-                parts.append(
-                    f'**[strength {link.strength:.1f}/5{direction}]**'
-                )
-                parts.append(await format_page(claim, PageDetail.ABSTRACT, db=db, linked_detail=None))
-                parts.append('')
-                all_page_ids.append(claim.id)
-                structural_ids.add(claim.id)
-
-        if children:
-            parts.append('## Direct Child Questions')
-            parts.append('')
-            for child in children:
-                parts.append(await format_page(child, PageDetail.ABSTRACT, db=db, linked_detail=None))
-                parts.append('')
-                all_page_ids.append(child.id)
-                structural_ids.add(child.id)
-
-        if child_judgements:
-            parts.append('## Judgements on Child Questions')
-            parts.append('')
-            for child, j in child_judgements:
-                parts.append(
-                    f'*On: {child.headline} (`{child.id[:8]}`)*'
-                )
-                parts.append(await format_page(j, PageDetail.ABSTRACT, db=db, linked_detail=None))
-                parts.append('')
-                all_page_ids.append(j.id)
-                structural_ids.add(j.id)
+        parts.append(group_by_credence(direct_items, heading_level='##'))
 
     headline_lines: list[str] = []
     headline_ids: list[str] = []
@@ -353,17 +382,21 @@ async def render_subtree(
 
         considerations = await graph.get_considerations_for_question(question.id)
         if considerations:
-            parts.append('')
-            parts.append(f'{indent}**Considerations:**')
+            con_items: list[tuple[str, Page]] = []
             for claim, link in considerations:
                 visited.add(claim.id)
-                direction = f' ({link.direction.value})' if link.direction else ''
-                parts.append(
-                    f'{indent}- [strength {link.strength:.1f}/5{direction}] '
+                direction = f'({link.direction.value}) ' if link.direction else ''
+                line = (
+                    f'{indent}- {direction}'
                     + await format_page(claim, linked_detail or PageDetail.HEADLINE, linked_detail=None, graph=graph)
                 )
                 if link.reasoning:
-                    parts.append(f'{indent}  Reasoning: {link.reasoning}')
+                    line += f'\n{indent}  Reasoning: {link.reasoning}'
+                con_items.append((line, claim))
+            parts.append('')
+            hn = min(depth + 3, 6)
+            grouped = group_by_credence(con_items, heading_level='#' * hn, separator='\n')
+            parts.append(grouped)
 
         all_judgements = await graph.get_judgements_for_question(question.id)
         judgements = (
@@ -420,21 +453,18 @@ async def format_page(
             page = full
 
     if detail == PageDetail.HEADLINE:
-        e = (
-            f'{page.epistemic_status:.0f}'
-            if page.epistemic_status is not None else '?'
-        )
-        return (
-            f'[{page.page_type.value.upper()} {e}/5] '
-            f'`{page.id[:8]}` -- {page.headline}'
-        )
+        tag = f'{page.page_type.value.upper()}'
+        if page.credence is not None:
+            tag += f' C{page.credence}/R{page.robustness}'
+        return f'[{tag}] `{page.id[:8]}` -- {page.headline}'
 
     extra = page.extra or {}
     lines = [
         f"### [{page.page_type.value.upper()}] {page.headline}",
         f"ID: {page.id}",
-        f"Epistemic status: {page.epistemic_status:.1f}/5 ({page.epistemic_type})",
     ]
+    if page.credence is not None:
+        lines.append(f"Credence: {page.credence}/9 | Robustness: {page.robustness}/5")
     for k, v in extra.items():
         lines.append(f"{k}: {v}")
 
@@ -444,40 +474,32 @@ async def format_page(
 
     source: DB | PageGraph | None = graph if graph is not None else db
     if linked_detail is not None and source and page.page_type == PageType.QUESTION:
+        linked_items: list[tuple[str, Page]] = []
+
         considerations = await source.get_considerations_for_question(page.id)
-        if considerations:
-            lines.append("")
-            lines.append("**Considerations:**")
-            for claim, link in considerations:
-                lines.append(
-                    f"- [strength {link.strength:.1f}/5] "
-                    + await format_page(claim, linked_detail, db=db, graph=graph, linked_detail=None)
-                )
-                if link.reasoning:
-                    lines.append(f"  Reasoning: {link.reasoning}")
+        for claim, link in considerations:
+            line = "- " + await format_page(claim, linked_detail, db=db, graph=graph, linked_detail=None)
+            if link.reasoning:
+                line += f"\n  Reasoning: {link.reasoning}"
+            linked_items.append((line, claim))
 
         judgements = await source.get_judgements_for_question(page.id)
-        if judgements:
-            lines.append("")
-            lines.append("**Existing judgements:**")
-            for j in judgements:
-                lines.append(
-                    '- ' + await format_page(j, linked_detail, db=db, graph=graph, linked_detail=None)
-                )
+        for j in judgements:
+            line = '- ' + await format_page(j, linked_detail, db=db, graph=graph, linked_detail=None)
+            linked_items.append((line, j))
 
         children = await source.get_child_questions(page.id)
-        child_judgements: list[tuple[Page, Page]] = []
         for child in children:
             for j in await source.get_judgements_for_question(child.id):
-                child_judgements.append((child, j))
-        if child_judgements:
-            lines.append("")
-            lines.append("**Sub-question judgements:**")
-            for child, j in child_judgements:
-                lines.append(
+                line = (
                     f"- *On: {child.headline} (`{child.id[:8]}`)*  "
                     + await format_page(j, linked_detail, db=db, graph=graph, linked_detail=None)
                 )
+                linked_items.append((line, j))
+
+        if linked_items:
+            lines.append("")
+            lines.append(group_by_credence(linked_items, heading_level="####", separator="\n"))
 
     return "\n".join(lines)
 
@@ -563,81 +585,56 @@ async def format_question_for_find_considerations(
     direct_children = [(p, l) for p, l in children_with_links if l.role == LinkRole.DIRECT]
     structural_children = [(p, l) for p, l in children_with_links if l.role == LinkRole.STRUCTURAL]
 
-    if direct_cons or direct_children:
-        parts.append("## Direct Considerations (compact)")
-        parts.append(
-            "These pages directly bear on the answer. They are shown in compact form "
-            "so you know what ground is already covered -- avoid redundant claims."
-        )
-        parts.append("")
-        for claim, link in direct_cons:
-            loaded_ids.append(claim.id)
-            parts.append(
-                f"- [strength {link.strength:.1f}] "
-                + claim.headline
-            )
-        for child, link in direct_children:
-            loaded_ids.append(child.id)
-            parts.append(
-                f"- [sub-Q] "
-                + child.headline
-            )
-        parts.append("")
+    all_con_items: list[tuple[str, Page]] = []
 
-    if structural_cons or structural_children:
-        parts.append("## Structural Considerations (expanded)")
-        parts.append(
-            "These pages frame the investigation -- they indicate what evidence and "
-            "angles still need to be explored. Read them to understand what bears "
-            "on the question and in which direction."
-        )
-        parts.append("")
-        for claim, link in structural_cons:
-            loaded_ids.append(claim.id)
-            if not claim.content:
-                full = await db.get_page(claim.id)
-                if full:
-                    claim = full
-            parts.append(f"### [{claim.page_type.value.upper()}] {claim.headline}")
-            parts.append(f"ID: {claim.id}")
-            parts.append(f"Strength: {link.strength:.1f}/5")
-            parts.append("")
-            parts.append(claim.content)
-            parts.append("")
-        for child, link in structural_children:
-            loaded_ids.append(child.id)
-            if not child.content:
-                full = await db.get_page(child.id)
-                if full:
-                    child = full
-            parts.append(f"### [QUESTION] {child.headline}")
-            parts.append(f"ID: {child.id}")
-            parts.append("")
-            parts.append(child.content)
-            parts.append("")
+    for claim, link in direct_cons:
+        loaded_ids.append(claim.id)
+        cr = f" C{claim.credence}/R{claim.robustness}" if claim.credence is not None else ""
+        all_con_items.append((f"-{cr} {claim.headline}", claim))
+    for child, _link in direct_children:
+        loaded_ids.append(child.id)
+        all_con_items.append((f"- [sub-Q] {child.headline}", child))
+
+    for claim, link in structural_cons:
+        loaded_ids.append(claim.id)
+        if not claim.content:
+            full = await db.get_page(claim.id)
+            if full:
+                claim = full
+        lines_buf = [f"### [{claim.page_type.value.upper()}] {claim.headline}"]
+        lines_buf.append(f"ID: {claim.id}")
+        if claim.credence is not None:
+            lines_buf.append(f"Credence: {claim.credence}/9 | Robustness: {claim.robustness}/5")
+        lines_buf.append("")
+        lines_buf.append(claim.content)
+        all_con_items.append(("\n".join(lines_buf), claim))
+    for child, _link in structural_children:
+        loaded_ids.append(child.id)
+        if not child.content:
+            full = await db.get_page(child.id)
+            if full:
+                child = full
+        lines_buf = [f"### [QUESTION] {child.headline}", f"ID: {child.id}", "", child.content]
+        all_con_items.append(("\n".join(lines_buf), child))
 
     judgements = await source.get_judgements_for_question(question_id)
-    if judgements:
-        parts.append("## Existing Judgements")
-        parts.append("")
-        for j in judgements:
-            loaded_ids.append(j.id)
-            parts.append(await format_page(j, PageDetail.HEADLINE))
-            parts.append("")
+    for j in judgements:
+        loaded_ids.append(j.id)
+        all_con_items.append((await format_page(j, PageDetail.HEADLINE), j))
 
     children = await source.get_child_questions(question_id)
-    child_judgements: list[tuple[Page, Page]] = []
     for child in children:
         for j in await source.get_judgements_for_question(child.id):
-            child_judgements.append((child, j))
-    if child_judgements:
-        parts.append("## Sub-question Judgements")
-        parts.append("")
-        for child, j in child_judgements:
             loaded_ids.append(j.id)
-            parts.append(f"*On sub-question: {child.headline} (`{child.id}`)*")
-            parts.append(await format_page(j, PageDetail.HEADLINE))
-            parts.append("")
+            line = (
+                f"*On sub-question: {child.headline} (`{child.id}`)*\n"
+                + await format_page(j, PageDetail.HEADLINE)
+            )
+            all_con_items.append((line, j))
+
+    if all_con_items:
+        parts.append(group_by_credence(all_con_items, heading_level="##"))
+        parts.append("")
 
     return "\n".join(parts), loaded_ids
 
@@ -904,13 +901,11 @@ async def build_embedding_based_context(
     distillation_pages = _filter_summary_pages(ranked)
     distillation_ids: list[str] = []
     distillation_chars = 0
-    full_parts: list[str] = []
+    all_items: list[tuple[str, Page]] = []
     full_ids: list[str] = []
     full_chars = 0
-    abstract_parts: list[str] = []
     abstract_ids: list[str] = []
     abstract_chars = 0
-    summary_parts: list[str] = []
     summary_ids: list[str] = []
     summary_chars = 0
 
@@ -920,7 +915,7 @@ async def build_embedding_based_context(
     for page, _sim in distillation_pages:
         formatted = await format_page(page, PageDetail.CONTENT, db=db, linked_detail=None)
         if distillation_chars + len(formatted) <= distillation_budget:
-            full_parts.append(formatted)
+            all_items.append((formatted, page))
             distillation_ids.append(page.id)
             distillation_chars += len(formatted)
 
@@ -929,7 +924,7 @@ async def build_embedding_based_context(
             continue
         if page.id in _headline_only:
             formatted = await format_page(page, PageDetail.HEADLINE, linked_detail=None)
-            summary_parts.append(formatted)
+            all_items.append((formatted, page))
             summary_ids.append(page.id)
             summary_chars += len(formatted)
             continue
@@ -943,7 +938,7 @@ async def build_embedding_based_context(
         if sim >= full_page_similarity_floor and full_chars < full_budget:
             formatted = await format_page(page, PageDetail.CONTENT, db=db, linked_detail=None)
             if full_chars + len(formatted) <= full_budget:
-                full_parts.append(formatted)
+                all_items.append((formatted, page))
                 full_ids.append(page.id)
                 full_chars += len(formatted)
                 continue
@@ -951,7 +946,7 @@ async def build_embedding_based_context(
         if sim >= abstract_page_similarity_floor and abstract_chars < abstract_budget:
             formatted = await format_page(page, PageDetail.ABSTRACT, linked_detail=None)
             if abstract_chars + len(formatted) <= abstract_budget:
-                abstract_parts.append(formatted)
+                all_items.append((formatted, page))
                 abstract_ids.append(page.id)
                 abstract_chars += len(formatted)
                 continue
@@ -959,7 +954,7 @@ async def build_embedding_based_context(
         if sim >= summary_page_similarity_floor and summary_chars < summary_budget:
             formatted = await format_page(page, PageDetail.HEADLINE, linked_detail=None)
             if summary_chars + len(formatted) <= summary_budget:
-                summary_parts.append(formatted)
+                all_items.append((formatted, page))
                 summary_ids.append(page.id)
                 summary_chars += len(formatted)
                 continue
@@ -970,20 +965,8 @@ async def build_embedding_based_context(
     sections: list[str] = []
     if scope_section:
         sections.append(scope_section)
-    if full_parts:
-        sections.append('## Relevant Pages (Full)')
-        sections.append('')
-        sections.append('\n\n'.join(full_parts))
-    if abstract_parts:
-        sections.append('')
-        sections.append('## Relevant Pages (Abstracts)')
-        sections.append('')
-        sections.append('\n\n'.join(abstract_parts))
-    if summary_parts:
-        sections.append('')
-        sections.append('## Relevant Pages (Summaries)')
-        sections.append('')
-        sections.append('\n'.join(summary_parts))
+    if all_items:
+        sections.append(group_by_credence(all_items, heading_level='##'))
 
     context_text = '\n'.join(sections)
 

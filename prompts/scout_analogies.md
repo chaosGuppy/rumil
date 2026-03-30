@@ -8,7 +8,7 @@ You are performing a **Scout Analogies** call — an initial exploration focused
 
 For each analogy (aim for 1–3):
 
-1. **A claim** describing the analogy and why it may be relevant. Explain the structural parallel: what features of the analogous situation map onto the current question, and what the analogy would predict or suggest if it holds. Set epistemic status to reflect how strong you think the parallel is.
+1. **A claim** describing the analogy and why it may be relevant. Explain the structural parallel: what features of the analogous situation map onto the current question, and what the analogy would predict or suggest if it holds. Set credence to reflect how strong you think the parallel is, and robustness to reflect how thoroughly you've examined it.
 
 2. **A subquestion** asking about the relevance, limits, or details of the analogy — e.g. "How closely does [analogy] parallel [situation in the parent question]?" or "What does the [analogous case] suggest about [specific aspect]?". Link it as a child of the parent question.
 

@@ -3,6 +3,7 @@
 import json
 import logging
 import re
+import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -25,11 +26,13 @@ from claude_agent_sdk.types import HookEvent, SyncHookJSONOutput
 
 from rumil.database import DB
 from rumil.models import Call, CallStatus, CallType
+from rumil.pricing import compute_cost
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
 from rumil.tracing.tracer import CallTrace
 from rumil.tracing.trace_events import (
     AgentStartedEvent,
+    LLMExchangeEvent,
     SubagentCompletedEvent,
     SubagentStartedEvent,
     ToolCallEvent,
@@ -250,10 +253,12 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
     last_assistant_text: list[str] = []
     structured_output: Any = None
     all_messages: list[dict] = []
+    turn_counter = 0
     async with ClaudeSDKClient(options=options) as client:
         await client.query(config.user_prompt)
         async for message in client.receive_response():
             if isinstance(message, AssistantMessage):
+                turn_counter += 1
                 parts = [
                     block.text
                     for block in message.content
@@ -261,6 +266,34 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
                 ]
                 if parts:
                     last_assistant_text = parts
+                if message.usage:
+                    input_tokens = message.usage.get("input_tokens", 0)
+                    output_tokens = message.usage.get("output_tokens", 0)
+                    cache_creation = message.usage.get(
+                        "cache_creation_input_tokens", 0
+                    )
+                    cache_read = message.usage.get(
+                        "cache_read_input_tokens", 0
+                    )
+                    cost_usd = compute_cost(
+                        model=settings.model,
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                        cache_creation_input_tokens=cache_creation,
+                        cache_read_input_tokens=cache_read,
+                    )
+                    await config.trace.record(
+                        LLMExchangeEvent(
+                            exchange_id=str(uuid.uuid4()),
+                            phase="sdk_agent",
+                            round=turn_counter,
+                            input_tokens=input_tokens,
+                            output_tokens=output_tokens,
+                            cache_creation_input_tokens=cache_creation or None,
+                            cache_read_input_tokens=cache_read or None,
+                            cost_usd=cost_usd or None,
+                        )
+                    )
                 if config.output_format:
                     all_messages.append({
                         "type": "AssistantMessage",

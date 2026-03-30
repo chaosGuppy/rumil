@@ -152,6 +152,11 @@ class SubagentCompletedEvent(BaseModel):
     agent_id: str
     child_call_id: str
     summary: str = ""
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    cache_creation_input_tokens: int | None = None
+    cache_read_input_tokens: int | None = None
+    cost_usd: float | None = None
 
 
 class AgentStartedEvent(BaseModel):

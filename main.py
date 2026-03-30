@@ -296,6 +296,7 @@ async def _load_prior_checkpoints(question_id: str, from_stage: int, db: DB) -> 
         .select("id, call_params")
         .eq("call_type", CallType.GROUNDING_FEEDBACK.value)
         .eq("scope_page_id", question_id)
+        .is_("parent_call_id", "null")
         .order("created_at", desc=True)
         .limit(1)
     )

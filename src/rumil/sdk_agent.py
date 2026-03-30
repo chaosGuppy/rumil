@@ -147,7 +147,7 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
             ToolCallEvent(
                 tool_name=tool_name,
                 tool_input=tool_input,
-                response=response[:2000],
+                response=response,
             )
         )
         return SyncHookJSONOutput()
@@ -189,8 +189,8 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
             summary = _read_subagent_summary(
                 input_data.get("agent_transcript_path", "")  # type: ignore[call-overload]
             )
-        if isinstance(summary, str) and len(summary) > 500:
-            summary = summary[:500]
+        if not isinstance(summary, str):
+            summary = ""
         if child_call_id:
             await config.db.update_call_status(
                 child_call_id,

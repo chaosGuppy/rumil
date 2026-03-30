@@ -61,6 +61,37 @@ _WEB_SEARCH_SEMAPHORE = asyncio.Semaphore(10)
 _UPDATE_SEMAPHORE = asyncio.Semaphore(15)
 
 
+class _CreateSourceInput(BaseModel):
+    url: str = Field(description="HTTP URL to scrape")
+
+
+class _CreateClaimInput(BaseModel):
+    headline: str = Field(description="Short headline for the claim")
+    content: str = Field(
+        description=(
+            "Full claim text. Cite sources inline using [url] syntax "
+            "(e.g. [https://example.com]) — these are automatically "
+            "rewritten to source page short IDs."
+        )
+    )
+    credence: int = Field(description="Credence level 1-9")
+    robustness: int = Field(description="Robustness level 1-5")
+    supersedes: str = Field(
+        default="",
+        description=(
+            "8-char short ID of the old claim to replace. "
+            "Consideration links are automatically copied from the old claim."
+        ),
+    )
+    source_urls: list[str] = Field(
+        default_factory=list,
+        description=(
+            "HTTP URLs of sources. Each is automatically scraped and "
+            "turned into a source page with a CITES link."
+        ),
+    )
+
+
 def _make_create_source_tool(call: Call, db: DB):
     """MCP tool: scrape a URL and create a SOURCE page."""
     source_cache: dict[str, str] = {}
@@ -68,9 +99,8 @@ def _make_create_source_tool(call: Call, db: DB):
     @tool(
         "create_source",
         "Scrape a URL and create a source page in the workspace. "
-        "Returns the 8-char short ID of the new source page. "
-        "Use this to ground claims with primary sources.",
-        {"url": str},
+        "Returns the 8-char short ID of the new source page.",
+        _CreateSourceInput.model_json_schema(),
     )
     async def create_source(args: dict) -> dict:
         url = args["url"]
@@ -92,20 +122,10 @@ def _make_create_claim_tool(call: Call, db: DB):
 
     @tool(
         "create_claim",
-        "Create a claim page. Automatically scrapes any HTTP URLs in "
-        "source_urls to create source pages, rewrites [url] inline "
-        "citations to [shortid], and creates CITES links. "
-        "Set 'supersedes' to the short ID of the old claim to replace it. "
-        "Use 'links' to attach the claim as a consideration on questions.",
-        {
-            "headline": str,
-            "content": str,
-            "credence": int,
-            "robustness": int,
-            "supersedes": str,
-            "source_urls": list[str],
-            "links": list[dict],
-        },
+        "Create a claim page that supersedes an old one. Automatically "
+        "scrapes source URLs, rewrites [url] inline citations to "
+        "[shortid], and copies consideration links from the old claim.",
+        _CreateClaimInput.model_json_schema(),
     )
     async def create_claim(args: dict) -> dict:
         result = await execute_with_source_creation(
@@ -126,18 +146,20 @@ _CLAIM_UPDATER_PROMPT = (
     "analysis.\n\n"
     "Your workflow:\n"
     "1. Use `explore_page` to read the old claim and understand its "
-    "context and its consideration links (you will need to re-create "
-    "these on the new claim).\n"
+    "context.\n"
     "2. Use `create_claim` to write the replacement claim. Pass:\n"
-    "   - `supersedes`: the old claim's short ID\n"
-    "   - `source_urls`: HTTP URLs from the findings (these are "
-    "automatically scraped and turned into source pages)\n"
-    "   - `links`: consideration links to the same questions the old "
-    "claim was linked to (copy from explore_page output)\n"
+    "   - `supersedes`: the old claim's short ID (consideration links "
+    "are automatically copied from the old claim)\n"
+    "   - `source_urls`: HTTP URLs from the findings (automatically "
+    "scraped and turned into source pages)\n"
     "   - `content`: the full claim text — cite sources inline "
-    "using [url] syntax (e.g. [https://example.com]) and they will "
-    "be automatically rewritten to source page short IDs\n"
+    "using [url] syntax (e.g. [https://example.com]), these are "
+    "automatically rewritten to source page short IDs\n"
     "   - `credence` and `robustness`: updated epistemic status\n\n"
+    "Do NOT describe claims as 'confirmed', 'empirically grounded', "
+    "'verified', or similar — neither in the headline nor the content. "
+    "Let the source citations and the credence/robustness fields speak "
+    "for themselves. Present the evidence and analysis neutrally.\n\n"
     "Be thorough but concise. Focus on factual accuracy and proper "
     "source attribution."
 )
@@ -580,8 +602,12 @@ async def _plan_updates(
     create_claim_tool = _make_create_claim_tool(call, db)
 
     plan_tools = [explore_tool, create_source_tool, create_claim_tool]
-    plan_tool_fqnames = [
-        f"{_PLAN_SERVER_NAME}__{t.name}" for t in plan_tools
+    subagent_tool_fqnames = [
+        f"mcp__{_PLAN_SERVER_NAME}__{t.name}"
+        for t in [explore_tool, create_claim_tool]
+    ]
+    all_tool_fqnames = [
+        f"mcp__{_PLAN_SERVER_NAME}__{t.name}" for t in plan_tools
     ]
 
     user_prompt = await _build_identification_user_message(
@@ -606,10 +632,10 @@ async def _plan_updates(
                     "Give it the claim page ID and relevant findings."
                 ),
                 prompt=_CLAIM_UPDATER_PROMPT,
-                tools=plan_tool_fqnames,
+                tools=subagent_tool_fqnames,
             ),
         },
-        allowed_tools=plan_tool_fqnames + ["Agent", "Bash", "Read"],
+        allowed_tools=all_tool_fqnames + ["Agent", "Bash", "Read"],
         disallowed_tools=(),
         output_format={
             "type": "json_schema",

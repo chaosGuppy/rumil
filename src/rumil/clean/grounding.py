@@ -28,16 +28,18 @@ from rumil.models import (
     Call,
     CallStatus,
     CallType,
-    ConsiderationDirection,
     LinkType,
     Page,
     PageLayer,
-    PageLink,
     PageType,
 )
 from claude_agent_sdk import AgentDefinition, tool
 
-from rumil.moves.base import extract_and_link_citations, write_page_file
+from rumil.moves.base import (
+    _copy_consideration_links,
+    extract_and_link_citations,
+    write_page_file,
+)
 from rumil.moves.create_claim import ensure_source_page, execute_with_source_creation
 from rumil.explore_tool import make_explore_tool
 from rumil.sdk_agent import SdkAgentConfig, run_sdk_agent
@@ -822,26 +824,15 @@ async def _reassess_claim(
         provenance_model="claude-opus-4-6",
         provenance_call_type=call.call_type.value,
         provenance_call_id=call.id,
+        project_id=old_page.project_id,
     )
     await db.save_page(new_page)
     write_page_file(new_page)
     await extract_and_link_citations(new_page.id, new_page.content, db)
 
-    # Supersede old claim
+    # Supersede old claim and copy consideration links
     await db.supersede_page(old_page.id, new_page.id)
-
-    # Re-link: copy consideration links from old claim to new claim
-    for link in links_from:
-        if link.link_type == LinkType.CONSIDERATION:
-            new_link = PageLink(
-                from_page_id=new_page.id,
-                to_page_id=link.to_page_id,
-                link_type=LinkType.CONSIDERATION,
-                direction=link.direction or ConsiderationDirection.SUPPORTS,
-                strength=link.strength,
-                reasoning=link.reasoning,
-            )
-            await db.save_link(new_link)
+    await _copy_consideration_links(old_page.id, new_page.id, db)
 
     log.info(
         "Reassessed claim %s -> %s: %s",

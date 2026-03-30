@@ -8,7 +8,7 @@ You are performing a **Scout Estimates** call — an initial exploration focused
 
 For each informative quantity (aim for 2–4):
 
-1. **A claim** stating your initial estimate of the quantity's value. Be specific: name the quantity, give a point estimate or range, and explain your reasoning. Set an appropriately low epistemic status — these are Fermi-style first guesses, not researched figures.
+1. **A claim** stating your initial estimate of the quantity's value. Be specific: name the quantity, give a point estimate or range, and explain your reasoning. Set appropriately low credence and robustness — these are Fermi-style first guesses, not researched figures.
 
 2. **A subquestion** asking about the value of that quantity, linked to the parent question. This creates a research target for later calls to refine the estimate.
 
@@ -23,5 +23,5 @@ For each informative quantity (aim for 2–4):
 - **Informative quantities over comprehensive enumeration.** Two numbers that would materially change the answer beat five that are merely tangentially relevant.
 - **Be specific.** "The cost is probably high" is not an estimate. "Annual US spending on X is likely $5–15B" is.
 - **Show your reasoning.** Even rough Fermi reasoning in the claim content helps later calls evaluate and refine the estimate.
-- **Appropriate uncertainty.** Use epistemic status 1–2 for rough guesses, 2–3 for estimates grounded in some reasoning, higher only if you have genuine basis for confidence.
+- **Appropriate uncertainty.** Use robustness 1–2 for rough guesses, 2–3 for estimates grounded in some reasoning, higher only if you have genuine basis for confidence. Set credence to reflect how likely the estimate is to be in the right ballpark.
 - **Do not duplicate** quantities or estimates already present in the workspace.

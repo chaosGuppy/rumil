@@ -13,9 +13,9 @@ PAGES_DIR = Path(__file__).parent.parent.parent / "pages"
 MAPS_DIR = PAGES_DIR / "maps"
 
 
-def _confidence_color(confidence: float) -> str:
-    """10-shade HSL gradient from red (low) to green (high). Input is 0-5 scale."""
-    clamped = max(0.0, min(1.0, confidence / 5.0))
+def _confidence_color(credence: int) -> str:
+    """HSL gradient from red (low) to green (high). Input is 1-9 credence scale."""
+    clamped = max(0.0, min(1.0, (credence - 1) / 8.0))
     bucket = min(9, int(clamped * 10))
     hue = bucket * (120 / 9)
     return f"hsl({hue:.0f}, 55%, 93%)"
@@ -51,13 +51,11 @@ def _budget_select(select_id: str) -> str:
 
 
 def _render_consideration(claim: Page, link, parent_question_id: str) -> str:
-    color = _confidence_color(claim.epistemic_status)
+    color = _confidence_color(claim.credence or 5)
     stars = _stars(link.strength)
     words = claim.headline.split()
     short = " ".join(words[:30]) + ("…" if len(words) > 30 else "")
-    epistemic = f"{claim.epistemic_status:.1f}/5 confidence" + (
-        f" — {escape(claim.epistemic_type)}" if claim.epistemic_type else ""
-    )
+    epistemic = f"C{claim.credence}/R{claim.robustness}" if claim.credence is not None else ""
 
     page_file = _find_page_file(claim)
     source_link = (
@@ -96,7 +94,7 @@ def _render_consideration(claim: Page, link, parent_question_id: str) -> str:
 
 
 def _render_judgement(j: Page, index: int, total: int) -> str:
-    color = _confidence_color(j.epistemic_status)
+    color = _confidence_color(j.credence or 5)
     label = f"Judgement {index + 1}/{total}" if total > 1 else "Judgement"
     extra = j.extra or {}
     deps = extra.get("key_dependencies", "")
@@ -111,11 +109,11 @@ def _render_judgement(j: Page, index: int, total: int) -> str:
   <details>
     <summary>
       <span class="j-label">{label}</span>
-      <span class="conf-badge">{j.epistemic_status:.1f}/5</span>
+      <span class="conf-badge">C{j.credence}/R{j.robustness}</span>
       <span class="summary-text">{escape(j.headline[:100])}</span>
     </summary>
     <div class="expanded">
-      <p class="epistemic">{j.epistemic_status:.1f}/5 confidence — {escape(j.epistemic_type)}</p>
+      <p class="epistemic">Credence: {j.credence}/9 | Robustness: {j.robustness}/5</p>
       <p class="body">{escape(j.content)}</p>
       {meta}
     </div>

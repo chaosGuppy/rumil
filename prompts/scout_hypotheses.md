@@ -19,7 +19,7 @@ Use `create_question` to create the hypothesis subquestion. The question text mu
 1. Read the parent question and existing context carefully.
 2. Identify candidate answers, paradigms, or explanatory frameworks — not just pieces of evidence, but specific views about what the answer to the parent question looks like.
 3. For each, create a hypothesis subquestion and link it to the parent.
-4. Where you have an initial view on plausibility, state it as a claim with appropriate epistemic status.
+4. Where you have an initial view on plausibility, state it as a claim with appropriate credence and robustness.
 
 ## What Makes a Good Hypothesis
 

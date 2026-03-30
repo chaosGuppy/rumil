@@ -94,8 +94,6 @@ async def cmd_add_question(
         content=q.content or q.abstract or q.headline,
         headline=q.headline,
         abstract=q.abstract,
-        epistemic_status=2.5,
-        epistemic_type="open question",
         provenance_model="human",
         provenance_call_type="manual",
         provenance_call_id="manual",

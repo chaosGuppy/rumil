@@ -225,8 +225,6 @@ async def create_root_question(
         content=content or abstract or question_text,
         headline=question_text,
         abstract=abstract,
-        epistemic_status=2.5,
-        epistemic_type="open question",
         provenance_model="human",
         provenance_call_type="init",
         provenance_call_id="init",

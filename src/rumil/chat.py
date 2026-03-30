@@ -97,8 +97,6 @@ async def _add_question(question_text: str, parent_id: str, db: DB) -> str:
         workspace=Workspace.RESEARCH,
         content=question_text,
         headline=question_text,
-        epistemic_status=2.5,
-        epistemic_type="open question",
         provenance_model="human",
         provenance_call_type="chat",
         provenance_call_id="chat",

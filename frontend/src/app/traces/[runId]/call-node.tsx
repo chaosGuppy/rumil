@@ -1024,6 +1024,32 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
           ))}
         </div>
       )}
+      {event.event === "update_plan_created" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">waves</span>
+            <span className="trace-kv-value">{event.wave_count}</span>
+          </div>
+          <div className="trace-kv">
+            <span className="trace-kv-key">operations</span>
+            <span className="trace-kv-value">{event.operation_count}</span>
+          </div>
+          {(event.waves ?? []).map((wave: Record<string, unknown>[], wi: number) => (
+            <div key={wi} className="mb-1">
+              <div className="text-xs text-muted-foreground">Wave {wi + 1}</div>
+              {wave.map((op: Record<string, unknown>, oi: number) => (
+                <div key={oi} className="trace-score-row">
+                  <code>{String(op.page_id ?? "").slice(0, 8)}</code>
+                  <span className="trace-kv-value">{String(op.operation ?? "")}</span>
+                  {op.findings_summary ? (
+                    <span className="trace-score-reasoning">{String(op.findings_summary).slice(0, 120)}</span>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
       {event.event === "claim_reassessed" && (
         <div className="trace-event-body">
           <div className="trace-kv">

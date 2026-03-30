@@ -181,6 +181,13 @@ class UpdateSubgraphComputedEvent(BaseModel):
     nodes: list[dict] = []
 
 
+class UpdatePlanCreatedEvent(BaseModel):
+    event: Literal["update_plan_created"] = "update_plan_created"
+    wave_count: int = 0
+    operation_count: int = 0
+    waves: list[list[dict]] = []
+
+
 class ClaimReassessedEvent(BaseModel):
     event: Literal["claim_reassessed"] = "claim_reassessed"
     old_page_id: str
@@ -219,6 +226,7 @@ TraceEvent = Annotated[
     | ReassessTriggeredEvent
     | AffectedPagesIdentifiedEvent
     | UpdateSubgraphComputedEvent
+    | UpdatePlanCreatedEvent
     | ClaimReassessedEvent
     | GroundingTasksGeneratedEvent
     | WebResearchCompleteEvent,

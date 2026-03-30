@@ -31,6 +31,7 @@ from rumil.tracing.trace_events import (
     SubagentCompletedEvent,
     SubagentStartedEvent,
     ToolCallEvent,
+    UpdatePlanCreatedEvent,
     UpdateSubgraphComputedEvent,
     WarningEvent,
     WebResearchCompleteEvent,
@@ -134,6 +135,10 @@ class UpdateSubgraphComputedEventOut(UpdateSubgraphComputedEvent, _TraceEnvelope
     pass
 
 
+class UpdatePlanCreatedEventOut(UpdatePlanCreatedEvent, _TraceEnvelopeMixin):
+    pass
+
+
 class ClaimReassessedEventOut(ClaimReassessedEvent, _TraceEnvelopeMixin):
     pass
 
@@ -167,6 +172,7 @@ TraceEventOut = Annotated[
     | ReassessTriggeredEventOut
     | AffectedPagesIdentifiedEventOut
     | UpdateSubgraphComputedEventOut
+    | UpdatePlanCreatedEventOut
     | ClaimReassessedEventOut
     | GroundingTasksGeneratedEventOut
     | WebResearchCompleteEventOut,

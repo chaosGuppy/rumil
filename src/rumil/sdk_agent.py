@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -23,7 +24,6 @@ from claude_agent_sdk import (
 from claude_agent_sdk.types import HookEvent, SyncHookJSONOutput
 
 from rumil.database import DB
-from rumil.evaluate.explore import explore_page_impl
 from rumil.models import Call, CallStatus, CallType
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
@@ -38,23 +38,6 @@ from rumil.tracing.trace_events import (
 
 log = logging.getLogger(__name__)
 
-
-def make_explore_tool(db: DB):
-    """Create the explore_page MCP tool definition, closing over *db*."""
-
-    @tool(
-        "explore_page",
-        "Explore the local graph around a page. Returns the page and its "
-        "neighbors at varying detail levels based on graph distance. "
-        "Input a page ID (short 8-char prefix or full UUID).",
-        {"page_id": str},
-    )
-    async def explore_page(args: dict) -> dict:
-        page_id = args["page_id"]
-        result = await explore_page_impl(page_id, db)
-        return {"content": [{"type": "text", "text": result}]}
-
-    return explore_page
 
 
 @dataclass
@@ -266,6 +249,7 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
 
     last_assistant_text: list[str] = []
     structured_output: Any = None
+    all_messages: list[dict] = []
     async with ClaudeSDKClient(options=options) as client:
         await client.query(config.user_prompt)
         async for message in client.receive_response():
@@ -277,6 +261,13 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
                 ]
                 if parts:
                     last_assistant_text = parts
+                if config.output_format:
+                    all_messages.append({
+                        "type": "AssistantMessage",
+                        "content": [
+                            _serialize_block(b) for b in message.content
+                        ],
+                    })
             elif isinstance(message, ResultMessage):
                 if not last_assistant_text and message.result:
                     last_assistant_text = [message.result]
@@ -290,8 +281,61 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
                             "output may be incomplete"
                         )
                     )
+                if config.output_format:
+                    all_messages.append({
+                        "type": "ResultMessage",
+                        "result": message.result,
+                        "stop_reason": message.stop_reason,
+                        "structured_output": message.structured_output,
+                    })
+
+    if config.output_format:
+        log.info(
+            "Structured output debug dump:\n%s",
+            json.dumps(all_messages, indent=2, default=str),
+        )
+        if structured_output is None:
+            structured_output = _try_extract_json(last_assistant_text)
+            if structured_output is not None:
+                log.info("Extracted structured output from assistant text (fallback)")
 
     return SdkAgentResult(
         last_assistant_text=last_assistant_text,
         structured_output=structured_output,
     )
+
+
+def _serialize_block(block: Any) -> dict:
+    """Best-effort serialization of a content block for debug logging."""
+    if isinstance(block, TextBlock):
+        return {"type": "text", "text": block.text}
+    if hasattr(block, "model_dump"):
+        return block.model_dump()  # type: ignore[no-any-return]
+    return {"type": type(block).__name__, "repr": repr(block)[:500]}
+
+
+_JSON_BLOCK_RE = re.compile(r"```(?:json)?\s*\n(.*?)\n```", re.DOTALL)
+
+
+def _try_extract_json(text_parts: Sequence[str]) -> Any:
+    """Try to parse structured JSON from assistant text.
+
+    Checks for JSON code blocks first, then tries parsing the raw text.
+    """
+    full_text = "\n".join(text_parts).strip()
+    if not full_text:
+        return None
+
+    block_match = _JSON_BLOCK_RE.search(full_text)
+    if block_match:
+        try:
+            return json.loads(block_match.group(1))
+        except json.JSONDecodeError:
+            pass
+
+    try:
+        return json.loads(full_text)
+    except json.JSONDecodeError:
+        pass
+
+    return None

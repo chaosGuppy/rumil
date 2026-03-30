@@ -773,6 +773,9 @@
                         "$ref": "#/components/schemas/UpdateSubgraphComputedEventOut"
                       },
                       {
+                        "$ref": "#/components/schemas/UpdatePlanCreatedEventOut"
+                      },
+                      {
                         "$ref": "#/components/schemas/ClaimReassessedEventOut"
                       },
                       {
@@ -803,6 +806,7 @@
                         "reassess_triggered": "#/components/schemas/ReassessTriggeredEventOut",
                         "affected_pages_identified": "#/components/schemas/AffectedPagesIdentifiedEventOut",
                         "update_subgraph_computed": "#/components/schemas/UpdateSubgraphComputedEventOut",
+                        "update_plan_created": "#/components/schemas/UpdatePlanCreatedEventOut",
                         "claim_reassessed": "#/components/schemas/ClaimReassessedEventOut",
                         "grounding_tasks_generated": "#/components/schemas/GroundingTasksGeneratedEventOut",
                         "web_research_complete": "#/components/schemas/WebResearchCompleteEventOut"
@@ -1573,6 +1577,9 @@
                   "$ref": "#/components/schemas/UpdateSubgraphComputedEventOut"
                 },
                 {
+                  "$ref": "#/components/schemas/UpdatePlanCreatedEventOut"
+                },
+                {
                   "$ref": "#/components/schemas/ClaimReassessedEventOut"
                 },
                 {
@@ -1603,6 +1610,7 @@
                   "subagent_completed": "#/components/schemas/SubagentCompletedEventOut",
                   "subagent_started": "#/components/schemas/SubagentStartedEventOut",
                   "tool_call": "#/components/schemas/ToolCallEventOut",
+                  "update_plan_created": "#/components/schemas/UpdatePlanCreatedEventOut",
                   "update_subgraph_computed": "#/components/schemas/UpdateSubgraphComputedEventOut",
                   "warning": "#/components/schemas/WarningEventOut",
                   "web_research_complete": "#/components/schemas/WebResearchCompleteEventOut"
@@ -2587,6 +2595,28 @@
             "title": "Epistemic Type",
             "default": ""
           },
+          "credence": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credence"
+          },
+          "robustness": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Robustness"
+          },
           "provenance_model": {
             "type": "string",
             "title": "Provenance Model",
@@ -2645,6 +2675,8 @@
           "project_id",
           "epistemic_status",
           "epistemic_type",
+          "credence",
+          "robustness",
           "provenance_model",
           "provenance_call_type",
           "provenance_call_id",
@@ -3359,6 +3391,56 @@
           "response"
         ],
         "title": "ToolCallEventOut"
+      },
+      "UpdatePlanCreatedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "update_plan_created",
+            "title": "Event",
+            "default": "update_plan_created"
+          },
+          "wave_count": {
+            "type": "integer",
+            "title": "Wave Count",
+            "default": 0
+          },
+          "operation_count": {
+            "type": "integer",
+            "title": "Operation Count",
+            "default": 0
+          },
+          "waves": {
+            "items": {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "title": "Waves",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "wave_count",
+          "operation_count",
+          "waves"
+        ],
+        "title": "UpdatePlanCreatedEventOut"
       },
       "UpdateSubgraphComputedEventOut": {
         "properties": {

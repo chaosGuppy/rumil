@@ -313,6 +313,8 @@ export type CallTraceOut = {
     } & AffectedPagesIdentifiedEventOut) | ({
         event: 'update_subgraph_computed';
     } & UpdateSubgraphComputedEventOut) | ({
+        event: 'update_plan_created';
+    } & UpdatePlanCreatedEventOut) | ({
         event: 'claim_reassessed';
     } & ClaimReassessedEventOut) | ({
         event: 'grounding_tasks_generated';
@@ -865,6 +867,14 @@ export type Page = {
      */
     epistemic_type: string;
     /**
+     * Credence
+     */
+    credence: number | null;
+    /**
+     * Robustness
+     */
+    robustness: number | null;
+    /**
      * Provenance Model
      */
     provenance_model: string;
@@ -1330,6 +1340,38 @@ export type ToolCallEventOut = {
      * Response
      */
     response: string;
+};
+
+/**
+ * UpdatePlanCreatedEventOut
+ */
+export type UpdatePlanCreatedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'update_plan_created';
+    /**
+     * Wave Count
+     */
+    wave_count: number;
+    /**
+     * Operation Count
+     */
+    operation_count: number;
+    /**
+     * Waves
+     */
+    waves: Array<Array<{
+        [key: string]: unknown;
+    }>>;
 };
 
 /**
@@ -1968,6 +2010,8 @@ export type GetCallEventsApiCallsCallIdEventsGetResponses = {
     } & AffectedPagesIdentifiedEventOut) | ({
         event: 'update_subgraph_computed';
     } & UpdateSubgraphComputedEventOut) | ({
+        event: 'update_plan_created';
+    } & UpdatePlanCreatedEventOut) | ({
         event: 'claim_reassessed';
     } & ClaimReassessedEventOut) | ({
         event: 'grounding_tasks_generated';

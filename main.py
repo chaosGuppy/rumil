@@ -180,7 +180,7 @@ async def cmd_ingest(
 
 
 async def cmd_evaluate(question_id: str, db: DB, *, eval_type: str = "default") -> None:
-    from rumil.evaluate import run_evaluation
+    from rumil.evaluate.runner import run_evaluation
 
     question = await db.get_page(question_id)
     if not question:
@@ -215,7 +215,7 @@ def _print_evaluation(call: Call) -> None:
         print("(no evaluation output)")
 
 
-async def cmd_ground(eval_call_id: str, db: DB) -> None:
+async def cmd_ground(eval_call_id: str, db: DB, *, from_stage: int = 1) -> None:
     from rumil.clean import run_grounding_feedback
     from rumil.models import CallStatus, CallType
 
@@ -257,6 +257,12 @@ async def cmd_ground(eval_call_id: str, db: DB) -> None:
     if question.project_id and question.project_id != db.project_id:
         db.project_id = question.project_id
 
+    prior_checkpoints: dict | None = None
+    if from_stage > 1:
+        prior_checkpoints = await _load_prior_checkpoints(
+            call.scope_page_id, from_stage, db
+        )
+
     await db.create_run(
         name=f"grounding: {question.headline[:80]}",
         question_id=call.scope_page_id,
@@ -265,12 +271,58 @@ async def cmd_ground(eval_call_id: str, db: DB) -> None:
 
     frontend = get_settings().frontend_url.rstrip("/")
     print(f"\nRunning grounding feedback for: {question.headline[:80]}")
+    if from_stage > 1:
+        print(f"Resuming from stage {from_stage}")
     print(f"Trace: {frontend}/traces/{db.run_id}\n")
 
-    result = await run_grounding_feedback(call.scope_page_id, evaluation_text, db)
+    result = await run_grounding_feedback(
+        call.scope_page_id,
+        evaluation_text,
+        db,
+        from_stage=from_stage,
+        prior_checkpoints=prior_checkpoints,
+    )
     print(f"\nGrounding feedback complete (call {result.id}).")
     if result.result_summary:
         print(result.result_summary)
+
+
+async def _load_prior_checkpoints(question_id: str, from_stage: int, db: DB) -> dict:
+    """Find the most recent grounding call for *question_id* and return its checkpoints."""
+    from rumil.models import CallType
+
+    rows = await db._execute(
+        db.client.table("calls")
+        .select("id, call_params")
+        .eq("call_type", CallType.GROUNDING_FEEDBACK.value)
+        .eq("scope_page_id", question_id)
+        .order("created_at", desc=True)
+        .limit(1)
+    )
+    if not rows.data:
+        print("Error: no prior grounding call found for this question.")
+        sys.exit(1)
+
+    prior = rows.data[0]
+    checkpoints = (prior.get("call_params") or {}).get("checkpoints", {})
+
+    required_keys = {
+        2: ["tasks"],
+        3: ["tasks", "findings"],
+        4: ["tasks", "findings", "update_plan"],
+        5: ["tasks", "findings", "update_plan"],
+    }
+    missing = [k for k in required_keys.get(from_stage, []) if k not in checkpoints]
+    if missing:
+        print(
+            f"Error: prior grounding call {prior['id'][:8]} is missing "
+            f"checkpoint data for: {', '.join(missing)}. "
+            f"Cannot resume from stage {from_stage}."
+        )
+        sys.exit(1)
+
+    print(f"Loaded checkpoints from prior call {prior['id'][:8]}")
+    return checkpoints
 
 
 async def cmd_show_evaluation(call_id: str, db: DB) -> None:
@@ -717,6 +769,17 @@ async def async_main():
         help="Run grounding feedback pipeline on a completed evaluation call",
     )
     parser.add_argument(
+        "--from-stage",
+        dest="from_stage",
+        type=int,
+        default=1,
+        metavar="N",
+        help=(
+            "Resume grounding from stage N (1-6), reusing checkpointed "
+            "outputs from the most recent prior grounding run"
+        ),
+    )
+    parser.add_argument(
         "--show-evaluation",
         dest="show_evaluation_id",
         metavar="CALL_ID",
@@ -893,7 +956,7 @@ async def async_main():
         await cmd_evaluate(args.evaluate_id, db, eval_type=args.eval_type)
         return
     elif args.ground_call_id:
-        await cmd_ground(args.ground_call_id, db)
+        await cmd_ground(args.ground_call_id, db, from_stage=args.from_stage)
         return
     elif args.show_evaluation_id:
         await cmd_show_evaluation(args.show_evaluation_id, db)

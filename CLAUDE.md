@@ -13,15 +13,16 @@ Runs can be **staged** (`staged=True` on the `DB` instance), meaning their effec
 **How it works:**
 
 - **New pages/links** created by a staged run are written to their base tables with `staged=true` and tagged with `run_id`. Only that run can see them (via `_staged_filter()`).
-- **Mutations to existing state** (superseding pages, deleting links, changing link roles) are recorded as append-only events in the `mutation_events` table instead of modifying base tables. On read, `_apply_page_events()` / `_apply_link_events()` replay these events to materialize the run's view of the workspace. The `MutationState` cache (`_load_mutation_state()`) avoids re-reading events.
+- **Mutations to existing state** (superseding pages, deleting links, changing link roles) are **always** recorded as append-only events in the `mutation_events` table, regardless of whether the run is staged. Non-staged runs also apply the mutation directly to base tables (dual-write) so that other readers see the change immediately. On read, `_apply_page_events()` / `_apply_link_events()` replay events to materialize a staged run's view. The `MutationState` cache (`_load_mutation_state()`) avoids re-reading events.
+- **Retroactive staging:** because all runs record mutation events, a completed non-staged run can be retroactively staged via `DB.stage_run(run_id)`. This flips the run's rows to `staged=true` and reverts direct mutations using the event log, restoring baseline state for other readers.
 - **Visibility rule:** staged runs see `staged=false` (baseline) rows plus their own `run_id` rows. Non-staged runs see only baseline. Two staged runs are fully isolated.
 
 **What this means for new code:**
 
-- Any new operation that modifies workspace state (pages, links, or future tables) **must** go through the staged path: write new rows with `staged`/`run_id` flags, and record mutations to existing rows in `mutation_events` rather than updating base tables directly.
+- Any new operation that modifies workspace state (pages, links, or future tables) **must** record a mutation event **and** apply the direct mutation when `not self.staged`. Write new rows with `staged`/`run_id` flags.
 - Any new read path **must** apply `_staged_filter()` and the relevant `_apply_*_events()` methods so staged runs see their own mutations.
 - RPC functions that read pages or links must accept a `staged_run_id` parameter and apply the same visibility logic. See `match_pages()` and `get_root_questions()` in the migrations for examples.
-- Never introduce a write path that silently bypasses staging — it will break run isolation.
+- Never introduce a write path that silently bypasses event recording — it will break retroactive staging.
 
 ## Running
 

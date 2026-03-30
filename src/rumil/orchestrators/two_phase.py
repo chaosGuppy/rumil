@@ -98,7 +98,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         before ``run()`` begins. ``_phase1`` reuses the pre-created call.
         """
         budget = self._effective_budget(await self.db.budget_remaining())
-        phase1_budget = min(budget - 3, MIN_TWOPHASE_BUDGET)
+        phase1_budget = budget
         p_call = await self.db.create_call(
             CallType.PRIORITIZATION,
             scope_page_id=question_id,
@@ -250,7 +250,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         budget: int,
         parent_call_id: str | None,
     ) -> PrioritizationResult:
-        phase1_budget = min(budget - 3, MIN_TWOPHASE_BUDGET)
+        phase1_budget = budget
         log.info(
             'TwoPhaseOrchestrator phase1: question=%s, budget=%d, phase1_budget=%d',
             question_id[:8], budget, phase1_budget,

@@ -2,6 +2,7 @@ import Link from "next/link";
 import Markdown from "react-markdown";
 import type { PageDetailOut, LinkedPageOut, Page, RunSummaryOut } from "@/api";
 import LinksContainer from "./links-container";
+import StagedBanner from "./staged-banner";
 
 import { API_BASE } from "@/lib/api-base";
 
@@ -47,26 +48,37 @@ const TYPE_CONFIG: Record<
   },
 };
 
-async function getPageDetail(pageId: string): Promise<PageDetailOut | null> {
-  const res = await fetch(`${API_BASE}/api/pages/${pageId}/detail`, {
-    cache: "no-store",
-  });
+function stagedQs(stagedRunId?: string): string {
+  return stagedRunId ? `?staged_run_id=${stagedRunId}` : "";
+}
+
+async function getPageDetail(
+  pageId: string,
+  stagedRunId?: string,
+): Promise<PageDetailOut | null> {
+  const res = await fetch(
+    `${API_BASE}/api/pages/${pageId}/detail${stagedQs(stagedRunId)}`,
+    { cache: "no-store" },
+  );
   if (!res.ok) return null;
   return res.json();
 }
 
 async function getPageHeadline(
   pageId: string,
+  stagedRunId?: string,
 ): Promise<{ headline: string; page_type: string } | null> {
-  const res = await fetch(`${API_BASE}/api/pages/${pageId}/detail`, {
-    cache: "no-store",
-  });
+  const res = await fetch(
+    `${API_BASE}/api/pages/${pageId}/detail${stagedQs(stagedRunId)}`,
+    { cache: "no-store" },
+  );
   if (!res.ok) return null;
   const data = (await res.json()) as PageDetailOut;
   return { headline: data.page.headline, page_type: data.page.page_type };
 }
 
-function pageHref(page: Page): string {
+function pageHref(page: Page, stagedRunId?: string): string {
+  if (stagedRunId) return `/pages/${page.id}?staged_run_id=${stagedRunId}`;
   return `/pages/${page.id}`;
 }
 
@@ -86,6 +98,7 @@ async function buildCitationMap(
   links_from: LinkedPageOut[],
   links_to: LinkedPageOut[],
   content: string,
+  stagedRunId?: string,
 ): Promise<Map<string, { fullId: string; pageType: string }>> {
   const map = new Map<string, { fullId: string; pageType: string }>();
   for (const lp of [...links_from, ...links_to]) {
@@ -95,11 +108,13 @@ async function buildCitationMap(
   const cited = extractCitedIds(content);
   const missing = [...cited].filter((id) => !map.has(id));
   if (missing.length > 0) {
+    const qs = stagedQs(stagedRunId);
     const results = await Promise.all(
       missing.map(async (shortId) => {
-        const res = await fetch(`${API_BASE}/api/pages/short/${shortId}`, {
-          cache: "no-store",
-        });
+        const res = await fetch(
+          `${API_BASE}/api/pages/short/${shortId}${qs}`,
+          { cache: "no-store" },
+        );
         if (!res.ok) return null;
         const page: Page = await res.json();
         return { shortId, fullId: page.id, pageType: page.page_type };
@@ -117,9 +132,11 @@ const CITATION_RE = /\[([a-f0-9]{8}(?:,\s*[a-f0-9]{8})*)\]/g;
 function injectCitationLinks(
   content: string,
   citationMap: Map<string, { fullId: string; pageType: string }>,
+  stagedRunId?: string,
 ): string {
   const orderMap = new Map<string, number>();
   let nextNum = 1;
+  const stagedSuffix = stagedRunId ? `&staged_run_id=${stagedRunId}` : "";
   return content.replace(CITATION_RE, (_match, group: string) => {
     const ids = group.split(/,\s*/);
     const parts = ids.map((shortId) => {
@@ -129,7 +146,7 @@ function injectCitationLinks(
         orderMap.set(shortId, nextNum++);
       }
       const num = orderMap.get(shortId)!;
-      return `[${num}](/pages/${entry.fullId}?cite=${entry.pageType})`;
+      return `[${num}](/pages/${entry.fullId}?cite=${entry.pageType}${stagedSuffix})`;
     });
     return parts.join(" ");
   });
@@ -157,12 +174,15 @@ function SegmentGauge({ value, max, label }: { value: number; max: number; label
 
 export default async function PageDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ pageId: string }>;
+  searchParams: Promise<{ staged_run_id?: string; cite?: string }>;
 }) {
   const { pageId } = await params;
+  const { staged_run_id: stagedRunId } = await searchParams;
   const [detail, run] = await Promise.all([
-    getPageDetail(pageId),
+    getPageDetail(pageId, stagedRunId),
     getPageRun(pageId),
   ]);
 
@@ -186,10 +206,10 @@ export default async function PageDetailPage({
   const { page, links_from, links_to } = detail;
   const cfg = TYPE_CONFIG[page.page_type] || TYPE_CONFIG.source;
   const [citationMap, supersedingPage] = await Promise.all([
-    buildCitationMap(links_from, links_to, page.content),
-    page.superseded_by ? getPageHeadline(page.superseded_by) : null,
+    buildCitationMap(links_from, links_to, page.content, stagedRunId),
+    page.superseded_by ? getPageHeadline(page.superseded_by, stagedRunId) : null,
   ]);
-  const processedContent = injectCitationLinks(page.content, citationMap);
+  const processedContent = injectCitationLinks(page.content, citationMap, stagedRunId);
 
   return (
     <>
@@ -198,6 +218,10 @@ export default async function PageDetailPage({
         <Link href={`/projects/${page.project_id}`} className="back-link">
         &larr; Workspace
       </Link>
+
+      {stagedRunId && (
+        <StagedBanner runId={stagedRunId} pageUrl={`/pages/${pageId}`} />
+      )}
 
       <article className="page-article">
         <div
@@ -220,7 +244,7 @@ export default async function PageDetailPage({
             <span className="page-id">{page.id.slice(0, 8)}</span>
             {page.is_superseded && page.superseded_by && supersedingPage ? (
               <Link
-                href={`/pages/${page.superseded_by}`}
+                href={`/pages/${page.superseded_by}${stagedRunId ? `?staged_run_id=${stagedRunId}` : ""}`}
                 className="superseded-link"
                 title={supersedingPage.headline}
               >
@@ -259,7 +283,10 @@ export default async function PageDetailPage({
                   const url = new URL(href, "http://x");
                   const pageType = url.searchParams.get("cite") || "claim";
                   const typeCfg = TYPE_CONFIG[pageType] || TYPE_CONFIG.source;
-                  const cleanHref = url.pathname;
+                  const stagedParam = url.searchParams.get("staged_run_id");
+                  const cleanHref = stagedParam
+                    ? `${url.pathname}?staged_run_id=${stagedParam}`
+                    : url.pathname;
                   return (
                     <Link href={cleanHref} className="citation-chip" style={{
                       color: typeCfg.accent,
@@ -292,7 +319,7 @@ export default async function PageDetailPage({
         )}
       </article>
 
-      <LinksContainer links_from={links_from} links_to={links_to} />
+      <LinksContainer links_from={links_from} links_to={links_to} stagedRunId={stagedRunId} />
 
       <footer className="page-footer">
         <span>{new Date(page.created_at).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}</span>
@@ -939,5 +966,55 @@ const styles = `
       --type-wiki-bg-hover: #111d14;
       --type-wiki-border: #1a2e1f;
     }
+  }
+
+  .staged-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.45rem 0.75rem;
+    margin-bottom: 1rem;
+    background: rgba(90, 138, 122, 0.06);
+    border: 1px solid rgba(90, 138, 122, 0.2);
+    font-family: var(--font-geist-mono), monospace;
+    font-size: 0.75rem;
+    color: #5a8a7a;
+    animation: bannerSlideIn 0.2s ease both;
+  }
+  @keyframes bannerSlideIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .staged-banner-indicator {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #5a8a7a;
+    flex-shrink: 0;
+    animation: indicatorPulse 2s ease infinite;
+  }
+  @keyframes indicatorPulse {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 1; }
+  }
+  .staged-banner-text {
+    flex: 1;
+    letter-spacing: 0.02em;
+  }
+  .staged-banner-clear {
+    font-size: 0.7rem;
+    font-family: var(--font-geist-mono), monospace;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #5a8a7a;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0.2rem 0.4rem;
+    opacity: 0.7;
+    transition: opacity 0.12s ease;
+  }
+  .staged-banner-clear:hover {
+    opacity: 1;
   }
 `;

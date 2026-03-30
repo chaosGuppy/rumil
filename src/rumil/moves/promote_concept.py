@@ -6,7 +6,12 @@ from pydantic import BaseModel, Field
 
 from rumil.database import DB
 from rumil.models import Call, MoveType, Page, PageLayer, PageType, Workspace
-from rumil.moves.base import MoveDef, MoveResult, extract_and_link_citations, write_page_file
+from rumil.moves.base import (
+    MoveDef,
+    MoveResult,
+    extract_and_link_citations,
+    write_page_file,
+)
 
 log = logging.getLogger(__name__)
 
@@ -58,18 +63,23 @@ async def execute(payload: PromoteConceptPayload, call: Call, db: DB) -> MoveRes
     write_page_file(research_page)
     try:
         await extract_and_link_citations(
-            research_page.id, research_page.content, db,
-            citing_page_type=PageType.CONCEPT,
+            research_page.id,
+            research_page.content,
+            db,
         )
     except Exception:
         log.warning(
-            "Citation extraction failed for page %s", research_page.id[:8], exc_info=True,
+            "Citation extraction failed for page %s",
+            research_page.id[:8],
+            exc_info=True,
         )
     await db.supersede_page(resolved, research_page.id)
 
     log.info(
         "Concept promoted: staging=%s -> research=%s, headline=%s",
-        resolved[:8], research_page.id[:8], research_page.headline[:60],
+        resolved[:8],
+        research_page.id[:8],
+        research_page.headline[:60],
     )
     return MoveResult(
         message=(

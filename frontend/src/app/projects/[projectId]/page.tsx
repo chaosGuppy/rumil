@@ -6,6 +6,7 @@ import { useEffect, useState, useMemo } from "react";
 import type { Page, PageType, RunListItemOut } from "@/api";
 
 import { CLIENT_API_BASE as API_BASE } from "@/api-config";
+import { useStagedRun } from "@/lib/staged-run-context";
 
 const PAGE_TYPES: PageType[] = [
   "question",
@@ -58,7 +59,8 @@ const TYPE_CONFIG: Record<
   },
 };
 
-function pageHref(page: Page): string {
+function pageHref(page: Page, stagedRunId?: string | null): string {
+  if (stagedRunId) return `/pages/${page.id}?staged_run_id=${stagedRunId}`;
   return `/pages/${page.id}`;
 }
 
@@ -79,7 +81,7 @@ export default function PagesIndexPage() {
   const [activeTypes, setActiveTypes] = useState<Set<PageType>>(new Set());
   const [runs, setRuns] = useState<RunListItemOut[]>([]);
   const [showSuperseded, setShowSuperseded] = useState(false);
-  const [activeStagedRunId, setActiveStagedRunId] = useState<string | null>(null);
+  const { activeStagedRunId, setActiveStagedRunId } = useStagedRun();
 
   useEffect(() => {
     const params = new URLSearchParams();
@@ -894,7 +896,7 @@ export default function PagesIndexPage() {
               return (
                 <Link
                   key={p.id}
-                  href={pageHref(p)}
+                  href={pageHref(p, activeStagedRunId)}
                   className={`page-row${p.provenance_model === "human" ? " human-created" : ""}${p.is_superseded ? " superseded" : ""}`}
                   style={{ animationDelay: `${Math.min(i * 15, 300)}ms` }}
                 >

@@ -293,7 +293,6 @@ async def create_page(
             page.id,
             page.content,
             db,
-            citing_page_type=page_type,
         )
         if cited_ids:
             log.info(
@@ -331,15 +330,16 @@ async def extract_and_link_citations(
     page_id: str,
     content: str,
     db: DB,
-    citing_page_type: PageType | None = None,
 ) -> set[str]:
     """Extract [shortid] citations from content and create page links.
 
-    Link type depends on both citing and cited page types:
-    - Cited SOURCE → CITES
-    - Cited CLAIM (from QUESTION/JUDGEMENT/CLAIM) → CONSIDERATION (direction flipped:
-      from=cited claim, to=citing page, since "claim bears on citing page")
-    - Otherwise → RELATED
+    Link type depends on the cited page's type:
+    - Cited SOURCE → CITES (from=citing, to=cited)
+    - Cited CLAIM or JUDGEMENT → CONSIDERATION (from=cited, to=citing)
+    - Otherwise → RELATED (from=cited, to=citing)
+
+    Non-SOURCE citations always point from the cited page into the citing
+    page, so the citing page receives an incoming link.
 
     Returns the set of full UUIDs that were successfully linked.
     """
@@ -360,18 +360,15 @@ async def extract_and_link_citations(
         if not cited_page:
             continue
 
-        from_id, to_id = page_id, resolved
         if cited_page.page_type == PageType.SOURCE:
             link_type = LinkType.CITES
-        elif cited_page.page_type == PageType.CLAIM and citing_page_type in (
-            PageType.QUESTION,
-            PageType.JUDGEMENT,
-            PageType.CLAIM,
-        ):
+            from_id, to_id = page_id, resolved
+        elif cited_page.page_type in (PageType.CLAIM, PageType.JUDGEMENT):
             link_type = LinkType.CONSIDERATION
             from_id, to_id = resolved, page_id
         else:
             link_type = LinkType.RELATED
+            from_id, to_id = resolved, page_id
 
         await db.save_link(
             PageLink(

@@ -211,3 +211,214 @@ async def test_get_pages_by_ids_respects_staged_events(baseline_db, staged_db, o
     observer_result = await observer_db.get_pages_by_ids([page.id])
     assert page.id in observer_result
     assert observer_result[page.id].is_superseded is False
+
+
+async def test_nonstaged_runs_record_mutation_events(baseline_db, observer_db):
+    """Non-staged mutations now record events in mutation_events table."""
+    q = await _make_page(baseline_db, "question", PageType.QUESTION)
+    claim = await _make_page(baseline_db, "original claim")
+    link = await _link(baseline_db, claim, q)
+
+    replacement = await _make_page(observer_db, "replacement claim")
+    await observer_db.supersede_page(claim.id, replacement.id)
+    await observer_db.delete_link(link.id)
+
+    q2 = await _make_page(baseline_db, "question 2", PageType.QUESTION)
+    claim2 = await _make_page(baseline_db, "claim 2")
+    link2 = await _link(baseline_db, claim2, q2)
+    await observer_db.update_link_role(link2.id, LinkRole.STRUCTURAL)
+
+    events = (
+        await observer_db._execute(
+            observer_db.client.table("mutation_events")
+            .select("event_type, target_id")
+            .eq("run_id", observer_db.run_id)
+            .order("created_at")
+        )
+    ).data
+    event_types = [e["event_type"] for e in events]
+    target_ids = [e["target_id"] for e in events]
+
+    assert "supersede_page" in event_types
+    assert "delete_link" in event_types
+    assert "change_link_role" in event_types
+    assert claim.id in target_ids
+    assert link.id in target_ids
+    assert link2.id in target_ids
+
+
+async def test_stage_run_hides_pages_from_baseline(project_id):
+    """After stage_run(), the run's pages and links are invisible to baseline readers."""
+    run_db = await _make_db(project_id, staged=False)
+    await run_db.init_budget(100)
+    observer = await _make_db(project_id, staged=False)
+
+    q = await _make_page(run_db, "question", PageType.QUESTION)
+    claim = await _make_page(run_db, "a claim")
+    await _link(run_db, claim, q)
+
+    # Before staging: observer sees everything
+    obs_pages = await observer.get_pages()
+    assert q.id in {p.id for p in obs_pages}
+    assert claim.id in {p.id for p in obs_pages}
+
+    await observer.stage_run(run_db.run_id)
+
+    # After staging: observer sees nothing from that run
+    obs_pages = await observer.get_pages()
+    obs_ids = {p.id for p in obs_pages}
+    assert q.id not in obs_ids
+    assert claim.id not in obs_ids
+
+    obs_links = await observer.get_links_to(q.id)
+    assert len(obs_links) == 0
+
+    await run_db.delete_run_data()
+    await observer.delete_run_data()
+
+
+async def test_stage_run_reverts_supersession(project_id):
+    """stage_run() restores a baseline page that the run had superseded."""
+    baseline = await _make_db(project_id, staged=False)
+    await baseline.init_budget(100)
+    run_db = await _make_db(project_id, staged=False)
+    await run_db.init_budget(100)
+    observer = await _make_db(project_id, staged=False)
+
+    original = await _make_page(baseline, "original claim")
+    replacement = await _make_page(run_db, "better claim")
+    await run_db.supersede_page(original.id, replacement.id)
+
+    # Before staging: observer sees original as superseded
+    obs_page = await observer.get_page(original.id)
+    assert obs_page is not None
+    assert obs_page.is_superseded is True
+
+    await observer.stage_run(run_db.run_id)
+
+    # After staging: observer sees original as active again
+    obs_page = await observer.get_page(original.id)
+    assert obs_page is not None
+    assert obs_page.is_superseded is False
+    assert obs_page.superseded_by is None
+
+    await baseline.delete_run_data()
+    await run_db.delete_run_data()
+    await observer.delete_run_data()
+
+
+async def test_stage_run_restores_deleted_link(project_id):
+    """stage_run() re-inserts a baseline link that the run had deleted."""
+    baseline = await _make_db(project_id, staged=False)
+    await baseline.init_budget(100)
+    run_db = await _make_db(project_id, staged=False)
+    await run_db.init_budget(100)
+    observer = await _make_db(project_id, staged=False)
+
+    q = await _make_page(baseline, "question", PageType.QUESTION)
+    claim = await _make_page(baseline, "some claim")
+    link = await _link(baseline, claim, q)
+
+    await run_db.delete_link(link.id)
+
+    # Before staging: link is gone
+    obs_links = await observer.get_links_to(q.id)
+    assert all(l.id != link.id for l in obs_links)
+
+    await observer.stage_run(run_db.run_id)
+
+    # After staging: link is restored
+    obs_links = await observer.get_links_to(q.id)
+    assert any(l.id == link.id for l in obs_links)
+
+    await baseline.delete_run_data()
+    await run_db.delete_run_data()
+    await observer.delete_run_data()
+
+
+async def test_stage_run_reverts_role_change(project_id):
+    """stage_run() restores a baseline link's original role."""
+    baseline = await _make_db(project_id, staged=False)
+    await baseline.init_budget(100)
+    run_db = await _make_db(project_id, staged=False)
+    await run_db.init_budget(100)
+    observer = await _make_db(project_id, staged=False)
+
+    q = await _make_page(baseline, "question", PageType.QUESTION)
+    claim = await _make_page(baseline, "some claim")
+    link = await _link(baseline, claim, q)
+    assert link.role == LinkRole.DIRECT
+
+    await run_db.update_link_role(link.id, LinkRole.STRUCTURAL)
+
+    # Before staging: observer sees STRUCTURAL
+    obs_link = await observer.get_link(link.id)
+    assert obs_link is not None
+    assert obs_link.role == LinkRole.STRUCTURAL
+
+    await observer.stage_run(run_db.run_id)
+
+    # After staging: observer sees original DIRECT
+    obs_link = await observer.get_link(link.id)
+    assert obs_link is not None
+    assert obs_link.role == LinkRole.DIRECT
+
+    await baseline.delete_run_data()
+    await run_db.delete_run_data()
+    await observer.delete_run_data()
+
+
+async def test_retroactively_staged_run_indistinguishable(project_id):
+    """A retroactively staged run looks identical to a natively staged run."""
+    baseline = await _make_db(project_id, staged=False)
+    await baseline.init_budget(100)
+    run_db = await _make_db(project_id, staged=False)
+    await run_db.init_budget(100)
+    helper = await _make_db(project_id, staged=False)
+
+    # Baseline state
+    original_claim = await _make_page(baseline, "original claim")
+    q = await _make_page(baseline, "question", PageType.QUESTION)
+    baseline_link = await _link(baseline, original_claim, q)
+
+    # Run creates a page, supersedes the original, and deletes the baseline link
+    replacement = await _make_page(run_db, "replacement claim")
+    await run_db.supersede_page(original_claim.id, replacement.id)
+    await run_db.delete_link(baseline_link.id)
+
+    # Retroactively stage
+    await helper.stage_run(run_db.run_id)
+
+    # Open a staged reader for the now-staged run
+    staged_reader = await DB.create(run_id=run_db.run_id, staged=True)
+    staged_reader.project_id = project_id
+
+    # Staged reader sees the replacement page
+    pages = await staged_reader.get_pages()
+    page_ids = {p.id for p in pages}
+    assert replacement.id in page_ids
+
+    # Staged reader sees original_claim as superseded
+    page = await staged_reader.get_page(original_claim.id)
+    assert page is not None
+    assert page.is_superseded is True
+    assert page.superseded_by == replacement.id
+
+    # Staged reader does not see the deleted baseline link
+    links = await staged_reader.get_links_to(q.id)
+    assert all(l.id != baseline_link.id for l in links)
+
+    # Baseline observer sees none of the run's effects
+    observer = await _make_db(project_id, staged=False)
+    obs_pages = await observer.get_pages(active_only=True)
+    obs_ids = {p.id for p in obs_pages}
+    assert original_claim.id in obs_ids
+    assert replacement.id not in obs_ids
+
+    obs_links = await observer.get_links_to(q.id)
+    assert any(l.id == baseline_link.id for l in obs_links)
+
+    await baseline.delete_run_data()
+    await run_db.delete_run_data()
+    await helper.delete_run_data()
+    await observer.delete_run_data()

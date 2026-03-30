@@ -128,6 +128,9 @@ uv run python main.py --ab "Your question here" --budget 10
 # Name a run for easier identification in the trace viewer
 uv run python main.py "Your question here" --name "baseline v2" --budget 10
 
+# Retroactively stage a completed run (hides its effects from baseline readers)
+uv run python main.py --stage-run RUN_ID
+
 # Smoke-test mode: uses Haiku, fewer agent rounds, budget defaults to 1
 uv run python main.py "Your question here" --smoke-test
 

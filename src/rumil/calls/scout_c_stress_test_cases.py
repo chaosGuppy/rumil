@@ -1,4 +1,4 @@
-"""Scout Hypotheses call: identify hypotheses to explore as potential answers."""
+"""Scout Stress-Test Cases call: identify concrete scenarios as hard tests for a claim."""
 
 from rumil.calls.closing_reviewers import StandardClosingReview
 from rumil.calls.context_builders import EmbeddingContext
@@ -7,13 +7,13 @@ from rumil.calls.stages import CallRunner, ClosingReviewer, ContextBuilder, Page
 from rumil.models import CallType
 
 
-class ScoutHypothesesCall(CallRunner):
-    """Identify hypotheses that should be explored as potential answers."""
+class ScoutCStressTestCasesCall(CallRunner):
+    """Identify concrete scenarios serving as hard tests for the claim."""
 
     context_builder_cls = EmbeddingContext
     page_creator_cls = MultiRoundLoop
     closing_reviewer_cls = StandardClosingReview
-    call_type = CallType.SCOUT_HYPOTHESES
+    call_type = CallType.SCOUT_C_STRESS_TEST_CASES
 
     def _make_context_builder(self) -> ContextBuilder:
         return EmbeddingContext(self.call_type)
@@ -32,10 +32,11 @@ class ScoutHypothesesCall(CallRunner):
 
     def task_description(self) -> str:
         return (
-            "Identify hypotheses that should be explored as potential answers "
-            "to the parent question. For each hypothesis, create a claim "
-            "stating the hypothesis and link it as a consideration to the "
-            "parent question. Set credence and robustness honestly — these "
-            "are initial assessments.\n\n"
-            f"Question ID: `{self.infra.question_id}`"
+            "Identify concrete scenarios that could serve as hard tests "
+            "for the scope claim, especially boundary cases where competing "
+            "stories predict different outcomes. Frame each as a question: "
+            '"What does [scenario] tell us about [the claim]?" For each, '
+            "describe the scenario, explain why it would be a good test, "
+            "and note which stories it helps discriminate between.\n\n"
+            f"Claim ID: `{self.infra.question_id}`"
         )

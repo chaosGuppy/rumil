@@ -5,6 +5,11 @@ from rumil.calls.call_registry import (
     ASSESS_CALL_CLASSES,
     INGEST_CALL_CLASSES,
     SCOUT_ANALOGIES_CALL_CLASSES,
+    SCOUT_C_CRUXES_CALL_CLASSES,
+    SCOUT_C_HOW_FALSE_CALL_CLASSES,
+    SCOUT_C_HOW_TRUE_CALL_CLASSES,
+    SCOUT_C_RELEVANT_EVIDENCE_CALL_CLASSES,
+    SCOUT_C_STRESS_TEST_CASES_CALL_CLASSES,
     SCOUT_FACTCHECKS_CALL_CLASSES,
     SCOUT_PARADIGM_CASES_CALL_CLASSES,
     SCOUT_DEEP_QUESTIONS_CALL_CLASSES,
@@ -29,6 +34,11 @@ from rumil.calls.scout_estimates import ScoutEstimatesCall
 from rumil.calls.scout_hypotheses import ScoutHypothesesCall
 from rumil.calls.scout_factchecks import ScoutFactchecksCall
 from rumil.calls.scout_subquestions import ScoutSubquestionsCall
+from rumil.calls.scout_c_cruxes import ScoutCCruxesCall
+from rumil.calls.scout_c_how_false import ScoutCHowFalseCall
+from rumil.calls.scout_c_how_true import ScoutCHowTrueCall
+from rumil.calls.scout_c_relevant_evidence import ScoutCRelevantEvidenceCall
+from rumil.calls.scout_c_stress_test_cases import ScoutCStressTestCasesCall
 from rumil.calls.scout_deep_questions import ScoutDeepQuestionsCall
 from rumil.calls.scout_web_questions import ScoutWebQuestionsCall
 
@@ -61,5 +71,15 @@ __all__ = [
     "SCOUT_WEB_QUESTIONS_CALL_CLASSES",
     "ScoutDeepQuestionsCall",
     "SCOUT_DEEP_QUESTIONS_CALL_CLASSES",
+    "ScoutCHowTrueCall",
+    "SCOUT_C_HOW_TRUE_CALL_CLASSES",
+    "ScoutCHowFalseCall",
+    "SCOUT_C_HOW_FALSE_CALL_CLASSES",
+    "ScoutCCruxesCall",
+    "SCOUT_C_CRUXES_CALL_CLASSES",
+    "ScoutCRelevantEvidenceCall",
+    "SCOUT_C_RELEVANT_EVIDENCE_CALL_CLASSES",
+    "ScoutCStressTestCasesCall",
+    "SCOUT_C_STRESS_TEST_CASES_CALL_CLASSES",
     "run_prioritization",
 ]

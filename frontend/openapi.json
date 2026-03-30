@@ -126,6 +126,22 @@
               "default": true,
               "title": "Active Only"
             }
+          },
+          {
+            "name": "staged_run_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Staged Run Id"
+            }
           }
         ],
         "responses": {
@@ -169,6 +185,22 @@
               "type": "string",
               "title": "Short Id"
             }
+          },
+          {
+            "name": "staged_run_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Staged Run Id"
+            }
           }
         ],
         "responses": {
@@ -207,6 +239,22 @@
             "schema": {
               "type": "string",
               "title": "Page Id"
+            }
+          },
+          {
+            "name": "staged_run_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Staged Run Id"
             }
           }
         ],
@@ -332,6 +380,22 @@
             "schema": {
               "type": "string",
               "title": "Page Id"
+            }
+          },
+          {
+            "name": "staged_run_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Staged Run Id"
             }
           }
         ],
@@ -1542,6 +1606,11 @@
           "scout_factchecks",
           "scout_web_questions",
           "scout_deep_questions",
+          "scout_c_how_true",
+          "scout_c_how_false",
+          "scout_c_cruxes",
+          "scout_c_relevant_evidence",
+          "scout_c_stress_test_cases",
           "web_research",
           "evaluate",
           "grounding_feedback"
@@ -1570,6 +1639,39 @@
           "call_type"
         ],
         "title": "CallTypeFruitScoreItem"
+      },
+      "ClaimScoreItem": {
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "title": "Page Id"
+          },
+          "headline": {
+            "type": "string",
+            "title": "Headline",
+            "default": ""
+          },
+          "impact": {
+            "type": "integer",
+            "title": "Impact",
+            "default": 0
+          },
+          "fruit": {
+            "type": "integer",
+            "title": "Fruit",
+            "default": 0
+          },
+          "reasoning": {
+            "type": "string",
+            "title": "Reasoning",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "page_id"
+        ],
+        "title": "ClaimScoreItem"
       },
       "ConsiderationDirection": {
         "type": "string",
@@ -2415,6 +2517,28 @@
             "title": "Epistemic Type",
             "default": ""
           },
+          "credence": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credence"
+          },
+          "robustness": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Robustness"
+          },
           "provenance_model": {
             "type": "string",
             "title": "Provenance Model",
@@ -2473,6 +2597,8 @@
           "project_id",
           "epistemic_status",
           "epistemic_type",
+          "credence",
+          "robustness",
           "provenance_model",
           "provenance_call_type",
           "provenance_call_id",
@@ -2934,6 +3060,14 @@
             "title": "Subquestion Scores",
             "default": []
           },
+          "claim_scores": {
+            "items": {
+              "$ref": "#/components/schemas/ClaimScoreItem"
+            },
+            "type": "array",
+            "title": "Claim Scores",
+            "default": []
+          },
           "parent_fruit": {
             "anyOf": [
               {
@@ -2970,6 +3104,7 @@
           "call_id",
           "event",
           "subquestion_scores",
+          "claim_scores",
           "parent_fruit",
           "parent_fruit_reasoning",
           "per_type_fruit",

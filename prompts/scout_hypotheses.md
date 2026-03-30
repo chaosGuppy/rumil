@@ -6,20 +6,20 @@ You are performing a **Scout Hypotheses** call — an initial exploration focuse
 
 ## What to Produce
 
-For each hypothesis (aim for 2–4):
+For each hypothesis (aim for 2-4):
 
-1. **A hypothesis subquestion** of the form "What should we make of the hypothesis that [X]?", linked as a child of the parent question. This frames the hypothesis as a research target: later calls will gather evidence for and against it, assess its plausibility, and extract whatever partial truth it contains.
+1. **A claim** stating the hypothesis as a concrete assertion, with your initial credence and robustness scores. Link it as a consideration to the parent question.
 
-2. Optionally, **a claim** summarising the core assertion of the hypothesis and your initial assessment of its plausibility, linked as a consideration to the parent question or to the hypothesis subquestion.
+2. The claim's content should explain: what is the hypothesis? Why is it worth taking seriously? What would the world look like if this hypothesis is true?
 
-Use `create_question` to create the hypothesis subquestion. The question text must always take the form "What should we make of the hypothesis that [X]?" where X is the specific assertive statement. The question will be automatically linked to the parent.
+Use `CREATE_CLAIM` to create the hypothesis claim and `LINK_CONSIDERATION` to link it to the parent question. Set the consideration direction to `supports` if the hypothesis supports a particular answer, or `neutral` if it frames an alternative perspective.
 
 ## How to Proceed
 
 1. Read the parent question and existing context carefully.
 2. Identify candidate answers, paradigms, or explanatory frameworks — not just pieces of evidence, but specific views about what the answer to the parent question looks like.
-3. For each, create a hypothesis subquestion and link it to the parent.
-4. Where you have an initial view on plausibility, state it as a claim with appropriate credence and robustness.
+3. For each, create a claim stating the hypothesis with appropriate credence and robustness. Low robustness is expected at this stage.
+4. Where multiple hypotheses compete, make sure they represent genuinely different views.
 
 ## What Makes a Good Hypothesis
 
@@ -33,3 +33,4 @@ Use `create_question` to create the hypothesis subquestion. The question text mu
 - **One strong hypothesis beats several thin ones.** Do not pad with obvious or uninteresting options.
 - **Diversity of perspective.** Aim for hypotheses that represent genuinely different views, not minor variations on the same theme.
 - **Do not duplicate** hypotheses already present in the workspace.
+- **Set credence and robustness honestly.** These are initial assessments — low robustness (1-2) is expected, credence should reflect your genuine initial estimate.

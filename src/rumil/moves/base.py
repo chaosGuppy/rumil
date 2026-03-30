@@ -55,6 +55,7 @@ class MoveState:
         self.db = db
         self.last_created_id: str | None = None
         self.created_page_ids: list[str] = []
+        self.context_page_ids: set[str] = set()
         self.moves: list[Move] = []
         self.move_created_ids: list[list[str]] = []
         self.move_trace_extras: list[dict[str, Any]] = []
@@ -110,6 +111,7 @@ class MoveDef(Generic[S]):
     description: str
     schema: type[S]
     execute: Callable[[S, Call, DB], Awaitable[MoveResult]]
+    context_check: Callable[[S, "MoveState"], Awaitable[MoveResult | None]] | None = None
 
     def bind(self, state: MoveState) -> Tool:
         """Return a Tool bound to this call's mutable state."""
@@ -123,6 +125,10 @@ class MoveDef(Generic[S]):
                 raise
             if state.last_created_id:
                 validated = _resolve_last_created(validated, state.last_created_id)
+            if self.context_check:
+                check_result = await self.context_check(validated, state)
+                if check_result is not None:
+                    return check_result.message
             result = await self.execute(validated, state.call, state.db)
             state.moves.append(Move(move_type=self.move_type, payload=validated))
             if result.dispatches:
@@ -131,6 +137,7 @@ class MoveDef(Generic[S]):
             if result.created_page_id:
                 state.created_page_ids.append(result.created_page_id)
                 state.last_created_id = result.created_page_id
+                state.context_page_ids.add(result.created_page_id)
                 move_page_ids.append(result.created_page_id)
                 log.debug(
                     "Move %s created page: %s",
@@ -141,6 +148,12 @@ class MoveDef(Generic[S]):
                 move_page_ids.extend(result.extra_created_ids)
             state.move_created_ids.append(move_page_ids)
             state.move_trace_extras.append(result.trace_extra)
+            if self.move_type == MoveType.LOAD_PAGE:
+                raw_pid = inp.get("page_id", "")
+                if raw_pid:
+                    loaded = await state.db.resolve_page_id(raw_pid)
+                    if loaded:
+                        state.context_page_ids.add(loaded)
             log.debug("Move %s result: %s", self.name, result.message[:100])
             return result.message
 

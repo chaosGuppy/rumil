@@ -13,7 +13,6 @@ from pydantic import BaseModel, Field
 if TYPE_CHECKING:
     from rumil.orchestrators.base import BaseOrchestrator
 
-from rumil.calls import run_prioritization
 from rumil.calls.assess_concept_types import (
     SCREENING_FRUIT_THRESHOLD,
     SCREENING_MAX_ROUNDS,

@@ -28,6 +28,45 @@
         }
       }
     },
+    "/api/projects/{project_id}": {
+      "get": {
+        "summary": "Get Project",
+        "operationId": "get_project_api_projects__project_id__get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{project_id}/runs": {
       "get": {
         "summary": "List Project Runs",
@@ -764,6 +803,21 @@
                         "$ref": "#/components/schemas/ToolCallEventOut"
                       },
                       {
+                        "$ref": "#/components/schemas/ReassessTriggeredEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/AffectedPagesIdentifiedEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/UpdateSubgraphComputedEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/UpdatePlanCreatedEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/ClaimReassessedEventOut"
+                      },
+                      {
                         "$ref": "#/components/schemas/GroundingTasksGeneratedEventOut"
                       },
                       {
@@ -788,6 +842,11 @@
                         "agent_started": "#/components/schemas/AgentStartedEventOut",
                         "evaluation_complete": "#/components/schemas/EvaluationCompleteEventOut",
                         "tool_call": "#/components/schemas/ToolCallEventOut",
+                        "reassess_triggered": "#/components/schemas/ReassessTriggeredEventOut",
+                        "affected_pages_identified": "#/components/schemas/AffectedPagesIdentifiedEventOut",
+                        "update_subgraph_computed": "#/components/schemas/UpdateSubgraphComputedEventOut",
+                        "update_plan_created": "#/components/schemas/UpdatePlanCreatedEventOut",
+                        "claim_reassessed": "#/components/schemas/ClaimReassessedEventOut",
                         "grounding_tasks_generated": "#/components/schemas/GroundingTasksGeneratedEventOut",
                         "web_research_complete": "#/components/schemas/WebResearchCompleteEventOut"
                       }
@@ -1063,6 +1122,41 @@
           "arms"
         ],
         "title": "ABRunTraceOut"
+      },
+      "AffectedPagesIdentifiedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "affected_pages_identified",
+            "title": "Event",
+            "default": "affected_pages_identified"
+          },
+          "affected_pages": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Affected Pages",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "affected_pages"
+        ],
+        "title": "AffectedPagesIdentifiedEventOut"
       },
       "AgentStartedEventOut": {
         "properties": {
@@ -1513,6 +1607,21 @@
                   "$ref": "#/components/schemas/ToolCallEventOut"
                 },
                 {
+                  "$ref": "#/components/schemas/ReassessTriggeredEventOut"
+                },
+                {
+                  "$ref": "#/components/schemas/AffectedPagesIdentifiedEventOut"
+                },
+                {
+                  "$ref": "#/components/schemas/UpdateSubgraphComputedEventOut"
+                },
+                {
+                  "$ref": "#/components/schemas/UpdatePlanCreatedEventOut"
+                },
+                {
+                  "$ref": "#/components/schemas/ClaimReassessedEventOut"
+                },
+                {
                   "$ref": "#/components/schemas/GroundingTasksGeneratedEventOut"
                 },
                 {
@@ -1522,7 +1631,9 @@
               "discriminator": {
                 "propertyName": "event",
                 "mapping": {
+                  "affected_pages_identified": "#/components/schemas/AffectedPagesIdentifiedEventOut",
                   "agent_started": "#/components/schemas/AgentStartedEventOut",
+                  "claim_reassessed": "#/components/schemas/ClaimReassessedEventOut",
                   "context_built": "#/components/schemas/ContextBuiltEventOut",
                   "dispatch_executed": "#/components/schemas/DispatchExecutedEventOut",
                   "dispatches_planned": "#/components/schemas/DispatchesPlannedEventOut",
@@ -1532,11 +1643,14 @@
                   "grounding_tasks_generated": "#/components/schemas/GroundingTasksGeneratedEventOut",
                   "llm_exchange": "#/components/schemas/LLMExchangeEventOut",
                   "moves_executed": "#/components/schemas/MovesExecutedEventOut",
+                  "reassess_triggered": "#/components/schemas/ReassessTriggeredEventOut",
                   "review_complete": "#/components/schemas/ReviewCompleteEventOut",
                   "scoring_completed": "#/components/schemas/ScoringCompletedEventOut",
                   "subagent_completed": "#/components/schemas/SubagentCompletedEventOut",
                   "subagent_started": "#/components/schemas/SubagentStartedEventOut",
                   "tool_call": "#/components/schemas/ToolCallEventOut",
+                  "update_plan_created": "#/components/schemas/UpdatePlanCreatedEventOut",
+                  "update_subgraph_computed": "#/components/schemas/UpdateSubgraphComputedEventOut",
                   "warning": "#/components/schemas/WarningEventOut",
                   "web_research_complete": "#/components/schemas/WebResearchCompleteEventOut"
                 }
@@ -1639,6 +1753,47 @@
           "call_type"
         ],
         "title": "CallTypeFruitScoreItem"
+      },
+      "ClaimReassessedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "claim_reassessed",
+            "title": "Event",
+            "default": "claim_reassessed"
+          },
+          "old_page_id": {
+            "type": "string",
+            "title": "Old Page Id"
+          },
+          "new_page_id": {
+            "type": "string",
+            "title": "New Page Id"
+          },
+          "headline": {
+            "type": "string",
+            "title": "Headline",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "old_page_id",
+          "new_page_id",
+          "headline"
+        ],
+        "title": "ClaimReassessedEventOut"
       },
       "ClaimScoreItem": {
         "properties": {
@@ -2798,6 +2953,54 @@
         ],
         "title": "RealtimeConfigOut"
       },
+      "ReassessTriggeredEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "reassess_triggered",
+            "title": "Event",
+            "default": "reassess_triggered"
+          },
+          "question_id": {
+            "type": "string",
+            "title": "Question Id"
+          },
+          "question_headline": {
+            "type": "string",
+            "title": "Question Headline",
+            "default": ""
+          },
+          "child_call_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Child Call Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "question_id",
+          "question_headline",
+          "child_call_id"
+        ],
+        "title": "ReassessTriggeredEventOut"
+      },
       "ReviewCompleteEventOut": {
         "properties": {
           "ts": {
@@ -3274,6 +3477,97 @@
           "response"
         ],
         "title": "ToolCallEventOut"
+      },
+      "UpdatePlanCreatedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "update_plan_created",
+            "title": "Event",
+            "default": "update_plan_created"
+          },
+          "wave_count": {
+            "type": "integer",
+            "title": "Wave Count",
+            "default": 0
+          },
+          "operation_count": {
+            "type": "integer",
+            "title": "Operation Count",
+            "default": 0
+          },
+          "waves": {
+            "items": {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "title": "Waves",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "wave_count",
+          "operation_count",
+          "waves"
+        ],
+        "title": "UpdatePlanCreatedEventOut"
+      },
+      "UpdateSubgraphComputedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "update_subgraph_computed",
+            "title": "Event",
+            "default": "update_subgraph_computed"
+          },
+          "node_count": {
+            "type": "integer",
+            "title": "Node Count",
+            "default": 0
+          },
+          "nodes": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Nodes",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "node_count",
+          "nodes"
+        ],
+        "title": "UpdateSubgraphComputedEventOut"
       },
       "ValidationError": {
         "properties": {

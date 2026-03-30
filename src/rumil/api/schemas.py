@@ -13,7 +13,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from rumil.models import Call, Page, PageLink, _all_fields_required
 from rumil.tracing.trace_events import (
+    AffectedPagesIdentifiedEvent,
     AgentStartedEvent,
+    ClaimReassessedEvent,
     ContextBuiltEvent,
     DispatchesPlannedEvent,
     DispatchExecutedEvent,
@@ -23,11 +25,14 @@ from rumil.tracing.trace_events import (
     GroundingTasksGeneratedEvent,
     LLMExchangeEvent,
     MovesExecutedEvent,
+    ReassessTriggeredEvent,
     ReviewCompleteEvent,
     ScoringCompletedEvent,
     SubagentCompletedEvent,
     SubagentStartedEvent,
     ToolCallEvent,
+    UpdatePlanCreatedEvent,
+    UpdateSubgraphComputedEvent,
     WarningEvent,
     WebResearchCompleteEvent,
 )
@@ -116,6 +121,28 @@ class ToolCallEventOut(ToolCallEvent, _TraceEnvelopeMixin):
     pass
 
 
+class ReassessTriggeredEventOut(ReassessTriggeredEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class AffectedPagesIdentifiedEventOut(
+    AffectedPagesIdentifiedEvent, _TraceEnvelopeMixin
+):
+    pass
+
+
+class UpdateSubgraphComputedEventOut(UpdateSubgraphComputedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class UpdatePlanCreatedEventOut(UpdatePlanCreatedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class ClaimReassessedEventOut(ClaimReassessedEvent, _TraceEnvelopeMixin):
+    pass
+
+
 class GroundingTasksGeneratedEventOut(
     GroundingTasksGeneratedEvent, _TraceEnvelopeMixin
 ):
@@ -142,6 +169,11 @@ TraceEventOut = Annotated[
     | AgentStartedEventOut
     | EvaluationCompleteEventOut
     | ToolCallEventOut
+    | ReassessTriggeredEventOut
+    | AffectedPagesIdentifiedEventOut
+    | UpdateSubgraphComputedEventOut
+    | UpdatePlanCreatedEventOut
+    | ClaimReassessedEventOut
     | GroundingTasksGeneratedEventOut
     | WebResearchCompleteEventOut,
     Field(discriminator="event"),

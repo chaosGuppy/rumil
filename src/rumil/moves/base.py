@@ -261,6 +261,32 @@ def write_page_file(page: Page) -> None:
     filepath.write_text("\n".join(lines), encoding="utf-8")
 
 
+async def _copy_consideration_links(
+    old_page_id: str, new_page_id: str, db: DB
+) -> None:
+    """Copy outbound CONSIDERATION links from *old_page_id* to *new_page_id*."""
+    links = await db.get_links_from(old_page_id)
+    for link in links:
+        if link.link_type == LinkType.CONSIDERATION:
+            await db.save_link(
+                PageLink(
+                    from_page_id=new_page_id,
+                    to_page_id=link.to_page_id,
+                    link_type=LinkType.CONSIDERATION,
+                    direction=link.direction,
+                    strength=link.strength,
+                    reasoning=link.reasoning,
+                    role=link.role,
+                )
+            )
+    count = sum(1 for l in links if l.link_type == LinkType.CONSIDERATION)
+    if count:
+        log.info(
+            "Copied %d consideration links from %s to %s",
+            count, old_page_id[:8], new_page_id[:8],
+        )
+
+
 async def create_page(
     payload: CreatePagePayload,
     call: Call,
@@ -324,6 +350,7 @@ async def create_page(
         old_id = await db.resolve_page_id(payload.supersedes)
         if old_id:
             await db.supersede_page(old_id, page.id)
+            await _copy_consideration_links(old_id, page.id, db)
             log.info("Superseded %s -> %s", old_id[:8], page.id[:8])
         else:
             log.warning("Supersede target %s not found", payload.supersedes)

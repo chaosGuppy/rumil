@@ -28,7 +28,7 @@ from rumil.llm import (
     build_user_message,
     structured_call,
 )
-from rumil.models import CallType, MoveType
+from rumil.models import CallType, MoveType, PageType
 from rumil.move_presets import get_moves_for_call
 from rumil.moves.load_page import LoadPagePayload
 from rumil.moves.registry import MOVES
@@ -194,7 +194,7 @@ async def _self_assessment(
         created_lines = []
         for pid in infra.state.created_page_ids:
             page = await infra.db.get_page(pid)
-            if page:
+            if page and page.page_type != PageType.SOURCE:
                 created_lines.append(f'  - `{pid[:8]}`: "{page.headline[:120]}"')
         if created_lines:
             page_summary_note = (

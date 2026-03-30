@@ -2,8 +2,11 @@
 
 import json
 import logging
+import re
+import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from typing import Any
 from pathlib import Path
 
 from claude_agent_sdk import (
@@ -22,13 +25,14 @@ from claude_agent_sdk import (
 from claude_agent_sdk.types import HookEvent, SyncHookJSONOutput
 
 from rumil.database import DB
-from rumil.evaluate.explore import explore_page_impl
 from rumil.models import Call, CallStatus, CallType
+from rumil.pricing import compute_cost
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
 from rumil.tracing.tracer import CallTrace
 from rumil.tracing.trace_events import (
     AgentStartedEvent,
+    LLMExchangeEvent,
     SubagentCompletedEvent,
     SubagentStartedEvent,
     ToolCallEvent,
@@ -37,23 +41,6 @@ from rumil.tracing.trace_events import (
 
 log = logging.getLogger(__name__)
 
-
-def make_explore_tool(db: DB):
-    """Create the explore_page MCP tool definition, closing over *db*."""
-
-    @tool(
-        "explore_page",
-        "Explore the local graph around a page. Returns the page and its "
-        "neighbors at varying detail levels based on graph distance. "
-        "Input a page ID (short 8-char prefix or full UUID).",
-        {"page_id": str},
-    )
-    async def explore_page(args: dict) -> dict:
-        page_id = args["page_id"]
-        result = await explore_page_impl(page_id, db)
-        return {"content": [{"type": "text", "text": result}]}
-
-    return explore_page
 
 
 @dataclass
@@ -74,6 +61,7 @@ class SdkAgentConfig:
     disallowed_tools: Sequence[str] = ("Write", "Edit", "Bash", "Glob")
     agents: dict[str, AgentDefinition] = field(default_factory=dict)
     extra_hooks: dict[HookEvent, list[HookMatcher]] = field(default_factory=dict)
+    output_format: dict[str, Any] | None = None
 
 
 @dataclass
@@ -81,6 +69,7 @@ class SdkAgentResult:
     """Result from running a Claude Agent SDK agent."""
 
     last_assistant_text: Sequence[str]
+    structured_output: Any = None
 
 
 def _read_subagent_summary(transcript_path: str, max_len: int = 500) -> str:
@@ -161,7 +150,7 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
             ToolCallEvent(
                 tool_name=tool_name,
                 tool_input=tool_input,
-                response=response[:2000],
+                response=response,
             )
         )
         return SyncHookJSONOutput()
@@ -203,8 +192,8 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
             summary = _read_subagent_summary(
                 input_data.get("agent_transcript_path", "")  # type: ignore[call-overload]
             )
-        if isinstance(summary, str) and len(summary) > 500:
-            summary = summary[:500]
+        if not isinstance(summary, str):
+            summary = ""
         if child_call_id:
             await config.db.update_call_status(
                 child_call_id,
@@ -251,6 +240,7 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
         hooks=hooks,
         max_turns=settings.sdk_agent_max_turns,
         model=settings.model,
+        output_format=config.output_format,
     )
 
     await config.trace.record(
@@ -261,10 +251,14 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
     )
 
     last_assistant_text: list[str] = []
+    structured_output: Any = None
+    all_messages: list[dict] = []
+    turn_counter = 0
     async with ClaudeSDKClient(options=options) as client:
         await client.query(config.user_prompt)
         async for message in client.receive_response():
             if isinstance(message, AssistantMessage):
+                turn_counter += 1
                 parts = [
                     block.text
                     for block in message.content
@@ -272,9 +266,46 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
                 ]
                 if parts:
                     last_assistant_text = parts
+                if message.usage:
+                    input_tokens = message.usage.get("input_tokens", 0)
+                    output_tokens = message.usage.get("output_tokens", 0)
+                    cache_creation = message.usage.get(
+                        "cache_creation_input_tokens", 0
+                    )
+                    cache_read = message.usage.get(
+                        "cache_read_input_tokens", 0
+                    )
+                    cost_usd = compute_cost(
+                        model=settings.model,
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                        cache_creation_input_tokens=cache_creation,
+                        cache_read_input_tokens=cache_read,
+                    )
+                    await config.trace.record(
+                        LLMExchangeEvent(
+                            exchange_id=str(uuid.uuid4()),
+                            phase="sdk_agent",
+                            round=turn_counter,
+                            input_tokens=input_tokens,
+                            output_tokens=output_tokens,
+                            cache_creation_input_tokens=cache_creation or None,
+                            cache_read_input_tokens=cache_read or None,
+                            cost_usd=cost_usd or None,
+                        )
+                    )
+                if config.output_format:
+                    all_messages.append({
+                        "type": "AssistantMessage",
+                        "content": [
+                            _serialize_block(b) for b in message.content
+                        ],
+                    })
             elif isinstance(message, ResultMessage):
                 if not last_assistant_text and message.result:
                     last_assistant_text = [message.result]
+                if message.structured_output is not None:
+                    structured_output = message.structured_output
                 if message.stop_reason == "max_turns":
                     log.warning("Agent hit max_turns limit")
                     await config.trace.record(
@@ -283,5 +314,61 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
                             "output may be incomplete"
                         )
                     )
+                if config.output_format:
+                    all_messages.append({
+                        "type": "ResultMessage",
+                        "result": message.result,
+                        "stop_reason": message.stop_reason,
+                        "structured_output": message.structured_output,
+                    })
 
-    return SdkAgentResult(last_assistant_text=last_assistant_text)
+    if config.output_format:
+        log.info(
+            "Structured output debug dump:\n%s",
+            json.dumps(all_messages, indent=2, default=str),
+        )
+        if structured_output is None:
+            structured_output = _try_extract_json(last_assistant_text)
+            if structured_output is not None:
+                log.info("Extracted structured output from assistant text (fallback)")
+
+    return SdkAgentResult(
+        last_assistant_text=last_assistant_text,
+        structured_output=structured_output,
+    )
+
+
+def _serialize_block(block: Any) -> dict:
+    """Best-effort serialization of a content block for debug logging."""
+    if isinstance(block, TextBlock):
+        return {"type": "text", "text": block.text}
+    if hasattr(block, "model_dump"):
+        return block.model_dump()  # type: ignore[no-any-return]
+    return {"type": type(block).__name__, "repr": repr(block)[:500]}
+
+
+_JSON_BLOCK_RE = re.compile(r"```(?:json)?\s*\n(.*?)\n```", re.DOTALL)
+
+
+def _try_extract_json(text_parts: Sequence[str]) -> Any:
+    """Try to parse structured JSON from assistant text.
+
+    Checks for JSON code blocks first, then tries parsing the raw text.
+    """
+    full_text = "\n".join(text_parts).strip()
+    if not full_text:
+        return None
+
+    block_match = _JSON_BLOCK_RE.search(full_text)
+    if block_match:
+        try:
+            return json.loads(block_match.group(1))
+        except json.JSONDecodeError:
+            pass
+
+    try:
+        return json.loads(full_text)
+    except json.JSONDecodeError:
+        pass
+
+    return None

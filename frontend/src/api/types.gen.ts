@@ -1278,6 +1278,26 @@ export type SubagentCompletedEventOut = {
      * Summary
      */
     summary: string;
+    /**
+     * Input Tokens
+     */
+    input_tokens: number | null;
+    /**
+     * Output Tokens
+     */
+    output_tokens: number | null;
+    /**
+     * Cache Creation Input Tokens
+     */
+    cache_creation_input_tokens: number | null;
+    /**
+     * Cache Read Input Tokens
+     */
+    cache_read_input_tokens: number | null;
+    /**
+     * Cost Usd
+     */
+    cost_usd: number | null;
 };
 
 /**

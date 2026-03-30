@@ -16,6 +16,11 @@ from rumil.calls.scout_factchecks import ScoutFactchecksCall
 from rumil.calls.scout_paradigm_cases import ScoutParadigmCasesCall
 from rumil.calls.scout_deep_questions import ScoutDeepQuestionsCall
 from rumil.calls.scout_web_questions import ScoutWebQuestionsCall
+from rumil.calls.scout_c_cruxes import ScoutCCruxesCall
+from rumil.calls.scout_c_how_false import ScoutCHowFalseCall
+from rumil.calls.scout_c_how_true import ScoutCHowTrueCall
+from rumil.calls.scout_c_relevant_evidence import ScoutCRelevantEvidenceCall
+from rumil.calls.scout_c_stress_test_cases import ScoutCStressTestCasesCall
 from rumil.calls.scout_concepts import ScoutConceptsCall
 from rumil.calls.web_research import WebResearchCall
 from rumil.calls.scout_estimates import ScoutEstimatesCall
@@ -79,4 +84,24 @@ SCOUT_WEB_QUESTIONS_CALL_CLASSES: dict[str, type[ScoutWebQuestionsCall]] = {
 
 SCOUT_DEEP_QUESTIONS_CALL_CLASSES: dict[str, type[ScoutDeepQuestionsCall]] = {
     "default": ScoutDeepQuestionsCall,
+}
+
+SCOUT_C_HOW_TRUE_CALL_CLASSES: dict[str, type[ScoutCHowTrueCall]] = {
+    "default": ScoutCHowTrueCall,
+}
+
+SCOUT_C_HOW_FALSE_CALL_CLASSES: dict[str, type[ScoutCHowFalseCall]] = {
+    "default": ScoutCHowFalseCall,
+}
+
+SCOUT_C_CRUXES_CALL_CLASSES: dict[str, type[ScoutCCruxesCall]] = {
+    "default": ScoutCCruxesCall,
+}
+
+SCOUT_C_RELEVANT_EVIDENCE_CALL_CLASSES: dict[str, type[ScoutCRelevantEvidenceCall]] = {
+    "default": ScoutCRelevantEvidenceCall,
+}
+
+SCOUT_C_STRESS_TEST_CASES_CALL_CLASSES: dict[str, type[ScoutCStressTestCasesCall]] = {
+    "default": ScoutCStressTestCasesCall,
 }

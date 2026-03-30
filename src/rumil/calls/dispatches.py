@@ -14,9 +14,15 @@ from rumil.models import (
     Dispatch,
     FindConsiderationsMode,
     PrioritizationDispatchPayload,
+    RecurseClaimDispatchPayload,
     RecurseDispatchPayload,
     ScopeOnlyDispatchPayload,
     ScoutAnalogiesDispatchPayload,
+    ScoutCCruxesDispatchPayload,
+    ScoutCHowFalseDispatchPayload,
+    ScoutCHowTrueDispatchPayload,
+    ScoutCRelevantEvidenceDispatchPayload,
+    ScoutCStressTestCasesDispatchPayload,
     ScoutDispatchPayload,
     ScoutParadigmCasesDispatchPayload,
     ScoutEstimatesDispatchPayload,
@@ -267,6 +273,71 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
         ),
         schema=ScoutDeepQuestionsDispatchPayload,
     ),
+    CallType.SCOUT_C_HOW_TRUE: DispatchDef(
+        call_type=CallType.SCOUT_C_HOW_TRUE,
+        name="dispatch_scout_c_how_true",
+        description=(
+            "Dispatch a scout that identifies plausible causal mechanisms "
+            "that would make the scope claim true. Always targets the scope claim. "
+            "Runs up to max_rounds rounds, stopping early when remaining "
+            "fruit falls below fruit_threshold. "
+            "Budget cost: between 1 and max_rounds (inclusive)."
+        ),
+        schema=ScoutCHowTrueDispatchPayload,
+    ),
+    CallType.SCOUT_C_HOW_FALSE: DispatchDef(
+        call_type=CallType.SCOUT_C_HOW_FALSE,
+        name="dispatch_scout_c_how_false",
+        description=(
+            "Dispatch a scout that identifies plausible causal stories "
+            "compatible with observed evidence but in which the scope claim "
+            "is false. Always targets the scope claim. "
+            "Runs up to max_rounds rounds, stopping early when remaining "
+            "fruit falls below fruit_threshold. "
+            "Budget cost: between 1 and max_rounds (inclusive)."
+        ),
+        schema=ScoutCHowFalseDispatchPayload,
+    ),
+    CallType.SCOUT_C_CRUXES: DispatchDef(
+        call_type=CallType.SCOUT_C_CRUXES,
+        name="dispatch_scout_c_cruxes",
+        description=(
+            "Dispatch a scout that identifies cruxes — specific points where "
+            "how-true and how-false stories diverge, such that resolving them "
+            "would be most informative. Always targets the scope claim. "
+            "Runs up to max_rounds rounds, stopping early when remaining "
+            "fruit falls below fruit_threshold. "
+            "Budget cost: between 1 and max_rounds (inclusive)."
+        ),
+        schema=ScoutCCruxesDispatchPayload,
+    ),
+    CallType.SCOUT_C_RELEVANT_EVIDENCE: DispatchDef(
+        call_type=CallType.SCOUT_C_RELEVANT_EVIDENCE,
+        name="dispatch_scout_c_relevant_evidence",
+        description=(
+            "Dispatch a scout that identifies evidence worth gathering that "
+            "bears on the most important cruxes of the scope claim. Always "
+            "targets the scope claim. "
+            "Runs up to max_rounds rounds, stopping early when remaining "
+            "fruit falls below fruit_threshold. "
+            "Budget cost: between 1 and max_rounds (inclusive)."
+        ),
+        schema=ScoutCRelevantEvidenceDispatchPayload,
+    ),
+    CallType.SCOUT_C_STRESS_TEST_CASES: DispatchDef(
+        call_type=CallType.SCOUT_C_STRESS_TEST_CASES,
+        name="dispatch_scout_c_stress_test_cases",
+        description=(
+            "Dispatch a scout that identifies concrete scenarios serving as "
+            "hard tests for the scope claim, especially boundary cases where "
+            "competing stories predict different outcomes. Always targets the "
+            "scope claim. "
+            "Runs up to max_rounds rounds, stopping early when remaining "
+            "fruit falls below fruit_threshold. "
+            "Budget cost: between 1 and max_rounds (inclusive)."
+        ),
+        schema=ScoutCStressTestCasesDispatchPayload,
+    ),
     CallType.WEB_RESEARCH: DispatchDef(
         call_type=CallType.WEB_RESEARCH,
         name="dispatch_web_factcheck",
@@ -290,4 +361,15 @@ RECURSE_DISPATCH_DEF: DispatchDef[RecurseDispatchPayload] = DispatchDef(
         "prioritization cycle. Budget cost: exactly the budget you assign."
     ),
     schema=RecurseDispatchPayload,
+)
+
+RECURSE_CLAIM_DISPATCH_DEF: DispatchDef[RecurseClaimDispatchPayload] = DispatchDef(
+    call_type=CallType.PRIORITIZATION,
+    name="recurse_into_claim_investigation",
+    description=(
+        "Recursively investigate a claim with its own two-phase claim "
+        "investigation cycle (how-true/how-false stories, cruxes, evidence). "
+        "Budget cost: exactly the budget you assign."
+    ),
+    schema=RecurseClaimDispatchPayload,
 )

@@ -68,6 +68,11 @@ class CallType(str, Enum):
     SCOUT_FACTCHECKS = "scout_factchecks"
     SCOUT_WEB_QUESTIONS = "scout_web_questions"
     SCOUT_DEEP_QUESTIONS = "scout_deep_questions"
+    SCOUT_C_HOW_TRUE = "scout_c_how_true"
+    SCOUT_C_HOW_FALSE = "scout_c_how_false"
+    SCOUT_C_CRUXES = "scout_c_cruxes"
+    SCOUT_C_RELEVANT_EVIDENCE = "scout_c_relevant_evidence"
+    SCOUT_C_STRESS_TEST_CASES = "scout_c_stress_test_cases"
     WEB_RESEARCH = "web_research"
     EVALUATE = "evaluate"
     GROUNDING_FEEDBACK = "grounding_feedback"
@@ -86,6 +91,11 @@ DISPATCHABLE_CALL_TYPES: set[CallType] = {
     CallType.SCOUT_FACTCHECKS,
     CallType.SCOUT_WEB_QUESTIONS,
     CallType.SCOUT_DEEP_QUESTIONS,
+    CallType.SCOUT_C_HOW_TRUE,
+    CallType.SCOUT_C_HOW_FALSE,
+    CallType.SCOUT_C_CRUXES,
+    CallType.SCOUT_C_RELEVANT_EVIDENCE,
+    CallType.SCOUT_C_STRESS_TEST_CASES,
     CallType.WEB_RESEARCH,
 }
 
@@ -252,6 +262,26 @@ class ScoutDeepQuestionsDispatchPayload(ScopeOnlyDispatchPayload, _MultiRoundFie
     pass
 
 
+class ScoutCHowTrueDispatchPayload(ScopeOnlyDispatchPayload, _MultiRoundFields):
+    pass
+
+
+class ScoutCHowFalseDispatchPayload(ScopeOnlyDispatchPayload, _MultiRoundFields):
+    pass
+
+
+class ScoutCCruxesDispatchPayload(ScopeOnlyDispatchPayload, _MultiRoundFields):
+    pass
+
+
+class ScoutCRelevantEvidenceDispatchPayload(ScopeOnlyDispatchPayload, _MultiRoundFields):
+    pass
+
+
+class ScoutCStressTestCasesDispatchPayload(ScopeOnlyDispatchPayload, _MultiRoundFields):
+    pass
+
+
 class WebResearchDispatchPayload(BaseDispatchPayload):
     pass
 
@@ -260,6 +290,13 @@ class RecurseDispatchPayload(BaseDispatchPayload, _PrioritizationFields):
     budget: int = Field(
         ge=MIN_TWOPHASE_BUDGET,
         description=f"Budget to allocate for the sub-investigation (minimum {MIN_TWOPHASE_BUDGET})",
+    )
+
+
+class RecurseClaimDispatchPayload(BaseDispatchPayload, _PrioritizationFields):
+    budget: int = Field(
+        ge=MIN_TWOPHASE_BUDGET,
+        description=f"Budget for the claim sub-investigation (minimum {MIN_TWOPHASE_BUDGET})",
     )
 
 

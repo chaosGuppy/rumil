@@ -304,7 +304,7 @@ export type CallTraceOut = {
 /**
  * CallType
  */
-export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_concepts' | 'assess_concept' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'web_research' | 'evaluate' | 'grounding_feedback';
+export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_concepts' | 'assess_concept' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'web_research' | 'evaluate' | 'grounding_feedback';
 
 /**
  * CallTypeFruitScoreItem
@@ -314,6 +314,32 @@ export type CallTypeFruitScoreItem = {
      * Call Type
      */
     call_type: string;
+    /**
+     * Fruit
+     */
+    fruit?: number;
+    /**
+     * Reasoning
+     */
+    reasoning?: string;
+};
+
+/**
+ * ClaimScoreItem
+ */
+export type ClaimScoreItem = {
+    /**
+     * Page Id
+     */
+    page_id: string;
+    /**
+     * Headline
+     */
+    headline?: string;
+    /**
+     * Impact
+     */
+    impact?: number;
     /**
      * Fruit
      */
@@ -803,6 +829,14 @@ export type Page = {
      */
     epistemic_type: string;
     /**
+     * Credence
+     */
+    credence: number | null;
+    /**
+     * Robustness
+     */
+    robustness: number | null;
+    /**
      * Provenance Model
      */
     provenance_model: string;
@@ -1101,6 +1135,10 @@ export type ScoringCompletedEventOut = {
      */
     subquestion_scores: Array<SubquestionScoreItem>;
     /**
+     * Claim Scores
+     */
+    claim_scores: Array<ClaimScoreItem>;
+    /**
      * Parent Fruit
      */
     parent_fruit: number | null;
@@ -1394,6 +1432,10 @@ export type ListPagesApiProjectsProjectIdPagesGetData = {
          * Active Only
          */
         active_only?: boolean;
+        /**
+         * Staged Run Id
+         */
+        staged_run_id?: string | null;
     };
     url: '/api/projects/{project_id}/pages';
 };
@@ -1426,7 +1468,12 @@ export type GetPageByShortIdApiPagesShortShortIdGetData = {
          */
         short_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Staged Run Id
+         */
+        staged_run_id?: string | null;
+    };
     url: '/api/pages/short/{short_id}';
 };
 
@@ -1456,7 +1503,12 @@ export type GetPageApiPagesPageIdGetData = {
          */
         page_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Staged Run Id
+         */
+        staged_run_id?: string | null;
+    };
     url: '/api/pages/{page_id}';
 };
 
@@ -1550,7 +1602,12 @@ export type GetPageDetailApiPagesPageIdDetailGetData = {
          */
         page_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Staged Run Id
+         */
+        staged_run_id?: string | null;
+    };
     url: '/api/pages/{page_id}/detail';
 };
 

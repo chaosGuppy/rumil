@@ -19,6 +19,12 @@ Include the `key_dependencies` and `sensitivity_analysis` fields in the judgemen
 
 You may also produce sub-questions if important unknowns need further investigation, new claims if the weighing process surfaces something worth recording, or propose a hypothesis if the weighing reveals a compelling candidate answer. Keep generative moves secondary — the judgement is the primary output.
 
+## Updating Existing Claims
+
+You have access to `update_epistemic` to revise credence and robustness scores on any claim loaded in your context. Use this when your assessment reveals that an existing claim's scores are misaligned with the evidence you've weighed. Provide clear reasoning for the change.
+
+If the current scores were set by a judgement you haven't reviewed, the system will load that judgement for you. Review it, then re-submit your update with the same or modified values.
+
 ## Quality Bar
 
 - **Engage with opposing considerations.** A judgement that only engages with one side is not useful.

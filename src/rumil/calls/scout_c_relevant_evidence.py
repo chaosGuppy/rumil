@@ -1,4 +1,4 @@
-"""Scout Hypotheses call: identify hypotheses to explore as potential answers."""
+"""Scout Relevant Evidence call: identify evidence questions bearing on cruxes."""
 
 from rumil.calls.closing_reviewers import StandardClosingReview
 from rumil.calls.context_builders import EmbeddingContext
@@ -7,13 +7,13 @@ from rumil.calls.stages import CallRunner, ClosingReviewer, ContextBuilder, Page
 from rumil.models import CallType
 
 
-class ScoutHypothesesCall(CallRunner):
-    """Identify hypotheses that should be explored as potential answers."""
+class ScoutCRelevantEvidenceCall(CallRunner):
+    """Identify evidence worth gathering that bears on important cruxes."""
 
     context_builder_cls = EmbeddingContext
     page_creator_cls = MultiRoundLoop
     closing_reviewer_cls = StandardClosingReview
-    call_type = CallType.SCOUT_HYPOTHESES
+    call_type = CallType.SCOUT_C_RELEVANT_EVIDENCE
 
     def _make_context_builder(self) -> ContextBuilder:
         return EmbeddingContext(self.call_type)
@@ -32,10 +32,12 @@ class ScoutHypothesesCall(CallRunner):
 
     def task_description(self) -> str:
         return (
-            "Identify hypotheses that should be explored as potential answers "
-            "to the parent question. For each hypothesis, create a claim "
-            "stating the hypothesis and link it as a consideration to the "
-            "parent question. Set credence and robustness honestly — these "
-            "are initial assessments.\n\n"
-            f"Question ID: `{self.infra.question_id}`"
+            "Identify evidence worth gathering that bears on the most "
+            "important cruxes of the scope claim. Frame each as a "
+            'question: "What does the literature say about X?", "What is '
+            'the actual rate of Y?", "Are there documented cases of Z?" '
+            "Prioritize questions that would discriminate between stories "
+            "over questions whose answers would merely be consistent with "
+            "one.\n\n"
+            f"Claim ID: `{self.infra.question_id}`"
         )

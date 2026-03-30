@@ -959,7 +959,9 @@ class DB:
     async def delete_link(self, link_id: str) -> None:
         """Delete a page link by ID."""
         rows = _rows(await self._execute(
-            self.client.table("page_links").select("*").eq("id", link_id)
+            self._staged_filter(
+                self.client.table("page_links").select("*").eq("id", link_id)
+            )
         ))
         link_snapshot = rows[0] if rows else {}
         await self.record_mutation_event("delete_link", link_id, link_snapshot)
@@ -1564,6 +1566,10 @@ class DB:
             elif et == "change_link_role":
                 old_role = payload.get("old_role")
                 if not old_role:
+                    log.warning(
+                        "Cannot revert role change for link %s: no old_role in event payload",
+                        tid,
+                    )
                     continue
                 link_rows = _rows(await self._execute(
                     self.client.table("page_links")

@@ -886,17 +886,17 @@ async def async_main():
         run_id=str(uuid.uuid4()), prod=args.prod_db, staged=args.staged
     )
 
-    if args.stage_run_id:
-        await db.stage_run(args.stage_run_id)
-        print(f"Run {args.stage_run_id} has been staged.")
-        return
-
     if args.list_workspaces:
         await cmd_list_workspaces(db)
         return
 
     project = await db.get_or_create_project(args.workspace_name)
     db.project_id = project.id
+
+    if args.stage_run_id:
+        await db.stage_run(args.stage_run_id)
+        print(f"Run {args.stage_run_id} has been staged.")
+        return
 
     if args.list:
         await cmd_list(db, args.workspace_name)

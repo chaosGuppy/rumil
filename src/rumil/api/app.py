@@ -86,6 +86,20 @@ async def list_projects():
     return await db.list_projects()
 
 
+@app.get("/api/projects/{project_id}", response_model=Project)
+async def get_project(project_id: str):
+    from rumil.database import _rows
+
+    db = await _get_db(project_id)
+    rows = _rows(
+        await db.client.table("projects").select("*").eq("id", project_id).execute()
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="Project not found")
+    r = rows[0]
+    return Project(id=r["id"], name=r["name"], created_at=r["created_at"])
+
+
 @app.get("/api/projects/{project_id}/runs", response_model=list[RunListItemOut])
 async def list_project_runs(project_id: str):
     db = await _get_db(project_id)

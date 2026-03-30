@@ -5,6 +5,8 @@ import LinksContainer from "./links-container";
 import StagedBanner from "./staged-banner";
 
 import { API_BASE } from "@/lib/api-base";
+import { WorkspaceIndicator } from "@/components/workspace-indicator";
+import { fetchProjectName } from "@/lib/fetch-project-name";
 
 const TYPE_CONFIG: Record<
   string,
@@ -205,9 +207,10 @@ export default async function PageDetailPage({
 
   const { page, links_from, links_to } = detail;
   const cfg = TYPE_CONFIG[page.page_type] || TYPE_CONFIG.source;
-  const [citationMap, supersedingPage] = await Promise.all([
+  const [citationMap, supersedingPage, projectName] = await Promise.all([
     buildCitationMap(links_from, links_to, page.content, stagedRunId),
     page.superseded_by ? getPageHeadline(page.superseded_by, stagedRunId) : null,
+    fetchProjectName(page.project_id),
   ]);
   const processedContent = injectCitationLinks(page.content, citationMap, stagedRunId);
 
@@ -215,9 +218,7 @@ export default async function PageDetailPage({
     <>
       <style>{styles}</style>
       <main className="page-detail">
-        <Link href={`/projects/${page.project_id}`} className="back-link">
-        &larr; Workspace
-      </Link>
+        <WorkspaceIndicator projectId={page.project_id} projectName={projectName} />
 
       {stagedRunId && (
         <StagedBanner runId={stagedRunId} pageUrl={`/pages/${pageId}`} />

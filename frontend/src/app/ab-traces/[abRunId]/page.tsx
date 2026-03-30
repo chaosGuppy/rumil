@@ -4,6 +4,8 @@ import { ABTraceViewer } from "./ab-trace-viewer";
 import "../../traces/[runId]/trace.css";
 
 import { API_BASE } from "@/lib/api-base";
+import { WorkspaceIndicator } from "@/components/workspace-indicator";
+import { fetchProjectName } from "@/lib/fetch-project-name";
 
 async function getABRunTrace(abRunId: string): Promise<AbRunTraceOut | null> {
   const res = await fetch(`${API_BASE}/api/ab-runs/${abRunId}/trace`, {
@@ -21,6 +23,10 @@ export default async function ABTracePage({
   const { abRunId } = await params;
   const trace = await getABRunTrace(abRunId);
 
+  const projectName = trace?.question?.project_id
+    ? await fetchProjectName(trace.question.project_id)
+    : undefined;
+
   if (!trace) {
     return (
       <main className="trace-page">
@@ -34,6 +40,9 @@ export default async function ABTracePage({
 
   return (
     <main className="ab-trace-page">
+      {trace.question?.project_id && (
+        <WorkspaceIndicator projectId={trace.question.project_id} projectName={projectName} />
+      )}
       <header className="ab-trace-header">
         {trace.question && (
           <Link

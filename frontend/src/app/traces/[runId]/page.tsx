@@ -4,6 +4,8 @@ import { TraceViewer } from "./trace-viewer";
 import "./trace.css";
 
 import { API_BASE } from "@/lib/api-base";
+import { WorkspaceIndicator } from "@/components/workspace-indicator";
+import { fetchProjectName } from "@/lib/fetch-project-name";
 
 async function getRunTraceTree(runId: string): Promise<RunTraceTreeOut | null> {
   const res = await fetch(`${API_BASE}/api/runs/${runId}/trace-tree`, {
@@ -36,6 +38,10 @@ export default async function TracePage({
     getRealtimeConfig(),
   ]);
 
+  const projectName = trace?.question?.project_id
+    ? await fetchProjectName(trace.question.project_id)
+    : undefined;
+
   if (!trace) {
     return (
       <main className="trace-page">
@@ -49,6 +55,9 @@ export default async function TracePage({
 
   return (
     <main className="trace-page">
+      {trace.question?.project_id && (
+        <WorkspaceIndicator projectId={trace.question.project_id} projectName={projectName} />
+      )}
       <header className="trace-header">
         {trace.question && (
           <Link

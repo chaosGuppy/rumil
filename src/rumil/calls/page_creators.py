@@ -68,6 +68,11 @@ class SimpleAgentLoop(PageCreator):
         if max_rounds is None:
             max_rounds = 1 if settings.is_smoke_test else 3
 
+        infra.state.context_page_ids = (
+            set(context.working_page_ids)
+            | set(context.preloaded_ids)
+            | set(context.phase1_ids)
+        )
         moves_list = (
             list(self._available_moves)
             if self._available_moves is not None
@@ -195,6 +200,11 @@ class MultiRoundLoop(PageCreator):
         infra: CallInfra,
         context: ContextResult,
     ) -> CreationResult:
+        infra.state.context_page_ids = (
+            set(context.working_page_ids)
+            | set(context.preloaded_ids)
+            | set(context.phase1_ids)
+        )
         moves_list = (
             list(self._available_moves)
             if self._available_moves is not None
@@ -358,6 +368,11 @@ class WebResearchLoop(PageCreator):
         max_rounds = 2 if settings.is_smoke_test else 5
         client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
 
+        infra.state.context_page_ids = (
+            set(context.working_page_ids)
+            | set(context.preloaded_ids)
+            | set(context.phase1_ids)
+        )
         server_tools = self._build_server_tools()
         moves_list = (
             list(self._available_moves)

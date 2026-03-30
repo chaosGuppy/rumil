@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState, useMemo } from "react";
-import type { Page, PageType, RunListItemOut } from "@/api";
+import type { Page, PageType, Project, RunListItemOut } from "@/api";
 
 import { CLIENT_API_BASE as API_BASE } from "@/api-config";
 import { useStagedRun } from "@/lib/staged-run-context";
+import { WorkspaceIndicator } from "@/components/workspace-indicator";
 
 const PAGE_TYPES: PageType[] = [
   "question",
@@ -75,6 +76,7 @@ export default function PagesIndexPage() {
   const params = useParams<{ projectId: string }>();
   const projectId = params.projectId;
 
+  const [projectName, setProjectName] = useState<string>();
   const [pages, setPages] = useState<Page[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -82,6 +84,14 @@ export default function PagesIndexPage() {
   const [runs, setRuns] = useState<RunListItemOut[]>([]);
   const [showSuperseded, setShowSuperseded] = useState(false);
   const { activeStagedRunId, setActiveStagedRunId } = useStagedRun();
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/projects/${projectId}`, { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: Project | null) => {
+        if (data) setProjectName(data.name);
+      });
+  }, [projectId]);
 
   useEffect(() => {
     const params = new URLSearchParams();
@@ -729,9 +739,7 @@ export default function PagesIndexPage() {
         }
       `}</style>
 
-      <Link href="/" className="back-link">
-        &larr; Workspaces
-      </Link>
+      <WorkspaceIndicator projectId={projectId} projectName={projectName} />
 
       <div className="pages-header">
         <h1>Pages</h1>

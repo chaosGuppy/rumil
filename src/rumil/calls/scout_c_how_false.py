@@ -1,4 +1,4 @@
-"""Scout Hypotheses call: identify hypotheses to explore as potential answers."""
+"""Scout How-False call: identify alternative stories where the claim is false."""
 
 from rumil.calls.closing_reviewers import StandardClosingReview
 from rumil.calls.context_builders import EmbeddingContext
@@ -7,13 +7,13 @@ from rumil.calls.stages import CallRunner, ClosingReviewer, ContextBuilder, Page
 from rumil.models import CallType
 
 
-class ScoutHypothesesCall(CallRunner):
-    """Identify hypotheses that should be explored as potential answers."""
+class ScoutCHowFalseCall(CallRunner):
+    """Identify plausible causal stories where the claim is false."""
 
     context_builder_cls = EmbeddingContext
     page_creator_cls = MultiRoundLoop
     closing_reviewer_cls = StandardClosingReview
-    call_type = CallType.SCOUT_HYPOTHESES
+    call_type = CallType.SCOUT_C_HOW_FALSE
 
     def _make_context_builder(self) -> ContextBuilder:
         return EmbeddingContext(self.call_type)
@@ -32,10 +32,11 @@ class ScoutHypothesesCall(CallRunner):
 
     def task_description(self) -> str:
         return (
-            "Identify hypotheses that should be explored as potential answers "
-            "to the parent question. For each hypothesis, create a claim "
-            "stating the hypothesis and link it as a consideration to the "
-            "parent question. Set credence and robustness honestly — these "
-            "are initial assessments.\n\n"
-            f"Question ID: `{self.infra.question_id}`"
+            "Identify plausible causal stories compatible with observed "
+            "evidence but in which the scope claim is false. These are "
+            "concrete alternative pictures of what might actually be going "
+            "on, where the same observations hold but the claim does not. "
+            "Focus on stories genuinely different from ones already "
+            "identified and plausible enough to be worth taking seriously.\n\n"
+            f"Claim ID: `{self.infra.question_id}`"
         )

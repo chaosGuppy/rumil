@@ -45,7 +45,6 @@ PRESETS: dict[str, MovePreset] = {
         ],
         CallType.SCOUT_HYPOTHESES: [
             MoveType.CREATE_CLAIM,
-            MoveType.CREATE_SCOUT_QUESTION,
             MoveType.LINK_CONSIDERATION,
             MoveType.LOAD_PAGE,
         ],
@@ -82,6 +81,32 @@ PRESETS: dict[str, MovePreset] = {
         ],
         CallType.SCOUT_DEEP_QUESTIONS: [
             MoveType.CREATE_CLAIM,
+            MoveType.CREATE_SCOUT_QUESTION,
+            MoveType.LINK_CONSIDERATION,
+            MoveType.LOAD_PAGE,
+        ],
+        CallType.SCOUT_C_HOW_TRUE: [
+            MoveType.CREATE_CLAIM,
+            MoveType.LINK_CONSIDERATION,
+            MoveType.LOAD_PAGE,
+        ],
+        CallType.SCOUT_C_HOW_FALSE: [
+            MoveType.CREATE_CLAIM,
+            MoveType.LINK_CONSIDERATION,
+            MoveType.LOAD_PAGE,
+        ],
+        CallType.SCOUT_C_CRUXES: [
+            MoveType.CREATE_CLAIM,
+            MoveType.CREATE_SCOUT_QUESTION,
+            MoveType.LINK_CONSIDERATION,
+            MoveType.LOAD_PAGE,
+        ],
+        CallType.SCOUT_C_RELEVANT_EVIDENCE: [
+            MoveType.CREATE_SCOUT_QUESTION,
+            MoveType.LINK_CONSIDERATION,
+            MoveType.LOAD_PAGE,
+        ],
+        CallType.SCOUT_C_STRESS_TEST_CASES: [
             MoveType.CREATE_SCOUT_QUESTION,
             MoveType.LINK_CONSIDERATION,
             MoveType.LOAD_PAGE,
@@ -133,7 +158,6 @@ PRESETS: dict[str, MovePreset] = {
         ],
         CallType.SCOUT_HYPOTHESES: [
             MoveType.CREATE_CLAIM,
-            MoveType.CREATE_SCOUT_QUESTION,
             MoveType.LINK_CONSIDERATION,
             MoveType.LOAD_PAGE,
         ],
@@ -170,6 +194,32 @@ PRESETS: dict[str, MovePreset] = {
         ],
         CallType.SCOUT_DEEP_QUESTIONS: [
             MoveType.CREATE_CLAIM,
+            MoveType.CREATE_SCOUT_QUESTION,
+            MoveType.LINK_CONSIDERATION,
+            MoveType.LOAD_PAGE,
+        ],
+        CallType.SCOUT_C_HOW_TRUE: [
+            MoveType.CREATE_CLAIM,
+            MoveType.LINK_CONSIDERATION,
+            MoveType.LOAD_PAGE,
+        ],
+        CallType.SCOUT_C_HOW_FALSE: [
+            MoveType.CREATE_CLAIM,
+            MoveType.LINK_CONSIDERATION,
+            MoveType.LOAD_PAGE,
+        ],
+        CallType.SCOUT_C_CRUXES: [
+            MoveType.CREATE_CLAIM,
+            MoveType.CREATE_SCOUT_QUESTION,
+            MoveType.LINK_CONSIDERATION,
+            MoveType.LOAD_PAGE,
+        ],
+        CallType.SCOUT_C_RELEVANT_EVIDENCE: [
+            MoveType.CREATE_SCOUT_QUESTION,
+            MoveType.LINK_CONSIDERATION,
+            MoveType.LOAD_PAGE,
+        ],
+        CallType.SCOUT_C_STRESS_TEST_CASES: [
             MoveType.CREATE_SCOUT_QUESTION,
             MoveType.LINK_CONSIDERATION,
             MoveType.LOAD_PAGE,

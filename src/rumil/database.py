@@ -287,7 +287,7 @@ class DB:
     async def record_mutation_event(
         self, event_type: str, target_id: str, payload: dict,
     ) -> None:
-        """Record a mutation event (staged runs only)."""
+        """Record a mutation event for undo/staging support."""
         await self._execute(
             self.client.table("mutation_events").insert({
                 "id": str(uuid.uuid4()),
@@ -567,19 +567,18 @@ class DB:
         return pages
 
     async def supersede_page(self, old_id: str, new_id: str) -> None:
-        if self.staged:
-            await self.record_mutation_event(
-                "supersede_page", old_id, {"new_page_id": new_id},
-            )
-            return
-        await self._execute(
-            self.client.table("pages").update(
-                {
-                    "is_superseded": True,
-                    "superseded_by": new_id,
-                }
-            ).eq("id", old_id)
+        await self.record_mutation_event(
+            "supersede_page", old_id, {"new_page_id": new_id},
         )
+        if not self.staged:
+            await self._execute(
+                self.client.table("pages").update(
+                    {
+                        "is_superseded": True,
+                        "superseded_by": new_id,
+                    }
+                ).eq("id", old_id)
+            )
 
     # --- Links ---
 
@@ -959,27 +958,32 @@ class DB:
 
     async def delete_link(self, link_id: str) -> None:
         """Delete a page link by ID."""
-        if self.staged:
-            await self.record_mutation_event(
-                "delete_link", link_id, {},
+        rows = _rows(await self._execute(
+            self._staged_filter(
+                self.client.table("page_links").select("*").eq("id", link_id)
             )
-            return
-        await self._execute(
-            self.client.table("page_links").delete().eq("id", link_id)
-        )
+        ))
+        link_snapshot = rows[0] if rows else {}
+        await self.record_mutation_event("delete_link", link_id, link_snapshot)
+        if not self.staged:
+            await self._execute(
+                self.client.table("page_links").delete().eq("id", link_id)
+            )
 
     async def update_link_role(self, link_id: str, role: LinkRole) -> None:
         """Update a link's role."""
-        if self.staged:
-            await self.record_mutation_event(
-                "change_link_role", link_id, {"new_role": role.value},
-            )
-            return
-        await self._execute(
-            self.client.table("page_links").update(
-                {"role": role.value}
-            ).eq("id", link_id)
+        link = await self.get_link(link_id)
+        old_role = link.role.value if link else None
+        await self.record_mutation_event(
+            "change_link_role", link_id,
+            {"new_role": role.value, "old_role": old_role},
         )
+        if not self.staged:
+            await self._execute(
+                self.client.table("page_links").update(
+                    {"role": role.value}
+                ).eq("id", link_id)
+            )
 
     async def get_last_find_considerations_info(
         self,
@@ -1205,20 +1209,22 @@ class DB:
         credence: int,
         robustness: int,
         reasoning: str = "",
+        source_page_id: str | None = None,
     ) -> None:
+        row: dict[str, Any] = {
+            "id": str(uuid.uuid4()),
+            "page_id": page_id,
+            "call_id": call_id,
+            "credence": credence,
+            "robustness": robustness,
+            "reasoning": reasoning,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "run_id": self.run_id,
+        }
+        if source_page_id is not None:
+            row["source_page_id"] = source_page_id
         await self._execute(
-            self.client.table("epistemic_scores").insert(
-                {
-                    "id": str(uuid.uuid4()),
-                    "page_id": page_id,
-                    "call_id": call_id,
-                    "credence": credence,
-                    "robustness": robustness,
-                    "reasoning": reasoning,
-                    "created_at": datetime.now(timezone.utc).isoformat(),
-                    "run_id": self.run_id,
-                }
-            )
+            self.client.table("epistemic_scores").insert(row)
         )
 
     async def apply_epistemic_overrides(self, pages: Sequence[Page]) -> None:
@@ -1226,15 +1232,21 @@ class DB:
         if not pages:
             return
         page_ids = [p.id for p in pages]
-        rows = _rows(
-            await self._execute(
-                self.client.table("epistemic_scores")
-                .select("page_id,credence,robustness,created_at")
-                .in_("page_id", page_ids)
-                .eq("run_id", self.run_id)
-                .order("created_at", desc=True)
+        batch_size = 200
+        rows: list[dict[str, Any]] = []
+        for i in range(0, len(page_ids), batch_size):
+            batch = page_ids[i : i + batch_size]
+            rows.extend(
+                _rows(
+                    await self._execute(
+                        self.client.table("epistemic_scores")
+                        .select("page_id,credence,robustness,created_at")
+                        .in_("page_id", batch)
+                        .eq("run_id", self.run_id)
+                        .order("created_at", desc=True)
+                    )
+                )
             )
-        )
         seen: set[str] = set()
         overrides: dict[str, tuple[int, int]] = {}
         for row in rows:
@@ -1245,6 +1257,59 @@ class DB:
         for page in pages:
             if page.id in overrides:
                 page.credence, page.robustness = overrides[page.id]
+
+    async def get_epistemic_score_source(
+        self,
+        page_id: str,
+    ) -> tuple[dict[str, Any] | None, Page | None]:
+        """Return the latest epistemic score entry and its source judgement (if any).
+
+        Returns (score_row, judgement_page) where either or both may be None.
+        """
+        rows = _rows(
+            await self._execute(
+                self.client.table("epistemic_scores")
+                .select("*")
+                .eq("page_id", page_id)
+                .eq("run_id", self.run_id)
+                .order("created_at", desc=True)
+                .limit(1)
+            )
+        )
+        if not rows:
+            return None, None
+        score_row = rows[0]
+        call_id = score_row["call_id"]
+        judgement_rows = _rows(
+            await self._execute(
+                self.client.table("pages")
+                .select("*")
+                .eq("provenance_call_id", call_id)
+                .eq("page_type", PageType.JUDGEMENT.value)
+                .eq("is_superseded", False)
+                .order("created_at", desc=True)
+                .limit(1)
+            )
+        )
+        judgement = _row_to_page(judgement_rows[0]) if judgement_rows else None
+        return score_row, judgement
+
+    async def get_latest_judgement_for_call(
+        self,
+        call_id: str,
+    ) -> str | None:
+        """Return the page ID of the most recent judgement created by a call."""
+        rows = _rows(
+            await self._execute(
+                self.client.table("pages")
+                .select("id")
+                .eq("provenance_call_id", call_id)
+                .eq("page_type", PageType.JUDGEMENT.value)
+                .order("created_at", desc=True)
+                .limit(1)
+            )
+        )
+        return rows[0]["id"] if rows else None
 
     async def get_root_questions(
         self,
@@ -1431,6 +1496,93 @@ class DB:
                 }
             )
         )
+
+    async def stage_run(self, run_id: str) -> None:
+        """Retroactively stage a completed non-staged run.
+
+        Flips the staged flag on the run's rows, then reverts direct
+        mutations (supersessions, link deletions, role changes) so baseline
+        readers see the pre-run state. The mutation events remain, so a
+        staged reader replaying them will see the same view the run
+        originally produced.
+        """
+        await self._execute(
+            self.client.table("runs").update({"staged": True}).eq("id", run_id)
+        )
+        await self._execute(
+            self.client.table("pages").update({"staged": True}).eq("run_id", run_id)
+        )
+        await self._execute(
+            self.client.table("page_links")
+            .update({"staged": True})
+            .eq("run_id", run_id)
+        )
+
+        events = _rows(
+            await self._execute(
+                self.client.table("mutation_events")
+                .select("event_type, target_id, payload")
+                .eq("run_id", run_id)
+                .order("created_at")
+            )
+        )
+        for ev in events:
+            et = ev["event_type"]
+            tid = ev["target_id"]
+            payload = ev.get("payload") or {}
+
+            if et == "supersede_page":
+                await self._execute(
+                    self.client.table("pages")
+                    .update({"is_superseded": False, "superseded_by": None})
+                    .eq("id", tid)
+                )
+
+            elif et == "delete_link":
+                if not payload or "from_page_id" not in payload:
+                    log.warning(
+                        "Cannot restore deleted link %s: no snapshot in event payload",
+                        tid,
+                    )
+                    continue
+                was_own_link = payload.get("run_id") == run_id
+                restore_row = {
+                    "id": tid,
+                    "from_page_id": payload["from_page_id"],
+                    "to_page_id": payload["to_page_id"],
+                    "link_type": payload["link_type"],
+                    "direction": payload.get("direction"),
+                    "strength": payload.get("strength", 2.5),
+                    "reasoning": payload.get("reasoning", ""),
+                    "role": payload.get("role", "direct"),
+                    "created_at": payload.get("created_at"),
+                    "run_id": payload.get("run_id", run_id),
+                    "staged": was_own_link,
+                }
+                await self._execute(
+                    self.client.table("page_links").upsert(restore_row)
+                )
+
+            elif et == "change_link_role":
+                old_role = payload.get("old_role")
+                if not old_role:
+                    log.warning(
+                        "Cannot revert role change for link %s: no old_role in event payload",
+                        tid,
+                    )
+                    continue
+                link_rows = _rows(await self._execute(
+                    self.client.table("page_links")
+                    .select("run_id")
+                    .eq("id", tid)
+                ))
+                if link_rows and link_rows[0].get("run_id") == run_id:
+                    continue
+                await self._execute(
+                    self.client.table("page_links")
+                    .update({"role": old_role})
+                    .eq("id", tid)
+                )
 
     async def create_ab_run(
         self,

@@ -28,6 +28,45 @@
         }
       }
     },
+    "/api/projects/{project_id}": {
+      "get": {
+        "summary": "Get Project",
+        "operationId": "get_project_api_projects__project_id__get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{project_id}/runs": {
       "get": {
         "summary": "List Project Runs",
@@ -1681,6 +1720,11 @@
           "scout_factchecks",
           "scout_web_questions",
           "scout_deep_questions",
+          "scout_c_how_true",
+          "scout_c_how_false",
+          "scout_c_cruxes",
+          "scout_c_relevant_evidence",
+          "scout_c_stress_test_cases",
           "web_research",
           "evaluate",
           "grounding_feedback"
@@ -1750,6 +1794,39 @@
           "headline"
         ],
         "title": "ClaimReassessedEventOut"
+      },
+      "ClaimScoreItem": {
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "title": "Page Id"
+          },
+          "headline": {
+            "type": "string",
+            "title": "Headline",
+            "default": ""
+          },
+          "impact": {
+            "type": "integer",
+            "title": "Impact",
+            "default": 0
+          },
+          "fruit": {
+            "type": "integer",
+            "title": "Fruit",
+            "default": 0
+          },
+          "reasoning": {
+            "type": "string",
+            "title": "Reasoning",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "page_id"
+        ],
+        "title": "ClaimScoreItem"
       },
       "ConsiderationDirection": {
         "type": "string",
@@ -3186,6 +3263,14 @@
             "title": "Subquestion Scores",
             "default": []
           },
+          "claim_scores": {
+            "items": {
+              "$ref": "#/components/schemas/ClaimScoreItem"
+            },
+            "type": "array",
+            "title": "Claim Scores",
+            "default": []
+          },
           "parent_fruit": {
             "anyOf": [
               {
@@ -3222,6 +3307,7 @@
           "call_id",
           "event",
           "subquestion_scores",
+          "claim_scores",
           "parent_fruit",
           "parent_fruit_reasoning",
           "per_type_fruit",

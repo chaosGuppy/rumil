@@ -898,6 +898,13 @@ async def async_main():
         "of modifying the database directly",
     )
     parser.add_argument(
+        "--stage-run",
+        dest="stage_run_id",
+        metavar="RUN_ID",
+        help="Retroactively stage a completed non-staged run, hiding its "
+        "effects from baseline readers",
+    )
+    parser.add_argument(
         "-q",
         "--quiet",
         action="store_true",
@@ -949,6 +956,11 @@ async def async_main():
 
     project = await db.get_or_create_project(args.workspace_name)
     db.project_id = project.id
+
+    if args.stage_run_id:
+        await db.stage_run(args.stage_run_id)
+        print(f"Run {args.stage_run_id} has been staged.")
+        return
 
     if args.list:
         await cmd_list(db, args.workspace_name)

@@ -104,6 +104,52 @@ async def _describe_child_questions(
     return '\n'.join(lines)
 
 
+async def _describe_considerations_on_page(
+    page_id: str, graph: PageGraph,
+) -> tuple[str, str]:
+    """Build enriched descriptions of claims and questions linked to a page.
+
+    Returns (claims_text, questions_text) with research stats for each.
+    """
+    considerations = await graph.get_considerations_for_question(page_id)
+    child_questions = await graph.get_child_questions(page_id)
+
+    claim_lines = []
+    for page, link in considerations:
+        sub_considerations = await graph.get_considerations_for_question(page.id)
+        sub_questions = await graph.get_child_questions(page.id)
+        parts = []
+        if sub_considerations:
+            parts.append(f'{len(sub_considerations)} considerations')
+        if sub_questions:
+            parts.append(f'{len(sub_questions)} subquestion{"s" if len(sub_questions) != 1 else ""}')
+        stats = ', '.join(parts) if parts else 'no research yet'
+        direction = link.direction.value if link.direction else 'neutral'
+        credence_tag = ''
+        if page.credence is not None:
+            credence_tag = f' C{page.credence}/R{page.robustness or 1}'
+        claim_lines.append(
+            f'- `{page.id}` — {page.headline} '
+            f'[{direction}{credence_tag}] ({stats})'
+        )
+
+    question_lines = []
+    for q in child_questions:
+        sub_considerations = await graph.get_considerations_for_question(q.id)
+        subtree_count = await _count_subtree_questions(q.id, graph)
+        parts = []
+        if sub_considerations:
+            parts.append(f'{len(sub_considerations)} considerations')
+        if subtree_count:
+            parts.append(f'{subtree_count} subquestion{"s" if subtree_count != 1 else ""}')
+        stats = ', '.join(parts) if parts else 'no research yet'
+        question_lines.append(f'- `{q.id}` — {q.headline} ({stats})')
+
+    claims_text = '\n'.join(claim_lines) if claim_lines else '(none)'
+    questions_text = '\n'.join(question_lines) if question_lines else '(none)'
+    return claims_text, questions_text
+
+
 class SubquestionScore(BaseModel):
     question_id: str = Field(description='Full UUID of the subquestion')
     headline: str = Field(description='Headline of the subquestion')
@@ -114,6 +160,18 @@ class SubquestionScore(BaseModel):
 
 class SubquestionScoringResult(BaseModel):
     scores: list[SubquestionScore]
+
+
+class ClaimScore(BaseModel):
+    page_id: str = Field(description='Full UUID of the claim')
+    headline: str = Field(description='Headline of the claim')
+    impact: int = Field(description='0-10: how much resolving this helps the investigation')
+    fruit: int = Field(description='0-10: how much useful investigation remains')
+    reasoning: str = Field(description='Brief explanation of scores')
+
+
+class ClaimScoringResult(BaseModel):
+    scores: list[ClaimScore]
 
 
 class FruitResult(BaseModel):

@@ -74,6 +74,11 @@ const CALL_TYPE_ACCENT: Record<string, string> = {
   scout_analogies: "#5498c8",
   scout_paradigm_cases: "#3b7fa8",
   scout_factchecks: "#4793bf",
+  scout_c_how_true: "#4dab6f",
+  scout_c_how_false: "#c46b6b",
+  scout_c_cruxes: "#d4943a",
+  scout_c_relevant_evidence: "#6b9fd4",
+  scout_c_stress_test_cases: "#b48ad4",
   web_research: "#c4884d",
   evaluate: "#d46b9f",
 };
@@ -806,6 +811,22 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
               {(event.subquestion_scores ?? []).map((s, i) => (
                 <div key={i} className="trace-score-row">
                   <span className="trace-score-headline">{s.headline || s.question_id.slice(0, 8)}</span>
+                  <span className="trace-kv-value">impact={s.impact} fruit={s.fruit}</span>
+                  {s.reasoning && (
+                    <span className="trace-score-reasoning">{s.reasoning}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          {(event.claim_scores ?? []).length > 0 && (
+            <div className="trace-scoring-section">
+              <div className="trace-kv">
+                <span className="trace-kv-key">claim scores</span>
+              </div>
+              {(event.claim_scores ?? []).map((s, i) => (
+                <div key={i} className="trace-score-row">
+                  <span className="trace-score-headline">{s.headline || s.page_id.slice(0, 8)}</span>
                   <span className="trace-kv-value">impact={s.impact} fruit={s.fruit}</span>
                   {s.reasoning && (
                     <span className="trace-score-reasoning">{s.reasoning}</span>

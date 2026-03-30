@@ -11,6 +11,11 @@ from collections.abc import Sequence
 from rumil.available_calls import get_available_calls_preset
 from rumil.calls.call_registry import (
     SCOUT_ANALOGIES_CALL_CLASSES,
+    SCOUT_C_CRUXES_CALL_CLASSES,
+    SCOUT_C_HOW_FALSE_CALL_CLASSES,
+    SCOUT_C_HOW_TRUE_CALL_CLASSES,
+    SCOUT_C_RELEVANT_EVIDENCE_CALL_CLASSES,
+    SCOUT_C_STRESS_TEST_CASES_CALL_CLASSES,
     SCOUT_DEEP_QUESTIONS_CALL_CLASSES,
     SCOUT_ESTIMATES_CALL_CLASSES,
     SCOUT_FACTCHECKS_CALL_CLASSES,
@@ -26,6 +31,11 @@ from rumil.models import (
     CallType,
     Dispatch,
     ScoutAnalogiesDispatchPayload,
+    ScoutCCruxesDispatchPayload,
+    ScoutCHowFalseDispatchPayload,
+    ScoutCHowTrueDispatchPayload,
+    ScoutCRelevantEvidenceDispatchPayload,
+    ScoutCStressTestCasesDispatchPayload,
     ScoutDeepQuestionsDispatchPayload,
     ScoutDispatchPayload,
     ScoutEstimatesDispatchPayload,
@@ -327,6 +337,56 @@ class BaseOrchestrator(ABC):
             child_call_id = await self._run_simple_call_dispatch(
                 resolved, CallType.SCOUT_DEEP_QUESTIONS,
                 SCOUT_DEEP_QUESTIONS_CALL_CLASSES, parent_call_id,
+                force=force, call_id=call_id,
+                sequence_id=sequence_id, sequence_position=sequence_position,
+                max_rounds=p.max_rounds, fruit_threshold=p.fruit_threshold,
+            )
+
+        elif isinstance(p, ScoutCHowTrueDispatchPayload):
+            log.info('Dispatch: scout_c_how_true on %s (max_rounds=%d) — %s', d_label, p.max_rounds, p.reason)
+            child_call_id = await self._run_simple_call_dispatch(
+                resolved, CallType.SCOUT_C_HOW_TRUE,
+                SCOUT_C_HOW_TRUE_CALL_CLASSES, parent_call_id,
+                force=force, call_id=call_id,
+                sequence_id=sequence_id, sequence_position=sequence_position,
+                max_rounds=p.max_rounds, fruit_threshold=p.fruit_threshold,
+            )
+
+        elif isinstance(p, ScoutCHowFalseDispatchPayload):
+            log.info('Dispatch: scout_c_how_false on %s (max_rounds=%d) — %s', d_label, p.max_rounds, p.reason)
+            child_call_id = await self._run_simple_call_dispatch(
+                resolved, CallType.SCOUT_C_HOW_FALSE,
+                SCOUT_C_HOW_FALSE_CALL_CLASSES, parent_call_id,
+                force=force, call_id=call_id,
+                sequence_id=sequence_id, sequence_position=sequence_position,
+                max_rounds=p.max_rounds, fruit_threshold=p.fruit_threshold,
+            )
+
+        elif isinstance(p, ScoutCCruxesDispatchPayload):
+            log.info('Dispatch: scout_c_cruxes on %s (max_rounds=%d) — %s', d_label, p.max_rounds, p.reason)
+            child_call_id = await self._run_simple_call_dispatch(
+                resolved, CallType.SCOUT_C_CRUXES,
+                SCOUT_C_CRUXES_CALL_CLASSES, parent_call_id,
+                force=force, call_id=call_id,
+                sequence_id=sequence_id, sequence_position=sequence_position,
+                max_rounds=p.max_rounds, fruit_threshold=p.fruit_threshold,
+            )
+
+        elif isinstance(p, ScoutCRelevantEvidenceDispatchPayload):
+            log.info('Dispatch: scout_c_relevant_evidence on %s (max_rounds=%d) — %s', d_label, p.max_rounds, p.reason)
+            child_call_id = await self._run_simple_call_dispatch(
+                resolved, CallType.SCOUT_C_RELEVANT_EVIDENCE,
+                SCOUT_C_RELEVANT_EVIDENCE_CALL_CLASSES, parent_call_id,
+                force=force, call_id=call_id,
+                sequence_id=sequence_id, sequence_position=sequence_position,
+                max_rounds=p.max_rounds, fruit_threshold=p.fruit_threshold,
+            )
+
+        elif isinstance(p, ScoutCStressTestCasesDispatchPayload):
+            log.info('Dispatch: scout_c_stress_test_cases on %s (max_rounds=%d) — %s', d_label, p.max_rounds, p.reason)
+            child_call_id = await self._run_simple_call_dispatch(
+                resolved, CallType.SCOUT_C_STRESS_TEST_CASES,
+                SCOUT_C_STRESS_TEST_CASES_CALL_CLASSES, parent_call_id,
                 force=force, call_id=call_id,
                 sequence_id=sequence_id, sequence_position=sequence_position,
                 max_rounds=p.max_rounds, fruit_threshold=p.fruit_threshold,

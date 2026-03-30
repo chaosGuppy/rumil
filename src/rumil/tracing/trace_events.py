@@ -99,9 +99,18 @@ class CallTypeFruitScoreItem(BaseModel):
     reasoning: str = ""
 
 
+class ClaimScoreItem(BaseModel):
+    page_id: str
+    headline: str = ""
+    impact: int = 0
+    fruit: int = 0
+    reasoning: str = ""
+
+
 class ScoringCompletedEvent(BaseModel):
     event: Literal["scoring_completed"] = "scoring_completed"
     subquestion_scores: list[SubquestionScoreItem] = []
+    claim_scores: list[ClaimScoreItem] = []
     # Deprecated: kept for backward compat with old traces.
     parent_fruit: int | None = None
     parent_fruit_reasoning: str = ""

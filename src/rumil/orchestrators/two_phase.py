@@ -8,7 +8,7 @@ from collections.abc import Sequence
 
 from rumil.available_calls import get_available_calls_preset
 from rumil.calls.common import mark_call_completed
-from rumil.calls.dispatches import DISPATCH_DEFS, DispatchDef, RECURSE_DISPATCH_DEF
+from rumil.calls.dispatches import DISPATCH_DEFS, DispatchDef, RECURSE_CLAIM_DISPATCH_DEF, RECURSE_DISPATCH_DEF
 from rumil.calls.prioritization import run_prioritization_call
 from rumil.constants import MIN_TWOPHASE_BUDGET
 from rumil.context import build_prioritization_context, collect_subtree_ids
@@ -20,16 +20,19 @@ from rumil.models import (
     CallType,
     Dispatch,
     LinkType,
+    RecurseClaimDispatchPayload,
     RecurseDispatchPayload,
     Workspace,
 )
 from rumil.orchestrators.base import BaseOrchestrator
 from rumil.orchestrators.common import (
     CallTypeFruitScore,
+    ClaimScoringResult,
     PerTypeFruitResult,
     PrioritizationResult,
     SubquestionScoringResult,
     _describe_child_questions,
+    _describe_considerations_on_page,
     assess_question,
     compute_dispatch_guidance,
 )
@@ -38,6 +41,7 @@ from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
 from rumil.tracing.trace_events import (
     CallTypeFruitScoreItem,
+    ClaimScoreItem,
     ContextBuiltEvent,
     DispatchExecutedEvent,
     DispatchesPlannedEvent,
@@ -94,7 +98,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         before ``run()`` begins. ``_phase1`` reuses the pre-created call.
         """
         budget = self._effective_budget(await self.db.budget_remaining())
-        phase1_budget = min(budget - 3, MIN_TWOPHASE_BUDGET)
+        phase1_budget = budget
         p_call = await self.db.create_call(
             CallType.PRIORITIZATION,
             scope_page_id=question_id,
@@ -246,7 +250,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         budget: int,
         parent_call_id: str | None,
     ) -> PrioritizationResult:
-        phase1_budget = min(budget - 3, MIN_TWOPHASE_BUDGET)
+        phase1_budget = budget
         log.info(
             'TwoPhaseOrchestrator phase1: question=%s, budget=%d, phase1_budget=%d',
             question_id[:8], budget, phase1_budget,
@@ -404,9 +408,35 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                 db=self.db,
             ))
         else:
-            async def _empty_scores():
+            async def _empty_subq_scores():
                 return type('R', (), {'data': {'scores': []}})()
-            scoring_tasks.append(_empty_scores())
+            scoring_tasks.append(_empty_subq_scores())
+
+        considerations = await graph.get_considerations_for_question(question_id)
+        if considerations:
+            claims_text, _ = await _describe_considerations_on_page(
+                question_id, graph,
+            )
+            claim_scoring_system = build_system_prompt('score_claim_items')
+            claim_user_msg = build_user_message(
+                f'Parent question: {parent_headline}\n\n'
+                f'Claims (considerations) to score:\n{claims_text}',
+                'Score each claim on impact and fruit.',
+            )
+            scoring_tasks.append(structured_call(
+                claim_scoring_system,
+                user_message=claim_user_msg,
+                response_model=ClaimScoringResult,
+                metadata=LLMExchangeMetadata(
+                    call_id=p_call.id,
+                    phase='score_claims',
+                ),
+                db=self.db,
+            ))
+        else:
+            async def _empty_claim_scores():
+                return type('R', (), {'data': {'scores': []}})()
+            scoring_tasks.append(_empty_claim_scores())
 
         preset = get_available_calls_preset()
         scout_types = [
@@ -452,9 +482,11 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
 
         scoring_results = await asyncio.gather(*scoring_tasks)
         subq_result = scoring_results[0]
-        fruit_result = scoring_results[1]
+        claim_result = scoring_results[1]
+        fruit_result = scoring_results[2]
 
         subq_scores = subq_result.data.get('scores', []) if subq_result.data else []
+        claim_scores = claim_result.data.get('scores', []) if claim_result.data else []
         raw_fruit_scores = fruit_result.data.get('scores', []) if fruit_result.data else []
         per_type_scores = [CallTypeFruitScore(**s) for s in raw_fruit_scores]
 
@@ -473,6 +505,9 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         await trace.record(ScoringCompletedEvent(
             subquestion_scores=[
                 SubquestionScoreItem(**s) for s in subq_scores
+            ],
+            claim_scores=[
+                ClaimScoreItem(**s) for s in claim_scores
             ],
             per_type_fruit=[
                 CallTypeFruitScoreItem(
@@ -494,6 +529,17 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                 )
             lines.append('')
             scores_text = '\n'.join(lines)
+
+        if claim_scores:
+            lines = ['## Claim Scores (considerations)', '']
+            for s in claim_scores:
+                lines.append(
+                    f'- `{s.get("page_id", "?")}` — {s.get("headline", "")}: '
+                    f'impact={s.get("impact", 0)}, fruit={s.get("fruit", 0)} '
+                    f'({s.get("reasoning", "")})'
+                )
+            lines.append('')
+            scores_text += '\n'.join(lines)
 
         fruit_lines = ['## Per-Scout-Type Fruit Scores', '']
         for s in per_type_scores:
@@ -527,6 +573,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         extra_defs: list[DispatchDef] = []
         if budget >= MIN_TWOPHASE_BUDGET:
             extra_defs.append(RECURSE_DISPATCH_DEF)
+            extra_defs.append(RECURSE_CLAIM_DISPATCH_DEF)
 
         result = await run_prioritization_call(
             task, context_text, p_call, self.db,
@@ -538,10 +585,29 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             system_prompt_override=build_system_prompt('two_phase_p2'),
         )
 
+        from rumil.orchestrators.claim_investigation import ClaimInvestigationOrchestrator
+
         sequences: list[list[Dispatch]] = []
-        children: list[tuple[TwoPhaseOrchestrator, str]] = []
+        children: list[tuple[TwoPhaseOrchestrator | ClaimInvestigationOrchestrator, str]] = []
         for d in result.dispatches:
-            if isinstance(d.payload, RecurseDispatchPayload):
+            if isinstance(d.payload, RecurseClaimDispatchPayload):
+                resolved = await self.db.resolve_page_id(d.payload.question_id)
+                if not resolved:
+                    log.warning(
+                        'Recurse claim ID not found: %s',
+                        d.payload.question_id[:8],
+                    )
+                    continue
+                child_claim = ClaimInvestigationOrchestrator(
+                    self.db, self.broadcaster, budget_cap=d.payload.budget,
+                )
+                child_claim._parent_call_id = p_call.id
+                children.append((child_claim, resolved))
+                log.info(
+                    'Queued recursive claim investigation: claim=%s, budget=%d — %s',
+                    resolved[:8], d.payload.budget, d.payload.reason,
+                )
+            elif isinstance(d.payload, RecurseDispatchPayload):
                 resolved = await self.db.resolve_page_id(d.payload.question_id)
                 if not resolved:
                     log.warning(
@@ -579,7 +645,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             for d in all_dispatches
         ]
         for d in result.dispatches:
-            if isinstance(d.payload, RecurseDispatchPayload):
+            if isinstance(d.payload, (RecurseDispatchPayload, RecurseClaimDispatchPayload)):
                 all_trace_items.append(DispatchTraceItem(
                     call_type='recurse',
                     **d.payload.model_dump(exclude_defaults=True),

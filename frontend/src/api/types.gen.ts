@@ -338,7 +338,7 @@ export type CallTraceOut = {
 /**
  * CallType
  */
-export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_concepts' | 'assess_concept' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'web_research' | 'evaluate' | 'grounding_feedback';
+export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_concepts' | 'assess_concept' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'web_research' | 'evaluate' | 'grounding_feedback';
 
 /**
  * CallTypeFruitScoreItem
@@ -386,6 +386,32 @@ export type ClaimReassessedEventOut = {
      * Headline
      */
     headline: string;
+};
+
+/**
+ * ClaimScoreItem
+ */
+export type ClaimScoreItem = {
+    /**
+     * Page Id
+     */
+    page_id: string;
+    /**
+     * Headline
+     */
+    headline?: string;
+    /**
+     * Impact
+     */
+    impact?: number;
+    /**
+     * Fruit
+     */
+    fruit?: number;
+    /**
+     * Reasoning
+     */
+    reasoning?: string;
 };
 
 /**
@@ -1203,6 +1229,10 @@ export type ScoringCompletedEventOut = {
      */
     subquestion_scores: Array<SubquestionScoreItem>;
     /**
+     * Claim Scores
+     */
+    claim_scores: Array<ClaimScoreItem>;
+    /**
      * Parent Fruit
      */
     parent_fruit: number | null;
@@ -1502,6 +1532,36 @@ export type ListProjectsApiProjectsGetResponses = {
 };
 
 export type ListProjectsApiProjectsGetResponse = ListProjectsApiProjectsGetResponses[keyof ListProjectsApiProjectsGetResponses];
+
+export type GetProjectApiProjectsProjectIdGetData = {
+    body?: never;
+    path: {
+        /**
+         * Project Id
+         */
+        project_id: string;
+    };
+    query?: never;
+    url: '/api/projects/{project_id}';
+};
+
+export type GetProjectApiProjectsProjectIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetProjectApiProjectsProjectIdGetError = GetProjectApiProjectsProjectIdGetErrors[keyof GetProjectApiProjectsProjectIdGetErrors];
+
+export type GetProjectApiProjectsProjectIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: Project;
+};
+
+export type GetProjectApiProjectsProjectIdGetResponse = GetProjectApiProjectsProjectIdGetResponses[keyof GetProjectApiProjectsProjectIdGetResponses];
 
 export type ListProjectRunsApiProjectsProjectIdRunsGetData = {
     body?: never;

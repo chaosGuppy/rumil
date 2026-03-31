@@ -48,20 +48,11 @@ class LLMOrchestrator(BaseOrchestrator):
         await self._setup()
         try:
             while True:
-                total, used = await self.db.get_budget()
-                remaining = total - used
+                remaining = await self.db.budget_remaining()
                 if remaining <= 0:
                     break
 
-                if get_settings().budget_pacing_enabled:
-                    round_budget = compute_round_budget(total, used)
-                    log.info(
-                        'Budget pacing: remaining=%d, round_allocation=%d',
-                        remaining, round_budget,
-                    )
-                else:
-                    round_budget = remaining
-
+                round_budget = await self._paced_budget(remaining)
                 result = await self._get_next_batch(root_question_id, round_budget)
                 if not result.dispatch_sequences:
                     break

@@ -474,6 +474,26 @@ class DB:
             else:
                 log.debug("resolve_page_id: no prefix match for %s", page_id)
             return None
+        if page_id.startswith("http"):
+            rows = _rows(
+                await self._execute(
+                    self.client.table("pages")
+                    .select("id")
+                    .eq("extra->>url", page_id)
+                )
+            )
+            if len(rows) == 1:
+                log.debug(
+                    "resolve_page_id: URL match %s -> %s",
+                    page_id, rows[0]["id"][:8],
+                )
+                return rows[0]["id"]
+            if len(rows) > 1:
+                log.debug(
+                    "resolve_page_id: URL match %s -> %s (first of %d)",
+                    page_id, rows[0]["id"][:8], len(rows),
+                )
+                return rows[0]["id"]
         log.debug("resolve_page_id: no match for %s", page_id[:8])
         return None
 

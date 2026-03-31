@@ -815,8 +815,8 @@ async def async_main():
         "--ingest",
         dest="ingest_files",
         action="append",
-        metavar="FILE",
-        help="Ingest a source file (can be repeated for multiple files)",
+        metavar="FILE_OR_URL",
+        help="Ingest a source file or URL (can be repeated)",
     )
     parser.add_argument(
         "--for-question",

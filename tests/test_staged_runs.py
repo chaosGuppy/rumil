@@ -50,7 +50,10 @@ async def _link(db: DB, from_page: Page, to_page: Page) -> PageLink:
 async def project_id():
     db = await DB.create(run_id=str(uuid.uuid4()))
     project = await db.get_or_create_project(f"test-staged-{uuid.uuid4().hex[:8]}")
-    return project.id
+    yield project.id
+    await db._execute(
+        db.client.table("projects").delete().eq("id", project.id)
+    )
 
 
 @pytest_asyncio.fixture

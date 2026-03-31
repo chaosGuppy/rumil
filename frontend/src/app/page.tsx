@@ -1,9 +1,9 @@
 import Link from "next/link";
 import type { Project } from "@/api";
-import { API_BASE } from "@/lib/api-base";
+import { API_BASE, serverFetch } from "@/lib/api-base";
 
 async function getProjects(): Promise<Project[]> {
-  const res = await fetch(`${API_BASE}/api/projects`, {
+  const res = await serverFetch(`${API_BASE}/api/projects`, {
     cache: "no-store",
   });
   if (!res.ok) return [];

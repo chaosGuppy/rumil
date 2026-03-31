@@ -3,12 +3,12 @@ import type { RunTraceTreeOut, RealtimeConfigOut } from "@/api/types.gen";
 import { TraceViewer } from "./trace-viewer";
 import "./trace.css";
 
-import { API_BASE } from "@/lib/api-base";
+import { API_BASE, serverFetch } from "@/lib/api-base";
 import { WorkspaceIndicator } from "@/components/workspace-indicator";
 import { fetchProjectName } from "@/lib/fetch-project-name";
 
 async function getRunTraceTree(runId: string): Promise<RunTraceTreeOut | null> {
-  const res = await fetch(`${API_BASE}/api/runs/${runId}/trace-tree`, {
+  const res = await serverFetch(`${API_BASE}/api/runs/${runId}/trace-tree`, {
     cache: "no-store",
   });
   if (!res.ok) return null;
@@ -17,7 +17,7 @@ async function getRunTraceTree(runId: string): Promise<RunTraceTreeOut | null> {
 
 async function getRealtimeConfig(): Promise<RealtimeConfigOut | null> {
   try {
-    const res = await fetch(`${API_BASE}/api/realtime/config`, {
+    const res = await serverFetch(`${API_BASE}/api/realtime/config`, {
       cache: "no-store",
     });
     if (!res.ok) return null;

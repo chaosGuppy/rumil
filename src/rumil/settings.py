@@ -68,6 +68,11 @@ class Settings(BaseSettings):
     sdk_agent_max_turns: int = _capture_field(default=200)
     grounding_update_budget: int = _capture_field(default=10)
 
+    max_api_retries: int = _capture_field(default=4)
+    max_api_retries_429: int | None = _capture_field(default=None)
+    max_api_retries_500: int | None = _capture_field(default=None)
+    max_api_retries_529: int | None = _capture_field(default=None)
+
     full_page_char_budget: int = _capture_field(default=10_000)
     abstract_page_char_budget: int = _capture_field(default=10_000)
     summary_page_char_budget: int = _capture_field(default=5_000)
@@ -99,6 +104,14 @@ class Settings(BaseSettings):
             for m in self.find_considerations_modes.split(",")
             if m.strip()
         ]
+
+    def get_max_retries(self, status: int | None = None) -> int:
+        """Return the max retry count, optionally specialized by HTTP status."""
+        if status is not None:
+            override = getattr(self, f"max_api_retries_{status}", None)
+            if override is not None:
+                return override
+        return self.max_api_retries
 
     @property
     def is_prod_db(self) -> bool:

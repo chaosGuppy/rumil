@@ -50,7 +50,8 @@ PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts"
 
 log = logging.getLogger(__name__)
 
-MAX_API_RETRIES = 4
+MAX_API_RETRIES = 60
+MAX_RETRY_WAIT = 60
 
 
 def _load_file(name: str) -> str:
@@ -418,7 +419,7 @@ async def call_api(
                         )
                     )
                 raise
-            wait = 2**attempt
+            wait = min(2 ** (attempt + 1), MAX_RETRY_WAIT)
             label = f"HTTP {status}" if status else name
             msg = (
                 f"API temporarily unavailable ({label}), "
@@ -704,7 +705,7 @@ async def _structured_call_parse(
                     exc_info=True,
                 )
                 raise
-            wait = 2**attempt
+            wait = min(2 ** (attempt + 1), MAX_RETRY_WAIT)
             label = f"HTTP {status}" if status else name
             log.warning(
                 "structured_call: API temporarily unavailable (%s), "

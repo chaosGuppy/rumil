@@ -862,8 +862,8 @@ async def async_main():
         help="Optional name for this run (defaults to question text)",
     )
     parser.add_argument(
-        "--available-moves-preset",
-        dest="available_moves_preset",
+        "--available-moves",
+        dest="available_moves",
         default=None,
         help="Available-moves preset name (default: 'default'). Controls which moves are available per call type.",
     )
@@ -931,8 +931,8 @@ async def async_main():
     )
     logging.getLogger("rumil").setLevel(log_level)
 
-    if args.available_moves_preset is not None:
-        get_settings().available_moves_preset = args.available_moves_preset
+    if args.available_moves is not None:
+        get_settings().available_moves = args.available_moves
     if args.available_calls is not None:
         get_settings().available_calls = args.available_calls
     if args.smoke_test:

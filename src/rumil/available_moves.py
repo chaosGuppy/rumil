@@ -347,7 +347,7 @@ PRESETS: dict[str, AvailableMoves] = {
 
 def get_moves_for_call(call_type: CallType) -> Sequence[MoveType]:
     """Look up available moves for a call type from the active preset."""
-    preset_name = get_settings().available_moves_preset
+    preset_name = get_settings().available_moves
     preset = PRESETS.get(preset_name)
     if preset is None:
         raise ValueError(

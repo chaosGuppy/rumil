@@ -165,8 +165,8 @@ async def run_call(args: argparse.Namespace, db: DB, question_id: str) -> None:
 
 async def run(args: argparse.Namespace) -> None:
     settings = get_settings()
-    if args.available_moves_preset is not None:
-        settings.available_moves_preset = args.available_moves_preset
+    if args.available_moves is not None:
+        settings.available_moves = args.available_moves
     if args.available_calls is not None:
         settings.available_calls = args.available_calls
     if args.smoke_test:
@@ -344,8 +344,8 @@ def main() -> None:
         help="Project workspace name (default: test-calls)",
     )
     parser.add_argument(
-        "--available-moves-preset",
-        dest="available_moves_preset",
+        "--available-moves",
+        dest="available_moves",
         default=None,
         help="Available-moves preset name (default: 'default'). Controls which moves are available per call type.",
     )

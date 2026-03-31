@@ -1,0 +1,19 @@
+{{- if .Values.frontend.httproute.enabled }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "rumil.fullname" . }}-frontend
+  labels:
+    {{- include "rumil.labels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend
+spec:
+  parentRefs:
+  - name: shared-tls-gateway
+    namespace: cert-manager
+  hostnames:
+  - {{ .Values.frontend.httproute.host | quote }}
+  rules:
+  - backendRefs:
+    - name: {{ include "rumil.fullname" . }}-frontend
+      port: {{ .Values.frontend.service.port }}
+{{- end }}

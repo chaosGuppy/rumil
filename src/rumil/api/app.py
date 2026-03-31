@@ -47,10 +47,15 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
+    allow_origins=["*"],
     allow_methods=["GET"],
     allow_headers=["*"],
 )
+
+
+@app.get("/healthz")
+async def healthz() -> dict[str, str]:
+    return {"status": "ok"}
 
 
 async def _get_db(project_id: str = "") -> DB:

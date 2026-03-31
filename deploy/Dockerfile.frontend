@@ -1,0 +1,30 @@
+FROM node:22-alpine AS base
+ENV PNPM_HOME="/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
+RUN corepack enable
+WORKDIR /workspace
+
+FROM base AS production
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+
+RUN addgroup --gid 1001 --system nodejs \
+    && adduser --uid 1001 --system nextjs
+
+COPY .next/standalone ./standalone/frontend
+COPY public ./standalone/frontend/public
+COPY .next/static ./standalone/frontend/.next/static
+RUN mv /workspace/standalone/frontend/node_modules /workspace/standalone/node_modules
+
+RUN mkdir -p /workspace/standalone/frontend/.next/cache \
+    && chown -R nextjs:nodejs /workspace/standalone
+
+USER nextjs
+
+EXPOSE 3000
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+
+WORKDIR /workspace/standalone/frontend
+
+CMD ["node", "server.js"]

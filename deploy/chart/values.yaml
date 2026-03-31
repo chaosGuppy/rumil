@@ -1,0 +1,126 @@
+nameOverride: ""
+fullnameOverride: ""
+
+releaseId: "latest"
+
+api:
+  replicaCount: 1
+
+  image:
+    repository: us-central1-docker.pkg.dev/varuna-400921/delphos/rumil-api
+    pullPolicy: IfNotPresent
+
+  service:
+    type: LoadBalancer
+    port: 8000
+
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 1
+      memory: 2Gi
+
+  livenessProbe:
+    httpGet:
+      path: /healthz
+      port: 8000
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    failureThreshold: 4
+    timeoutSeconds: 5
+
+  readinessProbe:
+    httpGet:
+      path: /healthz
+      port: 8000
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    failureThreshold: 3
+    timeoutSeconds: 5
+
+  startupProbe:
+    httpGet:
+      path: /healthz
+      port: 8000
+    periodSeconds: 10
+    failureThreshold: 30
+    timeoutSeconds: 5
+
+  env:
+    USE_PROD_DB: "1"
+    SUPABASE_PROD_URL: https://aesjaehibxrzearctiqp.supabase.co
+
+  httproute:
+    enabled: false
+
+frontend:
+  replicaCount: 1
+
+  image:
+    repository: us-central1-docker.pkg.dev/varuna-400921/delphos/rumil-frontend
+    pullPolicy: IfNotPresent
+
+  service:
+    type: LoadBalancer
+    port: 3000
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+  livenessProbe:
+    httpGet:
+      path: /
+      port: 3000
+    initialDelaySeconds: 10
+    periodSeconds: 15
+    timeoutSeconds: 5
+
+  readinessProbe:
+    httpGet:
+      path: /
+      port: 3000
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+
+  startupProbe:
+    httpGet:
+      path: /
+      port: 3000
+    periodSeconds: 10
+    failureThreshold: 30
+    timeoutSeconds: 5
+
+  # NOTE: NEXT_PUBLIC_API_URL is baked into the frontend at build time (client-side fetch).
+  # Set it to the external API URL when building the Docker image, not here.
+  # This env section is for any runtime server-side env vars the frontend might need.
+  env: {}
+
+  httproute:
+    enabled: false
+
+secrets:
+  enabled: true
+
+tolerations:
+  - key: "hyperdiskonly"
+    operator: "Equal"
+    value: "true"
+    effect: "NoSchedule"
+
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: hyperdiskonly
+              operator: In
+              values:
+                - "true"

@@ -68,6 +68,7 @@ class Settings(BaseSettings):
     sdk_agent_max_turns: int = _capture_field(default=200)
     grounding_update_budget: int = _capture_field(default=10)
 
+    max_db_retries: int = _capture_field(default=4)
     max_api_retries: int = _capture_field(default=4)
     max_api_retries_429: int | None = _capture_field(default=None)
     max_api_retries_500: int | None = _capture_field(default=None)

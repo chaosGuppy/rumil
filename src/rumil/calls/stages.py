@@ -11,7 +11,7 @@ from typing import ClassVar
 from rumil.calls.common import mark_call_completed
 from rumil.database import DB
 from rumil.models import Call, CallStage, CallStatus, CallType, Dispatch, Move, MoveType
-from rumil.move_presets import get_moves_for_call
+from rumil.available_moves import get_moves_for_call
 from rumil.moves.base import MoveState
 from rumil.tracing.trace_events import ErrorEvent
 from rumil.tracing.tracer import CallTrace, set_trace

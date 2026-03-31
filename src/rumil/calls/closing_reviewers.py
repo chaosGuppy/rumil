@@ -29,7 +29,7 @@ from rumil.llm import (
     structured_call,
 )
 from rumil.models import CallType, MoveType, PageType
-from rumil.move_presets import get_moves_for_call
+from rumil.available_moves import get_moves_for_call
 from rumil.moves.load_page import LoadPagePayload
 from rumil.moves.registry import MOVES
 from rumil.tracing.trace_events import ErrorEvent, ReviewCompleteEvent

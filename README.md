@@ -137,8 +137,8 @@ uv run python main.py "Your question here" --smoke-test
 # Any command can target the production database
 uv run python main.py --prod --list
 
-# Select a move preset (controls which tools are available per call type)
-uv run python main.py "Your question" --moves-preset default --budget 10
+# Select an available-moves preset (controls which tools are available per call type)
+uv run python main.py "Your question" --available-moves-preset default --budget 10
 
 # Select an available-calls preset (controls which scouts/dispatches the two-phase orchestrator uses)
 # 'default' = standard scouts, 'multi-subquestion' = replaces generic subquestions scout with web-questions and deep-questions scouts

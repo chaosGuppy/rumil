@@ -127,6 +127,7 @@ async def run_prioritization(
     budget: int,
     db: DB,
     broadcaster=None,
+    total_remaining: int | None = None,
 ) -> dict:
     """Run a Prioritization call.
 
@@ -149,8 +150,14 @@ async def run_prioritization(
     subtree_ids = await collect_subtree_ids(scope_question_id, db, graph=graph)
     await trace.record(ContextBuiltEvent(budget=budget))
 
+    budget_line = f"You have a budget of **{budget} research calls** to allocate on this question."
+    if total_remaining is not None and total_remaining > budget:
+        budget_line += (
+            f" The overall question has **{total_remaining} budget remaining** "
+            "across future rounds."
+        )
     task = (
-        f"You have a budget of **{budget} research calls** to allocate on this question.\n\n"
+        f"{budget_line}\n\n"
         f"Scope question ID: `{scope_question_id}`\n\n"
         "Review the current state of the workspace above and decide how to spend the budget. "
         "You may also create subquestions (using create_question + link_child_question) to "

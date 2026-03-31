@@ -905,6 +905,12 @@ async def async_main():
         "effects from baseline readers",
     )
     parser.add_argument(
+        "--commit-run",
+        dest="commit_run_id",
+        metavar="RUN_ID",
+        help="Commit a staged run, making its effects visible to all readers",
+    )
+    parser.add_argument(
         "-q",
         "--quiet",
         action="store_true",
@@ -960,6 +966,11 @@ async def async_main():
     if args.stage_run_id:
         await db.stage_run(args.stage_run_id)
         print(f"Run {args.stage_run_id} has been staged.")
+        return
+
+    if args.commit_run_id:
+        await db.commit_staged_run(args.commit_run_id)
+        print(f"Run {args.commit_run_id} has been committed.")
         return
 
     if args.list:

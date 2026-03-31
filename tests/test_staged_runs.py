@@ -2,6 +2,7 @@
 
 import uuid
 
+import pytest
 import pytest_asyncio
 
 from rumil.database import DB
@@ -425,3 +426,208 @@ async def test_retroactively_staged_run_indistinguishable(project_id):
     await run_db.delete_run_data()
     await helper.delete_run_data()
     await observer.delete_run_data()
+
+
+async def _register_run(db: DB) -> None:
+    """Register a run in the runs table so commit_staged_run can find it."""
+    await db.create_run(name="test", question_id=None)
+
+
+async def test_commit_staged_run_reveals_pages(project_id):
+    """After commit_staged_run(), a natively staged run's pages and links become visible."""
+    staged_db = await _make_db(project_id, staged=True)
+    await staged_db.init_budget(100)
+    await _register_run(staged_db)
+    helper = await _make_db(project_id, staged=False)
+
+    q = await _make_page(staged_db, "question", PageType.QUESTION)
+    claim = await _make_page(staged_db, "a claim")
+    await _link(staged_db, claim, q)
+
+    # Before commit: observer cannot see staged pages/links
+    observer = await _make_db(project_id, staged=False)
+    obs_pages = await observer.get_pages()
+    assert q.id not in {p.id for p in obs_pages}
+
+    await helper.commit_staged_run(staged_db.run_id)
+
+    # After commit: observer sees the pages and links
+    obs_pages = await observer.get_pages()
+    obs_ids = {p.id for p in obs_pages}
+    assert q.id in obs_ids
+    assert claim.id in obs_ids
+
+    obs_links = await observer.get_links_to(q.id)
+    assert any(l.from_page_id == claim.id for l in obs_links)
+
+    await staged_db.delete_run_data()
+    await helper.delete_run_data()
+    await observer.delete_run_data()
+
+
+async def test_commit_staged_run_applies_supersession(project_id):
+    """After commit_staged_run(), a staged supersession is applied to the baseline."""
+    baseline = await _make_db(project_id, staged=False)
+    await baseline.init_budget(100)
+    staged_db = await _make_db(project_id, staged=True)
+    await staged_db.init_budget(100)
+    await _register_run(staged_db)
+    helper = await _make_db(project_id, staged=False)
+
+    original = await _make_page(baseline, "original claim")
+    replacement = await _make_page(staged_db, "better claim")
+    await staged_db.supersede_page(original.id, replacement.id)
+
+    # Before commit: observer sees original as active
+    observer = await _make_db(project_id, staged=False)
+    obs_page = await observer.get_page(original.id)
+    assert obs_page is not None
+    assert obs_page.is_superseded is False
+
+    await helper.commit_staged_run(staged_db.run_id)
+
+    # After commit: observer sees original as superseded
+    obs_page = await observer.get_page(original.id)
+    assert obs_page is not None
+    assert obs_page.is_superseded is True
+    assert obs_page.superseded_by == replacement.id
+
+    await baseline.delete_run_data()
+    await staged_db.delete_run_data()
+    await helper.delete_run_data()
+    await observer.delete_run_data()
+
+
+async def test_commit_staged_run_applies_link_deletion(project_id):
+    """After commit_staged_run(), a staged link deletion is applied to the baseline."""
+    baseline = await _make_db(project_id, staged=False)
+    await baseline.init_budget(100)
+    staged_db = await _make_db(project_id, staged=True)
+    await staged_db.init_budget(100)
+    await _register_run(staged_db)
+    helper = await _make_db(project_id, staged=False)
+
+    q = await _make_page(baseline, "question", PageType.QUESTION)
+    claim = await _make_page(baseline, "some claim")
+    link = await _link(baseline, claim, q)
+
+    await staged_db.delete_link(link.id)
+
+    # Before commit: observer still sees the link
+    observer = await _make_db(project_id, staged=False)
+    obs_links = await observer.get_links_to(q.id)
+    assert any(l.id == link.id for l in obs_links)
+
+    await helper.commit_staged_run(staged_db.run_id)
+
+    # After commit: observer no longer sees the link
+    obs_links = await observer.get_links_to(q.id)
+    assert all(l.id != link.id for l in obs_links)
+
+    await baseline.delete_run_data()
+    await staged_db.delete_run_data()
+    await helper.delete_run_data()
+    await observer.delete_run_data()
+
+
+async def test_commit_staged_run_applies_role_change(project_id):
+    """After commit_staged_run(), a staged role change is applied to the baseline."""
+    baseline = await _make_db(project_id, staged=False)
+    await baseline.init_budget(100)
+    staged_db = await _make_db(project_id, staged=True)
+    await staged_db.init_budget(100)
+    await _register_run(staged_db)
+    helper = await _make_db(project_id, staged=False)
+
+    q = await _make_page(baseline, "question", PageType.QUESTION)
+    claim = await _make_page(baseline, "some claim")
+    link = await _link(baseline, claim, q)
+    assert link.role == LinkRole.DIRECT
+
+    await staged_db.update_link_role(link.id, LinkRole.STRUCTURAL)
+
+    # Before commit: observer sees original role
+    observer = await _make_db(project_id, staged=False)
+    obs_link = await observer.get_link(link.id)
+    assert obs_link is not None
+    assert obs_link.role == LinkRole.DIRECT
+
+    await helper.commit_staged_run(staged_db.run_id)
+
+    # After commit: observer sees the new role
+    obs_link = await observer.get_link(link.id)
+    assert obs_link is not None
+    assert obs_link.role == LinkRole.STRUCTURAL
+
+    await baseline.delete_run_data()
+    await staged_db.delete_run_data()
+    await helper.delete_run_data()
+    await observer.delete_run_data()
+
+
+async def test_commit_staged_run_roundtrip(project_id):
+    """stage_run() then commit_staged_run() restores the original non-staged state."""
+    baseline = await _make_db(project_id, staged=False)
+    await baseline.init_budget(100)
+    run_db = await _make_db(project_id, staged=False)
+    await run_db.init_budget(100)
+    await _register_run(run_db)
+    helper = await _make_db(project_id, staged=False)
+
+    original = await _make_page(baseline, "original claim")
+    q = await _make_page(baseline, "question", PageType.QUESTION)
+    baseline_link = await _link(baseline, original, q)
+
+    replacement = await _make_page(run_db, "replacement claim")
+    await run_db.supersede_page(original.id, replacement.id)
+    await run_db.delete_link(baseline_link.id)
+
+    # Snapshot the post-run state before staging
+    observer = await _make_db(project_id, staged=False)
+    pre_stage_page = await observer.get_page(original.id)
+    assert pre_stage_page is not None
+    assert pre_stage_page.is_superseded is True
+    pre_stage_links = await observer.get_links_to(q.id)
+    assert all(l.id != baseline_link.id for l in pre_stage_links)
+
+    # Stage, then commit
+    await helper.stage_run(run_db.run_id)
+    await helper.commit_staged_run(run_db.run_id)
+
+    # After roundtrip: state matches the original non-staged post-run state
+    post_page = await observer.get_page(original.id)
+    assert post_page is not None
+    assert post_page.is_superseded is True
+    assert post_page.superseded_by == replacement.id
+
+    post_pages = await observer.get_pages()
+    assert replacement.id in {p.id for p in post_pages}
+
+    post_links = await observer.get_links_to(q.id)
+    assert all(l.id != baseline_link.id for l in post_links)
+
+    await baseline.delete_run_data()
+    await run_db.delete_run_data()
+    await helper.delete_run_data()
+    await observer.delete_run_data()
+
+
+async def test_commit_staged_run_validation(project_id):
+    """commit_staged_run() raises ValueError for missing or non-staged runs."""
+    helper = await _make_db(project_id, staged=False)
+
+    # Non-existent run
+    with pytest.raises(ValueError, match="not found"):
+        await helper.commit_staged_run("nonexistent-run-id")
+
+    # Non-staged run
+    run_db = await _make_db(project_id, staged=False)
+    await run_db.init_budget(100)
+    await _register_run(run_db)
+    await _make_page(run_db, "a page")
+
+    with pytest.raises(ValueError, match="is not staged"):
+        await helper.commit_staged_run(run_db.run_id)
+
+    await helper.delete_run_data()
+    await run_db.delete_run_data()

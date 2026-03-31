@@ -87,6 +87,11 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             return min(global_remaining, self._budget_cap - self._consumed)
         return global_remaining
 
+    async def _pacing_params(self) -> tuple[int, int]:
+        if self._budget_cap is not None:
+            return self._budget_cap, self._consumed
+        return await self.db.get_budget()
+
     async def create_initial_call(
         self,
         question_id: str,
@@ -98,6 +103,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         before ``run()`` begins. ``_phase1`` reuses the pre-created call.
         """
         budget = self._effective_budget(await self.db.budget_remaining())
+        budget = await self._paced_budget(budget)
         phase1_budget = budget
         p_call = await self.db.create_call(
             CallType.PRIORITIZATION,
@@ -136,7 +142,8 @@ class ExperimentalOrchestrator(BaseOrchestrator):
                 if effective <= 0:
                     break
 
-                result = await self._get_next_batch(root_question_id, effective)
+                round_budget = await self._paced_budget(effective)
+                result = await self._get_next_batch(root_question_id, round_budget)
                 if not result.dispatch_sequences and not result.children:
                     break
 

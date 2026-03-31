@@ -9,6 +9,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 
 from rumil.available_calls import get_available_calls_preset
+from rumil.constants import compute_round_budget
 from rumil.calls.call_registry import (
     SCOUT_ANALOGIES_CALL_CLASSES,
     SCOUT_C_CRUXES_CALL_CLASSES,
@@ -67,6 +68,22 @@ class BaseOrchestrator(ABC):
         self.db = db
         self.broadcaster: Broadcaster | None = broadcaster
         self._owns_broadcaster: bool = False
+
+    async def _pacing_params(self) -> tuple[int, int]:
+        """Return (total, used) for budget pacing.
+
+        Subclasses with budget_cap should override to use their local scope.
+        """
+        return await self.db.get_budget()
+
+    async def _paced_budget(self, effective: int) -> int:
+        """Apply budget pacing to an effective budget, if enabled."""
+        if not get_settings().budget_pacing_enabled:
+            return effective
+        total, used = await self._pacing_params()
+        paced = min(effective, compute_round_budget(total, used))
+        log.info('Budget pacing: effective=%d, round_allocation=%d', effective, paced)
+        return paced
 
     async def _setup(self) -> None:
         if not self.broadcaster:

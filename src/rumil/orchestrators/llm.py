@@ -6,7 +6,7 @@ import logging
 
 from rumil.calls import run_prioritization
 from rumil.calls.common import mark_call_completed
-from rumil.constants import DEFAULT_FRUIT_THRESHOLD, DEFAULT_MAX_ROUNDS
+from rumil.constants import DEFAULT_FRUIT_THRESHOLD, DEFAULT_MAX_ROUNDS, compute_round_budget
 from rumil.database import DB
 from rumil.models import (
     AssessDispatchPayload,
@@ -42,6 +42,7 @@ class LLMOrchestrator(BaseOrchestrator):
 
         self._executed_since_last_plan: bool = False
         self._first_call: bool = True
+        self._sub_budget_ledger: dict[str, tuple[int, int]] = {}
 
     async def run(self, root_question_id: str) -> None:
         await self._setup()
@@ -51,7 +52,8 @@ class LLMOrchestrator(BaseOrchestrator):
                 if remaining <= 0:
                     break
 
-                result = await self._get_next_batch(root_question_id, remaining)
+                round_budget = await self._paced_budget(remaining)
+                result = await self._get_next_batch(root_question_id, round_budget)
                 if not result.dispatch_sequences:
                     break
 
@@ -153,23 +155,39 @@ class LLMOrchestrator(BaseOrchestrator):
             return
 
         d_label = await self.db.page_label(resolved)
-        log.info(
-            'Expanding sub-prioritization on %s (budget=%d) — %s',
-            d_label, payload.budget, payload.reason,
-        )
+
+        if get_settings().budget_pacing_enabled:
+            prev_total, prev_used = self._sub_budget_ledger.get(resolved, (0, 0))
+            cumulative_total = prev_total + payload.budget
+            sub_budget = compute_round_budget(cumulative_total, prev_used)
+            self._sub_budget_ledger[resolved] = (
+                cumulative_total, prev_used + sub_budget,
+            )
+            log.info(
+                'Expanding sub-prioritization on %s '
+                '(allocated=%d, cumulative_total=%d, cumulative_used=%d, paced=%d) — %s',
+                d_label, payload.budget, cumulative_total,
+                prev_used, sub_budget, payload.reason,
+            )
+        else:
+            sub_budget = payload.budget
+            log.info(
+                'Expanding sub-prioritization on %s (budget=%d) — %s',
+                d_label, payload.budget, payload.reason,
+            )
 
         p_call = await self.db.create_call(
             CallType.PRIORITIZATION,
             scope_page_id=resolved,
             parent_call_id=self._call_id or parent_call_id,
-            budget_allocated=payload.budget,
+            budget_allocated=sub_budget,
             workspace=Workspace.PRIORITIZATION,
         )
 
         plan = await run_prioritization(
             scope_question_id=resolved,
             call=p_call,
-            budget=payload.budget,
+            budget=sub_budget,
             db=self.db,
             broadcaster=self.broadcaster,
         )

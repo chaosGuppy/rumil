@@ -60,6 +60,8 @@ class Settings(BaseSettings):
         default="alternate,abstract,concrete"
     )
 
+    budget_pacing_enabled: bool = _capture_field(default=True)
+
     evaluate_content_hops: int = _capture_field(default=0)
     evaluate_abstract_hops: int = _capture_field(default=1)
     evaluate_headline_hops: int = _capture_field(default=2)

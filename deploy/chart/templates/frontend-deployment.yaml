@@ -13,6 +13,10 @@ spec:
       app.kubernetes.io/component: frontend
   template:
     metadata:
+      annotations:
+        {{- if .Values.secrets.enabled }}
+        checksum/secrets: {{ include (print $.Template.BasePath "/secrets.yaml") . | sha256sum }}
+        {{- end }}
       labels:
         {{- include "rumil.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: frontend
@@ -38,6 +42,11 @@ spec:
             - name: {{ $key }}
               value: {{ $value | quote }}
             {{- end }}
+          {{- if .Values.secrets.enabled }}
+          envFrom:
+            - secretRef:
+                name: {{ include "rumil.fullname" . }}-frontend-secrets
+          {{- end }}
       {{- with .Values.affinity }}
       affinity:
         {{- toYaml . | nindent 8 }}

@@ -11,7 +11,7 @@ api:
     pullPolicy: IfNotPresent
 
   service:
-    type: LoadBalancer
+    type: ClusterIP
     port: 8000
 
   resources:
@@ -76,7 +76,7 @@ frontend:
 
   livenessProbe:
     httpGet:
-      path: /
+      path: /healthz
       port: 3000
     initialDelaySeconds: 10
     periodSeconds: 15
@@ -84,7 +84,7 @@ frontend:
 
   readinessProbe:
     httpGet:
-      path: /
+      path: /healthz
       port: 3000
     initialDelaySeconds: 10
     periodSeconds: 10
@@ -92,16 +92,16 @@ frontend:
 
   startupProbe:
     httpGet:
-      path: /
+      path: /healthz
       port: 3000
     periodSeconds: 10
     failureThreshold: 30
     timeoutSeconds: 5
 
-  # NOTE: NEXT_PUBLIC_API_URL is baked into the frontend at build time (client-side fetch).
-  # Set it to the external API URL when building the Docker image, not here.
-  # This env section is for any runtime server-side env vars the frontend might need.
-  env: {}
+  # NEXT_PUBLIC_API_URL is baked at build time (client-side fetch) — set when building the image.
+  # API_BASE_URL is read at runtime for server-side rendering.
+  env:
+    API_BASE_URL: http://rumil-api.rumil.svc.cluster.local:8000
 
   httproute:
     enabled: false

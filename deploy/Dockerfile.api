@@ -3,8 +3,9 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
-COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev
+COPY pyproject.toml uv.lock README.md ./
+COPY src/rumil ./src/rumil
+RUN uv sync --frozen --no-dev --no-editable
 
 FROM python:3.13-slim
 
@@ -14,4 +15,3 @@ CMD ["uvicorn", "rumil.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
 
 WORKDIR /app
 COPY --from=build /app/.venv .venv
-COPY src/rumil ./rumil

@@ -23,11 +23,15 @@ class ScrapedPage:
     fetched_at: str
 
 
-async def scrape_url(url: str) -> ScrapedPage | None:
+async def scrape_url(
+    url: str, *, max_chars: int | None = None
+) -> ScrapedPage | None:
     """Fetch and extract text content from a URL via Jina Reader.
 
     Returns a ScrapedPage on success, or None on any failure.
+    *max_chars* overrides the default truncation limit (MAX_CONTENT_CHARS).
     """
+    limit = max_chars if max_chars is not None else MAX_CONTENT_CHARS
     try:
         headers: dict[str, str] = {"Accept": "application/json"}
         api_key = get_settings().jina_api_key
@@ -45,7 +49,7 @@ async def scrape_url(url: str) -> ScrapedPage | None:
             log.warning("Jina Reader returned no content for URL: %s", url)
             return None
 
-        content = data["content"][:MAX_CONTENT_CHARS]
+        content = data["content"][:limit]
         title = data.get("title") or url
 
         return ScrapedPage(

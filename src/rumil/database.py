@@ -569,6 +569,36 @@ class DB:
                 )
         return None
 
+    async def resolve_link_id(self, link_id: str) -> str | None:
+        """Resolve a link ID to a full UUID. Handles both full UUIDs and
+        8-char short IDs. Returns the full UUID if found, or None."""
+        if not link_id:
+            return None
+        rows = _rows(
+            await self._execute(
+                self.client.table("page_links").select("id").eq("id", link_id)
+            )
+        )
+        if rows:
+            return rows[0]["id"]
+        if len(link_id) <= 8:
+            rows = _rows(
+                await self._execute(
+                    self.client.table("page_links")
+                    .select("id")
+                    .like("id", f"{link_id}%")
+                )
+            )
+            if len(rows) == 1:
+                return rows[0]["id"]
+            if len(rows) > 1:
+                log.warning(
+                    "Ambiguous short ID '%s' matches %d links",
+                    link_id,
+                    len(rows),
+                )
+        return None
+
     async def page_label(self, page_id: str) -> str:
         """Return a human-readable label like '"Summary text" [short_id]'."""
         page = await self.get_page(page_id)

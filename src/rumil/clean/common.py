@@ -535,6 +535,7 @@ async def reassess_claims(
     parsed = ReassessedClaimsResult.model_validate(result.data)
 
     new_pages: list[Page] = []
+    superseded_by: dict[str, list[str]] = {}
     for item in parsed.claims:
         new_page = Page(
             page_type=PageType.CLAIM,
@@ -553,17 +554,20 @@ async def reassess_claims(
         write_page_file(new_page)
         await extract_and_link_citations(new_page.id, new_page.content, db)
 
+        old_ids: list[str] = []
         for superseded_short_id in item.supersedes:
             old_id = await db.resolve_page_id(superseded_short_id)
             if old_id:
                 await db.supersede_page(old_id, new_page.id)
                 await _copy_consideration_links(old_id, new_page.id, db)
+                old_ids.append(old_id)
                 log.info(
                     "reassess_claims: %s superseded by %s",
                     old_id[:8],
                     new_page.id[:8],
                 )
 
+        superseded_by[new_page.id] = old_ids
         new_pages.append(new_page)
 
     for link_add in parsed.link_adds:
@@ -583,9 +587,14 @@ async def reassess_claims(
         await execute_link_consideration(payload, call, db)
 
     for link_rm in parsed.link_removals:
-        resolved_link_id = await db.resolve_page_id(link_rm.link_id)
+        resolved_link_id = await db.resolve_link_id(link_rm.link_id)
+        if not resolved_link_id:
+            log.warning(
+                "reassess_claims: could not resolve link ID %s", link_rm.link_id
+            )
+            continue
         payload = RemoveLinkPayload(
-            link_id=resolved_link_id or link_rm.link_id,
+            link_id=resolved_link_id,
             reasoning=link_rm.reasoning,
         )
         await execute_remove_link(payload, call, db)
@@ -600,13 +609,23 @@ async def reassess_claims(
     )
 
     for new_page in new_pages:
-        await trace.record(
-            ClaimReassessedEvent(
-                old_page_id=claim_pages[0].id if claim_pages else "",
-                new_page_id=new_page.id,
-                headline=new_page.headline,
+        old_ids = superseded_by.get(new_page.id, [])
+        for old_id in old_ids:
+            await trace.record(
+                ClaimReassessedEvent(
+                    old_page_id=old_id,
+                    new_page_id=new_page.id,
+                    headline=new_page.headline,
+                )
             )
-        )
+        if not old_ids:
+            await trace.record(
+                ClaimReassessedEvent(
+                    old_page_id="",
+                    new_page_id=new_page.id,
+                    headline=new_page.headline,
+                )
+            )
 
 
 async def generate_abstracts(call: Call, db: DB) -> None:

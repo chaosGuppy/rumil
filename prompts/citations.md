@@ -10,7 +10,8 @@ Write the 8-character short ID inside square brackets wherever you reference ano
 
 ## Rules
 
+- **Every claim derived from a page must cite that page inline.** If information from a page influenced what you wrote, it *must* have a citation. *Never* leverage a page's content without citing it — uncited use of page information is treated as a fabrication.
 - **Only cite pages whose IDs appear in your context.** Never fabricate or guess a page ID.
 - **Cite in the `content` field** of page-creation tools, not in headlines.
-- **Cite whenever you draw on another page's substance** — paraphrasing a claim, referencing a finding, building on a judgement, or using a concept's definition.
-- Multiple citations in a single page are encouraged when the content synthesises several sources.
+- **Cite at the point of use, not just once per page.** If you draw on the same source in multiple sentences, cite it each time. If a single sentence synthesises two pages, cite both.
+- Multiple citations in a single page are expected when the content synthesises several sources. A page with no citations that makes factual claims about the workspace is almost certainly missing them.

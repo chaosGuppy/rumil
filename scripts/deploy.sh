@@ -18,8 +18,6 @@ usage() {
     echo "  --frontend   Build and deploy the frontend"
     echo "  --all        Build and deploy both (default if none specified)"
     echo "  --tag TAG    Image tag (default: git short SHA)"
-    echo ""
-    echo "Frontend build requires NEXT_PUBLIC_API_URL to be set in the environment."
     exit 1
 }
 
@@ -63,15 +61,9 @@ if $deploy_api; then
 fi
 
 if $deploy_frontend; then
-    if [[ -z "${NEXT_PUBLIC_API_URL:-}" ]]; then
-        echo "Error: NEXT_PUBLIC_API_URL must be set for frontend builds."
-        echo "Example: NEXT_PUBLIC_API_URL=https://api.example.com $0 --frontend"
-        exit 1
-    fi
-
     echo "==> Building frontend (pnpm build)..."
     cd "$REPO_ROOT/frontend"
-    NEXT_PUBLIC_API_URL="$NEXT_PUBLIC_API_URL" pnpm build
+    pnpm build
 
     echo "==> Building frontend image (linux/amd64)..."
     docker build --platform linux/amd64 \

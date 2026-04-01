@@ -672,6 +672,30 @@ class DB:
                 ).eq("id", old_id)
             )
 
+    async def resolve_supersession_chain(
+        self, page_id: str, max_depth: int = 10,
+    ) -> Page | None:
+        """Follow superseded_by links from *page_id* to the final active page.
+
+        Returns the end-of-chain (non-superseded) page, or ``None`` if the
+        chain is broken (missing page) or exceeds *max_depth*.
+        """
+        current_id = page_id
+        seen: set[str] = set()
+        for _ in range(max_depth):
+            page = await self.get_page(current_id)
+            if page is None:
+                return None
+            if not page.is_superseded:
+                return page if current_id != page_id else None
+            if page.superseded_by is None:
+                return None
+            if page.superseded_by in seen:
+                return None
+            seen.add(current_id)
+            current_id = page.superseded_by
+        return None
+
     # --- Links ---
 
     async def save_link(self, link: PageLink) -> None:

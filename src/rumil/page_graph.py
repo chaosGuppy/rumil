@@ -62,6 +62,24 @@ class PageGraph:
     async def get_page(self, page_id: str) -> Page | None:
         return self._pages.get(page_id)
 
+    async def resolve_supersession_chain(
+        self,
+        page: Page,
+    ) -> Page | None:
+        """Try to resolve the supersession chain for a superseded *page*.
+
+        PageGraph only holds active pages, so this can only resolve chains
+        where the direct ``superseded_by`` target is active and present in
+        the graph. Returns ``None`` otherwise — callers should fall back to
+        ``DB.resolve_supersession_chain``.
+        """
+        if not page.is_superseded or not page.superseded_by:
+            return None
+        target = self._pages.get(page.superseded_by)
+        if target and not target.is_superseded:
+            return target
+        return None
+
     async def get_pages(
         self,
         workspace: Workspace | None = None,

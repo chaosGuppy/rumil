@@ -6,6 +6,28 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/healthz": {
+      "get": {
+        "summary": "Healthz",
+        "operationId": "healthz_healthz_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Healthz Healthz Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects": {
       "get": {
         "summary": "List Projects",
@@ -1727,7 +1749,8 @@
           "scout_c_stress_test_cases",
           "web_research",
           "evaluate",
-          "grounding_feedback"
+          "grounding_feedback",
+          "feedback_update"
         ],
         "title": "CallType"
       },

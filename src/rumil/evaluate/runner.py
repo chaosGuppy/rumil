@@ -58,7 +58,7 @@ async def run_evaluation(
 
     initial_context = await explore_page_impl(resolved_id, db)
     system_prompt = build_evaluation_prompt(eval_type)
-    investigator_prompt = build_investigator_prompt()
+    investigator_prompt = build_investigator_prompt(eval_type)
     explore_tool = make_explore_tool(db)
 
     user_prompt = (

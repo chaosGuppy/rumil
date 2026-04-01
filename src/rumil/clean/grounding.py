@@ -11,13 +11,15 @@ from anthropic.types import ServerToolUseBlock, TextBlock
 
 from pydantic import BaseModel, Field
 
-from rumil.calls.call_registry import ASSESS_CALL_CLASSES
-from rumil.calls.common import (
-    ABSTRACT_INSTRUCTION,
-    PageSummaryItem,
-    save_page_abstracts,
+from rumil.clean.common import (
+    UpdateOperation,
+    UpdatePlan,
+    execute_update_plan,
+    generate_abstracts,
+    log_plan,
+    normalize_plan,
+    save_checkpoint,
 )
-from rumil.context import build_embedding_based_context
 from rumil.database import DB
 from rumil.llm import (
     LLMExchangeMetadata,
@@ -28,27 +30,17 @@ from rumil.models import (
     Call,
     CallStatus,
     CallType,
-    LinkType,
     Page,
-    PageLayer,
-    PageType,
 )
 from claude_agent_sdk import AgentDefinition, tool
 
-from rumil.moves.base import (
-    _copy_consideration_links,
-    extract_and_link_citations,
-    write_page_file,
-)
 from rumil.moves.create_claim import ensure_source_page, execute_with_source_creation
 from rumil.explore_tool import make_explore_tool
 from rumil.sdk_agent import SdkAgentConfig, run_sdk_agent
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
 from rumil.tracing.trace_events import (
-    ClaimReassessedEvent,
     GroundingTasksGeneratedEvent,
-    ReassessTriggeredEvent,
     UpdatePlanCreatedEvent,
     WebResearchCompleteEvent,
 )
@@ -60,7 +52,6 @@ _PROMPTS_DIR = Path(__file__).resolve().parents[3] / "prompts"
 _TOOL_SERVER_NAME = "grounding-identify"
 _PLAN_SERVER_NAME = "grounding-plan"
 _WEB_SEARCH_SEMAPHORE = asyncio.Semaphore(10)
-_UPDATE_SEMAPHORE = asyncio.Semaphore(15)
 
 
 class _CreateSourceInput(BaseModel):
@@ -130,9 +121,7 @@ def _make_create_claim_tool(call: Call, db: DB):
         _CreateClaimInput.model_json_schema(),
     )
     async def create_claim(args: dict) -> dict:
-        result = await execute_with_source_creation(
-            args, call, db, source_cache
-        )
+        result = await execute_with_source_creation(args, call, db, source_cache)
         return {"content": [{"type": "text", "text": result.message}]}
 
     return create_claim
@@ -182,46 +171,6 @@ class GroundingTask(BaseModel):
 
 class GroundingTaskList(BaseModel):
     tasks: list[GroundingTask]
-
-
-class UpdateOperation(BaseModel):
-    page_id: str = Field(
-        description="8-char short ID of the page to update"
-    )
-    operation: str = Field(
-        description=(
-            "Type of update: 'reassess_claim' to reassess a claim "
-            "with new findings, or 'reassess_question' to re-run "
-            "the full assessment on a question"
-        )
-    )
-    findings_summary: str = Field(
-        default="",
-        description=(
-            "For reassess_claim: concise summary of the web research "
-            "findings that bear on this claim, including relevant URLs. "
-            "For reassess_question: leave empty."
-        ),
-    )
-
-
-class UpdatePlan(BaseModel):
-    waves: list[list[UpdateOperation]] = Field(
-        description=(
-            "Ordered list of waves. Each wave is a list of update "
-            "operations that execute concurrently. Waves execute in "
-            "sequence — all operations in wave N complete before "
-            "wave N+1 starts."
-        )
-    )
-
-
-class ReassessedClaim(BaseModel):
-    headline: str = Field(description="New headline for the claim (10-15 words)")
-    content: str = Field(description="Full standalone content of the replacement claim")
-    credence: int = Field(description="Probability bucket 1-9 (1=very unlikely, 9=very likely)")
-    robustness: int = Field(description="Resilience of view 1-5 (1=fragile, 5=very robust)")
-
 
 
 async def run_grounding_feedback(
@@ -293,8 +242,7 @@ async def run_grounding_feedback(
             )
         else:
             findings = [
-                (GroundingTask(**f["task"]), f["findings_text"])
-                for f in cp["findings"]
+                (GroundingTask(**f["task"]), f["findings_text"]) for f in cp["findings"]
             ]
             log.info("Stage 2: loaded %d findings from prior run", len(findings))
 
@@ -329,17 +277,13 @@ async def run_grounding_feedback(
                 UpdatePlanCreatedEvent(
                     wave_count=len(plan.waves),
                     operation_count=sum(len(w) for w in plan.waves),
-                    waves=[
-                        [op.model_dump() for op in wave]
-                        for wave in plan.waves
-                    ],
+                    waves=[[op.model_dump() for op in wave] for wave in plan.waves],
                 )
             )
         else:
             plan = UpdatePlan(
                 waves=[
-                    [UpdateOperation(**op) for op in wave]
-                    for wave in cp["update_plan"]
+                    [UpdateOperation(**op) for op in wave] for wave in cp["update_plan"]
                 ]
             )
             log.info(
@@ -365,11 +309,11 @@ async def run_grounding_feedback(
             return call
 
         log.info("Stage 4: executing update plan")
-        await _execute_update_plan(plan, call, db, trace)
+        await execute_update_plan(plan, call, db, trace)
         log.info("Stage 4 complete")
 
         log.info("Stage 5: generating abstracts and embeddings")
-        await _generate_abstracts(call, db)
+        await generate_abstracts(call, db)
         log.info("Stage 5 complete")
 
         call.result_summary = (
@@ -388,10 +332,7 @@ async def run_grounding_feedback(
 
 
 def _save_checkpoint(call: Call, key: str, data: Any) -> None:
-    """Persist a stage checkpoint into ``call.call_params``."""
-    if call.call_params is None:
-        call.call_params = {}
-    call.call_params.setdefault("checkpoints", {})[key] = data
+    save_checkpoint(call, key, data)
 
 
 async def _generate_tasks(
@@ -555,7 +496,7 @@ async def _build_identification_user_message(
     findings_text_parts: list[str] = []
     for i, (task, task_findings) in enumerate(findings, 1):
         findings_text_parts.append(
-            f"<claim_findings index=\"{i}\" claim=\"{task.claim}\">\n"
+            f'<claim_findings index="{i}" claim="{task.claim}">\n'
             f"Search task: {task.search_task}\n\n"
             f"{task_findings}\n"
             f"</claim_findings>"
@@ -592,11 +533,14 @@ async def _plan_updates(
     settings = get_settings()
     budget = settings.grounding_update_budget
 
-    prompt_template = (_PROMPTS_DIR / "grounding-plan-updates.md").read_text()
+    plan_prompt = (_PROMPTS_DIR / "grounding-plan-updates.md").read_text()
+    wave_prompt = (_PROMPTS_DIR / "update-waves.md").read_text()
     system_prompt = (
         (_PROMPTS_DIR / "preamble.md").read_text()
         + "\n\n"
-        + prompt_template.replace("{budget}", str(budget))
+        + plan_prompt
+        + "\n\n"
+        + wave_prompt.replace("{budget}", str(budget))
     )
 
     explore_tool = make_explore_tool(db)
@@ -605,12 +549,9 @@ async def _plan_updates(
 
     plan_tools = [explore_tool, create_source_tool, create_claim_tool]
     subagent_tool_fqnames = [
-        f"mcp__{_PLAN_SERVER_NAME}__{t.name}"
-        for t in [explore_tool, create_claim_tool]
+        f"mcp__{_PLAN_SERVER_NAME}__{t.name}" for t in [explore_tool, create_claim_tool]
     ]
-    all_tool_fqnames = [
-        f"mcp__{_PLAN_SERVER_NAME}__{t.name}" for t in plan_tools
-    ]
+    all_tool_fqnames = [f"mcp__{_PLAN_SERVER_NAME}__{t.name}" for t in plan_tools]
 
     user_prompt = await _build_identification_user_message(
         question, evaluation_text, tasks, findings, call, db
@@ -651,297 +592,6 @@ async def _plan_updates(
         log.warning("Stage 3 agent returned no structured output")
         return UpdatePlan(waves=[])
 
-    plan = UpdatePlan.model_validate(_normalize_plan(result.structured_output))
-    _log_plan(plan)
+    plan = UpdatePlan.model_validate(normalize_plan(result.structured_output))
+    log_plan(plan)
     return plan
-
-
-def _normalize_plan(raw: Any) -> dict:
-    """Normalize the agent's free-form plan JSON into our UpdatePlan schema.
-
-    The model may produce waves as objects with an ``operations`` key and
-    use ``type`` instead of ``operation`` on each item.
-    """
-    if not isinstance(raw, dict):
-        return {"waves": []}
-
-    raw_waves = raw.get("waves", [])
-    normalized_waves: list[list[dict]] = []
-
-    for wave in raw_waves:
-        if isinstance(wave, list):
-            ops = wave
-        elif isinstance(wave, dict):
-            ops = wave.get("operations", [])
-        else:
-            continue
-
-        normalized_ops: list[dict] = []
-        for op in ops:
-            if not isinstance(op, dict):
-                continue
-            normalized_op: dict = {
-                "page_id": op.get("page_id", ""),
-                "operation": op.get("operation") or op.get("type", ""),
-                "findings_summary": op.get("findings_summary")
-                or op.get("findings", ""),
-            }
-            normalized_ops.append(normalized_op)
-
-        if normalized_ops:
-            normalized_waves.append(normalized_ops)
-
-    return {"waves": normalized_waves}
-
-
-def _log_plan(plan: UpdatePlan) -> None:
-    """Log the update plan for visibility."""
-    lines = ["Update plan:"]
-    for i, wave in enumerate(plan.waves, 1):
-        ops = ", ".join(
-            f"{op.page_id[:8]}({op.operation})" for op in wave
-        )
-        lines.append(f"  Wave {i}: {ops}")
-    log.info("\n".join(lines))
-
-
-async def _execute_update_plan(
-    plan: UpdatePlan,
-    call: Call,
-    db: DB,
-    trace: CallTrace,
-) -> None:
-    """Stage 4: execute the update plan wave by wave."""
-    for i, wave in enumerate(plan.waves, 1):
-        log.info("Executing wave %d (%d operations)", i, len(wave))
-
-        async def _execute_op(op: UpdateOperation) -> None:
-            async with _UPDATE_SEMAPHORE:
-                if op.operation == "reassess_claim":
-                    await _reassess_claim(
-                        op.page_id, op.findings_summary, call, db, trace
-                    )
-                elif op.operation == "reassess_question":
-                    await _reassess_question(op.page_id, call, db, trace)
-                else:
-                    log.warning("Unknown operation type: %s", op.operation)
-
-        await asyncio.gather(*[_execute_op(op) for op in wave])
-
-
-async def _reassess_claim(
-    page_id: str,
-    findings: str,
-    call: Call,
-    db: DB,
-    trace: CallTrace,
-) -> None:
-    """Reassess a claim using embedding context + linked pages + findings."""
-    resolved_id = await db.resolve_page_id(page_id)
-    if not resolved_id:
-        log.warning("Could not resolve claim page ID: %s", page_id)
-        return
-    old_page = await db.get_page(resolved_id)
-    if not old_page or not old_page.is_active():
-        log.warning("Claim page %s not found or inactive", page_id)
-        return
-    system_prompt = (
-        (_PROMPTS_DIR / "preamble.md").read_text()
-        + "\n\n"
-        + (_PROMPTS_DIR / "grounding-reassess-claim.md").read_text()
-    )
-
-    # Build embedding-based context around this claim
-    ctx_result = await build_embedding_based_context(
-        old_page.headline,
-        db,
-    )
-
-    # Expand linked pages
-    links_from = await db.get_links_from(old_page.id)
-    links_to = await db.get_links_to(old_page.id)
-    linked_ids = (
-        {l.to_page_id for l in links_from}
-        | {l.from_page_id for l in links_to}
-    )
-    linked_pages = await db.get_pages_by_ids(list(linked_ids))
-    linked_text_parts: list[str] = []
-    for pid, lp in linked_pages.items():
-        if lp.is_active():
-            linked_text_parts.append(
-                f"### `{pid[:8]}` — {lp.headline} ({lp.page_type.value})\n\n"
-                f"{lp.content}"
-            )
-    linked_text = "\n\n---\n\n".join(linked_text_parts) if linked_text_parts else ""
-
-    user_parts: list[str] = [
-        f"## Workspace context\n\n{ctx_result.context_text}",
-    ]
-    if linked_text:
-        user_parts.append(f"## Linked pages\n\n{linked_text}")
-    user_parts.append(
-        f"## Claim to reassess\n\n"
-        f"**Headline:** {old_page.headline}\n"
-        f"**ID:** `{old_page.id[:8]}`\n\n"
-        f"{old_page.content}"
-    )
-    if findings:
-        user_parts.append(
-            f"## Web research findings\n\n"
-            f"The following findings directly bear on this claim:\n\n"
-            f"{findings}"
-        )
-
-    user_message = "\n\n".join(user_parts)
-
-    meta = LLMExchangeMetadata(
-        call_id=call.id,
-        phase=f"reassess_claim_{old_page.id[:8]}",
-    )
-    result = await structured_call(
-        system_prompt,
-        user_message=user_message,
-        response_model=ReassessedClaim,
-        metadata=meta,
-        db=db,
-    )
-
-    if result.data is None:
-        log.warning("Reassess claim %s returned no data", old_page.id[:8])
-        return
-
-    reassessed = ReassessedClaim.model_validate(result.data)
-
-    # Create the new claim page
-    new_page = Page(
-        page_type=PageType.CLAIM,
-        layer=PageLayer.SQUIDGY,
-        workspace=old_page.workspace,
-        content=reassessed.content,
-        headline=reassessed.headline,
-        credence=reassessed.credence,
-        robustness=reassessed.robustness,
-        provenance_model="claude-opus-4-6",
-        provenance_call_type=call.call_type.value,
-        provenance_call_id=call.id,
-        project_id=old_page.project_id,
-    )
-    await db.save_page(new_page)
-    write_page_file(new_page)
-    await extract_and_link_citations(new_page.id, new_page.content, db)
-
-    # Supersede old claim and copy consideration links
-    await db.supersede_page(old_page.id, new_page.id)
-    await _copy_consideration_links(old_page.id, new_page.id, db)
-
-    log.info(
-        "Reassessed claim %s -> %s: %s",
-        old_page.id[:8],
-        new_page.id[:8],
-        reassessed.headline[:70],
-    )
-
-    await trace.record(
-        ClaimReassessedEvent(
-            old_page_id=old_page.id,
-            new_page_id=new_page.id,
-            headline=reassessed.headline,
-        )
-    )
-
-
-async def _reassess_question(
-    page_id: str,
-    call: Call,
-    db: DB,
-    trace: CallTrace,
-) -> None:
-    """Reassess a question's judgement by dispatching an AssessCall."""
-    resolved_id = await db.resolve_page_id(page_id)
-    if not resolved_id:
-        log.warning("Could not resolve question page ID: %s", page_id)
-        return
-    page = await db.get_page(resolved_id)
-    if not page:
-        log.warning("Question page %s not found", page_id)
-        return
-
-    assess_call = await db.create_call(
-        CallType.ASSESS,
-        scope_page_id=resolved_id,
-        parent_call_id=call.id,
-    )
-    cls = ASSESS_CALL_CLASSES[get_settings().assess_call_variant]
-    assess = cls(resolved_id, assess_call, db)
-    await assess.run()
-
-    log.info(
-        "Reassessed judgement for question %s (call %s)",
-        resolved_id[:8],
-        assess_call.id[:8],
-    )
-
-    await trace.record(
-        ReassessTriggeredEvent(
-            question_id=resolved_id,
-            question_headline=page.headline,
-            child_call_id=assess_call.id,
-        )
-    )
-
-
-class _PageAbstractList(BaseModel):
-    summaries: list[PageSummaryItem]
-
-
-async def _generate_abstracts(call: Call, db: DB) -> None:
-    """Stage 6: generate abstracts and embeddings for pages created in this call."""
-    rows = (
-        await db._execute(
-            db.client.table("pages")
-            .select("id, headline, content, page_type")
-            .eq("provenance_call_id", call.id)
-            .neq("page_type", "source")
-        )
-    )
-    pages = [r for r in (rows.data or []) if r.get("id")]
-    if not pages:
-        log.info("Stage 6: no pages to abstract")
-        return
-
-    page_lines = "\n".join(
-        f'- `{p["id"][:8]}`: "{p["headline"][:120]}"'
-        for p in pages
-    )
-    user_message = (
-        "Generate an abstract for each of the following pages.\n\n"
-        f"{page_lines}\n\n"
-        f"Abstract requirements: {ABSTRACT_INSTRUCTION}\n\n"
-        "For each page, return its page_id and abstract."
-    )
-
-    page_contents = "\n\n---\n\n".join(
-        f'Page `{p["id"][:8]}` — {p["headline"]}\n\n{p["content"]}'
-        for p in pages
-    )
-    system_prompt = (
-        "You are generating abstracts for workspace pages. "
-        "You will be given page contents and must produce a self-contained "
-        "abstract for each.\n\n"
-        f"Page contents:\n\n{page_contents}"
-    )
-
-    meta = LLMExchangeMetadata(
-        call_id=call.id,
-        phase="abstract_generation",
-    )
-    result = await structured_call(
-        system_prompt,
-        user_message=user_message,
-        response_model=_PageAbstractList,
-        metadata=meta,
-        db=db,
-    )
-    if result.data:
-        parsed = _PageAbstractList(**result.data)
-        await save_page_abstracts(parsed.summaries, db)

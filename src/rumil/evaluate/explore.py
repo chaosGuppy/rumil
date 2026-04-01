@@ -215,6 +215,6 @@ def _render_links(
         if extras:
             link_desc += f" ({', '.join(extras)})"
 
-        lines.append(f"  {arrow} {link_desc}: {other_label}")
+        lines.append(f"  {arrow} {link_desc} [link:{link.id[:8]}]: {other_label}")
 
     return lines

@@ -67,6 +67,8 @@ class Settings(BaseSettings):
     evaluate_headline_hops: int = _capture_field(default=2)
     sdk_agent_max_turns: int = _capture_field(default=200)
     grounding_update_budget: int = _capture_field(default=10)
+    feedback_update_budget: int = _capture_field(default=10)
+    feedback_investigation_budget: int = _capture_field(default=30)
 
     max_db_retries: int = _capture_field(default=4)
     max_api_retries: int = _capture_field(default=4)

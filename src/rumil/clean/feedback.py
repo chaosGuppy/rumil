@@ -119,7 +119,10 @@ def _make_investigate_question_tool(
                 ]
             }
 
+        budget_remaining -= budget
+
         if not question_id and not headline:
+            budget_remaining += budget
             return {
                 "content": [
                     {
@@ -134,6 +137,7 @@ def _make_investigate_question_tool(
 
         parent_resolved = await db.resolve_page_id(parent_question_id)
         if not parent_resolved:
+            budget_remaining += budget
             return {
                 "content": [
                     {
@@ -170,6 +174,7 @@ def _make_investigate_question_tool(
         else:
             resolved = await db.resolve_page_id(question_id)
             if not resolved:
+                budget_remaining += budget
                 return {
                     "content": [
                         {
@@ -194,8 +199,6 @@ def _make_investigate_question_tool(
         child_call_id = await orchestrator.create_initial_call(
             resolved, parent_call_id=call.id
         )
-
-        budget_remaining -= budget
 
         try:
             await orchestrator.run(resolved)

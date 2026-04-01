@@ -12,7 +12,7 @@ Produce a **Judgement**. It will be automatically linked to the scope question. 
 
 1. **Consideration landscape** — briefly characterise the state of the considerations (what's on each side, what's uncertain)
 2. **Weighing** — explain how you weigh the considerations against each other and why
-3. **Conclusion** — your position, stated clearly even if uncertain
+3. **Conclusion** — your position, stated clearly even if uncertain. Articulate your uncertainty clearly and in a structured way. Very often, it is a good idea to produce a probability breakdown between different possibilities or scenarios, backed by toy probability models where appropriate.
 4. **Key dependencies and sensitivity** — what your conclusion most depends on, and what would shift it
 
 Include the `key_dependencies` and `sensitivity_analysis` fields in the judgement.

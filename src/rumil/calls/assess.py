@@ -44,4 +44,7 @@ class EmbeddingAssessCall(AssessCall):
     context_builder_cls = EmbeddingContext
 
     def _make_context_builder(self) -> ContextBuilder:
-        return EmbeddingContext(self.call_type)
+        return EmbeddingContext(
+            self.call_type,
+            require_judgement_for_questions=True,
+        )

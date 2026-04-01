@@ -18,8 +18,7 @@ For each paradigm case (aim for 1–3):
 
 1. Read the parent question and consider: what concrete, real-world instances best illustrate the dynamics at play?
 2. For each case, create a claim describing it using `create_claim`, then `link_consideration` to the parent question.
-3. Create a subquestion for further exploration using `create_question` and `link_child_question`.
-4. If the case connects to existing pages in the workspace, use `link_related` to make those connections visible.
+3. Create a subquestion for further exploration using `create_question` (it is automatically linked as a child of the scope question).
 
 ## What Makes a Good Paradigm Case
 

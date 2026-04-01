@@ -29,7 +29,8 @@ Usage:
     uv run python scripts/run_call.py find-considerations "Test question" --up-to-stage build_context
     uv run python scripts/run_call.py find-considerations "Test question" --up-to-stage create_pages
 
-All runs write to the local database under the workspace 'test-calls' by default.
+All runs are staged by default (use --no-stage to disable). Workspace defaults to
+'default' but is auto-detected from --question-id when possible.
 """
 
 import argparse
@@ -182,7 +183,8 @@ async def run(args: argparse.Namespace) -> None:
     logging.getLogger("httpx").setLevel(logging.WARNING)
 
     workspace = args.workspace
-    db = await DB.create(run_id=str(uuid.uuid4()), prod=args.prod)
+    staged = not args.no_stage
+    db = await DB.create(run_id=str(uuid.uuid4()), prod=args.prod, staged=staged)
     project = await db.get_or_create_project(workspace)
     db.project_id = project.id
 
@@ -194,6 +196,8 @@ async def run(args: argparse.Namespace) -> None:
         if not page:
             print(f"Question {question_id} not found.")
             return
+        if page.project_id and page.project_id != db.project_id:
+            db.project_id = page.project_id
         question_text = page.headline
         print(f"Using existing question: {question_text}")
     elif args.question_text:
@@ -340,8 +344,9 @@ def main() -> None:
     )
     parser.add_argument(
         "--workspace",
-        default="test-calls",
-        help="Project workspace name (default: test-calls)",
+        default="default",
+        help="Project workspace name (default: 'default'). "
+        "Auto-detected from --question-id when possible.",
     )
     parser.add_argument(
         "--available-moves",
@@ -359,6 +364,12 @@ def main() -> None:
         "--prod",
         action="store_true",
         help="Use the production database instead of local Supabase",
+    )
+    parser.add_argument(
+        "--no-stage",
+        action="store_true",
+        dest="no_stage",
+        help="Run without staging (default: runs are staged)",
     )
     parser.add_argument(
         "--up-to-stage",

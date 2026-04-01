@@ -151,7 +151,7 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
             "Dispatch find-considerations rounds for a question. Finds missing "
             "considerations. Each round consumes 1 unit of budget. Runs up to "
             "max_rounds rounds, stopping early when remaining fruit falls below "
-            "fruit_threshold. Budget cost: between 1 and max_rounds (inclusive)."
+            "fruit_threshold. Budget cost: between 1 and max_rounds (inclusive), plus 1 auto-assess if targeting a subquestion."
         ),
         schema=ScoutDispatchPayload,
     ),
@@ -160,7 +160,8 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
         name="dispatch_assess",
         description=(
             "Dispatch an assessment for a question. Renders a judgement. "
-            "Budget cost: exactly 1."
+            "Budget cost: exactly 1 (plus 1 auto-assess if targeting a "
+            "subquestion, so 2 total)."
         ),
         schema=AssessDispatchPayload,
     ),
@@ -181,7 +182,7 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
             "for the scope question. Always targets the scope question. "
             "Runs up to max_rounds rounds, stopping early when remaining "
             "fruit falls below fruit_threshold. "
-            "Budget cost: between 1 and max_rounds (inclusive)."
+            "Budget cost: between 1 and max_rounds (inclusive), plus 1 auto-assess if targeting a subquestion."
         ),
         schema=ScoutSubquestionsDispatchPayload,
     ),
@@ -193,7 +194,7 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
             "bearing on the scope question. Always targets the scope question. "
             "Runs up to max_rounds rounds, stopping early when remaining "
             "fruit falls below fruit_threshold. "
-            "Budget cost: between 1 and max_rounds (inclusive)."
+            "Budget cost: between 1 and max_rounds (inclusive), plus 1 auto-assess if targeting a subquestion."
         ),
         schema=ScoutEstimatesDispatchPayload,
     ),
@@ -205,7 +206,7 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
             "for the scope question. Always targets the scope question. "
             "Runs up to max_rounds rounds, stopping early when remaining "
             "fruit falls below fruit_threshold. "
-            "Budget cost: between 1 and max_rounds (inclusive)."
+            "Budget cost: between 1 and max_rounds (inclusive), plus 1 auto-assess if targeting a subquestion."
         ),
         schema=ScoutHypothesesDispatchPayload,
     ),
@@ -217,7 +218,7 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
             "for the scope question. Always targets the scope question. "
             "Runs up to max_rounds rounds, stopping early when remaining "
             "fruit falls below fruit_threshold. "
-            "Budget cost: between 1 and max_rounds (inclusive)."
+            "Budget cost: between 1 and max_rounds (inclusive), plus 1 auto-assess if targeting a subquestion."
         ),
         schema=ScoutAnalogiesDispatchPayload,
     ),
@@ -229,7 +230,7 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
             "cases illuminating the scope question. Always targets the scope question. "
             "Runs up to max_rounds rounds, stopping early when remaining "
             "fruit falls below fruit_threshold. "
-            "Budget cost: between 1 and max_rounds (inclusive)."
+            "Budget cost: between 1 and max_rounds (inclusive), plus 1 auto-assess if targeting a subquestion."
         ),
         schema=ScoutParadigmCasesDispatchPayload,
     ),
@@ -242,7 +243,7 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
             "to the scope question. Always targets the scope question. "
             "Runs up to max_rounds rounds, stopping early when remaining "
             "fruit falls below fruit_threshold. "
-            "Budget cost: between 1 and max_rounds (inclusive)."
+            "Budget cost: between 1 and max_rounds (inclusive), plus 1 auto-assess if targeting a subquestion."
         ),
         schema=ScoutFactchecksDispatchPayload,
     ),
@@ -255,7 +256,7 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
             "already know the answer. Always targets the scope question. "
             "Runs up to max_rounds rounds, stopping early when remaining "
             "fruit falls below fruit_threshold. "
-            "Budget cost: between 1 and max_rounds (inclusive)."
+            "Budget cost: between 1 and max_rounds (inclusive), plus 1 auto-assess if targeting a subquestion."
         ),
         schema=ScoutWebQuestionsDispatchPayload,
     ),
@@ -269,7 +270,7 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
             "Always targets the scope question. "
             "Runs up to max_rounds rounds, stopping early when remaining "
             "fruit falls below fruit_threshold. "
-            "Budget cost: between 1 and max_rounds (inclusive)."
+            "Budget cost: between 1 and max_rounds (inclusive), plus 1 auto-assess if targeting a subquestion."
         ),
         schema=ScoutDeepQuestionsDispatchPayload,
     ),
@@ -281,7 +282,7 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
             "that would make the scope claim true. Always targets the scope claim. "
             "Runs up to max_rounds rounds, stopping early when remaining "
             "fruit falls below fruit_threshold. "
-            "Budget cost: between 1 and max_rounds (inclusive)."
+            "Budget cost: between 1 and max_rounds (inclusive), plus 1 auto-assess if targeting a subquestion."
         ),
         schema=ScoutCHowTrueDispatchPayload,
     ),
@@ -294,7 +295,7 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
             "is false. Always targets the scope claim. "
             "Runs up to max_rounds rounds, stopping early when remaining "
             "fruit falls below fruit_threshold. "
-            "Budget cost: between 1 and max_rounds (inclusive)."
+            "Budget cost: between 1 and max_rounds (inclusive), plus 1 auto-assess if targeting a subquestion."
         ),
         schema=ScoutCHowFalseDispatchPayload,
     ),
@@ -307,7 +308,7 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
             "would be most informative. Always targets the scope claim. "
             "Runs up to max_rounds rounds, stopping early when remaining "
             "fruit falls below fruit_threshold. "
-            "Budget cost: between 1 and max_rounds (inclusive)."
+            "Budget cost: between 1 and max_rounds (inclusive), plus 1 auto-assess if targeting a subquestion."
         ),
         schema=ScoutCCruxesDispatchPayload,
     ),
@@ -320,7 +321,7 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
             "targets the scope claim. "
             "Runs up to max_rounds rounds, stopping early when remaining "
             "fruit falls below fruit_threshold. "
-            "Budget cost: between 1 and max_rounds (inclusive)."
+            "Budget cost: between 1 and max_rounds (inclusive), plus 1 auto-assess if targeting a subquestion."
         ),
         schema=ScoutCRelevantEvidenceDispatchPayload,
     ),
@@ -334,7 +335,7 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
             "scope claim. "
             "Runs up to max_rounds rounds, stopping early when remaining "
             "fruit falls below fruit_threshold. "
-            "Budget cost: between 1 and max_rounds (inclusive)."
+            "Budget cost: between 1 and max_rounds (inclusive), plus 1 auto-assess if targeting a subquestion."
         ),
         schema=ScoutCStressTestCasesDispatchPayload,
     ),
@@ -347,7 +348,8 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
             "an assertion, looking up a figure or date, or finding known "
             "examples of a well-defined category. Do NOT use on broad, "
             "interpretive, hypothesis, or judgement questions. "
-            "Budget cost: exactly 1."
+            "Budget cost: exactly 1 (plus 1 auto-assess if targeting a "
+            "subquestion, so 2 total)."
         ),
         schema=WebResearchDispatchPayload,
     ),

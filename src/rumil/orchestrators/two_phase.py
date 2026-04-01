@@ -564,9 +564,22 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         )
         subtree_ids = await collect_subtree_ids(question_id, self.db, graph=graph)
 
+        dispatch_budget = budget - 1
         task = (
-            f'You have a budget of **{budget} budget units** to allocate.\n\n'
+            f'You have a budget of **{dispatch_budget} budget units** to allocate '
+            'across your dispatches (1 unit is reserved for a follow-up assessment '
+            'on the root question).\n\n'
             f'Scope question ID: `{question_id}`\n\n'
+            '## Budget accounting\n\n'
+            'Multi-round scouts (find_considerations, scout_*) cost between 1 and '
+            'max_rounds budget units depending on early stopping. Dispatches '
+            'targeting a **subquestion** (not the scope question) will have an '
+            'automatic assess appended, adding 1 to the cost. So a scout with '
+            'max_rounds=3 targeting a subquestion costs up to 4 budget units. '
+            'Web research and assess dispatches cost exactly 1 each. '
+            'Recurse costs exactly the budget you assign.\n\n'
+            'Plan conservatively: your total worst-case cost across all dispatches '
+            f'must not exceed {dispatch_budget}.\n\n'
             f'{scores_text}\n\n'
             'You must make all your dispatch calls now — this is your only turn. '
             f'Each recurse call must have a budget of at least {MIN_TWOPHASE_BUDGET}.'
@@ -578,7 +591,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             )
 
         extra_defs: list[DispatchDef] = []
-        if budget >= MIN_TWOPHASE_BUDGET:
+        if dispatch_budget >= MIN_TWOPHASE_BUDGET:
             extra_defs.append(RECURSE_DISPATCH_DEF)
             extra_defs.append(RECURSE_CLAIM_DISPATCH_DEF)
 

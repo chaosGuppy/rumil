@@ -1,5 +1,6 @@
 """General feedback pipeline: improve workspace based on feedback evaluation output."""
 
+import asyncio
 import logging
 from pathlib import Path
 
@@ -85,6 +86,7 @@ def _make_investigate_question_tool(
     exceed it are rejected.
     """
     budget_remaining = investigation_budget
+    budget_lock = asyncio.Lock()
 
     @tool(
         "investigate_question",
@@ -105,24 +107,24 @@ def _make_investigate_question_tool(
         parent_question_id = args["parent_question_id"]
         budget = args["budget"]
 
-        if budget > budget_remaining:
-            return {
-                "content": [
-                    {
-                        "type": "text",
-                        "text": (
-                            f"Rejected: requested budget {budget} exceeds "
-                            f"remaining investigation budget of {budget_remaining}. "
-                            f"Use a smaller budget or skip this investigation."
-                        ),
-                    }
-                ]
-            }
-
-        budget_remaining -= budget
+        async with budget_lock:
+            if budget > budget_remaining:
+                return {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": (
+                                f"Rejected: requested budget {budget} exceeds "
+                                f"remaining investigation budget of "
+                                f"{budget_remaining}. "
+                                f"Use a smaller budget or skip this investigation."
+                            ),
+                        }
+                    ]
+                }
+            budget_remaining -= budget
 
         if not question_id and not headline:
-            budget_remaining += budget
             return {
                 "content": [
                     {
@@ -137,7 +139,6 @@ def _make_investigate_question_tool(
 
         parent_resolved = await db.resolve_page_id(parent_question_id)
         if not parent_resolved:
-            budget_remaining += budget
             return {
                 "content": [
                     {
@@ -174,7 +175,6 @@ def _make_investigate_question_tool(
         else:
             resolved = await db.resolve_page_id(question_id)
             if not resolved:
-                budget_remaining += budget
                 return {
                     "content": [
                         {

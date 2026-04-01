@@ -9,6 +9,8 @@ from collections.abc import Sequence
 from datetime import datetime, timezone
 from typing import Any, cast
 
+import httpx
+
 from postgrest.types import CountMethod
 from supabase import acreate_client, AsyncClient
 from supabase.lib.client_options import AsyncClientOptions
@@ -206,10 +208,26 @@ class DB:
         except Exception:
             log.debug('Failed to close postgrest client', exc_info=True)
 
-    async def _execute(self, query: Any) -> Any:
-        """Execute a query builder through the concurrency semaphore."""
-        async with self._semaphore:
-            return await query.execute()
+    async def _execute(self, query: Any, *, _retries: int = 60) -> Any:
+        """Execute a query builder through the concurrency semaphore.
+
+        Retries on transient network errors (connection drops, timeouts)
+        with exponential backoff.
+        """
+        for attempt in range(_retries):
+            try:
+                async with self._semaphore:
+                    return await query.execute()
+            except (httpx.ReadError, httpx.ConnectError, httpx.RemoteProtocolError) as e:
+                if attempt == _retries - 1:
+                    raise
+                wait = min(2 ** (attempt + 1), 60)
+                log.warning(
+                    'DB query failed (%s), retrying in %ds (attempt %d/%d)',
+                    type(e).__name__, wait, attempt + 1, _retries,
+                )
+                await asyncio.sleep(wait)
+        raise RuntimeError('Unreachable: DB retry loop exhausted')
 
     def _staged_filter(self, query: Any) -> Any:
         """Apply staged-run visibility filter to a query.

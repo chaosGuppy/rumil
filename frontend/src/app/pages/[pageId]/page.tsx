@@ -163,6 +163,77 @@ async function getPageRun(pageId: string): Promise<RunSummaryOut | null> {
   return res.json();
 }
 
+function AssociationBoxes({
+  page,
+  linksFrom,
+  linksTo,
+  stagedRunId,
+}: {
+  page: Page;
+  linksFrom: LinkedPageOut[];
+  linksTo: LinkedPageOut[];
+  stagedRunId?: string;
+}) {
+  const items: { lp: LinkedPageOut; label: string }[] = [];
+  if (page.page_type === "question") {
+    for (const lp of linksTo) {
+      if (
+        lp.link.link_type === "related" &&
+        lp.page.page_type === "judgement" &&
+        !lp.page.is_superseded
+      ) {
+        items.push({ lp, label: "judgement" });
+      }
+    }
+  } else if (page.page_type === "judgement") {
+    for (const lp of linksFrom) {
+      if (
+        lp.link.link_type === "related" &&
+        lp.page.page_type === "question"
+      ) {
+        items.push({ lp, label: "question" });
+      }
+    }
+  }
+  if (items.length === 0) return null;
+  return (
+    <div className="assoc-boxes">
+      <div className="assoc-grid">
+        {items.map(({ lp, label }) => {
+          const cfg = TYPE_CONFIG[lp.page.page_type] || TYPE_CONFIG.source;
+          return (
+            <Link
+              key={lp.page.id}
+              href={pageHref(lp.page, stagedRunId)}
+              className="linked-card"
+            >
+              <div className="linked-card-accent" style={{ background: cfg.accent }} />
+              <div className="linked-card-body">
+                <div className="link-meta">
+                  <span className="link-type-label">{label}</span>
+                </div>
+                <div className="linked-card-header">
+                  <span
+                    className="linked-card-type"
+                    style={{ color: cfg.accent, background: cfg.bg }}
+                  >
+                    {lp.page.page_type}
+                  </span>
+                  <span className="linked-card-id">{lp.page.id.slice(0, 8)}</span>
+                </div>
+                <div className="linked-card-summary">{lp.page.headline}</div>
+                {lp.link.reasoning && (
+                  <div className="linked-card-reasoning">{lp.link.reasoning}</div>
+                )}
+              </div>
+            </Link>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function SegmentGauge({ value, max, label }: { value: number; max: number; label: string }) {
   return (
     <div className="ep-gauge">
@@ -260,6 +331,7 @@ export default async function PageDetailPage({
             ) : null}
           </div>
           <h1 className="page-summary">{page.headline}</h1>
+          <AssociationBoxes page={page} linksFrom={links_from} linksTo={links_to} stagedRunId={stagedRunId} />
           {page.page_type === "source" && typeof page.extra?.url === "string" && (
             <a
               href={page.extra.url}
@@ -507,6 +579,17 @@ const styles = `
   .source-url:hover .source-url-arrow {
     opacity: 1;
     transform: translate(1px, -1px);
+  }
+
+  .assoc-boxes {
+    margin-top: 0.75rem;
+  }
+  .assoc-grid {
+    display: grid;
+    gap: 1px;
+    background: var(--color-border);
+    border: 1px solid var(--color-border);
+    overflow: hidden;
   }
 
   .page-abstract {

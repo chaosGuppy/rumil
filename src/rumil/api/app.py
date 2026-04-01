@@ -202,16 +202,20 @@ async def get_page_detail(page_id: str, staged_run_id: str | None = None):
         raise HTTPException(status_code=404, detail="Page not found")
     raw_from = await db.get_links_from(page_id)
     raw_to = await db.get_links_to(page_id)
-    links_from = []
-    for link in raw_from:
-        target = await db.get_page(link.to_page_id)
-        if target:
-            links_from.append(LinkedPageOut(page=target, link=link))
-    links_to = []
-    for link in raw_to:
-        source = await db.get_page(link.from_page_id)
-        if source:
-            links_to.append(LinkedPageOut(page=source, link=link))
+    all_linked_ids = [link.to_page_id for link in raw_from] + [
+        link.from_page_id for link in raw_to
+    ]
+    pages_by_id = await db.get_pages_by_ids(all_linked_ids)
+    links_from = [
+        LinkedPageOut(page=pages_by_id[link.to_page_id], link=link)
+        for link in raw_from
+        if link.to_page_id in pages_by_id
+    ]
+    links_to = [
+        LinkedPageOut(page=pages_by_id[link.from_page_id], link=link)
+        for link in raw_to
+        if link.from_page_id in pages_by_id
+    ]
     return PageDetailOut(page=page, links_from=links_from, links_to=links_to)
 
 

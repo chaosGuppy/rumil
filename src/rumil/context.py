@@ -894,6 +894,7 @@ async def build_embedding_based_context(
     full_page_similarity_floor: float | None = None,
     abstract_page_similarity_floor: float | None = None,
     summary_page_similarity_floor: float | None = None,
+    require_judgement_for_questions: bool = False,
 ) -> EmbeddingBasedContextResult:
     """Build context by embedding-similarity search over the whole workspace.
 
@@ -943,6 +944,17 @@ async def build_embedding_based_context(
             )
             scope_page_ids = [scope_question_id]
             ranked = [(p, s) for p, s in ranked if p.id != scope_question_id]
+
+    if require_judgement_for_questions:
+        question_ids = [p.id for p, _ in ranked if p.page_type == PageType.QUESTION]
+        has_judgement: set[str] = set()
+        for qid in question_ids:
+            if await db.get_judgements_for_question(qid):
+                has_judgement.add(qid)
+        ranked = [
+            (p, s) for p, s in ranked
+            if p.page_type != PageType.QUESTION or p.id in has_judgement
+        ]
 
     distillation_budget = distillation_page_char_budget
     full_budget = full_page_char_budget

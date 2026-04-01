@@ -110,8 +110,14 @@ class GraphContextWithPhase1(ContextBuilder):
 class EmbeddingContext(ContextBuilder):
     """Embedding-based context (no phase1). Used by embedding variants."""
 
-    def __init__(self, call_type: CallType) -> None:
+    def __init__(
+        self,
+        call_type: CallType,
+        *,
+        require_judgement_for_questions: bool = False,
+    ) -> None:
         self._call_type = call_type
+        self._require_judgement_for_questions = require_judgement_for_questions
 
     async def build_context(self, infra: CallInfra) -> ContextResult:
         question = await infra.db.get_page(infra.question_id)
@@ -120,6 +126,7 @@ class EmbeddingContext(ContextBuilder):
             query,
             infra.db,
             scope_question_id=infra.question_id,
+            require_judgement_for_questions=self._require_judgement_for_questions,
         )
         working_page_ids = result.page_ids
         await _record_context_built(infra, working_page_ids, [])

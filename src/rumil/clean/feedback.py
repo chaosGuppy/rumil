@@ -199,10 +199,19 @@ def _make_investigate_question_tool(
 
         try:
             await orchestrator.run(resolved)
+            judgement_text = ""
+            judgements = await db.get_judgements_for_question(resolved)
+            if judgements:
+                latest = max(judgements, key=lambda j: j.created_at)
+                judgement_text = (
+                    f"\n\n## Judgement on [{resolved[:8]}]\n\n"
+                    f"**{latest.headline}**\n\n{latest.content}"
+                )
             summary = (
                 f"Investigation complete for [{resolved[:8]}] "
                 f'"{display_headline}". Child call: {child_call_id[:8]}. '
                 f"Remaining investigation budget: {budget_remaining}."
+                f"{judgement_text}"
             )
         except Exception:
             log.exception("investigate_question failed for %s", resolved[:8])
@@ -229,6 +238,7 @@ async def _plan_and_edit(
     settings = get_settings()
     budget = settings.feedback_update_budget
     investigation_budget = settings.feedback_investigation_budget
+    advertised_investigation_budget = int(investigation_budget * 0.75)
 
     plan_prompt = (_PROMPTS_DIR / "feedback-plan-updates.md").read_text()
     wave_prompt = (_PROMPTS_DIR / "update-waves.md").read_text()
@@ -237,14 +247,14 @@ async def _plan_and_edit(
         + "\n\n"
         + plan_prompt.replace("{min_budget}", str(MIN_TWOPHASE_BUDGET))
         .replace("{edit_budget}", str(budget))
-        .replace("{investigation_budget}", str(investigation_budget))
+        .replace("{investigation_budget}", str(advertised_investigation_budget))
         + "\n\n"
         + wave_prompt.replace("{budget}", str(budget))
     )
 
     explore_tool = make_explore_tool(db)
     investigate_tool = _make_investigate_question_tool(
-        call, db, broadcaster, investigation_budget
+        call, db, broadcaster, advertised_investigation_budget
     )
 
     plan_tools = [explore_tool, investigate_tool]

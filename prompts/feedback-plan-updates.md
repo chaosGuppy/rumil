@@ -15,7 +15,7 @@ Read the evaluation carefully and use the tools below to address each issue. Pri
 - `headline` (optional): headline for a NEW question to create and investigate. Mutually exclusive with `question_id`.
 - `content` (optional): content/description for a new question (used with `headline`).
 - `parent_question_id` (required): 8-char short ID of the parent question. The investigated question is automatically linked as a child of this parent.
-- `budget`: number of research calls to allocate (minimum {min_budget}).
+- `budget`: number of research calls to allocate (minimum {min_budget}). Generally budgets of 5-10 mean "try to answer this question quickly", budgets of 10-40 mean "this is worth a significant investigation to cover all the major angles", and budgets of 40+ mean "this is a major question which will involve deep dives into subquestions of its own". Do not default to the minimum — allocate based on the complexity and importance of each question.
 
 ### Examples of when and how to use investigate_question
 
@@ -32,9 +32,11 @@ Read the evaluation carefully and use the tools below to address each issue. Pri
 ### Important notes
 
 - You have a total **investigation budget of {investigation_budget}** research calls to distribute across all your `investigate_question` calls. Each call's `budget` parameter is deducted from this pool. Plan your allocation carefully — once the pool is exhausted, no further investigations can be commissioned.
+- **Dispatch investigations in parallel.** Investigations are independent of each other — call `investigate_question` multiple times in the same turn to run them concurrently. This is significantly faster than dispatching them one at a time. Only serialize investigations if a later one genuinely depends on the results of an earlier one.
 - Focus on the highest-impact issues first — you may not have budget for everything.
 - Always use `explore_page` to understand the graph around a page before commissioning investigations. This doesn't count against your budget.
 - When creating new questions, write clear, specific headlines that capture what needs to be investigated.
+- Each investigation returns the resulting judgement on the target question, so you can use it to inform your propagation plan.
 
 ## Phase 2: Propagation plan
 

@@ -287,7 +287,9 @@ async def cmd_ground(eval_call_id: str, db: DB, *, from_stage: int = 1) -> None:
         print(result.result_summary)
 
 
-async def cmd_feedback_update(eval_call_id: str, db: DB) -> None:
+async def cmd_feedback_update(
+    eval_call_id: str, db: DB, *, investigation_budget: int | None = None
+) -> None:
     from rumil.clean import run_feedback_update
     from rumil.models import CallStatus, CallType
 
@@ -338,6 +340,9 @@ async def cmd_feedback_update(eval_call_id: str, db: DB) -> None:
     frontend = get_settings().frontend_url.rstrip("/")
     print(f"\nRunning feedback update for: {question.headline[:80]}")
     print(f"Trace: {frontend}/traces/{db.run_id}\n")
+
+    if investigation_budget is not None:
+        get_settings().feedback_investigation_budget = investigation_budget
 
     result = await run_feedback_update(
         call.scope_page_id,
@@ -883,8 +888,8 @@ async def async_main():
         "--ingest",
         dest="ingest_files",
         action="append",
-        metavar="FILE",
-        help="Ingest a source file (can be repeated for multiple files)",
+        metavar="FILE_OR_URL",
+        help="Ingest a source file or URL (can be repeated)",
     )
     parser.add_argument(
         "--for-question",
@@ -930,10 +935,10 @@ async def async_main():
         help="Optional name for this run (defaults to question text)",
     )
     parser.add_argument(
-        "--moves-preset",
-        dest="moves_preset",
+        "--available-moves",
+        dest="available_moves",
         default=None,
-        help="Move preset name (default: 'default'). Controls which moves are available per call type.",
+        help="Available-moves preset name (default: 'default'). Controls which moves are available per call type.",
     )
     parser.add_argument(
         "--available-calls",
@@ -973,6 +978,12 @@ async def async_main():
         "effects from baseline readers",
     )
     parser.add_argument(
+        "--commit-run",
+        dest="commit_run_id",
+        metavar="RUN_ID",
+        help="Commit a staged run, making its effects visible to all readers",
+    )
+    parser.add_argument(
         "-q",
         "--quiet",
         action="store_true",
@@ -999,8 +1010,8 @@ async def async_main():
     )
     logging.getLogger("rumil").setLevel(log_level)
 
-    if args.moves_preset is not None:
-        get_settings().moves_preset = args.moves_preset
+    if args.available_moves is not None:
+        get_settings().available_moves = args.available_moves
     if args.available_calls is not None:
         get_settings().available_calls = args.available_calls
     if args.smoke_test:
@@ -1030,6 +1041,11 @@ async def async_main():
         print(f"Run {args.stage_run_id} has been staged.")
         return
 
+    if args.commit_run_id:
+        await db.commit_staged_run(args.commit_run_id)
+        print(f"Run {args.commit_run_id} has been committed.")
+        return
+
     if args.list:
         await cmd_list(db, args.workspace_name)
         return
@@ -1040,7 +1056,9 @@ async def async_main():
         await cmd_ground(args.ground_call_id, db, from_stage=args.from_stage)
         return
     elif args.feedback_call_id:
-        await cmd_feedback_update(args.feedback_call_id, db)
+        await cmd_feedback_update(
+            args.feedback_call_id, db, investigation_budget=args.budget
+        )
         return
     elif args.show_evaluation_id:
         await cmd_show_evaluation(args.show_evaluation_id, db)

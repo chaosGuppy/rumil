@@ -20,7 +20,8 @@ Tips for writing:
 * Prefer concrete over abstract, specific over vague.
 * Don't repeat yourself across sections.
 * Show your reasoning, not just your conclusions.
-* Be honest about uncertainty.
+* Reasons that boil down to "this was a judgement on a related question" are useless for the reader. Give them considerations that instantly make sense, or give them relevant facts.
+* Be honest about uncertainty -- nothing under Credence 8 / Robustness 3 should be presented as clear-cut.
 * Identify what's load-bearing.
 * Write about the substance, not the internals. The reader hasn't seen the research workspace. The reasoning behind conclusions should be front and center -- that's reasoning transparency -- but avoid referencing workspace internals, process mechanics, or research infrastructure that won't mean anything to a reader without context. The reader should see the reasoning, not the plumbing. Don't reference page IDs in the prose. But do use page IDs in the structured fields (confidence\_notes, key\_dependencies) so the integrator and any reviewers can trace claims back to their sources.
 * Respect the outline's guidance.

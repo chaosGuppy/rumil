@@ -12,20 +12,26 @@ Data types: Tool, ToolCall, RoundRecord, AgentResult, APIResponse,
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 from collections.abc import Awaitable, Callable, Sequence
 
 from datetime import date
 
 import anthropic
+from tenacity import (
+    RetryCallState,
+    retry,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from anthropic.types import (
     ServerToolUseBlock,
@@ -50,7 +56,52 @@ PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts"
 
 log = logging.getLogger(__name__)
 
-MAX_API_RETRIES = 4
+
+def _is_retryable(exc: BaseException) -> bool:
+    """Return True if the exception represents a transient API error."""
+    status = getattr(exc, "status_code", None)
+    name = type(exc).__name__.lower()
+    return (
+        status in (429, 500, 529)
+        or "overloaded" in name
+        or "ratelimit" in name
+        or "internalserver" in name
+        or "overloaded" in str(exc).lower()
+    )
+
+
+def _stop_after_status_retries(retry_state: RetryCallState) -> bool:
+    """Stop callback that respects per-status retry limits from settings."""
+    exc = retry_state.outcome.exception() if retry_state.outcome else None
+    status = getattr(exc, "status_code", None) if exc else None
+    max_retries = get_settings().get_max_retries(status)
+    return retry_state.attempt_number >= max_retries
+
+
+def _log_before_retry(retry_state: RetryCallState) -> None:
+    """Log a warning before each retry attempt."""
+    exc = retry_state.outcome.exception() if retry_state.outcome else None
+    status = getattr(exc, "status_code", None) if exc else None
+    name = type(exc).__name__.lower() if exc else "unknown"
+    label = f"HTTP {status}" if status else name
+    wait = retry_state.next_action.sleep if retry_state.next_action else 0
+    max_retries = get_settings().get_max_retries(status)
+    log.warning(
+        "API temporarily unavailable (%s), retrying in %gs (attempt %d/%d)",
+        label,
+        wait,
+        retry_state.attempt_number,
+        max_retries,
+    )
+
+
+_api_retry = retry(
+    retry=retry_if_exception(_is_retryable),
+    stop=_stop_after_status_retries,
+    wait=wait_exponential(multiplier=1, min=1, max=16),
+    before_sleep=_log_before_retry,
+    reraise=True,
+)
 
 
 def _load_file(name: str) -> str:
@@ -323,113 +374,98 @@ async def call_api(
         len(messages),
     )
 
-    for attempt in range(MAX_API_RETRIES):
-        try:
-            start = time.monotonic()
-            response = await client.messages.create(**kwargs)
-            elapsed_ms = int((time.monotonic() - start) * 1000)
-            log.debug(
-                "API response: stop_reason=%s, usage=%d/%d tokens, duration=%dms, "
-                "full_usage=%s",
-                response.stop_reason,
-                response.usage.input_tokens,
-                response.usage.output_tokens,
-                elapsed_ms,
-                response.usage,
-            )
-            if metadata and db:
-                text_parts = []
-                tool_call_data = []
-                for block in response.content:
-                    if isinstance(block, TextBlock):
-                        text_parts.append(block.text)
-                    elif isinstance(block, (ToolUseBlock, ServerToolUseBlock)):
-                        tool_call_data.append(
-                            {"name": block.name, "input": block.input}
-                        )
-                    elif isinstance(block, WebSearchToolResultBlock):
-                        tool_call_data.append(
-                            {
-                                "type": "web_search_tool_result",
-                                "tool_use_id": block.tool_use_id,
-                                "content": block.model_dump(mode="json")["content"],
-                            }
-                        )
-                if metadata.user_messages is None and len(messages) > 1:
-                    metadata.user_messages = _serialize_messages(messages)
-                try:
-                    await _save_exchange(
-                        metadata,
-                        db=db,
-                        model=model,
-                        system_prompt=system_prompt,
-                        response_text="\n".join(text_parts) or None,
-                        tool_calls=tool_call_data,
-                        input_tokens=response.usage.input_tokens,
-                        output_tokens=response.usage.output_tokens,
-                        duration_ms=elapsed_ms,
-                        cache_creation_input_tokens=getattr(
-                            response.usage, "cache_creation_input_tokens", 0
-                        )
-                        or 0,
-                        cache_read_input_tokens=getattr(
-                            response.usage, "cache_read_input_tokens", 0
-                        )
-                        or 0,
-                    )
-                except Exception as exc:
-                    log.error(
-                        "Failed to save exchange for call %s: %s",
-                        metadata.call_id[:8],
-                        exc,
-                        exc_info=True,
-                    )
-                    trace = get_trace()
-                    if trace:
-                        await trace.record(
-                            ErrorEvent(
-                                message=(
-                                    f"Failed to save exchange: "
-                                    f"{type(exc).__name__}: {exc}"
-                                ),
-                                phase=metadata.phase,
-                            )
-                        )
-            return APIResponse(message=response, duration_ms=elapsed_ms)
-        except Exception as e:
-            status = getattr(e, "status_code", None)
-            name = type(e).__name__.lower()
-            retryable = (
-                status in (429, 500, 529)
-                or "overloaded" in name
-                or "ratelimit" in name
-                or "internalserver" in name
-                or "overloaded" in str(e).lower()
-            )
-            if not retryable or attempt == MAX_API_RETRIES - 1:
-                log.error("API call failed (non-retryable): %s", e, exc_info=True)
-                trace = get_trace()
-                if trace:
-                    phase = metadata.phase if metadata else "api_call"
-                    await trace.record(
-                        ErrorEvent(
-                            message=f"API call failed: {type(e).__name__}: {e}",
-                            phase=phase,
-                        )
-                    )
-                raise
-            wait = 2**attempt
-            label = f"HTTP {status}" if status else name
-            msg = (
-                f"API temporarily unavailable ({label}), "
-                f"retrying in {wait}s (attempt {attempt + 1}/{MAX_API_RETRIES})"
-            )
-            log.warning("%s", msg)
-            if warnings is not None:
-                warnings.append(msg)
-            await asyncio.sleep(wait)
+    @_api_retry
+    async def _do_api_call() -> anthropic.types.Message:
+        start = time.monotonic()
+        response = await client.messages.create(**kwargs)
+        elapsed = int((time.monotonic() - start) * 1000)
+        response._elapsed_ms = elapsed  # type: ignore[attr-defined]
+        return response
 
-    raise RuntimeError("Unreachable: retry loop exhausted without raising")
+    try:
+        response = await _do_api_call()
+    except Exception as e:
+        log.error("API call failed: %s", e, exc_info=True)
+        trace = get_trace()
+        if trace:
+            phase = metadata.phase if metadata else "api_call"
+            await trace.record(
+                ErrorEvent(
+                    message=f"API call failed: {type(e).__name__}: {e}",
+                    phase=phase,
+                )
+            )
+        raise
+
+    elapsed_ms: int = getattr(response, "_elapsed_ms", 0)
+    log.debug(
+        "API response: stop_reason=%s, usage=%d/%d tokens, duration=%dms, "
+        "full_usage=%s",
+        response.stop_reason,
+        response.usage.input_tokens,
+        response.usage.output_tokens,
+        elapsed_ms,
+        response.usage,
+    )
+    if metadata and db:
+        text_parts = []
+        tool_call_data = []
+        for block in response.content:
+            if isinstance(block, TextBlock):
+                text_parts.append(block.text)
+            elif isinstance(block, (ToolUseBlock, ServerToolUseBlock)):
+                tool_call_data.append(
+                    {"name": block.name, "input": block.input}
+                )
+            elif isinstance(block, WebSearchToolResultBlock):
+                tool_call_data.append(
+                    {
+                        "type": "web_search_tool_result",
+                        "tool_use_id": block.tool_use_id,
+                        "content": block.model_dump(mode="json")["content"],
+                    }
+                )
+        if metadata.user_messages is None and len(messages) > 1:
+            metadata.user_messages = _serialize_messages(messages)
+        try:
+            await _save_exchange(
+                metadata,
+                db=db,
+                model=model,
+                system_prompt=system_prompt,
+                response_text="\n".join(text_parts) or None,
+                tool_calls=tool_call_data,
+                input_tokens=response.usage.input_tokens,
+                output_tokens=response.usage.output_tokens,
+                duration_ms=elapsed_ms,
+                cache_creation_input_tokens=getattr(
+                    response.usage, "cache_creation_input_tokens", 0
+                )
+                or 0,
+                cache_read_input_tokens=getattr(
+                    response.usage, "cache_read_input_tokens", 0
+                )
+                or 0,
+            )
+        except Exception as exc:
+            log.error(
+                "Failed to save exchange for call %s: %s",
+                metadata.call_id[:8],
+                exc,
+                exc_info=True,
+            )
+            trace = get_trace()
+            if trace:
+                await trace.record(
+                    ErrorEvent(
+                        message=(
+                            f"Failed to save exchange: "
+                            f"{type(exc).__name__}: {exc}"
+                        ),
+                        phase=metadata.phase,
+                    )
+                )
+    return APIResponse(message=response, duration_ms=elapsed_ms)
 
 
 async def text_call(
@@ -613,110 +649,85 @@ async def _structured_call_parse(
     model = settings.model
     system_prompt = _with_date_suffix(system_prompt)
 
-    for attempt in range(MAX_API_RETRIES):
-        try:
-            t0 = time.monotonic()
-            parse_kwargs: dict = {
-                "model": model,
-                "max_tokens": DEFAULT_MAX_TOKENS,
-                "system": system_prompt,
-                "messages": msg_list,
-            }
-            if response_model is not None:
-                parse_kwargs["output_format"] = response_model
-            if tools is not None:
-                parse_kwargs["tools"] = tools
-            if tool_choice is not None:
-                parse_kwargs["tool_choice"] = tool_choice
-            response = await client.messages.parse(**parse_kwargs)
-            elapsed_ms = int((time.monotonic() - t0) * 1000)
-            response_text = ""
-            for block in response.content:
-                if isinstance(block, TextBlock):
-                    response_text += block.text
-            if metadata and db:
-                if metadata.user_message is None and metadata.user_messages is None:
-                    if len(msg_list) == 1:
-                        content = msg_list[0].get("content", "")
-                        metadata.user_message = (
-                            content if isinstance(content, str) else None
-                        )
-                    if len(msg_list) > 1 or metadata.user_message is None:
-                        metadata.user_messages = _serialize_messages(msg_list)
-                await _save_exchange(
-                    metadata,
-                    db=db,
-                    model=model,
-                    system_prompt=system_prompt,
-                    response_text=response_text or None,
-                    tool_calls=[],
-                    input_tokens=response.usage.input_tokens,
-                    output_tokens=response.usage.output_tokens,
-                    duration_ms=elapsed_ms,
-                    cache_creation_input_tokens=getattr(
-                        response.usage, "cache_creation_input_tokens", 0
-                    )
-                    or 0,
-                    cache_read_input_tokens=getattr(
-                        response.usage, "cache_read_input_tokens", 0
-                    )
-                    or 0,
-                )
-            if response.parsed_output is not None:
-                log.debug(
-                    "structured_call success: %s, usage=%d/%d tokens",
-                    response_model.__name__ if response_model else "unknown",
-                    response.usage.input_tokens,
-                    response.usage.output_tokens,
-                )
-                return StructuredCallResult(
-                    data=response.parsed_output.model_dump(),
-                    response_text=response_text or None,
-                    input_tokens=response.usage.input_tokens,
-                    output_tokens=response.usage.output_tokens,
-                    duration_ms=elapsed_ms,
-                )
-            log.warning(
-                "Structured output was empty (stop_reason=%s, usage=%d tokens)",
-                response.stop_reason,
-                response.usage.output_tokens,
-            )
-            return StructuredCallResult(
-                response_text=response_text or None,
-                input_tokens=response.usage.input_tokens,
-                output_tokens=response.usage.output_tokens,
-                duration_ms=elapsed_ms,
-            )
-        except Exception as e:
-            status = getattr(e, "status_code", None)
-            name = type(e).__name__.lower()
-            retryable = (
-                status in (429, 500, 529)
-                or "overloaded" in name
-                or "ratelimit" in name
-                or "internalserver" in name
-                or "overloaded" in str(e).lower()
-            )
-            if not retryable or attempt == MAX_API_RETRIES - 1:
-                log.error(
-                    "structured_call failed (non-retryable): %s",
-                    e,
-                    exc_info=True,
-                )
-                raise
-            wait = 2**attempt
-            label = f"HTTP {status}" if status else name
-            log.warning(
-                "structured_call: API temporarily unavailable (%s), "
-                "retrying in %ds (attempt %d/%d)",
-                label,
-                wait,
-                attempt + 1,
-                MAX_API_RETRIES,
-            )
-            await asyncio.sleep(wait)
+    parse_kwargs: dict = {
+        "model": model,
+        "max_tokens": DEFAULT_MAX_TOKENS,
+        "system": system_prompt,
+        "messages": msg_list,
+    }
+    if response_model is not None:
+        parse_kwargs["output_format"] = response_model
+    if tools is not None:
+        parse_kwargs["tools"] = tools
+    if tool_choice is not None:
+        parse_kwargs["tool_choice"] = tool_choice
 
-    raise RuntimeError("Unreachable: retry loop exhausted without raising")
+    @_api_retry
+    async def _do_parse() -> Any:
+        t0 = time.monotonic()
+        resp = await client.messages.parse(**parse_kwargs)
+        resp._elapsed_ms = int((time.monotonic() - t0) * 1000)  # type: ignore[attr-defined]
+        return resp
+
+    response: Any = await _do_parse()
+    elapsed_ms: int = getattr(response, "_elapsed_ms", 0)
+    response_text = ""
+    for block in response.content:
+        if isinstance(block, TextBlock):
+            response_text += block.text
+    if metadata and db:
+        if metadata.user_message is None and metadata.user_messages is None:
+            if len(msg_list) == 1:
+                content = msg_list[0].get("content", "")
+                metadata.user_message = (
+                    content if isinstance(content, str) else None
+                )
+            if len(msg_list) > 1 or metadata.user_message is None:
+                metadata.user_messages = _serialize_messages(msg_list)
+        await _save_exchange(
+            metadata,
+            db=db,
+            model=model,
+            system_prompt=system_prompt,
+            response_text=response_text or None,
+            tool_calls=[],
+            input_tokens=response.usage.input_tokens,
+            output_tokens=response.usage.output_tokens,
+            duration_ms=elapsed_ms,
+            cache_creation_input_tokens=getattr(
+                response.usage, "cache_creation_input_tokens", 0
+            )
+            or 0,
+            cache_read_input_tokens=getattr(
+                response.usage, "cache_read_input_tokens", 0
+            )
+            or 0,
+        )
+    if response.parsed_output is not None:
+        log.debug(
+            "structured_call success: %s, usage=%d/%d tokens",
+            response_model.__name__ if response_model else "unknown",
+            response.usage.input_tokens,
+            response.usage.output_tokens,
+        )
+        return StructuredCallResult(
+            data=response.parsed_output.model_dump(),
+            response_text=response_text or None,
+            input_tokens=response.usage.input_tokens,
+            output_tokens=response.usage.output_tokens,
+            duration_ms=elapsed_ms,
+        )
+    log.warning(
+        "Structured output was empty (stop_reason=%s, usage=%d tokens)",
+        response.stop_reason,
+        response.usage.output_tokens,
+    )
+    return StructuredCallResult(
+        response_text=response_text or None,
+        input_tokens=response.usage.input_tokens,
+        output_tokens=response.usage.output_tokens,
+        duration_ms=elapsed_ms,
+    )
 
 
 async def structured_call(

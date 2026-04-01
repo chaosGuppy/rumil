@@ -31,7 +31,7 @@ from rumil.models import (
     Workspace,
 )
 from rumil.moves.base import link_pages, write_page_file
-from rumil.orchestrators.two_phase import TwoPhaseOrchestrator
+from rumil.orchestrators.experimental import ExperimentalOrchestrator
 from rumil.sdk_agent import SdkAgentConfig, run_sdk_agent
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
@@ -189,7 +189,7 @@ def _make_investigate_question_tool(
             link_type=LinkType.CHILD_QUESTION,
         )
 
-        orchestrator = TwoPhaseOrchestrator(db, broadcaster, budget_cap=budget)
+        orchestrator = ExperimentalOrchestrator(db, broadcaster, budget_cap=budget)
         orchestrator._parent_call_id = call.id
         child_call_id = await orchestrator.create_initial_call(
             resolved, parent_call_id=call.id
@@ -324,6 +324,7 @@ async def run_feedback_update(
     )
     trace = CallTrace(call.id, db, broadcaster=broadcaster)
     await db.update_call_status(call.id, CallStatus.RUNNING)
+    await db.init_budget(get_settings().feedback_investigation_budget)
 
     cp = prior_checkpoints or {}
 

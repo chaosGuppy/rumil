@@ -474,6 +474,26 @@ class DB:
             else:
                 log.debug("resolve_page_id: no prefix match for %s", page_id)
             return None
+        if page_id.startswith("http"):
+            rows = _rows(
+                await self._execute(
+                    self.client.table("pages")
+                    .select("id")
+                    .eq("extra->>url", page_id)
+                )
+            )
+            if len(rows) == 1:
+                log.debug(
+                    "resolve_page_id: URL match %s -> %s",
+                    page_id, rows[0]["id"][:8],
+                )
+                return rows[0]["id"]
+            if len(rows) > 1:
+                log.debug(
+                    "resolve_page_id: URL match %s -> %s (first of %d)",
+                    page_id, rows[0]["id"][:8], len(rows),
+                )
+                return rows[0]["id"]
         log.debug("resolve_page_id: no match for %s", page_id[:8])
         return None
 
@@ -1581,6 +1601,82 @@ class DB:
                 await self._execute(
                     self.client.table("page_links")
                     .update({"role": old_role})
+                    .eq("id", tid)
+                )
+
+    async def commit_staged_run(self, run_id: str) -> None:
+        """Commit a staged run, making its effects visible to all readers.
+
+        Flips the staged flag to false on the run's rows, then applies
+        mutation events (supersessions, link deletions, role changes) that
+        were recorded but never written directly to the database.
+        """
+        run_rows = _rows(
+            await self._execute(
+                self.client.table("runs").select("id, staged").eq("id", run_id)
+            )
+        )
+        if not run_rows:
+            raise ValueError(f"Run {run_id} not found")
+        if not run_rows[0].get("staged"):
+            raise ValueError(f"Run {run_id} is not staged")
+
+        await self._execute(
+            self.client.table("runs").update({"staged": False}).eq("id", run_id)
+        )
+        await self._execute(
+            self.client.table("pages")
+            .update({"staged": False})
+            .eq("run_id", run_id)
+        )
+        await self._execute(
+            self.client.table("page_links")
+            .update({"staged": False})
+            .eq("run_id", run_id)
+        )
+
+        events = _rows(
+            await self._execute(
+                self.client.table("mutation_events")
+                .select("event_type, target_id, payload")
+                .eq("run_id", run_id)
+                .order("created_at")
+            )
+        )
+        for ev in events:
+            et = ev["event_type"]
+            tid = ev["target_id"]
+            payload = ev.get("payload") or {}
+
+            if et == "supersede_page":
+                await self._execute(
+                    self.client.table("pages")
+                    .update(
+                        {
+                            "is_superseded": True,
+                            "superseded_by": payload["new_page_id"],
+                        }
+                    )
+                    .eq("id", tid)
+                )
+
+            elif et == "delete_link":
+                await self._execute(
+                    self.client.table("page_links").delete().eq("id", tid)
+                )
+
+            elif et == "change_link_role":
+                new_role = payload.get("new_role")
+                if not new_role:
+                    log.warning(
+                        "Cannot apply role change for link %s: "
+                        "no new_role in event payload",
+                        tid,
+                    )
+                    continue
+                await self._execute(
+                    self.client.table("page_links")
+                    .update({"role": new_role})
                     .eq("id", tid)
                 )
 

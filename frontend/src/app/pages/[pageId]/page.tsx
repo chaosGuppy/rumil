@@ -1,5 +1,6 @@
 import Link from "next/link";
 import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { PageDetailOut, LinkedPageOut, Page, RunSummaryOut } from "@/api";
 import LinksContainer from "./links-container";
 import StagedBanner from "./staged-banner";
@@ -350,6 +351,7 @@ export default async function PageDetailPage({
 
         <div className="page-content">
           <Markdown
+            remarkPlugins={[remarkGfm]}
             components={{
               a: ({ href, children }) => {
                 if (href && href.startsWith("/pages/") && href.includes("?cite=")) {
@@ -660,6 +662,24 @@ const styles = `
     margin: 0 0 0.75em;
     padding: 0.25em 0 0.25em 1em;
     opacity: 0.85;
+  }
+  .page-content table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0 0 0.75em;
+    font-size: 0.92em;
+  }
+  .page-content th, .page-content td {
+    border: 1px solid var(--color-border);
+    padding: 0.4em 0.65em;
+    text-align: left;
+  }
+  .page-content th {
+    font-weight: 600;
+    background: var(--color-surface);
+  }
+  .page-content tr:nth-child(even) td {
+    background: color-mix(in srgb, var(--color-surface) 40%, transparent);
   }
   .page-content strong {
     font-weight: 600;

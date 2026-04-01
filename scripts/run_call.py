@@ -182,7 +182,7 @@ async def run(args: argparse.Namespace) -> None:
     logging.getLogger("httpx").setLevel(logging.WARNING)
 
     workspace = args.workspace
-    db = await DB.create(run_id=str(uuid.uuid4()))
+    db = await DB.create(run_id=str(uuid.uuid4()), prod=args.prod)
     project = await db.get_or_create_project(workspace)
     db.project_id = project.id
 
@@ -354,6 +354,11 @@ def main() -> None:
         dest="available_calls",
         default=None,
         help="Available-calls preset name (default: 'default'). Controls which scout/dispatch types the two-phase orchestrator uses.",
+    )
+    parser.add_argument(
+        "--prod",
+        action="store_true",
+        help="Use the production database instead of local Supabase",
     )
     parser.add_argument(
         "--up-to-stage",

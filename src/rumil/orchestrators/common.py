@@ -65,7 +65,9 @@ PRIORITIZATION_MOVES: list[MoveType] = [
 
 
 async def _count_subtree_questions(
-    question_id: str, graph: PageGraph, visited: set[str] | None = None,
+    question_id: str,
+    graph: PageGraph,
+    visited: set[str] | None = None,
 ) -> int:
     """Count all descendant questions (not including the question itself)."""
     if visited is None:
@@ -82,7 +84,8 @@ async def _count_subtree_questions(
 
 
 async def _describe_child_questions(
-    children: Sequence[Page], graph: PageGraph,
+    children: Sequence[Page],
+    graph: PageGraph,
 ) -> str:
     """Build enriched descriptions of child questions with research stats."""
     lines = []
@@ -93,19 +96,24 @@ async def _describe_child_questions(
 
         parts = []
         if considerations:
-            parts.append(f'{len(considerations)} considerations')
+            parts.append(f"{len(considerations)} considerations")
         if judgements:
-            parts.append(f'{len(judgements)} judgement{"s" if len(judgements) != 1 else ""}')
+            parts.append(
+                f"{len(judgements)} judgement{'s' if len(judgements) != 1 else ''}"
+            )
         if subtree_count:
-            parts.append(f'{subtree_count} subquestion{"s" if subtree_count != 1 else ""}')
+            parts.append(
+                f"{subtree_count} subquestion{'s' if subtree_count != 1 else ''}"
+            )
 
-        stats = ', '.join(parts) if parts else 'no research yet'
-        lines.append(f'- `{c.id}` — {c.headline} ({stats})')
-    return '\n'.join(lines)
+        stats = ", ".join(parts) if parts else "no research yet"
+        lines.append(f"- `{c.id}` — {c.headline} ({stats})")
+    return "\n".join(lines)
 
 
 async def _describe_considerations_on_page(
-    page_id: str, graph: PageGraph,
+    page_id: str,
+    graph: PageGraph,
 ) -> tuple[str, str]:
     """Build enriched descriptions of claims and questions linked to a page.
 
@@ -120,17 +128,18 @@ async def _describe_considerations_on_page(
         sub_questions = await graph.get_child_questions(page.id)
         parts = []
         if sub_considerations:
-            parts.append(f'{len(sub_considerations)} considerations')
+            parts.append(f"{len(sub_considerations)} considerations")
         if sub_questions:
-            parts.append(f'{len(sub_questions)} subquestion{"s" if len(sub_questions) != 1 else ""}')
-        stats = ', '.join(parts) if parts else 'no research yet'
-        direction = link.direction.value if link.direction else 'neutral'
-        credence_tag = ''
+            parts.append(
+                f"{len(sub_questions)} subquestion{'s' if len(sub_questions) != 1 else ''}"
+            )
+        stats = ", ".join(parts) if parts else "no research yet"
+        direction = link.direction.value if link.direction else "neutral"
+        credence_tag = ""
         if page.credence is not None:
-            credence_tag = f' C{page.credence}/R{page.robustness or 1}'
+            credence_tag = f" C{page.credence}/R{page.robustness or 1}"
         claim_lines.append(
-            f'- `{page.id}` — {page.headline} '
-            f'[{direction}{credence_tag}] ({stats})'
+            f"- `{page.id}` — {page.headline} [{direction}{credence_tag}] ({stats})"
         )
 
     question_lines = []
@@ -139,23 +148,25 @@ async def _describe_considerations_on_page(
         subtree_count = await _count_subtree_questions(q.id, graph)
         parts = []
         if sub_considerations:
-            parts.append(f'{len(sub_considerations)} considerations')
+            parts.append(f"{len(sub_considerations)} considerations")
         if subtree_count:
-            parts.append(f'{subtree_count} subquestion{"s" if subtree_count != 1 else ""}')
-        stats = ', '.join(parts) if parts else 'no research yet'
-        question_lines.append(f'- `{q.id}` — {q.headline} ({stats})')
+            parts.append(
+                f"{subtree_count} subquestion{'s' if subtree_count != 1 else ''}"
+            )
+        stats = ", ".join(parts) if parts else "no research yet"
+        question_lines.append(f"- `{q.id}` — {q.headline} ({stats})")
 
-    claims_text = '\n'.join(claim_lines) if claim_lines else '(none)'
-    questions_text = '\n'.join(question_lines) if question_lines else '(none)'
+    claims_text = "\n".join(claim_lines) if claim_lines else "(none)"
+    questions_text = "\n".join(question_lines) if question_lines else "(none)"
     return claims_text, questions_text
 
 
 class SubquestionScore(BaseModel):
-    question_id: str = Field(description='Full UUID of the subquestion')
-    headline: str = Field(description='Headline of the subquestion')
-    impact: int = Field(description='0-10: how much answering this helps the parent')
-    fruit: int = Field(description='0-10: how much useful investigation remains')
-    reasoning: str = Field(description='Brief explanation of scores')
+    question_id: str = Field(description="Full UUID of the subquestion")
+    headline: str = Field(description="Headline of the subquestion")
+    impact: int = Field(description="0-10: how much answering this helps the parent")
+    fruit: int = Field(description="0-10: how much useful investigation remains")
+    reasoning: str = Field(description="Brief explanation of scores")
 
 
 class SubquestionScoringResult(BaseModel):
@@ -163,11 +174,13 @@ class SubquestionScoringResult(BaseModel):
 
 
 class ClaimScore(BaseModel):
-    page_id: str = Field(description='Full UUID of the claim')
-    headline: str = Field(description='Headline of the claim')
-    impact: int = Field(description='0-10: how much resolving this helps the investigation')
-    fruit: int = Field(description='0-10: how much useful investigation remains')
-    reasoning: str = Field(description='Brief explanation of scores')
+    page_id: str = Field(description="Full UUID of the claim")
+    headline: str = Field(description="Headline of the claim")
+    impact: int = Field(
+        description="0-10: how much resolving this helps the investigation"
+    )
+    fruit: int = Field(description="0-10: how much useful investigation remains")
+    reasoning: str = Field(description="Brief explanation of scores")
 
 
 class ClaimScoringResult(BaseModel):
@@ -176,16 +189,17 @@ class ClaimScoringResult(BaseModel):
 
 class FruitResult(BaseModel):
     """Deprecated: kept for reference. Use PerTypeFruitResult instead."""
-    fruit: int = Field(description='0-10: how much useful investigation remains')
-    reasoning: str = Field(description='Brief explanation')
+
+    fruit: int = Field(description="0-10: how much useful investigation remains")
+    reasoning: str = Field(description="Brief explanation")
 
 
 class CallTypeFruitScore(BaseModel):
     call_type: str = Field(
-        description='e.g. development, scout_subquestions, scout_estimates'
+        description="e.g. development, scout_subquestions, scout_estimates"
     )
-    fruit: int = Field(description='0-10: how much useful work of this type remains')
-    reasoning: str = Field(description='Brief explanation')
+    fruit: int = Field(description="0-10: how much useful work of this type remains")
+    reasoning: str = Field(description="Brief explanation")
 
 
 class PerTypeFruitResult(BaseModel):
@@ -203,7 +217,7 @@ def compute_dispatch_guidance(
     dev_score: int | None = None
     scout_scores: dict[str, int] = {}
     for s in fruit_scores:
-        if s.call_type == 'development':
+        if s.call_type == "development":
             dev_score = s.fruit
         else:
             scout_scores[s.call_type] = s.fruit
@@ -215,57 +229,58 @@ def compute_dispatch_guidance(
     low_scouts = [k for k, v in scout_scores.items() if v <= _LOW]
     exhausted_scouts = [k for k, v in scout_scores.items() if v <= 1]
     all_scouts_low = len(low_scouts) == len(scout_scores) and len(scout_scores) > 0
-    any_scouts_moderate_or_high = any(
-        v > _LOW for v in scout_scores.values()
-    )
+    any_scouts_moderate_or_high = any(v > _LOW for v in scout_scores.values())
 
     lines: list[str] = []
 
     if dev_score <= _LOW and high_scouts:
         lines.append(
-            'Development avenues are well-explored. Focus budget on scouting: '
-            + ', '.join(high_scouts) + '.'
+            "Development avenues are well-explored. Focus budget on scouting: "
+            + ", ".join(high_scouts)
+            + "."
         )
     elif dev_score >= _HIGH and all_scouts_low:
         lines.append(
-            'Scouting is largely exhausted. Focus budget on developing '
-            'existing subquestions via find_considerations and recurse.'
+            "Scouting is largely exhausted. Focus budget on developing "
+            "existing subquestions via find_considerations and recurse."
         )
     elif dev_score >= _HIGH and high_scouts:
         lines.append(
-            'Both development and scouting have significant remaining fruit. '
-            'Allocate broadly across development and high-fruit scouts: '
-            + ', '.join(high_scouts) + '.'
+            "Both development and scouting have significant remaining fruit. "
+            "Allocate broadly across development and high-fruit scouts: "
+            + ", ".join(high_scouts)
+            + "."
         )
     elif dev_score > _LOW and any_scouts_moderate_or_high:
         names = [k for k, v in scout_scores.items() if v > _LOW]
         lines.append(
-            'Balance budget between development calls and high-fruit scouts: '
-            + ', '.join(names) + '.'
+            "Balance budget between development calls and high-fruit scouts: "
+            + ", ".join(names)
+            + "."
         )
     elif dev_score > _LOW and all_scouts_low:
         lines.append(
-            'Scouting is largely exhausted but development has moderate fruit. '
-            'Focus budget on developing existing subquestions.'
+            "Scouting is largely exhausted but development has moderate fruit. "
+            "Focus budget on developing existing subquestions."
         )
     elif dev_score <= _LOW and all_scouts_low:
         lines.append(
-            'Remaining fruit is low across the board. '
-            'Consider allocating conservatively.'
+            "Remaining fruit is low across the board. "
+            "Consider allocating conservatively."
         )
 
     if not all_scouts_low:
         for name in exhausted_scouts:
-            lines.append(f'{name} appears exhausted — avoid dispatching.')
+            lines.append(f"{name} appears exhausted — avoid dispatching.")
 
-    return '\n'.join(lines)
+    return "\n".join(lines)
 
 
 @dataclass
 class PrioritizationResult:
     dispatch_sequences: Sequence[Sequence[Dispatch]]
     call_id: str | None = None
-    children: Sequence[tuple['BaseOrchestrator', str]] = ()
+    children: Sequence[tuple["BaseOrchestrator", str]] = ()
 
 
 async def create_root_question(
@@ -291,7 +306,11 @@ async def create_root_question(
     try:
         await embed_and_store_page(db, page, field_name="abstract")
     except Exception:
-        log.warning("Failed to create embedding for root question %s", page.id[:8], exc_info=True)
+        log.warning(
+            "Failed to create embedding for root question %s",
+            page.id[:8],
+            exc_info=True,
+        )
     return page.id
 
 
@@ -338,14 +357,18 @@ async def find_considerations_until_done(
     """
     if max_rounds is None:
         max_rounds = (
-            SMOKE_TEST_MAX_ROUNDS if get_settings().is_smoke_test
+            SMOKE_TEST_MAX_ROUNDS
+            if get_settings().is_smoke_test
             else DEFAULT_MAX_ROUNDS
         )
     elif get_settings().is_smoke_test:
         max_rounds = min(max_rounds, SMOKE_TEST_MAX_ROUNDS)
     log.info(
         "find_considerations_until_done: question=%s, max_rounds=%d, fruit_threshold=%d, mode=%s",
-        question_id[:8], max_rounds, fruit_threshold, mode.value,
+        question_id[:8],
+        max_rounds,
+        fruit_threshold,
+        mode.value,
     )
 
     if force and await db.budget_remaining() <= 0:
@@ -361,9 +384,13 @@ async def find_considerations_until_done(
         sequence_position=sequence_position,
     )
 
-    cls = FIND_CONSIDERATIONS_CALL_CLASSES[get_settings().find_considerations_call_variant]
+    cls = FIND_CONSIDERATIONS_CALL_CLASSES[
+        get_settings().find_considerations_call_variant
+    ]
     scout = cls(
-        question_id, call, db,
+        question_id,
+        call,
+        db,
         max_rounds=max_rounds,
         fruit_threshold=fruit_threshold,
         mode=mode,
@@ -374,7 +401,8 @@ async def find_considerations_until_done(
 
     log.info(
         "find_considerations_until_done finished: %d rounds, call=%s",
-        scout.rounds_completed, call.id[:8],
+        scout.rounds_completed,
+        call.id[:8],
     )
     return scout.rounds_completed, [call.id]
 
@@ -396,12 +424,15 @@ async def ingest_until_done(
     """
     if max_rounds is None:
         max_rounds = (
-            SMOKE_TEST_INGEST_MAX_ROUNDS if get_settings().is_smoke_test
+            SMOKE_TEST_INGEST_MAX_ROUNDS
+            if get_settings().is_smoke_test
             else DEFAULT_INGEST_MAX_ROUNDS
         )
     log.info(
         "ingest_until_done: source=%s, question=%s, max_rounds=%d",
-        source_page.id[:8], question_id[:8], max_rounds,
+        source_page.id[:8],
+        question_id[:8],
+        max_rounds,
     )
     rounds = 0
     for i in range(max_rounds):
@@ -422,13 +453,17 @@ async def ingest_until_done(
         remaining_fruit = review.get("remaining_fruit", 5) if review else 5
         log.info(
             "Ingest round %d/%d: remaining_fruit=%d (threshold=%d)",
-            i + 1, max_rounds, remaining_fruit, fruit_threshold,
+            i + 1,
+            max_rounds,
+            remaining_fruit,
+            fruit_threshold,
         )
 
         if remaining_fruit <= fruit_threshold:
             log.info(
                 "Ingest fruit (%d) below threshold (%d), stopping",
-                remaining_fruit, fruit_threshold,
+                remaining_fruit,
+                fruit_threshold,
             )
             break
 
@@ -458,15 +493,14 @@ async def assess_question(
         return None
 
     await summarize_question(
-        question_id, db,
+        question_id,
+        db,
         parent_call_id=parent_call_id,
         sequence_id=sequence_id,
         sequence_position=sequence_position,
     )
 
-    assess_position = (
-        sequence_position + 1 if sequence_position is not None else None
-    )
+    assess_position = sequence_position + 1 if sequence_position is not None else None
     call = await db.create_call(
         CallType.ASSESS,
         scope_page_id=question_id,
@@ -497,7 +531,10 @@ async def _run_assess_concept_loop(
     """
     log.info(
         "_run_assess_concept_loop: concept=%s, phase=%s, max_rounds=%d, threshold=%d",
-        concept_id[:8], phase, max_rounds, fruit_threshold,
+        concept_id[:8],
+        phase,
+        max_rounds,
+        fruit_threshold,
     )
     last_review: dict = {}
     for i in range(max_rounds):
@@ -514,13 +551,18 @@ async def _run_assess_concept_loop(
         remaining_fruit = last_review.get("remaining_fruit", 10)
         log.info(
             "Assess concept round %d/%d (%s): fruit=%d, score=%s",
-            i + 1, max_rounds, phase,
-            remaining_fruit, last_review.get("score"),
+            i + 1,
+            max_rounds,
+            phase,
+            remaining_fruit,
+            last_review.get("score"),
         )
         if remaining_fruit <= fruit_threshold:
             log.info(
                 "Concept fruit (%d) at or below threshold (%d), stopping %s phase",
-                remaining_fruit, fruit_threshold, phase,
+                remaining_fruit,
+                fruit_threshold,
+                phase,
             )
             break
 
@@ -552,7 +594,8 @@ async def run_concept_session(
 
     log.info(
         "Scout concepts complete: %d proposals for question=%s",
-        len(proposed_ids), question_id[:8],
+        len(proposed_ids),
+        question_id[:8],
     )
 
     for concept_id in proposed_ids:
@@ -561,7 +604,8 @@ async def run_concept_session(
         log.info("Screening concept: %s [%s]", label, concept_id[:8])
 
         screening_review = await _run_assess_concept_loop(
-            concept_id, db,
+            concept_id,
+            db,
             phase=SCREENING_PHASE,
             max_rounds=SCREENING_MAX_ROUNDS,
             fruit_threshold=SCREENING_FRUIT_THRESHOLD,
@@ -572,17 +616,20 @@ async def run_concept_session(
         if not screening_review.get("screening_passed"):
             log.info(
                 "Concept [%s] did not pass screening (score=%s)",
-                concept_id[:8], screening_review.get("score"),
+                concept_id[:8],
+                screening_review.get("score"),
             )
             continue
 
         log.info(
             "Concept [%s] passed screening (score=%s), proceeding to validation",
-            concept_id[:8], screening_review.get("score"),
+            concept_id[:8],
+            screening_review.get("score"),
         )
 
         validation_review = await _run_assess_concept_loop(
-            concept_id, db,
+            concept_id,
+            db,
             phase=VALIDATION_PHASE,
             max_rounds=VALIDATION_MAX_ROUNDS,
             fruit_threshold=VALIDATION_FRUIT_THRESHOLD,
@@ -596,7 +643,8 @@ async def run_concept_session(
         else:
             log.info(
                 "Concept [%s] completed validation but was not promoted (score=%s)",
-                concept_id[:8], validation_review.get("score"),
+                concept_id[:8],
+                validation_review.get("score"),
             )
 
 
@@ -612,7 +660,7 @@ async def web_research_question(
     sequence_position: int | None = None,
 ) -> str | None:
     """Run one web research call on a question. Returns call ID, or None if no budget."""
-    log.info('web_research_question: question=%s', question_id[:8])
+    log.info("web_research_question: question=%s", question_id[:8])
     if not await _consume_budget(db, force=force):
         return None
 
@@ -626,7 +674,9 @@ async def web_research_question(
     )
     cls = WEB_RESEARCH_CALL_CLASSES[get_settings().web_research_call_variant]
     web_research = cls(
-        question_id, call, db,
+        question_id,
+        call,
+        db,
         allowed_domains=allowed_domains,
         broadcaster=broadcaster,
     )

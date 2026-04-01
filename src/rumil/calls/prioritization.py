@@ -17,7 +17,7 @@ from rumil.calls.dispatches import (
 )
 from rumil.context import build_prioritization_context, collect_subtree_ids
 from rumil.database import DB
-from rumil.move_presets import get_moves_for_call
+from rumil.available_moves import get_moves_for_call
 from rumil.page_graph import PageGraph
 from rumil.llm import build_system_prompt, build_user_message
 from rumil.models import Call, CallStatus, CallType, MoveType

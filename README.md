@@ -131,14 +131,17 @@ uv run python main.py "Your question here" --name "baseline v2" --budget 10
 # Retroactively stage a completed run (hides its effects from baseline readers)
 uv run python main.py --stage-run RUN_ID
 
+# Commit a staged run (makes its effects visible to all readers)
+uv run python main.py --commit-run RUN_ID
+
 # Smoke-test mode: uses Haiku, fewer agent rounds, budget defaults to 1
 uv run python main.py "Your question here" --smoke-test
 
 # Any command can target the production database
 uv run python main.py --prod --list
 
-# Select a move preset (controls which tools are available per call type)
-uv run python main.py "Your question" --moves-preset default --budget 10
+# Select an available-moves preset (controls which tools are available per call type)
+uv run python main.py "Your question" --available-moves default --budget 10
 
 # Select an available-calls preset (controls which scouts/dispatches the two-phase orchestrator uses)
 # 'default' = standard scouts, 'multi-subquestion' = replaces generic subquestions scout with web-questions and deep-questions scouts

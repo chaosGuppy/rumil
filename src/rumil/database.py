@@ -10,10 +10,16 @@ from datetime import datetime, timezone
 from typing import Any, cast
 
 import httpx
-
 from postgrest.types import CountMethod
 from supabase import acreate_client, AsyncClient
 from supabase.lib.client_options import AsyncClientOptions
+from tenacity import (
+    RetryCallState,
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from rumil.settings import get_settings
 from rumil.models import (
@@ -42,6 +48,41 @@ _Rows = list[dict[str, Any]]
 def _rows(response: Any) -> _Rows:
     """Extract rows from a Supabase API response with proper typing."""
     return cast(_Rows, response.data) if response.data else []
+
+
+_DB_RETRYABLE_EXCEPTIONS = (
+    httpx.ConnectTimeout,
+    httpx.ConnectError,
+    httpx.PoolTimeout,
+    httpx.ReadError,
+    httpx.RemoteProtocolError,
+)
+
+
+def _stop_after_db_retries(retry_state: RetryCallState) -> bool:
+    return retry_state.attempt_number >= get_settings().max_db_retries
+
+
+def _log_db_retry(retry_state: RetryCallState) -> None:
+    exc = retry_state.outcome.exception() if retry_state.outcome else None
+    wait = retry_state.next_action.sleep if retry_state.next_action else 0
+    max_retries = get_settings().max_db_retries
+    log.warning(
+        "DB request failed (%s), retrying in %gs (attempt %d/%d)",
+        type(exc).__name__ if exc else "unknown",
+        wait,
+        retry_state.attempt_number,
+        max_retries,
+    )
+
+
+_db_retry = retry(
+    retry=retry_if_exception_type(_DB_RETRYABLE_EXCEPTIONS),
+    stop=_stop_after_db_retries,
+    wait=wait_exponential(multiplier=0.5, min=0.5, max=60),
+    before_sleep=_log_db_retry,
+    reraise=True,
+)
 
 
 _SLIM_PAGE_COLUMNS = (
@@ -208,26 +249,11 @@ class DB:
         except Exception:
             log.debug('Failed to close postgrest client', exc_info=True)
 
-    async def _execute(self, query: Any, *, _retries: int = 60) -> Any:
-        """Execute a query builder through the concurrency semaphore.
-
-        Retries on transient network errors (connection drops, timeouts)
-        with exponential backoff.
-        """
-        for attempt in range(_retries):
-            try:
-                async with self._semaphore:
-                    return await query.execute()
-            except (httpx.ReadError, httpx.ConnectError, httpx.RemoteProtocolError) as e:
-                if attempt == _retries - 1:
-                    raise
-                wait = min(2 ** (attempt + 1), 60)
-                log.warning(
-                    'DB query failed (%s), retrying in %ds (attempt %d/%d)',
-                    type(e).__name__, wait, attempt + 1, _retries,
-                )
-                await asyncio.sleep(wait)
-        raise RuntimeError('Unreachable: DB retry loop exhausted')
+    @_db_retry
+    async def _execute(self, query: Any) -> Any:
+        """Execute a query builder through the concurrency semaphore."""
+        async with self._semaphore:
+            return await query.execute()
 
     def _staged_filter(self, query: Any) -> Any:
         """Apply staged-run visibility filter to a query.
@@ -1619,6 +1645,82 @@ class DB:
                 await self._execute(
                     self.client.table("page_links")
                     .update({"role": old_role})
+                    .eq("id", tid)
+                )
+
+    async def commit_staged_run(self, run_id: str) -> None:
+        """Commit a staged run, making its effects visible to all readers.
+
+        Flips the staged flag to false on the run's rows, then applies
+        mutation events (supersessions, link deletions, role changes) that
+        were recorded but never written directly to the database.
+        """
+        run_rows = _rows(
+            await self._execute(
+                self.client.table("runs").select("id, staged").eq("id", run_id)
+            )
+        )
+        if not run_rows:
+            raise ValueError(f"Run {run_id} not found")
+        if not run_rows[0].get("staged"):
+            raise ValueError(f"Run {run_id} is not staged")
+
+        await self._execute(
+            self.client.table("runs").update({"staged": False}).eq("id", run_id)
+        )
+        await self._execute(
+            self.client.table("pages")
+            .update({"staged": False})
+            .eq("run_id", run_id)
+        )
+        await self._execute(
+            self.client.table("page_links")
+            .update({"staged": False})
+            .eq("run_id", run_id)
+        )
+
+        events = _rows(
+            await self._execute(
+                self.client.table("mutation_events")
+                .select("event_type, target_id, payload")
+                .eq("run_id", run_id)
+                .order("created_at")
+            )
+        )
+        for ev in events:
+            et = ev["event_type"]
+            tid = ev["target_id"]
+            payload = ev.get("payload") or {}
+
+            if et == "supersede_page":
+                await self._execute(
+                    self.client.table("pages")
+                    .update(
+                        {
+                            "is_superseded": True,
+                            "superseded_by": payload["new_page_id"],
+                        }
+                    )
+                    .eq("id", tid)
+                )
+
+            elif et == "delete_link":
+                await self._execute(
+                    self.client.table("page_links").delete().eq("id", tid)
+                )
+
+            elif et == "change_link_role":
+                new_role = payload.get("new_role")
+                if not new_role:
+                    log.warning(
+                        "Cannot apply role change for link %s: "
+                        "no new_role in event payload",
+                        tid,
+                    )
+                    continue
+                await self._execute(
+                    self.client.table("page_links")
+                    .update({"role": new_role})
                     .eq("id", tid)
                 )
 

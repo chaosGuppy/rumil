@@ -54,6 +54,42 @@ AVAILABLE_CALLS_PRESETS: dict[str, AvailableCallsPreset] = {
             CallType.SCOUT_C_STRESS_TEST_CASES,
         ],
     ),
+    "simple": AvailableCallsPreset(
+        phase1_scouts=[
+            CallType.SCOUT_ESTIMATES,
+            CallType.SCOUT_ANALOGIES,
+            CallType.SCOUT_PARADIGM_CASES,
+            CallType.SCOUT_FACTCHECKS,
+            CallType.SCOUT_WEB_QUESTIONS,
+            CallType.SCOUT_DEEP_QUESTIONS,
+        ],
+        phase2_dispatch=[
+            CallType.FIND_CONSIDERATIONS,
+            CallType.WEB_RESEARCH,
+            CallType.SCOUT_ESTIMATES,
+            CallType.SCOUT_ANALOGIES,
+            CallType.SCOUT_PARADIGM_CASES,
+            CallType.SCOUT_FACTCHECKS,
+            CallType.SCOUT_WEB_QUESTIONS,
+            CallType.SCOUT_DEEP_QUESTIONS,
+        ],
+        claim_phase1_scouts=[
+            CallType.SCOUT_C_HOW_TRUE,
+            CallType.SCOUT_C_HOW_FALSE,
+            CallType.SCOUT_C_CRUXES,
+            CallType.SCOUT_C_RELEVANT_EVIDENCE,
+            CallType.SCOUT_C_STRESS_TEST_CASES,
+        ],
+        claim_phase2_dispatch=[
+            CallType.FIND_CONSIDERATIONS,
+            CallType.WEB_RESEARCH,
+            CallType.SCOUT_C_HOW_TRUE,
+            CallType.SCOUT_C_HOW_FALSE,
+            CallType.SCOUT_C_CRUXES,
+            CallType.SCOUT_C_RELEVANT_EVIDENCE,
+            CallType.SCOUT_C_STRESS_TEST_CASES,
+        ],
+    ),
     "multi-subquestion": AvailableCallsPreset(
         phase1_scouts=[
             CallType.SCOUT_ESTIMATES,

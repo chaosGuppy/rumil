@@ -6,11 +6,13 @@ Read-only API for browsing projects, pages, links, and calls.
 
 import logging
 import os
+import secrets
 import uuid
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import TypeAdapter, ValidationError
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from rumil.database import DB, _row_to_call
 from rumil.models import Call, Page, PageLink, PageType, Project, Workspace
@@ -45,12 +47,46 @@ app = FastAPI(
     description="Read-only API for the Rumil research workspace.",
 )
 
+_AUTH_PASSWORD = os.environ.get("RUMIL_AUTH_PASSWORD", "")
+
+
+class BasicAuthMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):  # type: ignore[override]
+        if request.url.path == "/healthz" or not _AUTH_PASSWORD:
+            return await call_next(request)
+
+        import base64
+
+        auth = request.headers.get("Authorization", "")
+        if auth.startswith("Basic "):
+            try:
+                decoded = base64.b64decode(auth[6:]).decode()
+                _, password = decoded.split(":", 1)
+            except Exception:
+                password = ""
+            if secrets.compare_digest(password, _AUTH_PASSWORD):
+                return await call_next(request)
+
+        return Response(
+            status_code=401,
+            headers={"WWW-Authenticate": 'Basic realm="rumil"'},
+            content="Unauthorized",
+        )
+
+
+app.add_middleware(BasicAuthMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
+    allow_origins=["*"],
     allow_methods=["GET"],
     allow_headers=["*"],
 )
+
+
+@app.get("/healthz")
+async def healthz() -> dict[str, str]:
+    return {"status": "ok"}
 
 
 async def _get_db(project_id: str = "") -> DB:

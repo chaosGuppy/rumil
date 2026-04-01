@@ -53,7 +53,7 @@ class Settings(BaseSettings):
     web_research_call_variant: str = _capture_field(default="default")
     prioritizer_variant: str = _capture_field(default="two_phase")
 
-    moves_preset: str = _capture_field(default="default")
+    available_moves: str = _capture_field(default="default")
     available_calls: str = _capture_field(default="default")
 
     find_considerations_modes: str = _capture_field(
@@ -67,6 +67,12 @@ class Settings(BaseSettings):
     evaluate_headline_hops: int = _capture_field(default=2)
     sdk_agent_max_turns: int = _capture_field(default=200)
     grounding_update_budget: int = _capture_field(default=10)
+
+    max_db_retries: int = _capture_field(default=60)
+    max_api_retries: int = _capture_field(default=60)
+    max_api_retries_429: int | None = _capture_field(default=None)
+    max_api_retries_500: int | None = _capture_field(default=None)
+    max_api_retries_529: int | None = _capture_field(default=None)
 
     full_page_char_budget: int = _capture_field(default=10_000)
     abstract_page_char_budget: int = _capture_field(default=10_000)
@@ -99,6 +105,14 @@ class Settings(BaseSettings):
             for m in self.find_considerations_modes.split(",")
             if m.strip()
         ]
+
+    def get_max_retries(self, status: int | None = None) -> int:
+        """Return the max retry count, optionally specialized by HTTP status."""
+        if status is not None:
+            override = getattr(self, f"max_api_retries_{status}", None)
+            if override is not None:
+                return override
+        return self.max_api_retries
 
     @property
     def is_prod_db(self) -> bool:

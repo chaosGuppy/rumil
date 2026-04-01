@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 
 from rumil.context import format_page
 from rumil.database import DB
-from rumil.move_presets import get_moves_for_call
+from rumil.available_moves import get_moves_for_call
 from rumil.embeddings import embed_and_store_page
 from rumil.settings import get_settings
 from rumil.llm import (

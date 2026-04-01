@@ -1,13 +1,13 @@
-"""Move presets: named mappings from CallType to available moves."""
+"""Available moves: named mappings from CallType to allowed moves per call type."""
 
 from collections.abc import Sequence
 
 from rumil.models import CallType, MoveType
 from rumil.settings import get_settings
 
-MovePreset = dict[CallType, Sequence[MoveType]]
+AvailableMoves = dict[CallType, Sequence[MoveType]]
 
-PRESETS: dict[str, MovePreset] = {
+PRESETS: dict[str, AvailableMoves] = {
     "default": {
         CallType.FIND_CONSIDERATIONS: [
             MoveType.CREATE_CLAIM,
@@ -239,17 +239,17 @@ PRESETS: dict[str, MovePreset] = {
 
 def get_moves_for_call(call_type: CallType) -> Sequence[MoveType]:
     """Look up available moves for a call type from the active preset."""
-    preset_name = get_settings().moves_preset
+    preset_name = get_settings().available_moves
     preset = PRESETS.get(preset_name)
     if preset is None:
         raise ValueError(
-            f"Unknown move preset: {preset_name!r}. "
+            f"Unknown available-moves preset: {preset_name!r}. "
             f"Available presets: {', '.join(sorted(PRESETS))}"
         )
     moves = preset.get(call_type)
     if moves is None:
         raise ValueError(
             f"Preset {preset_name!r} has no entry for call type {call_type.value!r}. "
-            f"Add an entry to the {preset_name!r} preset in move_presets.py."
+            f"Add an entry to the {preset_name!r} preset in available_moves.py."
         )
     return moves

@@ -684,7 +684,9 @@ class DB:
                 f"headline.ilike.%{search}%,content.ilike.%{search}%"
             )
         query = self._staged_filter(query)
-        query = query.order("created_at", desc=True)
+        query = query.order(
+            "is_human_created", desc=True,
+        ).order("created_at", desc=True)
         end = offset + limit - 1
         result = await self._execute(query.range(offset, end))
         total = result.count or 0

@@ -1750,7 +1750,8 @@
           "web_research",
           "evaluate",
           "grounding_feedback",
-          "feedback_update"
+          "feedback_update",
+          "cross_cutting_update"
         ],
         "title": "CallType"
       },

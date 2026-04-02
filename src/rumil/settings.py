@@ -69,6 +69,8 @@ class Settings(BaseSettings):
     grounding_update_budget: int = _capture_field(default=10)
     feedback_update_budget: int = _capture_field(default=10)
     feedback_investigation_budget: int = _capture_field(default=30)
+    cross_cutting_investigation_budget: int = _capture_field(default=50)
+    cross_cutting_update_budget: int = _capture_field(default=20)
 
     max_db_retries: int = _capture_field(default=4)
     max_api_retries: int = _capture_field(default=4)

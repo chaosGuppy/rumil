@@ -101,6 +101,9 @@ uv run python main.py --show-evaluation CALL_ID
 # Run grounding feedback on a completed evaluation (improves workspace sourcing)
 uv run python main.py --ground EVAL_CALL_ID
 
+# Run cross-cutting analysis across multiple questions (JSON file with question IDs)
+uv run python main.py --cross-cutting questions.json
+
 # Control how deep the summary traverses and where it switches to compact mode.
 # --max-depth N        How many levels of sub-questions to include (default: 4).
 # --summarize-after-depth N  Levels 0..N-1 show full claim/judgement content;

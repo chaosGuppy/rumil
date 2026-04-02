@@ -410,6 +410,77 @@ async def cmd_feedback_update_from_file(
         print(result.result_summary)
 
 
+async def cmd_cross_cutting_update(
+    file_path: str,
+    db: DB,
+    *,
+    investigation_budget: int | None = None,
+) -> None:
+    import json as json_mod
+
+    from rumil.clean import run_cross_cutting_update
+
+    path = Path(file_path)
+    if not path.is_file():
+        print(f"Error: file '{file_path}' not found.")
+        sys.exit(1)
+
+    try:
+        raw = json_mod.loads(path.read_text())
+    except json_mod.JSONDecodeError as exc:
+        print(f"Error: invalid JSON in '{file_path}': {exc}")
+        sys.exit(1)
+
+    if not isinstance(raw, list) or not all(isinstance(x, str) for x in raw):
+        print("Error: JSON file must contain an array of question ID strings.")
+        sys.exit(1)
+
+    if len(raw) < 2:
+        print("Error: cross-cutting analysis requires at least 2 question IDs.")
+        sys.exit(1)
+
+    resolved_ids: list[str] = []
+    for qid in raw:
+        resolved = await db.resolve_page_id(qid)
+        if not resolved:
+            print(f"Error: question '{qid}' not found.")
+            sys.exit(1)
+        resolved_ids.append(resolved)
+
+    first_question = await db.get_page(resolved_ids[0])
+    if first_question and first_question.project_id:
+        if first_question.project_id != db.project_id:
+            db.project_id = first_question.project_id
+
+    headlines = []
+    for rid in resolved_ids:
+        page = await db.get_page(rid)
+        headlines.append(page.headline[:60] if page else rid[:8])
+
+    await db.create_run(
+        name=f"cross-cutting: {len(resolved_ids)} questions",
+        question_id=resolved_ids[0],
+        config=get_settings().capture_config(),
+    )
+
+    frontend = get_settings().frontend_url.rstrip("/")
+    print(f"\nRunning cross-cutting analysis on {len(resolved_ids)} questions:")
+    for i, hl in enumerate(headlines):
+        print(f"  {i + 1}. {hl}")
+    print(f"Trace: {frontend}/traces/{db.run_id}\n")
+
+    if investigation_budget is not None:
+        get_settings().cross_cutting_investigation_budget = investigation_budget
+
+    result = await run_cross_cutting_update(
+        resolved_ids,
+        db,
+    )
+    print(f"\nCross-cutting update complete (call {result.id}).")
+    if result.result_summary:
+        print(result.result_summary)
+
+
 async def _load_prior_checkpoints(question_id: str, from_stage: int, db: DB) -> dict:
     """Find the most recent grounding call for *question_id* and return its checkpoints."""
     from rumil.models import CallType
@@ -917,6 +988,15 @@ async def async_main():
         help="Run feedback update pipeline using feedback text from a file",
     )
     parser.add_argument(
+        "--cross-cutting",
+        dest="cross_cutting_file",
+        metavar="FILE_PATH",
+        help=(
+            "Run cross-cutting feedback pipeline on questions listed "
+            "in a JSON file (array of question IDs)"
+        ),
+    )
+    parser.add_argument(
         "--show-evaluation",
         dest="show_evaluation_id",
         metavar="CALL_ID",
@@ -1129,6 +1209,11 @@ async def async_main():
             args.feedback_file[1],
             db,
             investigation_budget=args.budget,
+        )
+        return
+    elif args.cross_cutting_file:
+        await cmd_cross_cutting_update(
+            args.cross_cutting_file, db, investigation_budget=args.budget
         )
         return
     elif args.show_evaluation_id:

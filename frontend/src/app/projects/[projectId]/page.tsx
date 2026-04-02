@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useState, useMemo } from "react";
-import type { Page, PageType, Project, RunListItemOut } from "@/api";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
+import type { Page, PageType, PaginatedPagesOut, Project, RunListItemOut } from "@/api";
 
 import { CLIENT_API_BASE as API_BASE } from "@/api-config";
 import { useStagedRun } from "@/lib/staged-run-context";
@@ -76,14 +76,29 @@ export default function PagesIndexPage() {
   const params = useParams<{ projectId: string }>();
   const projectId = params.projectId;
 
+  const PAGE_SIZE = 50;
+
   const [projectName, setProjectName] = useState<string>();
   const [pages, setPages] = useState<Page[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [currentOffset, setCurrentOffset] = useState(0);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [activeTypes, setActiveTypes] = useState<Set<PageType>>(new Set());
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [activeType, setActiveType] = useState<PageType | null>(null);
   const [runs, setRuns] = useState<RunListItemOut[]>([]);
   const [showSuperseded, setShowSuperseded] = useState(false);
   const { activeStagedRunId, setActiveStagedRunId } = useStagedRun();
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  const onSearchChange = useCallback((value: string) => {
+    setSearch(value);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setDebouncedSearch(value);
+      setCurrentOffset(0);
+    }, 300);
+  }, []);
 
   useEffect(() => {
     fetch(`${API_BASE}/api/projects/${projectId}`, { cache: "no-store" })
@@ -94,72 +109,55 @@ export default function PagesIndexPage() {
   }, [projectId]);
 
   useEffect(() => {
+    setLoading(true);
     const params = new URLSearchParams();
     if (showSuperseded) params.set("active_only", "false");
     if (activeStagedRunId) params.set("staged_run_id", activeStagedRunId);
+    if (debouncedSearch) params.set("search", debouncedSearch);
+    if (activeType) params.set("page_type", activeType);
+    params.set("offset", String(currentOffset));
+    params.set("limit", String(PAGE_SIZE));
     const qs = params.toString();
-    const url = `${API_BASE}/api/projects/${projectId}/pages${qs ? "?" + qs : ""}`;
+    const url = `${API_BASE}/api/projects/${projectId}/pages?${qs}`;
     fetch(url, { cache: "no-store" })
-      .then((res) => (res.ok ? res.json() : []))
-      .then((data: Page[]) => {
-        setPages(data);
+      .then((res) => (res.ok ? res.json() : { items: [], total_count: 0, offset: 0, limit: PAGE_SIZE }))
+      .then((data: PaginatedPagesOut) => {
+        setPages(data.items);
+        setTotalCount(data.total_count);
         setLoading(false);
       });
+  }, [projectId, showSuperseded, activeStagedRunId, debouncedSearch, activeType, currentOffset]);
+
+  useEffect(() => {
     fetch(`${API_BASE}/api/projects/${projectId}/runs`, {
       cache: "no-store",
     })
       .then((res) => (res.ok ? res.json() : []))
       .then((data: RunListItemOut[]) => setRuns(data));
-  }, [projectId, showSuperseded, activeStagedRunId]);
+  }, [projectId]);
 
   const toggleType = (t: PageType) => {
-    setActiveTypes((prev) => {
-      const next = new Set(prev);
-      if (next.has(t)) {
-        next.delete(t);
-      } else {
-        next.add(t);
-      }
-      return next;
-    });
+    setActiveType((prev) => (prev === t ? null : t));
+    setCurrentOffset(0);
   };
 
   const selectOnly = (t: PageType) => {
-    setActiveTypes(new Set([t]));
+    setActiveType(t);
+    setCurrentOffset(0);
   };
 
   const clearAll = () => {
-    setActiveTypes(new Set());
+    setActiveType(null);
+    setCurrentOffset(0);
   };
 
-  const filtered = useMemo(() => {
-    const q = search.toLowerCase();
-    return pages
-      .filter((p) => {
-        if (activeTypes.size > 0 && !activeTypes.has(p.page_type)) return false;
-        if (q && !p.headline.toLowerCase().includes(q) && !p.content.toLowerCase().includes(q))
-          return false;
-        return true;
-      })
-      .sort((a, b) => {
-        const aHuman = a.provenance_model === "human" ? 0 : 1;
-        const bHuman = b.provenance_model === "human" ? 0 : 1;
-        if (aHuman !== bHuman) return aHuman - bHuman;
-        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-      });
-  }, [pages, search, activeTypes]);
+  const totalPages = Math.ceil(totalCount / PAGE_SIZE);
+  const currentPage = Math.floor(currentOffset / PAGE_SIZE) + 1;
 
-  const typeCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const t of PAGE_TYPES) counts[t] = 0;
-    for (const p of pages) counts[p.page_type] = (counts[p.page_type] || 0) + 1;
-    return counts;
-  }, [pages]);
-
-  const supersededCount = useMemo(
-    () => pages.filter((p) => p.is_superseded).length,
-    [pages],
-  );
+  const goToPage = useCallback((page: number) => {
+    setCurrentOffset((page - 1) * PAGE_SIZE);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
 
   return (
     <main className="pages-index">
@@ -441,6 +439,40 @@ export default function PagesIndexPage() {
           text-align: center;
           color: var(--color-muted);
           font-size: 0.9rem;
+        }
+
+        .pagination {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 1rem;
+          margin-top: 1.25rem;
+          padding: 0.75rem 0;
+        }
+        .pagination-btn {
+          font-size: 0.75rem;
+          font-family: var(--font-geist-mono), monospace;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
+          padding: 0.35rem 0.75rem;
+          border: 1px solid var(--color-border);
+          border-radius: 1px;
+          background: var(--color-surface);
+          color: var(--color-foreground);
+          cursor: pointer;
+          transition: all 0.12s ease;
+        }
+        .pagination-btn:hover:not(:disabled) {
+          border-color: var(--color-accent);
+        }
+        .pagination-btn:disabled {
+          opacity: 0.3;
+          cursor: default;
+        }
+        .pagination-info {
+          font-size: 0.75rem;
+          font-family: var(--font-geist-mono), monospace;
+          color: var(--color-muted);
         }
 
         .runs-section {
@@ -743,7 +775,7 @@ export default function PagesIndexPage() {
 
       <div className="pages-header">
         <h1>Pages</h1>
-        <div className="subtitle">{pages.length} total</div>
+        <div className="subtitle">{totalCount} total</div>
       </div>
 
       {runs.length > 0 && (
@@ -830,15 +862,15 @@ export default function PagesIndexPage() {
             type="text"
             placeholder="Search summaries and content..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => onSearchChange(e.target.value)}
           />
         </div>
 
         <div className="filter-row">
           {PAGE_TYPES.map((t) => {
             const cfg = TYPE_CONFIG[t];
-            const isActive = activeTypes.has(t);
-            const noFilters = activeTypes.size === 0;
+            const isActive = activeType === t;
+            const noFilters = activeType === null;
             return (
               <button
                 key={t}
@@ -857,22 +889,21 @@ export default function PagesIndexPage() {
                 title={`Click to toggle, double-click to isolate`}
               >
                 {t}
-                <span className="count">{typeCounts[t]}</span>
               </button>
             );
           })}
           <div className="filter-divider" />
           <button
             className={`filter-chip superseded-toggle ${showSuperseded ? "active" : ""}`}
-            onClick={() => setShowSuperseded((prev) => !prev)}
+            onClick={() => {
+              setShowSuperseded((prev) => !prev);
+              setCurrentOffset(0);
+            }}
             title="Show superseded pages"
           >
             {showSuperseded ? "hide" : "show"} superseded
-            {showSuperseded && supersededCount > 0 && (
-              <span className="count">{supersededCount}</span>
-            )}
           </button>
-          {activeTypes.size > 0 && (
+          {activeType !== null && (
             <>
               <div className="filter-divider" />
               <button className="filter-all" onClick={clearAll}>
@@ -885,21 +916,20 @@ export default function PagesIndexPage() {
 
       {loading ? (
         <div className="loading-state">Loading pages...</div>
-      ) : filtered.length === 0 ? (
+      ) : pages.length === 0 ? (
         <div className="empty-state">
-          {pages.length === 0
+          {totalCount === 0 && !debouncedSearch && activeType === null
             ? "No pages in this project yet."
             : "No pages match the current filters."}
         </div>
       ) : (
         <>
           <div className="results-meta">
-            {filtered.length === pages.length
-              ? `${filtered.length} pages`
-              : `${filtered.length} of ${pages.length} pages`}
+            {totalCount} page{totalCount !== 1 ? "s" : ""}
+            {totalPages > 1 && ` \u00b7 page ${currentPage} of ${totalPages}`}
           </div>
           <div className="pages-grid">
-            {filtered.map((p, i) => {
+            {pages.map((p, i) => {
               const cfg = TYPE_CONFIG[p.page_type] || TYPE_CONFIG.source;
               return (
                 <Link
@@ -941,6 +971,27 @@ export default function PagesIndexPage() {
               );
             })}
           </div>
+          {totalPages > 1 && (
+            <div className="pagination">
+              <button
+                className="pagination-btn"
+                disabled={currentPage <= 1}
+                onClick={() => goToPage(currentPage - 1)}
+              >
+                Prev
+              </button>
+              <span className="pagination-info">
+                {currentPage} / {totalPages}
+              </span>
+              <button
+                className="pagination-btn"
+                disabled={currentPage >= totalPages}
+                onClick={() => goToPage(currentPage + 1)}
+              >
+                Next
+              </button>
+            </div>
+          )}
         </>
       )}
     </main>

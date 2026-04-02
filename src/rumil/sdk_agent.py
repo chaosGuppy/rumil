@@ -19,6 +19,8 @@ from claude_agent_sdk import (
     HookMatcher,
     ResultMessage,
     TextBlock,
+    ThinkingBlock,
+    ToolUseBlock,
     create_sdk_mcp_server,
     tool,
 )
@@ -40,6 +42,8 @@ from rumil.tracing.trace_events import (
 )
 
 log = logging.getLogger(__name__)
+
+_MIN_REAL_INPUT_TOKENS = 10
 
 
 
@@ -69,6 +73,7 @@ class SdkAgentResult:
     """Result from running a Claude Agent SDK agent."""
 
     last_assistant_text: Sequence[str]
+    all_assistant_text: Sequence[str] = field(default_factory=list)
     structured_output: Any = None
 
 
@@ -368,6 +373,7 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
     )
 
     last_assistant_text: list[str] = []
+    all_assistant_text: list[str] = []
     structured_output: Any = None
     all_messages: list[dict] = []
     turn_counter = 0
@@ -375,14 +381,28 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
         await client.query(config.user_prompt)
         async for message in client.receive_response():
             if isinstance(message, AssistantMessage):
-                turn_counter += 1
-                parts = [
+                text_parts = [
                     block.text
                     for block in message.content
                     if isinstance(block, TextBlock)
                 ]
-                if parts:
-                    last_assistant_text = parts
+                thinking_parts = [
+                    block.thinking
+                    for block in message.content
+                    if isinstance(block, ThinkingBlock)
+                ]
+                tool_uses = [
+                    {"tool": block.name, "input": block.input}
+                    for block in message.content
+                    if isinstance(block, ToolUseBlock)
+                ]
+                if text_parts:
+                    last_assistant_text = text_parts
+                    all_assistant_text.extend(text_parts)
+                input_tokens = 0
+                output_tokens = 0
+                cache_creation = 0
+                cache_read = 0
                 if message.usage:
                     input_tokens = message.usage.get("input_tokens", 0)
                     output_tokens = message.usage.get("output_tokens", 0)
@@ -392,6 +412,9 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
                     cache_read = message.usage.get(
                         "cache_read_input_tokens", 0
                     )
+                is_real_turn = input_tokens >= _MIN_REAL_INPUT_TOKENS
+                if is_real_turn:
+                    turn_counter += 1
                     cost_usd = compute_cost(
                         model=settings.model,
                         input_tokens=input_tokens,
@@ -409,6 +432,8 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
                             cache_creation_input_tokens=cache_creation or None,
                             cache_read_input_tokens=cache_read or None,
                             cost_usd=cost_usd or None,
+                            has_thinking=bool(thinking_parts),
+                            tool_uses=tool_uses or None,
                         )
                     )
                 if config.output_format:
@@ -451,6 +476,7 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
 
     return SdkAgentResult(
         last_assistant_text=last_assistant_text,
+        all_assistant_text=all_assistant_text,
         structured_output=structured_output,
     )
 

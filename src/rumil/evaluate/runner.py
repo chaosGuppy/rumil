@@ -12,7 +12,6 @@ from claude_agent_sdk.types import SyncHookJSONOutput
 
 from rumil.database import DB
 from rumil.evaluate.explore import explore_page_impl
-from rumil.evaluate.models import EVAL_TYPE_MODELS
 from rumil.evaluate.prompt import build_evaluation_prompt, build_investigator_prompt
 from rumil.models import Call, CallStatus, CallType
 from rumil.explore_tool import make_explore_tool
@@ -61,7 +60,6 @@ async def run_evaluation(
     system_prompt = build_evaluation_prompt(eval_type)
     investigator_prompt = build_investigator_prompt(eval_type)
     explore_tool = make_explore_tool(db)
-    report_model = EVAL_TYPE_MODELS[eval_type]
 
     user_prompt = (
         f"Evaluate the judgement for question ID `{resolved_id}`.\n\n"
@@ -102,6 +100,7 @@ async def run_evaluation(
         trace=trace,
         broadcaster=broadcaster,
         allowed_tools=[_EXPLORE_TOOL_FQNAME, "Read", "Grep", "Bash"],
+        disallowed_tools=(),
         agents={
             "investigator": AgentDefinition(
                 description=(
@@ -117,22 +116,13 @@ async def run_evaluation(
                 HookMatcher(matcher=_EXPLORE_TOOL_FQNAME, hooks=[on_explore_page]),
             ],
         },
-        output_format={
-            "type": "json_schema",
-            "schema": report_model.model_json_schema(),
-        },
     )
 
     try:
         result = await run_sdk_agent(config)
-        if result.structured_output is not None:
-            report = report_model.model_validate(result.structured_output)
-            result_text = report.render_markdown()
-        else:
-            log.warning(
-                "Evaluation agent returned no structured output, falling back to text"
-            )
-            result_text = "\n\n".join(result.last_assistant_text)
+        result_text = "\n\n".join(
+            result.all_assistant_text or result.last_assistant_text
+        )
         await trace.record(EvaluationCompleteEvent(evaluation=result_text))
         call.review_json = {"evaluation": result_text}
         call.result_summary = result_text

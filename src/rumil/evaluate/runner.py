@@ -121,7 +121,7 @@ async def run_evaluation(
     try:
         result = await run_sdk_agent(config)
         result_text = "\n\n".join(
-            result.all_assistant_text or result.last_assistant_text
+            result.last_assistant_text or result.all_assistant_text
         )
         await trace.record(EvaluationCompleteEvent(evaluation=result_text))
         call.review_json = {"evaluation": result_text}

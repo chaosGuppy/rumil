@@ -79,8 +79,11 @@ class UpdateOperation(BaseModel):
         default_factory=list,
         description=(
             "For reassess_claims / reassess_question: page IDs whose content "
-            "should inform the reassessment. Include only the minimal set of "
-            "pages that have been updated — avoid transitive dependencies. "
+            "should inform the reassessment. The update plan defines a chain "
+            "of updates — each operation's in_light_of should list the "
+            "updated pages that directly influence it. If page A depends on "
+            "page B only via an intermediate page C, B should not appear in "
+            "A's in_light_of (C is sufficient). "
             "If a page ID points to a question with an active judgement, "
             "the judgement is used instead."
         ),

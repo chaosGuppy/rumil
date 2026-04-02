@@ -72,8 +72,8 @@ class Settings(BaseSettings):
     cross_cutting_investigation_budget: int = _capture_field(default=50)
     cross_cutting_update_budget: int = _capture_field(default=20)
 
-    max_db_retries: int = _capture_field(default=4)
-    max_api_retries: int = _capture_field(default=4)
+    max_db_retries: int = _capture_field(default=60)
+    max_api_retries: int = _capture_field(default=60)
     max_api_retries_429: int | None = _capture_field(default=None)
     max_api_retries_500: int | None = _capture_field(default=None)
     max_api_retries_529: int | None = _capture_field(default=None)

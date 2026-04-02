@@ -54,6 +54,8 @@ _DB_RETRYABLE_EXCEPTIONS = (
     httpx.ConnectTimeout,
     httpx.ConnectError,
     httpx.PoolTimeout,
+    httpx.ReadError,
+    httpx.RemoteProtocolError,
 )
 
 
@@ -77,7 +79,7 @@ def _log_db_retry(retry_state: RetryCallState) -> None:
 _db_retry = retry(
     retry=retry_if_exception_type(_DB_RETRYABLE_EXCEPTIONS),
     stop=_stop_after_db_retries,
-    wait=wait_exponential(multiplier=0.5, min=0.5, max=8),
+    wait=wait_exponential(multiplier=0.5, min=0.5, max=60),
     before_sleep=_log_db_retry,
     reraise=True,
 )

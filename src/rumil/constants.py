@@ -32,9 +32,9 @@ def compute_round_budget(total: int, used: int) -> int:
     remaining = total - used
     if remaining <= 0:
         return 0
-    base = round((total + 10) ** 0.75)
+    base = round((total + 50) ** 0.75)
     if used < base:
-        f = round(math.sqrt((used + 10) * base))
+        f = round(math.sqrt((used + 50) * base))
     else:
         f = base
     if remaining >= 2 * f:

@@ -685,7 +685,7 @@ class DB:
             )
         query = self._staged_filter(query)
         query = query.order(
-            "provenance_model", desc=True,
+            "is_human_created", desc=True,
         ).order("created_at", desc=True)
         end = offset + limit - 1
         result = await self._execute(query.range(offset, end))

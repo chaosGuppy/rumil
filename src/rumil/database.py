@@ -660,6 +660,41 @@ class DB:
             pages = [p for p in pages if p.is_active()]
         return pages
 
+    async def get_pages_paginated(
+        self,
+        workspace: Workspace | None = None,
+        page_type: PageType | None = None,
+        active_only: bool = True,
+        search: str | None = None,
+        offset: int = 0,
+        limit: int = 50,
+    ) -> tuple[Sequence[Page], int]:
+        """Return a page of results and the total matching count."""
+        query = self.client.table("pages").select("*", count=CountMethod.exact)
+        if self.project_id:
+            query = query.eq("project_id", self.project_id)
+        if workspace:
+            query = query.eq("workspace", workspace.value)
+        if page_type:
+            query = query.eq("page_type", page_type.value)
+        if active_only:
+            query = query.eq("is_superseded", False)
+        if search:
+            query = query.or_(
+                f"headline.ilike.%{search}%,content.ilike.%{search}%"
+            )
+        query = self._staged_filter(query)
+        query = query.order("created_at", desc=True)
+        end = offset + limit - 1
+        result = await self._execute(query.range(offset, end))
+        total = result.count or 0
+        pages = [_row_to_page(r) for r in _rows(result)]
+        pages = await self._apply_page_events(pages)
+        await self.apply_epistemic_overrides(pages)
+        if active_only:
+            pages = [p for p in pages if p.is_active()]
+        return pages, total
+
     async def supersede_page(self, old_id: str, new_id: str) -> None:
         await self.record_mutation_event(
             "supersede_page", old_id, {"new_page_id": new_id},

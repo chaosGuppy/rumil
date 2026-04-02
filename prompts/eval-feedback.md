@@ -51,40 +51,38 @@ Think about:
 
 ## Output Format
 
-Your final message must be the structured evaluation below. Do not narrate your coordination process — just produce the evaluation once you have all the information you need.
+Your response uses structured JSON output. You MUST produce your complete evaluation as the structured output of your final result message. Do NOT write the evaluation in any earlier message — use earlier messages only for tool calls, delegation, and brief coordination notes.
 
-### Overlooked Considerations
+The JSON schema has four top-level arrays:
 
-For each significant gap you identify:
+### `overlooked_considerations`
 
-- **Missing element:** [what is absent — a line of reasoning, a subquestion, a perspective]
-- **Why it matters:** [how this gap could affect the overall conclusion]
-- **Suggested action:** [what kind of investigation or analysis would fill this gap]
+For each significant gap, an object with:
+- `missing_element`: what is absent — a line of reasoning, a subquestion, a perspective
+- `why_it_matters`: how this gap could affect the overall conclusion
+- `suggested_action`: what kind of investigation or analysis would fill this gap
 
-### Underdeveloped Key Lines
+### `underdeveloped_lines`
 
-For each underdeveloped area:
+For each underdeveloped area, an object with:
+- `area`: the subquestion, claim, or line of reasoning that is underdeveloped
+- `current_state`: what exists in the workspace — cite page headlines with their 8-char short IDs, e.g. `[abcd1234] "Solar payback periods..."`
+- `whats_lacking`: what specific analysis, evidence, or depth is missing
+- `suggested_action`: what further work would strengthen this area
 
-- **Area:** [the subquestion, claim, or line of reasoning that is underdeveloped]
-- **Current state:** [what exists in the workspace — cite page headlines with their 8-char short IDs, e.g. `[abcd1234] "Solar payback periods..."`]
-- **What's lacking:** [what specific analysis, evidence, or depth is missing]
-- **Suggested action:** [what further work would strengthen this area]
+### `inconsistencies`
 
-### Inconsistencies
+For each inconsistency found, an object with:
+- `conflict`: describe the contradiction
+- `pages_involved`: cite the specific pages on both sides, with headlines and 8-char short IDs
+- `impact`: how this inconsistency affects the reliability of the overall analysis
+- `suggested_resolution`: how to resolve or investigate the conflict
 
-For each inconsistency found:
+### `priority_improvements`
 
-- **Conflict:** [describe the contradiction]
-- **Pages involved:** [cite the specific pages on both sides, with headlines and 8-char short IDs]
-- **Impact:** [how this inconsistency affects the reliability of the overall analysis]
-- **Suggested resolution:** [how to resolve or investigate the conflict]
-
-### Priority Improvements
-
-A ranked list of the most impactful improvements to the analysis, drawing from all three dimensions above. For each:
-
-1. **[Short description]** — [why this is high-priority and what action to take]
-2. ...
+A ranked list (most impactful first) of improvements drawing from all three dimensions. Each object has:
+- `description`: short description of the improvement
+- `rationale`: why this is high-priority and what action to take
 
 Focus on improvements that would most change or strengthen the top-level judgement. Be concrete and actionable.
 

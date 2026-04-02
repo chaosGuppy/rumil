@@ -18,20 +18,21 @@ Identify the important claims made within the judgement and assess whether each 
 
 ## Output Format
 
-Your final message must be the structured evaluation below. Do not narrate your coordination process — just produce the evaluation once you have all the information you need.
+Your response uses structured JSON output. You MUST produce your complete evaluation as the structured output of your final result message. Do NOT write the evaluation in any earlier message — use earlier messages only for tool calls, delegation, and brief coordination notes.
 
-### Claims Assessment
+The JSON schema has two top-level fields:
 
-For each important claim in the judgement:
+### `claims`
 
-- **Claim:** [the claim, quoted or paraphrased]
-- **Grounding:** well-grounded | weakly-grounded | ungrounded
-- **Evidence chain:** [brief description of the supporting evidence you found, with page IDs]
-- **Gaps:** [what's missing — unsupported links, absent sources, unaddressed counter-evidence]
+An array of claim assessments. For each important claim in the judgement, an object with:
+- `claim`: the claim, quoted or paraphrased
+- `grounding`: `"well-grounded"`, `"weakly-grounded"`, or `"ungrounded"`
+- `evidence_chain`: brief description of the supporting evidence found, with page IDs
+- `gaps`: what's missing — unsupported links, absent sources, unaddressed counter-evidence
 
-### Overall Assessment
+### `overall_assessment`
 
-A brief summary of the judgement's overall evidential quality: how many claims are well-grounded vs. not, what the most significant gaps are, and what further investigation would be most valuable.
+A string summarizing the judgement's overall evidential quality: how many claims are well-grounded vs. not, what the most significant gaps are, and what further investigation would be most valuable.
 
 ## Handling Large Outputs
 

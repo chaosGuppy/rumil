@@ -166,6 +166,7 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
     subagent_calls: dict[str, str] = {}
     subagent_traces: dict[str, CallTrace] = {}
     pending_agent_prompts: list[str] = []
+    subagent_count = 0
 
     def _trace_for_agent(agent_id: str | None) -> CallTrace:
         """Return the child trace for a subagent, or the parent trace."""
@@ -176,8 +177,28 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
     async def on_pre_tool_use(
         input_data: HookInput, tool_use_id: str | None, context: HookContext
     ) -> SyncHookJSONOutput:
+        nonlocal subagent_count
         tool_name: str = input_data.get("tool_name", "")  # type: ignore[call-overload]
         if tool_name == "Agent":
+            max_subagents = settings.sdk_agent_max_subagents
+            if subagent_count >= max_subagents:
+                log.warning(
+                    "Subagent limit reached (%d/%d), blocking dispatch",
+                    subagent_count,
+                    max_subagents,
+                )
+                return SyncHookJSONOutput(
+                    decision="block",
+                    reason=(
+                        f"Subagent limit reached ({subagent_count}/{max_subagents}). "
+                        "You cannot dispatch more subagents. Wait for any "
+                        "already-dispatched subagents to finish, use their "
+                        "findings together with your own work so far, and "
+                        "continue with any further work you can do without "
+                        "subagents before producing your final output."
+                    ),
+                )
+            subagent_count += 1
             tool_input: dict = input_data.get("tool_input", {})  # type: ignore[call-overload]
             prompt = tool_input.get("prompt", "")
             pending_agent_prompts.append(prompt)

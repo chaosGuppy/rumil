@@ -76,6 +76,7 @@ class CallType(str, Enum):
     WEB_RESEARCH = "web_research"
     EVALUATE = "evaluate"
     GROUNDING_FEEDBACK = "grounding_feedback"
+    FEEDBACK_UPDATE = "feedback_update"
 
 
 # The subset of CallTypes that prioritization can dispatch.
@@ -274,7 +275,9 @@ class ScoutCCruxesDispatchPayload(ScopeOnlyDispatchPayload, _MultiRoundFields):
     pass
 
 
-class ScoutCRelevantEvidenceDispatchPayload(ScopeOnlyDispatchPayload, _MultiRoundFields):
+class ScoutCRelevantEvidenceDispatchPayload(
+    ScopeOnlyDispatchPayload, _MultiRoundFields
+):
     pass
 
 

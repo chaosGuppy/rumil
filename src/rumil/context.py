@@ -429,6 +429,21 @@ async def render_subtree(
     return '\n'.join(parts)
 
 
+async def _resolve_superseding_page(
+    page: Page,
+    db: DB | None,
+    graph: PageGraph | None,
+) -> Page | None:
+    """Resolve the supersession chain to the final active replacement page."""
+    if graph is not None:
+        result = await graph.resolve_supersession_chain(page)
+        if result is not None:
+            return result
+    if db is not None:
+        return await db.resolve_supersession_chain(page.id)
+    return None
+
+
 async def format_page(
     page: Page,
     detail: PageDetail = PageDetail.CONTENT,
@@ -436,6 +451,7 @@ async def format_page(
     linked_detail: PageDetail | None = PageDetail.HEADLINE,
     db: DB | None = None,
     graph: PageGraph | None = None,
+    include_superseding: bool = True,
 ) -> str:
     """Format a single page at the requested detail level.
 
@@ -446,7 +462,42 @@ async def format_page(
     *linked_detail* controls how considerations, judgements, and sub-question
     judgements are rendered for question pages. Set to None to omit them
     entirely.
+
+    When *include_superseding* is True (the default) and the page is
+    superseded, the output includes the superseded page annotated as such,
+    followed by the final replacement page rendered at the same detail level.
     """
+    if include_superseding and page.is_superseded:
+        replacement = await _resolve_superseding_page(page, db, graph)
+        original = await format_page(
+            page, detail, linked_detail=linked_detail,
+            db=db, graph=graph, include_superseding=False,
+        )
+        if replacement:
+            replacement_text = await format_page(
+                replacement, detail, linked_detail=linked_detail,
+                db=db, graph=graph, include_superseding=False,
+            )
+            if detail == PageDetail.HEADLINE:
+                return (
+                    f'[SUPERSEDED] {original}\n'
+                    f'  -> replaced by: {replacement_text}'
+                )
+            return (
+                f'{original}\n\n'
+                f'> **SUPERSEDED** — this page has been replaced by'
+                f' `{replacement.id[:8]}` ({replacement.headline}).'
+                f' Current version:\n\n'
+                f'{replacement_text}'
+            )
+        if detail == PageDetail.HEADLINE:
+            return f'[SUPERSEDED] {original}'
+        return (
+            f'{original}\n\n'
+            f'> **SUPERSEDED** — this page has been replaced'
+            f' (replacement not found).'
+        )
+
     if detail != PageDetail.HEADLINE and not page.content and db:
         full = await db.get_page(page.id)
         if full:
@@ -843,6 +894,7 @@ async def build_embedding_based_context(
     full_page_similarity_floor: float | None = None,
     abstract_page_similarity_floor: float | None = None,
     summary_page_similarity_floor: float | None = None,
+    require_judgement_for_questions: bool = False,
 ) -> EmbeddingBasedContextResult:
     """Build context by embedding-similarity search over the whole workspace.
 
@@ -892,6 +944,17 @@ async def build_embedding_based_context(
             )
             scope_page_ids = [scope_question_id]
             ranked = [(p, s) for p, s in ranked if p.id != scope_question_id]
+
+    if require_judgement_for_questions:
+        question_ids = [p.id for p, _ in ranked if p.page_type == PageType.QUESTION]
+        has_judgement: set[str] = set()
+        for qid in question_ids:
+            if await db.get_judgements_for_question(qid):
+                has_judgement.add(qid)
+        ranked = [
+            (p, s) for p, s in ranked
+            if p.page_type != PageType.QUESTION or p.id in has_judgement
+        ]
 
     distillation_budget = distillation_page_char_budget
     full_budget = full_page_char_budget

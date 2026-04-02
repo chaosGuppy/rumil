@@ -287,6 +287,129 @@ async def cmd_ground(eval_call_id: str, db: DB, *, from_stage: int = 1) -> None:
         print(result.result_summary)
 
 
+async def cmd_feedback_update(
+    eval_call_id: str, db: DB, *, investigation_budget: int | None = None
+) -> None:
+    from rumil.clean import run_feedback_update
+    from rumil.models import CallStatus, CallType
+
+    resolved_id = await db.resolve_call_id(eval_call_id)
+    if not resolved_id:
+        print(f"Error: call '{eval_call_id}' not found.")
+        sys.exit(1)
+    call = await db.get_call(resolved_id)
+    if not call:
+        print(f"Error: call '{eval_call_id}' not found.")
+        sys.exit(1)
+    if call.call_type != CallType.EVALUATE:
+        print(
+            f"Error: call '{eval_call_id}' is a {call.call_type.value} call, "
+            "not an evaluation. Pass the ID of a completed evaluation call."
+        )
+        sys.exit(1)
+    if call.status != CallStatus.COMPLETE:
+        print(
+            f"Error: evaluation call '{eval_call_id}' has status "
+            f"'{call.status.value}'. It must be complete."
+        )
+        sys.exit(1)
+
+    evaluation_text = (call.review_json or {}).get("evaluation", "")
+    if not evaluation_text:
+        print("Error: evaluation call has no evaluation output.")
+        sys.exit(1)
+
+    if not call.scope_page_id:
+        print("Error: evaluation call has no scope question.")
+        sys.exit(1)
+
+    question = await db.get_page(call.scope_page_id)
+    if not question:
+        print(f"Error: scope question '{call.scope_page_id}' not found.")
+        sys.exit(1)
+
+    if question.project_id and question.project_id != db.project_id:
+        db.project_id = question.project_id
+
+    await db.create_run(
+        name=f"feedback-update: {question.headline[:80]}",
+        question_id=call.scope_page_id,
+        config=get_settings().capture_config(),
+    )
+
+    frontend = get_settings().frontend_url.rstrip("/")
+    print(f"\nRunning feedback update for: {question.headline[:80]}")
+    print(f"Trace: {frontend}/traces/{db.run_id}\n")
+
+    if investigation_budget is not None:
+        get_settings().feedback_investigation_budget = investigation_budget
+
+    result = await run_feedback_update(
+        call.scope_page_id,
+        evaluation_text,
+        db,
+    )
+    print(f"\nFeedback update complete (call {result.id}).")
+    if result.result_summary:
+        print(result.result_summary)
+
+
+async def cmd_feedback_update_from_file(
+    question_id: str,
+    file_path: str,
+    db: DB,
+    *,
+    investigation_budget: int | None = None,
+) -> None:
+    from rumil.clean import run_feedback_update
+
+    path = Path(file_path)
+    if not path.is_file():
+        print(f"Error: file '{file_path}' not found.")
+        sys.exit(1)
+
+    evaluation_text = path.read_text().strip()
+    if not evaluation_text:
+        print(f"Error: file '{file_path}' is empty.")
+        sys.exit(1)
+
+    resolved_id = await db.resolve_page_id(question_id)
+    if not resolved_id:
+        print(f"Error: question '{question_id}' not found.")
+        sys.exit(1)
+
+    question = await db.get_page(resolved_id)
+    if not question:
+        print(f"Error: question '{question_id}' not found.")
+        sys.exit(1)
+
+    if question.project_id and question.project_id != db.project_id:
+        db.project_id = question.project_id
+
+    await db.create_run(
+        name=f"feedback-update (file): {question.headline[:80]}",
+        question_id=resolved_id,
+        config=get_settings().capture_config(),
+    )
+
+    frontend = get_settings().frontend_url.rstrip("/")
+    print(f"\nRunning feedback update for: {question.headline[:80]}")
+    print(f"Source: {file_path}")
+    print(f"Trace: {frontend}/traces/{db.run_id}\n")
+
+    if investigation_budget is not None:
+        get_settings().feedback_investigation_budget = investigation_budget
+
+    result = await run_feedback_update(
+        resolved_id,
+        evaluation_text,
+        db,
+    )
+    print(f"\nFeedback update complete (call {result.id}).")
+    if result.result_summary:
+        print(result.result_summary)
+
+
 async def _load_prior_checkpoints(question_id: str, from_stage: int, db: DB) -> dict:
     """Find the most recent grounding call for *question_id* and return its checkpoints."""
     from rumil.models import CallType
@@ -761,7 +884,7 @@ async def async_main():
         "--eval-type",
         dest="eval_type",
         default="default",
-        help="Evaluation prompt type (default: default). Options: default, grounding",
+        help="Evaluation prompt type (default: default). Options: default, grounding, feedback",
     )
     parser.add_argument(
         "--ground",
@@ -779,6 +902,19 @@ async def async_main():
             "Resume grounding from stage N (1-6), reusing checkpointed "
             "outputs from the most recent prior grounding run"
         ),
+    )
+    parser.add_argument(
+        "--feedback",
+        dest="feedback_call_id",
+        metavar="EVAL_CALL_ID",
+        help="Run feedback update pipeline on a completed feedback evaluation call",
+    )
+    parser.add_argument(
+        "--feedback-file",
+        dest="feedback_file",
+        nargs=2,
+        metavar=("QUESTION_ID", "FILE_PATH"),
+        help="Run feedback update pipeline using feedback text from a file",
     )
     parser.add_argument(
         "--show-evaluation",
@@ -981,6 +1117,19 @@ async def async_main():
         return
     elif args.ground_call_id:
         await cmd_ground(args.ground_call_id, db, from_stage=args.from_stage)
+        return
+    elif args.feedback_call_id:
+        await cmd_feedback_update(
+            args.feedback_call_id, db, investigation_budget=args.budget
+        )
+        return
+    elif args.feedback_file:
+        await cmd_feedback_update_from_file(
+            args.feedback_file[0],
+            args.feedback_file[1],
+            db,
+            investigation_budget=args.budget,
+        )
         return
     elif args.show_evaluation_id:
         await cmd_show_evaluation(args.show_evaluation_id, db)

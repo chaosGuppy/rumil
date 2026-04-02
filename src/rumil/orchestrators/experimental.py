@@ -541,8 +541,9 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         )
         subtree_ids = await collect_subtree_ids(question_id, self.db, graph=graph)
 
-        budget_line = f'You have a budget of **{budget} budget units** to allocate.'
-        if total_remaining is not None and total_remaining > budget:
+        dispatch_budget = budget - 1
+        budget_line = f'You have a budget of **{dispatch_budget} budget units** to allocate.'
+        if total_remaining is not None and total_remaining > dispatch_budget:
             budget_line += (
                 f' The overall question has **{total_remaining} budget remaining** '
                 'across future rounds.'
@@ -550,6 +551,16 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         task = (
             f'{budget_line}\n\n'
             f'Scope question ID: `{question_id}`\n\n'
+            '## Budget accounting\n\n'
+            'Multi-round scouts (find_considerations, scout_*) cost between 1 and '
+            'max_rounds budget units depending on early stopping. Dispatches '
+            'targeting a **subquestion** (not the scope question) will have an '
+            'automatic assess appended, adding 1 to the cost. So a scout with '
+            'max_rounds=3 targeting a subquestion costs up to 4 budget units. '
+            'Web research and assess dispatches cost exactly 1 each. '
+            'Recurse costs exactly the budget you assign.\n\n'
+            'Plan conservatively: your total worst-case cost across all dispatches '
+            f'must not exceed {dispatch_budget}.\n\n'
             f'{scores_text}\n\n'
             'You must make all your dispatch calls now — this is your only turn. '
             f'Each recurse call must have a budget of at least {MIN_TWOPHASE_BUDGET}.'
@@ -561,7 +572,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             )
 
         extra_defs: list[DispatchDef] = []
-        if budget >= MIN_TWOPHASE_BUDGET:
+        if dispatch_budget >= MIN_TWOPHASE_BUDGET:
             extra_defs.append(RECURSE_DISPATCH_DEF)
 
         result = await run_prioritization_call(

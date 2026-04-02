@@ -571,6 +571,36 @@ class DB:
                 )
         return None
 
+    async def resolve_link_id(self, link_id: str) -> str | None:
+        """Resolve a link ID to a full UUID. Handles both full UUIDs and
+        8-char short IDs. Returns the full UUID if found, or None."""
+        if not link_id:
+            return None
+        rows = _rows(
+            await self._execute(
+                self.client.table("page_links").select("id").eq("id", link_id)
+            )
+        )
+        if rows:
+            return rows[0]["id"]
+        if len(link_id) <= 8:
+            rows = _rows(
+                await self._execute(
+                    self.client.table("page_links")
+                    .select("id")
+                    .like("id", f"{link_id}%")
+                )
+            )
+            if len(rows) == 1:
+                return rows[0]["id"]
+            if len(rows) > 1:
+                log.warning(
+                    "Ambiguous short ID '%s' matches %d links",
+                    link_id,
+                    len(rows),
+                )
+        return None
+
     async def page_label(self, page_id: str) -> str:
         """Return a human-readable label like '"Summary text" [short_id]'."""
         page = await self.get_page(page_id)
@@ -643,6 +673,30 @@ class DB:
                     }
                 ).eq("id", old_id)
             )
+
+    async def resolve_supersession_chain(
+        self, page_id: str, max_depth: int = 10,
+    ) -> Page | None:
+        """Follow superseded_by links from *page_id* to the final active page.
+
+        Returns the end-of-chain (non-superseded) page, or ``None`` if the
+        chain is broken (missing page) or exceeds *max_depth*.
+        """
+        current_id = page_id
+        seen: set[str] = set()
+        for _ in range(max_depth):
+            page = await self.get_page(current_id)
+            if page is None:
+                return None
+            if not page.is_superseded:
+                return page if current_id != page_id else None
+            if page.superseded_by is None:
+                return None
+            if page.superseded_by in seen:
+                return None
+            seen.add(current_id)
+            current_id = page.superseded_by
+        return None
 
     # --- Links ---
 

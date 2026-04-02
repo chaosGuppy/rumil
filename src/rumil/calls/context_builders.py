@@ -129,10 +129,29 @@ class EmbeddingContext(ContextBuilder):
             require_judgement_for_questions=self._require_judgement_for_questions,
         )
         working_page_ids = result.page_ids
-        await _record_context_built(infra, working_page_ids, [])
+        preloaded_ids = infra.call.context_page_ids or []
+
+        context_text = result.context_text
+        if preloaded_ids:
+            parts: list[str] = []
+            for pid in preloaded_ids:
+                page = await infra.db.get_page(pid)
+                if page:
+                    parts += [
+                        "",
+                        "---",
+                        "",
+                        f"## Pre-loaded Page: `{pid[:8]}`",
+                        "",
+                        await format_page(page, PageDetail.CONTENT, db=infra.db),
+                    ]
+            context_text += "\n".join(parts)
+
+        await _record_context_built(infra, working_page_ids, preloaded_ids)
         return ContextResult(
-            context_text=result.context_text,
+            context_text=context_text,
             working_page_ids=working_page_ids,
+            preloaded_ids=preloaded_ids,
         )
 
 

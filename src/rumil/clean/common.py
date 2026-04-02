@@ -78,7 +78,12 @@ class UpdateOperation(BaseModel):
     in_light_of: list[str] = Field(
         default_factory=list,
         description=(
-            "For reassess_claims: page IDs whose content should inform the reassessment. "
+            "For reassess_claims / reassess_question: page IDs whose content "
+            "should inform the reassessment. The update plan defines a chain "
+            "of updates — each operation's in_light_of should list the "
+            "updated pages that directly influence it. If page A depends on "
+            "page B only via an intermediate page C, B should not appear in "
+            "A's in_light_of (C is sufficient). "
             "If a page ID points to a question with an active judgement, "
             "the judgement is used instead."
         ),
@@ -198,7 +203,9 @@ async def execute_update_plan(
                         op.page_ids, op.in_light_of, op.guidance, call, db, trace
                     )
                 elif op.operation == "reassess_question":
-                    await reassess_question(op.page_id, call, db, trace)
+                    await reassess_question(
+                        op.page_id, op.in_light_of, call, db, trace
+                    )
                 else:
                     log.warning("Unknown operation type: %s", op.operation)
 
@@ -326,11 +333,17 @@ async def reassess_claim(
 
 async def reassess_question(
     page_id: str,
+    in_light_of: Sequence[str],
     call: Call,
     db: DB,
     trace: CallTrace,
 ) -> None:
-    """Reassess a question's judgement by dispatching an AssessCall."""
+    """Reassess a question's judgement by dispatching an AssessCall.
+
+    *in_light_of* page IDs are resolved (questions → latest judgement) and
+    passed as ``context_page_ids`` on the child assess call so they appear
+    fully expanded in the assessment context.
+    """
     resolved_id = await db.resolve_page_id(page_id)
     if not resolved_id:
         log.warning("Could not resolve question page ID: %s", page_id)
@@ -340,10 +353,14 @@ async def reassess_question(
         log.warning("Question page %s not found", page_id)
         return
 
+    context_pages = await resolve_in_light_of(in_light_of, db)
+    context_page_ids = [p.id for p in context_pages]
+
     assess_call = await db.create_call(
         CallType.ASSESS,
         scope_page_id=resolved_id,
         parent_call_id=call.id,
+        context_page_ids=context_page_ids,
     )
     cls = ASSESS_CALL_CLASSES[get_settings().assess_call_variant]
     assess = cls(resolved_id, assess_call, db)

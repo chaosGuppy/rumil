@@ -251,7 +251,7 @@ async def test_concurrent_dispatch_failure_recorded_in_trace(
     dispatches = [[_assess_dispatch(question_page.id)]]
     call_count = 0
 
-    async def fake_get_next_batch(question_id, budget, parent_call_id=None):
+    async def fake_get_next_batch(question_id, budget, parent_call_id=None, **kwargs):
         nonlocal call_count
         call_count += 1
         if call_count == 1:

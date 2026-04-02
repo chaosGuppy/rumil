@@ -53,7 +53,9 @@ class LLMOrchestrator(BaseOrchestrator):
                     break
 
                 round_budget = await self._paced_budget(remaining)
-                result = await self._get_next_batch(root_question_id, round_budget)
+                result = await self._get_next_batch(
+                    root_question_id, round_budget, total_remaining=remaining,
+                )
                 if not result.dispatch_sequences:
                     break
 
@@ -73,12 +75,16 @@ class LLMOrchestrator(BaseOrchestrator):
         question_id: str,
         budget: int,
         parent_call_id: str | None = None,
+        total_remaining: int | None = None,
     ) -> PrioritizationResult:
         if self._cursor >= len(self._plan):
             if not self._first_call and not self._executed_since_last_plan:
                 return PrioritizationResult(dispatch_sequences=[])
 
-            await self._run_prioritization(question_id, budget, parent_call_id)
+            await self._run_prioritization(
+                question_id, budget, parent_call_id,
+                total_remaining=total_remaining,
+            )
             self._first_call = False
             self._executed_since_last_plan = False
 
@@ -110,6 +116,7 @@ class LLMOrchestrator(BaseOrchestrator):
         question_id: str,
         budget: int,
         parent_call_id: str | None,
+        total_remaining: int | None = None,
     ) -> None:
         p_call = await self.db.create_call(
             CallType.PRIORITIZATION,
@@ -125,6 +132,7 @@ class LLMOrchestrator(BaseOrchestrator):
             budget=budget,
             db=self.db,
             broadcaster=self.broadcaster,
+            total_remaining=total_remaining,
         )
 
         self._plan = list(plan.get('dispatches', []))
@@ -184,12 +192,18 @@ class LLMOrchestrator(BaseOrchestrator):
             workspace=Workspace.PRIORITIZATION,
         )
 
+        if get_settings().budget_pacing_enabled:
+            ct, _ = self._sub_budget_ledger.get(resolved, (0, 0))
+            sub_remaining = ct - prev_used
+        else:
+            sub_remaining = None
         plan = await run_prioritization(
             scope_question_id=resolved,
             call=p_call,
             budget=sub_budget,
             db=self.db,
             broadcaster=self.broadcaster,
+            total_remaining=sub_remaining,
         )
 
         sub_dispatches = list(plan.get('dispatches', []))

@@ -97,7 +97,7 @@ def _log_before_retry(retry_state: RetryCallState) -> None:
 _api_retry = retry(
     retry=retry_if_exception(_is_retryable),
     stop=_stop_after_status_retries,
-    wait=wait_exponential(multiplier=1, min=1, max=16),
+    wait=wait_exponential(multiplier=1, min=1, max=60),
     before_sleep=_log_before_retry,
     reraise=True,
 )

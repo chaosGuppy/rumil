@@ -151,7 +151,9 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
                     break
 
                 round_budget = await self._paced_budget(effective)
-                result = await self._get_next_batch(claim_id, round_budget)
+                result = await self._get_next_batch(
+                    claim_id, round_budget, total_remaining=effective,
+                )
                 if not result.dispatch_sequences and not result.children:
                     break
 
@@ -245,12 +247,16 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
         claim_id: str,
         budget: int,
         parent_call_id: str | None = None,
+        total_remaining: int | None = None,
     ) -> 'PrioritizationResult':
 
         if self._invocation == 0:
             self._invocation += 1
             if await self._is_new_claim(claim_id):
-                return await self._phase1(claim_id, budget, parent_call_id)
+                return await self._phase1(
+                    claim_id, budget, parent_call_id,
+                    total_remaining=total_remaining,
+                )
             await self._cancel_initial_call()
             self._executed_since_last_plan = True
 
@@ -259,13 +265,17 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
 
         self._executed_since_last_plan = False
         self._invocation += 1
-        return await self._phase2(claim_id, budget, self._parent_call_id)
+        return await self._phase2(
+            claim_id, budget, self._parent_call_id,
+            total_remaining=total_remaining,
+        )
 
     async def _phase1(
         self,
         claim_id: str,
         budget: int,
         parent_call_id: str | None,
+        total_remaining: int | None = None,
     ) -> 'PrioritizationResult':
 
         phase1_budget = budget
@@ -303,9 +313,17 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
         set_trace(trace)
         await trace.record(ContextBuiltEvent(budget=phase1_budget))
 
-        task = (
+        budget_line = (
             f'You have a budget of **{phase1_budget} research calls** to distribute '
-            'among the dispatch tools below.\n\n'
+            'among the dispatch tools below.'
+        )
+        if total_remaining is not None and total_remaining > phase1_budget:
+            budget_line += (
+                f' The overall question has **{total_remaining} budget remaining** '
+                'across future rounds.'
+            )
+        task = (
+            f'{budget_line}\n\n'
             f'Scope claim ID: `{claim_id}`\n\n'
             'Your job is to call the dispatch tools to fan out exploratory research on '
             'this claim. All scout dispatches automatically target the scope claim. '
@@ -374,6 +392,7 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
         claim_id: str,
         budget: int,
         parent_call_id: str | None,
+        total_remaining: int | None = None,
     ) -> 'PrioritizationResult':
         from rumil.orchestrators.common import PrioritizationResult
         from rumil.orchestrators.two_phase import TwoPhaseOrchestrator
@@ -537,8 +556,14 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
         )
         subtree_ids = await collect_subtree_ids(claim_id, self.db, graph=graph)
 
+        budget_line = f'You have a budget of **{budget} budget units** to allocate.'
+        if total_remaining is not None and total_remaining > budget:
+            budget_line += (
+                f' The overall question has **{total_remaining} budget remaining** '
+                'across future rounds.'
+            )
         task = (
-            f'You have a budget of **{budget} budget units** to allocate.\n\n'
+            f'{budget_line}\n\n'
             f'Scope claim ID: `{claim_id}`\n\n'
             f'{scores_text}\n\n'
             'You must make all your dispatch calls now — this is your only turn. '

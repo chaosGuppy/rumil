@@ -8,13 +8,13 @@ from rumil.constants import compute_round_budget
 @pytest.mark.parametrize(
     "total, used, expected",
     [
-        (250, 0, 25),
-        (250, 74, 65),
+        (250, 0, 60),
+        (250, 74, 72),
         (250, 170, 40),
         (250, 204, 46),
         (250, 250, 0),
-        (20, 0, 10),
-        (10, 0, 5),
+        (20, 0, 20),
+        (10, 0, 10),
         (5, 0, 5),
         (0, 0, 0),
         (1, 0, 1),

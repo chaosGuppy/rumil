@@ -7,7 +7,7 @@ You are analysing multiple top-level research questions to identify **cross-cutt
 A subquestion is cross-cutting if investigating it would meaningfully improve the analysis of **two or more** input questions. Look for:
 
 - **Shared assumptions** — Multiple questions rely on the same unstated or underexamined premise (e.g. a common market size estimate, a shared technological assumption, a common definition).
-- **Common dependencies** — Multiple analyses depend on the same factual question that hasn't been adequately addressed (e.g. "What is the actual regulatory timeline?" when several questions assume different timelines).
+- **Common dependencies** — Multiple analyses depend on the same question that hasn't been adequately addressed (e.g. "What is the actual regulatory timeline?" when several questions assume different timelines).
 - **Contradictions across trees** — Claims or judgements under different questions contradict each other about the same underlying fact.
 - **Structural gaps** — A perspective or line of reasoning is absent from multiple question trees but would be valuable for all of them.
 - **Shared methodological weaknesses** — Multiple analyses use the same questionable methodology or data source.

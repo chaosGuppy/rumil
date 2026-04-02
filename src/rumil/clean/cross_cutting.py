@@ -40,9 +40,11 @@ from rumil.orchestrators.experimental import ExperimentalOrchestrator
 from rumil.sdk_agent import SdkAgentConfig, run_sdk_agent
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
-from rumil.tracing.trace_events import UpdatePlanCreatedEvent
+from rumil.tracing.trace_events import (
+    CrossCuttingAnalysisCompleteEvent,
+    UpdatePlanCreatedEvent,
+)
 from rumil.tracing.tracer import CallTrace
-from rumil.workspace_map import build_workspace_map
 
 log = logging.getLogger(__name__)
 
@@ -272,19 +274,13 @@ def _make_investigate_cross_cutting_tool(
 
 
 async def _build_multi_question_context(questions: Sequence[Page], db: DB) -> str:
-    """Build context showing the workspace map and local graph for each input question."""
-    ws_map_text, _ = await build_workspace_map(db)
-
+    """Build context showing the local graph for each input question."""
     question_sections: list[str] = []
     for q in questions:
         graph_text = await explore_page_impl(q.id, db)
         question_sections.append(f"### `{q.id[:8]}` — {q.headline}\n\n{graph_text}")
 
-    return (
-        "## Workspace map\n\n"
-        f"{ws_map_text}\n\n"
-        "## Input questions\n\n" + "\n\n---\n\n".join(question_sections)
-    )
+    return "## Input questions\n\n" + "\n\n---\n\n".join(question_sections)
 
 
 async def _analyze_and_investigate(
@@ -487,9 +483,24 @@ async def run_cross_cutting_update(
                 trace=trace,
                 broadcaster=broadcaster,
             )
+            for sq in analysis.subquestions:
+                parents = ", ".join(sq.parent_question_ids)
+                log.info(
+                    "  Cross-cutting subquestion [%s] '%s' (parents: [%s]): %s",
+                    sq.question_id,
+                    sq.headline[:80],
+                    parents,
+                    sq.judgement_summary[:120],
+                )
             log.info(
                 "Stage 1-2 complete: %d cross-cutting subquestions investigated",
                 len(analysis.subquestions),
+            )
+            await trace.record(
+                CrossCuttingAnalysisCompleteEvent(
+                    subquestion_count=len(analysis.subquestions),
+                    subquestions=[sq.model_dump() for sq in analysis.subquestions],
+                )
             )
         else:
             analysis = CrossCuttingAnalysis(

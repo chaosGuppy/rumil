@@ -221,6 +221,14 @@ class WebResearchCompleteEvent(BaseModel):
     findings: list[dict] = []
 
 
+class CrossCuttingAnalysisCompleteEvent(BaseModel):
+    event: Literal["cross_cutting_analysis_complete"] = (
+        "cross_cutting_analysis_complete"
+    )
+    subquestion_count: int = 0
+    subquestions: list[dict] = []
+
+
 TraceEvent = Annotated[
     ContextBuiltEvent
     | MovesExecutedEvent
@@ -243,6 +251,7 @@ TraceEvent = Annotated[
     | UpdatePlanCreatedEvent
     | ClaimReassessedEvent
     | GroundingTasksGeneratedEvent
-    | WebResearchCompleteEvent,
+    | WebResearchCompleteEvent
+    | CrossCuttingAnalysisCompleteEvent,
     Field(discriminator="event"),
 ]

@@ -63,7 +63,7 @@ fi
 if $deploy_frontend; then
     echo "==> Building frontend (pnpm build)..."
     cd "$REPO_ROOT/frontend"
-    pnpm build
+    NEXT_PUBLIC_API_URL="" pnpm build
 
     echo "==> Building frontend image (linux/amd64)..."
     docker build --platform linux/amd64 \

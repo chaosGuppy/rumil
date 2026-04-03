@@ -59,3 +59,9 @@ The key operation for this pipeline is `reassess_claims` (plural). It takes mult
 **Updating dependent claims:** After claims are updated (by earlier waves), upstream claims that cite them may need updating too. Use `reassess_claims` on those upstream claims.
 
 **Reassessing questions:** Use `reassess_question` (with `page_id`) to re-run the judgement for a question after its considerations have been updated.
+
+**Substituting a superior source:** When the feedback says to use a specific page as the source of analysis for a subject (e.g. "use page `abcd1234` as the basis for X"), you need to propagate that substitution through the dependency chain:
+
+1. Use `explore_page` to trace which claims currently rely on the inferior source, and which questions' judgements depend on those claims.
+2. Use `reassess_claims` on the affected claims with the superior page in `in_light_of` and `guidance` explaining the substitution (e.g. "Rewrite this claim to draw on the analysis in `abcd1234` instead of `efgh5678`").
+3. After claims are updated, use `reassess_question` on each question whose judgement depended on the updated claims. Pass the superior page and/or the updated claims in `in_light_of`. Remember that judgements can depend on other judgements — if a parent question's judgement cites a child question's judgement that was based on the inferior source, you need to `reassess_question` on the child first, then the parent in a later wave.

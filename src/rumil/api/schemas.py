@@ -261,6 +261,7 @@ class RunTraceTreeOut(BaseModel):
     question: Page | None
     calls: list[CallNodeOut]
     cost_usd: float | None = None
+    staged: bool = False
 
 
 class RunSummaryOut(BaseModel):

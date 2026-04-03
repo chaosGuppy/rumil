@@ -696,6 +696,16 @@ export type LlmExchangeEventOut = {
      * Cost Usd
      */
     cost_usd: number | null;
+    /**
+     * Has Thinking
+     */
+    has_thinking: boolean | null;
+    /**
+     * Tool Uses
+     */
+    tool_uses: Array<{
+        [key: string]: unknown;
+    }> | null;
 };
 
 /**
@@ -1228,6 +1238,10 @@ export type RunTraceTreeOut = {
      * Cost Usd
      */
     cost_usd?: number | null;
+    /**
+     * Staged
+     */
+    staged?: boolean;
 };
 
 /**

@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import type { RunTraceTreeOut, CallNodeOut } from "@/api/types.gen";
 import { useRunTraceTree } from "@/lib/use-run-trace";
+import { useStagedRun } from "@/lib/staged-run-context";
 import { CallNode, HashTargetProvider, type TreeNode } from "./call-node";
 
 export type SequenceNode = {
@@ -89,6 +90,13 @@ export function TraceViewer({
 }) {
   const trace = useRunTraceTree(runId, initialTrace, realtimeConfig);
   const tree = useMemo(() => buildTree(trace.calls), [trace.calls]);
+  const { setActiveStagedRunId } = useStagedRun();
+
+  useEffect(() => {
+    if (trace.staged) {
+      setActiveStagedRunId(runId);
+    }
+  }, [trace.staged, runId, setActiveStagedRunId]);
 
   return (
     <HashTargetProvider>

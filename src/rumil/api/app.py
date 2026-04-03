@@ -390,11 +390,15 @@ async def get_run_trace_tree(run_id: str):
             )
         )
     total_cost = sum(c.cost_usd or 0 for c in calls)
+    run_resp = await db.client.table("runs").select("staged").eq("id", run_id).execute()
+    run_data: list[dict[str, object]] = run_resp.data or []  # type: ignore[assignment]
+    is_staged = bool(run_data and run_data[0].get("staged"))
     return RunTraceTreeOut(
         run_id=run_id,
         question=question_page,
         calls=nodes,
         cost_usd=total_cost if total_cost > 0 else None,
+        staged=is_staged,
     )
 
 

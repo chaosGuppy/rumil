@@ -13,6 +13,7 @@ import type {
   PageRef,
 } from "@/api/types.gen";
 import { CLIENT_API_BASE as QUERY_API_BASE } from "@/api-config";
+import { useStagedRun } from "@/lib/staged-run-context";
 import { traceKeys } from "@/lib/queries";
 import type { SequenceNode } from "./trace-viewer";
 
@@ -169,8 +170,12 @@ function getDuration(call: { created_at: string; completed_at?: string | null })
 function PageChip({ page }: { page: PageRef }) {
   const short = page.id.slice(0, 8);
   const label = page.headline || short;
+  const { activeStagedRunId } = useStagedRun();
+  const href = activeStagedRunId
+    ? `/pages/${page.id}?staged_run_id=${activeStagedRunId}`
+    : `/pages/${page.id}`;
   return (
-    <Link href={`/pages/${page.id}`} className="trace-page-chip" title={short}>
+    <Link href={href} className="trace-page-chip" title={short}>
       {label}
     </Link>
   );

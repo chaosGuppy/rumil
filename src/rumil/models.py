@@ -73,6 +73,8 @@ class CallType(str, Enum):
     SCOUT_C_CRUXES = "scout_c_cruxes"
     SCOUT_C_RELEVANT_EVIDENCE = "scout_c_relevant_evidence"
     SCOUT_C_STRESS_TEST_CASES = "scout_c_stress_test_cases"
+    SCOUT_C_ROBUSTIFY = "scout_c_robustify"
+    SCOUT_C_STRENGTHEN = "scout_c_strengthen"
     WEB_RESEARCH = "web_research"
     EVALUATE = "evaluate"
     GROUNDING_FEEDBACK = "grounding_feedback"
@@ -97,6 +99,8 @@ DISPATCHABLE_CALL_TYPES: set[CallType] = {
     CallType.SCOUT_C_CRUXES,
     CallType.SCOUT_C_RELEVANT_EVIDENCE,
     CallType.SCOUT_C_STRESS_TEST_CASES,
+    CallType.SCOUT_C_ROBUSTIFY,
+    CallType.SCOUT_C_STRENGTHEN,
     CallType.WEB_RESEARCH,
 }
 
@@ -113,6 +117,7 @@ class LinkType(str, Enum):
     CHILD_QUESTION = "child_question"  # question decomposes into sub-question
     SUPERSEDES = "supersedes"  # page replaces another
     RELATED = "related"  # general relation
+    VARIANT = "variant"  # more robust variation of a claim
     SUMMARIZES = "summarizes"  # summary page covers a question subtree
     CITES = "cites"  # claim cites a source
 
@@ -128,6 +133,7 @@ class MoveType(str, Enum):
     LINK_CONSIDERATION = "LINK_CONSIDERATION"
     LINK_CHILD_QUESTION = "LINK_CHILD_QUESTION"
     LINK_RELATED = "LINK_RELATED"
+    LINK_VARIANT = "LINK_VARIANT"
     FLAG_FUNNINESS = "FLAG_FUNNINESS"
     REPORT_DUPLICATE = "REPORT_DUPLICATE"
     LOAD_PAGE = "LOAD_PAGE"
@@ -282,6 +288,14 @@ class ScoutCRelevantEvidenceDispatchPayload(
 
 
 class ScoutCStressTestCasesDispatchPayload(ScopeOnlyDispatchPayload, _MultiRoundFields):
+    pass
+
+
+class ScoutCRobustifyDispatchPayload(ScopeOnlyDispatchPayload, _MultiRoundFields):
+    pass
+
+
+class ScoutCStrengthenDispatchPayload(ScopeOnlyDispatchPayload, _MultiRoundFields):
     pass
 
 

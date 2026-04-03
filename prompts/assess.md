@@ -10,8 +10,10 @@ Pages you need should already be loaded from the preliminary phase. Proceed dire
 
 Produce a **Judgement**. It will be automatically linked to the scope question. Structure your judgement content as:
 
-1. **Consideration landscape** — briefly characterise the state of the considerations (what's on each side, what's uncertain)
-2. **Weighing** — explain how you weigh the considerations against each other and why
+1. **Possibility space** — briefly outline the live options you are considering
+2. **Consideration landscape** — briefly characterise the state of the abstract considerations (what pushes in which direction, how strong it seems)
+3. **Evidence landscape** — briefly explain the key evidence, and the implications that has for the possibilities (use Bayesian analysis if appropriate)
+2. **Weighing** — explain how you weigh the considerations and evidence against each other and why
 3. **Conclusion** — your position, stated clearly even if uncertain. Articulate your uncertainty clearly and in a structured way. Very often, it is a good idea to produce a probability breakdown between different possibilities or scenarios, backed by toy probability models where appropriate.
 4. **Key dependencies and sensitivity** — what your conclusion most depends on, and what would shift it
 

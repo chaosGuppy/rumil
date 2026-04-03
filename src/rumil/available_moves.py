@@ -111,6 +111,16 @@ PRESETS: dict[str, AvailableMoves] = {
             MoveType.LINK_CONSIDERATION,
             MoveType.LOAD_PAGE,
         ],
+        CallType.SCOUT_C_ROBUSTIFY: [
+            MoveType.CREATE_CLAIM,
+            MoveType.LINK_VARIANT,
+            MoveType.LOAD_PAGE,
+        ],
+        CallType.SCOUT_C_STRENGTHEN: [
+            MoveType.CREATE_CLAIM,
+            MoveType.LINK_VARIANT,
+            MoveType.LOAD_PAGE,
+        ],
         CallType.SCOUT_CONCEPTS: [
             MoveType.PROPOSE_CONCEPT,
             MoveType.LOAD_PAGE,
@@ -222,6 +232,16 @@ PRESETS: dict[str, AvailableMoves] = {
         CallType.SCOUT_C_STRESS_TEST_CASES: [
             MoveType.CREATE_SCOUT_QUESTION,
             MoveType.LINK_CONSIDERATION,
+            MoveType.LOAD_PAGE,
+        ],
+        CallType.SCOUT_C_ROBUSTIFY: [
+            MoveType.CREATE_CLAIM,
+            MoveType.LINK_VARIANT,
+            MoveType.LOAD_PAGE,
+        ],
+        CallType.SCOUT_C_STRENGTHEN: [
+            MoveType.CREATE_CLAIM,
+            MoveType.LINK_VARIANT,
             MoveType.LOAD_PAGE,
         ],
         CallType.SCOUT_CONCEPTS: [

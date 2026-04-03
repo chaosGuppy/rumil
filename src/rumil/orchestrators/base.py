@@ -16,6 +16,8 @@ from rumil.calls.call_registry import (
     SCOUT_C_HOW_FALSE_CALL_CLASSES,
     SCOUT_C_HOW_TRUE_CALL_CLASSES,
     SCOUT_C_RELEVANT_EVIDENCE_CALL_CLASSES,
+    SCOUT_C_ROBUSTIFY_CALL_CLASSES,
+    SCOUT_C_STRENGTHEN_CALL_CLASSES,
     SCOUT_C_STRESS_TEST_CASES_CALL_CLASSES,
     SCOUT_DEEP_QUESTIONS_CALL_CLASSES,
     SCOUT_ESTIMATES_CALL_CLASSES,
@@ -36,6 +38,8 @@ from rumil.models import (
     ScoutCHowFalseDispatchPayload,
     ScoutCHowTrueDispatchPayload,
     ScoutCRelevantEvidenceDispatchPayload,
+    ScoutCRobustifyDispatchPayload,
+    ScoutCStrengthenDispatchPayload,
     ScoutCStressTestCasesDispatchPayload,
     ScoutDeepQuestionsDispatchPayload,
     ScoutDispatchPayload,
@@ -404,6 +408,26 @@ class BaseOrchestrator(ABC):
             child_call_id = await self._run_simple_call_dispatch(
                 resolved, CallType.SCOUT_C_STRESS_TEST_CASES,
                 SCOUT_C_STRESS_TEST_CASES_CALL_CLASSES, parent_call_id,
+                force=force, call_id=call_id,
+                sequence_id=sequence_id, sequence_position=sequence_position,
+                max_rounds=p.max_rounds, fruit_threshold=p.fruit_threshold,
+            )
+
+        elif isinstance(p, ScoutCRobustifyDispatchPayload):
+            log.info('Dispatch: scout_c_robustify on %s (max_rounds=%d) — %s', d_label, p.max_rounds, p.reason)
+            child_call_id = await self._run_simple_call_dispatch(
+                resolved, CallType.SCOUT_C_ROBUSTIFY,
+                SCOUT_C_ROBUSTIFY_CALL_CLASSES, parent_call_id,
+                force=force, call_id=call_id,
+                sequence_id=sequence_id, sequence_position=sequence_position,
+                max_rounds=p.max_rounds, fruit_threshold=p.fruit_threshold,
+            )
+
+        elif isinstance(p, ScoutCStrengthenDispatchPayload):
+            log.info('Dispatch: scout_c_strengthen on %s (max_rounds=%d) — %s', d_label, p.max_rounds, p.reason)
+            child_call_id = await self._run_simple_call_dispatch(
+                resolved, CallType.SCOUT_C_STRENGTHEN,
+                SCOUT_C_STRENGTHEN_CALL_CLASSES, parent_call_id,
                 force=force, call_id=call_id,
                 sequence_id=sequence_id, sequence_position=sequence_position,
                 max_rounds=p.max_rounds, fruit_threshold=p.fruit_threshold,

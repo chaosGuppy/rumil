@@ -24,6 +24,8 @@ scout_c_relevant_evidence: Identify evidence worth gathering that bears on the m
 
 scout_c_stress_test_cases: Identify concrete scenarios that could serve as hard tests for the claim, especially boundary cases where competing stories predict different outcomes. Produces questions (e.g. "what does scenario S tell us about the claim?").
 
+scout_c_robustify: Suggest more robust variations of the claim — lower bounds instead of point estimates, conditional versions, narrower scope where evidence is strongest, or weaker quantifiers. Produces variant claims linked to the original, trading some precision or scope for greater defensibility while remaining substantive.
+
 
 How Scouts Work
 
@@ -49,6 +51,8 @@ The natural starting point is usually scout_c_how_true and scout_c_how_false, si
 scout_c_cruxes and scout_c_relevant_evidence are most valuable after the how-true and how-false stories exist, but can still be dispatched in the first phase if budget allows.
 
 scout_c_stress_test_cases can be dispatched at any point — it doesn't strictly require the other scouts to have run first, though it benefits from having competing stories to test between.
+
+scout_c_robustify is most useful after how-true and how-false stories exist, when the claim has been explored enough to identify its fragilities. It can also be useful early if the claim is obviously over-precise or overly strong.
 
 
 Be conscious of the total budget available for the research. As a rule of thumb:

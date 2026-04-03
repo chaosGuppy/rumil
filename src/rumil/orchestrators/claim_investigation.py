@@ -15,7 +15,7 @@ from rumil.calls.dispatches import (
     RECURSE_DISPATCH_DEF,
 )
 from rumil.calls.prioritization import run_prioritization_call
-from rumil.constants import MIN_TWOPHASE_BUDGET
+from rumil.constants import LAST_CALL_THRESHOLD, MIN_TWOPHASE_BUDGET
 from rumil.context import build_prioritization_context, collect_subtree_ids
 from rumil.database import DB
 from rumil.llm import (
@@ -150,9 +150,14 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
                 if effective <= 0:
                     break
 
-                round_budget = await self._paced_budget(effective)
+                last_call = effective < LAST_CALL_THRESHOLD
+                if last_call:
+                    round_budget = effective
+                else:
+                    round_budget = await self._paced_budget(effective)
                 result = await self._get_next_batch(
                     claim_id, round_budget, total_remaining=effective,
+                    last_call=last_call,
                 )
                 if not result.dispatch_sequences and not result.children:
                     break
@@ -191,7 +196,7 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
 
                 self._executed_since_last_plan = True
 
-                if self._invocation > 1:
+                if self._invocation > 1 or last_call:
                     await assess_question(
                         claim_id, self.db,
                         parent_call_id=self._parent_call_id,
@@ -201,6 +206,9 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
                     )
                     if self._sequence_id is not None:
                         self._seq_position += 2
+
+                if last_call:
+                    break
         finally:
             await self._teardown()
             await own_db.close()
@@ -248,6 +256,7 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
         budget: int,
         parent_call_id: str | None = None,
         total_remaining: int | None = None,
+        last_call: bool = False,
     ) -> 'PrioritizationResult':
 
         if self._invocation == 0:
@@ -256,6 +265,7 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
                 return await self._phase1(
                     claim_id, budget, parent_call_id,
                     total_remaining=total_remaining,
+                    last_call=last_call,
                 )
             await self._cancel_initial_call()
             self._executed_since_last_plan = True
@@ -268,6 +278,7 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
         return await self._phase2(
             claim_id, budget, self._parent_call_id,
             total_remaining=total_remaining,
+            last_call=last_call,
         )
 
     async def _phase1(
@@ -276,6 +287,7 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
         budget: int,
         parent_call_id: str | None,
         total_remaining: int | None = None,
+        last_call: bool = False,
     ) -> 'PrioritizationResult':
 
         phase1_budget = budget
@@ -317,7 +329,13 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
             f'You have a budget of **{phase1_budget} research calls** to distribute '
             'among the dispatch tools below.'
         )
-        if total_remaining is not None and total_remaining > phase1_budget:
+        if last_call:
+            budget_line += (
+                ' **This is your FINAL allocation — there will be no further '
+                'research rounds after this. Spend the full budget on the '
+                'highest-value work.**'
+            )
+        elif total_remaining is not None and total_remaining > phase1_budget:
             budget_line += (
                 f' The overall question has **{total_remaining} budget remaining** '
                 'across future rounds.'
@@ -393,13 +411,14 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
         budget: int,
         parent_call_id: str | None,
         total_remaining: int | None = None,
+        last_call: bool = False,
     ) -> 'PrioritizationResult':
         from rumil.orchestrators.common import PrioritizationResult
         from rumil.orchestrators.two_phase import TwoPhaseOrchestrator
 
         log.info(
-            'ClaimInvestigationOrchestrator phase2: claim=%s, budget=%d',
-            claim_id[:8], budget,
+            'ClaimInvestigationOrchestrator phase2: claim=%s, budget=%d, last_call=%s',
+            claim_id[:8], budget, last_call,
         )
 
         p_call = await self.db.create_call(
@@ -557,7 +576,13 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
         subtree_ids = await collect_subtree_ids(claim_id, self.db, graph=graph)
 
         budget_line = f'You have a budget of **{budget} budget units** to allocate.'
-        if total_remaining is not None and total_remaining > budget:
+        if last_call:
+            budget_line += (
+                ' **This is your FINAL allocation — there will be no further '
+                'research rounds after this. Spend the full budget on the '
+                'highest-value remaining work.**'
+            )
+        elif total_remaining is not None and total_remaining > budget:
             budget_line += (
                 f' The overall question has **{total_remaining} budget remaining** '
                 'across future rounds.'

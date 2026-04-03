@@ -10,7 +10,7 @@ from rumil.available_calls import get_available_calls_preset
 from rumil.calls.common import mark_call_completed
 from rumil.calls.dispatches import DISPATCH_DEFS, DispatchDef, RECURSE_CLAIM_DISPATCH_DEF, RECURSE_DISPATCH_DEF
 from rumil.calls.prioritization import run_prioritization_call
-from rumil.constants import MIN_TWOPHASE_BUDGET
+from rumil.constants import LAST_CALL_THRESHOLD, MIN_TWOPHASE_BUDGET
 from rumil.context import build_prioritization_context, collect_subtree_ids
 from rumil.database import DB
 from rumil.llm import LLMExchangeMetadata, build_system_prompt, build_user_message, structured_call
@@ -142,9 +142,14 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                 if effective <= 0:
                     break
 
-                round_budget = await self._paced_budget(effective)
+                last_call = effective < LAST_CALL_THRESHOLD
+                if last_call:
+                    round_budget = effective
+                else:
+                    round_budget = await self._paced_budget(effective)
                 result = await self._get_next_batch(
                     root_question_id, round_budget, total_remaining=effective,
+                    last_call=last_call,
                 )
                 if not result.dispatch_sequences and not result.children:
                     break
@@ -183,7 +188,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
 
                 self._executed_since_last_plan = True
 
-                if self._invocation > 1:
+                if self._invocation > 1 or last_call:
                     await assess_question(
                         root_question_id, self.db,
                         parent_call_id=self._parent_call_id,
@@ -193,6 +198,9 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                     )
                     if self._sequence_id is not None:
                         self._seq_position += 2
+
+                if last_call:
+                    break
         finally:
             await self._teardown()
             await own_db.close()
@@ -239,6 +247,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         budget: int,
         parent_call_id: str | None = None,
         total_remaining: int | None = None,
+        last_call: bool = False,
     ) -> PrioritizationResult:
         if self._invocation == 0:
             self._invocation += 1
@@ -246,6 +255,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                 return await self._phase1(
                     question_id, budget, parent_call_id,
                     total_remaining=total_remaining,
+                    last_call=last_call,
                 )
             await self._cancel_initial_call()
             self._executed_since_last_plan = True
@@ -258,6 +268,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         return await self._phase2(
             question_id, budget, self._parent_call_id,
             total_remaining=total_remaining,
+            last_call=last_call,
         )
 
     async def _phase1(
@@ -266,6 +277,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         budget: int,
         parent_call_id: str | None,
         total_remaining: int | None = None,
+        last_call: bool = False,
     ) -> PrioritizationResult:
         phase1_budget = budget
         log.info(
@@ -306,7 +318,13 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             f'You have a budget of **{phase1_budget} research calls** to distribute '
             'among the dispatch tools below.'
         )
-        if total_remaining is not None and total_remaining > phase1_budget:
+        if last_call:
+            budget_line += (
+                ' **This is your FINAL allocation — there will be no further '
+                'research rounds after this. Spend the full budget on the '
+                'highest-value work.**'
+            )
+        elif total_remaining is not None and total_remaining > phase1_budget:
             budget_line += (
                 f' The overall question has **{total_remaining} budget remaining** '
                 'across future rounds.'
@@ -381,10 +399,11 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         budget: int,
         parent_call_id: str | None,
         total_remaining: int | None = None,
+        last_call: bool = False,
     ) -> PrioritizationResult:
         log.info(
-            'TwoPhaseOrchestrator phase2: question=%s, budget=%d',
-            question_id[:8], budget,
+            'TwoPhaseOrchestrator phase2: question=%s, budget=%d, last_call=%s',
+            question_id[:8], budget, last_call,
         )
 
         p_call = await self.db.create_call(
@@ -582,9 +601,15 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             self.db, scope_question_id=question_id, graph=graph,
         )
         subtree_ids = await collect_subtree_ids(question_id, self.db, graph=graph)
-        dispatch_budget = budget - 1
+        dispatch_budget = budget if last_call else budget - 1
         budget_line = f'You have a budget of **{dispatch_budget} budget units** to allocate.'
-        if total_remaining is not None and total_remaining > dispatch_budget:
+        if last_call:
+            budget_line += (
+                ' **This is your FINAL allocation — there will be no further '
+                'research rounds after this. Spend the full budget on the '
+                'highest-value remaining work.**'
+            )
+        elif total_remaining is not None and total_remaining > dispatch_budget:
             budget_line += (
                 f' The overall question has **{total_remaining} budget remaining** '
                 'across future rounds.'

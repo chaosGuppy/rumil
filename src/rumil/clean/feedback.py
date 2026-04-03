@@ -162,23 +162,6 @@ def _make_investigation_tools(
         parent_question_id = args["parent_question_id"]
         budget = args["budget"]
 
-        async with budget_lock:
-            if budget > budget_remaining:
-                return {
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": (
-                                f"Rejected: requested budget {budget} exceeds "
-                                f"remaining investigation budget of "
-                                f"{budget_remaining}. "
-                                f"Use a smaller budget or skip this investigation."
-                            ),
-                        }
-                    ]
-                }
-            budget_remaining -= budget
-
         if not question_id and not headline:
             return {
                 "content": [
@@ -202,6 +185,35 @@ def _make_investigation_tools(
                     }
                 ]
             }
+
+        if not headline:
+            resolved = await db.resolve_page_id(question_id)
+            if not resolved:
+                return {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": f"Question '{question_id}' not found.",
+                        }
+                    ]
+                }
+
+        async with budget_lock:
+            if budget > budget_remaining:
+                return {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": (
+                                f"Rejected: requested budget {budget} exceeds "
+                                f"remaining investigation budget of "
+                                f"{budget_remaining}. "
+                                f"Use a smaller budget or skip this investigation."
+                            ),
+                        }
+                    ]
+                }
+            budget_remaining -= budget
 
         if headline:
             parent_page = await db.get_page(parent_resolved)
@@ -229,15 +241,7 @@ def _make_investigation_tools(
             )
         else:
             resolved = await db.resolve_page_id(question_id)
-            if not resolved:
-                return {
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": f"Question '{question_id}' not found.",
-                        }
-                    ]
-                }
+            assert resolved  # validated before budget deduction
             page = await db.get_page(resolved)
             display_headline = page.headline if page else resolved[:8]
 

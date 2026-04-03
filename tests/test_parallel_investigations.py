@@ -120,6 +120,44 @@ async def test_collect_with_no_pending(investigation_tools):
     assert "no pending" in text.lower()
 
 
+async def test_validation_failure_does_not_leak_budget(investigation_tools):
+    """If validation fails (e.g. missing question_id), budget must not be consumed."""
+    investigate_tool, _ = investigation_tools
+
+    result = await investigate_tool.handler(
+        {
+            "question_id": "",
+            "headline": "",
+            "parent_question_id": "aaaa1111",
+            "budget": 50,
+        }
+    )
+    text = result["content"][0]["text"]
+    assert "error" in text.lower()
+
+    with (
+        patch("rumil.clean.feedback.link_pages", new_callable=AsyncMock),
+        patch("rumil.clean.feedback.ExperimentalOrchestrator") as MockOrch,
+    ):
+        mock_instance = MagicMock()
+        mock_instance.create_initial_call = AsyncMock(return_value="child-id")
+        mock_instance.run = AsyncMock()
+        mock_instance._parent_call_id = None
+        MockOrch.return_value = mock_instance
+
+        result = await investigate_tool.handler(
+            {
+                "question_id": "q0000001",
+                "parent_question_id": "aaaa1111",
+                "budget": 100,
+            }
+        )
+        text = result["content"][0]["text"]
+        assert "dispatched" in text.lower(), (
+            f"Full budget should still be available after validation failure, got: {text}"
+        )
+
+
 async def test_budget_rejection(investigation_tools):
     """Requesting more than available budget is rejected immediately."""
     investigate_tool, _ = investigation_tools

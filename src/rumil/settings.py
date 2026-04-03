@@ -80,6 +80,10 @@ class Settings(BaseSettings):
     abstract_page_char_budget: int = _capture_field(default=10_000)
     summary_page_char_budget: int = _capture_field(default=5_000)
     distillation_page_char_budget: int = _capture_field(default=3_000)
+
+    big_assess_full_page_char_budget: int | None = _capture_field(default=None)
+    big_assess_abstract_page_char_budget: int | None = _capture_field(default=None)
+    big_assess_summary_page_char_budget: int | None = _capture_field(default=None)
     full_page_similarity_floor: float = _capture_field(default=0.3)
     abstract_page_similarity_floor: float = _capture_field(default=0.2)
     summary_page_similarity_floor: float = _capture_field(default=0.1)

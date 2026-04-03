@@ -1,7 +1,11 @@
 """Assess call: synthesise considerations and render a judgement."""
 
 from rumil.calls.closing_reviewers import StandardClosingReview
-from rumil.calls.context_builders import EmbeddingContext, GraphContextWithPhase1
+from rumil.calls.context_builders import (
+    BigAssessContext,
+    EmbeddingContext,
+    GraphContextWithPhase1,
+)
 from rumil.calls.page_creators import SimpleAgentLoop
 from rumil.calls.stages import CallRunner, ClosingReviewer, ContextBuilder, PageCreator
 from rumil.models import CallType
@@ -48,3 +52,27 @@ class EmbeddingAssessCall(AssessCall):
             self.call_type,
             require_judgement_for_questions=True,
         )
+
+
+class BigAssessCall(AssessCall):
+    """Assess call that freshens connected pages before embedding-based assessment.
+
+    Resolves superseded links, reassesses stale dependencies, and checks for
+    higher-quality replacement pages via embedding search before building
+    the final assessment context.
+    """
+
+    context_builder_cls = BigAssessContext
+
+    def __init__(self, *args, guidance: str = "", **kwargs) -> None:
+        self._guidance = guidance
+        super().__init__(*args, **kwargs)
+
+    def _make_context_builder(self) -> ContextBuilder:
+        return BigAssessContext(self.call_type)
+
+    def task_description(self) -> str:
+        base = super().task_description()
+        if self._guidance:
+            return base + f"\n\n## Guidance\n\n{self._guidance}"
+        return base

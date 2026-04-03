@@ -886,6 +886,8 @@ async def build_embedding_based_context(
     db: DB,
     *,
     scope_question_id: str | None = None,
+    scope_detail: PageDetail | None = None,
+    scope_linked_detail: PageDetail | None = None,
     headline_only_ids: set[str] | None = None,
     full_page_char_budget: int | None = None,
     abstract_page_char_budget: int | None = None,
@@ -939,7 +941,12 @@ async def build_embedding_based_context(
         if scope_page:
             scope_section = (
                 '## Scope Question\n\n'
-                + await format_page(scope_page, PageDetail.ABSTRACT, db=db)
+                + await format_page(
+                    scope_page,
+                    scope_detail or PageDetail.ABSTRACT,
+                    linked_detail=scope_linked_detail or PageDetail.HEADLINE,
+                    db=db,
+                )
                 + '\n\n'
             )
             scope_page_ids = [scope_question_id]

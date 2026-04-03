@@ -1,6 +1,6 @@
 """Call types for the research workspace."""
 
-from rumil.calls.assess import AssessCall, EmbeddingAssessCall
+from rumil.calls.assess import AssessCall, BigAssessCall, EmbeddingAssessCall
 from rumil.calls.call_registry import (
     ASSESS_CALL_CLASSES,
     INGEST_CALL_CLASSES,
@@ -45,6 +45,7 @@ from rumil.calls.scout_web_questions import ScoutWebQuestionsCall
 __all__ = [
     "CallRunner",
     "AssessCall",
+    "BigAssessCall",
     "EmbeddingAssessCall",
     "IngestCall",
     "EmbeddingIngestCall",

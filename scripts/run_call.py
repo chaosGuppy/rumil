@@ -118,7 +118,11 @@ async def run_call(args: argparse.Namespace, db: DB, question_id: str) -> None:
             scope_page_id=question_id,
         )
         cls = ASSESS_CALL_CLASSES[settings.assess_call_variant]
-        assess = cls(question_id, call, db, up_to_stage=up_to_stage)
+        extra_kwargs: dict = {}
+        guidance = getattr(args, "guidance", None)
+        if guidance:
+            extra_kwargs["guidance"] = guidance
+        assess = cls(question_id, call, db, up_to_stage=up_to_stage, **extra_kwargs)
         await assess.run()
 
     elif call_type == "web-research":
@@ -370,6 +374,11 @@ def main() -> None:
         action="store_true",
         dest="no_stage",
         help="Run without staging (default: runs are staged)",
+    )
+    parser.add_argument(
+        "--guidance",
+        default="",
+        help="Optional guidance text appended to the assess task prompt (big assess only)",
     )
     parser.add_argument(
         "--up-to-stage",

@@ -2,14 +2,21 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import re
 from collections.abc import Sequence
 
+from pydantic import BaseModel, Field
+
 from rumil.calls.common import (
+    ABSTRACT_INSTRUCTION,
+    PageSummaryItem,
     _format_loaded_pages,
     _run_phase1,
     resolve_page_refs,
     run_single_call,
+    save_page_abstracts,
 )
 from rumil.calls.stages import CallInfra, ContextBuilder, ContextResult
 from rumil.context import (
@@ -20,22 +27,34 @@ from rumil.context import (
     format_preloaded_pages,
 )
 from rumil.database import DB
-from rumil.llm import build_system_prompt, build_user_message
+from rumil.embeddings import search_pages
+from rumil.llm import (
+    LLMExchangeMetadata,
+    build_system_prompt,
+    build_user_message,
+    structured_call,
+)
 from rumil.models import (
     Call,
     CallType,
+    LinkType,
     MoveType,
     Page,
     PageDetail,
+    PageLink,
+    PageType,
     FindConsiderationsMode,
 )
 from rumil.moves.base import MoveState
+from rumil.settings import get_settings
 from rumil.moves.registry import MOVES
 from rumil.page_graph import PageGraph
 from rumil.tracing.trace_events import ContextBuiltEvent
 from rumil.workspace_map import build_workspace_map
 
 log = logging.getLogger(__name__)
+
+_B2_SEMAPHORE = asyncio.Semaphore(15)
 
 
 async def _record_context_built(
@@ -597,4 +616,581 @@ class WebResearchEmbeddingContext(ContextBuilder):
         return ContextResult(
             context_text=context_text,
             working_page_ids=working_page_ids,
+        )
+
+
+class _LoadBearingSelection(BaseModel):
+    page_ids: list[str] = Field(
+        description="8-char short IDs of the most load-bearing pages (up to 5)"
+    )
+
+
+class _ImportantConnectedPages(BaseModel):
+    page_ids: list[str] = Field(
+        description="8-char short IDs of the most important connected pages (up to 10)"
+    )
+
+
+class _ReplacementPick(BaseModel):
+    replacement_ids: list[str] = Field(
+        default_factory=list,
+        description=(
+            "8-char short IDs of candidates that are more robust, credible, "
+            "or useful versions of the target page. Empty list if none qualify."
+        ),
+    )
+
+
+_CONNECTED_LINK_TYPES = {
+    LinkType.CONSIDERATION,
+    LinkType.CHILD_QUESTION,
+    LinkType.RELATED,
+}
+
+
+async def _gather_connected_pages(
+    page_id: str, db: DB,
+) -> list[tuple[Page, PageLink]]:
+    """Return all (page, link) pairs directly connected to a page.
+
+    Gathers considerations, child questions, and judgements linked to *page_id*.
+    Includes superseded pages so that Phase A can detect and swap them.
+    """
+    links_to = await db.get_links_to(page_id)
+    links_from = await db.get_links_from(page_id)
+
+    pairs: list[tuple[str, PageLink]] = []
+    for link in links_to:
+        if link.link_type in _CONNECTED_LINK_TYPES:
+            pairs.append((link.from_page_id, link))
+    for link in links_from:
+        if link.link_type in _CONNECTED_LINK_TYPES:
+            pairs.append((link.to_page_id, link))
+
+    if not pairs:
+        return []
+
+    all_ids = list({pid for pid, _ in pairs})
+    pages = await db.get_pages_by_ids(all_ids)
+
+    results: list[tuple[Page, PageLink]] = []
+    for pid, link in pairs:
+        page = pages.get(pid)
+        if page:
+            results.append((page, link))
+
+    return results
+
+
+async def _swap_superseded_link(
+    page: Page,
+    link: PageLink,
+    new_page: Page,
+    db: DB,
+) -> PageLink:
+    """Delete *link* and create a replacement pointing to/from *new_page*.
+
+    If an equivalent link (same endpoints, type, and direction) already exists
+    on *new_page*, the old link is simply deleted and the existing one returned.
+
+    Returns the new or pre-existing link.
+    """
+    await db.delete_link(link.id)
+    if link.from_page_id == page.id:
+        new_from = new_page.id
+        new_to = link.to_page_id
+    else:
+        new_from = link.from_page_id
+        new_to = new_page.id
+
+    existing_links = await db.get_links_from(new_from)
+    for existing in existing_links:
+        if (
+            existing.to_page_id == new_to
+            and existing.link_type == link.link_type
+            and existing.direction == link.direction
+        ):
+            log.info(
+                "Superseded link %s: equivalent link already exists on %s -> %s, skipping creation",
+                link.id[:8], new_from[:8], new_to[:8],
+            )
+            return existing
+
+    new_link = PageLink(
+        from_page_id=new_from,
+        to_page_id=new_to,
+        link_type=link.link_type,
+        direction=link.direction,
+        strength=link.strength,
+        reasoning=link.reasoning,
+        role=link.role,
+    )
+    await db.save_link(new_link)
+    log.info(
+        "Swapped superseded link %s: %s -> %s (page %s -> %s)",
+        link.id[:8],
+        link.from_page_id[:8],
+        link.to_page_id[:8],
+        page.id[:8],
+        new_page.id[:8],
+    )
+    return new_link
+
+
+async def _get_latest_judgement(
+    question_id: str, db: DB,
+) -> Page | None:
+    """Return the most recent active judgement for a question, or None."""
+    judgements = await db.get_judgements_for_question(question_id)
+    if not judgements:
+        return None
+    return max(judgements, key=lambda j: j.created_at)
+
+
+async def _phase_a_resolve_supersessions(
+    question_id: str,
+    latest_judgement: Page | None,
+    db: DB,
+) -> list[tuple[Page, PageLink]]:
+    """Phase A: resolve superseded connected pages by swapping links.
+
+    Returns the refreshed list of connected (page, link) pairs.
+    """
+    target_ids = [question_id]
+    if latest_judgement:
+        target_ids.append(latest_judgement.id)
+
+    connected: list[tuple[Page, PageLink]] = []
+    for tid in target_ids:
+        connected.extend(await _gather_connected_pages(tid, db))
+
+    seen_link_ids: set[str] = set()
+    deduped: list[tuple[Page, PageLink]] = []
+    for page, link in connected:
+        if link.id not in seen_link_ids:
+            seen_link_ids.add(link.id)
+            deduped.append((page, link))
+    connected = deduped
+
+    refreshed: list[tuple[Page, PageLink]] = []
+    for page, link in connected:
+        if page.is_superseded:
+            new_page = await db.resolve_supersession_chain(page.id)
+            if new_page:
+                new_link = await _swap_superseded_link(page, link, new_page, db)
+                refreshed.append((new_page, new_link))
+            else:
+                refreshed.append((page, link))
+        else:
+            refreshed.append((page, link))
+
+    return refreshed
+
+
+_CITATION_RE = re.compile(r"\[([a-f0-9]{8})\]")
+
+
+async def _cites_superseded_pages(page: Page, db: DB) -> bool:
+    """Check whether *page*'s inline citations reference any superseded page."""
+    if not page.content:
+        return False
+    short_ids = set(_CITATION_RE.findall(page.content))
+    if not short_ids:
+        return False
+    full_ids: list[str] = []
+    for sid in short_ids:
+        resolved = await db.resolve_page_id(sid)
+        if resolved:
+            full_ids.append(resolved)
+    if not full_ids:
+        return False
+    cited_pages = await db.get_pages_by_ids(full_ids)
+    return any(p.is_superseded for p in cited_pages.values())
+
+
+async def _phase_b1_reassess_stale(
+    connected: list[tuple[Page, PageLink]],
+    question: Page,
+    latest_judgement: Page | None,
+    infra: CallInfra,
+) -> None:
+    """Phase B1: find connected pages with superseded dependencies and reassess."""
+    stale: list[Page] = []
+    checks = await asyncio.gather(
+        *[_cites_superseded_pages(page, infra.db) for page, _ in connected]
+    )
+    for (page, _), is_stale in zip(connected, checks):
+        if is_stale:
+            stale.append(page)
+
+    if not stale:
+        log.info("Phase B1: no connected pages cite superseded pages")
+        return
+
+    log.info("Phase B1: %d connected pages cite superseded pages", len(stale))
+
+    if len(stale) > 5:
+        judgement_context = ""
+        if latest_judgement:
+            judgement_context = (
+                f"\n\n## Latest Judgement\n\n"
+                f"**{latest_judgement.headline}**\n\n"
+                f"{latest_judgement.content}"
+            )
+        page_list = "\n".join(
+            f"- `{p.id[:8]}` — {p.headline} ({p.page_type.value})"
+            for p in stale
+        )
+        meta = LLMExchangeMetadata(
+            call_id=infra.call.id,
+            phase="big_assess_b1_select",
+        )
+        result = await structured_call(
+            "You are selecting the most important pages for a research question. "
+            "Pick the 5 pages whose accuracy is most critical to answering the "
+            "question correctly. Return their 8-char short IDs.",
+            user_message=(
+                f"## Question\n\n**{question.headline}**"
+                f"{judgement_context}\n\n"
+                f"## Pages with stale dependencies\n\n{page_list}"
+            ),
+            response_model=_LoadBearingSelection,
+            metadata=meta,
+            db=infra.db,
+        )
+        if result.data:
+            selected = _LoadBearingSelection.model_validate(result.data)
+            selected_ids = set(selected.page_ids)
+            stale = [p for p in stale if p.id[:8] in selected_ids][:5]
+
+    async def _do_reassess(page: Page) -> None:
+        from rumil.clean.common import reassess_claim, reassess_question
+
+        if page.page_type == PageType.QUESTION:
+            await reassess_question(
+                page.id, [], infra.call, infra.db, infra.trace,
+            )
+        else:
+            await reassess_claim(
+                page.id, "", infra.call, infra.db, infra.trace,
+            )
+
+    log.info("Phase B1: reassessing %d pages", len(stale))
+    await asyncio.gather(*[_do_reassess(p) for p in stale])
+
+
+async def _phase_b2_embedding_quality(
+    connected: list[tuple[Page, PageLink]],
+    question: Page,
+    latest_judgement: Page | None,
+    infra: CallInfra,
+) -> set[str]:
+    """Phase B2: embedding-based quality check on connected pages.
+
+    For each connected page, searches for similar pages (>0.4 similarity).
+    If more than 10 connected pages have matches, asks an LLM which 10 are
+    most important to the question. For each chosen connected page, asks an
+    LLM whether any of its 5 closest matches should be used instead.
+
+    Returns a set of page IDs chosen as better replacements (for context only).
+    """
+    connected_ids = {page.id for page, _ in connected} | {infra.question_id}
+    scope_links = await infra.db.get_links_to(infra.question_id)
+    scope_linked_ids = {l.from_page_id for l in scope_links} | {
+        l.to_page_id for l in await infra.db.get_links_from(infra.question_id)
+    }
+    exclude_ids = connected_ids | scope_linked_ids
+
+    async def _search_for_page(page: Page) -> tuple[Page, list[tuple[Page, float]]]:
+        async with _B2_SEMAPHORE:
+            query_text = page.abstract if page.abstract else page.headline
+            results = await search_pages(
+                infra.db, query_text, match_threshold=0.6, match_count=5,
+            )
+        filtered = [
+            (p, score) for p, score in results
+            if p.id not in exclude_ids and p.is_active()
+        ]
+        return page, filtered
+
+    search_results = await asyncio.gather(
+        *[_search_for_page(page) for page, _ in connected]
+    )
+
+    for page, candidates in search_results:
+        if candidates:
+            match_titles = ", ".join(
+                f"{c.headline[:40]} ({score:.2f})" for c, score in candidates
+            )
+            log.info(
+                "Phase B2: %s (%s) — %d matches: %s",
+                page.id[:8], page.headline[:50], len(candidates), match_titles,
+            )
+        else:
+            log.info(
+                "Phase B2: %s (%s) — no matches",
+                page.id[:8], page.headline[:50],
+            )
+
+    pages_with_matches = [
+        (page, candidates) for page, candidates in search_results if candidates
+    ]
+
+    if not pages_with_matches:
+        log.info("Phase B2: no connected pages have similar matches")
+        return set()
+
+    log.info(
+        "Phase B2: %d connected pages have embedding matches",
+        len(pages_with_matches),
+    )
+
+    if len(pages_with_matches) > 10:
+        judgement_context = ""
+        if latest_judgement:
+            judgement_context = (
+                f"\n\n## Latest Judgement\n\n"
+                f"**{latest_judgement.headline}**\n\n"
+                f"{latest_judgement.content}"
+            )
+        page_list = "\n".join(
+            f"- `{p.id[:8]}` — {p.headline} ({p.page_type.value})"
+            for p, _ in pages_with_matches
+        )
+        meta = LLMExchangeMetadata(
+            call_id=infra.call.id,
+            phase="big_assess_b2_narrow",
+        )
+        result = await structured_call(
+            "You are selecting the most important connected pages for a "
+            "research question. Pick the 10 pages whose quality matters "
+            "most to the question. Return their 8-char short IDs.",
+            user_message=(
+                f"## Question\n\n**{question.headline}**"
+                f"{judgement_context}\n\n"
+                f"## Connected pages with potential replacements\n\n{page_list}"
+            ),
+            response_model=_ImportantConnectedPages,
+            metadata=meta,
+            db=infra.db,
+        )
+        if result.data:
+            selected = _ImportantConnectedPages.model_validate(result.data)
+            selected_ids = set(selected.page_ids)
+            pages_with_matches = [
+                (p, cs) for p, cs in pages_with_matches
+                if p.id[:8] in selected_ids
+            ][:10]
+
+    async def _check_replacements(
+        page: Page, candidates: list[tuple[Page, float]],
+    ) -> set[str]:
+        async with _B2_SEMAPHORE:
+            target_text = await format_page(
+                page, PageDetail.CONTENT, linked_detail=PageDetail.ABSTRACT,
+                db=infra.db,
+            )
+            candidate_parts: list[str] = []
+            for c, _ in candidates:
+                candidate_parts.append(
+                    await format_page(
+                        c, PageDetail.CONTENT, linked_detail=PageDetail.ABSTRACT,
+                        db=infra.db,
+                    )
+                )
+            candidate_descriptions = "\n\n---\n\n".join(candidate_parts)
+            meta = LLMExchangeMetadata(
+                call_id=infra.call.id,
+                phase=f"big_assess_b2_replace_{page.id[:8]}",
+            )
+            result = await structured_call(
+                "You are evaluating whether any candidate pages should replace a "
+                "target page because they analyse the same subject matter at "
+                "higher quality — better evidence, more nuance, stronger sourcing, "
+                "or higher credibility. A candidate must be about the same topic "
+                "as the target; do NOT select pages that are merely related to or "
+                "adjacent to the target's subject. You may pick multiple candidates "
+                "or none. Return the 8-char short IDs of qualifying candidates, "
+                "or an empty list if none qualify.",
+                user_message=(
+                    f"## Target page\n\n{target_text}\n\n"
+                    f"## Candidates\n\n{candidate_descriptions}"
+                ),
+                response_model=_ReplacementPick,
+                metadata=meta,
+                db=infra.db,
+            )
+        found: set[str] = set()
+        if result.data:
+            picks = _ReplacementPick.model_validate(result.data)
+            candidate_id_map = {c.id[:8]: c.id for c, _ in candidates}
+            for short_id in picks.replacement_ids:
+                full_id = candidate_id_map.get(short_id)
+                if full_id:
+                    found.add(full_id)
+        return found
+
+    per_page_results = await asyncio.gather(
+        *[_check_replacements(p, cs) for p, cs in pages_with_matches]
+    )
+    replacement_ids: set[str] = set()
+    for ids in per_page_results:
+        replacement_ids |= ids
+
+    log.info("Phase B2: found %d replacement pages", len(replacement_ids))
+    return replacement_ids
+
+
+class _AbstractBatch(BaseModel):
+    summaries: list[PageSummaryItem]
+
+
+async def _generate_missing_abstracts(
+    connected: Sequence[tuple[Page, PageLink]],
+    infra: CallInfra,
+) -> None:
+    """Generate and persist abstracts for connected pages that lack them."""
+    missing = [p for p, _ in connected if not p.abstract]
+    if not missing:
+        log.info("All connected pages have abstracts")
+        return
+
+    log.info(
+        "Generating abstracts for %d connected pages: %s",
+        len(missing),
+        ", ".join(p.id[:8] for p in missing),
+    )
+
+    page_contents = "\n\n---\n\n".join(
+        f'Page `{p.id[:8]}` — {p.headline}\n\n{p.content}'
+        for p in missing
+    )
+    system_prompt = (
+        "You are generating abstracts for workspace pages. "
+        "You will be given page contents and must produce a self-contained "
+        "abstract for each.\n\n"
+        f"Page contents:\n\n{page_contents}"
+    )
+    page_lines = "\n".join(
+        f'- `{p.id[:8]}`: "{p.headline[:120]}"'
+        for p in missing
+    )
+    user_message = (
+        "Generate an abstract for each of the following pages.\n\n"
+        f"{page_lines}\n\n"
+        f"Abstract requirements: {ABSTRACT_INSTRUCTION}\n\n"
+        "For each page, return its page_id and abstract."
+    )
+
+    meta = LLMExchangeMetadata(
+        call_id=infra.call.id,
+        phase="big_assess_abstract_generation",
+    )
+    result = await structured_call(
+        system_prompt,
+        user_message=user_message,
+        response_model=_AbstractBatch,
+        metadata=meta,
+        db=infra.db,
+    )
+    if result.data:
+        parsed = _AbstractBatch(**result.data)
+        await save_page_abstracts(parsed.summaries, infra.db)
+        log.info(
+            "Generated %d abstracts for connected pages",
+            len(parsed.summaries),
+        )
+
+
+class BigAssessContext(ContextBuilder):
+    """Elaborate context builder that freshens connected pages before assessment.
+
+    Runs four phases:
+    A) Resolve superseded connected pages (swaps links in DB)
+    B1) Reassess connected pages with stale dependencies
+    B2) Embedding-based quality check for better versions
+    C) Build final embedding context with all gathered pages
+    """
+
+    def __init__(self, call_type: CallType) -> None:
+        self._call_type = call_type
+
+    async def build_context(self, infra: CallInfra) -> ContextResult:
+        db = infra.db
+        question = await db.get_page(infra.question_id)
+        if not question:
+            return ContextResult(
+                context_text=f"[Question page {infra.question_id} not found]",
+                working_page_ids=[],
+            )
+
+        latest_judgement = await _get_latest_judgement(infra.question_id, db)
+
+        connected = await _phase_a_resolve_supersessions(
+            infra.question_id, latest_judgement, db,
+        )
+        log.info(
+            "Big assess phase A complete: %d connected pages after supersession",
+            len(connected),
+        )
+
+        await _phase_b1_reassess_stale(
+            connected, question, latest_judgement, infra,
+        )
+        latest_judgement = await _get_latest_judgement(infra.question_id, db)
+        connected = await _phase_a_resolve_supersessions(
+            infra.question_id, latest_judgement, db,
+        )
+        log.info(
+            "Big assess post-B1 refresh: %d connected pages",
+            len(connected),
+        )
+
+        replacement_ids = await _phase_b2_embedding_quality(
+            connected, question, latest_judgement, infra,
+        )
+
+        await _generate_missing_abstracts(connected, infra)
+
+        query = question.headline
+        settings = get_settings()
+        result = await build_embedding_based_context(
+            query,
+            db,
+            scope_question_id=infra.question_id,
+            scope_detail=PageDetail.CONTENT,
+            scope_linked_detail=PageDetail.ABSTRACT,
+            require_judgement_for_questions=True,
+            full_page_char_budget=settings.big_assess_full_page_char_budget,
+            abstract_page_char_budget=settings.big_assess_abstract_page_char_budget,
+            summary_page_char_budget=settings.big_assess_summary_page_char_budget,
+        )
+        working_page_ids = result.page_ids
+
+        extra_ids = list(replacement_ids)
+        preloaded_ids = infra.call.context_page_ids or []
+        all_extra = extra_ids + preloaded_ids
+
+        context_text = result.context_text
+        if all_extra:
+            parts: list[str] = []
+            for pid in all_extra:
+                page = await db.get_page(pid)
+                if page and page.is_active():
+                    parts += [
+                        "",
+                        "---",
+                        "",
+                        f"## Pre-loaded Page: `{pid[:8]}`",
+                        "",
+                        await format_page(page, PageDetail.CONTENT, db=db),
+                    ]
+            if parts:
+                context_text += "\n".join(parts)
+
+        await _record_context_built(infra, working_page_ids, all_extra)
+        return ContextResult(
+            context_text=context_text,
+            working_page_ids=working_page_ids,
+            preloaded_ids=all_extra,
         )

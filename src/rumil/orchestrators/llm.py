@@ -164,7 +164,8 @@ class LLMOrchestrator(BaseOrchestrator):
 
         d_label = await self.db.page_label(resolved)
 
-        if get_settings().budget_pacing_enabled:
+        pacing_enabled = get_settings().budget_pacing_enabled
+        if pacing_enabled:
             prev_total, prev_used = self._sub_budget_ledger.get(resolved, (0, 0))
             cumulative_total = prev_total + payload.budget
             sub_budget = compute_round_budget(cumulative_total, prev_used)
@@ -178,6 +179,7 @@ class LLMOrchestrator(BaseOrchestrator):
                 prev_used, sub_budget, payload.reason,
             )
         else:
+            prev_used = 0
             sub_budget = payload.budget
             log.info(
                 'Expanding sub-prioritization on %s (budget=%d) — %s',
@@ -192,7 +194,7 @@ class LLMOrchestrator(BaseOrchestrator):
             workspace=Workspace.PRIORITIZATION,
         )
 
-        if get_settings().budget_pacing_enabled:
+        if pacing_enabled:
             ct, _ = self._sub_budget_ledger.get(resolved, (0, 0))
             sub_remaining = ct - prev_used
         else:

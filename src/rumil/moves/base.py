@@ -199,6 +199,14 @@ class CreatePagePayload(BaseModel):
             "is marked as superseded."
         ),
     )
+    change_magnitude: int | None = Field(
+        None,
+        description=(
+            "1-5: how much the picture changed from the superseded page. "
+            "1=minor wording only, 3=substantive but same bottom line, "
+            "5=completely changed the picture. Only used when supersedes is set."
+        ),
+    )
 
     def page_extra_fields(self) -> dict[str, Any]:
         """Return type-specific metadata fields to store in page.extra.
@@ -349,7 +357,9 @@ async def create_page(
     if payload.supersedes:
         old_id = await db.resolve_page_id(payload.supersedes)
         if old_id:
-            await db.supersede_page(old_id, page.id)
+            await db.supersede_page(
+                old_id, page.id, change_magnitude=payload.change_magnitude,
+            )
             await _copy_consideration_links(old_id, page.id, db)
             log.info("Superseded %s -> %s", old_id[:8], page.id[:8])
         else:
@@ -469,13 +479,16 @@ async def supersede_old_judgements(
     new_judgement_id: str,
     question_id: str,
     db: DB,
+    change_magnitude: int | None = None,
 ) -> None:
     """Supersede any existing active judgements on a question when a new one is linked."""
     old_judgements = await db.get_judgements_for_question(question_id)
     for old in old_judgements:
         if old.id == new_judgement_id:
             continue
-        await db.supersede_page(old.id, new_judgement_id)
+        await db.supersede_page(
+            old.id, new_judgement_id, change_magnitude=change_magnitude,
+        )
         log.info(
             "Superseded old judgement %s with %s on question %s",
             old.id[:8],

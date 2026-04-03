@@ -119,4 +119,9 @@ Every page has a headline — the primary label seen throughout the workspace. W
 * **Be specific.** Vague gestures at considerations are not useful. Each claim should stand alone as a substantive assertion.
 * **Epistemic honesty.** Do not overstate confidence. Flag genuine uncertainty.
 * **Fix forward.** If something in the workspace is wrong, supersede the bad page rather than ignoring it.
+* **Track dependencies.** After creating a claim or judgement, use `link_depends_on` to record which other pages it most depends on being true. This builds a dependency graph that lets the workspace detect when upstream changes might invalidate downstream conclusions. Use it when:
+  * A claim assumes or builds on another claim ("if X is true, then Y follows")
+  * A judgement's conclusion rests heavily on specific considerations
+  * A variant claim still carries forward assumptions from the original
+* **Rate supersession impact.** When superseding a page, set `change_magnitude` to indicate how much the picture changed: 1 = minor wording only, 3 = substantive changes but same bottom line, 5 = completely changed the picture. This helps the workspace assess how urgently things that depended on the old page need revisiting.
 

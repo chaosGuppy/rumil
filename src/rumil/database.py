@@ -660,9 +660,17 @@ class DB:
             pages = [p for p in pages if p.is_active()]
         return pages
 
-    async def supersede_page(self, old_id: str, new_id: str) -> None:
+    async def supersede_page(
+        self,
+        old_id: str,
+        new_id: str,
+        change_magnitude: int | None = None,
+    ) -> None:
+        payload: dict = {"new_page_id": new_id}
+        if change_magnitude is not None:
+            payload["change_magnitude"] = change_magnitude
         await self.record_mutation_event(
-            "supersede_page", old_id, {"new_page_id": new_id},
+            "supersede_page", old_id, payload,
         )
         if not self.staged:
             await self._execute(
@@ -841,6 +849,94 @@ class DB:
             and pages[l.from_page_id].is_active()
             and pages[l.from_page_id].page_type == PageType.JUDGEMENT
         ]
+
+    async def get_dependents(
+        self, page_id: str,
+    ) -> list[tuple[Page, PageLink]]:
+        """Return (dependent_page, link) for all pages that depend on this one."""
+        links = await self.get_links_to(page_id)
+        dep_links = [l for l in links if l.link_type == LinkType.DEPENDS_ON]
+        if not dep_links:
+            return []
+        pages = await self.get_pages_by_ids(
+            [l.from_page_id for l in dep_links]
+        )
+        return [
+            (pages[l.from_page_id], l)
+            for l in dep_links
+            if l.from_page_id in pages and pages[l.from_page_id].is_active()
+        ]
+
+    async def get_dependencies(
+        self, page_id: str,
+    ) -> list[tuple[Page, PageLink]]:
+        """Return (dependency_page, link) for all pages this one depends on."""
+        links = await self.get_links_from(page_id)
+        dep_links = [l for l in links if l.link_type == LinkType.DEPENDS_ON]
+        if not dep_links:
+            return []
+        pages = await self.get_pages_by_ids(
+            [l.to_page_id for l in dep_links]
+        )
+        return [
+            (pages[l.to_page_id], l)
+            for l in dep_links
+            if l.to_page_id in pages
+        ]
+
+    async def get_stale_dependencies(self) -> list[tuple[PageLink, int | None]]:
+        """Return DEPENDS_ON links where the dependency has been superseded.
+
+        Returns (link, change_magnitude) pairs. change_magnitude comes from
+        the supersession mutation event if available, otherwise None.
+        """
+        query = (
+            self.client.table("page_links")
+            .select("*")
+            .eq("link_type", "depends_on")
+        )
+        query = self._staged_filter(query)
+        rows = _rows(await self._execute(query))
+        links = await self._apply_link_events([_row_to_link(r) for r in rows])
+
+        stale: list[tuple[PageLink, int | None]] = []
+        for link in links:
+            dep_page = await self.get_page(link.to_page_id)
+            if dep_page and dep_page.is_superseded:
+                magnitude = await self._get_supersession_magnitude(dep_page.id)
+                stale.append((link, magnitude))
+        return stale
+
+    async def get_dependency_counts(self) -> dict[str, int]:
+        """Return a map from page_id to how many pages depend on it."""
+        query = (
+            self.client.table("page_links")
+            .select("to_page_id")
+            .eq("link_type", LinkType.DEPENDS_ON.value)
+        )
+        query = self._staged_filter(query)
+        rows = _rows(await self._execute(query))
+        counts: dict[str, int] = {}
+        for row in rows:
+            pid = row["to_page_id"]
+            counts[pid] = counts.get(pid, 0) + 1
+        return counts
+
+    async def _get_supersession_magnitude(self, page_id: str) -> int | None:
+        """Look up the change_magnitude from the supersession mutation event."""
+        query = (
+            self.client.table("mutation_events")
+            .select("payload")
+            .eq("target_id", page_id)
+            .eq("event_type", "supersede_page")
+            .order("created_at", desc=True)
+            .limit(1)
+        )
+        rows = _rows(await self._execute(query))
+        if rows:
+            payload = rows[0].get("payload", {})
+            return payload.get("change_magnitude")
+        return None
 
     # --- Calls ---
 

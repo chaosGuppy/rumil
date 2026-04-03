@@ -120,6 +120,7 @@ class LinkType(str, Enum):
     VARIANT = "variant"  # more robust variation of a claim
     SUMMARIZES = "summarizes"  # summary page covers a question subtree
     CITES = "cites"  # claim cites a source
+    DEPENDS_ON = "depends_on"  # page depends on another page being true/valid
 
 
 class MoveType(str, Enum):
@@ -142,6 +143,7 @@ class MoveType(str, Enum):
     PROPOSE_CONCEPT = "PROPOSE_CONCEPT"
     PROMOTE_CONCEPT = "PROMOTE_CONCEPT"
     UPDATE_EPISTEMIC = "UPDATE_EPISTEMIC"
+    LINK_DEPENDS_ON = "LINK_DEPENDS_ON"
 
 
 class CallStage(str, Enum):

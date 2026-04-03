@@ -23,6 +23,7 @@ from rumil.moves.change_link_role import MOVE as _change_link_role
 from rumil.moves.propose_concept import MOVE as _propose_concept
 from rumil.moves.promote_concept import MOVE as _promote_concept
 from rumil.moves.update_epistemic import MOVE as _update_epistemic
+from rumil.moves.link_depends_on import MOVE as _link_depends_on
 
 MOVES: dict[MoveType, MoveDef] = {
     m.move_type: m
@@ -46,5 +47,6 @@ MOVES: dict[MoveType, MoveDef] = {
         _propose_concept,
         _promote_concept,
         _update_epistemic,
+        _link_depends_on,
     ]
 }

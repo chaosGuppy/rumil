@@ -29,14 +29,16 @@ Read the evaluation carefully and use the tools below to address each issue. Pri
 **Inconsistencies** — The evaluation identifies contradictory claims or judgements:
 - Create a targeted question (via `headline` + `content`) that asks specifically about the point of tension — e.g. "What is the actual X given conflicting claims A and B?" — and investigate it. Then in Phase 2, use the `reassess_claims` operation to reconcile the conflicting claims in light of the subquestion's findings.
 
+**`collect_investigations`** — Wait for all background investigations to complete and return their results. Call this once after dispatching all your `investigate_question` calls. Blocks until every investigation finishes. Takes no arguments.
+
 ### Important notes
 
 - You have a total **investigation budget of {investigation_budget}** research calls to distribute across all your `investigate_question` calls. Each call's `budget` parameter is deducted from this pool. Plan your allocation carefully — once the pool is exhausted, no further investigations can be commissioned.
-- **Dispatch investigations in parallel.** Investigations are independent of each other — call `investigate_question` multiple times in the same turn to run them concurrently. This is significantly faster than dispatching them one at a time. Only serialize investigations if a later one genuinely depends on the results of an earlier one.
+- **Dispatch all investigations first, then collect results.** Each `investigate_question` call returns immediately — the investigation runs in the background. Once you have dispatched all investigations, call `collect_investigations` to wait for all of them and get all results at once. This runs them in parallel, which is **dramatically** faster than calling them one at a time. Only serialize investigations if a later one genuinely depends on the results of an earlier one.
 - Focus on the highest-impact issues first — you may not have budget for everything.
 - Always use `explore_page` to understand the graph around a page before commissioning investigations. This doesn't count against your budget.
 - When creating new questions, write clear, specific headlines that capture what needs to be investigated.
-- Each investigation returns the resulting judgement on the target question, so you can use it to inform your propagation plan.
+- The results from `collect_investigations` include the resulting judgement on each target question, so you can use them to inform your propagation plan.
 
 ## Phase 2: Propagation plan
 

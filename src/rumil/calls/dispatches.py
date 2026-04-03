@@ -22,6 +22,8 @@ from rumil.models import (
     ScoutCHowFalseDispatchPayload,
     ScoutCHowTrueDispatchPayload,
     ScoutCRelevantEvidenceDispatchPayload,
+    ScoutCRobustifyDispatchPayload,
+    ScoutCStrengthenDispatchPayload,
     ScoutCStressTestCasesDispatchPayload,
     ScoutDispatchPayload,
     ScoutParadigmCasesDispatchPayload,
@@ -338,6 +340,33 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
             "Budget cost: between 1 and max_rounds (inclusive), plus 1 auto-assess if targeting a subquestion."
         ),
         schema=ScoutCStressTestCasesDispatchPayload,
+    ),
+    CallType.SCOUT_C_ROBUSTIFY: DispatchDef(
+        call_type=CallType.SCOUT_C_ROBUSTIFY,
+        name="dispatch_scout_c_robustify",
+        description=(
+            "Dispatch a scout that suggests more robust variations of the "
+            "scope claim — lower bounds, conditional versions, narrower scope, "
+            "or weaker quantifiers that are more defensible. Always targets the "
+            "scope claim. "
+            "Runs up to max_rounds rounds, stopping early when remaining "
+            "fruit falls below fruit_threshold. "
+            "Budget cost: between 1 and max_rounds (inclusive), plus 1 auto-assess if targeting a subquestion."
+        ),
+        schema=ScoutCRobustifyDispatchPayload,
+    ),
+    CallType.SCOUT_C_STRENGTHEN: DispatchDef(
+        call_type=CallType.SCOUT_C_STRENGTHEN,
+        name="dispatch_scout_c_strengthen",
+        description=(
+            "Dispatch a scout that tries to make a high-credence claim more "
+            "precise, specific, or stronger while maintaining that credence. "
+            "Always targets the scope claim. "
+            "Runs up to max_rounds rounds, stopping early when remaining "
+            "fruit falls below fruit_threshold. "
+            "Budget cost: between 1 and max_rounds (inclusive), plus 1 auto-assess if targeting a subquestion."
+        ),
+        schema=ScoutCStrengthenDispatchPayload,
     ),
     CallType.WEB_RESEARCH: DispatchDef(
         call_type=CallType.WEB_RESEARCH,

@@ -20,6 +20,8 @@ from rumil.calls.scout_c_cruxes import ScoutCCruxesCall
 from rumil.calls.scout_c_how_false import ScoutCHowFalseCall
 from rumil.calls.scout_c_how_true import ScoutCHowTrueCall
 from rumil.calls.scout_c_relevant_evidence import ScoutCRelevantEvidenceCall
+from rumil.calls.scout_c_robustify import ScoutCRobustifyCall
+from rumil.calls.scout_c_strengthen import ScoutCStrengthenCall
 from rumil.calls.scout_c_stress_test_cases import ScoutCStressTestCasesCall
 from rumil.calls.scout_concepts import ScoutConceptsCall
 from rumil.calls.web_research import WebResearchCall
@@ -104,4 +106,12 @@ SCOUT_C_RELEVANT_EVIDENCE_CALL_CLASSES: dict[str, type[ScoutCRelevantEvidenceCal
 
 SCOUT_C_STRESS_TEST_CASES_CALL_CLASSES: dict[str, type[ScoutCStressTestCasesCall]] = {
     "default": ScoutCStressTestCasesCall,
+}
+
+SCOUT_C_ROBUSTIFY_CALL_CLASSES: dict[str, type[ScoutCRobustifyCall]] = {
+    "default": ScoutCRobustifyCall,
+}
+
+SCOUT_C_STRENGTHEN_CALL_CLASSES: dict[str, type[ScoutCStrengthenCall]] = {
+    "default": ScoutCStrengthenCall,
 }

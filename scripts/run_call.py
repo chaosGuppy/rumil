@@ -55,6 +55,7 @@ from rumil.calls.prioritization import run_prioritization
 from rumil.database import DB
 from rumil.models import CallStage, CallType, FindConsiderationsMode
 from rumil.orchestrators import create_root_question
+from rumil.orchestrators.robustify import RobustifyOrchestrator
 from rumil.settings import Settings, get_settings, _settings_var
 
 
@@ -159,6 +160,18 @@ async def run_call(args: argparse.Namespace, db: DB, question_id: str) -> None:
             budget_allocated=args.budget,
         )
         await run_prioritization(question_id, call, args.budget, db)
+
+    elif call_type == "robustify":
+        if up_to_stage:
+            print("--up-to-stage is not supported for robustify.")
+            return
+        orch = RobustifyOrchestrator(db, max_rounds=args.max_rounds)
+        variant_ids = await orch.run(question_id)
+        print(f"\nProduced {len(variant_ids)} variant(s):")
+        for vid in variant_ids:
+            page = await db.get_page(vid)
+            if page:
+                print(f"  {vid[:8]} credence={page.credence} — {page.headline}")
 
     else:
         print(f"Unknown call type: {call_type}")
@@ -290,6 +303,7 @@ def main() -> None:
             "find-considerations",
             "assess",
             "prioritize",
+            "robustify",
             "web-research",
             *_SCOUT_CALL_TYPES,
         ],

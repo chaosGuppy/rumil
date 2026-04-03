@@ -43,6 +43,7 @@ AVAILABLE_CALLS_PRESETS: dict[str, AvailableCallsPreset] = {
             CallType.SCOUT_C_CRUXES,
             CallType.SCOUT_C_RELEVANT_EVIDENCE,
             CallType.SCOUT_C_STRESS_TEST_CASES,
+            CallType.SCOUT_C_ROBUSTIFY,
         ],
         claim_phase2_dispatch=[
             CallType.FIND_CONSIDERATIONS,
@@ -52,6 +53,8 @@ AVAILABLE_CALLS_PRESETS: dict[str, AvailableCallsPreset] = {
             CallType.SCOUT_C_CRUXES,
             CallType.SCOUT_C_RELEVANT_EVIDENCE,
             CallType.SCOUT_C_STRESS_TEST_CASES,
+            CallType.SCOUT_C_ROBUSTIFY,
+            CallType.SCOUT_C_STRENGTHEN,
         ],
     ),
     "simple": AvailableCallsPreset(
@@ -79,6 +82,7 @@ AVAILABLE_CALLS_PRESETS: dict[str, AvailableCallsPreset] = {
             CallType.SCOUT_C_CRUXES,
             CallType.SCOUT_C_RELEVANT_EVIDENCE,
             CallType.SCOUT_C_STRESS_TEST_CASES,
+            CallType.SCOUT_C_ROBUSTIFY,
         ],
         claim_phase2_dispatch=[
             CallType.FIND_CONSIDERATIONS,
@@ -88,6 +92,8 @@ AVAILABLE_CALLS_PRESETS: dict[str, AvailableCallsPreset] = {
             CallType.SCOUT_C_CRUXES,
             CallType.SCOUT_C_RELEVANT_EVIDENCE,
             CallType.SCOUT_C_STRESS_TEST_CASES,
+            CallType.SCOUT_C_ROBUSTIFY,
+            CallType.SCOUT_C_STRENGTHEN,
         ],
     ),
     "multi-subquestion": AvailableCallsPreset(
@@ -117,6 +123,7 @@ AVAILABLE_CALLS_PRESETS: dict[str, AvailableCallsPreset] = {
             CallType.SCOUT_C_CRUXES,
             CallType.SCOUT_C_RELEVANT_EVIDENCE,
             CallType.SCOUT_C_STRESS_TEST_CASES,
+            CallType.SCOUT_C_ROBUSTIFY,
         ],
         claim_phase2_dispatch=[
             CallType.FIND_CONSIDERATIONS,
@@ -126,6 +133,8 @@ AVAILABLE_CALLS_PRESETS: dict[str, AvailableCallsPreset] = {
             CallType.SCOUT_C_CRUXES,
             CallType.SCOUT_C_RELEVANT_EVIDENCE,
             CallType.SCOUT_C_STRESS_TEST_CASES,
+            CallType.SCOUT_C_ROBUSTIFY,
+            CallType.SCOUT_C_STRENGTHEN,
         ],
     ),
 }

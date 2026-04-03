@@ -66,6 +66,7 @@ class Settings(BaseSettings):
     evaluate_abstract_hops: int = _capture_field(default=1)
     evaluate_headline_hops: int = _capture_field(default=2)
     sdk_agent_max_turns: int = _capture_field(default=200)
+    sdk_agent_max_subagents: int = _capture_field(default=5)
     grounding_update_budget: int = _capture_field(default=10)
     feedback_update_budget: int = _capture_field(default=10)
     feedback_investigation_budget: int = _capture_field(default=30)

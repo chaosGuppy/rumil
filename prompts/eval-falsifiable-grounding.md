@@ -16,7 +16,9 @@ Your task is to identify claims (not necessarily just Claim Pages; any natural-l
 
 ## Output Format
 
-Your final message must be the structured evaluation below. Do not narrate your coordination process — just produce the evaluation once you have all the information you need.
+Do NOT write the evaluation incrementally or in intermediate messages. Use earlier messages ONLY for tool calls, delegation, and brief coordination notes. Your complete evaluation must appear in a single final message after all investigations are done.
+
+Your final message must contain the full structured evaluation below — nothing else.
 
 ### Claims Assessment
 

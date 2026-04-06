@@ -781,6 +781,35 @@ async def format_preloaded_pages(
     return "\n".join(parts)
 
 
+async def _build_dependency_signal(db: DB) -> str | None:
+    """Build a section listing the most-depended-on pages in the workspace.
+
+    Returns None if no DEPENDS_ON links exist yet.
+    """
+    counts = await db.get_dependency_counts()
+    if not counts:
+        return None
+
+    top = sorted(counts.items(), key=lambda x: x[1], reverse=True)[:10]
+    pages = await db.get_pages_by_ids([pid for pid, _ in top])
+    lines = ['## Load-Bearing Pages (by dependency count)', '']
+    lines.append(
+        'These pages are depended on by the most other pages. '
+        'Prioritize them for robustness assessment — if they turn out to '
+        'be wrong, the most downstream conclusions would be affected.'
+    )
+    lines.append('')
+    for pid, count in top:
+        page = pages.get(pid)
+        if page:
+            stale_tag = ' [SUPERSEDED]' if page.is_superseded else ''
+            lines.append(
+                f'- `{pid[:8]}` — {page.headline} '
+                f'({count} dependents){stale_tag}'
+            )
+    return '\n'.join(lines)
+
+
 async def build_prioritization_context(
     db: DB,
     scope_question_id: str | None = None,
@@ -851,24 +880,9 @@ async def build_prioritization_context(
             for sid in subtree_ids:
                 short_id_map[sid[:8]] = sid
 
-    source_pages = await source.get_pages(page_type=PageType.SOURCE)
-    if source_pages:
-        ingest_history = await db.get_ingest_history()
-        parts.append('## Sources and Ingest History')
-        parts.append('')
-        for src in source_pages:
-            src_extra = src.extra or {}
-            filename = src_extra.get('filename', src.id[:8])
-            char_count = src_extra.get('char_count', len(src.content))
-            question_ids = ingest_history.get(src.id, [])
-            parts.append(f'[SRC] `{src.id[:8]}` — {filename} ({char_count:,} chars)')
-            if question_ids:
-                for qid in question_ids:
-                    q = await source.get_page(qid)
-                    q_summary = q.headline[:60] if q else qid[:8]
-                    parts.append(f'  Ingested for: `{qid[:8]}` — {q_summary}')
-            else:
-                parts.append('  Not yet ingested for any question')
+    dep_section = await _build_dependency_signal(db)
+    if dep_section:
+        parts.append(dep_section)
         parts.append('')
 
     return '\n'.join(parts), short_id_map

@@ -207,6 +207,22 @@ async def get_links_to(page_id: str):
     return await db.get_links_to(page_id)
 
 
+@app.get("/api/pages/{page_id}/dependents", response_model=list[LinkedPageOut])
+async def get_dependents(page_id: str):
+    """Pages that depend on this page (inbound DEPENDS_ON links)."""
+    db = await _get_db()
+    results = await db.get_dependents(page_id)
+    return [LinkedPageOut(page=page, link=link) for page, link in results]
+
+
+@app.get("/api/pages/{page_id}/dependencies", response_model=list[LinkedPageOut])
+async def get_dependencies(page_id: str):
+    """Pages that this page depends on (outbound DEPENDS_ON links)."""
+    db = await _get_db()
+    results = await db.get_dependencies(page_id)
+    return [LinkedPageOut(page=page, link=link) for page, link in results]
+
+
 @app.get("/api/pages/{page_id}/detail", response_model=PageDetailOut)
 async def get_page_detail(page_id: str, staged_run_id: str | None = None):
     db = await _get_db_maybe_staged(staged_run_id)

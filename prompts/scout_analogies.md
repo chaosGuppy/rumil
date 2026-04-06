@@ -8,7 +8,7 @@ You are performing a **Scout Analogies** call — an initial exploration focused
 
 For each analogy (aim for 1–3):
 
-1. **A claim** describing the analogy and why it may be relevant. Explain the structural parallel: what features of the analogous situation map onto the current question, and what the analogy would predict or suggest if it holds. Set credence to reflect how strong you think the parallel is, and robustness to reflect how thoroughly you've examined it.
+1. **A claim** describing the analogy and why it may be relevant. Explain the structural parallel: what features of the analogous situation map onto the current question, and what the analogy would predict or suggest if it holds. **Also name the most important ways the analogy might break down — where the structural parallel is weakest, or where the analogous situation differs in ways that could change the conclusion.** Set credence to reflect how strong you think the parallel is, and robustness to reflect how thoroughly you've examined it.
 
 2. **A subquestion** asking about the relevance, limits, or details of the analogy — e.g. "How closely does [analogy] parallel [situation in the parent question]?" or "What does the [analogous case] suggest about [specific aspect]?". Link it as a child of the parent question.
 
@@ -30,5 +30,5 @@ For each analogy (aim for 1–3):
 ## Quality Bar
 
 - **One illuminating analogy beats three weak parallels.** Only propose analogies that genuinely advance understanding.
-- **Acknowledge limits.** Every analogy breaks down somewhere. Note where the parallel is strongest and where it may diverge — this is valuable for later investigation.
+- **Acknowledge limits.** Every analogy breaks down somewhere. **Explicitly identify the key disanalogies — differences that could undermine the parallel or reverse its implications. This is as important as identifying the parallel itself.** Note where the parallel is strongest and where it may diverge — this is valuable for later investigation.
 - **Do not duplicate** analogies already present in the workspace.

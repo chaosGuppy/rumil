@@ -39,6 +39,17 @@ from rumil.moves.base import DispatchValidator, MoveState
 
 log = logging.getLogger(__name__)
 
+
+def estimate_dispatch_cost(d: Dispatch) -> int:
+    """Estimate worst-case budget cost of a single dispatch."""
+    p = d.payload
+    if hasattr(p, 'budget'):
+        return p.budget
+    if hasattr(p, 'max_rounds'):
+        return p.max_rounds
+    return 1
+
+
 S = TypeVar("S", bound=BaseDispatchPayload)
 
 

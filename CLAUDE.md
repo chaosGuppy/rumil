@@ -23,6 +23,8 @@ Runs can be **staged** (`staged=True` on the `DB` instance), meaning their effec
 - Any new read path **must** apply `_staged_filter()` and the relevant `_apply_*_events()` methods so staged runs see their own mutations.
 - RPC functions that read pages or links must accept a `staged_run_id` parameter and apply the same visibility logic. See `match_pages()` and `get_root_questions()` in the migrations for examples.
 - Never introduce a write path that silently bypasses event recording — it will break retroactive staging.
+- Whenever you make a change, think through whether the research instance LLMs need to know about it - and if so, make sure to edit the relevant prompts.
+- If you change data structures, think through what will be needed in terms of database migrations for existing research,
 
 ## Running
 

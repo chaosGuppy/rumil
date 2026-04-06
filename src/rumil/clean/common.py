@@ -337,12 +337,16 @@ async def reassess_question(
     call: Call,
     db: DB,
     trace: CallTrace,
+    assess_variant: str | None = None,
 ) -> None:
     """Reassess a question's judgement by dispatching an AssessCall.
 
     *in_light_of* page IDs are resolved (questions → latest judgement) and
     passed as ``context_page_ids`` on the child assess call so they appear
     fully expanded in the assessment context.
+
+    *assess_variant* overrides the settings-level ``assess_call_variant``
+    when provided.
     """
     resolved_id = await db.resolve_page_id(page_id)
     if not resolved_id:
@@ -362,7 +366,8 @@ async def reassess_question(
         parent_call_id=call.id,
         context_page_ids=context_page_ids,
     )
-    cls = ASSESS_CALL_CLASSES[get_settings().assess_call_variant]
+    variant = assess_variant or get_settings().assess_call_variant
+    cls = ASSESS_CALL_CLASSES[variant]
     assess = cls(resolved_id, assess_call, db)
     await assess.run()
 

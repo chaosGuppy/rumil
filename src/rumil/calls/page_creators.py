@@ -52,11 +52,13 @@ class SimpleAgentLoop(PageCreator):
         task_description: str,
         available_moves: Sequence[MoveType] | None = None,
         max_rounds: int | None = None,
+        prompt_name: str | None = None,
     ) -> None:
         self._call_type = call_type
         self._task_description = task_description
         self._available_moves = available_moves
         self._max_rounds = max_rounds
+        self._prompt_name = prompt_name
 
     async def create_pages(
         self,
@@ -79,7 +81,7 @@ class SimpleAgentLoop(PageCreator):
             else list(MoveType)
         )
         tools = [MOVES[mt].bind(infra.state) for mt in moves_list]
-        system_prompt = build_system_prompt(self._call_type.value)
+        system_prompt = build_system_prompt(self._prompt_name or self._call_type.value)
         user_message = build_user_message(
             context.context_text,
             self._task_description,

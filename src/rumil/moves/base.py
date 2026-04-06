@@ -272,26 +272,40 @@ def write_page_file(page: Page) -> None:
 async def _copy_consideration_links(
     old_page_id: str, new_page_id: str, db: DB
 ) -> None:
-    """Copy outbound CONSIDERATION links from *old_page_id* to *new_page_id*."""
-    links = await db.get_links_from(old_page_id)
-    for link in links:
-        if link.link_type == LinkType.CONSIDERATION:
-            await db.save_link(
-                PageLink(
-                    from_page_id=new_page_id,
-                    to_page_id=link.to_page_id,
-                    link_type=LinkType.CONSIDERATION,
-                    direction=link.direction,
-                    strength=link.strength,
-                    reasoning=link.reasoning,
-                    role=link.role,
-                )
+    """Copy outbound CONSIDERATION links from *old_page_id* to *new_page_id*.
+
+    Skips links where *new_page_id* already has a CONSIDERATION link to the
+    same target with the same direction.
+    """
+    old_links = await db.get_links_from(old_page_id)
+    new_links = await db.get_links_from(new_page_id)
+    existing = {
+        (l.to_page_id, l.direction)
+        for l in new_links
+        if l.link_type == LinkType.CONSIDERATION
+    }
+    copied = 0
+    for link in old_links:
+        if link.link_type != LinkType.CONSIDERATION:
+            continue
+        if (link.to_page_id, link.direction) in existing:
+            continue
+        await db.save_link(
+            PageLink(
+                from_page_id=new_page_id,
+                to_page_id=link.to_page_id,
+                link_type=LinkType.CONSIDERATION,
+                direction=link.direction,
+                strength=link.strength,
+                reasoning=link.reasoning,
+                role=link.role,
             )
-    count = sum(1 for l in links if l.link_type == LinkType.CONSIDERATION)
-    if count:
+        )
+        copied += 1
+    if copied:
         log.info(
             "Copied %d consideration links from %s to %s",
-            count, old_page_id[:8], new_page_id[:8],
+            copied, old_page_id[:8], new_page_id[:8],
         )
 
 

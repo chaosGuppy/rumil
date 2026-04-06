@@ -7,7 +7,7 @@ from rumil.calls.context_builders import (
     _gather_connected_pages,
     _get_latest_judgement,
     _cites_superseded_pages,
-    _phase_a_resolve_supersessions,
+    _resolve_superseded_connections,
     _swap_superseded_link,
 )
 from rumil.models import (
@@ -222,7 +222,7 @@ async def test_phase_a_swaps_superseded_pages(tmp_db):
     ))
     await tmp_db.supersede_page(old.id, new.id)
 
-    connected = await _phase_a_resolve_supersessions(q.id, None, tmp_db)
+    connected = await _resolve_superseded_connections(q.id, None, tmp_db)
     page_ids = {p.id for p, _ in connected}
     assert new.id in page_ids
     assert old.id not in page_ids
@@ -230,7 +230,7 @@ async def test_phase_a_swaps_superseded_pages(tmp_db):
 
 async def test_phase_a_keeps_active_pages(tmp_db, question_with_considerations):
     q, c1, c2, child, *_ = question_with_considerations
-    connected = await _phase_a_resolve_supersessions(q.id, None, tmp_db)
+    connected = await _resolve_superseded_connections(q.id, None, tmp_db)
     page_ids = {p.id for p, _ in connected}
     assert c1.id in page_ids
     assert c2.id in page_ids
@@ -256,7 +256,7 @@ async def test_phase_a_includes_judgement_connections(tmp_db):
         link_type=LinkType.CONSIDERATION,
     ))
 
-    connected = await _phase_a_resolve_supersessions(q.id, j, tmp_db)
+    connected = await _resolve_superseded_connections(q.id, j, tmp_db)
     page_ids = {p.id for p, _ in connected}
     assert j.id in page_ids
     assert claim_on_j.id in page_ids
@@ -322,6 +322,6 @@ async def test_phase_a_deduplicates_shared_links(tmp_db):
     await tmp_db.save_link(link_to_q)
     await tmp_db.save_link(link_to_j)
 
-    connected = await _phase_a_resolve_supersessions(q.id, j, tmp_db)
+    connected = await _resolve_superseded_connections(q.id, j, tmp_db)
     link_ids = [link.id for _, link in connected]
     assert len(link_ids) == len(set(link_ids)), "Links should be deduplicated"

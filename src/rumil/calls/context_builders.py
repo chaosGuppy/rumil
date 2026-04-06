@@ -621,7 +621,10 @@ class WebResearchEmbeddingContext(ContextBuilder):
 
 class _LoadBearingSelection(BaseModel):
     page_ids: list[str] = Field(
-        description="8-char short IDs of the most load-bearing pages (up to 5)"
+        description=(
+            "8-char short IDs of the pages whose content the judgement is "
+            "most sensitive to (up to 5)"
+        )
     )
 
 
@@ -654,7 +657,7 @@ async def _gather_connected_pages(
     """Return all (page, link) pairs directly connected to a page.
 
     Gathers considerations, child questions, and judgements linked to *page_id*.
-    Includes superseded pages so that Phase A can detect and swap them.
+    Includes superseded pages so that supersession resolution can detect and swap them.
     """
     links_to = await db.get_links_to(page_id)
     links_from = await db.get_links_from(page_id)
@@ -747,12 +750,12 @@ async def _get_latest_judgement(
     return max(judgements, key=lambda j: j.created_at)
 
 
-async def _phase_a_resolve_supersessions(
+async def _resolve_superseded_connections(
     question_id: str,
     latest_judgement: Page | None,
     db: DB,
 ) -> list[tuple[Page, PageLink]]:
-    """Phase A: resolve superseded connected pages by swapping links.
+    """Resolve superseded connected pages by swapping links.
 
     Returns the refreshed list of connected (page, link) pairs.
     """
@@ -808,13 +811,13 @@ async def _cites_superseded_pages(page: Page, db: DB) -> bool:
     return any(p.is_superseded for p in cited_pages.values())
 
 
-async def _phase_b1_reassess_stale(
+async def _reassess_pages_citing_superseded(
     connected: list[tuple[Page, PageLink]],
     question: Page,
     latest_judgement: Page | None,
     infra: CallInfra,
 ) -> None:
-    """Phase B1: find connected pages with superseded dependencies and reassess."""
+    """Find connected pages that cite superseded content and reassess them."""
     stale: list[Page] = []
     checks = await asyncio.gather(
         *[_cites_superseded_pages(page, infra.db) for page, _ in connected]
@@ -824,36 +827,66 @@ async def _phase_b1_reassess_stale(
             stale.append(page)
 
     if not stale:
-        log.info("Phase B1: no connected pages cite superseded pages")
+        log.info("Reassess stale: no connected pages cite superseded pages")
         return
 
-    log.info("Phase B1: %d connected pages cite superseded pages", len(stale))
+    log.info("Reassess stale: %d connected pages cite superseded pages", len(stale))
 
     if len(stale) > 5:
-        judgement_context = ""
+        judgement_content = (
+            latest_judgement.content if latest_judgement else None
+        )
+
+        page_entries: list[str] = []
+        for p in stale:
+            entry = f"### `{p.id[:8]}` — {p.headline} ({p.page_type.value})"
+            if judgement_content:
+                sid = p.id[:8]
+                cite_pattern = re.compile(
+                    rf'[^\n]*\[{re.escape(sid)}\][^\n]*'
+                )
+                cite_lines = cite_pattern.findall(judgement_content)
+                if cite_lines:
+                    entry += "\n\nCited in the judgement as follows:"
+                    for line in cite_lines[:5]:
+                        entry += f"\n> {line.strip()}"
+                else:
+                    entry += "\n\n(Not directly cited in the judgement.)"
+            page_entries.append(entry)
+
+        page_list = "\n\n".join(page_entries)
+
+        user_message_parts = [f"## Question\n\n**{question.headline}**"]
         if latest_judgement:
-            judgement_context = (
-                f"\n\n## Latest Judgement\n\n"
+            user_message_parts.append(
+                f"## Judgement\n\n"
                 f"**{latest_judgement.headline}**\n\n"
                 f"{latest_judgement.content}"
             )
-        page_list = "\n".join(
-            f"- `{p.id[:8]}` — {p.headline} ({p.page_type.value})"
-            for p in stale
+        user_message_parts.append(
+            f"## Candidate pages\n\n"
+            f"Each of the following pages may contain outdated information. "
+            f"We can only refresh 5 of them. Pick the 5 whose content the "
+            f"judgement is most sensitive to.\n\n{page_list}"
         )
+
         meta = LLMExchangeMetadata(
             call_id=infra.call.id,
             phase="big_assess_b1_select",
         )
         result = await structured_call(
-            "You are selecting the most important pages for a research question. "
-            "Pick the 5 pages whose accuracy is most critical to answering the "
-            "question correctly. Return their 8-char short IDs.",
-            user_message=(
-                f"## Question\n\n**{question.headline}**"
-                f"{judgement_context}\n\n"
-                f"## Pages with stale dependencies\n\n{page_list}"
-            ),
+            "You are deciding which pages are most important to keep "
+            "up-to-date for a research question.\n\n"
+            "A page is important if the judgement is **sensitive** to its "
+            "content — meaning that if the page's content changed, the "
+            "judgement's conclusions would likely change too. A page that "
+            "is cited heavily, or that supplies key numbers, thresholds, "
+            "or pivotal reasoning to the judgement, is more important than "
+            "one that is mentioned in passing or provides background colour.\n\n"
+            "You cannot see each page's full content, so judge importance "
+            "from the page's headline and how it is cited in the judgement.\n\n"
+            "Select up to 5 pages. Return their 8-char short IDs.",
+            user_message="\n\n".join(user_message_parts),
             response_model=_LoadBearingSelection,
             metadata=meta,
             db=infra.db,
@@ -896,22 +929,22 @@ async def _phase_b1_reassess_stale(
                 page.id, "", infra.call, infra.db, infra.trace,
             )
 
-    log.info("Phase B1: reassessing %d pages", len(stale))
+    log.info("Reassess stale: reassessing %d pages", len(stale))
     await asyncio.gather(*[_do_reassess(p) for p in stale])
 
 
-async def _phase_b2_embedding_quality(
+async def _find_higher_quality_replacements(
     connected: list[tuple[Page, PageLink]],
     question: Page,
     latest_judgement: Page | None,
     infra: CallInfra,
 ) -> set[str]:
-    """Phase B2: embedding-based quality check on connected pages.
+    """Search for higher-quality replacements for connected pages via embeddings.
 
-    For each connected page, searches for similar pages (>0.4 similarity).
+    For each connected page, searches for similar pages by embedding distance.
     If more than 10 connected pages have matches, asks an LLM which 10 are
     most important to the question. For each chosen connected page, asks an
-    LLM whether any of its 5 closest matches should be used instead.
+    LLM whether any matches are more robust, credible, or useful versions.
 
     Returns a set of page IDs chosen as better replacements (for context only).
     """
@@ -944,12 +977,12 @@ async def _phase_b2_embedding_quality(
                 f"{c.headline[:40]} ({score:.2f})" for c, score in candidates
             )
             log.info(
-                "Phase B2: %s (%s) — %d matches: %s",
+                "Find replacements: %s (%s) — %d matches: %s",
                 page.id[:8], page.headline[:50], len(candidates), match_titles,
             )
         else:
             log.info(
-                "Phase B2: %s (%s) — no matches",
+                "Find replacements: %s (%s) — no matches",
                 page.id[:8], page.headline[:50],
             )
 
@@ -958,7 +991,7 @@ async def _phase_b2_embedding_quality(
     ]
 
     if not pages_with_matches:
-        log.info("Phase B2: no connected pages have similar matches")
+        log.info("Find replacements: no connected pages have similar matches")
         return set()
 
     log.info(
@@ -1058,7 +1091,7 @@ async def _phase_b2_embedding_quality(
     for ids in per_page_results:
         replacement_ids |= ids
 
-    log.info("Phase B2: found %d replacement pages", len(replacement_ids))
+    log.info("Find replacements: found %d replacement pages", len(replacement_ids))
     return replacement_ids
 
 
@@ -1126,11 +1159,12 @@ async def _generate_missing_abstracts(
 class BigAssessContext(ContextBuilder):
     """Elaborate context builder that freshens connected pages before assessment.
 
-    Runs four phases:
-    A) Resolve superseded connected pages (swaps links in DB)
-    B1) Reassess connected pages with stale dependencies
-    B2) Embedding-based quality check for better versions
-    C) Build final embedding context with all gathered pages
+    Steps:
+    1. Resolve superseded connections (swap links in DB)
+    2. Reassess pages that cite superseded content
+    3. Search for higher-quality replacement pages via embeddings
+    4. Generate missing abstracts
+    5. Build final embedding context with all gathered pages
     """
 
     def __init__(self, call_type: CallType) -> None:
@@ -1147,27 +1181,27 @@ class BigAssessContext(ContextBuilder):
 
         latest_judgement = await _get_latest_judgement(infra.question_id, db)
 
-        connected = await _phase_a_resolve_supersessions(
+        connected = await _resolve_superseded_connections(
             infra.question_id, latest_judgement, db,
         )
         log.info(
-            "Big assess phase A complete: %d connected pages after supersession",
+            "Big assess: %d connected pages after supersession resolution",
             len(connected),
         )
 
-        await _phase_b1_reassess_stale(
+        await _reassess_pages_citing_superseded(
             connected, question, latest_judgement, infra,
         )
         latest_judgement = await _get_latest_judgement(infra.question_id, db)
-        connected = await _phase_a_resolve_supersessions(
+        connected = await _resolve_superseded_connections(
             infra.question_id, latest_judgement, db,
         )
         log.info(
-            "Big assess post-B1 refresh: %d connected pages",
+            "Big assess: %d connected pages after reassessment refresh",
             len(connected),
         )
 
-        replacement_ids = await _phase_b2_embedding_quality(
+        replacement_ids = await _find_higher_quality_replacements(
             connected, question, latest_judgement, infra,
         )
 

@@ -619,19 +619,84 @@ class WebResearchEmbeddingContext(ContextBuilder):
         )
 
 
-class _LoadBearingSelection(BaseModel):
+class _PageSelection(BaseModel):
     page_ids: list[str] = Field(
-        description=(
-            "8-char short IDs of the pages whose content the judgement is "
-            "most sensitive to (up to 5)"
+        description="8-char short IDs of the selected pages"
+    )
+
+
+async def _select_sensitive_pages(
+    pages: Sequence[Page],
+    question: Page,
+    latest_judgement: Page | None,
+    limit: int,
+    infra: CallInfra,
+) -> list[Page]:
+    """Ask an LLM which pages the judgement is most sensitive to.
+
+    Formats each page with its headline and citation excerpts from the
+    judgement, then asks the model to select up to *limit* pages.
+    Returns the selected subset in the original order.
+    """
+    judgement_content = latest_judgement.content if latest_judgement else None
+
+    page_entries: list[str] = []
+    for p in pages:
+        entry = f"### `{p.id[:8]}` — {p.headline} ({p.page_type.value})"
+        if judgement_content:
+            cite_pattern = re.compile(
+                rf'[^\n]*\[{re.escape(p.id[:8])}\][^\n]*'
+            )
+            cite_lines = cite_pattern.findall(judgement_content)
+            if cite_lines:
+                entry += "\n\nCited in the judgement as follows:"
+                for line in cite_lines[:5]:
+                    entry += f"\n> {line.strip()}"
+            else:
+                entry += "\n\n(Not directly cited in the judgement.)"
+        page_entries.append(entry)
+
+    page_list = "\n\n".join(page_entries)
+
+    user_message_parts = [f"## Question\n\n**{question.headline}**"]
+    if latest_judgement:
+        user_message_parts.append(
+            f"## Judgement\n\n"
+            f"**{latest_judgement.headline}**\n\n"
+            f"{latest_judgement.content}"
         )
+    user_message_parts.append(
+        f"## Candidate pages\n\n"
+        f"Pick the {limit} pages whose content the judgement is most "
+        f"sensitive to.\n\n{page_list}"
     )
 
-
-class _ImportantConnectedPages(BaseModel):
-    page_ids: list[str] = Field(
-        description="8-char short IDs of the most important connected pages (up to 10)"
+    meta = LLMExchangeMetadata(
+        call_id=infra.call.id,
+        phase="big_assess_select_sensitive",
     )
+    result = await structured_call(
+        "You are deciding which pages are most important for a research "
+        "question's judgement.\n\n"
+        "A page is important if the judgement is **sensitive** to its "
+        "content — meaning that if the page's content changed, the "
+        "judgement's conclusions would likely change too. A page that "
+        "is cited heavily, or that supplies key numbers, thresholds, "
+        "or pivotal reasoning to the judgement, is more important than "
+        "one that is mentioned in passing or provides background colour.\n\n"
+        "You cannot see each page's full content, so judge importance "
+        "from the page's headline and how it is cited in the judgement.\n\n"
+        f"Select up to {limit} pages. Return their 8-char short IDs.",
+        user_message="\n\n".join(user_message_parts),
+        response_model=_PageSelection,
+        metadata=meta,
+        db=infra.db,
+    )
+    if result.data:
+        selected = _PageSelection.model_validate(result.data)
+        selected_ids = set(selected.page_ids)
+        return [p for p in pages if p.id[:8] in selected_ids][:limit]
+    return list(pages[:limit])
 
 
 class _ReplacementPick(BaseModel):
@@ -833,68 +898,9 @@ async def _reassess_pages_citing_superseded(
     log.info("Reassess stale: %d connected pages cite superseded pages", len(stale))
 
     if len(stale) > 5:
-        judgement_content = (
-            latest_judgement.content if latest_judgement else None
+        stale = await _select_sensitive_pages(
+            stale, question, latest_judgement, limit=5, infra=infra,
         )
-
-        page_entries: list[str] = []
-        for p in stale:
-            entry = f"### `{p.id[:8]}` — {p.headline} ({p.page_type.value})"
-            if judgement_content:
-                sid = p.id[:8]
-                cite_pattern = re.compile(
-                    rf'[^\n]*\[{re.escape(sid)}\][^\n]*'
-                )
-                cite_lines = cite_pattern.findall(judgement_content)
-                if cite_lines:
-                    entry += "\n\nCited in the judgement as follows:"
-                    for line in cite_lines[:5]:
-                        entry += f"\n> {line.strip()}"
-                else:
-                    entry += "\n\n(Not directly cited in the judgement.)"
-            page_entries.append(entry)
-
-        page_list = "\n\n".join(page_entries)
-
-        user_message_parts = [f"## Question\n\n**{question.headline}**"]
-        if latest_judgement:
-            user_message_parts.append(
-                f"## Judgement\n\n"
-                f"**{latest_judgement.headline}**\n\n"
-                f"{latest_judgement.content}"
-            )
-        user_message_parts.append(
-            f"## Candidate pages\n\n"
-            f"Each of the following pages may contain outdated information. "
-            f"We can only refresh 5 of them. Pick the 5 whose content the "
-            f"judgement is most sensitive to.\n\n{page_list}"
-        )
-
-        meta = LLMExchangeMetadata(
-            call_id=infra.call.id,
-            phase="big_assess_b1_select",
-        )
-        result = await structured_call(
-            "You are deciding which pages are most important to keep "
-            "up-to-date for a research question.\n\n"
-            "A page is important if the judgement is **sensitive** to its "
-            "content — meaning that if the page's content changed, the "
-            "judgement's conclusions would likely change too. A page that "
-            "is cited heavily, or that supplies key numbers, thresholds, "
-            "or pivotal reasoning to the judgement, is more important than "
-            "one that is mentioned in passing or provides background colour.\n\n"
-            "You cannot see each page's full content, so judge importance "
-            "from the page's headline and how it is cited in the judgement.\n\n"
-            "Select up to 5 pages. Return their 8-char short IDs.",
-            user_message="\n\n".join(user_message_parts),
-            response_model=_LoadBearingSelection,
-            metadata=meta,
-            db=infra.db,
-        )
-        if result.data:
-            selected = _LoadBearingSelection.model_validate(result.data)
-            selected_ids = set(selected.page_ids)
-            stale = [p for p in stale if p.id[:8] in selected_ids][:5]
 
     async def _do_reassess(page: Page) -> None:
         from rumil.clean.common import reassess_claim, reassess_question
@@ -1000,41 +1006,15 @@ async def _find_higher_quality_replacements(
     )
 
     if len(pages_with_matches) > 10:
-        judgement_context = ""
-        if latest_judgement:
-            judgement_context = (
-                f"\n\n## Latest Judgement\n\n"
-                f"**{latest_judgement.headline}**\n\n"
-                f"{latest_judgement.content}"
-            )
-        page_list = "\n".join(
-            f"- `{p.id[:8]}` — {p.headline} ({p.page_type.value})"
-            for p, _ in pages_with_matches
+        match_pages = [p for p, _ in pages_with_matches]
+        selected = await _select_sensitive_pages(
+            match_pages, question, latest_judgement, limit=10, infra=infra,
         )
-        meta = LLMExchangeMetadata(
-            call_id=infra.call.id,
-            phase="big_assess_b2_narrow",
-        )
-        result = await structured_call(
-            "You are selecting the most important connected pages for a "
-            "research question. Pick the 10 pages whose quality matters "
-            "most to the question. Return their 8-char short IDs.",
-            user_message=(
-                f"## Question\n\n**{question.headline}**"
-                f"{judgement_context}\n\n"
-                f"## Connected pages with potential replacements\n\n{page_list}"
-            ),
-            response_model=_ImportantConnectedPages,
-            metadata=meta,
-            db=infra.db,
-        )
-        if result.data:
-            selected = _ImportantConnectedPages.model_validate(result.data)
-            selected_ids = set(selected.page_ids)
-            pages_with_matches = [
-                (p, cs) for p, cs in pages_with_matches
-                if p.id[:8] in selected_ids
-            ][:10]
+        selected_ids = {p.id for p in selected}
+        pages_with_matches = [
+            (p, cs) for p, cs in pages_with_matches
+            if p.id in selected_ids
+        ][:10]
 
     async def _check_replacements(
         page: Page, candidates: list[tuple[Page, float]],

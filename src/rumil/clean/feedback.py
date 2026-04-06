@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 
 from pydantic import BaseModel, Field
@@ -76,17 +77,69 @@ class _InvestigateQuestionInput(BaseModel):
     )
 
 
-def _make_investigate_question_tool(
+@dataclass
+class _PendingInvestigation:
+    """A background investigation awaiting completion."""
+
+    question_id: str
+    display_headline: str
+    child_call_id: str
+    budget: int
+    task: asyncio.Task[str]
+
+
+def _make_investigation_tools(
     call: Call, db: DB, broadcaster: Broadcaster | None, investigation_budget: int
 ):
-    """MCP tool: commission investigation of a subquestion via the orchestrator.
+    """Create the investigate_question and collect_investigations MCP tools.
+
+    Returns a tuple of (investigate_tool, collect_tool) to register on the
+    MCP server.  ``investigate_question`` dispatches each investigation as a
+    background ``asyncio.Task`` and returns immediately so that the Claude
+    Agent SDK (which executes MCP tool calls serially) does not block on
+    long-running orchestrator runs.  ``collect_investigations`` awaits all
+    pending tasks and returns their results.
 
     *investigation_budget* is the total budget pool shared across all calls.
-    Each call's ``budget`` arg is deducted from this pool; calls that would
-    exceed it are rejected.
     """
     budget_remaining = investigation_budget
     budget_lock = asyncio.Lock()
+    pending: dict[str, _PendingInvestigation] = {}
+
+    async def _run_investigation(
+        question_id: str,
+        display_headline: str,
+        budget: int,
+    ) -> str:
+        """Run orchestrator and return a summary string."""
+        orchestrator = ExperimentalOrchestrator(db, broadcaster, budget_cap=budget)
+        orchestrator._parent_call_id = call.id
+        child_call_id = await orchestrator.create_initial_call(
+            question_id, parent_call_id=call.id
+        )
+        try:
+            await orchestrator.run(question_id)
+            judgement_text = ""
+            judgements = await db.get_judgements_for_question(question_id)
+            if judgements:
+                latest = max(judgements, key=lambda j: j.created_at)
+                judgement_text = (
+                    f"\n\n## Judgement on [{question_id[:8]}]\n\n"
+                    f"**{latest.headline}**\n\n{latest.content}"
+                )
+            return (
+                f"Investigation complete for [{question_id[:8]}] "
+                f'"{display_headline}". Child call: {child_call_id[:8]}. '
+                f"Remaining investigation budget: {budget_remaining}."
+                f"{judgement_text}"
+            )
+        except Exception:
+            log.exception("investigate_question failed for %s", question_id[:8])
+            return (
+                f"Investigation failed for [{question_id[:8]}] "
+                f'"{display_headline}". Child call: {child_call_id[:8]}. '
+                f"Remaining investigation budget: {budget_remaining}."
+            )
 
     @tool(
         "investigate_question",
@@ -96,7 +149,9 @@ def _make_investigate_question_tool(
         "new question (by headline + content). Either way, the question is "
         "automatically linked as a child of parent_question_id. "
         "Each call's budget is deducted from a shared investigation budget "
-        "pool — check the remaining budget in the tool response.",
+        "pool — check the remaining budget in the tool response. "
+        "This tool returns immediately — the investigation runs in the "
+        "background. Call collect_investigations to wait for results.",
         _InvestigateQuestionInput.model_json_schema(),
     )
     async def investigate_question(args: dict) -> dict:
@@ -106,23 +161,6 @@ def _make_investigate_question_tool(
         content = args.get("content", "")
         parent_question_id = args["parent_question_id"]
         budget = args["budget"]
-
-        async with budget_lock:
-            if budget > budget_remaining:
-                return {
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": (
-                                f"Rejected: requested budget {budget} exceeds "
-                                f"remaining investigation budget of "
-                                f"{budget_remaining}. "
-                                f"Use a smaller budget or skip this investigation."
-                            ),
-                        }
-                    ]
-                }
-            budget_remaining -= budget
 
         if not question_id and not headline:
             return {
@@ -147,6 +185,35 @@ def _make_investigate_question_tool(
                     }
                 ]
             }
+
+        if not headline:
+            resolved = await db.resolve_page_id(question_id)
+            if not resolved:
+                return {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": f"Question '{question_id}' not found.",
+                        }
+                    ]
+                }
+
+        async with budget_lock:
+            if budget > budget_remaining:
+                return {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": (
+                                f"Rejected: requested budget {budget} exceeds "
+                                f"remaining investigation budget of "
+                                f"{budget_remaining}. "
+                                f"Use a smaller budget or skip this investigation."
+                            ),
+                        }
+                    ]
+                }
+            budget_remaining -= budget
 
         if headline:
             parent_page = await db.get_page(parent_resolved)
@@ -174,15 +241,7 @@ def _make_investigate_question_tool(
             )
         else:
             resolved = await db.resolve_page_id(question_id)
-            if not resolved:
-                return {
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": f"Question '{question_id}' not found.",
-                        }
-                    ]
-                }
+            assert resolved  # validated before budget deduction
             page = await db.get_page(resolved)
             display_headline = page.headline if page else resolved[:8]
 
@@ -194,39 +253,77 @@ def _make_investigate_question_tool(
             link_type=LinkType.CHILD_QUESTION,
         )
 
-        orchestrator = ExperimentalOrchestrator(db, broadcaster, budget_cap=budget)
-        orchestrator._parent_call_id = call.id
-        child_call_id = await orchestrator.create_initial_call(
-            resolved, parent_call_id=call.id
+        task = asyncio.create_task(
+            _run_investigation(resolved, display_headline, budget)
+        )
+        short_id = resolved[:8]
+        pending[short_id] = _PendingInvestigation(
+            question_id=resolved,
+            display_headline=display_headline,
+            child_call_id="",
+            budget=budget,
+            task=task,
+        )
+        log.info(
+            "Dispatched background investigation for %s (%d pending)",
+            short_id,
+            len(pending),
         )
 
-        try:
-            await orchestrator.run(resolved)
-            judgement_text = ""
-            judgements = await db.get_judgements_for_question(resolved)
-            if judgements:
-                latest = max(judgements, key=lambda j: j.created_at)
-                judgement_text = (
-                    f"\n\n## Judgement on [{resolved[:8]}]\n\n"
-                    f"**{latest.headline}**\n\n{latest.content}"
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": (
+                        f"Investigation dispatched for [{short_id}] "
+                        f'"{display_headline}" (budget {budget}). '
+                        f"Remaining investigation budget: {budget_remaining}. "
+                        f"{len(pending)} investigation(s) now running in the "
+                        f"background. Call collect_investigations when you are "
+                        f"done dispatching to wait for results."
+                    ),
+                }
+            ]
+        }
+
+    @tool(
+        "collect_investigations",
+        "Wait for all pending background investigations to complete and "
+        "return their results. Call this after dispatching all your "
+        "investigate_question calls. Blocks until every investigation "
+        "finishes.",
+        {"type": "object", "properties": {}, "required": []},
+    )
+    async def collect_investigations(args: dict) -> dict:
+        if not pending:
+            return {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "No pending investigations to collect.",
+                    }
+                ]
+            }
+
+        log.info("Collecting %d pending investigations", len(pending))
+        results: list[str] = []
+        items = list(pending.items())
+        tasks = [inv.task for _, inv in items]
+        summaries = await asyncio.gather(*tasks, return_exceptions=True)
+        for (short_id, inv), summary in zip(items, summaries):
+            if isinstance(summary, BaseException):
+                log.exception("Investigation %s raised", short_id, exc_info=summary)
+                results.append(
+                    f"Investigation FAILED for [{short_id}] "
+                    f'"{inv.display_headline}": {summary}'
                 )
-            summary = (
-                f"Investigation complete for [{resolved[:8]}] "
-                f'"{display_headline}". Child call: {child_call_id[:8]}. '
-                f"Remaining investigation budget: {budget_remaining}."
-                f"{judgement_text}"
-            )
-        except Exception:
-            log.exception("investigate_question failed for %s", resolved[:8])
-            summary = (
-                f"Investigation failed for [{resolved[:8]}] "
-                f'"{display_headline}". Child call: {child_call_id[:8]}. '
-                f"Remaining investigation budget: {budget_remaining}."
-            )
+            else:
+                results.append(summary)
+        pending.clear()
 
-        return {"content": [{"type": "text", "text": summary}]}
+        return {"content": [{"type": "text", "text": "\n\n---\n\n".join(results)}]}
 
-    return investigate_question
+    return investigate_question, collect_investigations
 
 
 async def _plan_and_edit(
@@ -256,11 +353,11 @@ async def _plan_and_edit(
     )
 
     explore_tool = make_explore_tool(db)
-    investigate_tool = _make_investigate_question_tool(
+    investigate_tool, collect_tool = _make_investigation_tools(
         call, db, broadcaster, advertised_investigation_budget
     )
 
-    plan_tools = [explore_tool, investigate_tool]
+    plan_tools = [explore_tool, investigate_tool, collect_tool]
     all_tool_fqnames = [f"mcp__{_SERVER_NAME}__{t.name}" for t in plan_tools]
 
     investigator_prompt = build_investigator_prompt("feedback")

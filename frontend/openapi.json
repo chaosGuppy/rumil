@@ -203,6 +203,42 @@
               ],
               "title": "Staged Run Id"
             }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
           }
         ],
         "responses": {
@@ -211,11 +247,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Page"
-                  },
-                  "title": "Response List Pages Api Projects  Project Id  Pages Get"
+                  "$ref": "#/components/schemas/PaginatedPagesOut"
                 }
               }
             }
@@ -2308,6 +2340,32 @@
               }
             ],
             "title": "Cost Usd"
+          },
+          "has_thinking": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Has Thinking"
+          },
+          "tool_uses": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Uses"
           }
         },
         "type": "object",
@@ -2323,7 +2381,9 @@
           "cache_creation_input_tokens",
           "cache_read_input_tokens",
           "duration_ms",
-          "cost_usd"
+          "cost_usd",
+          "has_thinking",
+          "tool_uses"
         ],
         "title": "LLMExchangeEventOut"
       },
@@ -2934,6 +2994,37 @@
         ],
         "title": "PageType"
       },
+      "PaginatedPagesOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Page"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total_count": {
+            "type": "integer",
+            "title": "Total Count"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total_count",
+          "offset",
+          "limit"
+        ],
+        "title": "PaginatedPagesOut"
+      },
       "Project": {
         "properties": {
           "name": {
@@ -3252,6 +3343,11 @@
               }
             ],
             "title": "Cost Usd"
+          },
+          "staged": {
+            "type": "boolean",
+            "title": "Staged",
+            "default": false
           }
         },
         "type": "object",

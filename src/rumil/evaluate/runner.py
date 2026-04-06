@@ -100,6 +100,7 @@ async def run_evaluation(
         trace=trace,
         broadcaster=broadcaster,
         allowed_tools=[_EXPLORE_TOOL_FQNAME, "Read", "Grep", "Bash"],
+        disallowed_tools=(),
         agents={
             "investigator": AgentDefinition(
                 description=(
@@ -119,7 +120,7 @@ async def run_evaluation(
 
     try:
         result = await run_sdk_agent(config)
-        result_text = "\n\n".join(result.last_assistant_text)
+        result_text = "\n\n".join(result.all_assistant_text)
         await trace.record(EvaluationCompleteEvent(evaluation=result_text))
         call.review_json = {"evaluation": result_text}
         call.result_summary = result_text

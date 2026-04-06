@@ -704,6 +704,16 @@ export type LlmExchangeEventOut = {
      * Cost Usd
      */
     cost_usd: number | null;
+    /**
+     * Has Thinking
+     */
+    has_thinking: boolean | null;
+    /**
+     * Tool Uses
+     */
+    tool_uses: Array<{
+        [key: string]: unknown;
+    }> | null;
 };
 
 /**
@@ -1031,6 +1041,28 @@ export type PageRef = {
 export type PageType = 'source' | 'claim' | 'question' | 'judgement' | 'concept' | 'wiki' | 'summary';
 
 /**
+ * PaginatedPagesOut
+ */
+export type PaginatedPagesOut = {
+    /**
+     * Items
+     */
+    items: Array<Page>;
+    /**
+     * Total Count
+     */
+    total_count: number;
+    /**
+     * Offset
+     */
+    offset: number;
+    /**
+     * Limit
+     */
+    limit: number;
+};
+
+/**
  * Project
  */
 export type Project = {
@@ -1214,6 +1246,10 @@ export type RunTraceTreeOut = {
      * Cost Usd
      */
     cost_usd?: number | null;
+    /**
+     * Staged
+     */
+    staged?: boolean;
 };
 
 /**
@@ -1676,6 +1712,18 @@ export type ListPagesApiProjectsProjectIdPagesGetData = {
          * Staged Run Id
          */
         staged_run_id?: string | null;
+        /**
+         * Search
+         */
+        search?: string | null;
+        /**
+         * Offset
+         */
+        offset?: number;
+        /**
+         * Limit
+         */
+        limit?: number;
     };
     url: '/api/projects/{project_id}/pages';
 };
@@ -1691,11 +1739,9 @@ export type ListPagesApiProjectsProjectIdPagesGetError = ListPagesApiProjectsPro
 
 export type ListPagesApiProjectsProjectIdPagesGetResponses = {
     /**
-     * Response List Pages Api Projects  Project Id  Pages Get
-     *
      * Successful Response
      */
-    200: Array<Page>;
+    200: PaginatedPagesOut;
 };
 
 export type ListPagesApiProjectsProjectIdPagesGetResponse = ListPagesApiProjectsProjectIdPagesGetResponses[keyof ListPagesApiProjectsProjectIdPagesGetResponses];

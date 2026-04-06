@@ -27,6 +27,7 @@ from rumil.api.schemas import (
     LLMExchangeSummaryOut,
     PageCountsOut,
     PageDetailOut,
+    PaginatedPagesOut,
     RealtimeConfigOut,
     RunListItemOut,
     CallNodeOut,
@@ -145,19 +146,31 @@ async def list_project_runs(project_id: str):
 # --- Pages ---
 
 
-@app.get("/api/projects/{project_id}/pages", response_model=list[Page])
+@app.get("/api/projects/{project_id}/pages", response_model=PaginatedPagesOut)
 async def list_pages(
     project_id: str,
     page_type: PageType | None = None,
     workspace: Workspace | None = None,
     active_only: bool = True,
     staged_run_id: str | None = None,
+    search: str | None = None,
+    offset: int = 0,
+    limit: int = 50,
 ):
     db = await _get_db_maybe_staged(staged_run_id, project_id)
-    return await db.get_pages(
+    pages, total_count = await db.get_pages_paginated(
         workspace=workspace,
         page_type=page_type,
         active_only=active_only,
+        search=search,
+        offset=offset,
+        limit=limit,
+    )
+    return PaginatedPagesOut(
+        items=pages,
+        total_count=total_count,
+        offset=offset,
+        limit=limit,
     )
 
 
@@ -393,11 +406,15 @@ async def get_run_trace_tree(run_id: str):
             )
         )
     total_cost = sum(c.cost_usd or 0 for c in calls)
+    run_resp = await db.client.table("runs").select("staged").eq("id", run_id).execute()
+    run_data: list[dict[str, object]] = run_resp.data or []  # type: ignore[assignment]
+    is_staged = bool(run_data and run_data[0].get("staged"))
     return RunTraceTreeOut(
         run_id=run_id,
         question=question_page,
         calls=nodes,
         cost_usd=total_cost if total_cost > 0 else None,
+        staged=is_staged,
     )
 
 

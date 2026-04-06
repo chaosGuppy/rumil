@@ -261,6 +261,7 @@ class RunTraceTreeOut(BaseModel):
     question: Page | None
     calls: list[CallNodeOut]
     cost_usd: float | None = None
+    staged: bool = False
 
 
 class RunSummaryOut(BaseModel):
@@ -278,6 +279,14 @@ class RunListItemOut(BaseModel):
     ab_run_id: str | None = None
     arms: dict | None = None
     staged: bool = False
+
+
+class PaginatedPagesOut(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+    items: Sequence[Page]
+    total_count: int
+    offset: int
+    limit: int
 
 
 class ABRunArmOut(BaseModel):

@@ -1,6 +1,6 @@
 """Typed trace event models for the execution tracer."""
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, BeforeValidator, Field, model_validator
 
@@ -72,6 +72,8 @@ class LLMExchangeEvent(BaseModel):
     cache_read_input_tokens: int | None = None
     duration_ms: int | None = None
     cost_usd: float | None = None
+    has_thinking: bool | None = None
+    tool_uses: list[dict[str, Any]] | None = None
 
 
 class WarningEvent(BaseModel):

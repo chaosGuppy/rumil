@@ -671,9 +671,11 @@ class DB:
         payload: dict = {"new_page_id": new_id}
         if change_magnitude is not None:
             payload["change_magnitude"] = change_magnitude
+
         await self.record_mutation_event(
             "supersede_page", old_id, payload,
         )
+
         if not self.staged:
             await self._execute(
                 self.client.table("pages").update(
@@ -683,6 +685,44 @@ class DB:
                     }
                 ).eq("id", old_id)
             )
+
+    async def get_pages_paginated(
+        self,
+        workspace: Workspace | None = None,
+        page_type: PageType | None = None,
+        active_only: bool = True,
+        search: str | None = None,
+        offset: int = 0,
+        limit: int = 50,
+    ) -> tuple[Sequence[Page], int]:
+        """Return a page of results and the total matching count."""
+        query = self.client.table("pages").select("*", count=CountMethod.exact)
+        if self.project_id:
+            query = query.eq("project_id", self.project_id)
+        if workspace:
+            query = query.eq("workspace", workspace.value)
+        if page_type:
+            query = query.eq("page_type", page_type.value)
+        if active_only:
+            query = query.eq("is_superseded", False)
+        if search:
+            query = query.or_(
+                f"headline.ilike.%{search}%,content.ilike.%{search}%"
+            )
+        query = self._staged_filter(query)
+        query = query.order(
+            "is_human_created", desc=True,
+        ).order("created_at", desc=True)
+        end = offset + limit - 1
+        result = await self._execute(query.range(offset, end))
+        total = result.count or 0
+        pages = [_row_to_page(r) for r in _rows(result)]
+        pages = await self._apply_page_events(pages)
+        await self.apply_epistemic_overrides(pages)
+        if active_only:
+            pages = [p for p in pages if p.is_active()]
+        return pages, total
+
 
     async def resolve_supersession_chain(
         self, page_id: str, max_depth: int = 10,

@@ -351,7 +351,7 @@ export default async function PageDetailPage({
 
         <div className="page-content">
           <Markdown
-            remarkPlugins={[remarkGfm]}
+            remarkPlugins={[[remarkGfm, { singleTilde: false }]]}
             components={{
               a: ({ href, children }) => {
                 if (href && href.startsWith("/pages/") && href.includes("?cite=")) {

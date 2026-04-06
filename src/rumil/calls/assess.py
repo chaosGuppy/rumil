@@ -71,8 +71,20 @@ class BigAssessCall(AssessCall):
     def _make_context_builder(self) -> ContextBuilder:
         return BigAssessContext(self.call_type)
 
+    def _make_page_creator(self) -> PageCreator:
+        return SimpleAgentLoop(
+            self.call_type,
+            self.task_description(),
+            available_moves=self._resolve_available_moves(),
+            prompt_name="big_assess",
+        )
+
     def task_description(self) -> str:
-        base = super().task_description()
+        base = (
+            "Assess this question and render a judgement.\n\n"
+            f"Question ID: `{self.infra.question_id}`\n\n"
+            "Follow the instructions in the system prompt."
+        )
         if self._guidance:
             return base + f"\n\n## Guidance\n\n{self._guidance}"
         return base

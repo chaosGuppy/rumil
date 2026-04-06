@@ -88,6 +88,10 @@ class Settings(BaseSettings):
     full_page_similarity_floor: float = _capture_field(default=0.3)
     abstract_page_similarity_floor: float = _capture_field(default=0.2)
     summary_page_similarity_floor: float = _capture_field(default=0.1)
+    big_assess_full_page_similarity_floor: float | None = _capture_field(default=None)
+    big_assess_abstract_page_similarity_floor: float | None = _capture_field(
+        default=None
+    )
 
     @property
     def is_test_mode(self) -> bool:

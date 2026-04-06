@@ -735,6 +735,45 @@ class DB:
             current_id = page.superseded_by
         return None
 
+    async def resolve_supersession_chains(
+        self, page_ids: Sequence[str], max_depth: int = 10,
+    ) -> dict[str, Page]:
+        """Bulk-resolve supersession chains for multiple page IDs.
+
+        Returns ``{original_id: active_replacement}`` for each input ID whose
+        chain reaches an active page. IDs that are already active, have broken
+        chains, or exceed *max_depth* are omitted.
+        """
+        pages = await self.get_pages_by_ids(list(page_ids))
+        pending: dict[str, str] = {}
+        result: dict[str, Page] = {}
+        origin: dict[str, str] = {}
+
+        for pid in page_ids:
+            page = pages.get(pid)
+            if not page or not page.is_superseded or not page.superseded_by:
+                continue
+            pending[pid] = page.superseded_by
+            origin[pid] = pid
+
+        for _ in range(max_depth):
+            if not pending:
+                break
+            targets = list(set(pending.values()))
+            fetched = await self.get_pages_by_ids(targets)
+            next_pending: dict[str, str] = {}
+            for orig_id, target_id in pending.items():
+                target_page = fetched.get(target_id)
+                if not target_page:
+                    continue
+                if not target_page.is_superseded:
+                    result[orig_id] = target_page
+                elif target_page.superseded_by:
+                    next_pending[orig_id] = target_page.superseded_by
+            pending = next_pending
+
+        return result
+
     # --- Links ---
 
     async def save_link(self, link: PageLink) -> None:

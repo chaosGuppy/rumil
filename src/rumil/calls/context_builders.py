@@ -869,7 +869,28 @@ async def _phase_b1_reassess_stale(
         if page.page_type == PageType.QUESTION:
             await reassess_question(
                 page.id, [], infra.call, infra.db, infra.trace,
+                assess_variant="embedding",
             )
+        elif page.page_type == PageType.JUDGEMENT:
+            links = await infra.db.get_links_from(page.id)
+            question_links = [
+                l for l in links if l.link_type == LinkType.RELATED
+            ]
+            if question_links:
+                question_id = question_links[0].to_page_id
+                log.info(
+                    "Stale judgement %s: reassessing its question %s",
+                    page.id[:8], question_id[:8],
+                )
+                await reassess_question(
+                    question_id, [], infra.call, infra.db, infra.trace,
+                    assess_variant="embedding",
+                )
+            else:
+                log.warning(
+                    "Stale judgement %s has no linked question, skipping",
+                    page.id[:8],
+                )
         else:
             await reassess_claim(
                 page.id, "", infra.call, infra.db, infra.trace,
@@ -1152,6 +1173,10 @@ class BigAssessContext(ContextBuilder):
 
         await _generate_missing_abstracts(connected, infra)
 
+        exclude_ids: set[str] = set()
+        if latest_judgement:
+            exclude_ids.add(latest_judgement.id)
+
         query = question.headline
         settings = get_settings()
         result = await build_embedding_based_context(
@@ -1164,17 +1189,64 @@ class BigAssessContext(ContextBuilder):
             full_page_char_budget=settings.big_assess_full_page_char_budget,
             abstract_page_char_budget=settings.big_assess_abstract_page_char_budget,
             summary_page_char_budget=settings.big_assess_summary_page_char_budget,
+            full_page_similarity_floor=settings.big_assess_full_page_similarity_floor,
+            abstract_page_similarity_floor=settings.big_assess_abstract_page_similarity_floor,
+            exclude_page_ids=exclude_ids,
         )
         working_page_ids = result.page_ids
 
-        extra_ids = list(replacement_ids)
+        judgement_cited_ids: list[str] = []
+        if latest_judgement and latest_judgement.content:
+            cited_sids = sorted(set(
+                _CITATION_RE.findall(latest_judgement.content)
+            ))
+            if cited_sids:
+                resp = await db._execute(
+                    db.client.table("pages")
+                    .select("id,is_superseded")
+                    .or_(",".join(f"id.like.{sid}%" for sid in cited_sids))
+                )
+                rows = resp.data or []
+                prefix_to_row: dict[str, dict] = {}
+                for row in rows:
+                    prefix = row["id"][:8]
+                    if prefix in prefix_to_row:
+                        prefix_to_row.pop(prefix)
+                    else:
+                        prefix_to_row[prefix] = row
+
+                superseded_ids = [
+                    row["id"] for row in prefix_to_row.values()
+                    if row["is_superseded"]
+                ]
+                resolved = await db.resolve_supersession_chains(superseded_ids)
+
+                for sid in cited_sids:
+                    row = prefix_to_row.get(sid)
+                    if not row:
+                        continue
+                    full_id: str = row["id"]
+                    if full_id in exclude_ids:
+                        continue
+                    if row["is_superseded"]:
+                        replacement = resolved.get(full_id)
+                        if replacement and replacement.id not in exclude_ids:
+                            judgement_cited_ids.append(replacement.id)
+                    else:
+                        judgement_cited_ids.append(full_id)
+
+        extra_ids = judgement_cited_ids + list(replacement_ids)
         preloaded_ids = infra.call.context_page_ids or []
         all_extra = extra_ids + preloaded_ids
 
         context_text = result.context_text
+        already_in_context = set(working_page_ids) | {infra.question_id} | exclude_ids
         if all_extra:
             parts: list[str] = []
             for pid in all_extra:
+                if pid in already_in_context:
+                    continue
+                already_in_context.add(pid)
                 page = await db.get_page(pid)
                 if page and page.is_active():
                     parts += [

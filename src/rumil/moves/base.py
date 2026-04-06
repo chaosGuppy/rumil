@@ -306,6 +306,7 @@ async def create_page(
     workspace = _resolve_workspace(payload.workspace)
     extra = payload.page_extra_fields()
 
+    fruit_remaining = getattr(payload, 'fruit_remaining', None)
     page = Page(
         page_type=page_type,
         layer=layer,
@@ -314,6 +315,7 @@ async def create_page(
         headline=payload.headline,
         credence=None if page_type == PageType.QUESTION else payload.credence,
         robustness=None if page_type == PageType.QUESTION else payload.robustness,
+        fruit_remaining=fruit_remaining,
         provenance_model="claude-opus-4-6",
         provenance_call_type=call.call_type.value,
         provenance_call_id=call.id,

@@ -72,6 +72,7 @@ class BaseOrchestrator(ABC):
         self.db = db
         self.broadcaster: Broadcaster | None = broadcaster
         self._owns_broadcaster: bool = False
+        self.ingest_hint: str = ""
 
     async def _pacing_params(self) -> tuple[int, int]:
         """Return (total, used) for budget pacing.

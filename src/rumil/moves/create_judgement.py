@@ -33,6 +33,14 @@ class CreateJudgementPayload(CreatePagePayload):
     sensitivity_analysis: str | None = Field(
         None, description="What would shift this judgement, and in which direction"
     )
+    fruit_remaining: int | None = Field(
+        None,
+        description=(
+            "0-10: how much useful investigation remains on this question/claim. "
+            "0=thoroughly answered with high confidence, 10=wide open with many "
+            "unexplored angles."
+        ),
+    )
     change_magnitude: int | None = Field(
         None,
         description=(

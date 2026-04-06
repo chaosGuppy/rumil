@@ -17,7 +17,7 @@ Produce a **Judgement**. It will be automatically linked to the scope question. 
 3. **Conclusion** — your position, stated clearly even if uncertain. Articulate your uncertainty clearly and in a structured way. Very often, it is a good idea to produce a probability breakdown between different possibilities or scenarios, backed by toy probability models where appropriate.
 4. **Key dependencies and sensitivity** — what your conclusion most depends on, and what would shift it
 
-Include the `key_dependencies` and `sensitivity_analysis` fields in the judgement.
+Include the `key_dependencies`, `sensitivity_analysis`, and `fruit_remaining` fields in the judgement. `fruit_remaining` (0-10) estimates how much useful investigation remains on this question: 0 = thoroughly answered with high confidence, 1-2 = close to exhausted, 3-4 = most angles covered, 5-6 = diminishing but real returns, 7-8 = substantial work remains, 9-10 = wide open with many unexplored angles.
 
 You may also produce sub-questions if important unknowns need further investigation, new claims if the weighing process surfaces something worth recording, or propose a hypothesis if the weighing reveals a compelling candidate answer. Keep generative moves secondary — the judgement is the primary output.
 

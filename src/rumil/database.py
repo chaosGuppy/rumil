@@ -113,6 +113,7 @@ def _row_to_page(row: dict[str, Any]) -> Page:
         is_superseded=bool(row.get("is_superseded", False)),
         extra=row.get("extra") or {},
         abstract=row.get("abstract") or "",
+        fruit_remaining=row.get("fruit_remaining"),
     )
 
 
@@ -414,6 +415,7 @@ class DB:
                     "superseded_by": page.superseded_by,
                     "is_superseded": page.is_superseded,
                     "extra": page.extra,
+                    "fruit_remaining": page.fruit_remaining,
                     "run_id": self.run_id,
                     "staged": self.staged,
                     "abstract": page.abstract,
@@ -1241,6 +1243,32 @@ class DB:
             ct = row["call_type"]
             counts[ct] = counts.get(ct, 0) + 1
         return counts
+
+    async def get_latest_scout_fruit(
+        self,
+        question_id: str,
+    ) -> dict[str, int | None]:
+        """Return {call_type: remaining_fruit} for the most recent completed
+        scout call of each type on this question."""
+        rows = _rows(
+            await self._execute(
+                self.client.table("calls")
+                .select("call_type, completed_at, review_json")
+                .eq("scope_page_id", question_id)
+                .eq("status", "complete")
+                .like("call_type", "scout_%")
+                .order("completed_at", desc=True)
+            )
+        )
+        result: dict[str, int | None] = {}
+        for row in rows:
+            ct = row["call_type"]
+            if ct in result:
+                continue
+            review = row.get("review_json") or {}
+            fruit = review.get("remaining_fruit") if isinstance(review, dict) else None
+            result[ct] = fruit
+        return result
 
     async def get_ingest_history(self) -> dict[str, list[str]]:
         """Return {source_id: [question_id, ...]} based on considerations

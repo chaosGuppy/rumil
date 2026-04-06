@@ -7,6 +7,7 @@ from rumil.calls.common import (
     mark_call_completed,
     run_single_call,
 )
+from rumil.calls.dispatches import estimate_dispatch_cost
 from collections.abc import Sequence
 
 from rumil.calls.dispatches import (
@@ -46,6 +47,7 @@ async def run_prioritization_call(
     dispatch_types: Sequence[CallType] | None = None,
     extra_dispatch_defs: Sequence[DispatchDef] | None = None,
     system_prompt_override: str | None = None,
+    dispatch_budget: int | None = None,
 ) -> RunCallResult:
     """Run a prioritization call with tool use (single LLM round).
 
@@ -106,6 +108,33 @@ async def run_prioritization_call(
         db=db,
         state=state,
     )
+
+    if dispatch_budget is not None and state.dispatches:
+        allocated = sum(estimate_dispatch_cost(d) for d in state.dispatches)
+        if allocated < dispatch_budget * 0.5:
+            log.warning(
+                'Prioritization under-allocated: %d/%d budget dispatched, retrying once',
+                allocated, dispatch_budget,
+            )
+            retry_msgs = list(agent_result.messages)
+            retry_msgs.append({
+                'role': 'user',
+                'content': (
+                    f'You have only dispatched ~{allocated} of {dispatch_budget} '
+                    'available budget units. Please make your remaining dispatch '
+                    'calls now.'
+                ),
+            })
+            agent_result = await run_single_call(
+                system_prompt,
+                tools=tools,
+                call_id=call.id,
+                phase="prioritization_retry",
+                db=db,
+                state=state,
+                messages=retry_msgs,
+                cache=True,
+            )
 
     log.info(
         "run_prioritization_call complete: pages_created=%d, dispatches=%d, moves=%d",
@@ -173,6 +202,7 @@ async def run_prioritization(
         db,
         subtree_ids=subtree_ids,
         short_id_map=short_id_map,
+        dispatch_budget=budget,
     )
 
     await trace.record(

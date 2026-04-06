@@ -880,26 +880,6 @@ async def build_prioritization_context(
             for sid in subtree_ids:
                 short_id_map[sid[:8]] = sid
 
-    source_pages = await source.get_pages(page_type=PageType.SOURCE)
-    if source_pages:
-        ingest_history = await db.get_ingest_history()
-        parts.append('## Sources and Ingest History')
-        parts.append('')
-        for src in source_pages:
-            src_extra = src.extra or {}
-            filename = src_extra.get('filename', src.id[:8])
-            char_count = src_extra.get('char_count', len(src.content))
-            question_ids = ingest_history.get(src.id, [])
-            parts.append(f'[SRC] `{src.id[:8]}` — {filename} ({char_count:,} chars)')
-            if question_ids:
-                for qid in question_ids:
-                    q = await source.get_page(qid)
-                    q_summary = q.headline[:60] if q else qid[:8]
-                    parts.append(f'  Ingested for: `{qid[:8]}` — {q_summary}')
-            else:
-                parts.append('  Not yet ingested for any question')
-        parts.append('')
-
     dep_section = await _build_dependency_signal(db)
     if dep_section:
         parts.append(dep_section)

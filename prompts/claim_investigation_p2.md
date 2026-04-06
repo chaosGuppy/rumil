@@ -38,13 +38,9 @@ You will be shown scoring data from a preliminary assessment:
 
 
 
-Identified claims (from scout\_c\_how\_true, scout\_c\_how\_false, and some scout\_c\_cruxes): Each has an impact (0-10: how much resolving or understanding this claim would shift the overall assessment) and fruit (0-10: how much useful investigation remains). Each also shows research stats: how many considerations and sub-investigations it already has.
+\- \*\*Subquestion and claim scores\*\*: Each subquestion and claim has a `narrow impact` (0-10: how much answering it helps the parent), `broad impact` (0-10: how much answering it is helpful for getting a generally better strategic picture) and `fruit` (0-10: how much useful investigation remains). These scores are used to infer a \*suggested priority\* score (0-100, although 0-10 is common), that you can use as guidance but may overrule. They also show research stats: how many considerations, judgements, and sub-subquestions it already has.
 
-Identified questions (from scout\_c\_relevant\_evidence, scout\_c\_stress\_test\_cases, and some scout\_c\_cruxes): Each has an impact (0-10: how much answering this question would inform the overall assessment) and fruit (0-10: how much useful investigation remains). Each also shows research stats.
-
-Per-scout-type fruit scores: These inform you how much useful remaining work there is along two dimensions. First, scouting: remaining potential for each scout type (how-true, how-false, cruxes, relevant-evidence, stress-test-cases) — a high score means that type of scouting is likely to surface valuable new material, while a low score means most of what it can find has already been found. Second, development: overall useful remaining work from deeper investigation of claims and questions already identified — a high development score means many identified lines of inquiry remain under-investigated.
-
-Dispatch guidance: A computed recommendation based on the per-scout-type fruit scores. This guidance is advisory — follow it unless you have clear reason not to. It indicates whether to focus on development, scouting, or a balance of both.
+\- \*\*Per-scout-type fruit scores\*\*: These scores inform you how much useful remaining work there is to do from further scouting of this type. This is a simple 0-10 number. It shouldn't be read as a \*suggested priority\* score. If you want to make it comparable to those scores, perhaps multiply by 3 for scout types that are very apt for what would help the question, and 2 for scout types that are somewhat-apt.
 
 
 

@@ -27,13 +27,10 @@ from rumil.models import (
 )
 from rumil.orchestrators.base import BaseOrchestrator
 from rumil.orchestrators.common import (
-    CallTypeFruitScore,
-    PerTypeFruitResult,
     PrioritizationResult,
     SubquestionScoringResult,
     _describe_child_questions,
     assess_question,
-    compute_dispatch_guidance,
 )
 from rumil.page_graph import PageGraph
 from rumil.settings import get_settings
@@ -438,79 +435,22 @@ class ExperimentalOrchestrator(BaseOrchestrator):
                 return type('R', (), {'data': {'scores': []}})()
             scoring_tasks.append(_empty_scores())
 
-        preset = get_available_calls_preset()
-        scout_types = [
-            ct for ct in preset.phase2_dispatch
-            if ct.value.startswith('scout_')
-        ]
-        type_desc_lines = [
-            '- **development**: Deeper investigation of existing subquestions '
-            'via find_considerations, web_research, and recursion.',
-        ]
-        for ct in scout_types:
-            ddef = DISPATCH_DEFS.get(ct)
-            if ddef:
-                type_desc_lines.append(f'- **{ct.value}**: {ddef.description}')
-        type_descriptions = '\n'.join(type_desc_lines)
-
-        call_counts = await self.db.get_call_counts_by_type(question_id)
-        history_lines = [f'- {ct}: {n} call(s)' for ct, n in call_counts.items()]
-        history_text = (
-            'Prior completed calls on this question:\n'
-            + ('\n'.join(history_lines) if history_lines else '(none)')
-        )
-
-        fruit_system = build_system_prompt('score_per_type_fruit')
-        fruit_user_msg = build_user_message(
-            f'Question: {parent_headline}\n\n'
-            f'Question ID: `{question_id}`\n\n'
-            f'{history_text}\n\n'
-            f'## Call types to score\n\n{type_descriptions}',
-            'Score the remaining fruit for each call type listed. '
-            'Return one score per call type.',
-        )
-        scoring_tasks.append(structured_call(
-            fruit_system,
-            user_message=fruit_user_msg,
-            response_model=PerTypeFruitResult,
-            metadata=LLMExchangeMetadata(
-                call_id=p_call.id,
-                phase='score_per_type_fruit',
-            ),
-            db=self.db,
-        ))
+        scoring_tasks.append(self.db.get_latest_scout_fruit(question_id))
 
         scoring_results = await asyncio.gather(*scoring_tasks)
         subq_result = scoring_results[0]
-        fruit_result = scoring_results[1]
+        scout_fruit: dict[str, int | None] = scoring_results[1]
 
         subq_scores = subq_result.data.get('scores', []) if subq_result.data else []
-        raw_fruit_scores = fruit_result.data.get('scores', []) if fruit_result.data else []
-        per_type_scores = [CallTypeFruitScore(**s) for s in raw_fruit_scores]
-
-        has_dev_score = any(s.call_type == 'development' for s in per_type_scores)
-        if not has_dev_score:
-            log.warning(
-                'LLM did not return a development fruit score; defaulting to 5'
-            )
-            await trace.record(ErrorEvent(
-                message='LLM omitted development fruit score; defaulting to 5',
-                phase='score_per_type_fruit',
-            ))
-
-        guidance = compute_dispatch_guidance(per_type_scores)
 
         await trace.record(ScoringCompletedEvent(
             subquestion_scores=[
                 SubquestionScoreItem(**s) for s in subq_scores
             ],
             per_type_fruit=[
-                CallTypeFruitScoreItem(
-                    call_type=s.call_type, fruit=s.fruit, reasoning=s.reasoning,
-                )
-                for s in per_type_scores
+                CallTypeFruitScoreItem(call_type=ct, fruit=f or 0, reasoning='')
+                for ct, f in scout_fruit.items()
             ],
-            dispatch_guidance=guidance,
         ))
 
         scores_text = ''
@@ -525,16 +465,15 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             lines.append('')
             scores_text = '\n'.join(lines)
 
-        fruit_lines = ['## Per-Scout-Type Fruit Scores', '']
-        for s in per_type_scores:
-            fruit_lines.append(
-                f'- **{s.call_type}**: {s.fruit}/10 — {s.reasoning}'
-            )
-        fruit_lines.append('')
-        scores_text += '\n'.join(fruit_lines)
-
-        if guidance:
-            scores_text += f'\n## Dispatch Guidance\n\n{guidance}\n'
+        if scout_fruit:
+            fruit_lines = ['## Per-Scout-Type Remaining Fruit (from latest calls)', '']
+            for ct, f in sorted(scout_fruit.items()):
+                fruit_lines.append(
+                    f'- **{ct}**: {f}/10' if f is not None
+                    else f'- **{ct}**: unknown'
+                )
+            fruit_lines.append('')
+            scores_text += '\n'.join(fruit_lines)
 
         context_text, short_id_map = await build_prioritization_context(
             self.db, scope_question_id=question_id, graph=graph,
@@ -583,6 +522,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             dispatch_types=list(get_available_calls_preset().phase2_dispatch),
             extra_dispatch_defs=extra_defs or None,
             system_prompt_override=build_system_prompt('two_phase_p2'),
+            dispatch_budget=dispatch_budget,
         )
 
         sequences: list[list[Dispatch]] = []

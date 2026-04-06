@@ -811,7 +811,7 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
               {(event.subquestion_scores ?? []).map((s, i) => (
                 <div key={i} className="trace-score-row">
                   <span className="trace-score-headline">{s.headline || s.question_id.slice(0, 8)}</span>
-                  <span className="trace-kv-value">impact={s.impact} fruit={s.fruit}</span>
+                  <span className="trace-kv-value">impact_on_q={s.impact_on_question ?? s.impact ?? 0} broader={s.broader_impact ?? 0} fruit={s.fruit}</span>
                   {s.reasoning && (
                     <span className="trace-score-reasoning">{s.reasoning}</span>
                   )}
@@ -827,7 +827,7 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
               {(event.claim_scores ?? []).map((s, i) => (
                 <div key={i} className="trace-score-row">
                   <span className="trace-score-headline">{s.headline || s.page_id.slice(0, 8)}</span>
-                  <span className="trace-kv-value">impact={s.impact} fruit={s.fruit}</span>
+                  <span className="trace-kv-value">impact_on_q={s.impact_on_question ?? s.impact ?? 0} broader={s.broader_impact ?? 0} fruit={s.fruit}</span>
                   {s.reasoning && (
                     <span className="trace-score-reasoning">{s.reasoning}</span>
                   )}

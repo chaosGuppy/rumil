@@ -403,7 +403,15 @@ export type ClaimScoreItem = {
     /**
      * Impact
      */
-    impact?: number;
+    impact?: number | null;
+    /**
+     * Impact On Question
+     */
+    impact_on_question?: number;
+    /**
+     * Broader Impact
+     */
+    broader_impact?: number;
     /**
      * Fruit
      */
@@ -1349,7 +1357,15 @@ export type SubquestionScoreItem = {
     /**
      * Impact
      */
-    impact?: number;
+    impact?: number | null;
+    /**
+     * Impact On Question
+     */
+    impact_on_question?: number;
+    /**
+     * Broader Impact
+     */
+    broader_impact?: number;
     /**
      * Fruit
      */

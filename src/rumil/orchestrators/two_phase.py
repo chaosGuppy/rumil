@@ -13,7 +13,7 @@ from rumil.calls.prioritization import run_prioritization_call
 from rumil.constants import LAST_CALL_THRESHOLD, MIN_TWOPHASE_BUDGET
 from rumil.context import build_prioritization_context, collect_subtree_ids
 from rumil.database import DB
-from rumil.llm import LLMExchangeMetadata, build_system_prompt, build_user_message, structured_call
+from rumil.llm import build_system_prompt
 from rumil.models import (
     AssessDispatchPayload,
     Call,
@@ -26,15 +26,12 @@ from rumil.models import (
 )
 from rumil.orchestrators.base import BaseOrchestrator
 from rumil.orchestrators.common import (
-    CallTypeFruitScore,
-    ClaimScoringResult,
-    PerTypeFruitResult,
+    ClaimScore,
     PrioritizationResult,
-    SubquestionScoringResult,
-    _describe_child_questions,
-    _describe_considerations_on_page,
+    SubquestionScore,
     assess_question,
-    compute_dispatch_guidance,
+    compute_priority_score,
+    score_items_sequentially,
 )
 from rumil.page_graph import PageGraph
 from rumil.settings import get_settings
@@ -432,120 +429,46 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             )
         parent_headline = parent_question.headline
 
-        scoring_system = build_system_prompt('score_subquestions')
-
-        scoring_tasks = []
-        if child_questions:
-            child_descriptions = await _describe_child_questions(child_questions, graph)
-            subq_user_msg = build_user_message(
-                f'Parent question: {parent_headline}\n\n'
-                f'Subquestions to score:\n{child_descriptions}',
-                'Score each subquestion on impact and fruit.',
-            )
-            scoring_tasks.append(structured_call(
-                scoring_system,
-                user_message=subq_user_msg,
-                response_model=SubquestionScoringResult,
-                metadata=LLMExchangeMetadata(
-                    call_id=p_call.id,
-                    phase='score_subquestions',
-                ),
-                db=self.db,
-            ))
-        else:
-            async def _empty_subq_scores():
-                return type('R', (), {'data': {'scores': []}})()
-            scoring_tasks.append(_empty_subq_scores())
-
-        considerations = await graph.get_considerations_for_question(question_id)
-        if considerations:
-            claims_text, _ = await _describe_considerations_on_page(
-                question_id, graph,
-            )
-            claim_scoring_system = build_system_prompt('score_claim_items')
-            claim_user_msg = build_user_message(
-                f'Parent question: {parent_headline}\n\n'
-                f'Claims (considerations) to score:\n{claims_text}',
-                'Score each claim on impact and fruit.',
-            )
-            scoring_tasks.append(structured_call(
-                claim_scoring_system,
-                user_message=claim_user_msg,
-                response_model=ClaimScoringResult,
-                metadata=LLMExchangeMetadata(
-                    call_id=p_call.id,
-                    phase='score_claims',
-                ),
-                db=self.db,
-            ))
-        else:
-            async def _empty_claim_scores():
-                return type('R', (), {'data': {'scores': []}})()
-            scoring_tasks.append(_empty_claim_scores())
-
-        preset = get_available_calls_preset()
-        scout_types = [
-            ct for ct in preset.phase2_dispatch
-            if ct.value.startswith('scout_')
-        ]
-        type_desc_lines = [
-            '- **development**: Deeper investigation of existing subquestions '
-            'via find_considerations, web_research, and recursion.',
-        ]
-        for ct in scout_types:
-            ddef = DISPATCH_DEFS.get(ct)
-            if ddef:
-                type_desc_lines.append(f'- **{ct.value}**: {ddef.description}')
-        type_descriptions = '\n'.join(type_desc_lines)
-
-        call_counts = await self.db.get_call_counts_by_type(question_id)
-        history_lines = [f'- {ct}: {n} call(s)' for ct, n in call_counts.items()]
-        history_text = (
-            'Prior completed calls on this question:\n'
-            + ('\n'.join(history_lines) if history_lines else '(none)')
+        parent_judgements = await graph.get_judgements_for_question(question_id)
+        parent_judgement = (
+            max(parent_judgements, key=lambda j: j.created_at)
+            if parent_judgements else None
         )
 
-        fruit_system = build_system_prompt('score_per_type_fruit')
-        fruit_user_msg = build_user_message(
-            f'Question: {parent_headline}\n\n'
-            f'Question ID: `{question_id}`\n\n'
-            f'{history_text}\n\n'
-            f'## Call types to score\n\n{type_descriptions}',
-            'Score the remaining fruit for each call type listed. '
-            'Return one score per call type.',
-        )
-        scoring_tasks.append(structured_call(
-            fruit_system,
-            user_message=fruit_user_msg,
-            response_model=PerTypeFruitResult,
-            metadata=LLMExchangeMetadata(
-                call_id=p_call.id,
-                phase='score_per_type_fruit',
-            ),
+        scoring_tasks: list = []
+
+        consideration_pages = [
+            page for page, _link
+            in await graph.get_considerations_for_question(question_id)
+        ]
+
+        scoring_tasks.append(score_items_sequentially(
+            parent_page=parent_question,
+            parent_judgement=parent_judgement,
+            items=child_questions,
+            graph=graph,
+            system_prompt_name='score_subquestions',
+            response_model=SubquestionScore,
+            call_id=p_call.id,
+            db=self.db,
+        ))
+        scoring_tasks.append(score_items_sequentially(
+            parent_page=parent_question,
+            parent_judgement=parent_judgement,
+            items=consideration_pages,
+            graph=graph,
+            system_prompt_name='score_claim_items',
+            response_model=ClaimScore,
+            call_id=p_call.id,
             db=self.db,
         ))
 
+        scoring_tasks.append(self.db.get_latest_scout_fruit(question_id))
+
         scoring_results = await asyncio.gather(*scoring_tasks)
-        subq_result = scoring_results[0]
-        claim_result = scoring_results[1]
-        fruit_result = scoring_results[2]
-
-        subq_scores = subq_result.data.get('scores', []) if subq_result.data else []
-        claim_scores = claim_result.data.get('scores', []) if claim_result.data else []
-        raw_fruit_scores = fruit_result.data.get('scores', []) if fruit_result.data else []
-        per_type_scores = [CallTypeFruitScore(**s) for s in raw_fruit_scores]
-
-        has_dev_score = any(s.call_type == 'development' for s in per_type_scores)
-        if not has_dev_score:
-            log.warning(
-                'LLM did not return a development fruit score; defaulting to 5'
-            )
-            await trace.record(ErrorEvent(
-                message='LLM omitted development fruit score; defaulting to 5',
-                phase='score_per_type_fruit',
-            ))
-
-        guidance = compute_dispatch_guidance(per_type_scores)
+        subq_scores: list[dict] = scoring_results[0]
+        claim_scores: list[dict] = scoring_results[1]
+        scout_fruit: dict[str, int | None] = scoring_results[2]
 
         await trace.record(ScoringCompletedEvent(
             subquestion_scores=[
@@ -555,21 +478,24 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                 ClaimScoreItem(**s) for s in claim_scores
             ],
             per_type_fruit=[
-                CallTypeFruitScoreItem(
-                    call_type=s.call_type, fruit=s.fruit, reasoning=s.reasoning,
-                )
-                for s in per_type_scores
+                CallTypeFruitScoreItem(call_type=ct, fruit=f or 0, reasoning='')
+                for ct, f in scout_fruit.items()
             ],
-            dispatch_guidance=guidance,
         ))
 
         scores_text = ''
         if subq_scores:
             lines = ['## Subquestion Scores', '']
             for s in subq_scores:
+                priority = compute_priority_score(
+                    s["impact_on_question"], s["broader_impact"], s["fruit"],
+                )
                 lines.append(
                     f'- `{s["question_id"]}` — {s["headline"]}: '
-                    f'impact={s["impact"]}, fruit={s["fruit"]} '
+                    f'impact_on_q={s["impact_on_question"]}, '
+                    f'broader={s["broader_impact"]}, '
+                    f'fruit={s["fruit"]}, '
+                    f'**priority={priority}** '
                     f'({s["reasoning"]})'
                 )
             lines.append('')
@@ -578,24 +504,31 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         if claim_scores:
             lines = ['## Claim Scores (considerations)', '']
             for s in claim_scores:
+                priority = compute_priority_score(
+                    s.get("impact_on_question", 0),
+                    s.get("broader_impact", 0),
+                    s.get("fruit", 0),
+                )
                 lines.append(
                     f'- `{s.get("page_id", "?")}` — {s.get("headline", "")}: '
-                    f'impact={s.get("impact", 0)}, fruit={s.get("fruit", 0)} '
+                    f'impact_on_q={s.get("impact_on_question", 0)}, '
+                    f'broader={s.get("broader_impact", 0)}, '
+                    f'fruit={s.get("fruit", 0)}, '
+                    f'**priority={priority}** '
                     f'({s.get("reasoning", "")})'
                 )
             lines.append('')
             scores_text += '\n'.join(lines)
 
-        fruit_lines = ['## Per-Scout-Type Fruit Scores', '']
-        for s in per_type_scores:
-            fruit_lines.append(
-                f'- **{s.call_type}**: {s.fruit}/10 — {s.reasoning}'
-            )
-        fruit_lines.append('')
-        scores_text += '\n'.join(fruit_lines)
-
-        if guidance:
-            scores_text += f'\n## Dispatch Guidance\n\n{guidance}\n'
+        if scout_fruit:
+            fruit_lines = ['## Per-Scout-Type Remaining Fruit (from latest calls)', '']
+            for ct, f in sorted(scout_fruit.items()):
+                fruit_lines.append(
+                    f'- **{ct}**: {f}/10' if f is not None
+                    else f'- **{ct}**: unknown'
+                )
+            fruit_lines.append('')
+            scores_text += '\n'.join(fruit_lines)
 
         context_text, short_id_map = await build_prioritization_context(
             self.db, scope_question_id=question_id, graph=graph,
@@ -614,6 +547,11 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                 f' The overall question has **{total_remaining} budget remaining** '
                 'across future rounds.'
             )
+        ingest_hint = ''
+        if self.ingest_hint:
+            ingest_hint = f'\n\n**Note:** {self.ingest_hint}'
+            self.ingest_hint = ''
+
         task = (
             f'{budget_line}\n\n'
             f'Scope question ID: `{question_id}`\n\n'
@@ -630,6 +568,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             f'{scores_text}\n\n'
             'You must make all your dispatch calls now — this is your only turn. '
             f'Each recurse call must have a budget of at least {MIN_TWOPHASE_BUDGET}.'
+            f'{ingest_hint}'
         )
         if get_settings().force_twophase_recurse:
             task += (
@@ -650,6 +589,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             dispatch_types=list(get_available_calls_preset().phase2_dispatch),
             extra_dispatch_defs=extra_defs or None,
             system_prompt_override=build_system_prompt('two_phase_p2'),
+            dispatch_budget=dispatch_budget,
         )
 
         from rumil.orchestrators.claim_investigation import ClaimInvestigationOrchestrator

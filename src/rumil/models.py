@@ -375,6 +375,7 @@ class Page(BaseModel):
     is_superseded: bool = False
     extra: dict = Field(default_factory=dict)
     abstract: str = ""
+    fruit_remaining: int | None = None
 
     def is_active(self) -> bool:
         return not self.is_superseded

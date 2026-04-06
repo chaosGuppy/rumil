@@ -777,8 +777,11 @@ async def cmd_continue(
     print(f"Trace:        {frontend}/traces/{db.run_id}")
 
     ingested_source_names: list[str] = []
+    existing_claim_ids: set[str] = set()
     if ingest_files:
-        existing_claim_ids = {p.id for p in await db.get_pages(page_type=PageType.CLAIM)}
+        existing_claim_ids = {
+            p.id for p in await db.get_pages(page_type=PageType.CLAIM)
+        }
         source_pages = []
         for filepath in ingest_files:
             page = await create_source_page(filepath, db)
@@ -793,16 +796,16 @@ async def cmd_continue(
     if ingested_source_names:
         all_claims = await db.get_pages(page_type=PageType.CLAIM)
         ingested_claims = [p for p in all_claims if p.id not in existing_claim_ids]
-        claim_lines = [f'  - `{p.id}` {p.headline}' for p in ingested_claims]
+        claim_lines = [f"  - `{p.id}` {p.headline}" for p in ingested_claims]
         sources = ", ".join(ingested_source_names)
         orch.ingest_hint = (
-            f'New material was just ingested from: {sources}. '
-            'The following considerations were extracted:\n'
-            + '\n'.join(claim_lines)
-            + '\n\nNot every extracted claim is necessarily important — use your '
-            'judgement about which ones are worth investigating further. But the '
-            'user specifically provided this source, so the material as a whole '
-            'may deserve more attention than scores alone suggest.'
+            f"New material was just ingested from: {sources}. "
+            "The following considerations were extracted:\n"
+            + "\n".join(claim_lines)
+            + "\n\nNot every extracted claim is necessarily important — use your "
+            "judgement about which ones are worth investigating further. But the "
+            "user specifically provided this source, so the material as a whole "
+            "may deserve more attention than scores alone suggest."
         )
     await orch.run(question_id)
     await _print_summary(db)
@@ -1187,8 +1190,11 @@ async def async_main():
         )
     elif args.continue_id:
         await cmd_continue(
-            args.continue_id, args.budget, db,
-            name=args.run_name, ingest_files=args.ingest_files,
+            args.continue_id,
+            args.budget,
+            db,
+            name=args.run_name,
+            ingest_files=args.ingest_files,
         )
     elif args.batch_file:
         await cmd_batch(args.batch_file, db)

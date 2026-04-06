@@ -11,6 +11,8 @@ from anthropic.types import ServerToolUseBlock, TextBlock
 
 from pydantic import BaseModel, Field
 
+from rumil.moves.base import HEADLINE_DESCRIPTION
+
 from rumil.clean.common import (
     UpdateOperation,
     UpdatePlan,
@@ -59,7 +61,7 @@ class _CreateSourceInput(BaseModel):
 
 
 class _CreateClaimInput(BaseModel):
-    headline: str = Field(description="Short headline for the claim")
+    headline: str = Field(description=HEADLINE_DESCRIPTION)
     content: str = Field(
         description=(
             "Full claim text. Cite sources inline using [url] syntax "

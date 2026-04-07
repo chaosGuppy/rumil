@@ -670,7 +670,7 @@ async def _reassess_pages_citing_superseded(
         if page.page_type == PageType.QUESTION:
             await reassess_question(
                 page.id, [], infra.call, infra.db, infra.trace,
-                assess_variant="embedding",
+                assess_variant="default",
             )
         elif page.page_type == PageType.JUDGEMENT:
             links = await infra.db.get_links_from(page.id)
@@ -685,7 +685,7 @@ async def _reassess_pages_citing_superseded(
                 )
                 await reassess_question(
                     question_id, [], infra.call, infra.db, infra.trace,
-                    assess_variant="embedding",
+                    assess_variant="default",
                 )
             else:
                 log.warning(

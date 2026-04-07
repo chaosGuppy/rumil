@@ -24,7 +24,6 @@ from rumil.orchestrators.common import (
     web_research_question,
 )
 from rumil.orchestrators.experimental import ExperimentalOrchestrator
-from rumil.orchestrators.llm import LLMOrchestrator
 from rumil.orchestrators.two_phase import TwoPhaseOrchestrator
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
@@ -37,7 +36,7 @@ def Orchestrator(db: DB, broadcaster: Broadcaster | None = None) -> BaseOrchestr
         return TwoPhaseOrchestrator(db, broadcaster)
     if variant == "experimental":
         return ExperimentalOrchestrator(db, broadcaster)
-    return LLMOrchestrator(db, broadcaster)
+    raise ValueError(f"Unknown prioritizer_variant: {variant}")
 
 
 __all__ = [
@@ -47,7 +46,6 @@ __all__ = [
     "ClaimScoringResult",
     "ExperimentalOrchestrator",
     "FruitResult",
-    "LLMOrchestrator",
     "Orchestrator",
     "PRIORITIZATION_MOVES",
     "PrioritizationResult",

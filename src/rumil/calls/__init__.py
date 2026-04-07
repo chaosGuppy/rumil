@@ -1,6 +1,6 @@
 """Call types for the research workspace."""
 
-from rumil.calls.assess import AssessCall, BigAssessCall, EmbeddingAssessCall
+from rumil.calls.assess import AssessCall, BigAssessCall
 from rumil.calls.call_registry import (
     ASSESS_CALL_CLASSES,
     INGEST_CALL_CLASSES,
@@ -22,12 +22,9 @@ from rumil.calls.call_registry import (
     SCOUT_HYPOTHESES_CALL_CLASSES,
     SCOUT_SUBQUESTIONS_CALL_CLASSES,
 )
-from rumil.calls.ingest import EmbeddingIngestCall, IngestCall
+from rumil.calls.ingest import IngestCall
 from rumil.calls.prioritization import run_prioritization
-from rumil.calls.find_considerations import (
-    EmbeddingFindConsiderationsCall,
-    FindConsiderationsCall,
-)
+from rumil.calls.find_considerations import FindConsiderationsCall
 from rumil.calls.stages import CallRunner
 from rumil.calls.web_research import WebResearchCall
 from rumil.calls.scout_analogies import ScoutAnalogiesCall
@@ -50,11 +47,8 @@ __all__ = [
     "CallRunner",
     "AssessCall",
     "BigAssessCall",
-    "EmbeddingAssessCall",
     "IngestCall",
-    "EmbeddingIngestCall",
     "FindConsiderationsCall",
-    "EmbeddingFindConsiderationsCall",
     "ScoutSubquestionsCall",
     "ScoutEstimatesCall",
     "ScoutHypothesesCall",

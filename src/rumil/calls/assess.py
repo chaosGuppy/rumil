@@ -1,11 +1,7 @@
 """Assess call: synthesise considerations and render a judgement."""
 
 from rumil.calls.closing_reviewers import StandardClosingReview
-from rumil.calls.context_builders import (
-    BigAssessContext,
-    EmbeddingContext,
-    GraphContextWithPhase1,
-)
+from rumil.calls.context_builders import BigAssessContext, EmbeddingContext
 from rumil.calls.page_creators import SimpleAgentLoop
 from rumil.calls.stages import CallRunner, ClosingReviewer, ContextBuilder, PageCreator
 from rumil.models import CallType
@@ -14,13 +10,16 @@ from rumil.models import CallType
 class AssessCall(CallRunner):
     """Assess a question: weigh considerations and produce a judgement."""
 
-    context_builder_cls = GraphContextWithPhase1
+    context_builder_cls = EmbeddingContext
     page_creator_cls = SimpleAgentLoop
     closing_reviewer_cls = StandardClosingReview
     call_type = CallType.ASSESS
 
     def _make_context_builder(self) -> ContextBuilder:
-        return GraphContextWithPhase1(self.call_type)
+        return EmbeddingContext(
+            self.call_type,
+            require_judgement_for_questions=True,
+        )
 
     def _make_page_creator(self) -> PageCreator:
         return SimpleAgentLoop(
@@ -39,18 +38,6 @@ class AssessCall(CallRunner):
             "Synthesise the considerations, weigh evidence on multiple sides, "
             "and produce a judgement with structured confidence. "
             "Even if uncertain, commit to a position."
-        )
-
-
-class EmbeddingAssessCall(AssessCall):
-    """Assess call that builds context via embedding similarity search."""
-
-    context_builder_cls = EmbeddingContext
-
-    def _make_context_builder(self) -> ContextBuilder:
-        return EmbeddingContext(
-            self.call_type,
-            require_judgement_for_questions=True,
         )
 
 

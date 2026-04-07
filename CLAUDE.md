@@ -74,9 +74,9 @@ Always use the supabase cli to create new migrations: `supabase migration new`.
 
 Architecture:
 - `CallRunner` (`stages.py`) — base class for all call types. Owns `run()` orchestration via `CallInfra` (bundles `CallTrace`, `MoveState`, DB, call). Subclasses set class-level `context_builder_cls`, `page_creator_cls`, `closing_reviewer_cls`, and `call_type` attributes, plus override `_make_*()` factory methods for parameterized stages and `task_description()`.
-- `ContextBuilder` ABC — `build_context(infra) -> ContextResult`. Implementations in `context_builders.py`: `GraphContextWithPhase1`, `EmbeddingContext`, `IngestGraphContext`, `IngestEmbeddingContext`, `FindConsiderationsGraphContext`, `ScoutEmbeddingContext`, `ConceptScoutContext`, `ConceptAssessContext`, `WebResearchEmbeddingContext`.
+- `ContextBuilder` ABC — `build_context(infra) -> ContextResult`. Implementations in `context_builders.py`: `EmbeddingContext`, `IngestEmbeddingContext`, `ScoutEmbeddingContext`, `ConceptScoutContext`, `ConceptAssessContext`, `WebResearchEmbeddingContext`, `BigAssessContext`.
 - `PageCreator` ABC — `create_pages(infra, context) -> CreationResult`. Implementations in `page_creators.py`: `SimpleAgentLoop` (single-pass), `MultiRoundLoop` (multi-round with fruit checks), `WebResearchLoop` (server tools + scraping).
-- `ClosingReviewer` ABC — `closing_review(infra, context, creation) -> None` (persists all results as side effects). Implementations in `closing_reviewers.py`: `StandardClosingReview`, `IngestClosingReview`, `WebResearchClosingReview`, `TwoPhaseScoutReview`, `SinglePhaseScoutReview`, `ConceptAssessReview`.
+- `ClosingReviewer` ABC — `closing_review(infra, context, creation) -> None` (persists all results as side effects). Implementations in `closing_reviewers.py`: `StandardClosingReview`, `IngestClosingReview`, `WebResearchClosingReview`, `SinglePhaseScoutReview`, `ConceptAssessReview`.
 - Data types (`stages.py`): `CallInfra` (shared infra), `ContextResult` (context output), `CreationResult` (page creation output).
 
 The three phases:
@@ -86,7 +86,7 @@ The three phases:
 
 To add a new call type: subclass `CallRunner`. Set `call_type`, override `_make_context_builder()`, `_make_page_creator()`, `_make_closing_reviewer()`, and `task_description()`. For simple calls, reuse `SimpleAgentLoop` + `StandardClosingReview` + an existing context builder. Register the class in `call_registry.py` and export from `__init__.py`.
 
-**Call variant registries** (`src/rumil/calls/call_registry.py`): Each call type (find_considerations, assess, ingest) has a registry dict mapping string names to concrete classes (e.g. `FIND_CONSIDERATIONS_CALL_CLASSES = {"default": FindConsiderationsCall, "embedding": EmbeddingFindConsiderationsCall}`). The orchestrator looks up the active variant from settings (`find_considerations_call_variant`, `assess_call_variant`, `ingest_call_variant`) and instantiates directly.
+**Call variant registries** (`src/rumil/calls/call_registry.py`): Each call type (find_considerations, assess, ingest) has a registry dict mapping string names to concrete classes (e.g. `ASSESS_CALL_CLASSES = {"default": AssessCall, "big": BigAssessCall}`). The orchestrator looks up the active variant from settings (`find_considerations_call_variant`, `assess_call_variant`, `ingest_call_variant`) and instantiates directly.
 
 **Available moves** (`src/rumil/available_moves.py`): Named mappings from `CallType` to `Sequence[MoveType]`, controlling which tools each call type can use. `PRESETS` dict holds all presets; `get_moves_for_call()` reads the active preset from `settings.available_moves`. Call types absent from a preset get all moves. `CallRunner._resolve_available_moves()` checks the preset first, then falls back to the class-level `available_moves`. CLI flag: `--available-moves`.
 

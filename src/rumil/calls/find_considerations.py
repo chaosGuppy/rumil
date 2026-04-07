@@ -2,11 +2,8 @@
 
 from collections.abc import Sequence
 
-from rumil.calls.closing_reviewers import SinglePhaseScoutReview, TwoPhaseScoutReview
-from rumil.calls.context_builders import (
-    ScoutEmbeddingContext,
-    FindConsiderationsGraphContext,
-)
+from rumil.calls.closing_reviewers import SinglePhaseScoutReview
+from rumil.calls.context_builders import ScoutEmbeddingContext
 from rumil.calls.page_creators import MultiRoundLoop
 from rumil.calls.stages import CallRunner, ClosingReviewer, ContextBuilder, PageCreator
 from rumil.database import DB
@@ -16,9 +13,9 @@ from rumil.models import Call, CallStage, CallType, FindConsiderationsMode
 class FindConsiderationsCall(CallRunner):
     """Multi-round scout session with fruit checking."""
 
-    context_builder_cls = FindConsiderationsGraphContext
+    context_builder_cls = ScoutEmbeddingContext
     page_creator_cls = MultiRoundLoop
-    closing_reviewer_cls = TwoPhaseScoutReview
+    closing_reviewer_cls = SinglePhaseScoutReview
     call_type = CallType.FIND_CONSIDERATIONS
 
     def __init__(
@@ -54,7 +51,7 @@ class FindConsiderationsCall(CallRunner):
         return 0
 
     def _make_context_builder(self) -> ContextBuilder:
-        return FindConsiderationsGraphContext(self._mode, self._context_page_ids)
+        return ScoutEmbeddingContext(self._mode)
 
     def _make_page_creator(self) -> PageCreator:
         return MultiRoundLoop(
@@ -65,7 +62,7 @@ class FindConsiderationsCall(CallRunner):
         )
 
     def _make_closing_reviewer(self) -> ClosingReviewer:
-        return TwoPhaseScoutReview()
+        return SinglePhaseScoutReview()
 
     def task_description(self) -> str:
         return (
@@ -73,16 +70,3 @@ class FindConsiderationsCall(CallRunner):
             "Question ID (use this when linking considerations): "
             f"`{self.infra.question_id}`"
         )
-
-
-class EmbeddingFindConsiderationsCall(FindConsiderationsCall):
-    """Scout call that builds context via embedding similarity search."""
-
-    context_builder_cls = ScoutEmbeddingContext
-    closing_reviewer_cls = SinglePhaseScoutReview
-
-    def _make_context_builder(self) -> ContextBuilder:
-        return ScoutEmbeddingContext(self._mode)
-
-    def _make_closing_reviewer(self) -> ClosingReviewer:
-        return SinglePhaseScoutReview()

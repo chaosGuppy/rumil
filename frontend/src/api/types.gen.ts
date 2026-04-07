@@ -338,7 +338,7 @@ export type CallTraceOut = {
 /**
  * CallType
  */
-export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_concepts' | 'assess_concept' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update';
+export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_concepts' | 'assess_concept' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update';
 
 /**
  * CallTypeFruitScoreItem
@@ -828,7 +828,7 @@ export type LinkRole = 'direct' | 'structural';
 /**
  * LinkType
  */
-export type LinkType = 'consideration' | 'child_question' | 'supersedes' | 'related' | 'summarizes' | 'cites';
+export type LinkType = 'consideration' | 'child_question' | 'supersedes' | 'related' | 'variant' | 'summarizes' | 'cites' | 'depends_on';
 
 /**
  * LinkedPageOut
@@ -952,6 +952,10 @@ export type Page = {
      * Abstract
      */
     abstract: string;
+    /**
+     * Fruit Remaining
+     */
+    fruit_remaining: number | null;
 };
 
 /**
@@ -1879,6 +1883,70 @@ export type GetLinksToApiPagesPageIdLinksToGetResponses = {
 };
 
 export type GetLinksToApiPagesPageIdLinksToGetResponse = GetLinksToApiPagesPageIdLinksToGetResponses[keyof GetLinksToApiPagesPageIdLinksToGetResponses];
+
+export type GetDependentsApiPagesPageIdDependentsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Page Id
+         */
+        page_id: string;
+    };
+    query?: never;
+    url: '/api/pages/{page_id}/dependents';
+};
+
+export type GetDependentsApiPagesPageIdDependentsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetDependentsApiPagesPageIdDependentsGetError = GetDependentsApiPagesPageIdDependentsGetErrors[keyof GetDependentsApiPagesPageIdDependentsGetErrors];
+
+export type GetDependentsApiPagesPageIdDependentsGetResponses = {
+    /**
+     * Response Get Dependents Api Pages  Page Id  Dependents Get
+     *
+     * Successful Response
+     */
+    200: Array<LinkedPageOut>;
+};
+
+export type GetDependentsApiPagesPageIdDependentsGetResponse = GetDependentsApiPagesPageIdDependentsGetResponses[keyof GetDependentsApiPagesPageIdDependentsGetResponses];
+
+export type GetDependenciesApiPagesPageIdDependenciesGetData = {
+    body?: never;
+    path: {
+        /**
+         * Page Id
+         */
+        page_id: string;
+    };
+    query?: never;
+    url: '/api/pages/{page_id}/dependencies';
+};
+
+export type GetDependenciesApiPagesPageIdDependenciesGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetDependenciesApiPagesPageIdDependenciesGetError = GetDependenciesApiPagesPageIdDependenciesGetErrors[keyof GetDependenciesApiPagesPageIdDependenciesGetErrors];
+
+export type GetDependenciesApiPagesPageIdDependenciesGetResponses = {
+    /**
+     * Response Get Dependencies Api Pages  Page Id  Dependencies Get
+     *
+     * Successful Response
+     */
+    200: Array<LinkedPageOut>;
+};
+
+export type GetDependenciesApiPagesPageIdDependenciesGetResponse = GetDependenciesApiPagesPageIdDependenciesGetResponses[keyof GetDependenciesApiPagesPageIdDependenciesGetResponses];
 
 export type GetPageDetailApiPagesPageIdDetailGetData = {
     body?: never;

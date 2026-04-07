@@ -15,6 +15,7 @@ from rumil.calls.common import (
     save_page_abstracts,
 )
 from rumil.context import build_embedding_based_context
+from rumil.moves.base import HEADLINE_DESCRIPTION
 from rumil.database import DB
 from rumil.llm import LLMExchangeMetadata, structured_call
 from rumil.models import (
@@ -109,7 +110,7 @@ class UpdatePlan(BaseModel):
 
 
 class ReassessedClaim(BaseModel):
-    headline: str = Field(description="New headline for the claim (10-15 words)")
+    headline: str = Field(description=HEADLINE_DESCRIPTION)
     content: str = Field(description="Full standalone content of the replacement claim")
     credence: int = Field(description="Probability bucket 1-9 (1=very unlikely, 9=very likely)")
     robustness: int = Field(description="Resilience of view 1-5 (1=fragile, 5=very robust)")
@@ -387,7 +388,7 @@ async def reassess_question(
 
 
 class ReassessedClaimItem(BaseModel):
-    headline: str = Field(description="New headline for the claim (10-15 words)")
+    headline: str = Field(description=HEADLINE_DESCRIPTION)
     content: str = Field(description="Full standalone content of the replacement claim")
     credence: int = Field(
         description="Probability bucket 1-9 (1=very unlikely, 9=very likely)"

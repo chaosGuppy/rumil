@@ -59,7 +59,9 @@ class SummaryOutput(BaseModel):
         description=(
             "Self-contained summary of ~30 words. State the core topic and conclusion "
             "so a reader with no prior context understands what the page is about and "
-            "what it concludes. Include the key finding and main caveat if space allows."
+            "what it concludes. Include the key finding and main caveat if space allows. "
+            "Must stand alone — never use language that only makes sense relative to a "
+            "particular question or investigation."
         )
     )
     abstract: str = Field(
@@ -110,7 +112,9 @@ async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[Pa
             direction = f" [{link.direction.value}]" if link.direction else ""
             index_lines.append(f"- [consideration{direction}] {page.headline}")
         for j in judgements:
-            index_lines.append(f"- [judgement C{j.credence}/R{j.robustness}] {j.headline}")
+            index_lines.append(
+                f"- [judgement C{j.credence}/R{j.robustness}] {j.headline}"
+            )
         for child in children:
             index_lines.append(f"- [child question] {child.headline}")
         parts.append(_section("Index", "\n".join(index_lines)))
@@ -119,10 +123,13 @@ async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[Pa
         cons_parts = []
         for page, link in considerations:
             direction = f" [{link.direction.value}]" if link.direction else ""
-            cr = f" C{page.credence}/R{page.robustness}" if page.credence is not None else ""
+            cr = (
+                f" C{page.credence}/R{page.robustness}"
+                if page.credence is not None
+                else ""
+            )
             cons_parts.append(
-                f"**Consideration{direction}**{cr}: "
-                f"{page.headline}\n\n{page.content}"
+                f"**Consideration{direction}**{cr}: {page.headline}\n\n{page.content}"
             )
         parts.append(
             _section("Direct Considerations (full)", "\n\n---\n\n".join(cons_parts))
@@ -139,7 +146,9 @@ async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[Pa
         )
         older = [j for j in judgements if j.id != most_recent.id]
         if older:
-            older_lines = [f"- [C{j.credence}/R{j.robustness}] {j.headline}" for j in older]
+            older_lines = [
+                f"- [C{j.credence}/R{j.robustness}] {j.headline}" for j in older
+            ]
             parts.append(
                 _section("Earlier Judgements (summaries)", "\n".join(older_lines))
             )

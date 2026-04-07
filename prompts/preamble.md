@@ -100,12 +100,16 @@ Your primary readers are other AI research instances loading your pages as conte
 
 ## Headlines
 
-Every page has a headline — the primary label seen throughout the workspace. Write headlines that are **self-contained**: a reader with no prior context should understand what the page is about.
+Every page has a headline — the primary label seen throughout the workspace. Headlines are used outside the context of the current investigation — for example, during retrieval, when pages are surfaced for unrelated questions, or when conclusions are drawn from headline-only summaries. A headline that only makes sense if you already know which question is being investigated is a **broken headline**.
+
+Write headlines like newspaper headlines: a reader with no prior context should know at a glance what the page is about.
 
 * **10–15 words** (20-word ceiling). Sharp label, not a truncated sentence.
 * **Questions must be phrased as questions.** e.g. "How sensitive is the 2028 timeline to regulatory delays?"
 * **Claims and judgements should name the actual position**, e.g. "Solar payback periods have fallen below 7 years in most climates". Avoid vague openings like "There are several factors…".
 * **Include the key finding or main caveat** if space allows.
+* **Never use context-dependent language.** Phrases like "This undercuts the premise", "Key factor in the timeline", or "Evidence against the proposal" assume the reader knows what premise, timeline, or proposal is being discussed. Instead, name the subject explicitly.
+* **Always name the specific subject.** "The election is likely to take place" is broken because it doesn't say *which* election. "Dominant cancellation pathway" is broken because it doesn't say what might be cancelled. A headline like "Catastrophic exogenous crisis remains the dominant cancellation pathway" should instead be something like "Exogenous crisis is the most likely reason the 2028 Olympics would be cancelled".
 
 ## Key Principles
 

@@ -459,7 +459,9 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             for s in subq_scores:
                 lines.append(
                     f'- `{s["question_id"]}` — {s["headline"]}: '
-                    f'impact={s["impact"]}, fruit={s["fruit"]} '
+                    f'impact_on_q={s["impact_on_question"]}, '
+                    f'broader={s["broader_impact"]}, '
+                    f'fruit={s["fruit"]} '
                     f'({s["reasoning"]})'
                 )
             lines.append('')

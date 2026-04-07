@@ -186,7 +186,7 @@ class BaseDispatchPayload(_DispatchBase):
     question_id: str = Field(description="Page ID of the question to investigate")
 
 
-class _MultiRoundFields(BaseModel):
+class MultiRoundFields(BaseModel):
     fruit_threshold: int = Field(
         default=4, description="Remaining fruit threshold for stopping"
     )
@@ -195,7 +195,7 @@ class _MultiRoundFields(BaseModel):
     )
 
 
-class _ScoutFields(_MultiRoundFields):
+class _ScoutFields(MultiRoundFields):
     mode: FindConsiderationsMode = Field(
         description=(
             "Scout mode: 'alternate' alternates abstract and concrete "
@@ -204,7 +204,7 @@ class _ScoutFields(_MultiRoundFields):
     )
 
 
-class _PrioritizationFields(BaseModel):
+class PrioritizationFields(BaseModel):
     budget: int = Field(description="Budget to allocate for the sub-investigation")
 
 
@@ -216,7 +216,7 @@ class AssessDispatchPayload(BaseDispatchPayload):
     pass
 
 
-class PrioritizationDispatchPayload(BaseDispatchPayload, _PrioritizationFields):
+class PrioritizationDispatchPayload(BaseDispatchPayload, PrioritizationFields):
     pass
 
 
@@ -239,65 +239,63 @@ class ScopeOnlyDispatchPayload(BaseDispatchPayload):
     question_id: str = Field(default="", description="Injected at runtime")
 
 
-class ScoutSubquestionsDispatchPayload(ScopeOnlyDispatchPayload, _MultiRoundFields):
+class ScoutSubquestionsDispatchPayload(ScopeOnlyDispatchPayload, MultiRoundFields):
     pass
 
 
-class ScoutEstimatesDispatchPayload(ScopeOnlyDispatchPayload, _MultiRoundFields):
+class ScoutEstimatesDispatchPayload(ScopeOnlyDispatchPayload, MultiRoundFields):
     pass
 
 
-class ScoutHypothesesDispatchPayload(ScopeOnlyDispatchPayload, _MultiRoundFields):
+class ScoutHypothesesDispatchPayload(ScopeOnlyDispatchPayload, MultiRoundFields):
     pass
 
 
-class ScoutAnalogiesDispatchPayload(ScopeOnlyDispatchPayload, _MultiRoundFields):
+class ScoutAnalogiesDispatchPayload(ScopeOnlyDispatchPayload, MultiRoundFields):
     pass
 
 
-class ScoutParadigmCasesDispatchPayload(ScopeOnlyDispatchPayload, _MultiRoundFields):
+class ScoutParadigmCasesDispatchPayload(ScopeOnlyDispatchPayload, MultiRoundFields):
     pass
 
 
-class ScoutFactchecksDispatchPayload(ScopeOnlyDispatchPayload, _MultiRoundFields):
+class ScoutFactchecksDispatchPayload(ScopeOnlyDispatchPayload, MultiRoundFields):
     pass
 
 
-class ScoutWebQuestionsDispatchPayload(ScopeOnlyDispatchPayload, _MultiRoundFields):
+class ScoutWebQuestionsDispatchPayload(ScopeOnlyDispatchPayload, MultiRoundFields):
     pass
 
 
-class ScoutDeepQuestionsDispatchPayload(ScopeOnlyDispatchPayload, _MultiRoundFields):
+class ScoutDeepQuestionsDispatchPayload(ScopeOnlyDispatchPayload, MultiRoundFields):
     pass
 
 
-class ScoutCHowTrueDispatchPayload(ScopeOnlyDispatchPayload, _MultiRoundFields):
+class ScoutCHowTrueDispatchPayload(ScopeOnlyDispatchPayload, MultiRoundFields):
     pass
 
 
-class ScoutCHowFalseDispatchPayload(ScopeOnlyDispatchPayload, _MultiRoundFields):
+class ScoutCHowFalseDispatchPayload(ScopeOnlyDispatchPayload, MultiRoundFields):
     pass
 
 
-class ScoutCCruxesDispatchPayload(ScopeOnlyDispatchPayload, _MultiRoundFields):
+class ScoutCCruxesDispatchPayload(ScopeOnlyDispatchPayload, MultiRoundFields):
     pass
 
 
-class ScoutCRelevantEvidenceDispatchPayload(
-    ScopeOnlyDispatchPayload, _MultiRoundFields
-):
+class ScoutCRelevantEvidenceDispatchPayload(ScopeOnlyDispatchPayload, MultiRoundFields):
     pass
 
 
-class ScoutCStressTestCasesDispatchPayload(ScopeOnlyDispatchPayload, _MultiRoundFields):
+class ScoutCStressTestCasesDispatchPayload(ScopeOnlyDispatchPayload, MultiRoundFields):
     pass
 
 
-class ScoutCRobustifyDispatchPayload(ScopeOnlyDispatchPayload, _MultiRoundFields):
+class ScoutCRobustifyDispatchPayload(ScopeOnlyDispatchPayload, MultiRoundFields):
     pass
 
 
-class ScoutCStrengthenDispatchPayload(ScopeOnlyDispatchPayload, _MultiRoundFields):
+class ScoutCStrengthenDispatchPayload(ScopeOnlyDispatchPayload, MultiRoundFields):
     pass
 
 
@@ -305,14 +303,14 @@ class WebResearchDispatchPayload(BaseDispatchPayload):
     pass
 
 
-class RecurseDispatchPayload(BaseDispatchPayload, _PrioritizationFields):
+class RecurseDispatchPayload(BaseDispatchPayload, PrioritizationFields):
     budget: int = Field(
         ge=MIN_TWOPHASE_BUDGET,
         description=f"Budget to allocate for the sub-investigation (minimum {MIN_TWOPHASE_BUDGET})",
     )
 
 
-class RecurseClaimDispatchPayload(BaseDispatchPayload, _PrioritizationFields):
+class RecurseClaimDispatchPayload(BaseDispatchPayload, PrioritizationFields):
     budget: int = Field(
         ge=MIN_TWOPHASE_BUDGET,
         description=f"Budget for the claim sub-investigation (minimum {MIN_TWOPHASE_BUDGET})",
@@ -327,7 +325,7 @@ class InlineAssessDispatch(_DispatchBase):
     call_type: Literal["assess"] = "assess"
 
 
-class InlinePrioritizationDispatch(_DispatchBase, _PrioritizationFields):
+class InlinePrioritizationDispatch(_DispatchBase, PrioritizationFields):
     call_type: Literal["prioritization"] = "prioritization"
 
 

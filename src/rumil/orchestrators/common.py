@@ -369,8 +369,9 @@ async def score_items_sequentially(
         response_text = result.response_text or ""
         messages.append({"role": "assistant", "content": response_text})
 
-        if result.data:
-            for score in result.data.get("scores", []):
+        if result.parsed:
+            parsed_dict = result.parsed.model_dump()
+            for score in parsed_dict.get("scores", []):
                 results.append(score)
 
     return results

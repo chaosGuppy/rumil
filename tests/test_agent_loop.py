@@ -148,9 +148,9 @@ async def test_structured_call_returns_parsed_dict():
         "Rate the color blue on a scale of 1-5.",
         response_model=Rating,
     )
-    assert result.data is not None
-    assert isinstance(result.data["score"], int)
-    assert "reason" in result.data
+    assert result.parsed is not None
+    assert isinstance(result.parsed.score, int)
+    assert result.parsed.reason
     assert result.input_tokens is not None
     assert result.output_tokens is not None
     assert result.duration_ms is not None

@@ -183,7 +183,7 @@ async def _self_assessment(
         db=infra.db,
         cache=True,
     )
-    review_data = review_result.data or {}
+    review_data = review_result.parsed.model_dump() if review_result.parsed else {}
 
     if review_data:
         log.info(
@@ -327,7 +327,7 @@ class ConceptAssessReview(ClosingReviewer):
                 metadata=meta,
                 db=infra.db,
             )
-            review = result.data
+            review = result.parsed.model_dump() if result.parsed else None
         except Exception as e:
             log.error(
                 "Concept closing review failed for call=%s: %s",

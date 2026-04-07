@@ -432,7 +432,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             ))
         else:
             async def _empty_scores():
-                return type('R', (), {'data': {'scores': []}})()
+                return None
             scoring_tasks.append(_empty_scores())
 
         scoring_tasks.append(self.db.get_latest_scout_fruit(question_id))
@@ -441,7 +441,9 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         subq_result = scoring_results[0]
         scout_fruit: dict[str, int | None] = scoring_results[1]
 
-        subq_scores = subq_result.data.get('scores', []) if subq_result.data else []
+        subq_scores: list[dict] = []
+        if subq_result is not None and subq_result.parsed:
+            subq_scores = [s.model_dump() for s in subq_result.parsed.scores]
 
         await trace.record(ScoringCompletedEvent(
             subquestion_scores=[

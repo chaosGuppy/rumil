@@ -290,11 +290,11 @@ async def reassess_claim(
         db=db,
     )
 
-    if result.data is None:
+    if result.parsed is None:
         log.warning("Reassess claim %s returned no data", old_page.id[:8])
         return
 
-    reassessed = ReassessedClaim.model_validate(result.data)
+    reassessed = result.parsed
 
     new_page = Page(
         page_type=PageType.CLAIM,
@@ -551,11 +551,11 @@ async def reassess_claims(
         db=db,
     )
 
-    if result.data is None:
+    if result.parsed is None:
         log.warning("reassess_claims returned no data")
         return
 
-    parsed = ReassessedClaimsResult.model_validate(result.data)
+    parsed = result.parsed
 
     new_pages: list[Page] = []
     superseded_by: dict[str, list[str]] = {}
@@ -699,6 +699,5 @@ async def generate_abstracts(call: Call, db: DB) -> None:
         metadata=meta,
         db=db,
     )
-    if result.data:
-        parsed = _PageAbstractList(**result.data)
-        await save_page_abstracts(parsed.summaries, db)
+    if result.parsed:
+        await save_page_abstracts(result.parsed.summaries, db)

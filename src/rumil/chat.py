@@ -301,7 +301,7 @@ def _render_transcript_markdown(history: Sequence[dict]) -> str:
                             query = tool_input.get("query", json.dumps(tool_input))
                             text_parts.append(f"*[Searched workspace for: {query}]*")
                 if text_parts:
-                    parts.append(f"## Assistant\n\n" + "\n\n".join(text_parts) + "\n")
+                    parts.append("## Assistant\n\n" + "\n\n".join(text_parts) + "\n")
     return "\n".join(parts)
 
 
@@ -523,8 +523,8 @@ async def _extract_question(
         user_message=transcript,
         response_model=RefinedQuestion,
     )
-    if result.data:
-        return RefinedQuestion(**result.data)
+    if result.parsed:
+        return result.parsed
     return RefinedQuestion(headline=original_question, content=original_question)
 
 

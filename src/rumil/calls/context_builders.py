@@ -692,9 +692,8 @@ async def _select_sensitive_pages(
         metadata=meta,
         db=infra.db,
     )
-    if result.data:
-        selected = _PageSelection.model_validate(result.data)
-        selected_ids = set(selected.page_ids)
+    if result.parsed:
+        selected_ids = set(result.parsed.page_ids)
         return [p for p in pages if p.id[:8] in selected_ids][:limit]
     return list(pages[:limit])
 
@@ -1056,10 +1055,9 @@ async def _find_higher_quality_replacements(
                 db=infra.db,
             )
         found: set[str] = set()
-        if result.data:
-            picks = _ReplacementPick.model_validate(result.data)
+        if result.parsed:
             candidate_id_map = {c.id[:8]: c.id for c, _ in candidates}
-            for short_id in picks.replacement_ids:
+            for short_id in result.parsed.replacement_ids:
                 full_id = candidate_id_map.get(short_id)
                 if full_id:
                     found.add(full_id)
@@ -1128,12 +1126,11 @@ async def _generate_missing_abstracts(
         metadata=meta,
         db=infra.db,
     )
-    if result.data:
-        parsed = _AbstractBatch(**result.data)
-        await save_page_abstracts(parsed.summaries, infra.db)
+    if result.parsed:
+        await save_page_abstracts(result.parsed.summaries, infra.db)
         log.info(
             "Generated %d abstracts for connected pages",
-            len(parsed.summaries),
+            len(result.parsed.summaries),
         )
 
 

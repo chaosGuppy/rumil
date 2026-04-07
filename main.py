@@ -23,7 +23,7 @@ from rumil.models import Call, Page, PageLayer, PageLink, PageType, LinkType, Wo
 from rumil.constants import MIN_TWOPHASE_BUDGET
 from rumil.orchestrators import Orchestrator, create_root_question, run_concept_session
 from rumil.sources import create_source_page, run_ingest_calls
-from rumil.chat import run_chat
+from rumil.chat import run_chat, run_scoping_chat, run_continuation_chat
 from rumil.mapper import generate_map
 from rumil.summary import generate_summary, save_summary
 from rumil.report import generate_report, save_report
@@ -736,12 +736,41 @@ async def cmd_ab(
     print(f"\nAB test complete: {frontend}/ab-traces/{ab_run_id}")
 
 
+async def cmd_scope(
+    question_text: str,
+    budget: int | None,
+    db: DB,
+    name: str = "",
+    ingest_files: list[str] | None = None,
+) -> None:
+    effective_budget = _default_budget(budget)
+    await db.create_run(
+        name=name or f"scope: {question_text[:100]}",
+        question_id="",
+        config=get_settings().capture_config(),
+    )
+    # Create source pages up front (no extraction yet)
+    source_pages: list[Page] = []
+    if ingest_files:
+        for filepath in ingest_files:
+            page = await create_source_page(filepath, db)
+            if page:
+                source_pages.append(page)
+
+    question_id = await run_scoping_chat(
+        question_text, db, effective_budget, source_pages=source_pages,
+    )
+    if question_id:
+        await _print_summary(db)
+
+
 async def cmd_continue(
     question_id: str,
     additional_budget: int | None,
     db: DB,
     name: str = "",
     ingest_files: list[str] | None = None,
+    chat_first: bool = False,
 ) -> None:
     additional_budget = _default_budget(additional_budget)
     question = await db.get_page(question_id)
@@ -775,6 +804,19 @@ async def cmd_continue(
     )
     print(f"Budget:       {additional_budget} research calls")
     print(f"Trace:        {frontend}/traces/{db.run_id}")
+
+    if chat_first:
+        source_pages: list[Page] = []
+        if ingest_files:
+            for filepath in ingest_files:
+                page = await create_source_page(filepath, db)
+                if page:
+                    source_pages.append(page)
+        await run_continuation_chat(
+            question_id, db, additional_budget, source_pages=source_pages,
+        )
+        await _print_summary(db)
+        return
 
     ingested_source_names: list[str] = []
     existing_claim_ids: set[str] = set()
@@ -959,6 +1001,18 @@ async def async_main():
         dest="chat_id",
         metavar="QUESTION_ID",
         help="Chat interactively about the research on a question",
+    )
+    parser.add_argument(
+        "--scope",
+        dest="scope_question",
+        metavar="QUESTION_TEXT",
+        help="Start a scoping chat to refine a question before investigation",
+    )
+    parser.add_argument(
+        "--chat-first",
+        dest="chat_first",
+        action="store_true",
+        help="Enter continuation chat before resuming investigation (use with --continue)",
     )
     parser.add_argument(
         "--concepts",
@@ -1168,6 +1222,11 @@ async def async_main():
         return
     elif args.concepts_id:
         await cmd_concepts(args.concepts_id, db)
+    elif args.scope_question:
+        await cmd_scope(
+            args.scope_question, args.budget, db,
+            name=args.run_name, ingest_files=args.ingest_files,
+        )
     elif args.chat_id:
         await run_chat(args.chat_id, db)
     elif args.add_question:
@@ -1195,6 +1254,7 @@ async def async_main():
             db,
             name=args.run_name,
             ingest_files=args.ingest_files,
+            chat_first=args.chat_first,
         )
     elif args.batch_file:
         await cmd_batch(args.batch_file, db)

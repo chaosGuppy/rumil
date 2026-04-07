@@ -5,6 +5,7 @@ Build context text from workspace pages for injection into LLM prompts.
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
@@ -444,6 +445,66 @@ async def _resolve_superseding_page(
     return None
 
 
+_CITATION_RE = re.compile(r"\[([a-f0-9]{8})\]")
+
+
+async def _supersession_notes(body: str, db: DB) -> str:
+    """Return a note block for any inline citations that reference superseded pages.
+
+    Typically 2 DB queries: one to find superseded cited pages (prefix-match +
+    ``is_superseded`` filter), one bulk chain resolution.
+    """
+    short_ids = sorted(set(_CITATION_RE.findall(body)))
+    if not short_ids:
+        return ""
+
+    resp = await db._execute(
+        db.client.table("pages")
+        .select("id")
+        .eq("is_superseded", True)
+        .or_(",".join(f"id.like.{sid}%" for sid in short_ids))
+    )
+    rows = resp.data or []
+    if not rows:
+        return ""
+
+    prefix_to_full: dict[str, str] = {}
+    for row in rows:
+        prefix = row["id"][:8]
+        if prefix in prefix_to_full:
+            prefix_to_full.pop(prefix)
+        else:
+            prefix_to_full[prefix] = row["id"]
+
+    if not prefix_to_full:
+        return ""
+
+    superseded_ids = list(prefix_to_full.values())
+    resolved = await db.resolve_supersession_chains(superseded_ids)
+
+    notes: list[str] = []
+    for sid in short_ids:
+        full_id = prefix_to_full.get(sid)
+        if not full_id:
+            continue
+        replacement = resolved.get(full_id)
+        if not replacement:
+            notes.append(
+                f"> **Note:** `[{sid}]` has been superseded (replacement not found)."
+            )
+            continue
+        abstract_text = replacement.abstract or replacement.headline
+        notes.append(
+            f"> **Note:** `[{sid}]` has been superseded by "
+            f"`[{replacement.id[:8]}]` — {replacement.headline}\n"
+            f"> {abstract_text}"
+        )
+
+    if not notes:
+        return ""
+    return "\n\n" + "\n\n".join(notes)
+
+
 async def format_page(
     page: Page,
     detail: PageDetail = PageDetail.CONTENT,
@@ -452,6 +513,7 @@ async def format_page(
     db: DB | None = None,
     graph: PageGraph | None = None,
     include_superseding: bool = True,
+    exclude_page_ids: set[str] | None = None,
 ) -> str:
     """Format a single page at the requested detail level.
 
@@ -522,13 +584,20 @@ async def format_page(
     body = page.abstract if detail == PageDetail.ABSTRACT else page.content
     if body:
         lines += ["", body]
+        if db:
+            notes = await _supersession_notes(body, db)
+            if notes:
+                lines.append(notes)
 
     source: DB | PageGraph | None = graph if graph is not None else db
+    _exclude = exclude_page_ids or set()
     if linked_detail is not None and source and page.page_type == PageType.QUESTION:
         linked_items: list[tuple[str, Page]] = []
 
         considerations = await source.get_considerations_for_question(page.id)
         for claim, link in considerations:
+            if claim.id in _exclude:
+                continue
             line = "- " + await format_page(claim, linked_detail, db=db, graph=graph, linked_detail=None)
             if link.reasoning:
                 line += f"\n  Reasoning: {link.reasoning}"
@@ -536,12 +605,18 @@ async def format_page(
 
         judgements = await source.get_judgements_for_question(page.id)
         for j in judgements:
+            if j.id in _exclude:
+                continue
             line = '- ' + await format_page(j, linked_detail, db=db, graph=graph, linked_detail=None)
             linked_items.append((line, j))
 
         children = await source.get_child_questions(page.id)
         for child in children:
+            if child.id in _exclude:
+                continue
             for j in await source.get_judgements_for_question(child.id):
+                if j.id in _exclude:
+                    continue
                 line = (
                     f"- *On: {child.headline} (`{child.id[:8]}`)*  "
                     + await format_page(j, linked_detail, db=db, graph=graph, linked_detail=None)
@@ -781,6 +856,35 @@ async def format_preloaded_pages(
     return "\n".join(parts)
 
 
+async def _build_dependency_signal(db: DB) -> str | None:
+    """Build a section listing the most-depended-on pages in the workspace.
+
+    Returns None if no DEPENDS_ON links exist yet.
+    """
+    counts = await db.get_dependency_counts()
+    if not counts:
+        return None
+
+    top = sorted(counts.items(), key=lambda x: x[1], reverse=True)[:10]
+    pages = await db.get_pages_by_ids([pid for pid, _ in top])
+    lines = ['## Load-Bearing Pages (by dependency count)', '']
+    lines.append(
+        'These pages are depended on by the most other pages. '
+        'Prioritize them for robustness assessment — if they turn out to '
+        'be wrong, the most downstream conclusions would be affected.'
+    )
+    lines.append('')
+    for pid, count in top:
+        page = pages.get(pid)
+        if page:
+            stale_tag = ' [SUPERSEDED]' if page.is_superseded else ''
+            lines.append(
+                f'- `{pid[:8]}` — {page.headline} '
+                f'({count} dependents){stale_tag}'
+            )
+    return '\n'.join(lines)
+
+
 async def build_prioritization_context(
     db: DB,
     scope_question_id: str | None = None,
@@ -851,24 +955,9 @@ async def build_prioritization_context(
             for sid in subtree_ids:
                 short_id_map[sid[:8]] = sid
 
-    source_pages = await source.get_pages(page_type=PageType.SOURCE)
-    if source_pages:
-        ingest_history = await db.get_ingest_history()
-        parts.append('## Sources and Ingest History')
-        parts.append('')
-        for src in source_pages:
-            src_extra = src.extra or {}
-            filename = src_extra.get('filename', src.id[:8])
-            char_count = src_extra.get('char_count', len(src.content))
-            question_ids = ingest_history.get(src.id, [])
-            parts.append(f'[SRC] `{src.id[:8]}` — {filename} ({char_count:,} chars)')
-            if question_ids:
-                for qid in question_ids:
-                    q = await source.get_page(qid)
-                    q_summary = q.headline[:60] if q else qid[:8]
-                    parts.append(f'  Ingested for: `{qid[:8]}` — {q_summary}')
-            else:
-                parts.append('  Not yet ingested for any question')
+    dep_section = await _build_dependency_signal(db)
+    if dep_section:
+        parts.append(dep_section)
         parts.append('')
 
     return '\n'.join(parts), short_id_map
@@ -886,6 +975,8 @@ async def build_embedding_based_context(
     db: DB,
     *,
     scope_question_id: str | None = None,
+    scope_detail: PageDetail | None = None,
+    scope_linked_detail: PageDetail | None = None,
     headline_only_ids: set[str] | None = None,
     full_page_char_budget: int | None = None,
     abstract_page_char_budget: int | None = None,
@@ -895,6 +986,7 @@ async def build_embedding_based_context(
     abstract_page_similarity_floor: float | None = None,
     summary_page_similarity_floor: float | None = None,
     require_judgement_for_questions: bool = False,
+    exclude_page_ids: set[str] | None = None,
 ) -> EmbeddingBasedContextResult:
     """Build context by embedding-similarity search over the whole workspace.
 
@@ -932,6 +1024,10 @@ async def build_embedding_based_context(
         field_name='abstract',
     )
 
+    _exclude = exclude_page_ids or set()
+    if _exclude:
+        ranked = [(p, s) for p, s in ranked if p.id not in _exclude]
+
     scope_section = ''
     scope_page_ids: list[str] = []
     if scope_question_id:
@@ -939,7 +1035,13 @@ async def build_embedding_based_context(
         if scope_page:
             scope_section = (
                 '## Scope Question\n\n'
-                + await format_page(scope_page, PageDetail.ABSTRACT, db=db)
+                + await format_page(
+                    scope_page,
+                    scope_detail or PageDetail.ABSTRACT,
+                    linked_detail=scope_linked_detail or PageDetail.HEADLINE,
+                    db=db,
+                    exclude_page_ids=_exclude,
+                )
                 + '\n\n'
             )
             scope_page_ids = [scope_question_id]

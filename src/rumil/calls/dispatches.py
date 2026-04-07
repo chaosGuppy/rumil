@@ -34,10 +34,23 @@ from rumil.models import (
     ScoutWebQuestionsDispatchPayload,
     ScoutSubquestionsDispatchPayload,
     WebResearchDispatchPayload,
+    MultiRoundFields,
+    PrioritizationFields,
 )
 from rumil.moves.base import DispatchValidator, MoveState
 
 log = logging.getLogger(__name__)
+
+
+def estimate_dispatch_cost(d: Dispatch) -> int:
+    """Estimate worst-case budget cost of a single dispatch."""
+    p = d.payload
+    if isinstance(p, PrioritizationFields):
+        return p.budget
+    if isinstance(p, MultiRoundFields):
+        return p.max_rounds
+    return 1
+
 
 S = TypeVar("S", bound=BaseDispatchPayload)
 

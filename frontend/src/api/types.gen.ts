@@ -407,7 +407,15 @@ export type ClaimScoreItem = {
     /**
      * Impact
      */
-    impact?: number;
+    impact?: number | null;
+    /**
+     * Impact On Question
+     */
+    impact_on_question?: number;
+    /**
+     * Broader Impact
+     */
+    broader_impact?: number;
     /**
      * Fruit
      */
@@ -852,7 +860,7 @@ export type LinkSubquestionsCompleteEventOut = {
 /**
  * LinkType
  */
-export type LinkType = 'consideration' | 'child_question' | 'supersedes' | 'related' | 'variant' | 'summarizes' | 'cites';
+export type LinkType = 'consideration' | 'child_question' | 'supersedes' | 'related' | 'variant' | 'summarizes' | 'cites' | 'depends_on';
 
 /**
  * LinkedPageOut
@@ -976,6 +984,10 @@ export type Page = {
      * Abstract
      */
     abstract: string;
+    /**
+     * Fruit Remaining
+     */
+    fruit_remaining: number | null;
 };
 
 /**
@@ -1447,7 +1459,15 @@ export type SubquestionScoreItem = {
     /**
      * Impact
      */
-    impact?: number;
+    impact?: number | null;
+    /**
+     * Impact On Question
+     */
+    impact_on_question?: number;
+    /**
+     * Broader Impact
+     */
+    broader_impact?: number;
     /**
      * Fruit
      */
@@ -1925,6 +1945,70 @@ export type GetLinksToApiPagesPageIdLinksToGetResponses = {
 };
 
 export type GetLinksToApiPagesPageIdLinksToGetResponse = GetLinksToApiPagesPageIdLinksToGetResponses[keyof GetLinksToApiPagesPageIdLinksToGetResponses];
+
+export type GetDependentsApiPagesPageIdDependentsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Page Id
+         */
+        page_id: string;
+    };
+    query?: never;
+    url: '/api/pages/{page_id}/dependents';
+};
+
+export type GetDependentsApiPagesPageIdDependentsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetDependentsApiPagesPageIdDependentsGetError = GetDependentsApiPagesPageIdDependentsGetErrors[keyof GetDependentsApiPagesPageIdDependentsGetErrors];
+
+export type GetDependentsApiPagesPageIdDependentsGetResponses = {
+    /**
+     * Response Get Dependents Api Pages  Page Id  Dependents Get
+     *
+     * Successful Response
+     */
+    200: Array<LinkedPageOut>;
+};
+
+export type GetDependentsApiPagesPageIdDependentsGetResponse = GetDependentsApiPagesPageIdDependentsGetResponses[keyof GetDependentsApiPagesPageIdDependentsGetResponses];
+
+export type GetDependenciesApiPagesPageIdDependenciesGetData = {
+    body?: never;
+    path: {
+        /**
+         * Page Id
+         */
+        page_id: string;
+    };
+    query?: never;
+    url: '/api/pages/{page_id}/dependencies';
+};
+
+export type GetDependenciesApiPagesPageIdDependenciesGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetDependenciesApiPagesPageIdDependenciesGetError = GetDependenciesApiPagesPageIdDependenciesGetErrors[keyof GetDependenciesApiPagesPageIdDependenciesGetErrors];
+
+export type GetDependenciesApiPagesPageIdDependenciesGetResponses = {
+    /**
+     * Response Get Dependencies Api Pages  Page Id  Dependencies Get
+     *
+     * Successful Response
+     */
+    200: Array<LinkedPageOut>;
+};
+
+export type GetDependenciesApiPagesPageIdDependenciesGetResponse = GetDependenciesApiPagesPageIdDependenciesGetResponses[keyof GetDependenciesApiPagesPageIdDependenciesGetResponses];
 
 export type GetPageDetailApiPagesPageIdDetailGetData = {
     body?: never;

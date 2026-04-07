@@ -113,6 +113,7 @@ def _row_to_page(row: dict[str, Any]) -> Page:
         is_superseded=bool(row.get("is_superseded", False)),
         extra=row.get("extra") or {},
         abstract=row.get("abstract") or "",
+        fruit_remaining=row.get("fruit_remaining"),
     )
 
 
@@ -414,6 +415,7 @@ class DB:
                     "superseded_by": page.superseded_by,
                     "is_superseded": page.is_superseded,
                     "extra": page.extra,
+                    "fruit_remaining": page.fruit_remaining,
                     "run_id": self.run_id,
                     "staged": self.staged,
                     "abstract": page.abstract,
@@ -660,6 +662,30 @@ class DB:
             pages = [p for p in pages if p.is_active()]
         return pages
 
+    async def supersede_page(
+        self,
+        old_id: str,
+        new_id: str,
+        change_magnitude: int | None = None,
+    ) -> None:
+        payload: dict = {"new_page_id": new_id}
+        if change_magnitude is not None:
+            payload["change_magnitude"] = change_magnitude
+
+        await self.record_mutation_event(
+            "supersede_page", old_id, payload,
+        )
+
+        if not self.staged:
+            await self._execute(
+                self.client.table("pages").update(
+                    {
+                        "is_superseded": True,
+                        "superseded_by": new_id,
+                    }
+                ).eq("id", old_id)
+            )
+
     async def get_pages_paginated(
         self,
         workspace: Workspace | None = None,
@@ -697,19 +723,6 @@ class DB:
             pages = [p for p in pages if p.is_active()]
         return pages, total
 
-    async def supersede_page(self, old_id: str, new_id: str) -> None:
-        await self.record_mutation_event(
-            "supersede_page", old_id, {"new_page_id": new_id},
-        )
-        if not self.staged:
-            await self._execute(
-                self.client.table("pages").update(
-                    {
-                        "is_superseded": True,
-                        "superseded_by": new_id,
-                    }
-                ).eq("id", old_id)
-            )
 
     async def resolve_supersession_chain(
         self, page_id: str, max_depth: int = 10,
@@ -734,6 +747,45 @@ class DB:
             seen.add(current_id)
             current_id = page.superseded_by
         return None
+
+    async def resolve_supersession_chains(
+        self, page_ids: Sequence[str], max_depth: int = 10,
+    ) -> dict[str, Page]:
+        """Bulk-resolve supersession chains for multiple page IDs.
+
+        Returns ``{original_id: active_replacement}`` for each input ID whose
+        chain reaches an active page. IDs that are already active, have broken
+        chains, or exceed *max_depth* are omitted.
+        """
+        pages = await self.get_pages_by_ids(list(page_ids))
+        pending: dict[str, str] = {}
+        result: dict[str, Page] = {}
+        origin: dict[str, str] = {}
+
+        for pid in page_ids:
+            page = pages.get(pid)
+            if not page or not page.is_superseded or not page.superseded_by:
+                continue
+            pending[pid] = page.superseded_by
+            origin[pid] = pid
+
+        for _ in range(max_depth):
+            if not pending:
+                break
+            targets = list(set(pending.values()))
+            fetched = await self.get_pages_by_ids(targets)
+            next_pending: dict[str, str] = {}
+            for orig_id, target_id in pending.items():
+                target_page = fetched.get(target_id)
+                if not target_page:
+                    continue
+                if not target_page.is_superseded:
+                    result[orig_id] = target_page
+                elif target_page.superseded_by:
+                    next_pending[orig_id] = target_page.superseded_by
+            pending = next_pending
+
+        return result
 
     # --- Links ---
 
@@ -878,6 +930,94 @@ class DB:
             and pages[l.from_page_id].is_active()
             and pages[l.from_page_id].page_type == PageType.JUDGEMENT
         ]
+
+    async def get_dependents(
+        self, page_id: str,
+    ) -> list[tuple[Page, PageLink]]:
+        """Return (dependent_page, link) for all pages that depend on this one."""
+        links = await self.get_links_to(page_id)
+        dep_links = [l for l in links if l.link_type == LinkType.DEPENDS_ON]
+        if not dep_links:
+            return []
+        pages = await self.get_pages_by_ids(
+            [l.from_page_id for l in dep_links]
+        )
+        return [
+            (pages[l.from_page_id], l)
+            for l in dep_links
+            if l.from_page_id in pages and pages[l.from_page_id].is_active()
+        ]
+
+    async def get_dependencies(
+        self, page_id: str,
+    ) -> list[tuple[Page, PageLink]]:
+        """Return (dependency_page, link) for all pages this one depends on."""
+        links = await self.get_links_from(page_id)
+        dep_links = [l for l in links if l.link_type == LinkType.DEPENDS_ON]
+        if not dep_links:
+            return []
+        pages = await self.get_pages_by_ids(
+            [l.to_page_id for l in dep_links]
+        )
+        return [
+            (pages[l.to_page_id], l)
+            for l in dep_links
+            if l.to_page_id in pages
+        ]
+
+    async def get_stale_dependencies(self) -> list[tuple[PageLink, int | None]]:
+        """Return DEPENDS_ON links where the dependency has been superseded.
+
+        Returns (link, change_magnitude) pairs. change_magnitude comes from
+        the supersession mutation event if available, otherwise None.
+        """
+        query = (
+            self.client.table("page_links")
+            .select("*")
+            .eq("link_type", "depends_on")
+        )
+        query = self._staged_filter(query)
+        rows = _rows(await self._execute(query))
+        links = await self._apply_link_events([_row_to_link(r) for r in rows])
+
+        stale: list[tuple[PageLink, int | None]] = []
+        for link in links:
+            dep_page = await self.get_page(link.to_page_id)
+            if dep_page and dep_page.is_superseded:
+                magnitude = await self._get_supersession_magnitude(dep_page.id)
+                stale.append((link, magnitude))
+        return stale
+
+    async def get_dependency_counts(self) -> dict[str, int]:
+        """Return a map from page_id to how many pages depend on it."""
+        query = (
+            self.client.table("page_links")
+            .select("to_page_id")
+            .eq("link_type", LinkType.DEPENDS_ON.value)
+        )
+        query = self._staged_filter(query)
+        rows = _rows(await self._execute(query))
+        counts: dict[str, int] = {}
+        for row in rows:
+            pid = row["to_page_id"]
+            counts[pid] = counts.get(pid, 0) + 1
+        return counts
+
+    async def _get_supersession_magnitude(self, page_id: str) -> int | None:
+        """Look up the change_magnitude from the supersession mutation event."""
+        query = (
+            self.client.table("mutation_events")
+            .select("payload")
+            .eq("target_id", page_id)
+            .eq("event_type", "supersede_page")
+            .order("created_at", desc=True)
+            .limit(1)
+        )
+        rows = _rows(await self._execute(query))
+        if rows:
+            payload = rows[0].get("payload", {})
+            return payload.get("change_magnitude")
+        return None
 
     # --- Calls ---
 
@@ -1182,6 +1322,32 @@ class DB:
             ct = row["call_type"]
             counts[ct] = counts.get(ct, 0) + 1
         return counts
+
+    async def get_latest_scout_fruit(
+        self,
+        question_id: str,
+    ) -> dict[str, int | None]:
+        """Return {call_type: remaining_fruit} for the most recent completed
+        scout call of each type on this question."""
+        rows = _rows(
+            await self._execute(
+                self.client.table("calls")
+                .select("call_type, completed_at, review_json")
+                .eq("scope_page_id", question_id)
+                .eq("status", "complete")
+                .like("call_type", "scout_%")
+                .order("completed_at", desc=True)
+            )
+        )
+        result: dict[str, int | None] = {}
+        for row in rows:
+            ct = row["call_type"]
+            if ct in result:
+                continue
+            review = row.get("review_json") or {}
+            fruit = review.get("remaining_fruit") if isinstance(review, dict) else None
+            result[ct] = fruit
+        return result
 
     async def get_ingest_history(self) -> dict[str, list[str]]:
         """Return {source_id: [question_id, ...]} based on considerations

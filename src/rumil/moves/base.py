@@ -165,15 +165,24 @@ class MoveDef(Generic[S]):
         )
 
 
+HEADLINE_DESCRIPTION = (
+    "10-15 word headline (20 word ceiling). Must be a sharp, "
+    "self-contained label — not a truncated sentence. Think of it like a newspaper "
+    "headline: a reader with no prior context should know at a glance what this page "
+    "is about. Name the actual claim or position, e.g. 'Solar payback periods have "
+    "fallen below 7 years in most climates'. Never use language that only makes sense "
+    "relative to a particular question or investigation — headlines are used for "
+    "retrieval across the whole workspace and must stand alone. Always name the "
+    "specific subject: 'The election is likely to take place' is broken because it "
+    "doesn't say WHICH election. Avoid vague openings like 'There are several "
+    "factors...' and context-dependent phrasing like 'This undercuts the premise', "
+    "'Key factor in the timeline', or 'dominant cancellation pathway' (cancellation "
+    "of what?)."
+)
+
+
 class CreatePagePayload(BaseModel):
-    headline: str = Field(
-        description=(
-            "10-15 word headline (20 word ceiling). Must be a sharp, "
-            "self-contained label — not a truncated sentence. Name the actual claim "
-            "or position, e.g. 'Solar payback periods have fallen below 7 years in "
-            "most climates'. Avoid vague openings like 'There are several factors...'."
-        )
-    )
+    headline: str = Field(description=HEADLINE_DESCRIPTION)
     content: str = Field(
         description="Full explanation with reasoning. Be specific and substantive."
     )
@@ -197,6 +206,14 @@ class CreatePagePayload(BaseModel):
         description=(
             "Page ID of an existing page this one replaces. The old page "
             "is marked as superseded."
+        ),
+    )
+    change_magnitude: int | None = Field(
+        None,
+        description=(
+            "1-5: how much the picture changed from the superseded page. "
+            "1=minor wording only, 3=substantive but same bottom line, "
+            "5=completely changed the picture. Only used when supersedes is set."
         ),
     )
 
@@ -264,26 +281,40 @@ def write_page_file(page: Page) -> None:
 async def _copy_consideration_links(
     old_page_id: str, new_page_id: str, db: DB
 ) -> None:
-    """Copy outbound CONSIDERATION links from *old_page_id* to *new_page_id*."""
-    links = await db.get_links_from(old_page_id)
-    for link in links:
-        if link.link_type == LinkType.CONSIDERATION:
-            await db.save_link(
-                PageLink(
-                    from_page_id=new_page_id,
-                    to_page_id=link.to_page_id,
-                    link_type=LinkType.CONSIDERATION,
-                    direction=link.direction,
-                    strength=link.strength,
-                    reasoning=link.reasoning,
-                    role=link.role,
-                )
+    """Copy outbound CONSIDERATION links from *old_page_id* to *new_page_id*.
+
+    Skips links where *new_page_id* already has a CONSIDERATION link to the
+    same target with the same direction.
+    """
+    old_links = await db.get_links_from(old_page_id)
+    new_links = await db.get_links_from(new_page_id)
+    existing = {
+        (l.to_page_id, l.direction)
+        for l in new_links
+        if l.link_type == LinkType.CONSIDERATION
+    }
+    copied = 0
+    for link in old_links:
+        if link.link_type != LinkType.CONSIDERATION:
+            continue
+        if (link.to_page_id, link.direction) in existing:
+            continue
+        await db.save_link(
+            PageLink(
+                from_page_id=new_page_id,
+                to_page_id=link.to_page_id,
+                link_type=LinkType.CONSIDERATION,
+                direction=link.direction,
+                strength=link.strength,
+                reasoning=link.reasoning,
+                role=link.role,
             )
-    count = sum(1 for l in links if l.link_type == LinkType.CONSIDERATION)
-    if count:
+        )
+        copied += 1
+    if copied:
         log.info(
             "Copied %d consideration links from %s to %s",
-            count, old_page_id[:8], new_page_id[:8],
+            copied, old_page_id[:8], new_page_id[:8],
         )
 
 
@@ -298,6 +329,7 @@ async def create_page(
     workspace = _resolve_workspace(payload.workspace)
     extra = payload.page_extra_fields()
 
+    fruit_remaining = getattr(payload, 'fruit_remaining', None)
     page = Page(
         page_type=page_type,
         layer=layer,
@@ -306,6 +338,7 @@ async def create_page(
         headline=payload.headline,
         credence=None if page_type == PageType.QUESTION else payload.credence,
         robustness=None if page_type == PageType.QUESTION else payload.robustness,
+        fruit_remaining=fruit_remaining,
         provenance_model="claude-opus-4-6",
         provenance_call_type=call.call_type.value,
         provenance_call_id=call.id,
@@ -349,7 +382,9 @@ async def create_page(
     if payload.supersedes:
         old_id = await db.resolve_page_id(payload.supersedes)
         if old_id:
-            await db.supersede_page(old_id, page.id)
+            await db.supersede_page(
+                old_id, page.id, change_magnitude=payload.change_magnitude,
+            )
             await _copy_consideration_links(old_id, page.id, db)
             log.info("Superseded %s -> %s", old_id[:8], page.id[:8])
         else:
@@ -469,13 +504,16 @@ async def supersede_old_judgements(
     new_judgement_id: str,
     question_id: str,
     db: DB,
+    change_magnitude: int | None = None,
 ) -> None:
     """Supersede any existing active judgements on a question when a new one is linked."""
     old_judgements = await db.get_judgements_for_question(question_id)
     for old in old_judgements:
         if old.id == new_judgement_id:
             continue
-        await db.supersede_page(old.id, new_judgement_id)
+        await db.supersede_page(
+            old.id, new_judgement_id, change_magnitude=change_magnitude,
+        )
         log.info(
             "Superseded old judgement %s with %s on question %s",
             old.id[:8],

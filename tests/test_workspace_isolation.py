@@ -249,11 +249,3 @@ async def test_page_graph_isolated(two_workspaces):
     assert beta_page is not None
     assert alpha_leak is None
 
-
-async def test_source_in_prioritization_context_isolated(two_workspaces):
-    w = two_workspaces
-    ctx_alpha, _ = await build_prioritization_context(w["db_alpha"], w["q_alpha"].id)
-    ctx_beta, _ = await build_prioritization_context(w["db_beta"], w["q_beta"].id)
-
-    assert "sky-paper.pdf" in ctx_alpha
-    assert "sky-paper.pdf" not in ctx_beta

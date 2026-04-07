@@ -33,6 +33,22 @@ class CreateJudgementPayload(CreatePagePayload):
     sensitivity_analysis: str | None = Field(
         None, description="What would shift this judgement, and in which direction"
     )
+    fruit_remaining: int | None = Field(
+        None,
+        description=(
+            "0-10: how much useful investigation remains on this question/claim. "
+            "0=thoroughly answered with high confidence, 10=wide open with many "
+            "unexplored angles."
+        ),
+    )
+    change_magnitude: int | None = Field(
+        None,
+        description=(
+            "1-5: how much this judgement differs from the prior judgement on "
+            "this question. 1=minor wording, 3=substantive but same bottom line, "
+            "5=completely changed the picture. Omit if no prior judgement exists."
+        ),
+    )
 
     def page_extra_fields(self) -> dict[str, Any]:
         extra = super().page_extra_fields()
@@ -71,7 +87,12 @@ class CreateJudgementForQuestionPayload(CreateJudgementPayload):
     )
 
 
-async def _link_and_supersede(new_judgement_id: str, question_id: str, db: DB) -> None:
+async def _link_and_supersede(
+    new_judgement_id: str,
+    question_id: str,
+    db: DB,
+    change_magnitude: int | None = None,
+) -> None:
     """Link a new judgement to its question and supersede prior judgements."""
     await db.save_link(
         PageLink(
@@ -80,7 +101,9 @@ async def _link_and_supersede(new_judgement_id: str, question_id: str, db: DB) -
             link_type=LinkType.RELATED,
         )
     )
-    await supersede_old_judgements(new_judgement_id, question_id, db)
+    await supersede_old_judgements(
+        new_judgement_id, question_id, db, change_magnitude=change_magnitude,
+    )
     log.info(
         "Judgement %s linked to question %s",
         new_judgement_id[:8],
@@ -93,7 +116,10 @@ async def execute(payload: CreateJudgementPayload, call: Call, db: DB) -> MoveRe
     if not result.created_page_id or not call.scope_page_id:
         return result
 
-    await _link_and_supersede(result.created_page_id, call.scope_page_id, db)
+    await _link_and_supersede(
+        result.created_page_id, call.scope_page_id, db,
+        change_magnitude=payload.change_magnitude,
+    )
     return result
 
 
@@ -108,7 +134,10 @@ async def execute_for_question(
     if not result.created_page_id:
         return result
 
-    await _link_and_supersede(result.created_page_id, resolved, db)
+    await _link_and_supersede(
+        result.created_page_id, resolved, db,
+        change_magnitude=payload.change_magnitude,
+    )
     return result
 
 

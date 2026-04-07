@@ -461,6 +461,94 @@
         }
       }
     },
+    "/api/pages/{page_id}/dependents": {
+      "get": {
+        "summary": "Get Dependents",
+        "description": "Pages that depend on this page (inbound DEPENDS_ON links).",
+        "operationId": "get_dependents_api_pages__page_id__dependents_get",
+        "parameters": [
+          {
+            "name": "page_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Page Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LinkedPageOut"
+                  },
+                  "title": "Response Get Dependents Api Pages  Page Id  Dependents Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/pages/{page_id}/dependencies": {
+      "get": {
+        "summary": "Get Dependencies",
+        "description": "Pages that this page depends on (outbound DEPENDS_ON links).",
+        "operationId": "get_dependencies_api_pages__page_id__dependencies_get",
+        "parameters": [
+          {
+            "name": "page_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Page Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LinkedPageOut"
+                  },
+                  "title": "Response Get Dependencies Api Pages  Page Id  Dependencies Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/pages/{page_id}/detail": {
       "get": {
         "summary": "Get Page Detail",
@@ -1881,8 +1969,24 @@
             "default": ""
           },
           "impact": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Impact"
+          },
+          "impact_on_question": {
             "type": "integer",
-            "title": "Impact",
+            "title": "Impact On Question",
+            "default": 0
+          },
+          "broader_impact": {
+            "type": "integer",
+            "title": "Broader Impact",
             "default": 0
           },
           "fruit": {
@@ -2699,7 +2803,8 @@
           "related",
           "variant",
           "summarizes",
-          "cites"
+          "cites",
+          "depends_on"
         ],
         "title": "LinkType"
       },
@@ -2885,6 +2990,17 @@
             "type": "string",
             "title": "Abstract",
             "default": ""
+          },
+          "fruit_remaining": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fruit Remaining"
           }
         },
         "type": "object",
@@ -2907,7 +3023,8 @@
           "superseded_by",
           "is_superseded",
           "extra",
-          "abstract"
+          "abstract",
+          "fruit_remaining"
         ],
         "title": "Page"
       },
@@ -3698,8 +3815,24 @@
             "default": ""
           },
           "impact": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Impact"
+          },
+          "impact_on_question": {
             "type": "integer",
-            "title": "Impact",
+            "title": "Impact On Question",
+            "default": 0
+          },
+          "broader_impact": {
+            "type": "integer",
+            "title": "Broader Impact",
             "default": 0
           },
           "fruit": {

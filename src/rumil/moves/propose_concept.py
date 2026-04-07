@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from rumil.database import DB
 from rumil.models import Call, MoveType, Page, PageLayer, PageType, Workspace
 from rumil.moves.base import (
+    HEADLINE_DESCRIPTION,
     MoveDef,
     MoveResult,
     extract_and_link_citations,
@@ -13,12 +14,7 @@ from rumil.moves.base import (
 
 
 class ProposeConceptPayload(BaseModel):
-    headline: str = Field(
-        description=(
-            "10-15 word headline (20 word ceiling). A sharp, self-contained label "
-            "for the concept or distinction being proposed."
-        )
-    )
+    headline: str = Field(description=HEADLINE_DESCRIPTION)
     content: str = Field(
         description=(
             "Full definition and explanation of the concept. Include: what distinction "
@@ -27,7 +23,9 @@ class ProposeConceptPayload(BaseModel):
         )
     )
     credence: int = Field(5, description="1-9 credence that this concept is useful")
-    robustness: int = Field(1, description="1-5 robustness of the concept's value assessment")
+    robustness: int = Field(
+        1, description="1-5 robustness of the concept's value assessment"
+    )
 
 
 async def execute(payload: ProposeConceptPayload, call: Call, db: DB) -> MoveResult:

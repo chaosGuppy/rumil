@@ -90,7 +90,9 @@ class ErrorEvent(BaseModel):
 class SubquestionScoreItem(BaseModel):
     question_id: str
     headline: str = ""
-    impact: int = 0
+    impact: int | None = None
+    impact_on_question: int = 0
+    broader_impact: int = 0
     fruit: int = 0
     reasoning: str = ""
 
@@ -104,7 +106,9 @@ class CallTypeFruitScoreItem(BaseModel):
 class ClaimScoreItem(BaseModel):
     page_id: str
     headline: str = ""
-    impact: int = 0
+    impact: int | None = None
+    impact_on_question: int = 0
+    broader_impact: int = 0
     fruit: int = 0
     reasoning: str = ""
 

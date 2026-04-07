@@ -3,11 +3,13 @@ Shared helpers, data classes, and standalone orchestration functions.
 """
 
 import logging
+import math
 import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+import pydantic
 from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
@@ -161,10 +163,29 @@ async def _describe_considerations_on_page(
     return claims_text, questions_text
 
 
+def compute_priority_score(
+    impact_on_question: int, broader_impact: int, fruit: int,
+) -> int:
+    """Synthetic priority from three scoring dimensions.
+
+    Formula: floor((2 * 2^(ioq/2) + 2^(bi/2)) * fruit / 10)
+    """
+    raw = (2 * 2 ** (impact_on_question / 2) + 2 ** (broader_impact / 2)) * fruit
+    return math.floor(raw / 10)
+
+
 class SubquestionScore(BaseModel):
     question_id: str = Field(description="Full UUID of the subquestion")
     headline: str = Field(description="Headline of the subquestion")
-    impact: int = Field(description="0-10: how much answering this helps the parent")
+    impact_on_question: int = Field(
+        description="0-10: how much answering this helps the parent question"
+    )
+    broader_impact: int = Field(
+        description=(
+            "0-10: how strategically important it is in general to have a "
+            "good answer to this question"
+        )
+    )
     fruit: int = Field(description="0-10: how much useful investigation remains")
     reasoning: str = Field(description="Brief explanation of scores")
 
@@ -176,8 +197,14 @@ class SubquestionScoringResult(BaseModel):
 class ClaimScore(BaseModel):
     page_id: str = Field(description="Full UUID of the claim")
     headline: str = Field(description="Headline of the claim")
-    impact: int = Field(
-        description="0-10: how much resolving this helps the investigation"
+    impact_on_question: int = Field(
+        description="0-10: how much resolving this helps the parent investigation"
+    )
+    broader_impact: int = Field(
+        description=(
+            "0-10: how strategically important it is in general to have a "
+            "good answer on this claim"
+        )
     )
     fruit: int = Field(description="0-10: how much useful investigation remains")
     reasoning: str = Field(description="Brief explanation of scores")
@@ -194,86 +221,155 @@ class FruitResult(BaseModel):
     reasoning: str = Field(description="Brief explanation")
 
 
-class CallTypeFruitScore(BaseModel):
-    call_type: str = Field(
-        description="e.g. development, scout_subquestions, scout_estimates"
-    )
-    fruit: int = Field(description="0-10: how much useful work of this type remains")
-    reasoning: str = Field(description="Brief explanation")
 
 
-class PerTypeFruitResult(BaseModel):
-    scores: list[CallTypeFruitScore]
+SCORING_BATCH_SIZE = 10
 
 
-_LOW = 2
-_HIGH = 6
+def _split_into_batches(n: int, max_per_batch: int) -> list[int]:
+    """Split *n* items into balanced batches of at most *max_per_batch*.
+
+    E.g. n=25, max=10 → [9, 8, 8] (3 batches, sizes as even as possible).
+    """
+    if n == 0:
+        return []
+    n_batches = math.ceil(n / max_per_batch)
+    base, extra = divmod(n, n_batches)
+    return [base + (1 if i < extra else 0) for i in range(n_batches)]
 
 
-def compute_dispatch_guidance(
-    fruit_scores: Sequence[CallTypeFruitScore],
+async def _build_item_block(
+    item: Page, index: int, total: int, graph: PageGraph,
 ) -> str:
-    """Produce dispatch guidance text from per-scout-type fruit scores."""
-    dev_score: int | None = None
-    scout_scores: dict[str, int] = {}
-    for s in fruit_scores:
-        if s.call_type == "development":
-            dev_score = s.fruit
+    """Build the text block describing a single item for the scorer."""
+    parts = [
+        f'### Item {index + 1}/{total}',
+        f'ID: `{item.id}`',
+        f'Headline: {item.headline}',
+    ]
+    if item.abstract:
+        parts.append(f'\nAbstract:\n{item.abstract}')
+
+    judgements = await graph.get_judgements_for_question(item.id)
+    if judgements:
+        latest_j = max(judgements, key=lambda j: j.created_at)
+        parts.append(
+            f'\nLatest judgement (credence {latest_j.credence}/9, '
+            f'robustness {latest_j.robustness}/5):'
+        )
+        if latest_j.abstract:
+            parts.append(latest_j.abstract)
         else:
-            scout_scores[s.call_type] = s.fruit
+            parts.append(latest_j.headline)
+        if latest_j.fruit_remaining is not None:
+            parts.append(
+                f'\nPrior fruit_remaining estimate: {latest_j.fruit_remaining}/10'
+            )
+    else:
+        parts.append('\nNo prior assessment.')
+    return '\n'.join(parts)
 
-    if dev_score is None:
-        dev_score = 5
 
-    high_scouts = [k for k, v in scout_scores.items() if v >= _HIGH]
-    low_scouts = [k for k, v in scout_scores.items() if v <= _LOW]
-    exhausted_scouts = [k for k, v in scout_scores.items() if v <= 1]
-    all_scouts_low = len(low_scouts) == len(scout_scores) and len(scout_scores) > 0
-    any_scouts_moderate_or_high = any(v > _LOW for v in scout_scores.values())
+async def score_items_sequentially(
+    parent_page: Page,
+    parent_judgement: Page | None,
+    items: Sequence[Page],
+    graph: PageGraph,
+    system_prompt_name: str,
+    response_model: type[BaseModel],
+    call_id: str,
+    db: DB,
+) -> list[dict]:
+    """Score items in batched multi-turn cached conversation.
 
-    lines: list[str] = []
+    Items are split into balanced batches of up to SCORING_BATCH_SIZE.
+    Each batch is presented as a single user message; the model returns
+    a list of scores for that batch.
+    """
+    from rumil.llm import (
+        LLMExchangeMetadata,
+        build_system_prompt,
+        structured_call,
+    )
 
-    if dev_score <= _LOW and high_scouts:
-        lines.append(
-            "Development avenues are well-explored. Focus budget on scouting: "
-            + ", ".join(high_scouts)
-            + "."
+    if not items:
+        return []
+
+    batch_response_model = pydantic.create_model(
+        f'{response_model.__name__}Batch',
+        scores=(list[response_model], Field(description='One score per item in the batch')),
+    )
+
+    parent_parts = [
+        f'Parent: {parent_page.headline}',
+        '',
+    ]
+    if parent_page.abstract:
+        parent_parts.append(parent_page.abstract)
+        parent_parts.append('')
+    if parent_judgement:
+        parent_parts.append(
+            f'Latest judgement (credence {parent_judgement.credence}/9, '
+            f'robustness {parent_judgement.robustness}/5):'
         )
-    elif dev_score >= _HIGH and all_scouts_low:
-        lines.append(
-            "Scouting is largely exhausted. Focus budget on developing "
-            "existing subquestions via find_considerations and recurse."
-        )
-    elif dev_score >= _HIGH and high_scouts:
-        lines.append(
-            "Both development and scouting have significant remaining fruit. "
-            "Allocate broadly across development and high-fruit scouts: "
-            + ", ".join(high_scouts)
-            + "."
-        )
-    elif dev_score > _LOW and any_scouts_moderate_or_high:
-        names = [k for k, v in scout_scores.items() if v > _LOW]
-        lines.append(
-            "Balance budget between development calls and high-fruit scouts: "
-            + ", ".join(names)
-            + "."
-        )
-    elif dev_score > _LOW and all_scouts_low:
-        lines.append(
-            "Scouting is largely exhausted but development has moderate fruit. "
-            "Focus budget on developing existing subquestions."
-        )
-    elif dev_score <= _LOW and all_scouts_low:
-        lines.append(
-            "Remaining fruit is low across the board. "
-            "Consider allocating conservatively."
+        if parent_judgement.abstract:
+            parent_parts.append(parent_judgement.abstract)
+        else:
+            parent_parts.append(parent_judgement.headline)
+        parent_parts.append('')
+
+    parent_context = '\n'.join(parent_parts)
+    system_prompt = build_system_prompt(system_prompt_name)
+    messages: list[dict] = []
+    results: list[dict] = []
+
+    batch_sizes = _split_into_batches(len(items), SCORING_BATCH_SIZE)
+    offset = 0
+    for batch_idx, batch_size in enumerate(batch_sizes):
+        batch_items = items[offset:offset + batch_size]
+        offset += batch_size
+
+        item_blocks = []
+        for j, item in enumerate(batch_items):
+            global_idx = sum(batch_sizes[:batch_idx]) + j
+            block = await _build_item_block(item, global_idx, len(items), graph)
+            item_blocks.append(block)
+
+        batch_text = (
+            f'## Batch {batch_idx + 1}/{len(batch_sizes)} '
+            f'({batch_size} items)\n\n'
+            + '\n\n'.join(item_blocks)
+            + '\n\nScore all items in this batch now.'
         )
 
-    if not all_scouts_low:
-        for name in exhausted_scouts:
-            lines.append(f"{name} appears exhausted — avoid dispatching.")
+        if batch_idx == 0:
+            user_content = parent_context + '\n' + batch_text
+        else:
+            user_content = batch_text
 
-    return "\n".join(lines)
+        messages.append({'role': 'user', 'content': user_content})
+
+        result = await structured_call(
+            system_prompt,
+            messages=list(messages),
+            response_model=batch_response_model,
+            cache=True,
+            metadata=LLMExchangeMetadata(
+                call_id=call_id,
+                phase=f'score_batch_{batch_idx}',
+                user_messages=[{'role': 'user', 'content': user_content}],
+            ),
+            db=db,
+        )
+
+        response_text = result.response_text or ''
+        messages.append({'role': 'assistant', 'content': response_text})
+
+        if result.data:
+            for score in result.data.get('scores', []):
+                results.append(score)
+
+    return results
 
 
 @dataclass

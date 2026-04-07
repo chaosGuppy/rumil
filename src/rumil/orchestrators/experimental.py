@@ -32,7 +32,9 @@ from rumil.orchestrators.common import (
     _describe_child_questions,
     assess_question,
 )
+from rumil.moves.base import link_pages
 from rumil.page_graph import PageGraph
+from rumil.scope_subquestion_linker import run_scope_subquestion_linker
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
 from rumil.tracing.trace_events import (
@@ -257,6 +259,60 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             total_remaining=total_remaining,
         )
 
+    async def _run_subquestion_linker(
+        self,
+        question_id: str,
+        parent_call_id: str | None,
+    ) -> None:
+        """Run the subquestion linker and materialize its proposals as CHILD_QUESTION links.
+
+        Any failure is logged and swallowed — phase1 must proceed regardless.
+        """
+        try:
+            linker_call = await run_scope_subquestion_linker(
+                question_id,
+                self.db,
+                broadcaster=self.broadcaster,
+                parent_call_id=parent_call_id,
+            )
+        except Exception as e:
+            log.warning(
+                'Subquestion linker failed for question=%s: %s',
+                question_id[:8], e, exc_info=True,
+            )
+            return
+
+        proposed_ids = (linker_call.review_json or {}).get(
+            'proposed_subquestion_ids', []
+        )
+        if not proposed_ids:
+            log.info(
+                'Subquestion linker produced no proposals for question=%s',
+                question_id[:8],
+            )
+            return
+
+        created = 0
+        for child_id in proposed_ids:
+            try:
+                await link_pages(
+                    question_id,
+                    child_id,
+                    'Auto-linked by subquestion linker at phase1 start',
+                    self.db,
+                    LinkType.CHILD_QUESTION,
+                )
+                created += 1
+            except Exception as e:
+                log.warning(
+                    'Failed to link proposed subquestion %s -> %s: %s',
+                    question_id[:8], child_id[:8], e,
+                )
+        log.info(
+            'Subquestion linker: created %d/%d CHILD_QUESTION links for question=%s',
+            created, len(proposed_ids), question_id[:8],
+        )
+
     async def _phase1(
         self,
         question_id: str,
@@ -269,6 +325,8 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             'ExperimentalOrchestrator phase1: question=%s, budget=%d, phase1_budget=%d',
             question_id[:8], budget, phase1_budget,
         )
+
+        await self._run_subquestion_linker(question_id, parent_call_id)
 
         graph = await PageGraph.load(self.db)
         context_text, short_id_map = await build_prioritization_context(

@@ -74,6 +74,7 @@ class Settings(BaseSettings):
     sonnet_model: str = _capture_field(default="claude-sonnet-4-6")
     scope_subquestion_linker_max_rounds: int = _capture_field(default=6)
     scope_subquestion_linker_seed_limit: int = _capture_field(default=10)
+    scope_subquestion_linker_subgraph_max_pages: int = _capture_field(default=40)
 
     max_db_retries: int = _capture_field(default=60)
     max_api_retries: int = _capture_field(default=60)

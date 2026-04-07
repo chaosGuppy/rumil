@@ -951,15 +951,12 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
         <div className="trace-event-body">
           <div className="trace-kv">
             <span className="trace-kv-key">proposed</span>
-            <span className="trace-kv-value">{event.proposed_ids.length}</span>
+            <span className="trace-kv-value">{event.proposed.length}</span>
           </div>
-          {event.proposed_ids.map((id) => (
-            <div key={id} className="trace-kv trace-kv-block">
-              <span className="trace-kv-key">
-                <code>{id.slice(0, 8)}</code>
-              </span>
-              <span className="trace-kv-value trace-kv-pre">
-                {event.rationales[id] ?? ""}
+          {event.proposed.map((p) => (
+            <div key={p.id} className="trace-kv">
+              <span className="trace-kv-value">
+                <PageChip page={{ id: p.id, headline: p.headline }} />
               </span>
             </div>
           ))}

@@ -126,6 +126,19 @@ When the user pastes a `localhost:<port>` URL, do NOT use that port literally. I
 - Do not add section divider comments (e.g. `# ----------` banners). Use blank lines between logical sections; the code should speak for itself.
 - When adding new user-facing CLI flags or commands to `main.py`, always update `README.md` with corresponding documentation.
 
+## Database query efficiency
+
+**Think hard about query patterns whenever you write code that touches the DB**, and especially when traversing the page graph (children, parents, considerations, judgements, link chains, etc.). The codebase has accumulated many hot loops that issue one query per node and then complain about latency — do not add more.
+
+Before writing a new traversal or graph-walking helper, ask:
+
+- **How many round trips will this make in the worst case?** If it's O(N) in the number of pages/links visited, that's almost always wrong. Aim for O(depth) or O(1) round trips.
+- **Can I batch?** Most existing single-page helpers (`get_links_from`, `get_page`, `get_child_questions`, etc.) have or should have a `*_many` counterpart that takes a `Sequence[str]` and issues one `in_(...)` query plus one `_apply_*_events` pass. If the batched helper doesn't exist yet, add it next to the singular one in `database.py` rather than calling the singular form in a loop.
+- **Can I do level-by-level BFS instead of recursive per-node fetches?** For depth-bounded subgraph walks, BFS with batched fetches per level gives `O(depth)` round trips regardless of fan-out. See `src/rumil/scope_subquestion_linker/subgraph.py` for the canonical pattern (one batched links query + one batched pages query per level).
+- **Would a single RPC be dramatically better?** Sometimes yes — but remember that any new RPC reading pages or links must accept `staged_run_id` and reproduce the staged-runs visibility logic in SQL (see "Staged Runs and the Mutation Log"). That's real work; only take it on when batching in Python isn't enough.
+
+When you spot an existing per-node loop while working in nearby code, flag it to the user — don't silently rewrite it, but don't pretend you didn't see it either.
+
 ## Hooks
 
 PostToolUse hooks in `.claude/settings.json` run automatically after file edits. Do not manually invoke these — they fire on every Edit/Write/MultiEdit:

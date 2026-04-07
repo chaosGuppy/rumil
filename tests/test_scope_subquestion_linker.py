@@ -2,7 +2,7 @@
 
 import pytest
 
-from rumil.llm import AgentResult
+from rumil.llm import AgentResult, Tool
 from rumil.models import (
     CallStatus,
     CallType,
@@ -16,6 +16,23 @@ from rumil.models import (
 from rumil.scope_subquestion_linker.runner import run_scope_subquestion_linker
 from rumil.scope_subquestion_linker.seed_selection import select_seed_questions
 from rumil.scope_subquestion_linker.subgraph import render_question_subgraph
+from rumil.scope_subquestion_linker.tool import SUBMIT_TOOL_NAME
+
+
+def _fake_loop_submitting(payload: dict | None):
+    """Build a fake run_agent_loop side effect that calls the submit tool with *payload*.
+
+    Pass payload=None to simulate the agent never calling submit.
+    """
+
+    async def fake_loop(system_prompt, user_message, tools, **kwargs):
+        if payload is not None:
+            submit = next(t for t in tools if t.name == SUBMIT_TOOL_NAME)
+            assert isinstance(submit, Tool)
+            await submit.fn(payload)
+        return AgentResult(text="(stub)")
+
+    return fake_loop
 
 
 def _make_question(headline: str, *, provenance_model: str = "human") -> Page:
@@ -69,6 +86,53 @@ async def test_render_question_subgraph_three_hops(tmp_db):
     assert q3.id[:8] in rendered
     assert q4.id[:8] in rendered
     assert q5.id[:8] not in rendered
+
+
+async def test_render_question_subgraph_max_pages_cutoff(tmp_db):
+    # Linear chain Q1 -> Q2 -> Q3 -> Q4 -> Q5. With max_pages=3 and a deep
+    # max_depth, expansion stops once 3 pages are loaded; the deepest loaded
+    # page should be tagged as having overflow children.
+    q1 = _make_question("Q1 root")
+    q2 = _make_question("Q2 child")
+    q3 = _make_question("Q3 grandchild")
+    q4 = _make_question("Q4 great-grandchild")
+    q5 = _make_question("Q5 beyond budget")
+    for q in (q1, q2, q3, q4, q5):
+        await tmp_db.save_page(q)
+    await _link_child(tmp_db, q1, q2)
+    await _link_child(tmp_db, q2, q3)
+    await _link_child(tmp_db, q3, q4)
+    await _link_child(tmp_db, q4, q5)
+
+    rendered = await render_question_subgraph(q1.id, tmp_db, max_depth=10, max_pages=3)
+
+    assert q1.id[:8] in rendered
+    assert q2.id[:8] in rendered
+    assert q3.id[:8] in rendered
+    assert q4.id[:8] not in rendered
+    assert q5.id[:8] not in rendered
+    assert "more sub-Q(s) not shown -- horizon" in rendered
+
+
+async def test_render_question_subgraph_max_pages_truncates_full_level(tmp_db):
+    # Root has 5 children. With max_pages=3, the level of children would push
+    # the total to 6, which exceeds the budget -- so the entire children level
+    # is dropped and the root is tagged as having 5 hidden children.
+    root = _make_question("Root")
+    children = [_make_question(f"Child {i}") for i in range(5)]
+    await tmp_db.save_page(root)
+    for c in children:
+        await tmp_db.save_page(c)
+        await _link_child(tmp_db, root, c)
+
+    rendered = await render_question_subgraph(
+        root.id, tmp_db, max_depth=10, max_pages=3
+    )
+
+    assert root.id[:8] in rendered
+    for c in children:
+        assert c.id[:8] not in rendered
+    assert "5 more sub-Q(s) not shown -- horizon" in rendered
 
 
 async def test_render_question_subgraph_handles_cycles(tmp_db):
@@ -147,33 +211,19 @@ async def test_runner_filters_invalid_and_existing_children(tmp_db, mocker):
     claim = _make_claim("Not a question")
     await tmp_db.save_page(claim)
 
-    no_rationale = _make_question("Missing rationale")
-    await tmp_db.save_page(no_rationale)
-
-    agent_text = (
-        "Here are my findings.\n\n"
-        "```json\n"
-        "{\n"
-        f'  "linked_question_ids": ["{valid.id[:8]}", "{existing_child.id[:8]}", '
-        f'"{scope.id[:8]}", "{claim.id[:8]}", "deadbeef", "{no_rationale.id[:8]}"],\n'
-        '  "rationales": {\n'
-        f'    "{valid.id[:8]}": "Direct influence path explained.",\n'
-        f'    "{existing_child.id[:8]}": "Some rationale.",\n'
-        f'    "{scope.id[:8]}": "Some rationale.",\n'
-        f'    "{claim.id[:8]}": "Some rationale.",\n'
-        '    "deadbeef": "Some rationale.",\n'
-        f'    "{no_rationale.id[:8]}": ""\n'
-        "  }\n"
-        "}\n"
-        "```\n"
-    )
-
-    async def fake_loop(*args, **kwargs):
-        return AgentResult(text=agent_text)
+    payload = {
+        "question_ids": [
+            valid.id[:8],
+            existing_child.id[:8],
+            scope.id[:8],
+            claim.id[:8],
+            "deadbeef",
+        ]
+    }
 
     mocker.patch(
         "rumil.scope_subquestion_linker.runner.run_agent_loop",
-        side_effect=fake_loop,
+        side_effect=_fake_loop_submitting(payload),
     )
 
     call = await run_scope_subquestion_linker(scope.id, tmp_db, max_rounds=1)
@@ -182,21 +232,15 @@ async def test_runner_filters_invalid_and_existing_children(tmp_db, mocker):
     assert call.call_type == CallType.LINK_SUBQUESTIONS
     assert call.review_json is not None
     assert call.review_json["proposed_subquestion_ids"] == [valid.id]
-    assert call.review_json["rationales"] == {
-        valid.id: "Direct influence path explained.",
-    }
 
 
-async def test_runner_handles_missing_json_block(tmp_db, mocker):
+async def test_runner_handles_missing_submission(tmp_db, mocker):
     scope = _make_question("Scope")
     await tmp_db.save_page(scope)
 
-    async def fake_loop(*args, **kwargs):
-        return AgentResult(text="No JSON block here, just prose.")
-
     mocker.patch(
         "rumil.scope_subquestion_linker.runner.run_agent_loop",
-        side_effect=fake_loop,
+        side_effect=_fake_loop_submitting(None),
     )
 
     call = await run_scope_subquestion_linker(scope.id, tmp_db, max_rounds=1)
@@ -204,7 +248,6 @@ async def test_runner_handles_missing_json_block(tmp_db, mocker):
     assert call.status == CallStatus.COMPLETE
     assert call.review_json == {
         "proposed_subquestion_ids": [],
-        "rationales": {},
     }
 
 

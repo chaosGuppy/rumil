@@ -234,10 +234,14 @@ class RenderQuestionSubgraphEvent(BaseModel):
     response: str = ""
 
 
+class ProposedSubquestion(BaseModel):
+    id: str
+    headline: str = ""
+
+
 class LinkSubquestionsCompleteEvent(BaseModel):
     event: Literal["link_subquestions_complete"] = "link_subquestions_complete"
-    proposed_ids: list[str] = []
-    rationales: dict[str, str] = {}
+    proposed: list[ProposedSubquestion] = []
 
 
 TraceEvent = Annotated[

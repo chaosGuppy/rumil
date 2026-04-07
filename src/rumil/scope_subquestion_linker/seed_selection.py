@@ -38,19 +38,16 @@ async def select_seed_questions(
     *,
     limit: int = 10,
 ) -> list[Page]:
-    """Return up to *limit* top-level human-authored questions most relevant to *scope*.
+    """Return up to *limit* human-authored questions most relevant to *scope*.
 
-    1. Fetch all root questions in the workspace.
-    2. Filter to human-authored (`provenance_model == "human"`).
-    3. Drop the scope question itself.
-    4. If <= limit candidates remain, return them as-is (no LLM call).
-    5. Otherwise rank with a single Sonnet call and return the top *limit*.
+    1. Fetch all human-authored questions in the workspace.
+    2. Drop the scope question itself.
+    3. If <= limit candidates remain, return them as-is (no LLM call).
+    4. Otherwise rank with a single Sonnet call and return the top *limit*.
     """
     settings = get_settings()
-    roots = await db.get_root_questions()
-    candidates = [
-        q for q in roots if q.provenance_model == "human" and q.id != scope.id
-    ]
+    humans = await db.get_human_questions()
+    candidates = [q for q in humans if q.id != scope.id]
 
     if len(candidates) <= limit:
         return candidates

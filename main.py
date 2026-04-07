@@ -207,15 +207,11 @@ async def cmd_link_subquestions(
 
     call = await run_scope_subquestion_linker(question.id, db, max_rounds=max_rounds)
     proposed = (call.review_json or {}).get("proposed_subquestion_ids", [])
-    rationales = (call.review_json or {}).get("rationales", {})
     print(f"\nProposed {len(proposed)} subquestion(s) (call {call.id[:8]}):")
     for pid in proposed:
         page = await db.get_page(pid)
         headline = page.headline if page else "(unknown)"
         print(f"  - `{pid[:8]}` -- {headline}")
-        rationale = rationales.get(pid)
-        if rationale:
-            print(f"      {rationale}")
 
 
 async def cmd_evaluate(question_id: str, db: DB, *, eval_type: str = "default") -> None:
@@ -797,7 +793,10 @@ async def cmd_scope(
                 source_pages.append(page)
 
     question_id = await run_scoping_chat(
-        question_text, db, effective_budget, source_pages=source_pages,
+        question_text,
+        db,
+        effective_budget,
+        source_pages=source_pages,
     )
     if question_id:
         await _print_summary(db)
@@ -852,7 +851,10 @@ async def cmd_continue(
                 if page:
                     source_pages.append(page)
         await run_continuation_chat(
-            question_id, db, additional_budget, source_pages=source_pages,
+            question_id,
+            db,
+            additional_budget,
+            source_pages=source_pages,
         )
         await _print_summary(db)
         return
@@ -1289,8 +1291,11 @@ async def async_main():
         await cmd_concepts(args.concepts_id, db)
     elif args.scope_question:
         await cmd_scope(
-            args.scope_question, args.budget, db,
-            name=args.run_name, ingest_files=args.ingest_files,
+            args.scope_question,
+            args.budget,
+            db,
+            name=args.run_name,
+            ingest_files=args.ingest_files,
         )
     elif args.chat_id:
         await run_chat(args.chat_id, db)

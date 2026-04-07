@@ -846,15 +846,9 @@ export type LinkSubquestionsCompleteEventOut = {
      */
     event: 'link_subquestions_complete';
     /**
-     * Proposed Ids
+     * Proposed
      */
-    proposed_ids: Array<string>;
-    /**
-     * Rationales
-     */
-    rationales: {
-        [key: string]: string;
-    };
+    proposed: Array<ProposedSubquestion>;
 };
 
 /**
@@ -1114,6 +1108,20 @@ export type Project = {
      * Created At
      */
     created_at: string;
+};
+
+/**
+ * ProposedSubquestion
+ */
+export type ProposedSubquestion = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Headline
+     */
+    headline?: string;
 };
 
 /**

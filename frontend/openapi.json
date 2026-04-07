@@ -2767,21 +2767,13 @@
             "title": "Event",
             "default": "link_subquestions_complete"
           },
-          "proposed_ids": {
+          "proposed": {
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/ProposedSubquestion"
             },
             "type": "array",
-            "title": "Proposed Ids",
+            "title": "Proposed",
             "default": []
-          },
-          "rationales": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "type": "object",
-            "title": "Rationales",
-            "default": {}
           }
         },
         "type": "object",
@@ -2789,8 +2781,7 @@
           "ts",
           "call_id",
           "event",
-          "proposed_ids",
-          "rationales"
+          "proposed"
         ],
         "title": "LinkSubquestionsCompleteEventOut"
       },
@@ -3228,6 +3219,24 @@
           "created_at"
         ],
         "title": "Project"
+      },
+      "ProposedSubquestion": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "headline": {
+            "type": "string",
+            "title": "Headline",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "ProposedSubquestion"
       },
       "RealtimeConfigOut": {
         "properties": {

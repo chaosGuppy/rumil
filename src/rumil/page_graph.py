@@ -116,6 +116,34 @@ class PageGraph:
                 result.append((page, link))
         return result
 
+    async def get_dependents(
+        self,
+        page_id: str,
+    ) -> list[tuple[Page, PageLink]]:
+        """Pages that depend on *page_id* via DEPENDS_ON links."""
+        result = []
+        for link in self._links_to.get(page_id, []):
+            if link.link_type != LinkType.DEPENDS_ON:
+                continue
+            page = self._pages.get(link.from_page_id)
+            if page and page.is_active():
+                result.append((page, link))
+        return result
+
+    async def get_dependencies(
+        self,
+        page_id: str,
+    ) -> list[tuple[Page, PageLink]]:
+        """Pages that *page_id* depends on via DEPENDS_ON links."""
+        result = []
+        for link in self._links_from.get(page_id, []):
+            if link.link_type != LinkType.DEPENDS_ON:
+                continue
+            page = self._pages.get(link.to_page_id)
+            if page:
+                result.append((page, link))
+        return result
+
     async def get_judgements_for_question(
         self,
         question_id: str,

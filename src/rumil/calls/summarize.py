@@ -2,6 +2,7 @@
 
 import logging
 from datetime import UTC, datetime
+from pathlib import Path
 
 from pydantic import BaseModel, Field
 
@@ -24,15 +25,9 @@ from rumil.tracing.tracer import CallTrace, get_trace, set_trace
 
 log = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = (
-    "You are a precise research synthesiser. You will be given the full content of a research "
-    "question and the pages associated with it — considerations, judgements, child questions, "
-    "and their summaries. Your job is to produce a hierarchical summary of what is known about "
-    "this question and its sub-questions. Write for LLM instances that will use this summary "
-    "as context: prioritise accuracy, epistemic precision, and information density. Preserve "
-    "confidence levels, key qualifications, priority orderings, and causal mechanisms. "
-    "Do not pad. Do not add caveats beyond those in the source material."
-)
+_PROMPTS_DIR = Path(__file__).resolve().parents[3] / "prompts"
+
+SYSTEM_PROMPT = (_PROMPTS_DIR / "summarize.md").read_text()
 
 TASK = (
     "Produce a summary of this question subtree with three components:\n\n"

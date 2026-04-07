@@ -318,7 +318,7 @@ class MultiRoundLoop(PageCreator):
         system_prompt: str,
         resume_messages: list[dict],
         tool_defs: list[dict],
-        fruit_check_model: type,
+        fruit_check_model: type[_FruitCheck],
     ) -> int:
         check_messages = list(resume_messages) + [
             {"role": "user", "content": _FRUIT_CHECK_MESSAGE},
@@ -337,14 +337,13 @@ class MultiRoundLoop(PageCreator):
             db=infra.db,
             cache=True,
         )
-        if result.data:
-            score = result.data.get("remaining_fruit", 5)
+        if result.parsed:
             log.info(
                 "Fruit check: score=%d, reasoning=%s",
-                score,
-                result.data.get("brief_reasoning", ""),
+                result.parsed.remaining_fruit,
+                result.parsed.brief_reasoning,
             )
-            return score
+            return result.parsed.remaining_fruit
         log.warning("Fruit check returned empty data, defaulting to 5")
         return 5
 

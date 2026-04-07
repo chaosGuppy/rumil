@@ -272,7 +272,7 @@ async def summarize_question(
             db=db,
         )
 
-        if not result.data:
+        if not result.parsed:
             log.warning(
                 "summarize_question: structured call returned no data for %s",
                 question_id[:8],
@@ -280,10 +280,10 @@ async def summarize_question(
             await _fail_call(call, db)
             return None
 
-        data = result.data
+        data = result.parsed
         question = await db.get_page(question_id)
         page_headline = (
-            data.get("page_headline")
+            data.page_headline
             or f"Summary of {question.headline[:60] if question else question_id[:8]}"
         )
 
@@ -291,9 +291,9 @@ async def summarize_question(
             page_type=PageType.SUMMARY,
             layer=PageLayer.SQUIDGY,
             workspace=Workspace.RESEARCH,
-            content=data.get("content", ""),
-            headline=data.get("headline") or page_headline,
-            abstract=data.get("abstract", ""),
+            content=data.content,
+            headline=data.headline or page_headline,
+            abstract=data.abstract,
             credence=5,
             robustness=2,
             provenance_model="claude-sonnet-4-6",

@@ -713,6 +713,7 @@ _CONNECTED_LINK_TYPES = {
     LinkType.CONSIDERATION,
     LinkType.CHILD_QUESTION,
     LinkType.RELATED,
+    LinkType.DEPENDS_ON,
 }
 
 

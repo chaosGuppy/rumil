@@ -44,7 +44,9 @@ class CreateClaimPayload(CreatePagePayload):
         default_factory=list,
         description=(
             "Consideration links to create for this claim. Each entry links "
-            "the new claim to a question with a strength rating."
+            "the new claim to a QUESTION it bears on, with a strength rating. "
+            "Only use this for claim → question links. For claim → claim "
+            "dependencies, make a separate link_depends_on call."
         ),
     )
 

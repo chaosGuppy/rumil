@@ -47,10 +47,7 @@ class Settings(BaseSettings):
     frontend_url: str = "http://127.0.0.1:3000"
     db_max_concurrent_queries: int = 20
 
-    find_considerations_call_variant: str = _capture_field(default="default")
     assess_call_variant: str = _capture_field(default="default")
-    ingest_call_variant: str = _capture_field(default="default")
-    web_research_call_variant: str = _capture_field(default="default")
     prioritizer_variant: str = _capture_field(default="two_phase")
 
     available_moves: str = _capture_field(default="default")

@@ -11,14 +11,12 @@ Loop:
 
 import asyncio
 import logging
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 
-from rumil.calls.call_registry import (
-    SCOUT_C_HOW_FALSE_CALL_CLASSES,
-    SCOUT_C_HOW_TRUE_CALL_CLASSES,
-    SCOUT_C_ROBUSTIFY_CALL_CLASSES,
-    SCOUT_C_STRENGTHEN_CALL_CLASSES,
-)
+from rumil.calls.scout_c_how_false import ScoutCHowFalseCall
+from rumil.calls.scout_c_how_true import ScoutCHowTrueCall
+from rumil.calls.scout_c_robustify import ScoutCRobustifyCall
+from rumil.calls.scout_c_strengthen import ScoutCStrengthenCall
 from rumil.calls.stages import CallRunner
 from rumil.database import DB
 from rumil.models import CallType
@@ -61,17 +59,21 @@ class RobustifyOrchestrator:
 
         for round_num in range(1, self.max_rounds + 1):
             log.info(
-                'RobustifyOrchestrator round %d/%d: claim=%s',
-                round_num, self.max_rounds, claim_id[:8],
+                "RobustifyOrchestrator round %d/%d: claim=%s",
+                round_num,
+                self.max_rounds,
+                claim_id[:8],
             )
 
             if round_num == 1:
                 ids_to_test = await self._run_scout(
-                    claim_id, db, CallType.SCOUT_C_ROBUSTIFY,
-                    SCOUT_C_ROBUSTIFY_CALL_CLASSES,
+                    claim_id,
+                    db,
+                    CallType.SCOUT_C_ROBUSTIFY,
+                    ScoutCRobustifyCall,
                 )
                 if not ids_to_test:
-                    log.info('RobustifyOrchestrator: no variants produced, stopping')
+                    log.info("RobustifyOrchestrator: no variants produced, stopping")
                     break
                 all_variant_ids.extend(ids_to_test)
             else:
@@ -80,14 +82,18 @@ class RobustifyOrchestrator:
                     credence = await self._get_credence(vid, db)
                     if credence >= CREDENCE_THRESHOLD:
                         new_ids = await self._run_scout(
-                            vid, db, CallType.SCOUT_C_STRENGTHEN,
-                            SCOUT_C_STRENGTHEN_CALL_CLASSES,
+                            vid,
+                            db,
+                            CallType.SCOUT_C_STRENGTHEN,
+                            ScoutCStrengthenCall,
                         )
                         next_round_ids.extend(new_ids)
                     else:
                         new_ids = await self._run_scout(
-                            vid, db, CallType.SCOUT_C_ROBUSTIFY,
-                            SCOUT_C_ROBUSTIFY_CALL_CLASSES,
+                            vid,
+                            db,
+                            CallType.SCOUT_C_ROBUSTIFY,
+                            ScoutCRobustifyCall,
                         )
                         next_round_ids.extend(new_ids)
 
@@ -102,8 +108,8 @@ class RobustifyOrchestrator:
 
             if hit_threshold:
                 log.info(
-                    'RobustifyOrchestrator: completed extra round after '
-                    'reaching credence threshold, stopping',
+                    "RobustifyOrchestrator: completed extra round after "
+                    "reaching credence threshold, stopping",
                 )
                 break
 
@@ -114,14 +120,15 @@ class RobustifyOrchestrator:
 
             if hit_threshold:
                 log.info(
-                    'RobustifyOrchestrator: credence >= %d reached, '
-                    'will do one more round',
+                    "RobustifyOrchestrator: credence >= %d reached, "
+                    "will do one more round",
                     CREDENCE_THRESHOLD,
                 )
 
         log.info(
-            'RobustifyOrchestrator complete: %d variants produced over %d rounds',
-            len(all_variant_ids), round_num,
+            "RobustifyOrchestrator complete: %d variants produced over %d rounds",
+            len(all_variant_ids),
+            round_num,
         )
         return all_variant_ids
 
@@ -130,25 +137,30 @@ class RobustifyOrchestrator:
         claim_id: str,
         db: DB,
         call_type: CallType,
-        registry: Mapping[str, type[CallRunner]],
+        cls: type[CallRunner],
     ) -> list[str]:
         """Run a scout call and return created page IDs."""
         call = await db.create_call(call_type, scope_page_id=claim_id)
-        cls = registry['default']
         runner = cls(
-            claim_id, call, db,
+            claim_id,
+            call,
+            db,
             broadcaster=self.broadcaster,
         )
         await runner.run()
         created = list(runner.result.created_page_ids)
         log.info(
-            '%s on %s produced %d pages',
-            call_type.value, claim_id[:8], len(created),
+            "%s on %s produced %d pages",
+            call_type.value,
+            claim_id[:8],
+            len(created),
         )
         return created
 
     async def _investigate_variants(
-        self, variant_ids: Sequence[str], db: DB,
+        self,
+        variant_ids: Sequence[str],
+        db: DB,
     ) -> None:
         """Run how-true + how-false scouts then assess on each variant, concurrently."""
         tasks = [self._investigate_one(vid, db) for vid in variant_ids]
@@ -157,8 +169,10 @@ class RobustifyOrchestrator:
             for i, r in enumerate(results):
                 if isinstance(r, Exception):
                     log.error(
-                        'Investigation failed for variant %s: %s',
-                        variant_ids[i][:8], r, exc_info=r,
+                        "Investigation failed for variant %s: %s",
+                        variant_ids[i][:8],
+                        r,
+                        exc_info=r,
                     )
 
     async def _investigate_one(self, variant_id: str, db: DB) -> None:
@@ -172,17 +186,18 @@ class RobustifyOrchestrator:
             scope_page_id=variant_id,
         )
 
-        how_true_cls = SCOUT_C_HOW_TRUE_CALL_CLASSES['default']
-        how_false_cls = SCOUT_C_HOW_FALSE_CALL_CLASSES['default']
-
-        how_true_runner = how_true_cls(
-            variant_id, how_true_call, db,
+        how_true_runner = ScoutCHowTrueCall(
+            variant_id,
+            how_true_call,
+            db,
             broadcaster=self.broadcaster,
             max_rounds=SCOUT_MAX_ROUNDS,
             fruit_threshold=SCOUT_FRUIT_THRESHOLD,
         )
-        how_false_runner = how_false_cls(
-            variant_id, how_false_call, db,
+        how_false_runner = ScoutCHowFalseCall(
+            variant_id,
+            how_false_call,
+            db,
             broadcaster=self.broadcaster,
             max_rounds=SCOUT_MAX_ROUNDS,
             fruit_threshold=SCOUT_FRUIT_THRESHOLD,
@@ -191,7 +206,8 @@ class RobustifyOrchestrator:
         await asyncio.gather(how_true_runner.run(), how_false_runner.run())
 
         await assess_question(
-            variant_id, db,
+            variant_id,
+            db,
             broadcaster=self.broadcaster,
             force=True,
         )

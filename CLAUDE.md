@@ -84,9 +84,9 @@ The three phases:
 2. **create_pages** — `PageCreator.create_pages()` returns `CreationResult`
 3. **closing_review** — `ClosingReviewer.closing_review()` persists results and calls `mark_call_completed()`
 
-To add a new call type: subclass `CallRunner`. Set `call_type`, override `_make_context_builder()`, `_make_page_creator()`, `_make_closing_reviewer()`, and `task_description()`. For simple calls, reuse `SimpleAgentLoop` + `StandardClosingReview` + an existing context builder. Register the class in `call_registry.py` and export from `__init__.py`.
+To add a new call type: subclass `CallRunner`. Set `call_type`, override `_make_context_builder()`, `_make_page_creator()`, `_make_closing_reviewer()`, and `task_description()`. For simple calls, reuse `SimpleAgentLoop` + `StandardClosingReview` + an existing context builder. Export the class from `__init__.py`.
 
-**Call variant registries** (`src/rumil/calls/call_registry.py`): Each call type (find_considerations, assess, ingest) has a registry dict mapping string names to concrete classes (e.g. `ASSESS_CALL_CLASSES = {"default": AssessCall, "big": BigAssessCall}`). The orchestrator looks up the active variant from settings (`find_considerations_call_variant`, `assess_call_variant`, `ingest_call_variant`) and instantiates directly.
+**Assess call variants** (`src/rumil/calls/call_registry.py`): Only the assess call has multiple variants. `ASSESS_CALL_CLASSES = {"default": AssessCall, "big": BigAssessCall}` is keyed by `settings.assess_call_variant`. All other call types use a single concrete class — orchestrators import them directly.
 
 **Available moves** (`src/rumil/available_moves.py`): Named mappings from `CallType` to `Sequence[MoveType]`, controlling which tools each call type can use. `PRESETS` dict holds all presets; `get_moves_for_call()` reads the active preset from `settings.available_moves`. Call types absent from a preset get all moves. `CallRunner._resolve_available_moves()` checks the preset first, then falls back to the class-level `available_moves`. CLI flag: `--available-moves`.
 

@@ -23,14 +23,12 @@ from rumil.calls.assess_concept_types import (
     VALIDATION_MAX_ROUNDS,
     VALIDATION_PHASE,
 )
-from rumil.calls.call_registry import (
-    ASSESS_CALL_CLASSES,
-    ASSESS_CONCEPT_CALL_CLASSES,
-    FIND_CONSIDERATIONS_CALL_CLASSES,
-    INGEST_CALL_CLASSES,
-    SCOUT_CONCEPTS_CALL_CLASSES,
-    WEB_RESEARCH_CALL_CLASSES,
-)
+from rumil.calls.assess_concept import AssessConceptCall
+from rumil.calls.call_registry import ASSESS_CALL_CLASSES
+from rumil.calls.find_considerations import FindConsiderationsCall
+from rumil.calls.ingest import IngestCall
+from rumil.calls.scout_concepts import ScoutConceptsCall
+from rumil.calls.web_research import WebResearchCall
 from rumil.calls.summarize import summarize_question
 from rumil.constants import (
     DEFAULT_FRUIT_THRESHOLD,
@@ -164,7 +162,9 @@ async def _describe_considerations_on_page(
 
 
 def compute_priority_score(
-    impact_on_question: int, broader_impact: int, fruit: int,
+    impact_on_question: int,
+    broader_impact: int,
+    fruit: int,
 ) -> int:
     """Synthetic priority from three scoring dimensions.
 
@@ -221,8 +221,6 @@ class FruitResult(BaseModel):
     reasoning: str = Field(description="Brief explanation")
 
 
-
-
 SCORING_BATCH_SIZE = 10
 
 
@@ -239,23 +237,26 @@ def _split_into_batches(n: int, max_per_batch: int) -> list[int]:
 
 
 async def _build_item_block(
-    item: Page, index: int, total: int, graph: PageGraph,
+    item: Page,
+    index: int,
+    total: int,
+    graph: PageGraph,
 ) -> str:
     """Build the text block describing a single item for the scorer."""
     parts = [
-        f'### Item {index + 1}/{total}',
-        f'ID: `{item.id}`',
-        f'Headline: {item.headline}',
+        f"### Item {index + 1}/{total}",
+        f"ID: `{item.id}`",
+        f"Headline: {item.headline}",
     ]
     if item.abstract:
-        parts.append(f'\nAbstract:\n{item.abstract}')
+        parts.append(f"\nAbstract:\n{item.abstract}")
 
     judgements = await graph.get_judgements_for_question(item.id)
     if judgements:
         latest_j = max(judgements, key=lambda j: j.created_at)
         parts.append(
-            f'\nLatest judgement (credence {latest_j.credence}/9, '
-            f'robustness {latest_j.robustness}/5):'
+            f"\nLatest judgement (credence {latest_j.credence}/9, "
+            f"robustness {latest_j.robustness}/5):"
         )
         if latest_j.abstract:
             parts.append(latest_j.abstract)
@@ -263,11 +264,11 @@ async def _build_item_block(
             parts.append(latest_j.headline)
         if latest_j.fruit_remaining is not None:
             parts.append(
-                f'\nPrior fruit_remaining estimate: {latest_j.fruit_remaining}/10'
+                f"\nPrior fruit_remaining estimate: {latest_j.fruit_remaining}/10"
             )
     else:
-        parts.append('\nNo prior assessment.')
-    return '\n'.join(parts)
+        parts.append("\nNo prior assessment.")
+    return "\n".join(parts)
 
 
 async def score_items_sequentially(
@@ -296,29 +297,32 @@ async def score_items_sequentially(
         return []
 
     batch_response_model = pydantic.create_model(
-        f'{response_model.__name__}Batch',
-        scores=(list[response_model], Field(description='One score per item in the batch')),
+        f"{response_model.__name__}Batch",
+        scores=(
+            list[response_model],
+            Field(description="One score per item in the batch"),
+        ),
     )
 
     parent_parts = [
-        f'Parent: {parent_page.headline}',
-        '',
+        f"Parent: {parent_page.headline}",
+        "",
     ]
     if parent_page.abstract:
         parent_parts.append(parent_page.abstract)
-        parent_parts.append('')
+        parent_parts.append("")
     if parent_judgement:
         parent_parts.append(
-            f'Latest judgement (credence {parent_judgement.credence}/9, '
-            f'robustness {parent_judgement.robustness}/5):'
+            f"Latest judgement (credence {parent_judgement.credence}/9, "
+            f"robustness {parent_judgement.robustness}/5):"
         )
         if parent_judgement.abstract:
             parent_parts.append(parent_judgement.abstract)
         else:
             parent_parts.append(parent_judgement.headline)
-        parent_parts.append('')
+        parent_parts.append("")
 
-    parent_context = '\n'.join(parent_parts)
+    parent_context = "\n".join(parent_parts)
     system_prompt = build_system_prompt(system_prompt_name)
     messages: list[dict] = []
     results: list[dict] = []
@@ -326,7 +330,7 @@ async def score_items_sequentially(
     batch_sizes = _split_into_batches(len(items), SCORING_BATCH_SIZE)
     offset = 0
     for batch_idx, batch_size in enumerate(batch_sizes):
-        batch_items = items[offset:offset + batch_size]
+        batch_items = items[offset : offset + batch_size]
         offset += batch_size
 
         item_blocks = []
@@ -336,18 +340,18 @@ async def score_items_sequentially(
             item_blocks.append(block)
 
         batch_text = (
-            f'## Batch {batch_idx + 1}/{len(batch_sizes)} '
-            f'({batch_size} items)\n\n'
-            + '\n\n'.join(item_blocks)
-            + '\n\nScore all items in this batch now.'
+            f"## Batch {batch_idx + 1}/{len(batch_sizes)} "
+            f"({batch_size} items)\n\n"
+            + "\n\n".join(item_blocks)
+            + "\n\nScore all items in this batch now."
         )
 
         if batch_idx == 0:
-            user_content = parent_context + '\n' + batch_text
+            user_content = parent_context + "\n" + batch_text
         else:
             user_content = batch_text
 
-        messages.append({'role': 'user', 'content': user_content})
+        messages.append({"role": "user", "content": user_content})
 
         result = await structured_call(
             system_prompt,
@@ -356,17 +360,17 @@ async def score_items_sequentially(
             cache=True,
             metadata=LLMExchangeMetadata(
                 call_id=call_id,
-                phase=f'score_batch_{batch_idx}',
-                user_messages=[{'role': 'user', 'content': user_content}],
+                phase=f"score_batch_{batch_idx}",
+                user_messages=[{"role": "user", "content": user_content}],
             ),
             db=db,
         )
 
-        response_text = result.response_text or ''
-        messages.append({'role': 'assistant', 'content': response_text})
+        response_text = result.response_text or ""
+        messages.append({"role": "assistant", "content": response_text})
 
         if result.data:
-            for score in result.data.get('scores', []):
+            for score in result.data.get("scores", []):
                 results.append(score)
 
     return results
@@ -480,10 +484,7 @@ async def find_considerations_until_done(
         sequence_position=sequence_position,
     )
 
-    cls = FIND_CONSIDERATIONS_CALL_CLASSES[
-        get_settings().find_considerations_call_variant
-    ]
-    scout = cls(
+    scout = FindConsiderationsCall(
         question_id,
         call,
         db,
@@ -540,8 +541,7 @@ async def ingest_until_done(
             scope_page_id=source_page.id,
             parent_call_id=parent_call_id,
         )
-        cls = INGEST_CALL_CLASSES[get_settings().ingest_call_variant]
-        ingest = cls(source_page, question_id, call, db, broadcaster=broadcaster)
+        ingest = IngestCall(source_page, question_id, call, db, broadcaster=broadcaster)
         await ingest.run()
         review = ingest.review
         rounds += 1
@@ -639,8 +639,9 @@ async def _run_assess_concept_loop(
             scope_page_id=concept_id,
             parent_call_id=parent_call_id,
         )
-        cls = ASSESS_CONCEPT_CALL_CLASSES[get_settings().assess_call_variant]
-        assess = cls(concept_id, call, db, phase=phase, broadcaster=broadcaster)
+        assess = AssessConceptCall(
+            concept_id, call, db, phase=phase, broadcaster=broadcaster
+        )
         await assess.run()
         last_review = assess.concept_assessment
 
@@ -683,8 +684,7 @@ async def run_concept_session(
         CallType.SCOUT_CONCEPTS,
         scope_page_id=question_id,
     )
-    cls = SCOUT_CONCEPTS_CALL_CLASSES["default"]
-    scout = cls(question_id, scout_call, db, broadcaster=broadcaster)
+    scout = ScoutConceptsCall(question_id, scout_call, db, broadcaster=broadcaster)
     await scout.run()
     proposed_ids = scout.result.created_page_ids
 
@@ -768,8 +768,7 @@ async def web_research_question(
         sequence_id=sequence_id,
         sequence_position=sequence_position,
     )
-    cls = WEB_RESEARCH_CALL_CLASSES[get_settings().web_research_call_variant]
-    web_research = cls(
+    web_research = WebResearchCall(
         question_id,
         call,
         db,

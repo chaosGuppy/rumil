@@ -876,6 +876,12 @@
                       },
                       {
                         "$ref": "#/components/schemas/WebResearchCompleteEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/RenderQuestionSubgraphEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/LinkSubquestionsCompleteEventOut"
                       }
                     ],
                     "discriminator": {
@@ -902,7 +908,9 @@
                         "update_plan_created": "#/components/schemas/UpdatePlanCreatedEventOut",
                         "claim_reassessed": "#/components/schemas/ClaimReassessedEventOut",
                         "grounding_tasks_generated": "#/components/schemas/GroundingTasksGeneratedEventOut",
-                        "web_research_complete": "#/components/schemas/WebResearchCompleteEventOut"
+                        "web_research_complete": "#/components/schemas/WebResearchCompleteEventOut",
+                        "render_question_subgraph": "#/components/schemas/RenderQuestionSubgraphEventOut",
+                        "link_subquestions_complete": "#/components/schemas/LinkSubquestionsCompleteEventOut"
                       }
                     }
                   },
@@ -1680,6 +1688,12 @@
                 },
                 {
                   "$ref": "#/components/schemas/WebResearchCompleteEventOut"
+                },
+                {
+                  "$ref": "#/components/schemas/RenderQuestionSubgraphEventOut"
+                },
+                {
+                  "$ref": "#/components/schemas/LinkSubquestionsCompleteEventOut"
                 }
               ],
               "discriminator": {
@@ -1695,9 +1709,11 @@
                   "evaluation_complete": "#/components/schemas/EvaluationCompleteEventOut",
                   "explore_page": "#/components/schemas/ExplorePageEventOut",
                   "grounding_tasks_generated": "#/components/schemas/GroundingTasksGeneratedEventOut",
+                  "link_subquestions_complete": "#/components/schemas/LinkSubquestionsCompleteEventOut",
                   "llm_exchange": "#/components/schemas/LLMExchangeEventOut",
                   "moves_executed": "#/components/schemas/MovesExecutedEventOut",
                   "reassess_triggered": "#/components/schemas/ReassessTriggeredEventOut",
+                  "render_question_subgraph": "#/components/schemas/RenderQuestionSubgraphEventOut",
                   "review_complete": "#/components/schemas/ReviewCompleteEventOut",
                   "scoring_completed": "#/components/schemas/ScoringCompletedEventOut",
                   "subagent_completed": "#/components/schemas/SubagentCompletedEventOut",
@@ -1779,10 +1795,13 @@
           "scout_c_cruxes",
           "scout_c_relevant_evidence",
           "scout_c_stress_test_cases",
+          "scout_c_robustify",
+          "scout_c_strengthen",
           "web_research",
           "evaluate",
           "grounding_feedback",
-          "feedback_update"
+          "feedback_update",
+          "link_subquestions"
         ],
         "title": "CallType"
       },
@@ -2628,6 +2647,49 @@
         ],
         "title": "LinkRole"
       },
+      "LinkSubquestionsCompleteEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "link_subquestions_complete",
+            "title": "Event",
+            "default": "link_subquestions_complete"
+          },
+          "proposed_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Proposed Ids",
+            "default": []
+          },
+          "rationales": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Rationales",
+            "default": {}
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "proposed_ids",
+          "rationales"
+        ],
+        "title": "LinkSubquestionsCompleteEventOut"
+      },
       "LinkType": {
         "type": "string",
         "enum": [
@@ -2635,6 +2697,7 @@
           "child_question",
           "supersedes",
           "related",
+          "variant",
           "summarizes",
           "cites"
         ],
@@ -3114,6 +3177,48 @@
           "child_call_id"
         ],
         "title": "ReassessTriggeredEventOut"
+      },
+      "RenderQuestionSubgraphEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "render_question_subgraph",
+            "title": "Event",
+            "default": "render_question_subgraph"
+          },
+          "page_id": {
+            "type": "string",
+            "title": "Page Id"
+          },
+          "page_headline": {
+            "type": "string",
+            "title": "Page Headline",
+            "default": ""
+          },
+          "response": {
+            "type": "string",
+            "title": "Response",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "page_id",
+          "page_headline",
+          "response"
+        ],
+        "title": "RenderQuestionSubgraphEventOut"
       },
       "ReviewCompleteEventOut": {
         "properties": {

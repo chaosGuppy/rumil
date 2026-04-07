@@ -164,6 +164,7 @@ class LLMOrchestrator(BaseOrchestrator):
 
         d_label = await self.db.page_label(resolved)
 
+        prev_used = 0
         if get_settings().budget_pacing_enabled:
             prev_total, prev_used = self._sub_budget_ledger.get(resolved, (0, 0))
             cumulative_total = prev_total + payload.budget

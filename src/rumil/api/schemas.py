@@ -23,9 +23,11 @@ from rumil.tracing.trace_events import (
     EvaluationCompleteEvent,
     ExplorePageEvent,
     GroundingTasksGeneratedEvent,
+    LinkSubquestionsCompleteEvent,
     LLMExchangeEvent,
     MovesExecutedEvent,
     ReassessTriggeredEvent,
+    RenderQuestionSubgraphEvent,
     ReviewCompleteEvent,
     ScoringCompletedEvent,
     SubagentCompletedEvent,
@@ -153,6 +155,16 @@ class WebResearchCompleteEventOut(WebResearchCompleteEvent, _TraceEnvelopeMixin)
     pass
 
 
+class RenderQuestionSubgraphEventOut(RenderQuestionSubgraphEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class LinkSubquestionsCompleteEventOut(
+    LinkSubquestionsCompleteEvent, _TraceEnvelopeMixin
+):
+    pass
+
+
 TraceEventOut = Annotated[
     ContextBuiltEventOut
     | MovesExecutedEventOut
@@ -175,7 +187,9 @@ TraceEventOut = Annotated[
     | UpdatePlanCreatedEventOut
     | ClaimReassessedEventOut
     | GroundingTasksGeneratedEventOut
-    | WebResearchCompleteEventOut,
+    | WebResearchCompleteEventOut
+    | RenderQuestionSubgraphEventOut
+    | LinkSubquestionsCompleteEventOut,
     Field(discriminator="event"),
 ]
 

@@ -320,7 +320,11 @@ export type CallTraceOut = {
         event: 'grounding_tasks_generated';
     } & GroundingTasksGeneratedEventOut) | ({
         event: 'web_research_complete';
-    } & WebResearchCompleteEventOut)>;
+    } & WebResearchCompleteEventOut) | ({
+        event: 'render_question_subgraph';
+    } & RenderQuestionSubgraphEventOut) | ({
+        event: 'link_subquestions_complete';
+    } & LinkSubquestionsCompleteEventOut)>;
     /**
      * Children
      */
@@ -338,7 +342,7 @@ export type CallTraceOut = {
 /**
  * CallType
  */
-export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_concepts' | 'assess_concept' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update';
+export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_concepts' | 'assess_concept' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions';
 
 /**
  * CallTypeFruitScoreItem
@@ -818,9 +822,37 @@ export type LlmExchangeSummaryOut = {
 export type LinkRole = 'direct' | 'structural';
 
 /**
+ * LinkSubquestionsCompleteEventOut
+ */
+export type LinkSubquestionsCompleteEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'link_subquestions_complete';
+    /**
+     * Proposed Ids
+     */
+    proposed_ids: Array<string>;
+    /**
+     * Rationales
+     */
+    rationales: {
+        [key: string]: string;
+    };
+};
+
+/**
  * LinkType
  */
-export type LinkType = 'consideration' | 'child_question' | 'supersedes' | 'related' | 'summarizes' | 'cites';
+export type LinkType = 'consideration' | 'child_question' | 'supersedes' | 'related' | 'variant' | 'summarizes' | 'cites';
 
 /**
  * LinkedPageOut
@@ -1114,6 +1146,36 @@ export type ReassessTriggeredEventOut = {
      * Child Call Id
      */
     child_call_id: string | null;
+};
+
+/**
+ * RenderQuestionSubgraphEventOut
+ */
+export type RenderQuestionSubgraphEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'render_question_subgraph';
+    /**
+     * Page Id
+     */
+    page_id: string;
+    /**
+     * Page Headline
+     */
+    page_headline: string;
+    /**
+     * Response
+     */
+    response: string;
 };
 
 /**
@@ -2163,7 +2225,11 @@ export type GetCallEventsApiCallsCallIdEventsGetResponses = {
         event: 'grounding_tasks_generated';
     } & GroundingTasksGeneratedEventOut) | ({
         event: 'web_research_complete';
-    } & WebResearchCompleteEventOut)>;
+    } & WebResearchCompleteEventOut) | ({
+        event: 'render_question_subgraph';
+    } & RenderQuestionSubgraphEventOut) | ({
+        event: 'link_subquestions_complete';
+    } & LinkSubquestionsCompleteEventOut)>;
 };
 
 export type GetCallEventsApiCallsCallIdEventsGetResponse = GetCallEventsApiCallsCallIdEventsGetResponses[keyof GetCallEventsApiCallsCallIdEventsGetResponses];

@@ -79,6 +79,7 @@ class CallType(str, Enum):
     EVALUATE = "evaluate"
     GROUNDING_FEEDBACK = "grounding_feedback"
     FEEDBACK_UPDATE = "feedback_update"
+    LINK_SUBQUESTIONS = "link_subquestions"
 
 
 # The subset of CallTypes that prioritization can dispatch.

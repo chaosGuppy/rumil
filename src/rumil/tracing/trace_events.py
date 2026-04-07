@@ -223,6 +223,19 @@ class WebResearchCompleteEvent(BaseModel):
     findings: list[dict] = []
 
 
+class RenderQuestionSubgraphEvent(BaseModel):
+    event: Literal["render_question_subgraph"] = "render_question_subgraph"
+    page_id: str
+    page_headline: str = ""
+    response: str = ""
+
+
+class LinkSubquestionsCompleteEvent(BaseModel):
+    event: Literal["link_subquestions_complete"] = "link_subquestions_complete"
+    proposed_ids: list[str] = []
+    rationales: dict[str, str] = {}
+
+
 TraceEvent = Annotated[
     ContextBuiltEvent
     | MovesExecutedEvent
@@ -245,6 +258,8 @@ TraceEvent = Annotated[
     | UpdatePlanCreatedEvent
     | ClaimReassessedEvent
     | GroundingTasksGeneratedEvent
-    | WebResearchCompleteEvent,
+    | WebResearchCompleteEvent
+    | RenderQuestionSubgraphEvent
+    | LinkSubquestionsCompleteEvent,
     Field(discriminator="event"),
 ]

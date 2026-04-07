@@ -413,9 +413,7 @@ async def call_api(
             if isinstance(block, TextBlock):
                 text_parts.append(block.text)
             elif isinstance(block, (ToolUseBlock, ServerToolUseBlock)):
-                tool_call_data.append(
-                    {"name": block.name, "input": block.input}
-                )
+                tool_call_data.append({"name": block.name, "input": block.input})
             elif isinstance(block, WebSearchToolResultBlock):
                 tool_call_data.append(
                     {
@@ -458,8 +456,7 @@ async def call_api(
                 await trace.record(
                     ErrorEvent(
                         message=(
-                            f"Failed to save exchange: "
-                            f"{type(exc).__name__}: {exc}"
+                            f"Failed to save exchange: {type(exc).__name__}: {exc}"
                         ),
                         phase=metadata.phase,
                     )
@@ -515,6 +512,7 @@ async def _structured_call_cached(
     tools: Sequence[dict] | None = None,
     metadata: LLMExchangeMetadata | None = None,
     db: DB | None = None,
+    model: str | None = None,
 ) -> StructuredCallResult:
     """Structured output via create() + manual JSON parsing for cache reuse.
 
@@ -526,12 +524,13 @@ async def _structured_call_cached(
     client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
     schema_text = _schema_instruction(response_model)
     inject_msgs = _inject_into_last_user_message(msg_list, schema_text)
+    effective_model = model or settings.model
 
     max_parse_attempts = 2
     for parse_attempt in range(max_parse_attempts):
         api_resp = await call_api(
             client,
-            settings.model,
+            effective_model,
             system_prompt,
             inject_msgs,
             tools=tools,
@@ -641,11 +640,12 @@ async def _structured_call_parse(
     tool_choice: dict | None = None,
     metadata: LLMExchangeMetadata | None = None,
     db: DB | None = None,
+    model: str | None = None,
 ) -> StructuredCallResult:
     """Structured output via messages.parse (no cache sharing with create)."""
     settings = get_settings()
     client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
-    model = settings.model
+    model = model or settings.model
     system_prompt = _with_date_suffix(system_prompt)
 
     parse_kwargs: dict = {
@@ -678,9 +678,7 @@ async def _structured_call_parse(
         if metadata.user_message is None and metadata.user_messages is None:
             if len(msg_list) == 1:
                 content = msg_list[0].get("content", "")
-                metadata.user_message = (
-                    content if isinstance(content, str) else None
-                )
+                metadata.user_message = content if isinstance(content, str) else None
             if len(msg_list) > 1 or metadata.user_message is None:
                 metadata.user_messages = _serialize_messages(msg_list)
         await _save_exchange(
@@ -740,6 +738,7 @@ async def structured_call(
     metadata: LLMExchangeMetadata | None = None,
     db: DB | None = None,
     cache: bool = False,
+    model: str | None = None,
 ) -> StructuredCallResult:
     """Run an LLM call that returns structured output matching response_model.
 
@@ -775,6 +774,7 @@ async def structured_call(
             tools=tools,
             metadata=metadata,
             db=db,
+            model=model,
         )
     return await _structured_call_parse(
         system_prompt,
@@ -784,4 +784,5 @@ async def structured_call(
         tool_choice=tool_choice,
         metadata=metadata,
         db=db,
+        model=model,
     )

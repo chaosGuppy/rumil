@@ -113,14 +113,14 @@ class CallStatus(str, Enum):
 
 
 class LinkType(str, Enum):
-    CONSIDERATION = "consideration"  # claim bears on a question
+    CONSIDERATION = "consideration"  # claim -> question: claim should be accounted for in analysis of the question
     CHILD_QUESTION = "child_question"  # question decomposes into sub-question
     SUPERSEDES = "supersedes"  # page replaces another
-    RELATED = "related"  # general relation
+    RELATED = "related"  # general relation (also: judgement -> question it answers)
     VARIANT = "variant"  # more robust variation of a claim
     SUMMARIZES = "summarizes"  # summary page covers a question subtree
     CITES = "cites"  # claim cites a source
-    DEPENDS_ON = "depends_on"  # page depends on another page being true/valid
+    DEPENDS_ON = "depends_on"  # claim/judgement -> claim/judgement: source page's conclusions rest on target being true/valid
 
 
 class MoveType(str, Enum):

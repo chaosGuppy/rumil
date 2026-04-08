@@ -10,4 +10,13 @@ Score each item on three dimensions:
 
 - **fruit** (0-10): How much useful investigation can the system still apply to this subquestion? 0 = thoroughly investigated or unanswerable, 1-2 = close to exhausted, 3-4 = most angles covered, 5-6 = diminishing but real returns, 7-8 = substantial work remains, 9-10 = wide open with many unexplored angles. If a `fruit_remaining` estimate is visible from an assessment on the subquestion, default to this but be willing to revise based on broader context.
 
+## Reading the latest judgement
+
+Each subquestion may show one or more **active judgements**, each tagged with credence and robustness:
+
+- **Credence (1-9)** is the system's degree of belief in the judgement's headline answer (1 = very unlikely, 5 = uncertain, 9 = very likely). It tells you *what* the workspace currently believes.
+- **Robustness (1-5)** is how well-supported that belief is — how much scrutiny the answer has survived, how rich the evidence base is, how stable the credence would be under further investigation. 1 = a tentative first pass, 5 = thoroughly vetted and unlikely to move with more work.
+
+**Robustness is the single most important signal for `fruit`.** A subquestion with a low-robustness judgement (1-2/5) almost always has substantial room for improvement: more evidence, more scrutiny, or alternative framings could meaningfully shift either the answer or your confidence in it. A subquestion with a high-robustness judgement (4-5/5) is mostly exhausted — further investigation is unlikely to change much. Treat low robustness as a strong reason to score `fruit` higher and high robustness as a strong reason to score it lower, even when you find the current answer plausible.
+
 Provide brief reasoning (1-2 sentences) explaining your scores. Focus on the marginal value of further investigation given what has already been discovered.

@@ -15,7 +15,7 @@ from rumil.calls.prioritization import run_prioritization_call
 from rumil.constants import MIN_TWOPHASE_BUDGET
 from rumil.context import build_prioritization_context, collect_subtree_ids
 from rumil.database import DB
-from rumil.llm import LLMExchangeMetadata, build_system_prompt, build_user_message, structured_call
+from rumil.llm import build_system_prompt
 from rumil.models import (
     AssessDispatchPayload,
     Call,
@@ -28,9 +28,9 @@ from rumil.models import (
 from rumil.orchestrators.base import BaseOrchestrator
 from rumil.orchestrators.common import (
     PrioritizationResult,
-    SubquestionScoringResult,
-    _describe_child_questions,
+    SubquestionScore,
     assess_question,
+    score_items_sequentially,
 )
 from rumil.moves.base import link_pages
 from rumil.page_graph import PageGraph
@@ -466,40 +466,29 @@ class ExperimentalOrchestrator(BaseOrchestrator):
                 'This usually means the question belongs to a different project '
                 'than the current DB scope.'
             )
-        parent_headline = parent_question.headline
 
-        scoring_system = build_system_prompt('score_subquestions')
+        parent_judgements = await graph.get_judgements_for_question(question_id)
+        parent_judgement = (
+            max(parent_judgements, key=lambda j: j.created_at)
+            if parent_judgements else None
+        )
 
-        scoring_tasks = []
-        if child_questions:
-            child_descriptions = await _describe_child_questions(child_questions, graph)
-            subq_user_msg = build_user_message(
-                f'Parent question: {parent_headline}\n\n'
-                f'Subquestions to score:\n{child_descriptions}',
-                'Score each subquestion on impact and fruit.',
-            )
-            scoring_tasks.append(structured_call(
-                scoring_system,
-                user_message=subq_user_msg,
-                response_model=SubquestionScoringResult,
-                metadata=LLMExchangeMetadata(
-                    call_id=p_call.id,
-                    phase='score_subquestions',
-                ),
-                db=self.db,
-            ))
-        else:
-            async def _empty_scores():
-                return type('R', (), {'data': {'scores': []}})()
-            scoring_tasks.append(_empty_scores())
-
+        scoring_tasks: list = []
+        scoring_tasks.append(score_items_sequentially(
+            parent_page=parent_question,
+            parent_judgement=parent_judgement,
+            items=child_questions,
+            graph=graph,
+            system_prompt_name='score_subquestions',
+            response_model=SubquestionScore,
+            call_id=p_call.id,
+            db=self.db,
+        ))
         scoring_tasks.append(self.db.get_latest_scout_fruit(question_id))
 
         scoring_results = await asyncio.gather(*scoring_tasks)
-        subq_result = scoring_results[0]
+        subq_scores: list[dict] = scoring_results[0]
         scout_fruit: dict[str, int | None] = scoring_results[1]
-
-        subq_scores = subq_result.data.get('scores', []) if subq_result.data else []
 
         await trace.record(ScoringCompletedEvent(
             subquestion_scores=[

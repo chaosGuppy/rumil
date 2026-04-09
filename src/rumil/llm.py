@@ -524,6 +524,7 @@ async def _structured_call_cached(
     tools: Sequence[dict] | None = None,
     metadata: LLMExchangeMetadata | None = None,
     db: DB | None = None,
+    model: str | None = None,
 ) -> StructuredCallResult[T]:
     """Structured output via create() + manual JSON parsing for cache reuse.
 
@@ -535,12 +536,13 @@ async def _structured_call_cached(
     client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
     schema_text = _schema_instruction(response_model)
     inject_msgs = _inject_into_last_user_message(msg_list, schema_text)
+    effective_model = model or settings.model
 
     max_parse_attempts = 2
     for parse_attempt in range(max_parse_attempts):
         api_resp = await call_api(
             client,
-            settings.model,
+            effective_model,
             system_prompt,
             inject_msgs,
             tools=tools,
@@ -650,11 +652,12 @@ async def _structured_call_parse(
     tool_choice: dict | None = None,
     metadata: LLMExchangeMetadata | None = None,
     db: DB | None = None,
+    model: str | None = None,
 ) -> StructuredCallResult[T]:
     """Structured output via messages.parse (no cache sharing with create)."""
     settings = get_settings()
     client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
-    model = settings.model
+    model = model or settings.model
     system_prompt = _with_date_suffix(system_prompt)
 
     parse_kwargs: dict = {
@@ -749,6 +752,7 @@ async def structured_call(
     metadata: LLMExchangeMetadata | None = None,
     db: DB | None = None,
     cache: bool = False,
+    model: str | None = None,
 ) -> StructuredCallResult[T]: ...
 
 
@@ -764,6 +768,7 @@ async def structured_call(
     metadata: LLMExchangeMetadata | None = None,
     db: DB | None = None,
     cache: bool = False,
+    model: str | None = None,
 ) -> StructuredCallResult[T]: ...
 
 
@@ -779,6 +784,7 @@ async def structured_call(
     metadata: LLMExchangeMetadata | None = None,
     db: DB | None = None,
     cache: bool = False,
+    model: str | None = None,
 ) -> StructuredCallResult[BaseModel]: ...
 
 
@@ -793,6 +799,7 @@ async def structured_call(
     metadata: LLMExchangeMetadata | None = None,
     db: DB | None = None,
     cache: bool = False,
+    model: str | None = None,
 ) -> StructuredCallResult[T] | StructuredCallResult[BaseModel]:
     """Run an LLM call that returns structured output matching response_model.
 
@@ -828,6 +835,7 @@ async def structured_call(
             tools=tools,
             metadata=metadata,
             db=db,
+            model=model,
         )
     return await _structured_call_parse(
         system_prompt,
@@ -837,4 +845,5 @@ async def structured_call(
         tool_choice=tool_choice,
         metadata=metadata,
         db=db,
+        model=model,
     )

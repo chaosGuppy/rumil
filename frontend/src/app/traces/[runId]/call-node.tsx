@@ -933,6 +933,36 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
         </div>
       )}
 
+      {event.event === "render_question_subgraph" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">page</span>
+            <span className="trace-kv-value">
+              <PageChip page={{ id: event.page_id, headline: event.page_headline }} />
+            </span>
+          </div>
+          {event.response && (
+            <CollapsiblePre label="Subgraph" content={event.response} />
+          )}
+        </div>
+      )}
+
+      {event.event === "link_subquestions_complete" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">proposed</span>
+            <span className="trace-kv-value">{event.proposed.length}</span>
+          </div>
+          {event.proposed.map((p) => (
+            <div key={p.id} className="trace-kv">
+              <span className="trace-kv-value">
+                <PageChip page={{ id: p.id, headline: p.headline }} />
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
       {event.event === "subagent_started" && (
         <div className="trace-event-body">
           <div className="trace-kv">

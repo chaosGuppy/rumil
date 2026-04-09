@@ -15,7 +15,7 @@ from rumil.calls.prioritization import run_prioritization_call
 from rumil.constants import MIN_TWOPHASE_BUDGET
 from rumil.context import build_prioritization_context, collect_subtree_ids
 from rumil.database import DB
-from rumil.llm import LLMExchangeMetadata, build_system_prompt, build_user_message, structured_call
+from rumil.llm import build_system_prompt
 from rumil.models import (
     AssessDispatchPayload,
     Call,
@@ -28,11 +28,13 @@ from rumil.models import (
 from rumil.orchestrators.base import BaseOrchestrator
 from rumil.orchestrators.common import (
     PrioritizationResult,
-    SubquestionScoringResult,
-    _describe_child_questions,
+    SubquestionScore,
     assess_question,
+    score_items_sequentially,
 )
+from rumil.moves.base import link_pages
 from rumil.page_graph import PageGraph
+from rumil.scope_subquestion_linker import run_scope_subquestion_linker
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
 from rumil.tracing.trace_events import (
@@ -257,6 +259,60 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             total_remaining=total_remaining,
         )
 
+    async def _run_subquestion_linker(
+        self,
+        question_id: str,
+        parent_call_id: str | None,
+    ) -> None:
+        """Run the subquestion linker and materialize its proposals as CHILD_QUESTION links.
+
+        Any failure is logged and swallowed — phase1 must proceed regardless.
+        """
+        try:
+            linker_call = await run_scope_subquestion_linker(
+                question_id,
+                self.db,
+                broadcaster=self.broadcaster,
+                parent_call_id=parent_call_id,
+            )
+        except Exception as e:
+            log.warning(
+                'Subquestion linker failed for question=%s: %s',
+                question_id[:8], e, exc_info=True,
+            )
+            return
+
+        proposed_ids = (linker_call.review_json or {}).get(
+            'proposed_subquestion_ids', []
+        )
+        if not proposed_ids:
+            log.info(
+                'Subquestion linker produced no proposals for question=%s',
+                question_id[:8],
+            )
+            return
+
+        created = 0
+        for child_id in proposed_ids:
+            try:
+                await link_pages(
+                    question_id,
+                    child_id,
+                    'Auto-linked by subquestion linker at phase1 start',
+                    self.db,
+                    LinkType.CHILD_QUESTION,
+                )
+                created += 1
+            except Exception as e:
+                log.warning(
+                    'Failed to link proposed subquestion %s -> %s: %s',
+                    question_id[:8], child_id[:8], e,
+                )
+        log.info(
+            'Subquestion linker: created %d/%d CHILD_QUESTION links for question=%s',
+            created, len(proposed_ids), question_id[:8],
+        )
+
     async def _phase1(
         self,
         question_id: str,
@@ -269,6 +325,8 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             'ExperimentalOrchestrator phase1: question=%s, budget=%d, phase1_budget=%d',
             question_id[:8], budget, phase1_budget,
         )
+
+        await self._run_subquestion_linker(question_id, parent_call_id)
 
         graph = await PageGraph.load(self.db)
         context_text, short_id_map = await build_prioritization_context(
@@ -408,42 +466,29 @@ class ExperimentalOrchestrator(BaseOrchestrator):
                 'This usually means the question belongs to a different project '
                 'than the current DB scope.'
             )
-        parent_headline = parent_question.headline
 
-        scoring_system = build_system_prompt('score_subquestions')
+        parent_judgements = await graph.get_judgements_for_question(question_id)
+        parent_judgement = (
+            max(parent_judgements, key=lambda j: j.created_at)
+            if parent_judgements else None
+        )
 
-        scoring_tasks = []
-        if child_questions:
-            child_descriptions = await _describe_child_questions(child_questions, graph)
-            subq_user_msg = build_user_message(
-                f'Parent question: {parent_headline}\n\n'
-                f'Subquestions to score:\n{child_descriptions}',
-                'Score each subquestion on impact and fruit.',
-            )
-            scoring_tasks.append(structured_call(
-                scoring_system,
-                user_message=subq_user_msg,
-                response_model=SubquestionScoringResult,
-                metadata=LLMExchangeMetadata(
-                    call_id=p_call.id,
-                    phase='score_subquestions',
-                ),
-                db=self.db,
-            ))
-        else:
-            async def _empty_scores():
-                return None
-            scoring_tasks.append(_empty_scores())
-
+        scoring_tasks: list = []
+        scoring_tasks.append(score_items_sequentially(
+            parent_page=parent_question,
+            parent_judgement=parent_judgement,
+            items=child_questions,
+            graph=graph,
+            system_prompt_name='score_subquestions',
+            response_model=SubquestionScore,
+            call_id=p_call.id,
+            db=self.db,
+        ))
         scoring_tasks.append(self.db.get_latest_scout_fruit(question_id))
 
         scoring_results = await asyncio.gather(*scoring_tasks)
-        subq_result = scoring_results[0]
+        subq_scores: list[dict] = scoring_results[0]
         scout_fruit: dict[str, int | None] = scoring_results[1]
-
-        subq_scores: list[dict] = []
-        if subq_result is not None and subq_result.parsed:
-            subq_scores = [s.model_dump() for s in subq_result.parsed.scores]
 
         await trace.record(ScoringCompletedEvent(
             subquestion_scores=[

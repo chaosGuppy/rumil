@@ -483,6 +483,64 @@ class DB:
         await self.apply_epistemic_overrides(pages)
         return {p.id: p for p in pages}
 
+    async def resolve_page_ids(
+        self, page_ids: Sequence[str]
+    ) -> dict[str, str]:
+        """Batch-resolve a mix of full UUIDs and 8-char short IDs.
+
+        Returns a mapping from each input id to its resolved full UUID,
+        omitting inputs that can't be resolved (not found, or ambiguous
+        short prefix). At most two queries are issued regardless of
+        input size: one for full-id matches, one for short-id prefix
+        matches.
+        """
+        if not page_ids:
+            return {}
+        cleaned: list[str] = [pid.strip() for pid in page_ids if pid and pid.strip()]
+        full_ids = [pid for pid in cleaned if len(pid) > 8]
+        short_ids = [pid for pid in cleaned if len(pid) <= 8]
+
+        resolved: dict[str, str] = {}
+
+        if full_ids:
+            rows = _rows(
+                await self._execute(
+                    self.client.table("pages")
+                    .select("id")
+                    .in_("id", list(set(full_ids)))
+                )
+            )
+            existing = {r["id"] for r in rows}
+            for pid in full_ids:
+                if pid in existing:
+                    resolved[pid] = pid
+
+        if short_ids:
+            unique_short = list({pid for pid in short_ids})
+            or_clause = ",".join(f"id.like.{p}%" for p in unique_short)
+            rows = _rows(
+                await self._execute(
+                    self.client.table("pages")
+                    .select("id")
+                    .or_(or_clause)
+                )
+            )
+            matches_by_prefix: dict[str, list[str]] = {p: [] for p in unique_short}
+            for r in rows:
+                full = r["id"]
+                for p in unique_short:
+                    if full.startswith(p):
+                        matches_by_prefix[p].append(full)
+            for pid in short_ids:
+                hits = matches_by_prefix.get(pid, [])
+                if len(hits) == 1:
+                    resolved[pid] = hits[0]
+                elif len(hits) > 1:
+                    log.warning(
+                        "Ambiguous short ID '%s' matches %d pages", pid, len(hits)
+                    )
+        return resolved
+
     async def resolve_page_id(self, page_id: str) -> str | None:
         """Resolve a page ID to a full UUID. Handles both full UUIDs and
         8-char short IDs. Returns the full UUID if found, or None."""
@@ -833,6 +891,31 @@ class DB:
         rows = _rows(await self._execute(query))
         return await self._apply_link_events([_row_to_link(r) for r in rows])
 
+    async def get_links_from_many(
+        self, page_ids: Sequence[str],
+    ) -> dict[str, list[PageLink]]:
+        """Bulk-fetch outgoing links for many pages. Returns {page_id: [links]}."""
+        result: dict[str, list[PageLink]] = {pid: [] for pid in page_ids}
+        if not page_ids:
+            return result
+        id_list = list(dict.fromkeys(page_ids))
+        batch_size = 200
+        all_links: list[PageLink] = []
+        for start in range(0, len(id_list), batch_size):
+            batch = id_list[start:start + batch_size]
+            query = (
+                self.client.table("page_links")
+                .select("*")
+                .in_("from_page_id", batch)
+            )
+            query = self._staged_filter(query)
+            rows = _rows(await self._execute(query))
+            all_links.extend(_row_to_link(r) for r in rows)
+        applied = await self._apply_link_events(all_links)
+        for link in applied:
+            result.setdefault(link.from_page_id, []).append(link)
+        return result
+
     async def get_latest_summary_for_question(self, question_id: str) -> "Page | None":
         """Return the most recent active SUMMARY page linked to a question."""
         links = await self.get_links_to(question_id)
@@ -930,6 +1013,43 @@ class DB:
             and pages[l.from_page_id].is_active()
             and pages[l.from_page_id].page_type == PageType.JUDGEMENT
         ]
+
+    async def get_judgements_for_questions(
+        self, question_ids: Sequence[str],
+    ) -> dict[str, list[Page]]:
+        """Bulk-fetch active judgements for many questions. Returns {question_id: [judgements]}.
+
+        Issues two batched queries (links + pages) regardless of input size.
+        """
+        result: dict[str, list[Page]] = {qid: [] for qid in question_ids}
+        if not question_ids:
+            return result
+        id_list = list(dict.fromkeys(question_ids))
+        batch_size = 200
+        all_links: list[PageLink] = []
+        for start in range(0, len(id_list), batch_size):
+            batch = id_list[start:start + batch_size]
+            query = (
+                self.client.table("page_links")
+                .select("*")
+                .in_("to_page_id", batch)
+                .eq("link_type", LinkType.RELATED.value)
+            )
+            query = self._staged_filter(query)
+            rows = _rows(await self._execute(query))
+            all_links.extend(_row_to_link(r) for r in rows)
+        applied = await self._apply_link_events(all_links)
+        from_ids = list({l.from_page_id for l in applied})
+        pages = await self.get_pages_by_ids(from_ids)
+        for link in applied:
+            page = pages.get(link.from_page_id)
+            if (
+                page is not None
+                and page.is_active()
+                and page.page_type == PageType.JUDGEMENT
+            ):
+                result.setdefault(link.to_page_id, []).append(page)
+        return result
 
     async def get_dependents(
         self, page_id: str,
@@ -1648,6 +1768,34 @@ class DB:
         pages = [_row_to_page(r) for r in rows]
         await self.apply_epistemic_overrides(pages)
         return pages
+
+    async def get_human_questions(
+        self,
+        workspace: Workspace = Workspace.RESEARCH,
+    ) -> list[Page]:
+        """Return all active, human-authored questions in *workspace*.
+
+        Uses the generated `is_human_created` column on `pages`. Unlike
+        `get_root_questions`, this does not assume the question graph is a
+        DAG -- a human-authored question deep inside a cycle is still
+        returned.
+        """
+        query = (
+            self.client.table("pages")
+            .select("*")
+            .eq("page_type", PageType.QUESTION.value)
+            .eq("workspace", workspace.value)
+            .eq("is_human_created", True)
+            .eq("is_superseded", False)
+        )
+        if self.project_id:
+            query = query.eq("project_id", self.project_id)
+        query = self._staged_filter(query)
+        rows = _rows(await self._execute(query))
+        pages = [_row_to_page(r) for r in rows]
+        pages = await self._apply_page_events(pages)
+        await self.apply_epistemic_overrides(pages)
+        return [p for p in pages if p.is_active()]
 
     async def count_pages_for_question(self, question_id: str) -> dict:
         """Count pages linked to or created in context of a question."""

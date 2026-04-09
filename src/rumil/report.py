@@ -82,26 +82,20 @@ class SectionDraft(BaseModel):
     flags_for_integrator: str = ""
 
 
-
 async def _run_outliner(research_tree: str) -> ReportOutline:
     system_prompt = _load_prompt("report-outliner.md")
-    user_message = (
-        "Here is the full research tree:\n\n"
-        f"{research_tree}"
-    )
+    user_message = f"Here is the full research tree:\n\n{research_tree}"
     result = await structured_call(
         system_prompt=system_prompt,
         user_message=user_message,
         response_model=ReportOutline,
     )
-    if not result.data:
+    if not result.parsed:
         raise RuntimeError("Outliner returned no data")
-    return ReportOutline.model_validate(result.data)
+    return result.parsed
 
 
-async def _collect_section_pages(
-    section: OutlineSection, db: DB
-) -> str:
+async def _collect_section_pages(section: OutlineSection, db: DB) -> str:
     all_ids: list[str] = []
     all_ids.extend(section.source_judgements)
     all_ids.extend(section.source_considerations)
@@ -166,9 +160,11 @@ async def _run_section_writer(
         user_message=user_message,
         response_model=SectionDraft,
     )
-    if not result.data:
-        raise RuntimeError(f"Section writer returned no data for section {section.sequence}")
-    return SectionDraft.model_validate(result.data)
+    if not result.parsed:
+        raise RuntimeError(
+            f"Section writer returned no data for section {section.sequence}"
+        )
+    return result.parsed
 
 
 async def _run_integrator(
@@ -202,7 +198,6 @@ async def _run_integrator(
         system_prompt=system_prompt,
         user_message=user_message,
     )
-
 
 
 async def generate_report(
@@ -240,7 +235,9 @@ async def generate_report(
 def save_report(report_text: str, question_headline: str) -> Path:
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-    slug = "".join(c if c.isalnum() or c in " -" else "" for c in question_headline[:50])
+    slug = "".join(
+        c if c.isalnum() or c in " -" else "" for c in question_headline[:50]
+    )
     slug = slug.strip().replace(" ", "-").lower()
     filename = f"{timestamp}-{slug}.md"
     path = REPORTS_DIR / filename

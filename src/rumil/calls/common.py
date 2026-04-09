@@ -835,7 +835,7 @@ async def run_closing_review(
             metadata=meta,
             db=db,
         )
-        review = result.data
+        review = result.parsed.model_dump() if result.parsed else None
         if review:
             log.info(
                 "Closing review complete: call=%s, fruit=%s, confidence=%s",

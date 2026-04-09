@@ -10,23 +10,22 @@ from collections.abc import Sequence
 
 from rumil.available_calls import get_available_calls_preset
 from rumil.constants import compute_round_budget
-from rumil.calls.call_registry import (
-    SCOUT_ANALOGIES_CALL_CLASSES,
-    SCOUT_C_CRUXES_CALL_CLASSES,
-    SCOUT_C_HOW_FALSE_CALL_CLASSES,
-    SCOUT_C_HOW_TRUE_CALL_CLASSES,
-    SCOUT_C_RELEVANT_EVIDENCE_CALL_CLASSES,
-    SCOUT_C_ROBUSTIFY_CALL_CLASSES,
-    SCOUT_C_STRENGTHEN_CALL_CLASSES,
-    SCOUT_C_STRESS_TEST_CASES_CALL_CLASSES,
-    SCOUT_DEEP_QUESTIONS_CALL_CLASSES,
-    SCOUT_ESTIMATES_CALL_CLASSES,
-    SCOUT_FACTCHECKS_CALL_CLASSES,
-    SCOUT_HYPOTHESES_CALL_CLASSES,
-    SCOUT_PARADIGM_CASES_CALL_CLASSES,
-    SCOUT_SUBQUESTIONS_CALL_CLASSES,
-    SCOUT_WEB_QUESTIONS_CALL_CLASSES,
-)
+from rumil.calls.scout_analogies import ScoutAnalogiesCall
+from rumil.calls.scout_c_cruxes import ScoutCCruxesCall
+from rumil.calls.scout_c_how_false import ScoutCHowFalseCall
+from rumil.calls.scout_c_how_true import ScoutCHowTrueCall
+from rumil.calls.scout_c_relevant_evidence import ScoutCRelevantEvidenceCall
+from rumil.calls.scout_c_robustify import ScoutCRobustifyCall
+from rumil.calls.scout_c_strengthen import ScoutCStrengthenCall
+from rumil.calls.scout_c_stress_test_cases import ScoutCStressTestCasesCall
+from rumil.calls.scout_deep_questions import ScoutDeepQuestionsCall
+from rumil.calls.scout_estimates import ScoutEstimatesCall
+from rumil.calls.scout_factchecks import ScoutFactchecksCall
+from rumil.calls.scout_hypotheses import ScoutHypothesesCall
+from rumil.calls.scout_paradigm_cases import ScoutParadigmCasesCall
+from rumil.calls.scout_subquestions import ScoutSubquestionsCall
+from rumil.calls.scout_web_questions import ScoutWebQuestionsCall
+from rumil.calls.stages import CallRunner
 from rumil.constants import SMOKE_TEST_MAX_ROUNDS
 from rumil.database import DB
 from rumil.models import (
@@ -111,7 +110,7 @@ class BaseOrchestrator(ABC):
         self,
         question_id: str,
         call_type: CallType,
-        registry: dict,
+        cls: type[CallRunner],
         parent_call_id: str | None,
         force: bool = False,
         call_id: str | None = None,
@@ -139,7 +138,6 @@ class BaseOrchestrator(ABC):
             sequence_id=sequence_id,
             sequence_position=sequence_position,
         )
-        cls = registry['default']
         instance = cls(
             question_id, call, self.db,
             broadcaster=self.broadcaster,
@@ -288,7 +286,7 @@ class BaseOrchestrator(ABC):
             log.info('Dispatch: scout_subquestions on %s (max_rounds=%d) — %s', d_label, p.max_rounds, p.reason)
             child_call_id = await self._run_simple_call_dispatch(
                 resolved, CallType.SCOUT_SUBQUESTIONS,
-                SCOUT_SUBQUESTIONS_CALL_CLASSES, parent_call_id,
+                ScoutSubquestionsCall, parent_call_id,
                 force=force, call_id=call_id,
                 sequence_id=sequence_id, sequence_position=sequence_position,
                 max_rounds=p.max_rounds, fruit_threshold=p.fruit_threshold,
@@ -298,7 +296,7 @@ class BaseOrchestrator(ABC):
             log.info('Dispatch: scout_estimates on %s (max_rounds=%d) — %s', d_label, p.max_rounds, p.reason)
             child_call_id = await self._run_simple_call_dispatch(
                 resolved, CallType.SCOUT_ESTIMATES,
-                SCOUT_ESTIMATES_CALL_CLASSES, parent_call_id,
+                ScoutEstimatesCall, parent_call_id,
                 force=force, call_id=call_id,
                 sequence_id=sequence_id, sequence_position=sequence_position,
                 max_rounds=p.max_rounds, fruit_threshold=p.fruit_threshold,
@@ -308,7 +306,7 @@ class BaseOrchestrator(ABC):
             log.info('Dispatch: scout_hypotheses on %s (max_rounds=%d) — %s', d_label, p.max_rounds, p.reason)
             child_call_id = await self._run_simple_call_dispatch(
                 resolved, CallType.SCOUT_HYPOTHESES,
-                SCOUT_HYPOTHESES_CALL_CLASSES, parent_call_id,
+                ScoutHypothesesCall, parent_call_id,
                 force=force, call_id=call_id,
                 sequence_id=sequence_id, sequence_position=sequence_position,
                 max_rounds=p.max_rounds, fruit_threshold=p.fruit_threshold,
@@ -318,7 +316,7 @@ class BaseOrchestrator(ABC):
             log.info('Dispatch: scout_analogies on %s (max_rounds=%d) — %s', d_label, p.max_rounds, p.reason)
             child_call_id = await self._run_simple_call_dispatch(
                 resolved, CallType.SCOUT_ANALOGIES,
-                SCOUT_ANALOGIES_CALL_CLASSES, parent_call_id,
+                ScoutAnalogiesCall, parent_call_id,
                 force=force, call_id=call_id,
                 sequence_id=sequence_id, sequence_position=sequence_position,
                 max_rounds=p.max_rounds, fruit_threshold=p.fruit_threshold,
@@ -328,7 +326,7 @@ class BaseOrchestrator(ABC):
             log.info('Dispatch: scout_paradigm_cases on %s (max_rounds=%d) — %s', d_label, p.max_rounds, p.reason)
             child_call_id = await self._run_simple_call_dispatch(
                 resolved, CallType.SCOUT_PARADIGM_CASES,
-                SCOUT_PARADIGM_CASES_CALL_CLASSES, parent_call_id,
+                ScoutParadigmCasesCall, parent_call_id,
                 force=force, call_id=call_id,
                 sequence_id=sequence_id, sequence_position=sequence_position,
                 max_rounds=p.max_rounds, fruit_threshold=p.fruit_threshold,
@@ -338,7 +336,7 @@ class BaseOrchestrator(ABC):
             log.info('Dispatch: scout_factchecks on %s (max_rounds=%d) — %s', d_label, p.max_rounds, p.reason)
             child_call_id = await self._run_simple_call_dispatch(
                 resolved, CallType.SCOUT_FACTCHECKS,
-                SCOUT_FACTCHECKS_CALL_CLASSES, parent_call_id,
+                ScoutFactchecksCall, parent_call_id,
                 force=force, call_id=call_id,
                 sequence_id=sequence_id, sequence_position=sequence_position,
                 max_rounds=p.max_rounds, fruit_threshold=p.fruit_threshold,
@@ -348,7 +346,7 @@ class BaseOrchestrator(ABC):
             log.info('Dispatch: scout_web_questions on %s (max_rounds=%d) — %s', d_label, p.max_rounds, p.reason)
             child_call_id = await self._run_simple_call_dispatch(
                 resolved, CallType.SCOUT_WEB_QUESTIONS,
-                SCOUT_WEB_QUESTIONS_CALL_CLASSES, parent_call_id,
+                ScoutWebQuestionsCall, parent_call_id,
                 force=force, call_id=call_id,
                 sequence_id=sequence_id, sequence_position=sequence_position,
                 max_rounds=p.max_rounds, fruit_threshold=p.fruit_threshold,
@@ -358,7 +356,7 @@ class BaseOrchestrator(ABC):
             log.info('Dispatch: scout_deep_questions on %s (max_rounds=%d) — %s', d_label, p.max_rounds, p.reason)
             child_call_id = await self._run_simple_call_dispatch(
                 resolved, CallType.SCOUT_DEEP_QUESTIONS,
-                SCOUT_DEEP_QUESTIONS_CALL_CLASSES, parent_call_id,
+                ScoutDeepQuestionsCall, parent_call_id,
                 force=force, call_id=call_id,
                 sequence_id=sequence_id, sequence_position=sequence_position,
                 max_rounds=p.max_rounds, fruit_threshold=p.fruit_threshold,
@@ -368,7 +366,7 @@ class BaseOrchestrator(ABC):
             log.info('Dispatch: scout_c_how_true on %s (max_rounds=%d) — %s', d_label, p.max_rounds, p.reason)
             child_call_id = await self._run_simple_call_dispatch(
                 resolved, CallType.SCOUT_C_HOW_TRUE,
-                SCOUT_C_HOW_TRUE_CALL_CLASSES, parent_call_id,
+                ScoutCHowTrueCall, parent_call_id,
                 force=force, call_id=call_id,
                 sequence_id=sequence_id, sequence_position=sequence_position,
                 max_rounds=p.max_rounds, fruit_threshold=p.fruit_threshold,
@@ -378,7 +376,7 @@ class BaseOrchestrator(ABC):
             log.info('Dispatch: scout_c_how_false on %s (max_rounds=%d) — %s', d_label, p.max_rounds, p.reason)
             child_call_id = await self._run_simple_call_dispatch(
                 resolved, CallType.SCOUT_C_HOW_FALSE,
-                SCOUT_C_HOW_FALSE_CALL_CLASSES, parent_call_id,
+                ScoutCHowFalseCall, parent_call_id,
                 force=force, call_id=call_id,
                 sequence_id=sequence_id, sequence_position=sequence_position,
                 max_rounds=p.max_rounds, fruit_threshold=p.fruit_threshold,
@@ -388,7 +386,7 @@ class BaseOrchestrator(ABC):
             log.info('Dispatch: scout_c_cruxes on %s (max_rounds=%d) — %s', d_label, p.max_rounds, p.reason)
             child_call_id = await self._run_simple_call_dispatch(
                 resolved, CallType.SCOUT_C_CRUXES,
-                SCOUT_C_CRUXES_CALL_CLASSES, parent_call_id,
+                ScoutCCruxesCall, parent_call_id,
                 force=force, call_id=call_id,
                 sequence_id=sequence_id, sequence_position=sequence_position,
                 max_rounds=p.max_rounds, fruit_threshold=p.fruit_threshold,
@@ -398,7 +396,7 @@ class BaseOrchestrator(ABC):
             log.info('Dispatch: scout_c_relevant_evidence on %s (max_rounds=%d) — %s', d_label, p.max_rounds, p.reason)
             child_call_id = await self._run_simple_call_dispatch(
                 resolved, CallType.SCOUT_C_RELEVANT_EVIDENCE,
-                SCOUT_C_RELEVANT_EVIDENCE_CALL_CLASSES, parent_call_id,
+                ScoutCRelevantEvidenceCall, parent_call_id,
                 force=force, call_id=call_id,
                 sequence_id=sequence_id, sequence_position=sequence_position,
                 max_rounds=p.max_rounds, fruit_threshold=p.fruit_threshold,
@@ -408,7 +406,7 @@ class BaseOrchestrator(ABC):
             log.info('Dispatch: scout_c_stress_test_cases on %s (max_rounds=%d) — %s', d_label, p.max_rounds, p.reason)
             child_call_id = await self._run_simple_call_dispatch(
                 resolved, CallType.SCOUT_C_STRESS_TEST_CASES,
-                SCOUT_C_STRESS_TEST_CASES_CALL_CLASSES, parent_call_id,
+                ScoutCStressTestCasesCall, parent_call_id,
                 force=force, call_id=call_id,
                 sequence_id=sequence_id, sequence_position=sequence_position,
                 max_rounds=p.max_rounds, fruit_threshold=p.fruit_threshold,
@@ -418,7 +416,7 @@ class BaseOrchestrator(ABC):
             log.info('Dispatch: scout_c_robustify on %s (max_rounds=%d) — %s', d_label, p.max_rounds, p.reason)
             child_call_id = await self._run_simple_call_dispatch(
                 resolved, CallType.SCOUT_C_ROBUSTIFY,
-                SCOUT_C_ROBUSTIFY_CALL_CLASSES, parent_call_id,
+                ScoutCRobustifyCall, parent_call_id,
                 force=force, call_id=call_id,
                 sequence_id=sequence_id, sequence_position=sequence_position,
                 max_rounds=p.max_rounds, fruit_threshold=p.fruit_threshold,
@@ -428,7 +426,7 @@ class BaseOrchestrator(ABC):
             log.info('Dispatch: scout_c_strengthen on %s (max_rounds=%d) — %s', d_label, p.max_rounds, p.reason)
             child_call_id = await self._run_simple_call_dispatch(
                 resolved, CallType.SCOUT_C_STRENGTHEN,
-                SCOUT_C_STRENGTHEN_CALL_CLASSES, parent_call_id,
+                ScoutCStrengthenCall, parent_call_id,
                 force=force, call_id=call_id,
                 sequence_id=sequence_id, sequence_position=sequence_position,
                 max_rounds=p.max_rounds, fruit_threshold=p.fruit_threshold,

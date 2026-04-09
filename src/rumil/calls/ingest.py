@@ -1,7 +1,7 @@
 """Ingest call: extract considerations from a source document."""
 
 from rumil.calls.closing_reviewers import IngestClosingReview
-from rumil.calls.context_builders import IngestEmbeddingContext, IngestGraphContext
+from rumil.calls.context_builders import IngestEmbeddingContext
 from rumil.calls.page_creators import SimpleAgentLoop
 from rumil.calls.stages import CallRunner, ClosingReviewer, ContextBuilder, PageCreator
 from rumil.database import DB
@@ -11,7 +11,7 @@ from rumil.models import Call, CallStage, CallType, Page
 class IngestCall(CallRunner):
     """Ingest a source document: extract considerations for a question."""
 
-    context_builder_cls = IngestGraphContext
+    context_builder_cls = IngestEmbeddingContext
     page_creator_cls = SimpleAgentLoop
     closing_reviewer_cls = IngestClosingReview
     call_type = CallType.INGEST
@@ -34,7 +34,7 @@ class IngestCall(CallRunner):
         )
 
     def _make_context_builder(self) -> ContextBuilder:
-        return IngestGraphContext(self._source_page)
+        return IngestEmbeddingContext(self._source_page)
 
     def _make_page_creator(self) -> PageCreator:
         return SimpleAgentLoop(
@@ -52,12 +52,3 @@ class IngestCall(CallRunner):
             f"Question ID: `{self.infra.question_id}`\n"
             f"Source page ID: `{self._source_page.id}`"
         )
-
-
-class EmbeddingIngestCall(IngestCall):
-    """Ingest call that builds context via embedding similarity search."""
-
-    context_builder_cls = IngestEmbeddingContext
-
-    def _make_context_builder(self) -> ContextBuilder:
-        return IngestEmbeddingContext(self._source_page)

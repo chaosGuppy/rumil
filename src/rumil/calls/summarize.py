@@ -2,6 +2,7 @@
 
 import logging
 from datetime import UTC, datetime
+from pathlib import Path
 
 from pydantic import BaseModel, Field
 
@@ -24,15 +25,9 @@ from rumil.tracing.tracer import CallTrace, get_trace, set_trace
 
 log = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = (
-    "You are a precise research synthesiser. You will be given the full content of a research "
-    "question and the pages associated with it — considerations, judgements, child questions, "
-    "and their summaries. Your job is to produce a hierarchical summary of what is known about "
-    "this question and its sub-questions. Write for LLM instances that will use this summary "
-    "as context: prioritise accuracy, epistemic precision, and information density. Preserve "
-    "confidence levels, key qualifications, priority orderings, and causal mechanisms. "
-    "Do not pad. Do not add caveats beyond those in the source material."
-)
+_PROMPTS_DIR = Path(__file__).resolve().parents[3] / "prompts"
+
+SYSTEM_PROMPT = (_PROMPTS_DIR / "summarize.md").read_text()
 
 TASK = (
     "Produce a summary of this question subtree with three components:\n\n"
@@ -277,7 +272,7 @@ async def summarize_question(
             db=db,
         )
 
-        if not result.data:
+        if not result.parsed:
             log.warning(
                 "summarize_question: structured call returned no data for %s",
                 question_id[:8],
@@ -285,10 +280,10 @@ async def summarize_question(
             await _fail_call(call, db)
             return None
 
-        data = result.data
+        data = result.parsed
         question = await db.get_page(question_id)
         page_headline = (
-            data.get("page_headline")
+            data.page_headline
             or f"Summary of {question.headline[:60] if question else question_id[:8]}"
         )
 
@@ -296,9 +291,9 @@ async def summarize_question(
             page_type=PageType.SUMMARY,
             layer=PageLayer.SQUIDGY,
             workspace=Workspace.RESEARCH,
-            content=data.get("content", ""),
-            headline=data.get("headline") or page_headline,
-            abstract=data.get("abstract", ""),
+            content=data.content,
+            headline=data.headline or page_headline,
+            abstract=data.abstract,
             credence=5,
             robustness=2,
             provenance_model="claude-sonnet-4-6",

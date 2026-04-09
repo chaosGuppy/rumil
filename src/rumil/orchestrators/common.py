@@ -23,14 +23,12 @@ from rumil.calls.assess_concept_types import (
     VALIDATION_MAX_ROUNDS,
     VALIDATION_PHASE,
 )
-from rumil.calls.call_registry import (
-    ASSESS_CALL_CLASSES,
-    ASSESS_CONCEPT_CALL_CLASSES,
-    FIND_CONSIDERATIONS_CALL_CLASSES,
-    INGEST_CALL_CLASSES,
-    SCOUT_CONCEPTS_CALL_CLASSES,
-    WEB_RESEARCH_CALL_CLASSES,
-)
+from rumil.calls.assess_concept import AssessConceptCall
+from rumil.calls.call_registry import ASSESS_CALL_CLASSES
+from rumil.calls.find_considerations import FindConsiderationsCall
+from rumil.calls.ingest import IngestCall
+from rumil.calls.scout_concepts import ScoutConceptsCall
+from rumil.calls.web_research import WebResearchCall
 from rumil.calls.summarize import summarize_question
 from rumil.constants import (
     DEFAULT_FRUIT_THRESHOLD,
@@ -343,8 +341,9 @@ async def score_items_sequentially(
         response_text = result.response_text or ""
         messages.append({"role": "assistant", "content": response_text})
 
-        if result.data:
-            for score in result.data.get("scores", []):
+        if result.parsed:
+            parsed_dict = result.parsed.model_dump()
+            for score in parsed_dict.get("scores", []):
                 results.append(score)
 
     return results
@@ -458,10 +457,7 @@ async def find_considerations_until_done(
         sequence_position=sequence_position,
     )
 
-    cls = FIND_CONSIDERATIONS_CALL_CLASSES[
-        get_settings().find_considerations_call_variant
-    ]
-    scout = cls(
+    scout = FindConsiderationsCall(
         question_id,
         call,
         db,
@@ -518,8 +514,7 @@ async def ingest_until_done(
             scope_page_id=source_page.id,
             parent_call_id=parent_call_id,
         )
-        cls = INGEST_CALL_CLASSES[get_settings().ingest_call_variant]
-        ingest = cls(source_page, question_id, call, db, broadcaster=broadcaster)
+        ingest = IngestCall(source_page, question_id, call, db, broadcaster=broadcaster)
         await ingest.run()
         review = ingest.review
         rounds += 1
@@ -617,8 +612,9 @@ async def _run_assess_concept_loop(
             scope_page_id=concept_id,
             parent_call_id=parent_call_id,
         )
-        cls = ASSESS_CONCEPT_CALL_CLASSES[get_settings().assess_call_variant]
-        assess = cls(concept_id, call, db, phase=phase, broadcaster=broadcaster)
+        assess = AssessConceptCall(
+            concept_id, call, db, phase=phase, broadcaster=broadcaster
+        )
         await assess.run()
         last_review = assess.concept_assessment
 
@@ -661,8 +657,7 @@ async def run_concept_session(
         CallType.SCOUT_CONCEPTS,
         scope_page_id=question_id,
     )
-    cls = SCOUT_CONCEPTS_CALL_CLASSES["default"]
-    scout = cls(question_id, scout_call, db, broadcaster=broadcaster)
+    scout = ScoutConceptsCall(question_id, scout_call, db, broadcaster=broadcaster)
     await scout.run()
     proposed_ids = scout.result.created_page_ids
 
@@ -746,8 +741,7 @@ async def web_research_question(
         sequence_id=sequence_id,
         sequence_position=sequence_position,
     )
-    cls = WEB_RESEARCH_CALL_CLASSES[get_settings().web_research_call_variant]
-    web_research = cls(
+    web_research = WebResearchCall(
         question_id,
         call,
         db,

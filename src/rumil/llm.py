@@ -18,7 +18,7 @@ import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, TYPE_CHECKING
+from typing import Any, Generic, TYPE_CHECKING, TypeVar, overload
 
 from collections.abc import Awaitable, Callable, Sequence
 
@@ -497,11 +497,19 @@ async def text_call(
     return ""
 
 
-@dataclass
-class StructuredCallResult:
-    """Result of a structured_call invocation."""
+T = TypeVar("T", bound=BaseModel)
 
-    data: dict | None = None
+
+@dataclass
+class StructuredCallResult(Generic[T]):
+    """Result of a structured_call invocation.
+
+    `parsed` holds the validated pydantic instance, or None if the model
+    returned no parseable output. The type parameter matches the
+    `response_model` passed to `structured_call`.
+    """
+
+    parsed: T | None = None
     response_text: str | None = None
     input_tokens: int | None = None
     output_tokens: int | None = None
@@ -510,14 +518,14 @@ class StructuredCallResult:
 
 async def _structured_call_cached(
     system_prompt: str,
-    response_model: type[BaseModel],
+    response_model: type[T],
     msg_list: list[dict],
     *,
     tools: Sequence[dict] | None = None,
     metadata: LLMExchangeMetadata | None = None,
     db: DB | None = None,
     model: str | None = None,
-) -> StructuredCallResult:
+) -> StructuredCallResult[T]:
     """Structured output via create() + manual JSON parsing for cache reuse.
 
     Uses call_api (messages.create) so the request shares the same cache
@@ -558,7 +566,7 @@ async def _structured_call_cached(
                 api_resp.message.usage.output_tokens,
             )
             return StructuredCallResult(
-                data=parsed.model_dump(),
+                parsed=parsed,
                 response_text=response_text or None,
                 input_tokens=api_resp.message.usage.input_tokens,
                 output_tokens=api_resp.message.usage.output_tokens,
@@ -637,7 +645,7 @@ def _inject_into_last_user_message(
 
 async def _structured_call_parse(
     system_prompt: str,
-    response_model: type[BaseModel] | None,
+    response_model: type[T] | None,
     msg_list: list[dict],
     *,
     tools: Sequence[dict] | None = None,
@@ -645,7 +653,7 @@ async def _structured_call_parse(
     metadata: LLMExchangeMetadata | None = None,
     db: DB | None = None,
     model: str | None = None,
-) -> StructuredCallResult:
+) -> StructuredCallResult[T]:
     """Structured output via messages.parse (no cache sharing with create)."""
     settings = get_settings()
     client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
@@ -713,7 +721,7 @@ async def _structured_call_parse(
             response.usage.output_tokens,
         )
         return StructuredCallResult(
-            data=response.parsed_output.model_dump(),
+            parsed=response.parsed_output,
             response_text=response_text or None,
             input_tokens=response.usage.input_tokens,
             output_tokens=response.usage.output_tokens,
@@ -732,10 +740,11 @@ async def _structured_call_parse(
     )
 
 
+@overload
 async def structured_call(
     system_prompt: str,
-    user_message: str = "",
-    response_model: type[BaseModel] | None = None,
+    user_message: str,
+    response_model: type[T],
     *,
     messages: list[dict] | None = None,
     tools: Sequence[dict] | None = None,
@@ -744,7 +753,54 @@ async def structured_call(
     db: DB | None = None,
     cache: bool = False,
     model: str | None = None,
-) -> StructuredCallResult:
+) -> StructuredCallResult[T]: ...
+
+
+@overload
+async def structured_call(
+    system_prompt: str,
+    user_message: str = "",
+    *,
+    response_model: type[T],
+    messages: list[dict] | None = None,
+    tools: Sequence[dict] | None = None,
+    tool_choice: dict | None = None,
+    metadata: LLMExchangeMetadata | None = None,
+    db: DB | None = None,
+    cache: bool = False,
+    model: str | None = None,
+) -> StructuredCallResult[T]: ...
+
+
+@overload
+async def structured_call(
+    system_prompt: str,
+    user_message: str = "",
+    response_model: None = None,
+    *,
+    messages: list[dict] | None = None,
+    tools: Sequence[dict] | None = None,
+    tool_choice: dict | None = None,
+    metadata: LLMExchangeMetadata | None = None,
+    db: DB | None = None,
+    cache: bool = False,
+    model: str | None = None,
+) -> StructuredCallResult[BaseModel]: ...
+
+
+async def structured_call(
+    system_prompt: str,
+    user_message: str = "",
+    response_model: type[T] | None = None,
+    *,
+    messages: list[dict] | None = None,
+    tools: Sequence[dict] | None = None,
+    tool_choice: dict | None = None,
+    metadata: LLMExchangeMetadata | None = None,
+    db: DB | None = None,
+    cache: bool = False,
+    model: str | None = None,
+) -> StructuredCallResult[T] | StructuredCallResult[BaseModel]:
     """Run an LLM call that returns structured output matching response_model.
 
     When cache=True, uses messages.create with manual JSON parsing so the

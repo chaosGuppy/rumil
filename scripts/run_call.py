@@ -38,19 +38,18 @@ import asyncio
 import logging
 import uuid
 
-from rumil.calls.call_registry import (
-    ASSESS_CALL_CLASSES,
-    FIND_CONSIDERATIONS_CALL_CLASSES,
-    SCOUT_ANALOGIES_CALL_CLASSES,
-    SCOUT_DEEP_QUESTIONS_CALL_CLASSES,
-    SCOUT_ESTIMATES_CALL_CLASSES,
-    SCOUT_FACTCHECKS_CALL_CLASSES,
-    SCOUT_HYPOTHESES_CALL_CLASSES,
-    SCOUT_WEB_QUESTIONS_CALL_CLASSES,
-    SCOUT_PARADIGM_CASES_CALL_CLASSES,
-    SCOUT_SUBQUESTIONS_CALL_CLASSES,
-    WEB_RESEARCH_CALL_CLASSES,
-)
+from rumil.calls.call_registry import ASSESS_CALL_CLASSES
+from rumil.calls.find_considerations import FindConsiderationsCall
+from rumil.calls.scout_analogies import ScoutAnalogiesCall
+from rumil.calls.scout_deep_questions import ScoutDeepQuestionsCall
+from rumil.calls.scout_estimates import ScoutEstimatesCall
+from rumil.calls.scout_factchecks import ScoutFactchecksCall
+from rumil.calls.scout_hypotheses import ScoutHypothesesCall
+from rumil.calls.scout_paradigm_cases import ScoutParadigmCasesCall
+from rumil.calls.scout_subquestions import ScoutSubquestionsCall
+from rumil.calls.scout_web_questions import ScoutWebQuestionsCall
+from rumil.calls.stages import CallRunner
+from rumil.calls.web_research import WebResearchCall
 from rumil.calls.prioritization import run_prioritization
 from rumil.database import DB
 from rumil.models import CallStage, CallType, FindConsiderationsMode
@@ -60,30 +59,15 @@ from rumil.scope_subquestion_linker import run_scope_subquestion_linker
 from rumil.settings import Settings, get_settings, _settings_var
 
 
-_SCOUT_CALL_TYPES: dict[str, tuple[CallType, dict]] = {
-    "scout-subquestions": (
-        CallType.SCOUT_SUBQUESTIONS,
-        SCOUT_SUBQUESTIONS_CALL_CLASSES,
-    ),
-    "scout-estimates": (CallType.SCOUT_ESTIMATES, SCOUT_ESTIMATES_CALL_CLASSES),
-    "scout-hypotheses": (CallType.SCOUT_HYPOTHESES, SCOUT_HYPOTHESES_CALL_CLASSES),
-    "scout-analogies": (CallType.SCOUT_ANALOGIES, SCOUT_ANALOGIES_CALL_CLASSES),
-    "scout-paradigm-cases": (
-        CallType.SCOUT_PARADIGM_CASES,
-        SCOUT_PARADIGM_CASES_CALL_CLASSES,
-    ),
-    "scout-factchecks": (
-        CallType.SCOUT_FACTCHECKS,
-        SCOUT_FACTCHECKS_CALL_CLASSES,
-    ),
-    "scout-web-questions": (
-        CallType.SCOUT_WEB_QUESTIONS,
-        SCOUT_WEB_QUESTIONS_CALL_CLASSES,
-    ),
-    "scout-deep-questions": (
-        CallType.SCOUT_DEEP_QUESTIONS,
-        SCOUT_DEEP_QUESTIONS_CALL_CLASSES,
-    ),
+_SCOUT_CALL_TYPES: dict[str, tuple[CallType, type[CallRunner]]] = {
+    "scout-subquestions": (CallType.SCOUT_SUBQUESTIONS, ScoutSubquestionsCall),
+    "scout-estimates": (CallType.SCOUT_ESTIMATES, ScoutEstimatesCall),
+    "scout-hypotheses": (CallType.SCOUT_HYPOTHESES, ScoutHypothesesCall),
+    "scout-analogies": (CallType.SCOUT_ANALOGIES, ScoutAnalogiesCall),
+    "scout-paradigm-cases": (CallType.SCOUT_PARADIGM_CASES, ScoutParadigmCasesCall),
+    "scout-factchecks": (CallType.SCOUT_FACTCHECKS, ScoutFactchecksCall),
+    "scout-web-questions": (CallType.SCOUT_WEB_QUESTIONS, ScoutWebQuestionsCall),
+    "scout-deep-questions": (CallType.SCOUT_DEEP_QUESTIONS, ScoutDeepQuestionsCall),
 }
 
 
@@ -100,10 +84,7 @@ async def run_call(args: argparse.Namespace, db: DB, question_id: str) -> None:
             CallType.FIND_CONSIDERATIONS,
             scope_page_id=question_id,
         )
-        cls = FIND_CONSIDERATIONS_CALL_CLASSES[
-            settings.find_considerations_call_variant
-        ]
-        scout = cls(
+        scout = FindConsiderationsCall(
             question_id,
             call,
             db,
@@ -132,8 +113,7 @@ async def run_call(args: argparse.Namespace, db: DB, question_id: str) -> None:
             CallType.WEB_RESEARCH,
             scope_page_id=question_id,
         )
-        cls = WEB_RESEARCH_CALL_CLASSES[settings.web_research_call_variant]
-        web_research = cls(
+        web_research = WebResearchCall(
             question_id,
             call,
             db,
@@ -142,9 +122,8 @@ async def run_call(args: argparse.Namespace, db: DB, question_id: str) -> None:
         await web_research.run()
 
     elif call_type in _SCOUT_CALL_TYPES:
-        scout_ct, registry = _SCOUT_CALL_TYPES[call_type]
+        scout_ct, cls = _SCOUT_CALL_TYPES[call_type]
         call = await db.create_call(scout_ct, scope_page_id=question_id)
-        cls = registry["default"]
         instance = cls(
             question_id,
             call,

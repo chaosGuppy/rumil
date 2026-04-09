@@ -117,54 +117,11 @@ class WebResearchClosingReview(StandardClosingReview):
         )
 
 
-_LINK_REVIEW_INSTRUCTION = (
-    "You have finished scouting. Before your self-assessment, review the "
-    "links on the scope question.\n\n"
-    "For each link below, decide whether it should stay as-is, have its "
-    "role changed (direct \u2194 structural), or be removed entirely.\n\n"
-    "- **direct**: the linked page directly bears on the answer.\n"
-    "- **structural**: the linked page frames what evidence/angles to explore.\n"
-    "- **remove**: the link is no longer relevant or useful.\n\n"
-    "Use `change_link_role` to switch a link between direct and structural. "
-    "Use `remove_link` to delete a link that should not exist. "
-    "Leave links alone if they are already correct.\n\n"
-    "{link_inventory}\n\n"
-    "Scope question ID: `{question_id}`"
-)
-
 _SELF_ASSESSMENT_INSTRUCTION = (
     "Now provide your self-assessment. Do not call any tools \u2014 they will "
     "have no effect here.\n\n"
     "Scope question ID: `{question_id}`"
 )
-
-
-async def _build_link_inventory(
-    question_id: str,
-    db,
-    graph=None,
-) -> str:
-    source = graph if graph is not None else db
-    considerations = await source.get_considerations_for_question(question_id)
-    children_with_links = await source.get_child_questions_with_links(question_id)
-
-    if not considerations and not children_with_links:
-        return "No existing links on the scope question."
-
-    lines = ["### Current Links"]
-    for page, link in considerations:
-        lines.append(
-            f"- [{link.role.value}] consideration: "
-            f'"{page.headline}" '
-            f"(strength {link.strength:.1f}, link_id: `{link.id}`)"
-        )
-    for page, link in children_with_links:
-        lines.append(
-            f"- [{link.role.value}] child_question: "
-            f'"{page.headline}" '
-            f"(link_id: `{link.id}`)"
-        )
-    return "\n".join(lines)
 
 
 async def _self_assessment(
@@ -226,7 +183,7 @@ async def _self_assessment(
         db=infra.db,
         cache=True,
     )
-    review_data = review_result.data or {}
+    review_data = review_result.parsed.model_dump() if review_result.parsed else {}
 
     if review_data:
         log.info(
@@ -284,82 +241,8 @@ async def _collect_all_loaded_summaries(
     return summaries
 
 
-class TwoPhaseScoutReview(ClosingReviewer):
-    """Two-phase closing: link modification then self-assessment. Used by FindConsiderationsCall."""
-
-    async def closing_review(
-        self,
-        infra: CallInfra,
-        context: ContextResult,
-        creation: CreationResult,
-    ) -> None:
-        if not creation.messages:
-            infra.call.review_json = {}
-            summary = (
-                f"Scout session complete. {creation.rounds_completed} rounds, "
-                f"{len(creation.created_page_ids)} pages created."
-            )
-            await mark_call_completed(infra.call, infra.db, summary)
-            return
-
-        assert creation.last_fruit_score is not None
-        loaded_summaries = await _collect_all_loaded_summaries(
-            infra,
-            context.preloaded_ids,
-        )
-
-        move_types = get_moves_for_call(infra.call.call_type)
-        tools = [MOVES[mt].bind(infra.state) for mt in move_types]
-        tool_defs, _ = prepare_tools(tools)
-        system_prompt = build_system_prompt(infra.call.call_type.value)
-
-        link_inventory = await _build_link_inventory(infra.question_id, infra.db)
-        link_review_msg = _LINK_REVIEW_INSTRUCTION.format(
-            link_inventory=link_inventory,
-            question_id=infra.question_id,
-        )
-        link_messages = list(creation.messages) + [
-            {"role": "user", "content": link_review_msg},
-        ]
-
-        link_tools = [MOVES[mt].bind(infra.state) for mt in move_types]
-        link_result = await run_single_call(
-            system_prompt,
-            tools=link_tools,
-            call_id=infra.call.id,
-            phase="link_review",
-            db=infra.db,
-            state=infra.state,
-            messages=link_messages,
-            cache=True,
-        )
-        post_link_messages = list(link_result.messages)
-
-        review_data = await _self_assessment(
-            infra,
-            system_prompt,
-            tool_defs,
-            post_link_messages,
-            loaded_summaries,
-        )
-
-        infra.call.review_json = review_data
-        await infra.trace.record(
-            ReviewCompleteEvent(
-                remaining_fruit=creation.last_fruit_score,
-                confidence=review_data.get("confidence_in_output"),
-            )
-        )
-
-        summary = (
-            f"Scout session complete. {creation.rounds_completed} rounds, "
-            f"{len(creation.created_page_ids)} pages created."
-        )
-        await mark_call_completed(infra.call, infra.db, summary)
-
-
 class SinglePhaseScoutReview(ClosingReviewer):
-    """Skip link review, go straight to self-assessment. Used by EmbeddingFindConsiderationsCall."""
+    """Closing review for the scout call: self-assessment only."""
 
     async def closing_review(
         self,
@@ -444,7 +327,7 @@ class ConceptAssessReview(ClosingReviewer):
                 metadata=meta,
                 db=infra.db,
             )
-            review = result.data
+            review = result.parsed.model_dump() if result.parsed else None
         except Exception as e:
             log.error(
                 "Concept closing review failed for call=%s: %s",

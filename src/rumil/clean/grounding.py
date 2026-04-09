@@ -361,10 +361,9 @@ async def _generate_tasks(
         metadata=meta,
         db=db,
     )
-    if result.data is None:
+    if result.parsed is None:
         return []
-    task_list = GroundingTaskList.model_validate(result.data)
-    return task_list.tasks
+    return result.parsed.tasks
 
 
 async def _run_web_search_task(

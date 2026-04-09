@@ -103,7 +103,7 @@ async def test_reassess_question_passes_context_page_ids(
 
     # Mock CallRunner.run to avoid LLM calls — we only care about call creation
     mocker.patch("rumil.clean.common.ASSESS_CALL_CLASSES", {
-        "embedding": type("FakeAssess", (), {
+        "default": type("FakeAssess", (), {
             "__init__": lambda self, *a, **kw: None,
             "run": mocker.AsyncMock(),
         }),
@@ -145,7 +145,7 @@ async def test_reassess_question_resolves_question_to_judgement_in_context(
     trace = CallTrace(parent_call.id, tmp_db)
 
     mocker.patch("rumil.clean.common.ASSESS_CALL_CLASSES", {
-        "embedding": type("FakeAssess", (), {
+        "default": type("FakeAssess", (), {
             "__init__": lambda self, *a, **kw: None,
             "run": mocker.AsyncMock(),
         }),

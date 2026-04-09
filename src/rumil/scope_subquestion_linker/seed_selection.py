@@ -75,13 +75,13 @@ async def select_seed_questions(
         model=model,
     )
 
-    if result.data is None:
+    if result.parsed is None:
         log.warning(
             "seed selection ranker returned no data; falling back to first %d", limit
         )
         return candidates[:limit]
 
-    ranking = TopLevelRelevanceRanking.model_validate(result.data)
+    ranking = result.parsed
     by_short_id: dict[str, Page] = {c.id[:8]: c for c in candidates}
     selected: list[Page] = []
     seen: set[str] = set()

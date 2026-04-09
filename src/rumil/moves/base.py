@@ -408,13 +408,14 @@ async def extract_and_link_citations(
 ) -> set[str]:
     """Extract [shortid] citations from content and create page links.
 
-    Link type depends on the cited page's type:
+    Link type depends on the citing and cited pages' types:
     - Cited SOURCE → CITES (from=citing, to=cited)
-    - Cited CLAIM or JUDGEMENT → CONSIDERATION (from=cited, to=citing)
-    - Otherwise → RELATED (from=cited, to=citing)
-
-    Non-SOURCE citations always point from the cited page into the citing
-    page, so the citing page receives an incoming link.
+    - Citing CLAIM/JUDGEMENT cites a CLAIM/JUDGEMENT → DEPENDS_ON
+      (from=citing, to=cited): the citing page's conclusions rest on the
+      cited page being true.
+    - Citing QUESTION cites a CLAIM/JUDGEMENT → CONSIDERATION
+      (from=cited, to=citing): the cited claim bears on the question.
+    - Otherwise → RELATED (from=cited, to=citing).
 
     Returns the set of full UUIDs that were successfully linked.
     """
@@ -423,6 +424,9 @@ async def extract_and_link_citations(
     matches.discard(own_short_id)
     if not matches:
         return set()
+
+    citing_page = await db.get_page(page_id)
+    citing_type = citing_page.page_type if citing_page else None
 
     linked: set[str] = set()
     for short_id in matches:
@@ -439,8 +443,15 @@ async def extract_and_link_citations(
             link_type = LinkType.CITES
             from_id, to_id = page_id, resolved
         elif cited_page.page_type in (PageType.CLAIM, PageType.JUDGEMENT):
-            link_type = LinkType.CONSIDERATION
-            from_id, to_id = resolved, page_id
+            if citing_type in (PageType.CLAIM, PageType.JUDGEMENT):
+                link_type = LinkType.DEPENDS_ON
+                from_id, to_id = page_id, resolved
+            elif citing_type == PageType.QUESTION:
+                link_type = LinkType.CONSIDERATION
+                from_id, to_id = resolved, page_id
+            else:
+                link_type = LinkType.RELATED
+                from_id, to_id = resolved, page_id
         else:
             link_type = LinkType.RELATED
             from_id, to_id = resolved, page_id

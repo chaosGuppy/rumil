@@ -220,10 +220,10 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
         return result
 
     async def _is_new_claim(self, claim_id: str) -> bool:
-        """A claim is 'new' if it has no consideration links to it."""
+        """A claim is 'new' if no other page depends on it yet."""
         links = await self.db.get_links_to(claim_id)
         return not any(
-            l.link_type == LinkType.CONSIDERATION for l in links
+            l.link_type == LinkType.DEPENDS_ON for l in links
         )
 
     async def _cancel_initial_call(self) -> None:
@@ -440,12 +440,12 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
             if scope_judgements else None
         )
 
-        consideration_pages = [
+        dependent_pages = [
             page for page, _link
-            in await graph.get_considerations_for_question(claim_id)
+            in await graph.get_dependents(claim_id)
         ]
         child_questions = await graph.get_child_questions(claim_id)
-        all_items = consideration_pages + list(child_questions)
+        all_items = dependent_pages + list(child_questions)
 
         scoring_tasks: list = []
         scoring_tasks.append(score_items_sequentially(

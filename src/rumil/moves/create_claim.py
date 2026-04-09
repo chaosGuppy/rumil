@@ -65,6 +65,15 @@ async def execute(payload: CreateClaimPayload, call: Call, db: DB) -> MoveResult
             )
             continue
 
+        target = await db.get_page(resolved)
+        if target is None or target.page_type != PageType.QUESTION:
+            log.warning(
+                "Inline consideration link skipped: target %s is %s, expected question",
+                resolved[:8],
+                target.page_type.value if target else "missing",
+            )
+            continue
+
         await db.save_link(
             PageLink(
                 from_page_id=result.created_page_id,

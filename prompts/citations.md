@@ -12,6 +12,7 @@ Write the 8-character short ID inside square brackets wherever you reference ano
 
 - **Every claim derived from a page must cite that page inline.** If information from a page influenced what you wrote, it *must* have a citation. *Never* leverage a page's content without citing it — uncited use of page information is treated as a fabrication.
 - **Only cite pages whose IDs appear in your context.** Never fabricate or guess a page ID.
+- **Never cite a question — cite its judgement instead.** Questions are open queries, not knowledge. If you want to draw on what the workspace currently believes about a question, find the question's judgement page and cite that. If a question has no judgement yet, you have nothing to cite from it: leave it out, or open a sub-question or assess call to produce a judgement first.
 - **Cite in the `content` field** of page-creation tools, not in headlines.
 - **Cite at the point of use, not just once per page.** If you draw on the same source in multiple sentences, cite it each time. If a single sentence synthesises two pages, cite both.
 - Multiple citations in a single page are expected when the content synthesises several sources. A page with no citations that makes factual claims about the workspace is almost certainly missing them.

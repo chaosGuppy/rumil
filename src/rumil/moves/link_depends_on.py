@@ -5,10 +5,12 @@ import logging
 from pydantic import BaseModel, Field
 
 from rumil.database import DB
-from rumil.models import Call, LinkType, MoveType, PageLink
+from rumil.models import Call, LinkType, MoveType, PageLink, PageType
 from rumil.moves.base import MoveDef, MoveResult
 
 log = logging.getLogger(__name__)
+
+_DEPENDS_ON_TYPES = (PageType.CLAIM, PageType.JUDGEMENT)
 
 
 class LinkDependsOnPayload(BaseModel):
@@ -37,9 +39,42 @@ async def execute(payload: LinkDependsOnPayload, call: Call, db: DB) -> MoveResu
     if not dependent_id or not dependency_id:
         log.warning(
             "LINK_DEPENDS_ON skipped: dependent=%s, dependency=%s",
-            dependent_id, dependency_id,
+            dependent_id,
+            dependency_id,
         )
         return MoveResult("Link skipped — page IDs not found.")
+
+    dependent_page = await db.get_page(dependent_id)
+    dependency_page = await db.get_page(dependency_id)
+    if dependent_page is None or dependent_page.page_type not in _DEPENDS_ON_TYPES:
+        log.warning(
+            "LINK_DEPENDS_ON skipped: dependent %s is %s, expected claim/judgement",
+            dependent_id[:8],
+            dependent_page.page_type.value if dependent_page else "missing",
+        )
+        return MoveResult(
+            "Link skipped — depends_on links must originate from a claim or judgement. "
+            "Use link_child_question to relate questions to each other."
+        )
+    if dependency_page is None or dependency_page.page_type not in _DEPENDS_ON_TYPES:
+        kind = dependency_page.page_type.value if dependency_page else "missing"
+        log.warning(
+            "LINK_DEPENDS_ON skipped: dependency %s is %s, expected claim/judgement",
+            dependency_id[:8],
+            kind,
+        )
+        if (
+            dependency_page is not None
+            and dependency_page.page_type == PageType.QUESTION
+        ):
+            return MoveResult(
+                "Link skipped — depends_on must point at a claim or judgement, not a "
+                "question. If you mean 'depends on the answer to this question', link "
+                "to the question's current judgement instead."
+            )
+        return MoveResult(
+            "Link skipped — depends_on must point at a claim or judgement."
+        )
 
     link = PageLink(
         from_page_id=dependent_id,
@@ -51,7 +86,9 @@ async def execute(payload: LinkDependsOnPayload, call: Call, db: DB) -> MoveResu
     await db.save_link(link)
     log.info(
         "Dependency linked: %s depends on %s (%.1f)",
-        dependent_id[:8], dependency_id[:8], payload.strength,
+        dependent_id[:8],
+        dependency_id[:8],
+        payload.strength,
     )
     return MoveResult("Done.")
 

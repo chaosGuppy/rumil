@@ -135,6 +135,45 @@ async def test_render_question_subgraph_max_pages_truncates_full_level(tmp_db):
     assert "5 more sub-Q(s) not shown -- horizon" in rendered
 
 
+async def test_render_question_subgraph_excludes_ids(tmp_db):
+    # Tree:
+    #   root
+    #   ├── child_a
+    #   │   └── grandchild_a (will be excluded; subtree pruned)
+    #   │       └── deep_a   (must not appear since parent is excluded)
+    #   └── child_b
+    root = _make_question("Root")
+    child_a = _make_question("Child A")
+    child_b = _make_question("Child B")
+    grandchild_a = _make_question("Grandchild A")
+    deep_a = _make_question("Deep A")
+    for q in (root, child_a, child_b, grandchild_a, deep_a):
+        await tmp_db.save_page(q)
+    await _link_child(tmp_db, root, child_a)
+    await _link_child(tmp_db, root, child_b)
+    await _link_child(tmp_db, child_a, grandchild_a)
+    await _link_child(tmp_db, grandchild_a, deep_a)
+
+    rendered = await render_question_subgraph(
+        root.id, tmp_db, exclude_ids={grandchild_a.id}
+    )
+
+    assert root.id[:8] in rendered
+    assert child_a.id[:8] in rendered
+    assert child_b.id[:8] in rendered
+    assert grandchild_a.id[:8] not in rendered
+    assert deep_a.id[:8] not in rendered
+
+
+async def test_render_question_subgraph_excluded_root_returns_empty(tmp_db):
+    root = _make_question("Root")
+    await tmp_db.save_page(root)
+
+    rendered = await render_question_subgraph(root.id, tmp_db, exclude_ids={root.id})
+
+    assert rendered == ""
+
+
 async def test_render_question_subgraph_handles_cycles(tmp_db):
     q1 = _make_question("Q1")
     q2 = _make_question("Q2")

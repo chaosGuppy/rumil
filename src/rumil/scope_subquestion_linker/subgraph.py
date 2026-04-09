@@ -11,6 +11,7 @@ async def render_question_subgraph(
     *,
     max_depth: int = 6,
     max_pages: int | None = None,
+    exclude_ids: set[str] | None = None,
 ) -> str:
     """Render a subgraph of the question graph rooted at *page_id*.
 
@@ -20,12 +21,19 @@ async def render_question_subgraph(
     `max_pages` (if set). Parents whose children weren't expanded are tagged
     with an overflow count. Cycle-safe.
 
+    Any page id in *exclude_ids* is pruned: it is never rendered, its children
+    are never fetched, and it is not counted toward `max_pages`. If the root
+    itself is excluded, returns an empty string.
+
     Fetches each level in two batched queries (links + pages), so the total
     number of round trips is O(depth-actually-walked) regardless of fan-out.
     """
+    excluded = exclude_ids or set()
     resolved = await db.resolve_page_id(page_id)
     if resolved is None:
         return f'[Page "{page_id}" not found]'
+    if resolved in excluded:
+        return ""
     root = await db.get_page(resolved)
     if root is None:
         return f'[Page "{page_id}" not found]'
@@ -50,6 +58,7 @@ async def render_question_subgraph(
             child_links = [
                 l for l in links_by_parent.get(parent_id, [])
                 if l.link_type == LinkType.CHILD_QUESTION
+                and l.to_page_id not in excluded
             ]
             child_ids = [l.to_page_id for l in child_links]
             parent_child_links[parent_id] = child_ids

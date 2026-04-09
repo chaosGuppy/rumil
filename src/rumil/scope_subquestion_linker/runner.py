@@ -83,8 +83,10 @@ async def run_scope_subquestion_linker(
                 seed.id,
                 db,
                 max_pages=settings.scope_subquestion_linker_subgraph_max_pages,
+                exclude_ids={scope.id},
             )
-            seed_blocks.append(sub)
+            if sub:
+                seed_blocks.append(sub)
         seed_block = "\n\n".join(seed_blocks)
 
         current_children = await db.get_child_questions(scope.id)

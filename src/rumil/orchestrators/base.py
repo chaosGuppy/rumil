@@ -176,14 +176,15 @@ class BaseOrchestrator(ABC):
             seq_id = call_sequence.id
 
         pre_ids = [str(uuid.uuid4()) for _ in sequence]
-        resolves = []
-        headlines = []
-        for dispatch in sequence:
-            resolved = await self.db.resolve_page_id(dispatch.payload.question_id)
-            resolved = resolved or scope_question_id
-            resolves.append(resolved)
-            page = await self.db.get_page(resolved)
-            headlines.append(page.headline if page else '')
+        raw_qids = [d.payload.question_id for d in sequence]
+        resolved_map = await self.db.resolve_page_ids(raw_qids)
+        resolves = [resolved_map.get(qid) or scope_question_id for qid in raw_qids]
+        pages = await self.db.get_pages_by_ids(
+            [r for r in resolves if r is not None]
+        )
+        headlines = [
+            pages[r].headline if r in pages else '' for r in resolves
+        ]
 
         trace = get_trace()
         if trace:

@@ -84,7 +84,7 @@ async def execute(payload: PromoteConceptPayload, call: Call, db: DB) -> MoveRes
     return MoveResult(
         message=(
             f"Promoted concept [{research_page.id[:8]}]: {research_page.headline}. "
-            f"Now active in research workspace."
+            "Now active in research workspace."
         ),
         created_page_id=research_page.id,
     )

@@ -52,19 +52,17 @@ async def _context_check(
         return None
 
     state.context_page_ids.add(source_judgement.id)
-    formatted = await format_page(
-        source_judgement, PageDetail.CONTENT, db=state.db
-    )
+    formatted = await format_page(source_judgement, PageDetail.CONTENT, db=state.db)
     return MoveResult(
         f"Before updating scores on [{page_id[:8]}], please review the "
-        f"judgement that established the current scores "
+        "judgement that established the current scores "
         f"(C{score_entry['credence']}/R{score_entry['robustness']}):\n\n"
         f"**[{source_judgement.id[:8]}] {source_judgement.headline}**\n\n"
         f"{formatted}\n\n"
-        f"Reasoning for current scores: "
+        "Reasoning for current scores: "
         f"{score_entry.get('reasoning') or '(none)'}\n\n"
-        f"If you still want to update the scores after reviewing, "
-        f"call update_epistemic again with the same or modified values."
+        "If you still want to update the scores after reviewing, "
+        "call update_epistemic again with the same or modified values."
     )
 
 

@@ -130,13 +130,13 @@ def build_user_message(context_text: str, task_description: str) -> str:
 _CACHE_BREAKPOINT = {"type": "ephemeral"}
 
 
-def _add_cache_breakpoint(messages: list[dict]) -> list[dict]:
+def _add_cache_breakpoint(messages: Sequence[dict]) -> list[dict]:
     """Return a shallow copy of messages with a cache breakpoint on the last block.
 
     Mutates nothing — copies only the last message and its content.
     """
     if not messages:
-        return messages
+        return list(messages)
     msgs = list(messages)
     last = dict(msgs[-1])
     content = last.get("content")
@@ -183,7 +183,7 @@ def _extract_json(text: str) -> dict:
     raise ValueError(f"No JSON found in response: {text[:200]}")
 
 
-def _serialize_messages(messages: list[dict]) -> list[dict]:
+def _serialize_messages(messages: Sequence[dict]) -> list[dict]:
     """Serialize messages for JSON storage, converting SDK objects to dicts."""
     result = []
     for msg in messages:

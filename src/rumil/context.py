@@ -233,10 +233,14 @@ async def build_scout_context(
 
     considerations = await source.get_considerations_for_question(question_id)
     children = await source.get_child_questions(question_id)
-    child_judgements: list[tuple[Page, Page]] = []
-    for child in children:
-        for j in await source.get_judgements_for_question(child.id):
-            child_judgements.append((child, j))
+    child_judgements_by_qid = await source.get_judgements_for_questions(
+        [c.id for c in children]
+    )
+    child_judgements: list[tuple[Page, Page]] = [
+        (child, j)
+        for child in children
+        for j in child_judgements_by_qid.get(child.id, [])
+    ]
 
     if considerations or children or child_judgements:
         direct_items: list[tuple[str, Page]] = []
@@ -268,12 +272,23 @@ async def build_scout_context(
     headline_ids: list[str] = []
 
     if ancestry:
+        ancestor_ids = {a.id for a in ancestry}
+        siblings_by_ancestor: dict[str, list[Page]] = {
+            a.id: await source.get_child_questions(a.id) for a in ancestry
+        }
+        judgement_qids: list[str] = [a.id for a in ancestry]
+        for sibs in siblings_by_ancestor.values():
+            for sib in sibs:
+                if sib.id != question_id and sib.id not in ancestor_ids:
+                    judgement_qids.append(sib.id)
+        judgements_by_qid = await source.get_judgements_for_questions(judgement_qids)
+
         headline_lines.append('## Ancestry & Siblings')
         headline_lines.append('')
         for ancestor in reversed(ancestry):
             structural_ids.add(ancestor.id)
             headline_lines.append(await format_page(ancestor, PageDetail.HEADLINE))
-            a_judgements = await source.get_judgements_for_question(ancestor.id)
+            a_judgements = judgements_by_qid.get(ancestor.id, [])
             if a_judgements:
                 latest = max(a_judgements, key=lambda j: j.created_at)
                 headline_lines.append(
@@ -281,16 +296,16 @@ async def build_scout_context(
                 )
                 headline_ids.append(latest.id)
                 structural_ids.add(latest.id)
-            siblings = await source.get_child_questions(ancestor.id)
+            siblings = siblings_by_ancestor[ancestor.id]
             for sib in siblings:
-                if sib.id == question_id or any(a.id == sib.id for a in ancestry):
+                if sib.id == question_id or sib.id in ancestor_ids:
                     continue
                 headline_lines.append(
                     '  ' + await format_page(sib, PageDetail.HEADLINE)
                 )
                 headline_ids.append(sib.id)
                 structural_ids.add(sib.id)
-                sib_judgements = await source.get_judgements_for_question(sib.id)
+                sib_judgements = judgements_by_qid.get(sib.id, [])
                 if sib_judgements:
                     latest = max(sib_judgements, key=lambda j: j.created_at)
                     headline_lines.append(
@@ -547,17 +562,17 @@ async def format_page(
                 )
             return (
                 f'{original}\n\n'
-                f'> **SUPERSEDED** — this page has been replaced by'
+                '> **SUPERSEDED** — this page has been replaced by'
                 f' `{replacement.id[:8]}` ({replacement.headline}).'
-                f' Current version:\n\n'
+                ' Current version:\n\n'
                 f'{replacement_text}'
             )
         if detail == PageDetail.HEADLINE:
             return f'[SUPERSEDED] {original}'
         return (
             f'{original}\n\n'
-            f'> **SUPERSEDED** — this page has been replaced'
-            f' (replacement not found).'
+            '> **SUPERSEDED** — this page has been replaced'
+            ' (replacement not found).'
         )
 
     if detail != PageDetail.HEADLINE and not page.content and db:
@@ -611,10 +626,13 @@ async def format_page(
             linked_items.append((line, j))
 
         children = await source.get_child_questions(page.id)
+        child_judgements = await source.get_judgements_for_questions(
+            [child.id for child in children if child.id not in _exclude]
+        )
         for child in children:
             if child.id in _exclude:
                 continue
-            for j in await source.get_judgements_for_question(child.id):
+            for j in child_judgements.get(child.id, []):
                 if j.id in _exclude:
                     continue
                 line = (
@@ -749,8 +767,11 @@ async def format_question_for_find_considerations(
         all_con_items.append((await format_page(j, PageDetail.HEADLINE), j))
 
     children = await source.get_child_questions(question_id)
+    child_judgements = await source.get_judgements_for_questions(
+        [c.id for c in children]
+    )
     for child in children:
-        for j in await source.get_judgements_for_question(child.id):
+        for j in child_judgements.get(child.id, []):
             loaded_ids.append(j.id)
             line = (
                 f"*On sub-question: {child.headline} (`{child.id}`)*\n"
@@ -1049,10 +1070,8 @@ async def build_embedding_based_context(
 
     if require_judgement_for_questions:
         question_ids = [p.id for p, _ in ranked if p.page_type == PageType.QUESTION]
-        has_judgement: set[str] = set()
-        for qid in question_ids:
-            if await db.get_judgements_for_question(qid):
-                has_judgement.add(qid)
+        judgements_by_qid = await db.get_judgements_for_questions(question_ids)
+        has_judgement = {qid for qid, js in judgements_by_qid.items() if js}
         ranked = [
             (p, s) for p, s in ranked
             if p.page_type != PageType.QUESTION or p.id in has_judgement

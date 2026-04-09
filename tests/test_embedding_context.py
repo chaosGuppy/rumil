@@ -181,12 +181,15 @@ async def test_require_judgement_filters_unjudged_questions(
     """Questions without judgements are excluded when require_judgement_for_questions is set."""
     db = mocker.AsyncMock()
 
-    async def fake_get_judgements(qid):
-        if qid == QUESTION_WITH_JUDGEMENT.id:
-            return [JUDGEMENT_PAGE]
-        return []
+    async def fake_get_judgements_many(qids):
+        return {
+            qid: [JUDGEMENT_PAGE] if qid == QUESTION_WITH_JUDGEMENT.id else []
+            for qid in qids
+        }
 
-    db.get_judgements_for_question = mocker.AsyncMock(side_effect=fake_get_judgements)
+    db.get_judgements_for_questions = mocker.AsyncMock(
+        side_effect=fake_get_judgements_many
+    )
 
     result = await build_embedding_based_context(
         "test query",

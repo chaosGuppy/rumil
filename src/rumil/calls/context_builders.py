@@ -53,8 +53,8 @@ _B2_SEMAPHORE = asyncio.Semaphore(15)
 
 async def _record_context_built(
     infra: CallInfra,
-    working_page_ids: list[str],
-    preloaded_ids: list[str],
+    working_page_ids: Sequence[str],
+    preloaded_ids: Sequence[str],
     *,
     source_page_id: str | None = None,
     scout_mode: str | None = None,
@@ -422,12 +422,12 @@ async def _select_sensitive_pages(
     user_message_parts = [f"## Question\n\n**{question.headline}**"]
     if latest_judgement:
         user_message_parts.append(
-            f"## Judgement\n\n"
+            "## Judgement\n\n"
             f"**{latest_judgement.headline}**\n\n"
             f"{latest_judgement.content}"
         )
     user_message_parts.append(
-        f"## Candidate pages\n\n"
+        "## Candidate pages\n\n"
         f"Pick the {limit} pages whose content the judgement is most "
         f"sensitive to.\n\n{page_list}"
     )
@@ -626,11 +626,8 @@ async def _cites_superseded_pages(page: Page, db: DB) -> bool:
     short_ids = set(_CITATION_RE.findall(page.content))
     if not short_ids:
         return False
-    full_ids: list[str] = []
-    for sid in short_ids:
-        resolved = await db.resolve_page_id(sid)
-        if resolved:
-            full_ids.append(resolved)
+    resolved_map = await db.resolve_page_ids(list(short_ids))
+    full_ids = list(resolved_map.values())
     if not full_ids:
         return False
     cited_pages = await db.get_pages_by_ids(full_ids)
@@ -638,7 +635,7 @@ async def _cites_superseded_pages(page: Page, db: DB) -> bool:
 
 
 async def _reassess_pages_citing_superseded(
-    connected: list[tuple[Page, PageLink]],
+    connected: Sequence[tuple[Page, PageLink]],
     question: Page,
     latest_judgement: Page | None,
     infra: CallInfra,
@@ -701,7 +698,7 @@ async def _reassess_pages_citing_superseded(
 
 
 async def _find_higher_quality_replacements(
-    connected: list[tuple[Page, PageLink]],
+    connected: Sequence[tuple[Page, PageLink]],
     question: Page,
     latest_judgement: Page | None,
     infra: CallInfra,
@@ -778,7 +775,7 @@ async def _find_higher_quality_replacements(
         ][:10]
 
     async def _check_replacements(
-        page: Page, candidates: list[tuple[Page, float]],
+        page: Page, candidates: Sequence[tuple[Page, float]],
     ) -> set[str]:
         async with _B2_SEMAPHORE:
             target_text = await format_page(
@@ -1015,12 +1012,13 @@ class BigAssessContext(ContextBuilder):
         context_text = result.context_text
         already_in_context = set(working_page_ids) | {infra.question_id} | exclude_ids
         if all_extra:
+            extra_pages = await db.get_pages_by_ids(all_extra)
             parts: list[str] = []
             for pid in all_extra:
                 if pid in already_in_context:
                     continue
                 already_in_context.add(pid)
-                page = await db.get_page(pid)
+                page = extra_pages.get(pid)
                 if page and page.is_active():
                     parts += [
                         "",

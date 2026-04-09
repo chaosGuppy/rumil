@@ -35,6 +35,7 @@ from rumil.models import (
     Dispatch,
     Move,
     MoveType,
+    Page,
     PageDetail,
 )
 from rumil.moves.base import MoveState
@@ -71,7 +72,7 @@ PHASE1_TASK = (
 
 
 async def execute_tool_uses(
-    tool_uses: list[ToolUseBlock],
+    tool_uses: Sequence[ToolUseBlock],
     tool_fns: dict,
 ) -> tuple[list[ToolCall], list[dict]]:
     """Execute tool calls and build tool_result messages."""
@@ -148,7 +149,7 @@ async def record_round_moves(
         )
 
 
-def prepare_tools(tools: list[Tool]) -> tuple[list[dict], dict]:
+def prepare_tools(tools: Sequence[Tool]) -> tuple[list[dict], dict]:
     """Build API tool definitions and function lookup from Tool list."""
     tool_defs = [
         {"name": t.name, "description": t.description, "input_schema": t.input_schema}
@@ -393,7 +394,7 @@ async def run_agent_loop(
             budget_note = {
                 "type": "text",
                 "text": (
-                    f"After this round of tool calls, you will have "
+                    "After this round of tool calls, you will have "
                     f"{remaining - 1} rounds remaining."
                 ),
             }
@@ -520,11 +521,12 @@ class RunCallResult:
     agent_result: AgentResult = field(default_factory=AgentResult)
 
 
-async def _format_loaded_pages(page_ids: list[str], db: DB) -> str:
+async def _format_loaded_pages(page_ids: Sequence[str], db: DB) -> str:
     """Format loaded pages as context text for phase 2."""
+    pages = await db.get_pages_by_ids(page_ids)
     parts = []
     for pid in page_ids:
-        page = await db.get_page(pid)
+        page = pages.get(pid)
         if page:
             parts.append(
                 f"### Page `{pid[:8]}`\n\n{await format_page(page, PageDetail.HEADLINE, db=db)}"
@@ -673,48 +675,58 @@ async def extract_loaded_page_ids(result: RunCallResult, db: DB) -> list[str]:
 
 async def resolve_page_refs(page_ids: Sequence[str], db: DB) -> list[PageRef]:
     """Resolve a list of page IDs to PageRef objects with headlines."""
-    refs = []
-    for pid in page_ids:
-        page = await db.get_page(pid)
-        hl = page.headline if page else ""
-        refs.append(PageRef(id=pid, headline=hl))
-    return refs
+    pages = await db.get_pages_by_ids(page_ids)
+    return [
+        PageRef(id=pid, headline=pages[pid].headline if pid in pages else "")
+        for pid in page_ids
+    ]
 
 
-async def _resolve_payload_refs(move: Move, db: DB) -> list[PageRef]:
-    """Resolve page IDs referenced in a move's payload fields."""
+def _payload_raw_refs(move: Move) -> list[str]:
+    """Extract raw page ID strings from a move's payload fields."""
     fields = PAGE_ID_FIELDS.get(move.move_type, [])
-    refs: list[PageRef] = []
+    raws: list[str] = []
     for field_name in fields:
         raw = getattr(move.payload, field_name, None)
-        if not raw:
-            continue
-        full_id = await db.resolve_page_id(raw)
-        if not full_id:
-            continue
-        page = await db.get_page(full_id)
-        hl = page.headline if page else ""
-        refs.append(PageRef(id=full_id, headline=hl))
-    return refs
+        if raw:
+            raws.append(raw)
+    return raws
 
 
 async def moves_to_trace_event(
-    moves: list[Move],
-    move_created_ids: list[list[str]],
+    moves: Sequence[Move],
+    move_created_ids: Sequence[Sequence[str]],
     db: DB,
-    trace_extras: list[dict] | None = None,
+    trace_extras: Sequence[dict] | None = None,
 ) -> MovesExecutedEvent:
     """Build a typed MovesExecutedEvent from a list of moves."""
+    raw_payload_refs = [_payload_raw_refs(m) for m in moves]
+    all_raw_refs = [raw for refs in raw_payload_refs for raw in refs]
+    resolved_payload_ids = await db.resolve_page_ids(all_raw_refs)
+
+    all_full_ids: set[str] = set()
+    for created in move_created_ids:
+        all_full_ids.update(created)
+    all_full_ids.update(resolved_payload_ids.values())
+    pages = await db.get_pages_by_ids(list(all_full_ids))
+
+    def _ref(full_id: str) -> PageRef:
+        return PageRef(
+            id=full_id,
+            headline=pages[full_id].headline if full_id in pages else "",
+        )
+
     trace_items = []
     for i, m in enumerate(moves):
         created_ids = move_created_ids[i] if i < len(move_created_ids) else []
-        created_refs = await resolve_page_refs(created_ids, db)
-        payload_refs = await _resolve_payload_refs(m, db)
+        created_refs = [_ref(pid) for pid in created_ids]
         seen = {r.id for r in created_refs}
-        for pr in payload_refs:
-            if pr.id not in seen:
-                created_refs.append(pr)
-                seen.add(pr.id)
+        for raw in raw_payload_refs[i]:
+            full_id = resolved_payload_ids.get(raw)
+            if not full_id or full_id in seen:
+                continue
+            created_refs.append(_ref(full_id))
+            seen.add(full_id)
         payload_data = m.payload.model_dump(exclude_none=True, exclude_defaults=True)
         extra = trace_extras[i] if trace_extras and i < len(trace_extras) else {}
         trace_items.append(
@@ -768,11 +780,17 @@ async def run_closing_review(
     db: DB | None = None,
 ) -> dict | None:
     """Run the closing review as a separate call. Free (not counted against budget)."""
+    review_pages: dict[str, Page] = {}
+    if db and (loaded_page_ids or created_page_ids):
+        review_pages = await db.get_pages_by_ids(
+            list(loaded_page_ids or []) + list(created_page_ids or [])
+        )
+
     page_rating_note = ""
     if loaded_page_ids and db:
         page_lines = []
         for pid in loaded_page_ids:
-            page = await db.get_page(pid)
+            page = review_pages.get(pid)
             if page:
                 page_lines.append(f'  - `{pid[:8]}`: "{page.headline[:120]}"')
         if page_lines:
@@ -789,7 +807,7 @@ async def run_closing_review(
     if created_page_ids and db:
         created_lines = []
         for pid in created_page_ids:
-            page = await db.get_page(pid)
+            page = review_pages.get(pid)
             if page:
                 created_lines.append(f'  - `{pid[:8]}`: "{page.headline[:120]}"')
         if created_lines:
@@ -844,8 +862,13 @@ async def run_closing_review(
                 review.get("confidence_in_output"),
             )
             if db:
-                for r in review.get("page_ratings", []):
-                    pid = await db.resolve_page_id(r.get("page_id", ""))
+                ratings = review.get("page_ratings", [])
+                raw_rating_ids = [r.get("page_id", "") for r in ratings]
+                resolved_rating_ids = await db.resolve_page_ids(
+                    [rid for rid in raw_rating_ids if rid]
+                )
+                for r in ratings:
+                    pid = resolved_rating_ids.get(r.get("page_id", ""))
                     score = r.get("score")
                     if pid and isinstance(score, int):
                         await db.save_page_rating(
@@ -879,7 +902,7 @@ async def run_closing_review(
         return None
 
 
-def format_moves_for_review(moves: list[Move]) -> str:
+def format_moves_for_review(moves: Sequence[Move]) -> str:
     """Format moves as readable text for closing review context."""
     if not moves:
         return "(no moves)"

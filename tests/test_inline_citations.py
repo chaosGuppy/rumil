@@ -5,6 +5,7 @@ import re
 import pytest
 import pytest_asyncio
 
+from rumil.calls.assess import AssessCall
 from rumil.models import (
     Call,
     CallStatus,
@@ -319,7 +320,6 @@ async def test_assess_produces_inline_citations(tmp_db, question_page):
     )
     await tmp_db.save_call(call)
 
-    from rumil.calls.assess import AssessCall
 
     runner = AssessCall(question_page.id, call, tmp_db)
     await runner.run()

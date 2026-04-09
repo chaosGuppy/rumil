@@ -20,6 +20,7 @@ from rumil.models import (
 )
 from rumil.calls.page_creators import _resolve_round_mode
 from rumil.moves.base import MoveState
+from rumil.moves.create_question import CreateSubquestionPayload
 from rumil.settings import get_settings, override_settings
 
 
@@ -204,7 +205,6 @@ def test_allowed_find_considerations_modes_single():
 
 def test_filter_mode_schema_nested():
     """filter_mode_schema restricts FindConsiderationsMode in nested $defs."""
-    from rumil.moves.create_question import CreateSubquestionPayload
 
     schema = CreateSubquestionPayload.model_json_schema()
     filtered = filter_mode_schema(schema, [FindConsiderationsMode.ABSTRACT])

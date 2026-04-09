@@ -264,15 +264,15 @@ async def reassess_claim(
     if linked_text:
         user_parts.append(f"## Linked pages\n\n{linked_text}")
     user_parts.append(
-        f"## Claim to reassess\n\n"
+        "## Claim to reassess\n\n"
         f"**Headline:** {old_page.headline}\n"
         f"**ID:** `{old_page.id[:8]}`\n\n"
         f"{old_page.content}"
     )
     if findings:
         user_parts.append(
-            f"## Web research findings\n\n"
-            f"The following findings directly bear on this claim:\n\n"
+            "## Web research findings\n\n"
+            "The following findings directly bear on this claim:\n\n"
             f"{findings}"
         )
 

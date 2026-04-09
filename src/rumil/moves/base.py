@@ -425,17 +425,20 @@ async def extract_and_link_citations(
     if not matches:
         return set()
 
-    citing_page = await db.get_page(page_id)
+    resolved_map = await db.resolve_page_ids(list(matches))
+    needed_ids = list({pid for pid in resolved_map.values()} | {page_id})
+    pages = await db.get_pages_by_ids(needed_ids)
+    citing_page = pages.get(page_id)
     citing_type = citing_page.page_type if citing_page else None
 
     linked: set[str] = set()
     for short_id in matches:
-        resolved = await db.resolve_page_id(short_id)
+        resolved = resolved_map.get(short_id)
         if not resolved:
             log.debug("Citation [%s] did not resolve to a page", short_id)
             continue
 
-        cited_page = await db.get_page(resolved)
+        cited_page = pages.get(resolved)
         if not cited_page:
             continue
 

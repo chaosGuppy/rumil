@@ -7,7 +7,6 @@ Produces a tiered text view of the local graph around a page:
 - Frontier connections beyond O hops are indicated but not expanded.
 """
 
-from collections import deque
 from collections.abc import Sequence
 
 from rumil.context import format_page
@@ -107,35 +106,39 @@ async def _bfs(
 ) -> tuple[dict[str, int], dict[str, set[str]]]:
     """BFS from *start_id* up to *max_hops*.
 
+    Issues two batched link queries (links_from + links_to) per BFS level,
+    so total round trips are O(max_hops) regardless of fan-out.
+
     Returns (visited, neighbor_map) where:
     - visited maps page_id → minimum hop distance
     - neighbor_map maps page_id → set of all neighbor page_ids (including beyond max_hops)
     """
-    visited: dict[str, int] = {}
+    visited: dict[str, int] = {start_id: 0}
     neighbor_map: dict[str, set[str]] = {}
-    queue: deque[tuple[str, int]] = deque([(start_id, 0)])
+    frontier: list[str] = [start_id]
+    dist = 0
 
-    while queue:
-        pid, dist = queue.popleft()
-        if pid in visited:
-            continue
-        if dist > max_hops:
-            continue
-        visited[pid] = dist
+    while frontier and dist <= max_hops:
+        links_from_map = await db.get_links_from_many(frontier)
+        links_to_map = await db.get_links_to_many(frontier)
 
-        links_from = await db.get_links_from(pid)
-        links_to = await db.get_links_to(pid)
+        next_frontier: list[str] = []
+        for pid in frontier:
+            neighbors: set[str] = set()
+            for link in links_from_map.get(pid, []):
+                neighbors.add(link.to_page_id)
+            for link in links_to_map.get(pid, []):
+                neighbors.add(link.from_page_id)
+            neighbor_map[pid] = neighbors
 
-        neighbors: set[str] = set()
-        for link in links_from:
-            neighbors.add(link.to_page_id)
-        for link in links_to:
-            neighbors.add(link.from_page_id)
-        neighbor_map[pid] = neighbors
+            if dist < max_hops:
+                for neighbor_id in neighbors:
+                    if neighbor_id not in visited:
+                        visited[neighbor_id] = dist + 1
+                        next_frontier.append(neighbor_id)
 
-        for neighbor_id in neighbors:
-            if neighbor_id not in visited:
-                queue.append((neighbor_id, dist + 1))
+        frontier = next_frontier
+        dist += 1
 
     return visited, neighbor_map
 

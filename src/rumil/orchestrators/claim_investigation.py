@@ -123,7 +123,7 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
         effective = self._effective_budget(remaining)
         if effective < MIN_TWOPHASE_BUDGET:
             raise ValueError(
-                f'ClaimInvestigationOrchestrator requires a budget of at least '
+                'ClaimInvestigationOrchestrator requires a budget of at least '
                 f'{MIN_TWOPHASE_BUDGET}, got {effective}'
             )
         if self._parent_call_id:
@@ -175,7 +175,7 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
                             )
                             await trace.record(ErrorEvent(
                                 message=(
-                                    f"Concurrent dispatch failed: "
+                                    "Concurrent dispatch failed: "
                                     f"{type(r).__name__}: {r}"
                                 ),
                                 phase="dispatch",
@@ -619,11 +619,14 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
         await trace.record(DispatchesPlannedEvent(dispatches=all_trace_items))
 
         recurse_base = len(all_dispatches)
+        child_pages = await self.db.get_pages_by_ids(
+            [child_id for _, child_id in children]
+        )
         for ci, (child, child_id) in enumerate(children):
             child_call_id = await child.create_initial_call(
                 child_id, parent_call_id=p_call.id,
             )
-            child_page = await self.db.get_page(child_id)
+            child_page = child_pages.get(child_id)
             await trace.record(DispatchExecutedEvent(
                 index=recurse_base + ci,
                 child_call_type='recurse',

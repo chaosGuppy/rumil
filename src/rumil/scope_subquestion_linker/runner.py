@@ -4,7 +4,7 @@ import logging
 
 from rumil.calls.common import run_agent_loop
 from rumil.database import DB
-from rumil.models import Call, CallStatus, CallType, PageType
+from rumil.models import Call, CallStatus, CallType, Page, PageType
 from rumil.moves.base import MoveState
 from rumil.scope_subquestion_linker.prompt import build_linker_prompt
 from rumil.scope_subquestion_linker.seed_selection import select_seed_questions
@@ -37,9 +37,11 @@ async def run_scope_subquestion_linker(
     """Explore the workspace looking for subquestions to link to a scope question.
 
     Returns the persisted Call. The call's `review_json` will contain
-    `{"proposed_subquestion_ids": [...]}`. The agent does
-    NOT create LINK_CHILD_QUESTION links itself; that is left to a follow-up
-    review step.
+    `{"proposed_subquestion_ids": [...]}`. This runner only proposes
+    subquestions; it does not create CHILD_QUESTION links itself.
+    `ExperimentalOrchestrator` is currently the sole caller and
+    materializes the proposed links inline via `link_pages` immediately
+    after the runner returns.
     """
     settings = get_settings()
 
@@ -144,21 +146,17 @@ async def run_scope_subquestion_linker(
             )
             holder.result = LinkerResult(question_ids=[])
 
-        proposed_ids = await _validate_proposals(
+        proposed_pages = await _validate_proposals(
             holder.result, db, scope.id, current_children_ids
         )
+        proposed_ids = [p.id for p in proposed_pages]
         log.info(
             "scope_subquestion_linker: %d proposal(s) survived validation",
             len(proposed_ids),
         )
 
-        proposed_pages = await db.get_pages_by_ids(proposed_ids)
         proposed = [
-            ProposedSubquestion(
-                id=pid,
-                headline=proposed_pages[pid].headline if pid in proposed_pages else "",
-            )
-            for pid in proposed_ids
+            ProposedSubquestion(id=p.id, headline=p.headline) for p in proposed_pages
         ]
         await trace.record(LinkSubquestionsCompleteEvent(proposed=proposed))
 
@@ -181,32 +179,47 @@ async def _validate_proposals(
     db: DB,
     scope_id: str,
     current_children_ids: set[str],
-) -> list[str]:
+) -> list[Page]:
     """Apply semantic validation to a schema-validated LinkerResult.
 
     Drops ids that point at the scope itself, are already children, are not
-    questions, or are unknown. Returns deduped full UUIDs in submission order.
+    questions, or are unknown. Returns deduped Pages in submission order.
+    Issues at most a constant number of DB round trips regardless of how
+    many ids the agent submits.
     """
-    proposed_ids: list[str] = []
+    cleaned_ids = [raw.strip() for raw in result.question_ids if raw.strip()]
+    if not cleaned_ids:
+        return []
+
+    resolved_map = await db.resolve_page_ids(cleaned_ids)
+
+    ordered_resolved: list[str] = []
     seen: set[str] = set()
-    for raw_id in result.question_ids:
-        cleaned = raw_id.strip()
-        resolved = await db.resolve_page_id(cleaned)
+    for raw in cleaned_ids:
+        resolved = resolved_map.get(raw)
         if resolved is None:
-            log.info("dropping %s: not found", cleaned)
+            log.info("dropping %s: not found", raw)
             continue
         if resolved == scope_id:
-            log.info("dropping %s: is scope itself", cleaned)
+            log.info("dropping %s: is scope itself", raw)
             continue
         if resolved in current_children_ids:
-            log.info("dropping %s: already a child of scope", cleaned)
+            log.info("dropping %s: already a child of scope", raw)
             continue
         if resolved in seen:
             continue
-        page = await db.get_page(resolved)
-        if page is None or page.page_type != PageType.QUESTION:
-            log.info("dropping %s: not a question", cleaned)
-            continue
-        proposed_ids.append(resolved)
         seen.add(resolved)
-    return proposed_ids
+        ordered_resolved.append(resolved)
+
+    if not ordered_resolved:
+        return []
+
+    pages_by_id = await db.get_pages_by_ids(ordered_resolved)
+    proposed: list[Page] = []
+    for resolved in ordered_resolved:
+        page = pages_by_id.get(resolved)
+        if page is None or page.page_type != PageType.QUESTION:
+            log.info("dropping %s: not a question", resolved)
+            continue
+        proposed.append(page)
+    return proposed

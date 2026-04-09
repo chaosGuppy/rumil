@@ -54,7 +54,7 @@ async def select_seed_questions(
 
     candidate_lines = [f"{c.id[:8]}: {c.headline}" for c in candidates]
     user_message = (
-        f"Scope question:\n"
+        "Scope question:\n"
         f"  `{scope.id[:8]}` -- {scope.headline}\n\n"
         f"{scope.content or scope.abstract}\n\n"
         f"Candidate top-level questions ({len(candidates)} total). "

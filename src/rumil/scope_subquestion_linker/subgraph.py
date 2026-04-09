@@ -62,16 +62,25 @@ async def render_question_subgraph(
             ]
             child_ids = [l.to_page_id for l in child_links]
             parent_child_links[parent_id] = child_ids
-            if depth == max_depth:
-                continue
             for cid in child_ids:
                 if cid not in visited:
                     next_ids.add(cid)
 
-        if depth == max_depth or not next_ids:
+        if depth == max_depth:
+            # Hit the depth horizon: record any children as overflow so the
+            # parent shows a "(N more sub-Q(s) not shown -- horizon)" note.
             for parent_id, child_ids in parent_child_links.items():
                 if child_ids:
                     overflow_by_parent[parent_id] = len(child_ids)
+            break
+
+        if not next_ids:
+            # No new pages to load this level: every child is already
+            # visited (diamond/back-edge in the DAG). Render them as
+            # leaves under their parents -- they're not horizon overflow
+            # because they appear elsewhere in the tree.
+            for parent_id, child_ids in parent_child_links.items():
+                children_by_parent[parent_id] = child_ids
             break
 
         fetched = await db.get_pages_by_ids(list(next_ids))

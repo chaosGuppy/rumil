@@ -483,6 +483,64 @@ class DB:
         await self.apply_epistemic_overrides(pages)
         return {p.id: p for p in pages}
 
+    async def resolve_page_ids(
+        self, page_ids: Sequence[str]
+    ) -> dict[str, str]:
+        """Batch-resolve a mix of full UUIDs and 8-char short IDs.
+
+        Returns a mapping from each input id to its resolved full UUID,
+        omitting inputs that can't be resolved (not found, or ambiguous
+        short prefix). At most two queries are issued regardless of
+        input size: one for full-id matches, one for short-id prefix
+        matches.
+        """
+        if not page_ids:
+            return {}
+        cleaned: list[str] = [pid.strip() for pid in page_ids if pid and pid.strip()]
+        full_ids = [pid for pid in cleaned if len(pid) > 8]
+        short_ids = [pid for pid in cleaned if len(pid) <= 8]
+
+        resolved: dict[str, str] = {}
+
+        if full_ids:
+            rows = _rows(
+                await self._execute(
+                    self.client.table("pages")
+                    .select("id")
+                    .in_("id", list(set(full_ids)))
+                )
+            )
+            existing = {r["id"] for r in rows}
+            for pid in full_ids:
+                if pid in existing:
+                    resolved[pid] = pid
+
+        if short_ids:
+            unique_short = list({pid for pid in short_ids})
+            or_clause = ",".join(f"id.like.{p}%" for p in unique_short)
+            rows = _rows(
+                await self._execute(
+                    self.client.table("pages")
+                    .select("id")
+                    .or_(or_clause)
+                )
+            )
+            matches_by_prefix: dict[str, list[str]] = {p: [] for p in unique_short}
+            for r in rows:
+                full = r["id"]
+                for p in unique_short:
+                    if full.startswith(p):
+                        matches_by_prefix[p].append(full)
+            for pid in short_ids:
+                hits = matches_by_prefix.get(pid, [])
+                if len(hits) == 1:
+                    resolved[pid] = hits[0]
+                elif len(hits) > 1:
+                    log.warning(
+                        "Ambiguous short ID '%s' matches %d pages", pid, len(hits)
+                    )
+        return resolved
+
     async def resolve_page_id(self, page_id: str) -> str | None:
         """Resolve a page ID to a full UUID. Handles both full UUIDs and
         8-char short IDs. Returns the full UUID if found, or None."""

@@ -43,6 +43,7 @@ from rumil.models import (
     LinkType,
     Workspace,
 )
+from rumil.constants import MIN_TWOPHASE_BUDGET
 from rumil.orchestrators import Orchestrator
 from rumil.settings import get_settings
 from rumil.sources import create_source_page, run_ingest_calls
@@ -159,7 +160,7 @@ CONTINUATION_HELP_TEXT = (
     "\n"
     "Commands:\n"
     "  /add <question text>               Add a sub-question for later investigation\n"
-    "  /investigate <question text>       Add and immediately investigate (default budget: 3)\n"
+    "  /investigate <question text>       Add and immediately investigate (default budget: 4)\n"
     "  /done or /continue                 End chat and resume investigation\n"
     "  /exit                              Cancel without continuing\n"
     "  /help or help                      Show this message\n"
@@ -169,12 +170,12 @@ READONLY_HELP_TEXT = (
     "\n"
     "Commands:\n"
     "  /add <question text>               Add a sub-question for later investigation\n"
-    "  /investigate <question text>       Add and immediately investigate (default budget: 3)\n"
+    "  /investigate <question text>       Add and immediately investigate (default budget: 4)\n"
     "  /exit                              End the chat\n"
     "  /help or help                      Show this message\n"
 )
 
-DEFAULT_INVESTIGATE_BUDGET = 3
+DEFAULT_INVESTIGATE_BUDGET = MIN_TWOPHASE_BUDGET
 
 
 def _load_prompt(name: str) -> str:
@@ -250,8 +251,13 @@ async def _default_slash_handler(
         page_id = await _add_question(question_text, scope_question_id, db)
         await io.send_system(f"\n  Question added: {page_id}")
         await io.send_system(f"  Investigating with budget {effective_budget}...\n")
-        await db.add_budget(effective_budget)
-        await Orchestrator(db).run(page_id)
+        await db.init_budget(effective_budget)
+        try:
+            await Orchestrator(db).run(page_id)
+        except Exception as e:
+            log.error("Investigation failed: %s", e, exc_info=True)
+            await io.send_system(f"\n  Investigation failed: {e}")
+            return True
         total, used = await db.get_budget()
         await io.send_system(f"\n  Investigation complete. Budget used: {used}/{total}")
         return True

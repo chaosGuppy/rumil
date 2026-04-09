@@ -15,10 +15,18 @@ _DEPENDS_ON_TYPES = (PageType.CLAIM, PageType.JUDGEMENT)
 
 class LinkDependsOnPayload(BaseModel):
     dependent_page_id: str = Field(
-        description="Page ID of the page that depends on another (or LAST_CREATED)"
+        description=(
+            "Page ID of the page that depends on another (or LAST_CREATED). "
+            "Must be a claim or judgement."
+        )
     )
     dependency_page_id: str = Field(
-        description="Page ID of the load-bearing page being depended on"
+        description=(
+            "Page ID of the load-bearing page being depended on. Must be a "
+            "claim or judgement — never a question. If you mean 'depends on "
+            "the answer to this question', point at the question's current "
+            "judgement instead."
+        )
     )
     strength: float = Field(
         3.0,
@@ -97,10 +105,14 @@ MOVE = MoveDef(
     move_type=MoveType.LINK_DEPENDS_ON,
     name="link_depends_on",
     description=(
-        "Declare that a page depends on another page being true or valid. "
-        "Use after creating a claim that builds on another claim, or after "
-        "creating a judgement to record which considerations were most "
-        "load-bearing for the conclusion."
+        "Declare that a claim or judgement depends on another claim or "
+        "judgement being true or valid. Both endpoints must be a claim or "
+        "judgement — questions are never valid endpoints. If a claim or "
+        "judgement depends on the answer to a question, point at that "
+        "question's current judgement instead. Use after creating a claim "
+        "that builds on another claim, or after creating a judgement to "
+        "record which considerations were most load-bearing for the "
+        "conclusion."
     ),
     schema=LinkDependsOnPayload,
     execute=execute,

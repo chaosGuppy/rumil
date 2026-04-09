@@ -7,6 +7,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from rumil.database import DB
+from rumil.settings import get_settings
 from rumil.llm import LLMExchangeMetadata, build_user_message, structured_call
 from rumil.models import (
     Call,
@@ -296,7 +297,7 @@ async def summarize_question(
             abstract=data.abstract,
             credence=5,
             robustness=2,
-            provenance_model="claude-sonnet-4-6",
+            provenance_model=get_settings().model,
             provenance_call_type=CallType.SUMMARIZE.value,
             provenance_call_id=call.id,
         )

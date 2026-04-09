@@ -225,7 +225,7 @@ def _make_investigation_tools(
                 workspace=ws,
                 content=content or headline,
                 headline=headline,
-                provenance_model="claude-opus-4-6",
+                provenance_model=get_settings().model,
                 provenance_call_type=call.call_type.value,
                 provenance_call_id=call.id,
                 project_id=proj_id,

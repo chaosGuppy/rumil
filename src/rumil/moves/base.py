@@ -10,6 +10,7 @@ import re
 from pydantic import BaseModel, Field
 
 from rumil.database import DB
+from rumil.settings import get_settings
 from rumil.embeddings import embed_and_store_page
 from rumil.llm import Tool
 from rumil.models import (
@@ -339,7 +340,7 @@ async def create_page(
         credence=None if page_type == PageType.QUESTION else payload.credence,
         robustness=None if page_type == PageType.QUESTION else payload.robustness,
         fruit_remaining=fruit_remaining,
-        provenance_model="claude-opus-4-6",
+        provenance_model=get_settings().model,
         provenance_call_type=call.call_type.value,
         provenance_call_id=call.id,
         extra=extra,

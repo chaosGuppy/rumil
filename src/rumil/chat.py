@@ -12,8 +12,10 @@ import json
 import logging
 import os
 import re
+import sys
 import tempfile
 from collections.abc import Awaitable, Callable, Sequence
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -55,6 +57,41 @@ _RESET = "\033[0m"
 _HUMAN = "\033[38;2;255;240;210m"  # warm cream
 _AI = "\033[38;2;210;230;255m"  # cool blue-white
 _DIM = "\033[38;2;150;150;150m"  # for system messages
+
+
+_SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+
+@asynccontextmanager
+async def _spinner(label: str = "Thinking"):
+    """Async context manager that shows an animated spinner on the current line."""
+    stop = asyncio.Event()
+    is_tty = sys.stdout.isatty()
+
+    async def _animate() -> None:
+        i = 0
+        while not stop.is_set():
+            frame = _SPINNER_FRAMES[i % len(_SPINNER_FRAMES)]
+            sys.stdout.write(f"\r{_DIM}{frame} {label}...{_RESET}")
+            sys.stdout.flush()
+            i += 1
+            try:
+                await asyncio.wait_for(stop.wait(), timeout=0.08)
+            except asyncio.TimeoutError:
+                pass
+        sys.stdout.write("\r\033[2K")
+        sys.stdout.flush()
+
+    if not is_tty:
+        yield
+        return
+
+    task = asyncio.create_task(_animate())
+    try:
+        yield
+    finally:
+        stop.set()
+        await task
 
 
 def _enable_ansi_windows() -> None:
@@ -424,15 +461,18 @@ async def _chat_loop(
         try:
             # Inner tool loop: keep calling API until no more tool use
             messages = list(history)
+            round_num = 0
             while True:
-                api_resp = await call_api(
-                    client,
-                    model,
-                    system_prompt,
-                    messages,
-                    tools=tool_defs or None,
-                    cache=True,
-                )
+                label = "Thinking" if round_num == 0 else "Searching"
+                async with _spinner(label):
+                    api_resp = await call_api(
+                        client,
+                        model,
+                        system_prompt,
+                        messages,
+                        tools=tool_defs or None,
+                        cache=True,
+                    )
 
                 response = api_resp.message
                 text_parts: list[str] = []
@@ -456,11 +496,11 @@ async def _chat_loop(
                     messages.append({"role": "user", "content": tool_results})
 
                     if text_parts:
-                        # Show intermediate text to user
                         await io.send_system("  " + " ".join(text_parts))
 
                     if response.stop_reason == "end_turn":
                         break
+                    round_num += 1
                 else:
                     # No tool use — display response and break
                     response_text = "\n".join(text_parts)

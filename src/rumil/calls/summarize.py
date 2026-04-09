@@ -41,11 +41,7 @@ TASK = (
     "best answer or stance, and the main caveat. Must make sense with zero prior context.\n\n"
     "ABSTRACT (~200 words): Fully self-contained. Include the core conclusion, "
     "key supporting and opposing considerations, the status of child questions, and "
-    "critical uncertainties. Preserve epistemic qualifications.\n\n"
-    "Format your response exactly as:\n"
-    "CONTENT: <text>\n\n"
-    "HEADLINE: <text>\n\n"
-    "ABSTRACT: <text>"
+    "critical uncertainties. Preserve epistemic qualifications."
 )
 
 

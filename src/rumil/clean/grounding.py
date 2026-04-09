@@ -500,22 +500,22 @@ async def _build_identification_user_message(
             f'<claim_findings index="{i}" claim="{task.claim}">\n'
             f"Search task: {task.search_task}\n\n"
             f"{task_findings}\n"
-            f"</claim_findings>"
+            "</claim_findings>"
         )
     findings_text = "\n\n".join(findings_text_parts)
 
     return (
-        f"<briefing>\n"
-        f"The following briefing was prepared from an evaluation of the "
-        f"workspace's evidential grounding. It identifies claims with "
-        f"grounding issues and lists the relevant workspace page IDs.\n\n"
+        "<briefing>\n"
+        "The following briefing was prepared from an evaluation of the "
+        "workspace's evidential grounding. It identifies claims with "
+        "grounding issues and lists the relevant workspace page IDs.\n\n"
         f"{briefing}\n"
-        f"</briefing>\n\n"
-        f"<web_research_findings>\n"
-        f"Web research agents investigated the issues outlined in the "
-        f"briefing above. Here is what they found.\n\n"
+        "</briefing>\n\n"
+        "<web_research_findings>\n"
+        "Web research agents investigated the issues outlined in the "
+        "briefing above. Here is what they found.\n\n"
         f"{findings_text}\n"
-        f"</web_research_findings>"
+        "</web_research_findings>"
     )
 
 

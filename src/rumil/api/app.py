@@ -4,6 +4,8 @@ FastAPI application for the Rumil research workspace.
 Read-only API for browsing projects, pages, links, and calls.
 """
 
+import asyncio
+import base64
 import logging
 import os
 import secrets
@@ -14,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import TypeAdapter, ValidationError
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from rumil.database import DB, _row_to_call
+from rumil.database import DB, _row_to_call, _rows
 from rumil.models import Call, Page, PageLink, PageType, Project, Workspace
 from rumil.settings import get_settings
 from rumil.api.schemas import (
@@ -55,8 +57,6 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):  # type: ignore[override]
         if request.url.path == "/healthz" or not _AUTH_PASSWORD:
             return await call_next(request)
-
-        import base64
 
         auth = request.headers.get("Authorization", "")
         if auth.startswith("Basic "):
@@ -114,9 +114,6 @@ async def _get_db_maybe_staged(
     return await _get_db(project_id)
 
 
-# --- Projects ---
-
-
 @app.get("/api/projects", response_model=list[Project])
 async def list_projects():
     db = await _get_db()
@@ -125,7 +122,6 @@ async def list_projects():
 
 @app.get("/api/projects/{project_id}", response_model=Project)
 async def get_project(project_id: str):
-    from rumil.database import _rows
 
     db = await _get_db(project_id)
     rows = _rows(
@@ -141,9 +137,6 @@ async def get_project(project_id: str):
 async def list_project_runs(project_id: str):
     db = await _get_db(project_id)
     return await db.list_runs_for_project(project_id)
-
-
-# --- Pages ---
 
 
 @app.get("/api/projects/{project_id}/pages", response_model=PaginatedPagesOut)
@@ -255,9 +248,6 @@ async def get_page_counts(page_id: str):
     return PageCountsOut(**counts)
 
 
-# --- Questions ---
-
-
 @app.get(
     "/api/projects/{project_id}/questions",
     response_model=list[Page],
@@ -268,9 +258,6 @@ async def list_root_questions(
 ):
     db = await _get_db(project_id)
     return await db.get_root_questions(workspace)
-
-
-# --- Calls ---
 
 
 @app.get(
@@ -284,7 +271,6 @@ async def list_calls(
     db = await _get_db(project_id)
     if question_id:
         return await db.get_root_calls_for_question(question_id)
-    from rumil.database import _rows
 
     rows = _rows(
         await db.client.table("calls")
@@ -316,29 +302,39 @@ async def _build_call_trace(db: DB, call_id: str) -> CallTraceOut:
     call = await db.get_call(call_id)
     if not call:
         raise HTTPException(status_code=404, detail="Call not found")
-    events = await _parse_trace_events(db, call_id)
+    events, children, db_sequences = await asyncio.gather(
+        _parse_trace_events(db, call_id),
+        db.get_child_calls(call_id),
+        db.get_sequences_for_call(call_id),
+    )
     scope_page_summary = None
     if call.scope_page_id:
         scope_page = await db.get_page(call.scope_page_id)
         if scope_page:
             scope_page_summary = scope_page.headline
-    children = await db.get_child_calls(call_id)
-    child_traces = [await _build_call_trace(db, c.id) for c in children]
+    child_traces = list(
+        await asyncio.gather(*[_build_call_trace(db, c.id) for c in children])
+    )
 
     sequences_out: list[CallSequenceOut] | None = None
-    db_sequences = await db.get_sequences_for_call(call_id)
     if db_sequences:
-        sequences_out = []
-        for seq in db_sequences:
-            seq_calls = await db.get_calls_for_sequence(seq.id)
-            seq_traces = [await _build_call_trace(db, sc.id) for sc in seq_calls]
-            sequences_out.append(
-                CallSequenceOut(
-                    id=seq.id,
-                    position_in_batch=seq.position_in_batch,
-                    calls=seq_traces,
-                )
+        seq_call_lists = await asyncio.gather(
+            *[db.get_calls_for_sequence(seq.id) for seq in db_sequences]
+        )
+        seq_trace_lists = await asyncio.gather(
+            *[
+                asyncio.gather(*[_build_call_trace(db, sc.id) for sc in seq_calls])
+                for seq_calls in seq_call_lists
+            ]
+        )
+        sequences_out = [
+            CallSequenceOut(
+                id=seq.id,
+                position_in_batch=seq.position_in_batch,
+                calls=list(seq_traces),
             )
+            for seq, seq_traces in zip(db_sequences, seq_trace_lists)
+        ]
 
     child_costs = [ct.cost_usd for ct in child_traces if ct.cost_usd is not None]
     total = (call.cost_usd or 0) + sum(child_costs)
@@ -430,7 +426,6 @@ async def get_call_events(call_id: str):
 @app.get("/api/ab-runs/{ab_run_id}/trace", response_model=ABRunTraceOut)
 async def get_ab_run_trace(ab_run_id: str):
     db = await _get_db()
-    from rumil.database import _rows
 
     ab_rows = _rows(
         await db.client.table("ab_runs").select("*").eq("id", ab_run_id).execute()
@@ -449,8 +444,8 @@ async def get_ab_run_trace(ab_run_id: str):
     qid = ab_row.get("question_id")
     if qid:
         question_page = await db.get_page(qid)
-    arms = []
-    for arm_row in arm_rows:
+
+    async def _build_arm(arm_row: dict) -> ABRunArmOut:
         run_id = arm_row["id"]
         question_id = await db.get_run_question_id(run_id)
         q_page = None
@@ -458,7 +453,9 @@ async def get_ab_run_trace(ab_run_id: str):
             q_page = await db.get_page(question_id)
         calls = await db.get_calls_for_run(run_id)
         root_calls = [c for c in calls if c.parent_call_id is None]
-        root_traces = [await _build_call_trace(db, c.id) for c in root_calls]
+        root_traces = list(
+            await asyncio.gather(*[_build_call_trace(db, c.id) for c in root_calls])
+        )
         run_costs = [ct.cost_usd for ct in root_traces if ct.cost_usd is not None]
         run_total = sum(run_costs)
         trace = RunTraceOut(
@@ -467,14 +464,14 @@ async def get_ab_run_trace(ab_run_id: str):
             root_calls=root_traces,
             cost_usd=run_total if run_total > 0 else None,
         )
-        arms.append(
-            ABRunArmOut(
-                run_id=run_id,
-                name=arm_row.get("name", ""),
-                config=arm_row.get("config", {}),
-                trace=trace,
-            )
+        return ABRunArmOut(
+            run_id=run_id,
+            name=arm_row.get("name", ""),
+            config=arm_row.get("config", {}),
+            trace=trace,
         )
+
+    arms = list(await asyncio.gather(*[_build_arm(arm_row) for arm_row in arm_rows]))
     return ABRunTraceOut(
         ab_run_id=ab_run_id,
         name=ab_row.get("name", ""),

@@ -3,6 +3,7 @@ Source file reading, summarisation, and ingestion helpers.
 """
 
 import logging
+from collections.abc import Sequence
 from pathlib import Path
 
 from rumil.database import DB
@@ -139,7 +140,9 @@ async def _create_source_page_from_url(url: str, db: DB) -> Page | None:
     return page
 
 
-async def run_ingest_calls(source_pages: list[Page], question_id: str, db: DB) -> int:
+async def run_ingest_calls(
+    source_pages: Sequence[Page], question_id: str, db: DB
+) -> int:
     """Run ingest extraction calls for each source against a question. Returns calls made."""
     made = 0
     for source_page in source_pages:

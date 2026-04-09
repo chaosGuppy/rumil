@@ -547,17 +547,17 @@ async def format_page(
                 )
             return (
                 f'{original}\n\n'
-                f'> **SUPERSEDED** — this page has been replaced by'
+                '> **SUPERSEDED** — this page has been replaced by'
                 f' `{replacement.id[:8]}` ({replacement.headline}).'
-                f' Current version:\n\n'
+                ' Current version:\n\n'
                 f'{replacement_text}'
             )
         if detail == PageDetail.HEADLINE:
             return f'[SUPERSEDED] {original}'
         return (
             f'{original}\n\n'
-            f'> **SUPERSEDED** — this page has been replaced'
-            f' (replacement not found).'
+            '> **SUPERSEDED** — this page has been replaced'
+            ' (replacement not found).'
         )
 
     if detail != PageDetail.HEADLINE and not page.content and db:
@@ -611,10 +611,13 @@ async def format_page(
             linked_items.append((line, j))
 
         children = await source.get_child_questions(page.id)
+        child_judgements = await source.get_judgements_for_questions(
+            [child.id for child in children if child.id not in _exclude]
+        )
         for child in children:
             if child.id in _exclude:
                 continue
-            for j in await source.get_judgements_for_question(child.id):
+            for j in child_judgements.get(child.id, []):
                 if j.id in _exclude:
                     continue
                 line = (
@@ -749,8 +752,11 @@ async def format_question_for_find_considerations(
         all_con_items.append((await format_page(j, PageDetail.HEADLINE), j))
 
     children = await source.get_child_questions(question_id)
+    child_judgements = await source.get_judgements_for_questions(
+        [c.id for c in children]
+    )
     for child in children:
-        for j in await source.get_judgements_for_question(child.id):
+        for j in child_judgements.get(child.id, []):
             loaded_ids.append(j.id)
             line = (
                 f"*On sub-question: {child.headline} (`{child.id}`)*\n"
@@ -1049,10 +1055,8 @@ async def build_embedding_based_context(
 
     if require_judgement_for_questions:
         question_ids = [p.id for p, _ in ranked if p.page_type == PageType.QUESTION]
-        has_judgement: set[str] = set()
-        for qid in question_ids:
-            if await db.get_judgements_for_question(qid):
-                has_judgement.add(qid)
+        judgements_by_qid = await db.get_judgements_for_questions(question_ids)
+        has_judgement = {qid for qid, js in judgements_by_qid.items() if js}
         ranked = [
             (p, s) for p, s in ranked
             if p.page_type != PageType.QUESTION or p.id in has_judgement

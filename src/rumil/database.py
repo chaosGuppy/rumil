@@ -387,8 +387,6 @@ class DB:
             for r in rows
         ]
 
-    # --- Pages ---
-
     async def save_page(self, page: Page) -> None:
         log.debug(
             "save_page: id=%s, type=%s, headline=%s",
@@ -847,8 +845,6 @@ class DB:
 
         return result
 
-    # --- Links ---
-
     async def save_link(self, link: PageLink) -> None:
         log.debug(
             "save_link: %s -> %s, type=%s",
@@ -916,6 +912,31 @@ class DB:
         applied = await self._apply_link_events(all_links)
         for link in applied:
             result.setdefault(link.from_page_id, []).append(link)
+        return result
+
+    async def get_links_to_many(
+        self, page_ids: Sequence[str],
+    ) -> dict[str, list[PageLink]]:
+        """Bulk-fetch incoming links for many pages. Returns {page_id: [links]}."""
+        result: dict[str, list[PageLink]] = {pid: [] for pid in page_ids}
+        if not page_ids:
+            return result
+        id_list = list(dict.fromkeys(page_ids))
+        batch_size = 200
+        all_links: list[PageLink] = []
+        for start in range(0, len(id_list), batch_size):
+            batch = id_list[start:start + batch_size]
+            query = (
+                self.client.table("page_links")
+                .select("*")
+                .in_("to_page_id", batch)
+            )
+            query = self._staged_filter(query)
+            rows = _rows(await self._execute(query))
+            all_links.extend(_row_to_link(r) for r in rows)
+        applied = await self._apply_link_events(all_links)
+        for link in applied:
+            result.setdefault(link.to_page_id, []).append(link)
         return result
 
     async def get_latest_summary_for_question(self, question_id: str) -> "Page | None":
@@ -1141,8 +1162,6 @@ class DB:
             return payload.get("change_magnitude")
         return None
 
-    # --- Calls ---
-
     async def create_call(
         self,
         call_type: CallType,
@@ -1253,8 +1272,6 @@ class DB:
                 {"call_id": call_id, "amount": amount},
             )
         )
-
-    # --- Per-run budget ---
 
     async def init_budget(self, total: int) -> None:
         await self._execute(
@@ -1483,9 +1500,7 @@ class DB:
             out.setdefault(row["source_id"], []).append(row["question_id"])
         return out
 
-    # --- Traces ---
-
-    async def save_call_trace(self, call_id: str, events: list[dict]) -> None:
+    async def save_call_trace(self, call_id: str, events: Sequence[dict]) -> None:
         """Append trace events to the call's trace_json column."""
         await self._execute(
             self.client.rpc(
@@ -1825,7 +1840,7 @@ class DB:
         system_prompt: str | None,
         user_message: str | None,
         response_text: str | None,
-        tool_calls: list[dict] | None = None,
+        tool_calls: Sequence[dict] | None = None,
         input_tokens: int | None = None,
         output_tokens: int | None = None,
         error: str | None = None,
@@ -1833,7 +1848,7 @@ class DB:
         round_num: int | None = None,
         cache_creation_input_tokens: int | None = None,
         cache_read_input_tokens: int | None = None,
-        user_messages: list[dict] | None = None,
+        user_messages: Sequence[dict] | None = None,
     ) -> str:
         exchange_id = str(uuid.uuid4())
         row: dict[str, Any] = {

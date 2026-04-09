@@ -18,16 +18,29 @@ import sys
 import uuid
 from pathlib import Path
 
-from rumil.database import DB
-from rumil.models import Call, Page, PageLayer, PageLink, PageType, LinkType, Workspace
+from rumil.chat import run_chat, run_continuation_chat, run_scoping_chat
+from rumil.clean import run_feedback_update, run_grounding_feedback
 from rumil.constants import MIN_TWOPHASE_BUDGET
-from rumil.orchestrators import Orchestrator, create_root_question, run_concept_session
-from rumil.sources import create_source_page, run_ingest_calls
-from rumil.chat import run_chat, run_scoping_chat, run_continuation_chat
+from rumil.database import DB
+from rumil.evaluate.runner import run_evaluation
 from rumil.mapper import generate_map
-from rumil.summary import generate_summary, save_summary
+from rumil.models import (
+    Call,
+    CallStatus,
+    CallType,
+    LinkType,
+    Page,
+    PageLayer,
+    PageLink,
+    PageType,
+    Workspace,
+)
+from rumil.orchestrators import Orchestrator, create_root_question, run_concept_session
 from rumil.report import generate_report, save_report
-from rumil.settings import Settings, get_settings, _settings_var
+from rumil.scope_subquestion_linker import run_scope_subquestion_linker
+from rumil.settings import Settings, _settings_var, get_settings
+from rumil.sources import create_source_page, run_ingest_calls
+from rumil.summary import generate_summary, save_summary
 
 PAGES_DIR = Path(__file__).parent / "pages"
 
@@ -185,7 +198,6 @@ async def cmd_link_subquestions(
     *,
     max_rounds: int | None = None,
 ) -> None:
-    from rumil.scope_subquestion_linker import run_scope_subquestion_linker
 
     resolved = await db.resolve_page_id(question_id)
     if not resolved:
@@ -215,7 +227,6 @@ async def cmd_link_subquestions(
 
 
 async def cmd_evaluate(question_id: str, db: DB, *, eval_type: str = "default") -> None:
-    from rumil.evaluate.runner import run_evaluation
 
     question = await db.get_page(question_id)
     if not question:
@@ -251,9 +262,6 @@ def _print_evaluation(call: Call) -> None:
 
 
 async def cmd_ground(eval_call_id: str, db: DB, *, from_stage: int = 1) -> None:
-    from rumil.clean import run_grounding_feedback
-    from rumil.models import CallStatus, CallType
-
     resolved_id = await db.resolve_call_id(eval_call_id)
     if not resolved_id:
         print(f"Error: call '{eval_call_id}' not found.")
@@ -325,9 +333,6 @@ async def cmd_ground(eval_call_id: str, db: DB, *, from_stage: int = 1) -> None:
 async def cmd_feedback_update(
     eval_call_id: str, db: DB, *, investigation_budget: int | None = None
 ) -> None:
-    from rumil.clean import run_feedback_update
-    from rumil.models import CallStatus, CallType
-
     resolved_id = await db.resolve_call_id(eval_call_id)
     if not resolved_id:
         print(f"Error: call '{eval_call_id}' not found.")
@@ -396,7 +401,6 @@ async def cmd_feedback_update_from_file(
     *,
     investigation_budget: int | None = None,
 ) -> None:
-    from rumil.clean import run_feedback_update
 
     path = Path(file_path)
     if not path.is_file():
@@ -447,7 +451,6 @@ async def cmd_feedback_update_from_file(
 
 async def _load_prior_checkpoints(question_id: str, from_stage: int, db: DB) -> dict:
     """Find the most recent grounding call for *question_id* and return its checkpoints."""
-    from rumil.models import CallType
 
     rows = await db._execute(
         db.client.table("calls")
@@ -485,7 +488,6 @@ async def _load_prior_checkpoints(question_id: str, from_stage: int, db: DB) -> 
 
 
 async def cmd_show_evaluation(call_id: str, db: DB) -> None:
-    from rumil.models import CallType
 
     call = await db.get_call(call_id)
     if not call:

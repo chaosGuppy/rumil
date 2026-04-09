@@ -206,9 +206,9 @@ def _make_investigation_tools(
                             "type": "text",
                             "text": (
                                 f"Rejected: requested budget {budget} exceeds "
-                                f"remaining investigation budget of "
+                                "remaining investigation budget of "
                                 f"{budget_remaining}. "
-                                f"Use a smaller budget or skip this investigation."
+                                "Use a smaller budget or skip this investigation."
                             ),
                         }
                     ]
@@ -279,8 +279,8 @@ def _make_investigation_tools(
                         f'"{display_headline}" (budget {budget}). '
                         f"Remaining investigation budget: {budget_remaining}. "
                         f"{len(pending)} investigation(s) now running in the "
-                        f"background. Call collect_investigations when you are "
-                        f"done dispatching to wait for results."
+                        "background. Call collect_investigations when you are "
+                        "done dispatching to wait for results."
                     ),
                 }
             ]
@@ -493,7 +493,7 @@ async def run_feedback_update(
         log.info("Stage 3 complete")
 
         call.result_summary = (
-            f"Feedback update complete: "
+            "Feedback update complete: "
             f"{total_ops} propagation operations executed "
             f"in {len(plan.waves)} waves."
         )

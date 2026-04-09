@@ -158,6 +158,21 @@ class PageGraph:
                 result.append(page)
         return result
 
+    async def get_judgements_for_questions(
+        self,
+        question_ids: Sequence[str],
+    ) -> dict[str, list[Page]]:
+        """Bulk variant of get_judgements_for_question for many questions."""
+        result: dict[str, list[Page]] = {qid: [] for qid in question_ids}
+        for qid in question_ids:
+            for link in self._links_to.get(qid, []):
+                if link.link_type != LinkType.RELATED:
+                    continue
+                page = self._pages.get(link.from_page_id)
+                if page and page.is_active() and page.page_type == PageType.JUDGEMENT:
+                    result[qid].append(page)
+        return result
+
     async def get_parent_question(self, question_id: str) -> Page | None:
         """Return the parent question, or None if this is a root question."""
         for link in self._links_to.get(question_id, []):

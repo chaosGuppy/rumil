@@ -6,6 +6,7 @@ from rumil.calls.common import RunCallResult, run_call
 from rumil.calls.prioritization import run_prioritization_call
 from rumil.models import CallType, LinkType, MoveType, PageType
 from rumil.moves.base import MoveState
+from rumil.moves.registry import MOVES
 
 
 @pytest.mark.llm
@@ -40,7 +41,7 @@ async def test_scout_run_call(tmp_db, question_page, scout_call):
 async def test_prioritization_produces_dispatches(tmp_db, question_page, prioritization_call):
     """A prioritization call should produce at least one dispatch."""
     context = (
-        f"## Questions\n\n"
+        "## Questions\n\n"
         f"- `{question_page.id[:8]}`: {question_page.headline} (0 considerations)\n"
     )
     task = (
@@ -65,7 +66,6 @@ async def test_available_moves_restricts_tools(tmp_db, scout_call):
     """When available_moves is restricted, only those move types are bound."""
     allowed = [MoveType.CREATE_CLAIM, MoveType.LOAD_PAGE]
     state = MoveState(scout_call, tmp_db)
-    from rumil.moves.registry import MOVES
 
     tools = [MOVES[mt].bind(state) for mt in allowed]
 
@@ -78,7 +78,7 @@ async def test_available_moves_restricts_tools(tmp_db, scout_call):
 async def test_create_claim_with_inline_links(tmp_db, question_page, scout_call):
     """The LLM should create a claim linked as a consideration in a single tool call."""
     working_context = (
-        f"## Question\n\n"
+        "## Question\n\n"
         f"ID: `{question_page.id[:8]}`\n\n"
         f"{question_page.content}\n"
     )
@@ -117,7 +117,7 @@ async def test_create_claim_with_inline_links(tmp_db, question_page, scout_call)
 async def test_create_question_with_inline_links(tmp_db, question_page, scout_call):
     """The LLM should create a sub-question linked to its parent in a single tool call."""
     working_context = (
-        f"## Question\n\n"
+        "## Question\n\n"
         f"ID: `{question_page.id[:8]}`\n\n"
         f"{question_page.content}\n"
     )
@@ -156,7 +156,7 @@ async def test_create_question_with_inline_links(tmp_db, question_page, scout_ca
 async def test_create_judgement_with_inline_links(tmp_db, question_page, scout_call):
     """The LLM should create a judgement auto-linked to the scope question."""
     working_context = (
-        f"## Question\n\n"
+        "## Question\n\n"
         f"ID: `{question_page.id[:8]}`\n\n"
         f"{question_page.content}\n"
     )
@@ -196,7 +196,7 @@ async def test_create_subquestion_with_inline_dispatches(
 ):
     """Prioritization should create subquestions with inline dispatches."""
     context = (
-        f"## Questions\n\n"
+        "## Questions\n\n"
         f"- `{question_page.id[:8]}`: {question_page.headline} (0 considerations)\n"
     )
     task = (

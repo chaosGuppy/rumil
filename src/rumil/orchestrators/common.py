@@ -208,11 +208,11 @@ def _split_into_batches(n: int, max_per_batch: int) -> list[int]:
     return [base + (1 if i < extra else 0) for i in range(n_batches)]
 
 
-async def _build_item_block(
+def _build_item_block(
     item: Page,
     index: int,
     total: int,
-    graph: PageGraph,
+    judgements_by_id: dict[str, list[Page]],
 ) -> str:
     """Build the text block describing a single item for the scorer."""
     parts = [
@@ -223,7 +223,7 @@ async def _build_item_block(
     if item.abstract:
         parts.append(f"\nAbstract:\n{item.abstract}")
 
-    judgements = await graph.get_judgements_for_question(item.id)
+    judgements = judgements_by_id.get(item.id, [])
     if judgements:
         latest_j = max(judgements, key=lambda j: j.created_at)
         parts.append(
@@ -247,7 +247,6 @@ async def score_items_sequentially(
     parent_page: Page,
     parent_judgement: Page | None,
     items: Sequence[Page],
-    graph: PageGraph,
     system_prompt_name: str,
     response_model: type[BaseModel],
     call_id: str,
@@ -258,6 +257,10 @@ async def score_items_sequentially(
     Items are split into balanced batches of up to SCORING_BATCH_SIZE.
     Each batch is presented as a single user message; the model returns
     a list of scores for that batch.
+
+    Bulk-fetches each item's latest judgement up front via
+    ``db.get_judgements_for_questions`` so the per-item formatter doesn't
+    need a graph.
     """
     from rumil.llm import (
         LLMExchangeMetadata,
@@ -267,6 +270,10 @@ async def score_items_sequentially(
 
     if not items:
         return []
+
+    judgements_by_id = await db.get_judgements_for_questions(
+        [item.id for item in items]
+    )
 
     batch_response_model = pydantic.create_model(
         f"{response_model.__name__}Batch",
@@ -308,7 +315,7 @@ async def score_items_sequentially(
         item_blocks = []
         for j, item in enumerate(batch_items):
             global_idx = sum(batch_sizes[:batch_idx]) + j
-            block = await _build_item_block(item, global_idx, len(items), graph)
+            block = _build_item_block(item, global_idx, len(items), judgements_by_id)
             item_blocks.append(block)
 
         batch_text = (

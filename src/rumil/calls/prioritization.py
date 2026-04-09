@@ -19,7 +19,7 @@ from rumil.calls.dispatches import (
 from rumil.context import build_prioritization_context, collect_subtree_ids
 from rumil.database import DB
 from rumil.available_moves import get_moves_for_call
-from rumil.page_graph import PageGraph
+from rumil.page_graph import SubtreeGraph
 from rumil.llm import build_system_prompt, build_user_message
 from rumil.models import Call, CallStatus, CallType, MoveType
 from rumil.moves.base import MoveState
@@ -113,18 +113,21 @@ async def run_prioritization_call(
         allocated = sum(estimate_dispatch_cost(d) for d in state.dispatches)
         if allocated < dispatch_budget * 0.5:
             log.warning(
-                'Prioritization under-allocated: %d/%d budget dispatched, retrying once',
-                allocated, dispatch_budget,
+                "Prioritization under-allocated: %d/%d budget dispatched, retrying once",
+                allocated,
+                dispatch_budget,
             )
             retry_msgs = list(agent_result.messages)
-            retry_msgs.append({
-                'role': 'user',
-                'content': (
-                    f'You have only dispatched ~{allocated} of {dispatch_budget} '
-                    'available budget units. Please make your remaining dispatch '
-                    'calls now.'
-                ),
-            })
+            retry_msgs.append(
+                {
+                    "role": "user",
+                    "content": (
+                        f"You have only dispatched ~{allocated} of {dispatch_budget} "
+                        "available budget units. Please make your remaining dispatch "
+                        "calls now."
+                    ),
+                }
+            )
             agent_result = await run_single_call(
                 system_prompt,
                 tools=tools,
@@ -170,7 +173,7 @@ async def run_prioritization(
         scope_question_id[:8],
         budget,
     )
-    graph = await PageGraph.load(db)
+    graph = await SubtreeGraph.load_for_root(db, scope_question_id)
     context_text, short_id_map = await build_prioritization_context(
         db,
         scope_question_id=scope_question_id,

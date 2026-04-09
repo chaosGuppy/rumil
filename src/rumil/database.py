@@ -916,6 +916,31 @@ class DB:
             result.setdefault(link.from_page_id, []).append(link)
         return result
 
+    async def get_links_to_many(
+        self, page_ids: Sequence[str],
+    ) -> dict[str, list[PageLink]]:
+        """Bulk-fetch incoming links for many pages. Returns {page_id: [links]}."""
+        result: dict[str, list[PageLink]] = {pid: [] for pid in page_ids}
+        if not page_ids:
+            return result
+        id_list = list(dict.fromkeys(page_ids))
+        batch_size = 200
+        all_links: list[PageLink] = []
+        for start in range(0, len(id_list), batch_size):
+            batch = id_list[start:start + batch_size]
+            query = (
+                self.client.table("page_links")
+                .select("*")
+                .in_("to_page_id", batch)
+            )
+            query = self._staged_filter(query)
+            rows = _rows(await self._execute(query))
+            all_links.extend(_row_to_link(r) for r in rows)
+        applied = await self._apply_link_events(all_links)
+        for link in applied:
+            result.setdefault(link.to_page_id, []).append(link)
+        return result
+
     async def get_latest_summary_for_question(self, question_id: str) -> "Page | None":
         """Return the most recent active SUMMARY page linked to a question."""
         links = await self.get_links_to(question_id)

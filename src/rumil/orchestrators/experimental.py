@@ -33,7 +33,7 @@ from rumil.orchestrators.common import (
     score_items_sequentially,
 )
 from rumil.moves.base import link_pages
-from rumil.page_graph import PageGraph
+from rumil.page_graph import SubtreeGraph
 from rumil.scope_subquestion_linker import run_scope_subquestion_linker
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
@@ -328,7 +328,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
 
         await self._run_subquestion_linker(question_id, parent_call_id)
 
-        graph = await PageGraph.load(self.db)
+        graph = await SubtreeGraph.load_for_root(self.db, question_id)
         context_text, short_id_map = await build_prioritization_context(
             self.db, scope_question_id=question_id, graph=graph,
         )
@@ -457,12 +457,12 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         set_trace(trace)
         await trace.record(ContextBuiltEvent(budget=budget))
 
-        graph = await PageGraph.load(self.db)
+        graph = await SubtreeGraph.load_for_root(self.db, question_id)
         child_questions = await graph.get_child_questions(question_id)
         parent_question = await graph.get_page(question_id)
         if not parent_question:
             raise RuntimeError(
-                f'Parent question {question_id} not found in PageGraph. '
+                f'Parent question {question_id} not found in SubtreeGraph. '
                 'This usually means the question belongs to a different project '
                 'than the current DB scope.'
             )
@@ -478,7 +478,6 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             parent_page=parent_question,
             parent_judgement=parent_judgement,
             items=child_questions,
-            graph=graph,
             system_prompt_name='score_subquestions',
             response_model=SubquestionScore,
             call_id=p_call.id,

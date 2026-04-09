@@ -37,7 +37,7 @@ from rumil.orchestrators.common import (
     compute_priority_score,
     score_items_sequentially,
 )
-from rumil.page_graph import PageGraph
+from rumil.page_graph import SubtreeGraph
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
 from rumil.tracing.trace_events import (
@@ -286,7 +286,7 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
             claim_id[:8], budget, phase1_budget,
         )
 
-        graph = await PageGraph.load(self.db)
+        graph = await SubtreeGraph.load_for_root(self.db, claim_id)
         context_text, short_id_map = await build_prioritization_context(
             self.db, scope_question_id=claim_id, graph=graph,
         )
@@ -426,11 +426,11 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
         set_trace(trace)
         await trace.record(ContextBuiltEvent(budget=budget))
 
-        graph = await PageGraph.load(self.db)
+        graph = await SubtreeGraph.load_for_root(self.db, claim_id)
         scope_page = await graph.get_page(claim_id)
         if not scope_page:
             raise RuntimeError(
-                f'Scope claim {claim_id} not found in PageGraph.'
+                f'Scope claim {claim_id} not found in SubtreeGraph.'
             )
         scope_headline = scope_page.headline
 
@@ -452,7 +452,6 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
             parent_page=scope_page,
             parent_judgement=scope_judgement,
             items=all_items,
-            graph=graph,
             system_prompt_name='score_claim_items',
             response_model=ClaimScore,
             call_id=p_call.id,

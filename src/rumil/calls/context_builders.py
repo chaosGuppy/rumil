@@ -42,7 +42,7 @@ from rumil.models import (
     FindConsiderationsMode,
 )
 from rumil.settings import get_settings
-from rumil.page_graph import PageGraph
+from rumil.page_graph import PageGraph, SubtreeGraph
 from rumil.tracing.trace_events import ContextBuiltEvent
 from rumil.workspace_map import build_workspace_map
 
@@ -182,7 +182,12 @@ class ScoutEmbeddingContext(ContextBuilder):
         self._mode = mode
 
     async def build_context(self, infra: CallInfra) -> ContextResult:
-        graph = await PageGraph.load(infra.db)
+        graph = await SubtreeGraph.load_for_root(
+            infra.db,
+            infra.question_id,
+            include_ancestors=True,
+            include_ancestor_children=True,
+        )
         scout_ctx = await build_scout_context(
             infra.question_id,
             infra.db,

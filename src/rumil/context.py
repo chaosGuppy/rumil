@@ -860,23 +860,6 @@ def assemble_call_context(
     return "\n".join(parts)
 
 
-async def format_preloaded_pages(
-    page_ids: Sequence[str],
-    db: DB,
-    graph: PageGraph | None = None,
-) -> str:
-    """Format preloaded pages as context text."""
-    source: DB | PageGraph = graph if graph is not None else db
-    parts: list[str] = []
-    for pid in page_ids:
-        page = await source.get_page(pid)
-        if page:
-            parts += ["---", "", f"## Pre-loaded Page: `{pid[:8]}`", ""]
-            parts.append(await format_page(page, PageDetail.HEADLINE, db=db, graph=graph))
-            parts.append("")
-    return "\n".join(parts)
-
-
 async def _build_dependency_signal(db: DB) -> str | None:
     """Build a section listing the most-depended-on pages in the workspace.
 

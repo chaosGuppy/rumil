@@ -52,8 +52,10 @@ def _rows(response: Any) -> _Rows:
 
 _DB_RETRYABLE_EXCEPTIONS = (
     httpx.ConnectTimeout,
-    httpx.ConnectError,
+    httpx.ReadTimeout,
+    httpx.WriteTimeout,
     httpx.PoolTimeout,
+    httpx.ConnectError,
     httpx.ReadError,
     httpx.RemoteProtocolError,
 )

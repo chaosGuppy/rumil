@@ -83,34 +83,6 @@ async def _count_subtree_questions(
     return count
 
 
-async def _describe_child_questions(
-    children: Sequence[Page],
-    graph: PageGraph,
-) -> str:
-    """Build enriched descriptions of child questions with research stats."""
-    lines = []
-    for c in children:
-        considerations = await graph.get_considerations_for_question(c.id)
-        judgements = await graph.get_judgements_for_question(c.id)
-        subtree_count = await _count_subtree_questions(c.id, graph)
-
-        parts = []
-        if considerations:
-            parts.append(f"{len(considerations)} considerations")
-        if judgements:
-            parts.append(
-                f"{len(judgements)} judgement{'s' if len(judgements) != 1 else ''}"
-            )
-        if subtree_count:
-            parts.append(
-                f"{subtree_count} subquestion{'s' if subtree_count != 1 else ''}"
-            )
-
-        stats = ", ".join(parts) if parts else "no research yet"
-        lines.append(f"- `{c.id}` — {c.headline} ({stats})")
-    return "\n".join(lines)
-
-
 async def _describe_considerations_on_page(
     page_id: str,
     graph: PageGraph,

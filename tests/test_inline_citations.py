@@ -187,8 +187,9 @@ async def test_question_citing_claim_creates_consideration_link(
     assert cons[0].to_page_id == question.id
 
 
-async def test_citing_question_creates_related_link_cited_to_citing(tmp_db):
-    """Citing a QUESTION should produce a RELATED link from the cited question to the citing page."""
+async def test_citing_question_resolves_to_its_judgement(tmp_db):
+    """Citing a QUESTION should auto-resolve to that question's current judgement
+    and produce a DEPENDS_ON link to the judgement, not to the question."""
     question = Page(
         page_type=PageType.QUESTION,
         layer=PageLayer.SQUIDGY,
@@ -198,25 +199,72 @@ async def test_citing_question_creates_related_link_cited_to_citing(tmp_db):
     )
     await tmp_db.save_page(question)
 
-    judgement = Page(
+    answer = Page(
         page_type=PageType.JUDGEMENT,
         layer=PageLayer.SQUIDGY,
         workspace=Workspace.RESEARCH,
-        content=f"This relates to [{question.id[:8]}] but approaches it differently.",
-        headline="Alternative approach to sky color",
+        content="Rayleigh scattering of shorter wavelengths.",
+        headline="Rayleigh scattering",
     )
-    await tmp_db.save_page(judgement)
+    await tmp_db.save_page(answer)
+    await tmp_db.save_link(PageLink(
+        from_page_id=answer.id,
+        to_page_id=question.id,
+        link_type=LinkType.RELATED,
+    ))
 
-    linked = await extract_and_link_citations(
-        judgement.id, judgement.content, tmp_db,
+    citing = Page(
+        page_type=PageType.JUDGEMENT,
+        layer=PageLayer.SQUIDGY,
+        workspace=Workspace.RESEARCH,
+        content=f"Building on [{question.id[:8]}], sunsets follow.",
+        headline="Sunsets follow from sky color",
     )
+    await tmp_db.save_page(citing)
 
-    assert linked == {question.id}
-    links_to_judgement = await tmp_db.get_links_to(judgement.id)
-    related = [l for l in links_to_judgement if l.link_type == LinkType.RELATED]
-    assert len(related) == 1
-    assert related[0].from_page_id == question.id
-    assert related[0].to_page_id == judgement.id
+    linked = await extract_and_link_citations(citing.id, citing.content, tmp_db)
+
+    assert linked == {answer.id}
+    links_from_citing = await tmp_db.get_links_from(citing.id)
+    deps = [l for l in links_from_citing if l.link_type == LinkType.DEPENDS_ON]
+    assert len(deps) == 1
+    assert deps[0].from_page_id == citing.id
+    assert deps[0].to_page_id == answer.id
+
+    links_to_question = await tmp_db.get_links_to(question.id)
+    assert not [
+        l for l in links_to_question
+        if l.from_page_id == citing.id
+    ], "no link should be created to the question itself"
+
+
+async def test_citing_question_without_judgement_skipped(tmp_db):
+    """Citing a QUESTION that has no judgement yet should be skipped, not linked."""
+    question = Page(
+        page_type=PageType.QUESTION,
+        layer=PageLayer.SQUIDGY,
+        workspace=Workspace.RESEARCH,
+        content="Why is the sky blue?",
+        headline="Why is the sky blue?",
+    )
+    await tmp_db.save_page(question)
+
+    citing = Page(
+        page_type=PageType.JUDGEMENT,
+        layer=PageLayer.SQUIDGY,
+        workspace=Workspace.RESEARCH,
+        content=f"This builds on [{question.id[:8]}].",
+        headline="Builds on open question",
+    )
+    await tmp_db.save_page(citing)
+
+    linked = await extract_and_link_citations(citing.id, citing.content, tmp_db)
+
+    assert linked == set()
+    links_from = await tmp_db.get_links_from(citing.id)
+    links_to_question = await tmp_db.get_links_to(question.id)
+    assert links_from == []
+    assert not [l for l in links_to_question if l.from_page_id == citing.id]
 
 
 async def test_unresolvable_short_ids_skipped(tmp_db):

@@ -408,7 +408,12 @@ async def extract_and_link_citations(
 ) -> set[str]:
     """Extract [shortid] citations from content and create page links.
 
-    Link type depends on the citing and cited pages' types:
+    Questions are never valid citation targets — when a citation resolves
+    to a question, it is rewritten to that question's current judgement.
+    If the question has no judgement yet, the citation is skipped with a
+    warning. After this rewrite, link type depends on the citing and
+    cited pages' types:
+
     - Cited SOURCE → CITES (from=citing, to=cited)
     - Citing CLAIM/JUDGEMENT cites a CLAIM/JUDGEMENT → DEPENDS_ON
       (from=citing, to=cited): the citing page's conclusions rest on the
@@ -441,6 +446,20 @@ async def extract_and_link_citations(
         cited_page = pages.get(resolved)
         if not cited_page:
             continue
+
+        if cited_page.page_type == PageType.QUESTION:
+            judgements = await db.get_judgements_for_question(cited_page.id)
+            if not judgements:
+                log.warning(
+                    "Citation [%s] points at a question with no judgement; "
+                    "skipping. Cite the question's judgement, not the question.",
+                    short_id,
+                )
+                continue
+            cited_page = judgements[0]
+            resolved = cited_page.id
+            if resolved == page_id:
+                continue
 
         if cited_page.page_type == PageType.SOURCE:
             link_type = LinkType.CITES

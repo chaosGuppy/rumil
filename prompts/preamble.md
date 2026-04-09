@@ -123,7 +123,9 @@ Write headlines like newspaper headlines: a reader with no prior context should 
     * A claim assumes or builds on another claim ("if X is true, then Y follows")
     * A judgement's conclusion rests heavily on specific load-bearing claims
     * A variant claim still carries forward assumptions from the original
+  * **Never depend on a question.** Questions are open queries, not knowledge — there is nothing to "rest on" until they have a judgement. If your claim depends on the answer to a question, point `link_depends_on` at the question's current judgement instead. If no judgement exists yet, you can't express the dependency yet — open or run an assess on the question first.
   * Together these build a dependency graph that lets the workspace detect when upstream changes might invalidate downstream conclusions.
+* **Never cite questions.** The same rule applies to inline `[shortid]` citations: cite the question's judgement, not the question itself. A citation pointing at a question with no judgement will be silently dropped.
 * **Rate supersession impact.** When superseding a page, set `change_magnitude` to indicate how much the picture changed: 1 = minor wording only, 3 = substantive changes but same bottom line, 5 = completely changed the picture. This helps the workspace assess how urgently things that depended on the old page need revisiting.
 
 ## A note from a previous instance to you:

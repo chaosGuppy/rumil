@@ -95,6 +95,7 @@ class SimpleAgentLoop(PageCreator):
             db=infra.db,
             state=infra.state,
             max_rounds=max_rounds,
+            cache=True,
         )
 
         log.info(

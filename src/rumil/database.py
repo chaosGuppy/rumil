@@ -358,6 +358,7 @@ class DB:
                 id=row["id"],
                 name=row["name"],
                 created_at=datetime.fromisoformat(row["created_at"]),
+                hidden=row.get("hidden", False),
             )
         row = _rows(
             await self._execute(
@@ -368,21 +369,20 @@ class DB:
             id=row["id"],
             name=row["name"],
             created_at=datetime.fromisoformat(row["created_at"]),
+            hidden=row.get("hidden", False),
         )
 
-    async def list_projects(self) -> list[Project]:
-        rows = _rows(
-            await self._execute(
-                self.client.table("projects")
-                .select("*")
-                .order("created_at")
-            )
-        )
+    async def list_projects(self, include_hidden: bool = False) -> list[Project]:
+        query = self.client.table("projects").select("*").order("created_at")
+        if not include_hidden:
+            query = query.eq("hidden", False)
+        rows = _rows(await self._execute(query))
         return [
             Project(
                 id=r["id"],
                 name=r["name"],
                 created_at=datetime.fromisoformat(r["created_at"]),
+                hidden=r.get("hidden", False),
             )
             for r in rows
         ]

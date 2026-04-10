@@ -108,6 +108,15 @@ PYTHONPATH=.claude/lib uv run python -m rumil_skills.<script_name> [args]
 Scripts: `workspace`, `list_questions`, `show_question`, `search_workspace`,
 `trace`, `dispatch_call`, `chat_envelope`, `apply_move`.
 
+## Gloss page and call IDs
+
+Whenever you cite a page, call, or any other rumil entity by its short
+ID (8-char hex), include a brief gloss: `be6d1a1d (the
+AI-governance-determines-space-allocation claim)`, not just `be6d1a1d`.
+Bare IDs are opaque — forcing the user to switch to the frontend or
+run another skill to know what you're pointing at slows every
+discussion. Apply this across every rumil skill's output.
+
 ## Visibility and attribution
 
 - **Trace URLs**: every script that creates a run prints the trace URL

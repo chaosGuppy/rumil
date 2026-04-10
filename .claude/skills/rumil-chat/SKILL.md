@@ -40,6 +40,10 @@ research. Not to race to produce outputs. Specifically:
   what's there, what isn't, where claims feel thin.
 - **Name specifics, not generalities.** When you reference a claim or
   question, use its short ID so the user can jump to it.
+- **Gloss every ID.** When citing `be6d1a1d` (or any short ID), add a
+  3-8 word summary in parens: `be6d1a1d (the space-as-proxy-for-AI-power
+  claim)`. Bare hex forces the user to look it up. Do this for every
+  ID reference in your replies, not just the first.
 - **Ask before dispatching.** If you think a call would help, say so and
   propose it — don't fire `/rumil-dispatch` without confirmation. One call
   costs real money.

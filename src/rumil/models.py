@@ -80,6 +80,10 @@ class CallType(str, Enum):
     GROUNDING_FEEDBACK = "grounding_feedback"
     FEEDBACK_UPDATE = "feedback_update"
     LINK_SUBQUESTIONS = "link_subquestions"
+    # Envelope call for mutations made from Claude Code's broader context
+    # (not a rumil-internal call with carefully scoped prompt). Never
+    # dispatchable from prioritization — only created by .claude/ skills.
+    CLAUDE_CODE_DIRECT = "claude_code_direct"
 
 
 # The subset of CallTypes that prioritization can dispatch.

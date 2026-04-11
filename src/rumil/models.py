@@ -117,7 +117,8 @@ class LinkType(str, Enum):
     CONSIDERATION = "consideration"  # claim -> question: claim should be accounted for in analysis of the question
     CHILD_QUESTION = "child_question"  # question decomposes into sub-question
     SUPERSEDES = "supersedes"  # page replaces another
-    RELATED = "related"  # general relation (also: judgement -> question it answers)
+    RELATED = "related"  # general relation
+    ANSWERS = "answers"  # judgement -> question: this judgement is the current answer to the question
     VARIANT = "variant"  # more robust variation of a claim
     SUMMARIZES = "summarizes"  # summary page covers a question subtree
     CITES = "cites"  # claim cites a source

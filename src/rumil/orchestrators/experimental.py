@@ -44,6 +44,7 @@ from rumil.tracing.trace_events import (
     DispatchesPlannedEvent,
     DispatchTraceItem,
     ErrorEvent,
+    PhaseSkippedEvent,
     ScoringCompletedEvent,
     SubquestionScoreItem,
 )
@@ -213,9 +214,19 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         return result
 
     async def _is_new_question(self, question_id: str) -> bool:
-        """A question is 'new' if it has no links besides child_question to a parent."""
+        """A question is 'new' if no substantive research has happened on it yet.
+
+        Incoming CHILD_QUESTION links (a parent refers to it) and RELATED
+        links (inline citation from another page's body, or a general
+        relation drawn at creation time) don't count — they can exist on a
+        freshly-born question. Any other inbound link (CONSIDERATION,
+        ANSWERS, DEPENDS_ON, etc.) indicates real research has happened.
+        """
         links = await self.db.get_links_to(question_id)
-        return all(l.link_type == LinkType.CHILD_QUESTION for l in links)
+        return all(
+            l.link_type in (LinkType.CHILD_QUESTION, LinkType.RELATED)
+            for l in links
+        )
 
     async def _cancel_initial_call(self) -> None:
         """Mark the eagerly-created phase-1 call as complete when phase 1 is skipped."""
@@ -228,6 +239,12 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             call.sequence_position = self._seq_position
             await self.db.save_call(call)
             self._seq_position += 1
+        trace = CallTrace(call.id, self.db, broadcaster=self.broadcaster)
+        set_trace(trace)
+        await trace.record(PhaseSkippedEvent(
+            phase='phase1',
+            reason='Question already has research.',
+        ))
         await mark_call_completed(
             call, self.db, 'Phase 1 skipped — question already has research.',
         )

@@ -179,7 +179,7 @@ function AssociationBoxes({
   if (page.page_type === "question") {
     for (const lp of linksTo) {
       if (
-        lp.link.link_type === "related" &&
+        lp.link.link_type === "answers" &&
         lp.page.page_type === "judgement" &&
         !lp.page.is_superseded
       ) {
@@ -189,7 +189,7 @@ function AssociationBoxes({
   } else if (page.page_type === "judgement") {
     for (const lp of linksFrom) {
       if (
-        lp.link.link_type === "related" &&
+        lp.link.link_type === "answers" &&
         lp.page.page_type === "question"
       ) {
         items.push({ lp, label: "question" });

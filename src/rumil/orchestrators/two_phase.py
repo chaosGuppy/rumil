@@ -44,6 +44,7 @@ from rumil.tracing.trace_events import (
     DispatchesPlannedEvent,
     DispatchTraceItem,
     ErrorEvent,
+    PhaseSkippedEvent,
     ScoringCompletedEvent,
     SubquestionScoreItem,
 )
@@ -234,6 +235,12 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             call.sequence_position = self._seq_position
             await self.db.save_call(call)
             self._seq_position += 1
+        trace = CallTrace(call.id, self.db, broadcaster=self.broadcaster)
+        set_trace(trace)
+        await trace.record(PhaseSkippedEvent(
+            phase='phase1',
+            reason='Question already has research.',
+        ))
         await mark_call_completed(
             call, self.db, 'Phase 1 skipped — question already has research.',
         )

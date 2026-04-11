@@ -244,6 +244,12 @@ class LinkSubquestionsCompleteEvent(BaseModel):
     proposed: list[ProposedSubquestion] = []
 
 
+class PhaseSkippedEvent(BaseModel):
+    event: Literal["phase_skipped"] = "phase_skipped"
+    phase: str = ""
+    reason: str = ""
+
+
 TraceEvent = Annotated[
     ContextBuiltEvent
     | MovesExecutedEvent
@@ -268,6 +274,7 @@ TraceEvent = Annotated[
     | GroundingTasksGeneratedEvent
     | WebResearchCompleteEvent
     | RenderQuestionSubgraphEvent
-    | LinkSubquestionsCompleteEvent,
+    | LinkSubquestionsCompleteEvent
+    | PhaseSkippedEvent,
     Field(discriminator="event"),
 ]

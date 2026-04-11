@@ -71,24 +71,6 @@ class EmbeddingBasedContextResult:
     budget_usage: dict[str, int] = field(default_factory=dict)
 
 
-async def collect_subtree_ids(
-    question_id: str,
-    db: DB,
-    graph: PageGraph | None = None,
-    _visited: set[str] | None = None,
-) -> set[str]:
-    """Recursively collect all question IDs in a subtree (inclusive)."""
-    if _visited is None:
-        _visited = set()
-    if question_id in _visited:
-        return set()
-    _visited = _visited | {question_id}
-    source: DB | PageGraph = graph if graph is not None else db
-    result = {question_id}
-    for child in await source.get_child_questions(question_id):
-        result |= await collect_subtree_ids(child.id, db, graph=graph, _visited=_visited)
-    return result
-
 
 async def collect_all_subtree_page_ids(
     question_id: str,
@@ -113,274 +95,24 @@ async def collect_all_subtree_page_ids(
     return result
 
 
-async def _get_ancestry_chain(
-    question_id: str,
-    source: DB | PageGraph,
-) -> list[Page]:
-    """Walk up from question to root. Returns [parent, grandparent, ...] order."""
-    chain: list[Page] = []
-    current_id = question_id
-    visited = {question_id}
-    while True:
-        parent = await source.get_parent_question(current_id)
-        if not parent or parent.id in visited:
-            break
-        chain.append(parent)
-        visited.add(parent.id)
-        current_id = parent.id
-    return chain
-
-
-async def _render_subtree_headlines(
-    question_id: str,
-    source: DB | PageGraph,
-    db: DB,
-    indent: int = 0,
-    _visited: set[str] | None = None,
-) -> tuple[list[str], list[str]]:
-    """Render a question subtree as headlines. Returns (lines, page_ids)."""
-    if _visited is None:
-        _visited = set()
-    if question_id in _visited:
-        return [], []
-    _visited = _visited | {question_id}
-
-    question = await source.get_page(question_id)
-    if not question:
-        return [], []
-
-    prefix = '  ' * indent
-    lines = [prefix + await format_page(question, PageDetail.HEADLINE)]
-    page_ids = [question_id]
-
-    judgements = await source.get_judgements_for_question(question_id)
-    if judgements:
-        latest = max(judgements, key=lambda j: j.created_at)
-        lines.append(
-            prefix + '  ' + await format_page(latest, PageDetail.HEADLINE)
-        )
-        page_ids.append(latest.id)
-
-    for child in await source.get_child_questions(question_id):
-        child_lines, child_ids = await _render_subtree_headlines(
-            child.id, source, db, indent + 1, _visited=_visited,
-        )
-        lines.extend(child_lines)
-        page_ids.extend(child_ids)
-
-    return lines, page_ids
-
-
-@dataclass
-class ScoutContextResult:
-    context_text: str
-    page_ids: list[str]
-    structural_page_ids: set[str]
-
-
-async def build_scout_context(
-    question_id: str,
-    db: DB,
-    graph: PageGraph | None = None,
-) -> ScoutContextResult:
-    """Build context for a find_considerations call.
-
-    Combines embedding search with structural context:
-    - Full text of scope question
-    - Abstract of parent/grandparent + direct child considerations/questions/judgements
-    - Headlines for ancestry chain, siblings, subtree, and judgements on each
-    """
-    source: DB | PageGraph = graph if graph is not None else db
-    question = await source.get_page(question_id)
-    if not question:
-        return ScoutContextResult(
-            context_text=f'[Question {question_id} not found]',
-            page_ids=[], structural_page_ids=set(),
-        )
-
-    all_page_ids: list[str] = []
-    structural_ids: set[str] = set()
-    parts: list[str] = []
-
-    parts.append('# Scope Question')
-    parts.append('')
-    parts.append(await format_page(question, PageDetail.CONTENT, db=db, linked_detail=None))
-    parts.append('')
-    all_page_ids.append(question_id)
-    structural_ids.add(question_id)
-
-    ancestry = await _get_ancestry_chain(question_id, source)
-    parent = ancestry[0] if len(ancestry) >= 1 else None
-    grandparent = ancestry[1] if len(ancestry) >= 2 else None
-
-    if parent or grandparent:
-        parts.append('# Parent Context')
-        parts.append('')
-        if parent:
-            parts.append('## Parent Question')
-            parts.append('')
-            parts.append(await format_page(parent, PageDetail.ABSTRACT, db=db, linked_detail=None))
-            parts.append('')
-            all_page_ids.append(parent.id)
-            structural_ids.add(parent.id)
-        if grandparent:
-            parts.append('## Grandparent Question')
-            parts.append('')
-            parts.append(await format_page(grandparent, PageDetail.ABSTRACT, db=db, linked_detail=None))
-            parts.append('')
-            all_page_ids.append(grandparent.id)
-            structural_ids.add(grandparent.id)
-
-    considerations = await source.get_considerations_for_question(question_id)
-    children = await source.get_child_questions(question_id)
-    child_judgements_by_qid = await source.get_judgements_for_questions(
-        [c.id for c in children]
-    )
-    child_judgements: list[tuple[Page, Page]] = [
-        (child, j)
-        for child in children
-        for j in child_judgements_by_qid.get(child.id, [])
-    ]
-
-    if considerations or children or child_judgements:
-        direct_items: list[tuple[str, Page]] = []
-        for claim, link in considerations:
-            direction = f' **({link.direction.value})**\n' if link.direction else ''
-            formatted = direction + await format_page(claim, PageDetail.ABSTRACT, db=db, linked_detail=None)
-            direct_items.append((formatted, claim))
-            all_page_ids.append(claim.id)
-            structural_ids.add(claim.id)
-        for child in children:
-            formatted = await format_page(child, PageDetail.ABSTRACT, db=db, linked_detail=None)
-            direct_items.append((formatted, child))
-            all_page_ids.append(child.id)
-            structural_ids.add(child.id)
-        for child, j in child_judgements:
-            formatted = (
-                f'*On: {child.headline} (`{child.id[:8]}`)*\n'
-                + await format_page(j, PageDetail.ABSTRACT, db=db, linked_detail=None)
-            )
-            direct_items.append((formatted, j))
-            all_page_ids.append(j.id)
-            structural_ids.add(j.id)
-
-        parts.append('# Direct Context')
-        parts.append('')
-        parts.append(group_by_credence(direct_items, heading_level='##'))
-
-    headline_lines: list[str] = []
-    headline_ids: list[str] = []
-
-    if ancestry:
-        ancestor_ids = {a.id for a in ancestry}
-        siblings_by_ancestor: dict[str, list[Page]] = {
-            a.id: await source.get_child_questions(a.id) for a in ancestry
-        }
-        judgement_qids: list[str] = [a.id for a in ancestry]
-        for sibs in siblings_by_ancestor.values():
-            for sib in sibs:
-                if sib.id != question_id and sib.id not in ancestor_ids:
-                    judgement_qids.append(sib.id)
-        judgements_by_qid = await source.get_judgements_for_questions(judgement_qids)
-
-        headline_lines.append('## Ancestry & Siblings')
-        headline_lines.append('')
-        for ancestor in reversed(ancestry):
-            structural_ids.add(ancestor.id)
-            headline_lines.append(await format_page(ancestor, PageDetail.HEADLINE))
-            a_judgements = judgements_by_qid.get(ancestor.id, [])
-            if a_judgements:
-                latest = max(a_judgements, key=lambda j: j.created_at)
-                headline_lines.append(
-                    '  ' + await format_page(latest, PageDetail.HEADLINE)
-                )
-                headline_ids.append(latest.id)
-                structural_ids.add(latest.id)
-            siblings = siblings_by_ancestor[ancestor.id]
-            for sib in siblings:
-                if sib.id == question_id or sib.id in ancestor_ids:
-                    continue
-                headline_lines.append(
-                    '  ' + await format_page(sib, PageDetail.HEADLINE)
-                )
-                headline_ids.append(sib.id)
-                structural_ids.add(sib.id)
-                sib_judgements = judgements_by_qid.get(sib.id, [])
-                if sib_judgements:
-                    latest = max(sib_judgements, key=lambda j: j.created_at)
-                    headline_lines.append(
-                        '    ' + await format_page(latest, PageDetail.HEADLINE)
-                    )
-                    headline_ids.append(latest.id)
-                    structural_ids.add(latest.id)
-        headline_lines.append('')
-
-    subtree_lines, subtree_ids = await _render_subtree_headlines(
-        question_id, source, db,
-    )
-    if subtree_lines:
-        headline_lines.append('## Scope Subtree')
-        headline_lines.append('')
-        headline_lines.extend(subtree_lines)
-        headline_lines.append('')
-        headline_ids.extend(subtree_ids)
-        structural_ids.update(subtree_ids)
-
-    if headline_lines:
-        parts.append('# Wider Context (Headlines)')
-        parts.append('')
-        parts.extend(headline_lines)
-
-    all_page_ids.extend(headline_ids)
-
-    embedding_result = await build_embedding_based_context(
-        question.headline,
-        db,
-        scope_question_id=question_id,
-        headline_only_ids=structural_ids,
-    )
-    if embedding_result.context_text:
-        parts.append('# Embedding Search Results')
-        parts.append('')
-        parts.append(embedding_result.context_text)
-        parts.append('')
-    all_page_ids.extend(embedding_result.page_ids)
-
-    return ScoutContextResult(
-        context_text='\n'.join(parts),
-        page_ids=all_page_ids,
-        structural_page_ids=structural_ids,
-    )
-
-
-async def render_subtree(
+async def render_page_and_immediate_children(
     root_id: str,
     db: DB,
     *,
-    graph: PageGraph | None = None,
     detail: PageDetail = PageDetail.CONTENT,
     linked_detail: PageDetail | None = PageDetail.HEADLINE,
     content_page_ids: set[str] | None = None,
-    max_depth: int | None = None,
 ) -> str:
-    """Render a full subtree of pages starting from a root page.
+    """Render a page and its direct child questions (one level deep).
 
-    Loads all pages and links into a PageGraph (if not already provided)
-    to avoid per-page DB round trips, then walks the tree depth-first:
-    question -> considerations, judgements, child questions (recurse).
-
-    Non-question root pages are rendered standalone with their outgoing links.
+    For question pages: renders the root with its considerations and
+    judgements, then each direct child question with their considerations
+    and judgements. Non-question root pages are rendered standalone.
 
     Pages whose IDs appear in *content_page_ids* are rendered at CONTENT
     detail regardless of the *detail* parameter.
-
-    *max_depth* limits how many levels of child questions to recurse into
-    (0 = root only, 1 = root + direct children, None = unlimited).
     """
-    if graph is None:
-        graph = await PageGraph.load(db)
-
-    root = await graph.get_page(root_id)
+    root = await db.get_page(root_id)
     if not root:
         return f'[Page {root_id} not found]'
 
@@ -388,7 +120,7 @@ async def render_subtree(
     parts: list[str] = []
     visited: set[str] = set()
 
-    async def _render_question(question: Page, depth: int) -> None:
+    async def _render_question(question: Page, depth: int, include_children: bool) -> None:
         if question.id in visited:
             parts.append(f'{"  " * depth}(cycle: `{question.id[:8]}`)')
             return
@@ -397,10 +129,10 @@ async def render_subtree(
         q_detail = PageDetail.CONTENT if question.id in _content_ids else detail
         indent = '  ' * depth
         parts.append(
-            indent + await format_page(question, q_detail, linked_detail=None, db=db, graph=graph)
+            indent + await format_page(question, q_detail, linked_detail=None, db=db)
         )
 
-        considerations = await graph.get_considerations_for_question(question.id)
+        considerations = await db.get_considerations_for_question(question.id)
         if considerations:
             con_items: list[tuple[str, Page]] = []
             for claim, link in considerations:
@@ -408,7 +140,7 @@ async def render_subtree(
                 direction = f'({link.direction.value}) ' if link.direction else ''
                 line = (
                     f'{indent}- {direction}'
-                    + await format_page(claim, linked_detail or PageDetail.HEADLINE, linked_detail=None, graph=graph)
+                    + await format_page(claim, linked_detail or PageDetail.HEADLINE, linked_detail=None, db=db)
                 )
                 if link.reasoning:
                     line += f'\n{indent}  Reasoning: {link.reasoning}'
@@ -418,7 +150,7 @@ async def render_subtree(
             grouped = group_by_credence(con_items, heading_level='#' * hn, separator='\n')
             parts.append(grouped)
 
-        all_judgements = await graph.get_judgements_for_question(question.id)
+        all_judgements = await db.get_judgements_for_question(question.id)
         judgements = (
             [max(all_judgements, key=lambda j: j.created_at)] if all_judgements else []
         )
@@ -429,25 +161,25 @@ async def render_subtree(
                 visited.add(j.id)
                 parts.append(
                     f'{indent}- '
-                    + await format_page(j, linked_detail or PageDetail.HEADLINE, linked_detail=None, graph=graph)
+                    + await format_page(j, linked_detail or PageDetail.HEADLINE, linked_detail=None, db=db)
                 )
 
-        if max_depth is not None and depth >= max_depth:
+        if not include_children:
             return
 
-        children = await graph.get_child_questions(question.id)
+        children = await db.get_child_questions(question.id)
         if children:
             parts.append('')
             parts.append(f'{indent}**Sub-questions:**')
             parts.append('')
             for child in children:
-                await _render_question(child, depth + 1)
+                await _render_question(child, depth + 1, include_children=False)
                 parts.append('')
 
     if root.page_type == PageType.QUESTION:
-        await _render_question(root, 0)
+        await _render_question(root, 0, include_children=True)
     else:
-        parts.append(await format_page(root, detail, linked_detail=linked_detail, graph=graph))
+        parts.append(await format_page(root, detail, linked_detail=linked_detail, db=db))
 
     return '\n'.join(parts)
 
@@ -852,7 +584,6 @@ async def _build_dependency_signal(db: DB) -> str | None:
 async def build_prioritization_context(
     db: DB,
     scope_question_id: str | None = None,
-    graph: PageGraph | None = None,
 ) -> tuple[str, dict[str, str]]:
     """Build context for a prioritization call.
 
@@ -863,15 +594,14 @@ async def build_prioritization_context(
     Returns (context_text, short_id_map) where short_id_map maps 8-char
     short IDs to full UUIDs.
     """
-    source: DB | PageGraph = graph if graph is not None else db
     parts: list[str] = ['# Prioritization Context', '']
     short_id_map: dict[str, str] = {}
 
     if scope_question_id:
-        question = await source.get_page(scope_question_id)
+        question = await db.get_page(scope_question_id)
         if question:
             subtree_page_ids = await collect_all_subtree_page_ids(
-                scope_question_id, db, graph=graph,
+                scope_question_id, db,
             )
             embedding_result = await build_embedding_based_context(
                 question.headline,
@@ -885,15 +615,13 @@ async def build_prioritization_context(
                 parts.append('---')
                 parts.append('')
 
-            direct_children = await source.get_child_questions(scope_question_id)
+            direct_children = await db.get_child_questions(scope_question_id)
             full_page_ids = {scope_question_id} | {c.id for c in direct_children}
-            subtree_text = await render_subtree(
+            subtree_text = await render_page_and_immediate_children(
                 scope_question_id, db,
-                graph=graph,
                 detail=PageDetail.ABSTRACT,
                 linked_detail=PageDetail.ABSTRACT,
                 content_page_ids=full_page_ids,
-                max_depth=1,
             )
             parts.append('## Scope Question — Detail')
             parts.append('')

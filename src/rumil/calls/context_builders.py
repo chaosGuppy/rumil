@@ -21,7 +21,6 @@ from rumil.calls.stages import CallInfra, ContextBuilder, ContextResult
 from rumil.context import (
     build_call_context,
     build_embedding_based_context,
-    build_scout_context,
     format_page,
 )
 from rumil.database import DB
@@ -39,10 +38,10 @@ from rumil.models import (
     PageDetail,
     PageLink,
     PageType,
-    FindConsiderationsMode,
+
 )
 from rumil.settings import get_settings
-from rumil.page_graph import PageGraph, SubtreeGraph
+from rumil.page_graph import PageGraph
 from rumil.tracing.trace_events import ContextBuiltEvent
 from rumil.workspace_map import build_workspace_map
 
@@ -171,43 +170,6 @@ class IngestEmbeddingContext(ContextBuilder):
         )
         return ContextResult(
             context_text=result.context_text + source_section,
-            working_page_ids=working_page_ids,
-        )
-
-
-class ScoutEmbeddingContext(ContextBuilder):
-    """Scout context built via embedding similarity search."""
-
-    def __init__(self, mode: FindConsiderationsMode) -> None:
-        self._mode = mode
-
-    async def build_context(self, infra: CallInfra) -> ContextResult:
-        graph = await SubtreeGraph.load_for_root(
-            infra.db,
-            infra.question_id,
-            include_ancestors=True,
-            include_ancestor_children=True,
-        )
-        scout_ctx = await build_scout_context(
-            infra.question_id,
-            infra.db,
-            graph=graph,
-        )
-        working_page_ids = scout_ctx.page_ids
-
-        await infra.trace.record(
-            ContextBuiltEvent(
-                working_context_page_ids=await resolve_page_refs(
-                    working_page_ids,
-                    infra.db,
-                ),
-                preloaded_page_ids=[],
-                scout_mode=self._mode.value,
-            )
-        )
-
-        return ContextResult(
-            context_text=scout_ctx.context_text,
             working_page_ids=working_page_ids,
         )
 

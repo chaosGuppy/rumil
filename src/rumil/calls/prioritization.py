@@ -16,10 +16,9 @@ from rumil.calls.dispatches import (
     filter_mode_schema,
     make_mode_validator,
 )
-from rumil.context import build_prioritization_context, collect_subtree_ids
+from rumil.context import build_prioritization_context
 from rumil.database import DB
 from rumil.available_moves import get_moves_for_call
-from rumil.page_graph import SubtreeGraph
 from rumil.llm import build_system_prompt, build_user_message
 from rumil.models import Call, CallStatus, CallType, MoveType
 from rumil.moves.base import MoveState
@@ -42,7 +41,6 @@ async def run_prioritization_call(
     db: DB,
     *,
     available_moves: list[MoveType] | None = None,
-    subtree_ids: set[str] | None = None,
     short_id_map: dict[str, str] | None = None,
     dispatch_types: Sequence[CallType] | None = None,
     extra_dispatch_defs: Sequence[DispatchDef] | None = None,
@@ -89,8 +87,7 @@ async def run_prioritization_call(
     for ddef in selected_defs:
         tool = ddef.bind(
             state,
-            subtree_ids,
-            short_id_map,
+            short_id_map=short_id_map,
             scope_question_id=call.scope_page_id,
         )
         if ddef.call_type == CallType.FIND_CONSIDERATIONS:
@@ -173,13 +170,10 @@ async def run_prioritization(
         scope_question_id[:8],
         budget,
     )
-    graph = await SubtreeGraph.load_for_root(db, scope_question_id)
     context_text, short_id_map = await build_prioritization_context(
         db,
         scope_question_id=scope_question_id,
-        graph=graph,
     )
-    subtree_ids = await collect_subtree_ids(scope_question_id, db, graph=graph)
     await trace.record(ContextBuiltEvent(budget=budget))
 
     budget_line = f"You have a budget of **{budget} research calls** to allocate on this question."
@@ -203,7 +197,6 @@ async def run_prioritization(
         context_text,
         call,
         db,
-        subtree_ids=subtree_ids,
         short_id_map=short_id_map,
         dispatch_budget=budget,
     )

@@ -7,6 +7,7 @@ Currently an exact copy of TwoPhaseOrchestrator.
 import asyncio
 import logging
 from collections.abc import Sequence
+from datetime import UTC, datetime
 
 from rumil.available_calls import get_available_calls_preset
 from rumil.calls.common import mark_call_completed
@@ -32,8 +33,7 @@ from rumil.orchestrators.common import (
     assess_question,
     score_items_sequentially,
 )
-from rumil.moves.base import link_pages
-from rumil.scope_subquestion_linker import run_scope_subquestion_linker
+from rumil.calls.link_subquestions import LinkSubquestionsCall
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
 from rumil.tracing.trace_events import (
@@ -80,6 +80,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         self._parent_call_id: str | None = None
         self._sequence_id: str | None = None
         self._seq_position: int = 0
+        self._last_linker_eval_at: datetime | None = None
 
     def _effective_budget(self, global_remaining: int) -> int:
         if self._budget_cap is not None:
@@ -261,6 +262,8 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         if not self._executed_since_last_plan:
             return PrioritizationResult(dispatch_sequences=[])
 
+        await self._maybe_rerun_linker(question_id, self._parent_call_id)
+
         self._executed_since_last_plan = False
         self._invocation += 1
         return await self._phase2(
@@ -273,54 +276,47 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         question_id: str,
         parent_call_id: str | None,
     ) -> None:
-        """Run the subquestion linker and materialize its proposals as CHILD_QUESTION links.
+        """Run the LinkSubquestionsCall and update the linker eval timestamp.
 
-        Any failure is logged and swallowed — phase1 must proceed regardless.
+        Any failure is logged and swallowed — the orchestrator must proceed regardless.
         """
         try:
-            linker_call = await run_scope_subquestion_linker(
-                question_id,
-                self.db,
-                broadcaster=self.broadcaster,
+            call = await self.db.create_call(
+                CallType.LINK_SUBQUESTIONS,
+                scope_page_id=question_id,
                 parent_call_id=parent_call_id,
             )
+            runner = LinkSubquestionsCall(
+                question_id,
+                call,
+                self.db,
+                broadcaster=self.broadcaster,
+            )
+            await runner.run()
+            self._last_linker_eval_at = datetime.now(UTC)
         except Exception as e:
             log.warning(
                 'Subquestion linker failed for question=%s: %s',
                 question_id[:8], e, exc_info=True,
             )
-            return
 
-        proposed_ids = (linker_call.review_json or {}).get(
-            'proposed_subquestion_ids', []
-        )
-        if not proposed_ids:
+    async def _maybe_rerun_linker(
+        self,
+        question_id: str,
+        parent_call_id: str | None,
+    ) -> None:
+        """Re-run the linker if enough pages have been added since the last evaluation."""
+        if self._last_linker_eval_at is None:
+            return
+        settings = get_settings()
+        count = await self.db.count_pages_since(self._last_linker_eval_at)
+        if count >= settings.linker_cache_invalidation_threshold:
             log.info(
-                'Subquestion linker produced no proposals for question=%s',
-                question_id[:8],
+                'Linker cache invalidation: %d pages since last eval, re-running '
+                'for question=%s',
+                count, question_id[:8],
             )
-            return
-
-        created = 0
-        for child_id in proposed_ids:
-            try:
-                await link_pages(
-                    question_id,
-                    child_id,
-                    'Auto-linked by subquestion linker at phase1 start',
-                    self.db,
-                    LinkType.CHILD_QUESTION,
-                )
-                created += 1
-            except Exception as e:
-                log.warning(
-                    'Failed to link proposed subquestion %s -> %s: %s',
-                    question_id[:8], child_id[:8], e,
-                )
-        log.info(
-            'Subquestion linker: created %d/%d CHILD_QUESTION links for question=%s',
-            created, len(proposed_ids), question_id[:8],
-        )
+            await self._run_subquestion_linker(question_id, parent_call_id)
 
     async def _phase1(
         self,

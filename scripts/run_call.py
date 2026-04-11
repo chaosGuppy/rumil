@@ -25,9 +25,9 @@ Usage:
     # A/B test a call (requires .a.env and .b.env)
     uv run python scripts/run_call.py find-considerations "Test question" --ab --smoke-test
 
-    # Run only up to a specific stage (build_context or create_pages)
+    # Run only up to a specific stage (build_context or update_workspace)
     uv run python scripts/run_call.py find-considerations "Test question" --up-to-stage build_context
-    uv run python scripts/run_call.py find-considerations "Test question" --up-to-stage create_pages
+    uv run python scripts/run_call.py find-considerations "Test question" --up-to-stage update_workspace
 
 All runs are staged by default (use --no-stage to disable). Workspace defaults to
 'default' but is auto-detected from --question-id when possible.

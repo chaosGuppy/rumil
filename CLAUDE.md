@@ -64,27 +64,27 @@ Always use the supabase cli to create new migrations: `supabase migration new`.
 
 **Entry point:** `main.py` — CLI arg parsing, dispatches to command functions.
 
-**Single-call runner** (`scripts/run_call.py`): Runs one call type against the local database. Supports `--workspace`, `--smoke-test`, `--ab` (A/B testing with `.a.env`/`.b.env`), `--name`, and `--up-to-stage` (truncate the call lifecycle after `build_context` or `create_pages`). Runs are recorded in the `runs` table with captured config.
+**Single-call runner** (`scripts/run_call.py`): Runs one call type against the local database. Supports `--workspace`, `--smoke-test`, `--ab` (A/B testing with `.a.env`/`.b.env`), `--name`, and `--up-to-stage` (truncate the call lifecycle after `build_context` or `update_workspace`). Runs are recorded in the `runs` table with captured config.
 
 **Package:** `src/rumil/` — installed as `rumil` via hatch/uv. Uses src layout. Always use absolute imports (e.g. `from rumil.database import DB`).
 
 **Orchestrators** (`src/rumil/orchestrator.py`): Orchestrators determine the sequence of calls to dispatch. Each represents a different way of prioritizing and executing research. 
 
-**Call types** (`src/rumil/calls/`): Composition-based architecture using three pluggable stage ABCs. `CallRunner` (in `stages.py`) orchestrates the three phases by delegating to `ContextBuilder`, `PageCreator`, and `ClosingReviewer` instances. Each call type lives in its own module (`find_considerations.py`, `assess.py`, `ingest.py`, etc.) as a thin `CallRunner` subclass. `common.py` has shared utilities (`run_agent_loop()`, `run_single_call()`, closing reviews). Public API re-exported from `__init__.py`.
+**Call types** (`src/rumil/calls/`): Composition-based architecture using three pluggable stage ABCs. `CallRunner` (in `stages.py`) orchestrates the three phases by delegating to `ContextBuilder`, `WorkspaceUpdater`, and `ClosingReviewer` instances. Each call type lives in its own module (`find_considerations.py`, `assess.py`, `ingest.py`, etc.) as a thin `CallRunner` subclass. `common.py` has shared utilities (`run_agent_loop()`, `run_single_call()`, closing reviews). Public API re-exported from `__init__.py`.
 
 Architecture:
-- `CallRunner` (`stages.py`) — base class for all call types. Owns `run()` orchestration via `CallInfra` (bundles `CallTrace`, `MoveState`, DB, call). Subclasses set class-level `context_builder_cls`, `page_creator_cls`, `closing_reviewer_cls`, and `call_type` attributes, plus override `_make_*()` factory methods for parameterized stages and `task_description()`.
+- `CallRunner` (`stages.py`) — base class for all call types. Owns `run()` orchestration via `CallInfra` (bundles `CallTrace`, `MoveState`, DB, call). Subclasses set class-level `context_builder_cls`, `workspace_updater_cls`, `closing_reviewer_cls`, and `call_type` attributes, plus override `_make_*()` factory methods for parameterized stages and `task_description()`.
 - `ContextBuilder` ABC — `build_context(infra) -> ContextResult`. Implementations in `context_builders.py`: `EmbeddingContext`, `IngestEmbeddingContext`, `ScoutEmbeddingContext`, `ConceptScoutContext`, `ConceptAssessContext`, `WebResearchEmbeddingContext`, `BigAssessContext`.
-- `PageCreator` ABC — `create_pages(infra, context) -> CreationResult`. Implementations in `page_creators.py`: `SimpleAgentLoop` (single-pass), `MultiRoundLoop` (multi-round with fruit checks), `WebResearchLoop` (server tools + scraping).
+- `WorkspaceUpdater` ABC — `update_workspace(infra, context) -> UpdateResult`. Implementations in `page_creators.py`: `SimpleAgentLoop` (single-pass), `MultiRoundLoop` (multi-round with fruit checks), `WebResearchLoop` (server tools + scraping).
 - `ClosingReviewer` ABC — `closing_review(infra, context, creation) -> None` (persists all results as side effects). Implementations in `closing_reviewers.py`: `StandardClosingReview`, `IngestClosingReview`, `WebResearchClosingReview`, `SinglePhaseScoutReview`, `ConceptAssessReview`.
-- Data types (`stages.py`): `CallInfra` (shared infra), `ContextResult` (context output), `CreationResult` (page creation output).
+- Data types (`stages.py`): `CallInfra` (shared infra), `ContextResult` (context output), `UpdateResult` (workspace update output).
 
 The three phases:
 1. **build_context** — `ContextBuilder.build_context()` returns `ContextResult`
-2. **create_pages** — `PageCreator.create_pages()` returns `CreationResult`
+2. **update_workspace** — `WorkspaceUpdater.update_workspace()` returns `UpdateResult`
 3. **closing_review** — `ClosingReviewer.closing_review()` persists results and calls `mark_call_completed()`
 
-To add a new call type: subclass `CallRunner`. Set `call_type`, override `_make_context_builder()`, `_make_page_creator()`, `_make_closing_reviewer()`, and `task_description()`. For simple calls, reuse `SimpleAgentLoop` + `StandardClosingReview` + an existing context builder. Export the class from `__init__.py`.
+To add a new call type: subclass `CallRunner`. Set `call_type`, override `_make_context_builder()`, `_make_workspace_updater()`, `_make_closing_reviewer()`, and `task_description()`. For simple calls, reuse `SimpleAgentLoop` + `StandardClosingReview` + an existing context builder. Export the class from `__init__.py`.
 
 **Assess call variants** (`src/rumil/calls/call_registry.py`): Only the assess call has multiple variants. `ASSESS_CALL_CLASSES = {"default": AssessCall, "big": BigAssessCall}` is keyed by `settings.assess_call_variant`. All other call types use a single concrete class — orchestrators import them directly.
 

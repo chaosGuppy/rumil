@@ -1949,6 +1949,17 @@ class DB:
         )
         return cast(dict[str, Any], result.data or {})
 
+    async def count_pages_since(self, since: datetime) -> int:
+        """Count workspace pages created after *since* (for cache invalidation)."""
+        query = self.client.table("pages").select(
+            "id", count=CountMethod.exact
+        ).gt("created_at", since.isoformat())
+        if self.project_id:
+            query = query.eq("project_id", self.project_id)
+        query = self._staged_filter(query)
+        result = await self._execute(query)
+        return result.count or 0
+
     async def save_llm_exchange(
         self,
         call_id: str,

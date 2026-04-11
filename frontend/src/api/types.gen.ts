@@ -324,7 +324,9 @@ export type CallTraceOut = {
         event: 'render_question_subgraph';
     } & RenderQuestionSubgraphEventOut) | ({
         event: 'link_subquestions_complete';
-    } & LinkSubquestionsCompleteEventOut)>;
+    } & LinkSubquestionsCompleteEventOut) | ({
+        event: 'phase_skipped';
+    } & PhaseSkippedEventOut)>;
     /**
      * Children
      */
@@ -854,7 +856,7 @@ export type LinkSubquestionsCompleteEventOut = {
 /**
  * LinkType
  */
-export type LinkType = 'consideration' | 'child_question' | 'supersedes' | 'related' | 'variant' | 'summarizes' | 'cites' | 'depends_on';
+export type LinkType = 'consideration' | 'child_question' | 'supersedes' | 'related' | 'answers' | 'variant' | 'summarizes' | 'cites' | 'depends_on';
 
 /**
  * LinkedPageOut
@@ -1090,6 +1092,32 @@ export type PaginatedPagesOut = {
      * Limit
      */
     limit: number;
+};
+
+/**
+ * PhaseSkippedEventOut
+ */
+export type PhaseSkippedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'phase_skipped';
+    /**
+     * Phase
+     */
+    phase: string;
+    /**
+     * Reason
+     */
+    reason: string;
 };
 
 /**
@@ -2325,7 +2353,9 @@ export type GetCallEventsApiCallsCallIdEventsGetResponses = {
         event: 'render_question_subgraph';
     } & RenderQuestionSubgraphEventOut) | ({
         event: 'link_subquestions_complete';
-    } & LinkSubquestionsCompleteEventOut)>;
+    } & LinkSubquestionsCompleteEventOut) | ({
+        event: 'phase_skipped';
+    } & PhaseSkippedEventOut)>;
 };
 
 export type GetCallEventsApiCallsCallIdEventsGetResponse = GetCallEventsApiCallsCallIdEventsGetResponses[keyof GetCallEventsApiCallsCallIdEventsGetResponses];

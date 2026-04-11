@@ -45,9 +45,9 @@ async def test_create_judgement_auto_links_to_scope_question(
     jid = await _create_judgement(tmp_db, scout_call)
 
     links = await tmp_db.get_links_from(jid)
-    related_links = [l for l in links if l.to_page_id == question_page.id]
-    assert len(related_links) == 1
-    assert related_links[0].link_type == LinkType.RELATED
+    question_links = [l for l in links if l.to_page_id == question_page.id]
+    assert len(question_links) == 1
+    assert question_links[0].link_type == LinkType.ANSWERS
 
 
 async def test_create_judgement_found_by_get_judgements(
@@ -192,12 +192,12 @@ async def test_get_judgements_excludes_superseded(tmp_db, question_page):
     await tmp_db.save_link(PageLink(
         from_page_id=j1.id,
         to_page_id=question_page.id,
-        link_type=LinkType.RELATED,
+        link_type=LinkType.ANSWERS,
     ))
     await tmp_db.save_link(PageLink(
         from_page_id=j2.id,
         to_page_id=question_page.id,
-        link_type=LinkType.RELATED,
+        link_type=LinkType.ANSWERS,
     ))
 
     before = await tmp_db.get_judgements_for_question(question_page.id)

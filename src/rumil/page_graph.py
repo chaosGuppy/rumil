@@ -152,7 +152,7 @@ class PageGraph:
         links = self._links_to.get(question_id, [])
         result = []
         for link in links:
-            if link.link_type != LinkType.RELATED:
+            if link.link_type != LinkType.ANSWERS:
                 continue
             page = self._pages.get(link.from_page_id)
             if page and page.is_active() and page.page_type == PageType.JUDGEMENT:
@@ -167,7 +167,7 @@ class PageGraph:
         result: dict[str, list[Page]] = {qid: [] for qid in question_ids}
         for qid in question_ids:
             for link in self._links_to.get(qid, []):
-                if link.link_type != LinkType.RELATED:
+                if link.link_type != LinkType.ANSWERS:
                     continue
                 page = self._pages.get(link.from_page_id)
                 if page and page.is_active() and page.page_type == PageType.JUDGEMENT:

@@ -440,6 +440,7 @@ _CONNECTED_LINK_TYPES = {
     LinkType.CONSIDERATION,
     LinkType.CHILD_QUESTION,
     LinkType.RELATED,
+    LinkType.ANSWERS,
     LinkType.DEPENDS_ON,
 }
 
@@ -638,7 +639,7 @@ async def _reassess_pages_citing_superseded(
         elif page.page_type == PageType.JUDGEMENT:
             links = await infra.db.get_links_from(page.id)
             question_links = [
-                l for l in links if l.link_type == LinkType.RELATED
+                l for l in links if l.link_type == LinkType.ANSWERS
             ]
             if question_links:
                 question_id = question_links[0].to_page_id

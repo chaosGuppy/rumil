@@ -1138,6 +1138,15 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
           ))}
         </div>
       )}
+      {event.event === "phase_skipped" && (
+        <div className="trace-event-body">
+          {event.reason && (
+            <div className="trace-kv">
+              <span className="trace-kv-value">{event.reason}</span>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 });

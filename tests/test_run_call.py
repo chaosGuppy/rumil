@@ -183,11 +183,11 @@ async def test_create_judgement_with_inline_links(tmp_db, question_page, scout_c
     assert judgement.page_type is PageType.JUDGEMENT
 
     links = await tmp_db.get_links_from(judgement_id)
-    related_links = [l for l in links if l.link_type == LinkType.RELATED]
-    assert len(related_links) >= 1, (
-        'Expected at least one related link from the judgement to the scope question'
+    answers_links = [l for l in links if l.link_type == LinkType.ANSWERS]
+    assert len(answers_links) >= 1, (
+        'Expected at least one answers link from the judgement to the scope question'
     )
-    assert related_links[0].to_page_id == question_page.id
+    assert answers_links[0].to_page_id == question_page.id
 
 
 @pytest.mark.llm

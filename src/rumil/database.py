@@ -1023,7 +1023,7 @@ class DB:
 
     async def get_judgements_for_question(self, question_id: str) -> list[Page]:
         links = await self.get_links_to(question_id)
-        judgement_links = [l for l in links if l.link_type == LinkType.RELATED]
+        judgement_links = [l for l in links if l.link_type == LinkType.ANSWERS]
         if not judgement_links:
             return []
         pages = await self.get_pages_by_ids(
@@ -1056,7 +1056,7 @@ class DB:
                 self.client.table("page_links")
                 .select("*")
                 .in_("to_page_id", batch)
-                .eq("link_type", LinkType.RELATED.value)
+                .eq("link_type", LinkType.ANSWERS.value)
             )
             query = self._staged_filter(query)
             rows = _rows(await self._execute(query))

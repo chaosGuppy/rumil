@@ -26,13 +26,25 @@ def _test_settings():
 
 
 def pytest_addoption(parser):
-    parser.addoption("--llm", action="store_true", default=False, help="Run tests that call the real LLM API")
-    parser.addoption("--integration", action="store_true", default=False, help="Run slow integration tests (implies --llm)")
+    parser.addoption(
+        "--llm",
+        action="store_true",
+        default=False,
+        help="Run tests that call the real LLM API",
+    )
+    parser.addoption(
+        "--integration",
+        action="store_true",
+        default=False,
+        help="Run slow integration tests (implies --llm)",
+    )
 
 
 def pytest_configure(config):
     config.addinivalue_line("markers", "llm: tests that call the real LLM API")
-    config.addinivalue_line("markers", "integration: slow integration tests that call the real LLM API")
+    config.addinivalue_line(
+        "markers", "integration: slow integration tests that call the real LLM API"
+    )
 
 
 def pytest_collection_modifyitems(config, items):
@@ -62,13 +74,13 @@ async def tmp_db():
 
 @pytest_asyncio.fixture
 async def question_page(tmp_db):
-    """Create and return a question page in the DB."""
+    """Create and return a question page in the DB (TAI-framed so LLM tests don't get refused)."""
     page = Page(
         page_type=PageType.QUESTION,
         layer=PageLayer.SQUIDGY,
         workspace=Workspace.RESEARCH,
-        content="Is the sky blue?",
-        headline="Is the sky blue?",
+        content="How quickly will frontier AI automate routine cognitive labour?",
+        headline="How quickly will frontier AI automate routine cognitive labour?",
     )
     await tmp_db.save_page(page)
     return page

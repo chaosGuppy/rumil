@@ -162,10 +162,15 @@ async def test_judgement_citing_claim_creates_depends_on_link(
     assert deps[0].to_page_id == claim_page.id
 
 
-async def test_question_citing_claim_creates_consideration_link(
+async def test_question_citing_claim_creates_related_link(
     tmp_db, claim_page,
 ):
-    """A QUESTION citing a CLAIM should produce a CONSIDERATION link (claim → question)."""
+    """A QUESTION citing a CLAIM should produce a RELATED link (claim → question).
+
+    Inline citations from a question's body are not strong enough to count
+    as considerations bearing on the question — they're a general relation.
+    A real consideration requires a deliberate link from a research step.
+    """
     question = Page(
         page_type=PageType.QUESTION,
         layer=PageLayer.SQUIDGY,
@@ -180,11 +185,14 @@ async def test_question_citing_claim_creates_consideration_link(
     )
 
     assert linked == {claim_page.id}
-    consideration_links = await tmp_db.get_links_to(question.id)
-    cons = [l for l in consideration_links if l.link_type == LinkType.CONSIDERATION]
-    assert len(cons) == 1
-    assert cons[0].from_page_id == claim_page.id
-    assert cons[0].to_page_id == question.id
+    question_links = await tmp_db.get_links_to(question.id)
+    rel = [l for l in question_links if l.link_type == LinkType.RELATED]
+    assert len(rel) == 1
+    assert rel[0].from_page_id == claim_page.id
+    assert rel[0].to_page_id == question.id
+    assert not [
+        l for l in question_links if l.link_type == LinkType.CONSIDERATION
+    ], "inline citation from a question body must not create a consideration"
 
 
 async def test_citing_question_resolves_to_its_judgement(tmp_db):
@@ -210,7 +218,7 @@ async def test_citing_question_resolves_to_its_judgement(tmp_db):
     await tmp_db.save_link(PageLink(
         from_page_id=answer.id,
         to_page_id=question.id,
-        link_type=LinkType.RELATED,
+        link_type=LinkType.ANSWERS,
     ))
 
     citing = Page(

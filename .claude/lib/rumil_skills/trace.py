@@ -23,30 +23,6 @@ from ._format import trace_url, truncate
 from ._runctx import make_db
 
 
-async def _resolve_call_id(db, call_id: str) -> str | None:
-    """Resolve a short (8-char) or full call ID to a full UUID."""
-    if len(call_id) >= 32:
-        rows = await db._execute(
-            db.client.table("calls").select("id").eq("id", call_id)
-        )
-        data = getattr(rows, "data", None) or []
-        return data[0]["id"] if data else None
-    # Short-ID prefix match
-    rows = await db._execute(
-        db.client.table("calls").select("id").like("id", f"{call_id}%").limit(2)
-    )
-    data = getattr(rows, "data", None) or []
-    if len(data) == 1:
-        return data[0]["id"]
-    if len(data) > 1:
-        print(
-            f"ambiguous short call id {call_id!r}: {len(data)}+ matches",
-            file=sys.stderr,
-        )
-        return None
-    return None
-
-
 async def _fetch_full_exchanges(db, call_id: str) -> list[dict[str, Any]]:
     """Fetch full llm_exchanges rows for a call, ordered by round."""
     rows = await db._execute(
@@ -171,7 +147,7 @@ async def main() -> None:
 
     db, ws = await make_db(workspace=args.workspace)
     try:
-        full_id = await _resolve_call_id(db, args.call_id)
+        full_id = await db.resolve_call_id(args.call_id)
         if not full_id:
             print(f"no call matching {args.call_id!r}")
             sys.exit(1)

@@ -103,16 +103,6 @@ question immediately shows whether the producing calls are suspect.
 
 **Size:** 30 minutes.
 
-### N3. Unify `_resolve_call_id`
-
-**What:** `trace.py` has its own call-id resolver that duplicates
-`db.resolve_call_id`. Drop the duplicate.
-
-**Why:** The DB method already handles edge cases my version doesn't
-(staged filtering, multi-match disambiguation). Duplication risks drift.
-
-**Size:** 15 minutes.
-
 ### N4. `rumil-prompt-edit` — script-backed file lookup
 
 **What:** Replace the hardcoded call_type → prompt-file mapping table in
@@ -395,9 +385,10 @@ archetype.
 - **Looking things up in the frontend because CC can't see them.** Means
   there should be a direct skill for that lookup. `rumil-page` was born
   from this pattern; `rumil-runs` (N1) is the next obvious case.
-- **Duplicated logic between `.claude/lib/` and `src/rumil/`.** My
-  `_resolve_call_id` is the current example. Drop the dup; use the
-  rumil side. Never reimplement what rumil already does.
+- **Duplicated logic between `.claude/lib/` and `src/rumil/`.** Never
+  reimplement what rumil already does — always prefer the rumil-side
+  method over a local copy. (N3 was the first instance: `trace.py` had
+  its own call-id resolver, now deferred to `db.resolve_call_id`.)
 - **"Which file/function am I supposed to look at"** — the prompt-file
   mapping in `rumil-prompt-edit` is the current case. Replace hardcoded
   tables with introspection where possible (N4).

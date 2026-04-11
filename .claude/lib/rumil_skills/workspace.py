@@ -46,8 +46,15 @@ async def _set(name: str) -> None:
     state = load_session_state()
     prev = state.workspace
     state.workspace = name
+    # An envelope is scoped to the workspace it was created in. Switching
+    # workspaces drops it so the next skill call opens a fresh one.
+    dropped_envelope = state.chat_envelope is not None and prev != name
+    if dropped_envelope:
+        state.chat_envelope = None
     save_session_state(state)
     print(f"workspace: {prev} → {name}")
+    if dropped_envelope:
+        print("(cleared stale chat envelope from previous workspace)")
 
 
 async def main() -> None:
@@ -56,7 +63,12 @@ async def main() -> None:
     sub.add_parser("list")
     set_parser = sub.add_parser("set")
     set_parser.add_argument("name")
-    args = parser.parse_args()
+
+    # Accept bare `<name>` as shorthand for `set <name>`.
+    argv = sys.argv[1:]
+    if argv and argv[0] not in ("list", "set", "-h", "--help"):
+        argv = ["set", *argv]
+    args = parser.parse_args(argv)
 
     state = load_session_state()
 

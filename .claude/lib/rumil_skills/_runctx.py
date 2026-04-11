@@ -198,8 +198,11 @@ async def ensure_chat_envelope(
     same way moves hang off a normal rumil call.
     """
     state = load_session_state()
+    ws = resolve_workspace(workspace)
     existing = state.chat_envelope
-    if existing:
+    # An envelope is only reusable if it was created for the *current* session
+    # workspace. Otherwise new moves would bleed into a stale project's trace.
+    if existing and existing.get("workspace") == ws:
         db = await DB.create(
             run_id=existing["run_id"],
             prod=False,
@@ -213,8 +216,10 @@ async def ensure_chat_envelope(
         # Stale pointer — close the leaked client and recreate below.
         await db.close()
         state.chat_envelope = None
-
-    ws = resolve_workspace(workspace)
+    elif existing:
+        # Workspace changed out from under the envelope; drop it.
+        state.chat_envelope = None
+        save_session_state(state)
     db = await DB.create(run_id=str(uuid.uuid4()), prod=False, staged=False)
     project = await db.get_or_create_project(ws)
     db.project_id = project.id

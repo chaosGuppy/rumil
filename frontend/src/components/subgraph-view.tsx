@@ -243,8 +243,8 @@ export function SubgraphView({
                       ? "var(--color-foreground)"
                       : "var(--color-muted)"
                   }
-                  strokeWidth={isHoveredEdge ? 1.5 : 0.9}
-                  opacity={dim ? 0.12 : 0.55}
+                  strokeWidth={isHoveredEdge ? 1.4 : 0.7}
+                  opacity={isHoveredEdge ? 0.85 : dim ? 0.08 : 0.22}
                   markerEnd={
                     dim
                       ? undefined
@@ -292,6 +292,7 @@ export function SubgraphView({
                   <circle
                     r={r}
                     fill={typeColor(n.page_type)}
+                    fillOpacity={isAnchor || isHovered ? 1 : 0.6}
                     stroke={
                       isAnchor
                         ? "var(--color-foreground)"

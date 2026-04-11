@@ -1921,6 +1921,34 @@ class DB:
             "judgements": cast(int, judgements_result.data or 0),
         }
 
+    async def get_project_stats(self, project_id: str) -> dict[str, Any]:
+        """Compute aggregate stats for a project via the compute_project_stats RPC.
+
+        Returns a JSONB blob (see supabase/migrations/20260411204240_add_stats_rpcs.sql
+        for the shape). v1 is baseline-only: staged runs are not applied.
+        """
+        result = await self._execute(
+            self.client.rpc(
+                "compute_project_stats",
+                {"p_project_id": project_id},
+            )
+        )
+        return cast(dict[str, Any], result.data or {})
+
+    async def get_question_stats(self, question_id: str) -> dict[str, Any]:
+        """Compute aggregate stats for the 3-hop undirected neighborhood of a question.
+
+        Returns the same JSONB shape as get_project_stats plus a subgraph_page_count
+        field. v1 is baseline-only: staged runs are not applied.
+        """
+        result = await self._execute(
+            self.client.rpc(
+                "compute_question_stats",
+                {"p_question_id": question_id},
+            )
+        )
+        return cast(dict[str, Any], result.data or {})
+
     async def count_pages_since(self, since: datetime) -> int:
         """Count workspace pages created after *since* (for cache invalidation)."""
         query = self.client.table("pages").select(

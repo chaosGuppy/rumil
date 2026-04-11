@@ -44,6 +44,7 @@ from rumil.models import (
     CallType,
     Dispatch,
     FindConsiderationsMode,
+    LinkType,
     MoveType,
     Page,
     PageLayer,
@@ -291,12 +292,34 @@ async def score_items_sequentially(
         return []
 
     item_ids = [item.id for item in items]
-    children_by_id: dict[str, list[Page]] = {}
+    question_items = [i for i in items if i.page_type == PageType.QUESTION]
+    question_ids = [q.id for q in question_items]
+
+    children_by_id: dict[str, list[Page]] | None = None
     all_child_ids: list[str] = []
-    for item in items:
-        children = await db.get_child_questions(item.id)
-        children_by_id[item.id] = children
-        all_child_ids.extend(c.id for c in children)
+    if question_ids:
+        children_by_id = {}
+        links_by_parent = await db.get_links_from_many(question_ids)
+        child_page_ids: list[str] = []
+        for qid in question_ids:
+            child_page_ids.extend(
+                l.to_page_id for l in links_by_parent.get(qid, [])
+                if l.link_type == LinkType.CHILD_QUESTION
+            )
+        if child_page_ids:
+            child_pages = await db.get_pages_by_ids(child_page_ids)
+            for qid in question_ids:
+                children_by_id[qid] = [
+                    child_pages[l.to_page_id]
+                    for l in links_by_parent.get(qid, [])
+                    if l.link_type == LinkType.CHILD_QUESTION
+                    and l.to_page_id in child_pages
+                    and child_pages[l.to_page_id].is_active()
+                ]
+            all_child_ids = [p.id for p in child_pages.values() if p.is_active()]
+        else:
+            for qid in question_ids:
+                children_by_id[qid] = []
 
     judgements_by_id = await db.get_judgements_for_questions(item_ids + all_child_ids)
 

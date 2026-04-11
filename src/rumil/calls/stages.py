@@ -42,8 +42,8 @@ class ContextResult:
 
 
 @dataclass
-class CreationResult:
-    """Output of the page-creation stage."""
+class UpdateResult:
+    """Output of the workspace-update stage."""
 
     created_page_ids: list[str]
     moves: list[Move]
@@ -59,13 +59,13 @@ class ContextBuilder(ABC):
     async def build_context(self, infra: CallInfra) -> ContextResult: ...
 
 
-class PageCreator(ABC):
+class WorkspaceUpdater(ABC):
     @abstractmethod
-    async def create_pages(
+    async def update_workspace(
         self,
         infra: CallInfra,
         context: ContextResult,
-    ) -> CreationResult: ...
+    ) -> UpdateResult: ...
 
 
 class ClosingReviewer(ABC):
@@ -74,7 +74,7 @@ class ClosingReviewer(ABC):
         self,
         infra: CallInfra,
         context: ContextResult,
-        creation: CreationResult,
+        creation: UpdateResult,
     ) -> None: ...
 
 
@@ -86,7 +86,7 @@ class CallRunner(ABC):
     """
 
     context_builder_cls: ClassVar[type[ContextBuilder]]
-    page_creator_cls: ClassVar[type[PageCreator]]
+    workspace_updater_cls: ClassVar[type[WorkspaceUpdater]]
     closing_reviewer_cls: ClassVar[type[ClosingReviewer]]
     call_type: ClassVar[CallType]
 
@@ -112,7 +112,7 @@ class CallRunner(ABC):
         self._max_rounds = max_rounds
         self._fruit_threshold = fruit_threshold
         self.context_result: ContextResult | None = None
-        self.creation_result: CreationResult | None = None
+        self.update_result: UpdateResult | None = None
         call.call_params = {
             **(call.call_params or {}),
             "max_rounds": max_rounds,
@@ -120,14 +120,14 @@ class CallRunner(ABC):
         }
 
         self.context_builder = self._make_context_builder()
-        self.page_creator = self._make_page_creator()
+        self.workspace_updater = self._make_workspace_updater()
         self.closing_reviewer = self._make_closing_reviewer()
 
     def _make_context_builder(self) -> ContextBuilder:
         return self.context_builder_cls()
 
-    def _make_page_creator(self) -> PageCreator:
-        return self.page_creator_cls()
+    def _make_workspace_updater(self) -> WorkspaceUpdater:
+        return self.workspace_updater_cls()
 
     def _make_closing_reviewer(self) -> ClosingReviewer:
         return self.closing_reviewer_cls()
@@ -142,11 +142,11 @@ class CallRunner(ABC):
         return self.infra.call.review_json or {}
 
     @property
-    def result(self) -> CreationResult:
-        """Access the creation result for backward compatibility."""
-        if self.creation_result is not None:
-            return self.creation_result
-        return CreationResult(created_page_ids=[], moves=[], all_loaded_ids=[])
+    def result(self) -> UpdateResult:
+        """Access the update result for backward compatibility."""
+        if self.update_result is not None:
+            return self.update_result
+        return UpdateResult(created_page_ids=[], moves=[], all_loaded_ids=[])
 
     @abstractmethod
     def task_description(self) -> str: ...
@@ -177,22 +177,22 @@ class CallRunner(ABC):
                 )
                 return
 
-            self.creation_result = await self.page_creator.create_pages(
+            self.update_result = await self.workspace_updater.update_workspace(
                 self.infra,
                 self.context_result,
             )
-            if self.up_to_stage == CallStage.CREATE_PAGES:
+            if self.up_to_stage == CallStage.UPDATE_WORKSPACE:
                 await mark_call_completed(
                     self.infra.call,
                     self.infra.db,
-                    "Stopped after create_pages",
+                    "Stopped after update_workspace",
                 )
                 return
 
             await self.closing_reviewer.closing_review(
                 self.infra,
                 self.context_result,
-                self.creation_result,
+                self.update_result,
             )
         except Exception as e:
             await self.infra.trace.record(

@@ -11,7 +11,7 @@ from rumil.calls.assess_concept_types import (
 from rumil.calls.closing_reviewers import ConceptAssessReview
 from rumil.calls.context_builders import ConceptAssessContext
 from rumil.calls.page_creators import SimpleAgentLoop
-from rumil.calls.stages import CallRunner, ClosingReviewer, ContextBuilder, PageCreator
+from rumil.calls.stages import CallRunner, ClosingReviewer, ContextBuilder, WorkspaceUpdater
 from rumil.database import DB
 from rumil.models import Call, CallStage, CallType, MoveType
 
@@ -20,7 +20,7 @@ class AssessConceptCall(CallRunner):
     """Assess a staged concept proposal: one round of testing."""
 
     context_builder_cls = ConceptAssessContext
-    page_creator_cls = SimpleAgentLoop
+    workspace_updater_cls = SimpleAgentLoop
     closing_reviewer_cls = ConceptAssessReview
     call_type = CallType.ASSESS_CONCEPT
 
@@ -50,7 +50,7 @@ class AssessConceptCall(CallRunner):
     def _make_context_builder(self) -> ContextBuilder:
         return ConceptAssessContext(self._phase)
 
-    def _make_page_creator(self) -> PageCreator:
+    def _make_workspace_updater(self) -> WorkspaceUpdater:
         if self._phase == VALIDATION_PHASE:
             moves = [MoveType.PROMOTE_CONCEPT, MoveType.LOAD_PAGE]
         else:

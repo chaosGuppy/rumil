@@ -21,7 +21,7 @@ from rumil.calls.common import (
     run_single_call,
     save_page_abstracts,
 )
-from rumil.calls.stages import CallInfra, ClosingReviewer, ContextResult, CreationResult
+from rumil.calls.stages import CallInfra, ClosingReviewer, ContextResult, UpdateResult
 from rumil.llm import (
     LLMExchangeMetadata,
     build_system_prompt,
@@ -48,7 +48,7 @@ class StandardClosingReview(ClosingReviewer):
         self,
         infra: CallInfra,
         context: ContextResult,
-        creation: CreationResult,
+        creation: UpdateResult,
     ) -> None:
         review_context = format_moves_for_review(creation.moves)
         review = await run_closing_review(
@@ -77,7 +77,7 @@ class StandardClosingReview(ClosingReviewer):
         summary = self._result_summary(creation)
         await mark_call_completed(infra.call, infra.db, summary)
 
-    def _result_summary(self, creation: CreationResult) -> str:
+    def _result_summary(self, creation: UpdateResult) -> str:
         return (
             f"{self._call_type.value.capitalize()} complete. "
             f"Created {len(creation.created_page_ids)} pages."
@@ -91,7 +91,7 @@ class IngestClosingReview(StandardClosingReview):
         super().__init__(call_type)
         self._filename = filename
 
-    def _result_summary(self, creation: CreationResult) -> str:
+    def _result_summary(self, creation: UpdateResult) -> str:
         return (
             f"Ingest complete. Created {len(creation.created_page_ids)} "
             f"pages from '{self._filename}'."
@@ -105,7 +105,7 @@ class WebResearchClosingReview(StandardClosingReview):
         super().__init__(call_type)
         self._page_creator = page_creator
 
-    def _result_summary(self, creation: CreationResult) -> str:
+    def _result_summary(self, creation: UpdateResult) -> str:
         source_count = (
             len(self._page_creator.source_page_ids)
             if self._page_creator is not None
@@ -248,7 +248,7 @@ class SinglePhaseScoutReview(ClosingReviewer):
         self,
         infra: CallInfra,
         context: ContextResult,
-        creation: CreationResult,
+        creation: UpdateResult,
     ) -> None:
         if not creation.messages:
             infra.call.review_json = {}
@@ -304,7 +304,7 @@ class ConceptAssessReview(ClosingReviewer):
         self,
         infra: CallInfra,
         context: ContextResult,
-        creation: CreationResult,
+        creation: UpdateResult,
     ) -> None:
         review_context = format_moves_for_review(creation.moves)
         review_task = (

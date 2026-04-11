@@ -211,6 +211,15 @@ export function SubgraphView({
             </marker>
           </defs>
 
+          <rect
+            x={0}
+            y={0}
+            width={WIDTH}
+            height={HEIGHT}
+            fill="transparent"
+            onMouseMove={() => setHoveredId(null)}
+          />
+
           {Array.from({ length: maxDepth }, (_, i) => i + 1).map((d) => (
             <circle
               key={`ring-${d}`}

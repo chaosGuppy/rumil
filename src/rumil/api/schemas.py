@@ -326,3 +326,41 @@ class ABRunTraceOut(BaseModel):
 class RealtimeConfigOut(BaseModel):
     url: str
     anon_key: str
+
+
+class DegreeCell(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    avg_out: float
+    avg_in: float
+
+
+class CallsForQuestion(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    question_id: str
+    headline: str | None
+    by_type: dict[str, int]
+    total: int
+
+
+class StatsOut(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    pages_total: int
+    pages_by_type: dict[str, int]
+    links_total: int
+    links_by_type: dict[str, int]
+    degree_matrix: dict[str, dict[str, DegreeCell]]
+    robustness_histogram: dict[str, int]
+    credence_histogram: dict[str, int]
+    calls_per_question: list[CallsForQuestion]
+
+
+class ProjectStatsOut(StatsOut):
+    project_id: str
+
+
+class QuestionStatsOut(StatsOut):
+    question_id: str
+    subgraph_page_count: int

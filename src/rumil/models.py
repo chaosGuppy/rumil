@@ -150,7 +150,7 @@ class MoveType(str, Enum):
 
 class CallStage(str, Enum):
     BUILD_CONTEXT = "build_context"
-    CREATE_PAGES = "create_pages"
+    UPDATE_WORKSPACE = "update_workspace"
     CLOSING_REVIEW = "closing_review"
 
 

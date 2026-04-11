@@ -361,6 +361,7 @@ async def render_subtree(
     detail: PageDetail = PageDetail.CONTENT,
     linked_detail: PageDetail | None = PageDetail.HEADLINE,
     content_page_ids: set[str] | None = None,
+    max_depth: int | None = None,
 ) -> str:
     """Render a full subtree of pages starting from a root page.
 
@@ -372,6 +373,9 @@ async def render_subtree(
 
     Pages whose IDs appear in *content_page_ids* are rendered at CONTENT
     detail regardless of the *detail* parameter.
+
+    *max_depth* limits how many levels of child questions to recurse into
+    (0 = root only, 1 = root + direct children, None = unlimited).
     """
     if graph is None:
         graph = await PageGraph.load(db)
@@ -427,6 +431,9 @@ async def render_subtree(
                     f'{indent}- '
                     + await format_page(j, linked_detail or PageDetail.HEADLINE, linked_detail=None, graph=graph)
                 )
+
+        if max_depth is not None and depth >= max_depth:
+            return
 
         children = await graph.get_child_questions(question.id)
         if children:
@@ -786,53 +793,6 @@ async def format_question_for_find_considerations(
     return "\n".join(parts), loaded_ids
 
 
-async def _build_question_index(
-    question_id: str,
-    db: DB,
-    indent: int = 0,
-    graph: PageGraph | None = None,
-    _visited: set[str] | None = None,
-) -> list[str]:
-    """Recursively build a flat index of all questions in the tree with their IDs.
-    Includes consideration count, last find-considerations fruit/date, and hypothesis flag."""
-    if _visited is None:
-        _visited = set()
-    if question_id in _visited:
-        return [f"{'  ' * indent}[child] `{question_id}` — *** cycle detected ***"]
-    _visited = _visited | {question_id}
-
-    source: DB | PageGraph = graph if graph is not None else db
-    question = await source.get_page(question_id)
-    if not question:
-        return []
-    prefix = "  " * indent
-    tag = "[scope]" if indent == 0 else "[child]"
-
-    extra = question.extra or {}
-    is_hypothesis = extra.get("hypothesis", False)
-    hypothesis_tag = " [hypothesis]" if is_hypothesis else ""
-
-    n_cons = len(await source.get_considerations_for_question(question_id))
-    fc_info = await db.get_last_find_considerations_info(question_id)
-    if fc_info:
-        date_str = fc_info[0][:10]
-        fruit = fc_info[1]
-        fruit_str = f"fruit={fruit}" if fruit is not None else "fruit=?"
-        fc_str = f"{fruit_str} · {date_str}"
-    else:
-        fc_str = "never explored"
-
-    lines = [
-        f"{prefix}{tag}{hypothesis_tag} `{question_id}` — {question.headline} "
-        f"({n_cons} cons · {fc_str})"
-    ]
-    for child in await source.get_child_questions(question_id):
-        lines.extend(await _build_question_index(
-            child.id, db, indent + 1, graph=graph, _visited=_visited,
-        ))
-    return lines
-
-
 def assemble_call_context(
     working_context: str,
     workspace_map: str | None = None,
@@ -897,8 +857,8 @@ async def build_prioritization_context(
     """Build context for a prioritization call.
 
     Uses embedding-similarity search to surface the most relevant pages
-    from the workspace, then appends the scope question's full subtree
-    (at ABSTRACT detail) and a dispatchable question index.
+    from the workspace, then appends the scope question and its direct
+    children (at ABSTRACT detail) and a dispatchable question index.
 
     Returns (context_text, short_id_map) where short_id_map maps 8-char
     short IDs to full UUIDs.
@@ -925,20 +885,6 @@ async def build_prioritization_context(
                 parts.append('---')
                 parts.append('')
 
-            index_lines = await _build_question_index(
-                scope_question_id, db, graph=graph,
-            )
-            parts.append('## Scope Subtree — Dispatchable Questions')
-            parts.append('')
-            parts.append(
-                'You can only dispatch research calls on questions in this subtree '
-                '(or on new subquestions you create during this call). '
-                'Use only these exact IDs in your dispatch tags:'
-            )
-            parts.append('')
-            parts.extend(index_lines)
-            parts.append('')
-
             direct_children = await source.get_child_questions(scope_question_id)
             full_page_ids = {scope_question_id} | {c.id for c in direct_children}
             subtree_text = await render_subtree(
@@ -947,17 +893,15 @@ async def build_prioritization_context(
                 detail=PageDetail.ABSTRACT,
                 linked_detail=PageDetail.ABSTRACT,
                 content_page_ids=full_page_ids,
+                max_depth=1,
             )
-            parts.append('## Scope Subtree — Detail')
+            parts.append('## Scope Question — Detail')
             parts.append('')
             parts.append(subtree_text)
             parts.append('')
 
-            subtree_ids = await collect_subtree_ids(
-                scope_question_id, db, graph=graph,
-            )
-            for sid in subtree_ids:
-                short_id_map[sid[:8]] = sid
+            for pid in full_page_ids:
+                short_id_map[pid[:8]] = pid
 
     dep_section = await _build_dependency_signal(db)
     if dep_section:

@@ -213,6 +213,7 @@ def _build_item_block(
     index: int,
     total: int,
     judgements_by_id: dict[str, list[Page]],
+    children_by_id: dict[str, list[Page]] | None = None,
 ) -> str:
     """Build the text block describing a single item for the scorer."""
     parts = [
@@ -240,6 +241,24 @@ def _build_item_block(
             )
     else:
         parts.append("\nNo prior assessment.")
+
+    if children_by_id is not None:
+        children = children_by_id.get(item.id, [])
+        if children:
+            parts.append("\nSubquestions:")
+            for child in children:
+                child_js = judgements_by_id.get(child.id, [])
+                if child_js:
+                    cj = max(child_js, key=lambda j: j.created_at)
+                    parts.append(
+                        f"- {child.headline} — judgement: {cj.headline} "
+                        f"(robustness {cj.robustness}/5)"
+                    )
+                else:
+                    parts.append(f"- {child.headline} — NO JUDGEMENT")
+        else:
+            parts.append("\nNo subquestions.")
+
     return "\n".join(parts)
 
 
@@ -271,9 +290,15 @@ async def score_items_sequentially(
     if not items:
         return []
 
-    judgements_by_id = await db.get_judgements_for_questions(
-        [item.id for item in items]
-    )
+    item_ids = [item.id for item in items]
+    children_by_id: dict[str, list[Page]] = {}
+    all_child_ids: list[str] = []
+    for item in items:
+        children = await db.get_child_questions(item.id)
+        children_by_id[item.id] = children
+        all_child_ids.extend(c.id for c in children)
+
+    judgements_by_id = await db.get_judgements_for_questions(item_ids + all_child_ids)
 
     batch_response_model = pydantic.create_model(
         f"{response_model.__name__}Batch",
@@ -315,7 +340,13 @@ async def score_items_sequentially(
         item_blocks = []
         for j, item in enumerate(batch_items):
             global_idx = sum(batch_sizes[:batch_idx]) + j
-            block = _build_item_block(item, global_idx, len(items), judgements_by_id)
+            block = _build_item_block(
+                item,
+                global_idx,
+                len(items),
+                judgements_by_id,
+                children_by_id,
+            )
             item_blocks.append(block)
 
         batch_text = (

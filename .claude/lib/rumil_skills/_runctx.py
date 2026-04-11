@@ -129,7 +129,7 @@ def _git_head() -> str | None:
 async def make_db(
     *,
     prod: bool = False,
-    staged: bool = True,
+    staged: bool = False,
     workspace: str | None = None,
     run_id: str | None = None,
 ) -> tuple[DB, str]:

@@ -72,28 +72,6 @@ class EmbeddingBasedContextResult:
 
 
 
-async def collect_all_subtree_page_ids(
-    question_id: str,
-    db: DB,
-    graph: PageGraph | None = None,
-    _visited: set[str] | None = None,
-) -> set[str]:
-    """Recursively collect all page IDs in a subtree: questions, considerations, and judgements."""
-    if _visited is None:
-        _visited = set()
-    if question_id in _visited:
-        return set()
-    _visited = _visited | {question_id}
-    source: DB | PageGraph = graph if graph is not None else db
-    result: set[str] = {question_id}
-    for page, _ in await source.get_considerations_for_question(question_id):
-        result.add(page.id)
-    for j in await source.get_judgements_for_question(question_id):
-        result.add(j.id)
-    for child in await source.get_child_questions(question_id):
-        result |= await collect_all_subtree_page_ids(child.id, db, graph=graph, _visited=_visited)
-    return result
-
 
 async def render_page_and_immediate_children(
     root_id: str,
@@ -600,14 +578,13 @@ async def build_prioritization_context(
     if scope_question_id:
         question = await db.get_page(scope_question_id)
         if question:
-            subtree_page_ids = await collect_all_subtree_page_ids(
-                scope_question_id, db,
-            )
+            direct_children = await db.get_child_questions(scope_question_id)
+            full_page_ids = {scope_question_id} | {c.id for c in direct_children}
             embedding_result = await build_embedding_based_context(
                 question.headline,
                 db,
                 scope_question_id=scope_question_id,
-                headline_only_ids=subtree_page_ids,
+                headline_only_ids=full_page_ids,
             )
             if embedding_result.context_text:
                 parts.append(embedding_result.context_text)
@@ -615,8 +592,6 @@ async def build_prioritization_context(
                 parts.append('---')
                 parts.append('')
 
-            direct_children = await db.get_child_questions(scope_question_id)
-            full_page_ids = {scope_question_id} | {c.id for c in direct_children}
             subtree_text = await render_page_and_immediate_children(
                 scope_question_id, db,
                 detail=PageDetail.ABSTRACT,

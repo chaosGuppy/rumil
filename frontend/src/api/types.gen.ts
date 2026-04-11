@@ -1304,6 +1304,7 @@ export type QuestionStatsOut = {
      * Subgraph Page Count
      */
     subgraph_page_count: number;
+    subgraph: Subgraph;
 };
 
 /**
@@ -1632,6 +1633,60 @@ export type SubagentStartedEventOut = {
      * Prompt
      */
     prompt: string;
+};
+
+/**
+ * Subgraph
+ */
+export type Subgraph = {
+    /**
+     * Nodes
+     */
+    nodes: Array<SubgraphNode>;
+    /**
+     * Edges
+     */
+    edges: Array<SubgraphEdge>;
+};
+
+/**
+ * SubgraphEdge
+ */
+export type SubgraphEdge = {
+    /**
+     * From Page Id
+     */
+    from_page_id: string;
+    /**
+     * To Page Id
+     */
+    to_page_id: string;
+    /**
+     * Link Type
+     */
+    link_type: string;
+};
+
+/**
+ * SubgraphNode
+ */
+export type SubgraphNode = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Page Type
+     */
+    page_type: string;
+    /**
+     * Headline
+     */
+    headline: string | null;
+    /**
+     * Depth
+     */
+    depth: number;
 };
 
 /**

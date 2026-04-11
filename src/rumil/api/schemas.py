@@ -361,6 +361,31 @@ class ProjectStatsOut(StatsOut):
     project_id: str
 
 
+class SubgraphNode(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    id: str
+    page_type: str
+    headline: str | None
+    depth: int
+
+
+class SubgraphEdge(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    from_page_id: str
+    to_page_id: str
+    link_type: str
+
+
+class Subgraph(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    nodes: list[SubgraphNode]
+    edges: list[SubgraphEdge]
+
+
 class QuestionStatsOut(StatsOut):
     question_id: str
     subgraph_page_count: int
+    subgraph: Subgraph

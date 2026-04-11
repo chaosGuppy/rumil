@@ -3562,6 +3562,9 @@
           "subgraph_page_count": {
             "type": "integer",
             "title": "Subgraph Page Count"
+          },
+          "subgraph": {
+            "$ref": "#/components/schemas/Subgraph"
           }
         },
         "type": "object",
@@ -3575,7 +3578,8 @@
           "credence_histogram",
           "calls_per_question",
           "question_id",
-          "subgraph_page_count"
+          "subgraph_page_count",
+          "subgraph"
         ],
         "title": "QuestionStatsOut"
       },
@@ -4152,6 +4156,88 @@
           "prompt"
         ],
         "title": "SubagentStartedEventOut"
+      },
+      "Subgraph": {
+        "properties": {
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/SubgraphNode"
+            },
+            "type": "array",
+            "title": "Nodes"
+          },
+          "edges": {
+            "items": {
+              "$ref": "#/components/schemas/SubgraphEdge"
+            },
+            "type": "array",
+            "title": "Edges"
+          }
+        },
+        "type": "object",
+        "required": [
+          "nodes",
+          "edges"
+        ],
+        "title": "Subgraph"
+      },
+      "SubgraphEdge": {
+        "properties": {
+          "from_page_id": {
+            "type": "string",
+            "title": "From Page Id"
+          },
+          "to_page_id": {
+            "type": "string",
+            "title": "To Page Id"
+          },
+          "link_type": {
+            "type": "string",
+            "title": "Link Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "from_page_id",
+          "to_page_id",
+          "link_type"
+        ],
+        "title": "SubgraphEdge"
+      },
+      "SubgraphNode": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "page_type": {
+            "type": "string",
+            "title": "Page Type"
+          },
+          "headline": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Headline"
+          },
+          "depth": {
+            "type": "integer",
+            "title": "Depth"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "page_type",
+          "headline",
+          "depth"
+        ],
+        "title": "SubgraphNode"
       },
       "SubquestionScoreItem": {
         "properties": {

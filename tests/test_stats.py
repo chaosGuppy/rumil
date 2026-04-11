@@ -263,3 +263,47 @@ async def test_question_stats_nonexistent(tmp_db):
     assert blob["subgraph_page_count"] == 0
     assert blob["pages_total"] == 0
     assert blob["links_total"] == 0
+
+
+@pytest.mark.asyncio
+async def test_question_stats_subgraph_depths(tmp_db, linear_chain):
+    """Each node in the returned subgraph should report its min hop distance
+    from the anchor. On a chain q0–q1–q2–q3–q4, scoping to q0 gives depths
+    0, 1, 2, 3 for q0..q3 respectively."""
+    blob = await tmp_db.get_question_stats(linear_chain[0].id)
+    nodes = blob["subgraph"]["nodes"]
+    depth_by_id = {n["id"]: n["depth"] for n in nodes}
+
+    assert depth_by_id[linear_chain[0].id] == 0
+    assert depth_by_id[linear_chain[1].id] == 1
+    assert depth_by_id[linear_chain[2].id] == 2
+    assert depth_by_id[linear_chain[3].id] == 3
+    assert linear_chain[4].id not in depth_by_id
+
+
+@pytest.mark.asyncio
+async def test_question_stats_subgraph_edges(tmp_db, small_project):
+    """Edges returned for a subgraph should match the active links between
+    subgraph pages, carrying link_type intact."""
+    blob = await tmp_db.get_question_stats(small_project["q_a"].id)
+    edges = blob["subgraph"]["edges"]
+    edge_set = {(e["from_page_id"], e["to_page_id"], e["link_type"]) for e in edges}
+
+    q_a_id = small_project["q_a"].id
+    assert (small_project["c_1"].id, q_a_id, "consideration") in edge_set
+    assert (small_project["c_2"].id, q_a_id, "consideration") in edge_set
+    assert (small_project["j_1"].id, q_a_id, "answers") in edge_set
+    assert (q_a_id, small_project["q_b"].id, "child_question") in edge_set
+
+
+@pytest.mark.asyncio
+async def test_question_stats_subgraph_isolated(tmp_db):
+    """A question with no neighbors has a subgraph containing only itself."""
+    q = await _make_page(tmp_db, page_type=PageType.QUESTION, headline="alone")
+    blob = await tmp_db.get_question_stats(q.id)
+    subgraph = blob["subgraph"]
+
+    assert len(subgraph["nodes"]) == 1
+    assert subgraph["nodes"][0]["id"] == q.id
+    assert subgraph["nodes"][0]["depth"] == 0
+    assert subgraph["edges"] == []

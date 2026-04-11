@@ -8,6 +8,7 @@ import type { PageDetailOut, QuestionStatsOut, Project } from "@/api";
 import { CLIENT_API_BASE as API_BASE } from "@/api-config";
 import { WorkspaceIndicator } from "@/components/workspace-indicator";
 import { StatsView } from "@/components/stats-view";
+import { SubgraphView } from "@/components/subgraph-view";
 
 type LoadState =
   | { kind: "loading" }
@@ -91,7 +92,8 @@ export default function QuestionStatsPage() {
 
   const leadingPanel =
     state.kind === "ready" ? (
-      <div className="question-context">
+      <>
+        <div className="question-context">
         <style>{`
           .question-context {
             border: 1px solid var(--type-question-border);
@@ -128,9 +130,12 @@ export default function QuestionStatsPage() {
         <div className="label">Question</div>
         <div className="headline">{state.headline}</div>
         <div className="meta">
-          <strong>{state.data.subgraph_page_count}</strong> pages within 3 hops
+          <strong>{state.data.subgraph_page_count}</strong>{" "}
+          {state.data.subgraph_page_count === 1 ? "page" : "pages"} within 3 hops
         </div>
-      </div>
+        </div>
+        <SubgraphView data={state.data.subgraph} anchorId={pageId} />
+      </>
     ) : null;
 
   return (

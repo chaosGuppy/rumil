@@ -220,9 +220,12 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         return result
 
     async def _is_new_question(self, question_id: str) -> bool:
-        """A question is 'new' if it has no links besides child_question to a parent."""
+        """A question is 'new' if it only has parent-pointer or inline-citation links."""
         links = await self.db.get_links_to(question_id)
-        return all(l.link_type == LinkType.CHILD_QUESTION for l in links)
+        return all(
+            l.link_type in (LinkType.CHILD_QUESTION, LinkType.RELATED)
+            for l in links
+        )
 
     async def _cancel_initial_call(self) -> None:
         """Mark the eagerly-created phase-1 call as complete when phase 1 is skipped."""

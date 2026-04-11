@@ -214,14 +214,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         return result
 
     async def _is_new_question(self, question_id: str) -> bool:
-        """A question is 'new' if no substantive research has happened on it yet.
-
-        Incoming CHILD_QUESTION links (a parent refers to it) and RELATED
-        links (inline citation from another page's body, or a general
-        relation drawn at creation time) don't count — they can exist on a
-        freshly-born question. Any other inbound link (CONSIDERATION,
-        ANSWERS, DEPENDS_ON, etc.) indicates real research has happened.
-        """
+        """A question is 'new' if it only has parent-pointer or inline-citation links."""
         links = await self.db.get_links_to(question_id)
         return all(
             l.link_type in (LinkType.CHILD_QUESTION, LinkType.RELATED)

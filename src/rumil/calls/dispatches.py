@@ -67,7 +67,6 @@ class DispatchDef(Generic[S]):
     def bind(
         self,
         state: MoveState,
-        subtree_ids: set[str] | None = None,
         short_id_map: dict[str, str] | None = None,
         scope_question_id: str | None = None,
     ) -> Tool:

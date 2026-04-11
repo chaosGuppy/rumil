@@ -16,7 +16,7 @@ from rumil.calls.dispatches import (
 )
 from rumil.calls.prioritization import run_prioritization_call
 from rumil.constants import LAST_CALL_THRESHOLD, MIN_TWOPHASE_BUDGET
-from rumil.context import build_prioritization_context, collect_subtree_ids
+from rumil.context import build_prioritization_context
 from rumil.database import DB
 from rumil.llm import build_system_prompt
 from rumil.models import (
@@ -37,7 +37,6 @@ from rumil.orchestrators.common import (
     compute_priority_score,
     score_items_sequentially,
 )
-from rumil.page_graph import SubtreeGraph
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
 from rumil.tracing.trace_events import (
@@ -293,11 +292,9 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
             claim_id[:8], budget, phase1_budget,
         )
 
-        graph = await SubtreeGraph.load_for_root(self.db, claim_id)
         context_text, short_id_map = await build_prioritization_context(
-            self.db, scope_question_id=claim_id, graph=graph,
+            self.db, scope_question_id=claim_id,
         )
-        subtree_ids = await collect_subtree_ids(claim_id, self.db, graph=graph)
         if self._initial_call is not None:
             p_call = self._initial_call
             self._initial_call = None
@@ -351,8 +348,6 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
 
         result = await run_prioritization_call(
             task, context_text, p_call, self.db,
-
-            subtree_ids=subtree_ids,
             short_id_map=short_id_map,
             dispatch_types=list(get_available_calls_preset().claim_phase1_scouts),
             system_prompt_override=build_system_prompt('claim_investigation_p1'),
@@ -433,15 +428,14 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
         set_trace(trace)
         await trace.record(ContextBuiltEvent(budget=budget))
 
-        graph = await SubtreeGraph.load_for_root(self.db, claim_id)
-        scope_page = await graph.get_page(claim_id)
+        scope_page = await self.db.get_page(claim_id)
         if not scope_page:
             raise RuntimeError(
-                f'Scope claim {claim_id} not found in SubtreeGraph.'
+                f'Scope claim {claim_id} not found.'
             )
         scope_headline = scope_page.headline
 
-        scope_judgements = await graph.get_judgements_for_question(claim_id)
+        scope_judgements = await self.db.get_judgements_for_question(claim_id)
         scope_judgement = (
             max(scope_judgements, key=lambda j: j.created_at)
             if scope_judgements else None
@@ -449,9 +443,9 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
 
         dependent_pages = [
             page for page, _link
-            in await graph.get_dependents(claim_id)
+            in await self.db.get_dependents(claim_id)
         ]
-        child_questions = await graph.get_child_questions(claim_id)
+        child_questions = await self.db.get_child_questions(claim_id)
         all_items = dependent_pages + list(child_questions)
 
         scoring_tasks: list = []
@@ -513,10 +507,8 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
             scores_text += '\n'.join(fruit_lines)
 
         context_text, short_id_map = await build_prioritization_context(
-            self.db, scope_question_id=claim_id, graph=graph,
+            self.db, scope_question_id=claim_id,
         )
-        subtree_ids = await collect_subtree_ids(claim_id, self.db, graph=graph)
-
         budget_line = f'You have a budget of **{budget} budget units** to allocate.'
         if last_call:
             budget_line += (
@@ -550,8 +542,6 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
 
         result = await run_prioritization_call(
             task, context_text, p_call, self.db,
-
-            subtree_ids=subtree_ids,
             short_id_map=short_id_map,
             dispatch_types=list(get_available_calls_preset().claim_phase2_dispatch),
             extra_dispatch_defs=extra_defs or None,

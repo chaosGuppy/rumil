@@ -293,12 +293,13 @@ class ExperimentalOrchestrator(BaseOrchestrator):
                 broadcaster=self.broadcaster,
             )
             await runner.run()
-            self._last_linker_eval_at = datetime.now(UTC)
         except Exception as e:
             log.warning(
                 'Subquestion linker failed for question=%s: %s',
                 question_id[:8], e, exc_info=True,
             )
+        finally:
+            self._last_linker_eval_at = datetime.now(UTC)
 
     async def _maybe_rerun_linker(
         self,

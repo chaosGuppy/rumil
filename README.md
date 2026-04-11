@@ -95,13 +95,6 @@ uv run python main.py --evaluate QUESTION_ID
 # Use a specific evaluation prompt type (default: "default")
 uv run python main.py --evaluate QUESTION_ID --eval-type grounding
 
-# Find existing questions in the workspace that should be linked as subquestions
-# of a scope question. Returns proposed ids without creating links.
-uv run python main.py --link-subquestions QUESTION_ID
-
-# Override the linker agent's max exploration rounds (default: 6)
-uv run python main.py --link-subquestions QUESTION_ID --linker-max-rounds 4
-
 # Display the full output of a completed evaluation
 uv run python main.py --show-evaluation CALL_ID
 

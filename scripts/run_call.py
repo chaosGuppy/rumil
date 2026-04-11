@@ -55,7 +55,7 @@ from rumil.database import DB
 from rumil.models import CallStage, CallType, FindConsiderationsMode
 from rumil.orchestrators import create_root_question
 from rumil.orchestrators.robustify import RobustifyOrchestrator
-from rumil.scope_subquestion_linker import run_scope_subquestion_linker
+from rumil.calls.link_subquestions import LinkSubquestionsCall
 from rumil.settings import Settings, get_settings, _settings_var
 
 
@@ -146,10 +146,17 @@ async def run_call(args: argparse.Namespace, db: DB, question_id: str) -> None:
         await run_prioritization(question_id, call, args.budget, db)
 
     elif call_type == "link-subquestions":
-        if up_to_stage:
-            print("--up-to-stage is not supported for link-subquestions.")
-            return
-        await run_scope_subquestion_linker(question_id, db, max_rounds=args.max_rounds)
+        call = await db.create_call(
+            CallType.LINK_SUBQUESTIONS,
+            scope_page_id=question_id,
+        )
+        linker = LinkSubquestionsCall(
+            question_id,
+            call,
+            db,
+            up_to_stage=up_to_stage,
+        )
+        await linker.run()
 
     elif call_type == "robustify":
         if up_to_stage:

@@ -51,9 +51,10 @@ content is persisted regardless of display truncation.
 
 ## Workspace
 
-`--save` uses the session workspace from `.claude/state/rumil-session.json`,
-overridable with `--workspace name`. Non-save modes ignore workspace —
-they don't touch the DB.
+All modes resolve the session workspace from `.claude/state/rumil-session.json`
+and print it in the header, overridable with `--workspace name`. Default and
+`--summary` modes don't touch the DB, so the workspace is label-only there
+(it becomes load-bearing once `--save` writes a Source page).
 
 ## Invocation
 

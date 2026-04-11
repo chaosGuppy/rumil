@@ -34,6 +34,7 @@ from rumil.sources import (
 )
 
 from ._format import print_event, truncate
+from ._runctx import resolve_workspace
 
 DISPLAY_LIMIT = 50_000
 
@@ -89,6 +90,7 @@ async def _do_save(
     db, ws = await make_db(workspace=workspace)
     try:
         print(f"workspace: {ws}")
+        print()
         page = await create_source_page(source_arg, db)
         if page is None:
             sys.exit(1)
@@ -131,7 +133,7 @@ async def main() -> None:
     parser.add_argument(
         "--workspace",
         default=None,
-        help="Workspace override for --save (otherwise uses session state)",
+        help="Override the session workspace (defaults to session state)",
     )
     args = parser.parse_args()
 
@@ -139,7 +141,9 @@ async def main() -> None:
         await _do_save(args.source, args.workspace)
         return
 
-    # Pure fetch-and-print path: no DB, no rumil_skills runctx.
+    # Pure fetch-and-print path: no DB, but still resolve the workspace so the
+    # output header is consistent with other rumil-* skills.
+    ws = resolve_workspace(args.workspace)
     title: str
     content: str
     extra_lines: list[str] = []
@@ -159,6 +163,7 @@ async def main() -> None:
             sys.exit(1)
         title, content = fetched
 
+    print(f"workspace: {ws}")
     print(f"source:    {title}")
     for line in extra_lines:
         print(line)

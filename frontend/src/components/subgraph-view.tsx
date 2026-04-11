@@ -131,6 +131,11 @@ export function SubgraphView({
       .filter((e): e is NonNullable<typeof e> => e !== null);
   }, [data.edges, positions, anchorId]);
 
+  const hoveredNode = useMemo(() => {
+    if (!hoveredId) return null;
+    return laidOut.find((n) => n.id === hoveredId) ?? null;
+  }, [hoveredId, laidOut]);
+
   const hoveredNeighbors = useMemo(() => {
     if (!hoveredId) return new Set<string>();
     const s = new Set<string>();
@@ -286,9 +291,6 @@ export function SubgraphView({
                     transition: "opacity 0.15s ease",
                   }}
                 >
-                  <title>
-                    {n.page_type} · {n.headline ?? n.id} · hop {n.depth}
-                  </title>
                   {isAnchor && (
                     <circle
                       r={baseR + 6}
@@ -314,6 +316,22 @@ export function SubgraphView({
             })}
           </g>
         </svg>
+        <div className={`hover-info${hoveredNode ? " visible" : ""}`}>
+          {hoveredNode && (
+            <>
+              <span
+                className="hover-type"
+                style={{ color: typeColor(hoveredNode.page_type) }}
+              >
+                {hoveredNode.page_type}
+              </span>
+              <span className="hover-headline">
+                {hoveredNode.headline ?? hoveredNode.id}
+              </span>
+              <span className="hover-depth">hop {hoveredNode.depth}</span>
+            </>
+          )}
+        </div>
       </div>
       <div className="legend">
         <span className="legend-label">page types</span>
@@ -379,6 +397,52 @@ const subgraphCss = `
         radial-gradient(circle at center, rgba(255,255,255,0.035) 1px, transparent 1.5px) 0 0 / 18px 18px,
         var(--color-background);
     }
+  }
+  .subgraph-panel .hover-info {
+    position: absolute;
+    left: 0.75rem;
+    bottom: 0.75rem;
+    right: 0.75rem;
+    display: flex;
+    align-items: baseline;
+    gap: 0.65rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-left: 3px solid var(--color-accent);
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity 0.15s ease, transform 0.15s ease;
+    pointer-events: none;
+  }
+  .subgraph-panel .hover-info.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  .subgraph-panel .hover-type {
+    font-family: var(--font-geist-mono), monospace;
+    font-size: 0.6rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+  .subgraph-panel .hover-headline {
+    font-size: 0.8rem;
+    color: var(--color-foreground);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .subgraph-panel .hover-depth {
+    font-family: var(--font-geist-mono), monospace;
+    font-size: 0.6rem;
+    color: var(--color-muted);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    flex-shrink: 0;
   }
   .subgraph-panel .legend {
     display: flex;

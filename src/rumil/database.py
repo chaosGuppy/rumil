@@ -87,6 +87,11 @@ _db_retry = retry(
 )
 
 
+_LINK_COLUMNS = (
+    'id,from_page_id,to_page_id,link_type,direction,'
+    'strength,reasoning,role,created_at'
+)
+
 _SLIM_PAGE_COLUMNS = (
     'id,page_type,layer,workspace,headline,abstract,'
     'epistemic_status,epistemic_type,credence,robustness,extra,is_superseded,'
@@ -897,18 +902,26 @@ class DB:
         if not page_ids:
             return result
         id_list = list(dict.fromkeys(page_ids))
-        batch_size = 200
+        batch_size = 100
+        page_size = 2000
         all_links: list[PageLink] = []
         for start in range(0, len(id_list), batch_size):
             batch = id_list[start:start + batch_size]
-            query = (
-                self.client.table("page_links")
-                .select("*")
-                .in_("from_page_id", batch)
-            )
-            query = self._staged_filter(query)
-            rows = _rows(await self._execute(query))
-            all_links.extend(_row_to_link(r) for r in rows)
+            offset = 0
+            while True:
+                query = (
+                    self.client.table("page_links")
+                    .select(_LINK_COLUMNS)
+                    .in_("from_page_id", batch)
+                )
+                query = self._staged_filter(query)
+                rows = _rows(await self._execute(
+                    query.range(offset, offset + page_size - 1)
+                ))
+                all_links.extend(_row_to_link(r) for r in rows)
+                if len(rows) < page_size:
+                    break
+                offset += page_size
         applied = await self._apply_link_events(all_links)
         for link in applied:
             result.setdefault(link.from_page_id, []).append(link)
@@ -922,18 +935,26 @@ class DB:
         if not page_ids:
             return result
         id_list = list(dict.fromkeys(page_ids))
-        batch_size = 200
+        batch_size = 100
+        page_size = 2000
         all_links: list[PageLink] = []
         for start in range(0, len(id_list), batch_size):
             batch = id_list[start:start + batch_size]
-            query = (
-                self.client.table("page_links")
-                .select("*")
-                .in_("to_page_id", batch)
-            )
-            query = self._staged_filter(query)
-            rows = _rows(await self._execute(query))
-            all_links.extend(_row_to_link(r) for r in rows)
+            offset = 0
+            while True:
+                query = (
+                    self.client.table("page_links")
+                    .select(_LINK_COLUMNS)
+                    .in_("to_page_id", batch)
+                )
+                query = self._staged_filter(query)
+                rows = _rows(await self._execute(
+                    query.range(offset, offset + page_size - 1)
+                ))
+                all_links.extend(_row_to_link(r) for r in rows)
+                if len(rows) < page_size:
+                    break
+                offset += page_size
         applied = await self._apply_link_events(all_links)
         for link in applied:
             result.setdefault(link.to_page_id, []).append(link)
@@ -979,6 +1000,31 @@ class DB:
             if l.from_page_id in pages and pages[l.from_page_id].is_active()
         ]
 
+    async def get_considerations_for_questions(
+        self,
+        question_ids: Sequence[str],
+    ) -> dict[str, list[tuple[Page, PageLink]]]:
+        """Bulk-fetch considerations for many questions. Returns {question_id: [(claim, link)]}."""
+        result: dict[str, list[tuple[Page, PageLink]]] = {qid: [] for qid in question_ids}
+        if not question_ids:
+            return result
+        id_list = list(dict.fromkeys(question_ids))
+        links_by_target = await self.get_links_to_many(id_list)
+        consideration_links: list[PageLink] = []
+        for qid in id_list:
+            for link in links_by_target.get(qid, []):
+                if link.link_type == LinkType.CONSIDERATION:
+                    consideration_links.append(link)
+        if not consideration_links:
+            return result
+        page_ids = list({l.from_page_id for l in consideration_links})
+        pages = await self.get_pages_by_ids(page_ids)
+        for link in consideration_links:
+            page = pages.get(link.from_page_id)
+            if page and page.is_active():
+                result[link.to_page_id].append((page, link))
+        return result
+
     async def get_parent_question(self, question_id: str) -> Page | None:
         """Return the parent question, or None if this is a root question."""
         links = await self.get_links_to(question_id)
@@ -1023,7 +1069,7 @@ class DB:
 
     async def get_judgements_for_question(self, question_id: str) -> list[Page]:
         links = await self.get_links_to(question_id)
-        judgement_links = [l for l in links if l.link_type == LinkType.RELATED]
+        judgement_links = [l for l in links if l.link_type == LinkType.ANSWERS]
         if not judgement_links:
             return []
         pages = await self.get_pages_by_ids(
@@ -1048,19 +1094,27 @@ class DB:
         if not question_ids:
             return result
         id_list = list(dict.fromkeys(question_ids))
-        batch_size = 200
+        batch_size = 100
+        page_size = 2000
         all_links: list[PageLink] = []
         for start in range(0, len(id_list), batch_size):
             batch = id_list[start:start + batch_size]
-            query = (
-                self.client.table("page_links")
-                .select("*")
-                .in_("to_page_id", batch)
-                .eq("link_type", LinkType.RELATED.value)
-            )
-            query = self._staged_filter(query)
-            rows = _rows(await self._execute(query))
-            all_links.extend(_row_to_link(r) for r in rows)
+            offset = 0
+            while True:
+                query = (
+                    self.client.table("page_links")
+                    .select(_LINK_COLUMNS)
+                    .in_("to_page_id", batch)
+                    .eq("link_type", LinkType.ANSWERS.value)
+                )
+                query = self._staged_filter(query)
+                rows = _rows(await self._execute(
+                    query.range(offset, offset + page_size - 1)
+                ))
+                all_links.extend(_row_to_link(r) for r in rows)
+                if len(rows) < page_size:
+                    break
+                offset += page_size
         applied = await self._apply_link_events(all_links)
         from_ids = list({l.from_page_id for l in applied})
         pages = await self.get_pages_by_ids(from_ids)
@@ -1349,8 +1403,7 @@ class DB:
         """
         if page_ids is not None:
             return await self._get_links_for_pages(page_ids)
-        query = self.client.table("page_links").select("*")
-        query = self._staged_filter(query)
+        page_size = 2000
         if self.project_id:
             page_ids_query = self._staged_filter(
                 self.client.table("pages")
@@ -1359,14 +1412,36 @@ class DB:
             )
             page_ids_rows = _rows(await self._execute(page_ids_query.limit(50000)))
             proj_page_ids = {r["id"] for r in page_ids_rows}
-            rows = _rows(await self._execute(query.limit(50000)))
+            all_rows: list[dict[str, Any]] = []
+            offset = 0
+            while True:
+                query = self.client.table("page_links").select(_LINK_COLUMNS)
+                query = self._staged_filter(query)
+                rows = _rows(await self._execute(
+                    query.range(offset, offset + page_size - 1)
+                ))
+                all_rows.extend(rows)
+                if len(rows) < page_size:
+                    break
+                offset += page_size
             links = [
-                _row_to_link(r) for r in rows
+                _row_to_link(r) for r in all_rows
                 if r["from_page_id"] in proj_page_ids or r["to_page_id"] in proj_page_ids
             ]
         else:
-            rows = _rows(await self._execute(query.limit(50000)))
-            links = [_row_to_link(r) for r in rows]
+            all_rows = []
+            offset = 0
+            while True:
+                query = self.client.table("page_links").select(_LINK_COLUMNS)
+                query = self._staged_filter(query)
+                rows = _rows(await self._execute(
+                    query.range(offset, offset + page_size - 1)
+                ))
+                all_rows.extend(rows)
+                if len(rows) < page_size:
+                    break
+                offset += page_size
+            links = [_row_to_link(r) for r in all_rows]
         return await self._apply_link_events(links)
 
     async def _get_links_for_pages(
@@ -1374,20 +1449,33 @@ class DB:
     ) -> list[PageLink]:
         """Fetch links where at least one endpoint is in *page_ids*.
 
-        Batches into chunks to stay within URL-length limits.
+        Batches into chunks to stay within URL-length limits and paginates
+        within each batch to avoid PostgREST response-size failures.
         """
         all_links: dict[str, PageLink] = {}
         id_list = list(page_ids)
-        batch_size = 200
+        batch_size = 100
+        page_size = 2000
         for start in range(0, len(id_list), batch_size):
             batch = id_list[start:start + batch_size]
             for col in ('from_page_id', 'to_page_id'):
-                query = self.client.table("page_links").select("*").in_(col, batch)
-                query = self._staged_filter(query)
-                rows = _rows(await self._execute(query.limit(50000)))
-                for r in rows:
-                    link = _row_to_link(r)
-                    all_links[link.id] = link
+                offset = 0
+                while True:
+                    query = (
+                        self.client.table("page_links")
+                        .select(_LINK_COLUMNS)
+                        .in_(col, batch)
+                    )
+                    query = self._staged_filter(query)
+                    rows = _rows(await self._execute(
+                        query.range(offset, offset + page_size - 1)
+                    ))
+                    for r in rows:
+                        link = _row_to_link(r)
+                        all_links[link.id] = link
+                    if len(rows) < page_size:
+                        break
+                    offset += page_size
         return await self._apply_link_events(list(all_links.values()))
 
     async def delete_link(self, link_id: str) -> None:
@@ -1832,6 +1920,45 @@ class DB:
             "considerations": cons_result.count or 0,
             "judgements": cast(int, judgements_result.data or 0),
         }
+
+    async def get_project_stats(self, project_id: str) -> dict[str, Any]:
+        """Compute aggregate stats for a project via the compute_project_stats RPC.
+
+        Returns a JSONB blob (see supabase/migrations/20260411204240_add_stats_rpcs.sql
+        for the shape). v1 is baseline-only: staged runs are not applied.
+        """
+        result = await self._execute(
+            self.client.rpc(
+                "compute_project_stats",
+                {"p_project_id": project_id},
+            )
+        )
+        return cast(dict[str, Any], result.data or {})
+
+    async def get_question_stats(self, question_id: str) -> dict[str, Any]:
+        """Compute aggregate stats for the 3-hop undirected neighborhood of a question.
+
+        Returns the same JSONB shape as get_project_stats plus a subgraph_page_count
+        field. v1 is baseline-only: staged runs are not applied.
+        """
+        result = await self._execute(
+            self.client.rpc(
+                "compute_question_stats",
+                {"p_question_id": question_id},
+            )
+        )
+        return cast(dict[str, Any], result.data or {})
+
+    async def count_pages_since(self, since: datetime) -> int:
+        """Count workspace pages created after *since* (for cache invalidation)."""
+        query = self.client.table("pages").select(
+            "id", count=CountMethod.exact
+        ).gt("created_at", since.isoformat())
+        if self.project_id:
+            query = query.eq("project_id", self.project_id)
+        query = self._staged_filter(query)
+        result = await self._execute(query)
+        return result.count or 0
 
     async def save_llm_exchange(
         self,

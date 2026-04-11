@@ -3,7 +3,12 @@
 from rumil.calls.closing_reviewers import StandardClosingReview
 from rumil.calls.context_builders import ConceptScoutContext
 from rumil.calls.page_creators import SimpleAgentLoop
-from rumil.calls.stages import CallRunner, ClosingReviewer, ContextBuilder, PageCreator
+from rumil.calls.stages import (
+    CallRunner,
+    ClosingReviewer,
+    ContextBuilder,
+    WorkspaceUpdater,
+)
 from rumil.models import CallType
 
 
@@ -11,14 +16,14 @@ class ScoutConceptsCall(CallRunner):
     """Survey the research workspace and propose concepts for assessment."""
 
     context_builder_cls = ConceptScoutContext
-    page_creator_cls = SimpleAgentLoop
+    workspace_updater_cls = SimpleAgentLoop
     closing_reviewer_cls = StandardClosingReview
     call_type = CallType.SCOUT_CONCEPTS
 
     def _make_context_builder(self) -> ContextBuilder:
         return ConceptScoutContext(self.call_type)
 
-    def _make_page_creator(self) -> PageCreator:
+    def _make_workspace_updater(self) -> WorkspaceUpdater:
         return SimpleAgentLoop(
             self.call_type,
             self.task_description(),

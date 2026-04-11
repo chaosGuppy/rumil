@@ -183,6 +183,11 @@ export default function PagesIndexPage() {
         .pages-header {
           margin-top: 1.5rem;
           margin-bottom: 2rem;
+          display: flex;
+          align-items: baseline;
+          justify-content: space-between;
+          gap: 1rem;
+          flex-wrap: wrap;
         }
         .pages-header h1 {
           font-size: 1.6rem;
@@ -194,6 +199,25 @@ export default function PagesIndexPage() {
           font-size: 0.85rem;
           color: var(--color-muted);
           font-family: var(--font-geist-mono), monospace;
+        }
+        .pages-header-nav {
+          display: flex;
+          gap: 0.5rem;
+          font-family: var(--font-geist-mono), monospace;
+          font-size: 0.7rem;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+        }
+        .pages-header-nav a {
+          color: var(--color-muted);
+          text-decoration: none;
+          border: 1px solid var(--color-border);
+          padding: 0.35rem 0.7rem;
+          transition: all 0.12s ease;
+        }
+        .pages-header-nav a:hover {
+          color: var(--color-foreground);
+          border-color: var(--color-accent);
         }
 
         .controls {
@@ -774,8 +798,13 @@ export default function PagesIndexPage() {
       <WorkspaceIndicator projectId={projectId} projectName={projectName} />
 
       <div className="pages-header">
-        <h1>Pages</h1>
-        <div className="subtitle">{totalCount} total</div>
+        <div>
+          <h1>Pages</h1>
+          <div className="subtitle">{totalCount} total</div>
+        </div>
+        <div className="pages-header-nav">
+          <Link href={`/projects/${projectId}/stats`}>Stats</Link>
+        </div>
       </div>
 
       {runs.length > 0 && (

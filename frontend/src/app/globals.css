@@ -3,6 +3,42 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+
+  --color-muted: #888;
+  --color-dim: #aaa;
+  --color-border: #ddd;
+  --color-surface: #f6f6f6;
+  --color-accent: #444;
+
+  --type-claim: #4a6d9c;
+  --type-claim-bg: #f3f5f8;
+  --type-claim-bg-hover: #eaeff4;
+  --type-claim-border: #b0bfcf;
+
+  --type-question: #6b5b8a;
+  --type-question-bg: #f4f3f7;
+  --type-question-bg-hover: #edebf2;
+  --type-question-border: #b5aec5;
+
+  --type-judgement: #8c7040;
+  --type-judgement-bg: #f7f5f0;
+  --type-judgement-bg-hover: #f0ece2;
+  --type-judgement-border: #c4b48a;
+
+  --type-source: #6b7280;
+  --type-source-bg: #f4f5f6;
+  --type-source-bg-hover: #ededef;
+  --type-source-border: #c0c3c8;
+
+  --type-concept: #4a7f78;
+  --type-concept-bg: #f2f6f5;
+  --type-concept-bg-hover: #e8efed;
+  --type-concept-border: #a3bdb8;
+
+  --type-wiki: #4e7f56;
+  --type-wiki-bg: #f3f6f3;
+  --type-wiki-bg-hover: #e9f0ea;
+  --type-wiki-border: #a5c0a9;
 }
 
 @theme inline {
@@ -16,6 +52,42 @@
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
+
+    --color-muted: #6a6a6a;
+    --color-dim: #4a4a4a;
+    --color-border: #222;
+    --color-surface: #111;
+    --color-accent: #888;
+
+    --type-claim: #7a9abb;
+    --type-claim-bg: #0e1318;
+    --type-claim-bg-hover: #131a22;
+    --type-claim-border: #1e2a38;
+
+    --type-question: #9388ad;
+    --type-question-bg: #11101a;
+    --type-question-bg-hover: #181524;
+    --type-question-border: #242038;
+
+    --type-judgement: #b8a46a;
+    --type-judgement-bg: #141108;
+    --type-judgement-bg-hover: #1c180f;
+    --type-judgement-border: #2e2714;
+
+    --type-source: #8a8f96;
+    --type-source-bg: #101112;
+    --type-source-bg-hover: #171819;
+    --type-source-border: #242628;
+
+    --type-concept: #6aaa9f;
+    --type-concept-bg: #0b1413;
+    --type-concept-bg-hover: #111d1b;
+    --type-concept-border: #1a2e2a;
+
+    --type-wiki: #6fa877;
+    --type-wiki-bg: #0b140d;
+    --type-wiki-bg-hover: #111d14;
+    --type-wiki-border: #1a2e1f;
   }
 }
 

@@ -418,8 +418,10 @@ async def extract_and_link_citations(
     - Citing CLAIM/JUDGEMENT cites a CLAIM/JUDGEMENT → DEPENDS_ON
       (from=citing, to=cited): the citing page's conclusions rest on the
       cited page being true.
-    - Citing QUESTION cites a CLAIM/JUDGEMENT → CONSIDERATION
-      (from=cited, to=citing): the cited claim bears on the question.
+    - Citing QUESTION cites a CLAIM/JUDGEMENT → RELATED
+      (from=cited, to=citing): inline citations from a question's body are
+      not strong enough to count as considerations bearing on the question —
+      they are just a general relation.
     - Otherwise → RELATED (from=cited, to=citing).
 
     Returns the set of full UUIDs that were successfully linked.
@@ -468,9 +470,6 @@ async def extract_and_link_citations(
             if citing_type in (PageType.CLAIM, PageType.JUDGEMENT):
                 link_type = LinkType.DEPENDS_ON
                 from_id, to_id = page_id, resolved
-            elif citing_type == PageType.QUESTION:
-                link_type = LinkType.CONSIDERATION
-                from_id, to_id = resolved, page_id
             else:
                 link_type = LinkType.RELATED
                 from_id, to_id = resolved, page_id

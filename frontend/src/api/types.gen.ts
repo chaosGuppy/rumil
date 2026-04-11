@@ -324,7 +324,9 @@ export type CallTraceOut = {
         event: 'render_question_subgraph';
     } & RenderQuestionSubgraphEventOut) | ({
         event: 'link_subquestions_complete';
-    } & LinkSubquestionsCompleteEventOut)>;
+    } & LinkSubquestionsCompleteEventOut) | ({
+        event: 'phase_skipped';
+    } & PhaseSkippedEventOut)>;
     /**
      * Children
      */
@@ -360,6 +362,30 @@ export type CallTypeFruitScoreItem = {
      * Reasoning
      */
     reasoning?: string;
+};
+
+/**
+ * CallsForQuestion
+ */
+export type CallsForQuestion = {
+    /**
+     * Question Id
+     */
+    question_id: string;
+    /**
+     * Headline
+     */
+    headline: string | null;
+    /**
+     * By Type
+     */
+    by_type: {
+        [key: string]: number;
+    };
+    /**
+     * Total
+     */
+    total: number;
 };
 
 /**
@@ -467,6 +493,20 @@ export type ContextBuiltEventOut = {
      * Scout Mode
      */
     scout_mode: string | null;
+};
+
+/**
+ * DegreeCell
+ */
+export type DegreeCell = {
+    /**
+     * Avg Out
+     */
+    avg_out: number;
+    /**
+     * Avg In
+     */
+    avg_in: number;
 };
 
 /**
@@ -854,7 +894,7 @@ export type LinkSubquestionsCompleteEventOut = {
 /**
  * LinkType
  */
-export type LinkType = 'consideration' | 'child_question' | 'supersedes' | 'related' | 'variant' | 'summarizes' | 'cites' | 'depends_on';
+export type LinkType = 'consideration' | 'child_question' | 'supersedes' | 'related' | 'answers' | 'variant' | 'summarizes' | 'cites' | 'depends_on';
 
 /**
  * LinkedPageOut
@@ -1093,6 +1133,32 @@ export type PaginatedPagesOut = {
 };
 
 /**
+ * PhaseSkippedEventOut
+ */
+export type PhaseSkippedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'phase_skipped';
+    /**
+     * Phase
+     */
+    phase: string;
+    /**
+     * Reason
+     */
+    reason: string;
+};
+
+/**
  * Project
  */
 export type Project = {
@@ -1115,6 +1181,60 @@ export type Project = {
 };
 
 /**
+ * ProjectStatsOut
+ */
+export type ProjectStatsOut = {
+    /**
+     * Pages Total
+     */
+    pages_total: number;
+    /**
+     * Pages By Type
+     */
+    pages_by_type: {
+        [key: string]: number;
+    };
+    /**
+     * Links Total
+     */
+    links_total: number;
+    /**
+     * Links By Type
+     */
+    links_by_type: {
+        [key: string]: number;
+    };
+    /**
+     * Degree Matrix
+     */
+    degree_matrix: {
+        [key: string]: {
+            [key: string]: DegreeCell;
+        };
+    };
+    /**
+     * Robustness Histogram
+     */
+    robustness_histogram: {
+        [key: string]: number;
+    };
+    /**
+     * Credence Histogram
+     */
+    credence_histogram: {
+        [key: string]: number;
+    };
+    /**
+     * Calls Per Question
+     */
+    calls_per_question: Array<CallsForQuestion>;
+    /**
+     * Project Id
+     */
+    project_id: string;
+};
+
+/**
  * ProposedSubquestion
  */
 export type ProposedSubquestion = {
@@ -1126,6 +1246,65 @@ export type ProposedSubquestion = {
      * Headline
      */
     headline?: string;
+};
+
+/**
+ * QuestionStatsOut
+ */
+export type QuestionStatsOut = {
+    /**
+     * Pages Total
+     */
+    pages_total: number;
+    /**
+     * Pages By Type
+     */
+    pages_by_type: {
+        [key: string]: number;
+    };
+    /**
+     * Links Total
+     */
+    links_total: number;
+    /**
+     * Links By Type
+     */
+    links_by_type: {
+        [key: string]: number;
+    };
+    /**
+     * Degree Matrix
+     */
+    degree_matrix: {
+        [key: string]: {
+            [key: string]: DegreeCell;
+        };
+    };
+    /**
+     * Robustness Histogram
+     */
+    robustness_histogram: {
+        [key: string]: number;
+    };
+    /**
+     * Credence Histogram
+     */
+    credence_histogram: {
+        [key: string]: number;
+    };
+    /**
+     * Calls Per Question
+     */
+    calls_per_question: Array<CallsForQuestion>;
+    /**
+     * Question Id
+     */
+    question_id: string;
+    /**
+     * Subgraph Page Count
+     */
+    subgraph_page_count: number;
+    subgraph: Subgraph;
 };
 
 /**
@@ -1454,6 +1633,60 @@ export type SubagentStartedEventOut = {
      * Prompt
      */
     prompt: string;
+};
+
+/**
+ * Subgraph
+ */
+export type Subgraph = {
+    /**
+     * Nodes
+     */
+    nodes: Array<SubgraphNode>;
+    /**
+     * Edges
+     */
+    edges: Array<SubgraphEdge>;
+};
+
+/**
+ * SubgraphEdge
+ */
+export type SubgraphEdge = {
+    /**
+     * From Page Id
+     */
+    from_page_id: string;
+    /**
+     * To Page Id
+     */
+    to_page_id: string;
+    /**
+     * Link Type
+     */
+    link_type: string;
+};
+
+/**
+ * SubgraphNode
+ */
+export type SubgraphNode = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Page Type
+     */
+    page_type: string;
+    /**
+     * Headline
+     */
+    headline: string | null;
+    /**
+     * Depth
+     */
+    depth: number;
 };
 
 /**
@@ -2087,6 +2320,66 @@ export type GetPageCountsApiPagesPageIdCountsGetResponses = {
 
 export type GetPageCountsApiPagesPageIdCountsGetResponse = GetPageCountsApiPagesPageIdCountsGetResponses[keyof GetPageCountsApiPagesPageIdCountsGetResponses];
 
+export type GetProjectStatsApiProjectsProjectIdStatsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Project Id
+         */
+        project_id: string;
+    };
+    query?: never;
+    url: '/api/projects/{project_id}/stats';
+};
+
+export type GetProjectStatsApiProjectsProjectIdStatsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetProjectStatsApiProjectsProjectIdStatsGetError = GetProjectStatsApiProjectsProjectIdStatsGetErrors[keyof GetProjectStatsApiProjectsProjectIdStatsGetErrors];
+
+export type GetProjectStatsApiProjectsProjectIdStatsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ProjectStatsOut;
+};
+
+export type GetProjectStatsApiProjectsProjectIdStatsGetResponse = GetProjectStatsApiProjectsProjectIdStatsGetResponses[keyof GetProjectStatsApiProjectsProjectIdStatsGetResponses];
+
+export type GetQuestionStatsApiPagesPageIdStatsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Page Id
+         */
+        page_id: string;
+    };
+    query?: never;
+    url: '/api/pages/{page_id}/stats';
+};
+
+export type GetQuestionStatsApiPagesPageIdStatsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetQuestionStatsApiPagesPageIdStatsGetError = GetQuestionStatsApiPagesPageIdStatsGetErrors[keyof GetQuestionStatsApiPagesPageIdStatsGetErrors];
+
+export type GetQuestionStatsApiPagesPageIdStatsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: QuestionStatsOut;
+};
+
+export type GetQuestionStatsApiPagesPageIdStatsGetResponse = GetQuestionStatsApiPagesPageIdStatsGetResponses[keyof GetQuestionStatsApiPagesPageIdStatsGetResponses];
+
 export type ListRootQuestionsApiProjectsProjectIdQuestionsGetData = {
     body?: never;
     path: {
@@ -2325,7 +2618,9 @@ export type GetCallEventsApiCallsCallIdEventsGetResponses = {
         event: 'render_question_subgraph';
     } & RenderQuestionSubgraphEventOut) | ({
         event: 'link_subquestions_complete';
-    } & LinkSubquestionsCompleteEventOut)>;
+    } & LinkSubquestionsCompleteEventOut) | ({
+        event: 'phase_skipped';
+    } & PhaseSkippedEventOut)>;
 };
 
 export type GetCallEventsApiCallsCallIdEventsGetResponse = GetCallEventsApiCallsCallIdEventsGetResponses[keyof GetCallEventsApiCallsCallIdEventsGetResponses];

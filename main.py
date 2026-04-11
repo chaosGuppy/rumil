@@ -37,7 +37,6 @@ from rumil.models import (
 )
 from rumil.orchestrators import Orchestrator, create_root_question, run_concept_session
 from rumil.report import generate_report, save_report
-from rumil.scope_subquestion_linker import run_scope_subquestion_linker
 from rumil.settings import Settings, _settings_var, get_settings
 from rumil.sources import create_source_page, run_ingest_calls
 from rumil.summary import generate_summary, save_summary
@@ -190,40 +189,6 @@ async def cmd_ingest(
     print(f"\nIngest complete. {made} extraction call{'s' if made != 1 else ''} made.")
     print(f"Budget used: {used}/{total}")
     print("\nRun --map or --chat to explore the results.")
-
-
-async def cmd_link_subquestions(
-    question_id: str,
-    db: DB,
-    *,
-    max_rounds: int | None = None,
-) -> None:
-
-    resolved = await db.resolve_page_id(question_id)
-    if not resolved:
-        print(
-            f"Error: question '{question_id}' not found. "
-            "Run --list to see existing questions."
-        )
-        sys.exit(1)
-    question = await db.get_page(resolved)
-    if not question:
-        print(f"Error: question '{question_id}' not found.")
-        sys.exit(1)
-    if question.project_id and question.project_id != db.project_id:
-        db.project_id = question.project_id
-
-    frontend = get_settings().frontend_url.rstrip("/")
-    print(f"\nLinking subquestions for: {question.headline[:80]}")
-    print(f"Trace: {frontend}/traces/{db.run_id}\n")
-
-    call = await run_scope_subquestion_linker(question.id, db, max_rounds=max_rounds)
-    proposed = (call.review_json or {}).get("proposed_subquestion_ids", [])
-    print(f"\nProposed {len(proposed)} subquestion(s) (call {call.id[:8]}):")
-    for pid in proposed:
-        page = await db.get_page(pid)
-        headline = page.headline if page else "(unknown)"
-        print(f"  - `{pid[:8]}` -- {headline}")
 
 
 async def cmd_evaluate(question_id: str, db: DB, *, eval_type: str = "default") -> None:
@@ -998,27 +963,6 @@ async def async_main():
         help="Evaluate the judgement quality for a question",
     )
     parser.add_argument(
-        "--link-subquestions",
-        dest="link_subquestions_id",
-        metavar="QUESTION_ID",
-        help=(
-            "Run the subquestion-linker agent to find existing questions in the "
-            "workspace that should be linked as subquestions of the given scope "
-            "question. Returns proposed ids without creating links."
-        ),
-    )
-    parser.add_argument(
-        "--linker-max-rounds",
-        dest="linker_max_rounds",
-        type=int,
-        default=None,
-        metavar="N",
-        help=(
-            "Override the max exploration rounds for --link-subquestions "
-            "(default: scope_subquestion_linker_max_rounds setting)."
-        ),
-    )
-    parser.add_argument(
         "--eval-type",
         dest="eval_type",
         default="default",
@@ -1264,11 +1208,6 @@ async def async_main():
         return
     elif args.evaluate_id:
         await cmd_evaluate(args.evaluate_id, db, eval_type=args.eval_type)
-        return
-    elif args.link_subquestions_id:
-        await cmd_link_subquestions(
-            args.link_subquestions_id, db, max_rounds=args.linker_max_rounds
-        )
         return
     elif args.ground_call_id:
         await cmd_ground(args.ground_call_id, db, from_stage=args.from_stage)

@@ -18,16 +18,10 @@ class LinkRelatedPayload(BaseModel):
 
 
 async def execute(payload: LinkRelatedPayload, call: Call, db: DB) -> MoveResult:
-    result = await link_pages(
-        payload.from_page_id,
-        payload.to_page_id,
-        payload.reasoning,
-        db,
-        LinkType.RELATED,
-    )
-
+    link_type = LinkType.RELATED
     from_id = await db.resolve_page_id(payload.from_page_id)
     to_id = await db.resolve_page_id(payload.to_page_id)
+    is_judgement_to_question = False
     if from_id and to_id:
         from_page = await db.get_page(from_id)
         to_page = await db.get_page(to_id)
@@ -37,7 +31,19 @@ async def execute(payload: LinkRelatedPayload, call: Call, db: DB) -> MoveResult
             and to_page
             and to_page.page_type == PageType.QUESTION
         ):
-            await supersede_old_judgements(from_id, to_id, db)
+            link_type = LinkType.ANSWERS
+            is_judgement_to_question = True
+
+    result = await link_pages(
+        payload.from_page_id,
+        payload.to_page_id,
+        payload.reasoning,
+        db,
+        link_type,
+    )
+
+    if is_judgement_to_question and from_id and to_id:
+        await supersede_old_judgements(from_id, to_id, db)
 
     return result
 

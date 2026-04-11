@@ -5,7 +5,12 @@ from collections.abc import Sequence
 from rumil.calls.closing_reviewers import WebResearchClosingReview
 from rumil.calls.context_builders import WebResearchEmbeddingContext
 from rumil.calls.page_creators import WebResearchLoop
-from rumil.calls.stages import CallRunner, ClosingReviewer, ContextBuilder, PageCreator
+from rumil.calls.stages import (
+    CallRunner,
+    ClosingReviewer,
+    ContextBuilder,
+    WorkspaceUpdater,
+)
 from rumil.database import DB
 from rumil.models import Call, CallStage, CallType
 
@@ -14,7 +19,7 @@ class WebResearchCall(CallRunner):
     """Web research call: search and fetch web sources, create grounded claims."""
 
     context_builder_cls = WebResearchEmbeddingContext
-    page_creator_cls = WebResearchLoop
+    workspace_updater_cls = WebResearchLoop
     closing_reviewer_cls = WebResearchClosingReview
     call_type = CallType.WEB_RESEARCH
 
@@ -40,15 +45,15 @@ class WebResearchCall(CallRunner):
     def _make_context_builder(self) -> ContextBuilder:
         return WebResearchEmbeddingContext()
 
-    def _make_page_creator(self) -> PageCreator:
+    def _make_workspace_updater(self) -> WorkspaceUpdater:
         return WebResearchLoop(
             allowed_domains=self._allowed_domains,
             available_moves=self._resolve_available_moves(),
         )
 
     def _make_closing_reviewer(self) -> ClosingReviewer:
-        assert isinstance(self.page_creator, WebResearchLoop)
-        return WebResearchClosingReview(self.call_type, self.page_creator)
+        assert isinstance(self.workspace_updater, WebResearchLoop)
+        return WebResearchClosingReview(self.call_type, self.workspace_updater)
 
     def task_description(self) -> str:
         return (

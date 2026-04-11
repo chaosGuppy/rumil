@@ -7,13 +7,14 @@ Currently an exact copy of TwoPhaseOrchestrator.
 import asyncio
 import logging
 from collections.abc import Sequence
+from datetime import UTC, datetime
 
 from rumil.available_calls import get_available_calls_preset
 from rumil.calls.common import mark_call_completed
 from rumil.calls.dispatches import DISPATCH_DEFS, DispatchDef, RECURSE_DISPATCH_DEF
 from rumil.calls.prioritization import run_prioritization_call
 from rumil.constants import MIN_TWOPHASE_BUDGET
-from rumil.context import build_prioritization_context, collect_subtree_ids
+from rumil.context import build_prioritization_context
 from rumil.database import DB
 from rumil.llm import build_system_prompt
 from rumil.models import (
@@ -32,9 +33,7 @@ from rumil.orchestrators.common import (
     assess_question,
     score_items_sequentially,
 )
-from rumil.moves.base import link_pages
-from rumil.page_graph import SubtreeGraph
-from rumil.scope_subquestion_linker import run_scope_subquestion_linker
+from rumil.calls.link_subquestions import LinkSubquestionsCall
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
 from rumil.tracing.trace_events import (
@@ -44,6 +43,7 @@ from rumil.tracing.trace_events import (
     DispatchesPlannedEvent,
     DispatchTraceItem,
     ErrorEvent,
+    PhaseSkippedEvent,
     ScoringCompletedEvent,
     SubquestionScoreItem,
 )
@@ -80,6 +80,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         self._parent_call_id: str | None = None
         self._sequence_id: str | None = None
         self._seq_position: int = 0
+        self._last_linker_eval_at: datetime | None = None
 
     def _effective_budget(self, global_remaining: int) -> int:
         if self._budget_cap is not None:
@@ -213,9 +214,12 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         return result
 
     async def _is_new_question(self, question_id: str) -> bool:
-        """A question is 'new' if it has no links besides child_question to a parent."""
+        """A question is 'new' if it only has parent-pointer or inline-citation links."""
         links = await self.db.get_links_to(question_id)
-        return all(l.link_type == LinkType.CHILD_QUESTION for l in links)
+        return all(
+            l.link_type in (LinkType.CHILD_QUESTION, LinkType.RELATED)
+            for l in links
+        )
 
     async def _cancel_initial_call(self) -> None:
         """Mark the eagerly-created phase-1 call as complete when phase 1 is skipped."""
@@ -228,6 +232,12 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             call.sequence_position = self._seq_position
             await self.db.save_call(call)
             self._seq_position += 1
+        trace = CallTrace(call.id, self.db, broadcaster=self.broadcaster)
+        set_trace(trace)
+        await trace.record(PhaseSkippedEvent(
+            phase='phase1',
+            reason='Question already has research.',
+        ))
         await mark_call_completed(
             call, self.db, 'Phase 1 skipped — question already has research.',
         )
@@ -252,6 +262,8 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         if not self._executed_since_last_plan:
             return PrioritizationResult(dispatch_sequences=[])
 
+        await self._maybe_rerun_linker(question_id, self._parent_call_id)
+
         self._executed_since_last_plan = False
         self._invocation += 1
         return await self._phase2(
@@ -264,54 +276,48 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         question_id: str,
         parent_call_id: str | None,
     ) -> None:
-        """Run the subquestion linker and materialize its proposals as CHILD_QUESTION links.
+        """Run the LinkSubquestionsCall and update the linker eval timestamp.
 
-        Any failure is logged and swallowed — phase1 must proceed regardless.
+        Any failure is logged and swallowed — the orchestrator must proceed regardless.
         """
         try:
-            linker_call = await run_scope_subquestion_linker(
-                question_id,
-                self.db,
-                broadcaster=self.broadcaster,
+            call = await self.db.create_call(
+                CallType.LINK_SUBQUESTIONS,
+                scope_page_id=question_id,
                 parent_call_id=parent_call_id,
             )
+            runner = LinkSubquestionsCall(
+                question_id,
+                call,
+                self.db,
+                broadcaster=self.broadcaster,
+            )
+            await runner.run()
         except Exception as e:
             log.warning(
                 'Subquestion linker failed for question=%s: %s',
                 question_id[:8], e, exc_info=True,
             )
-            return
+        finally:
+            self._last_linker_eval_at = datetime.now(UTC)
 
-        proposed_ids = (linker_call.review_json or {}).get(
-            'proposed_subquestion_ids', []
-        )
-        if not proposed_ids:
+    async def _maybe_rerun_linker(
+        self,
+        question_id: str,
+        parent_call_id: str | None,
+    ) -> None:
+        """Re-run the linker if enough pages have been added since the last evaluation."""
+        if self._last_linker_eval_at is None:
+            return
+        settings = get_settings()
+        count = await self.db.count_pages_since(self._last_linker_eval_at)
+        if count >= settings.linker_cache_invalidation_threshold:
             log.info(
-                'Subquestion linker produced no proposals for question=%s',
-                question_id[:8],
+                'Linker cache invalidation: %d pages since last eval, re-running '
+                'for question=%s',
+                count, question_id[:8],
             )
-            return
-
-        created = 0
-        for child_id in proposed_ids:
-            try:
-                await link_pages(
-                    question_id,
-                    child_id,
-                    'Auto-linked by subquestion linker at phase1 start',
-                    self.db,
-                    LinkType.CHILD_QUESTION,
-                )
-                created += 1
-            except Exception as e:
-                log.warning(
-                    'Failed to link proposed subquestion %s -> %s: %s',
-                    question_id[:8], child_id[:8], e,
-                )
-        log.info(
-            'Subquestion linker: created %d/%d CHILD_QUESTION links for question=%s',
-            created, len(proposed_ids), question_id[:8],
-        )
+            await self._run_subquestion_linker(question_id, parent_call_id)
 
     async def _phase1(
         self,
@@ -328,11 +334,9 @@ class ExperimentalOrchestrator(BaseOrchestrator):
 
         await self._run_subquestion_linker(question_id, parent_call_id)
 
-        graph = await SubtreeGraph.load_for_root(self.db, question_id)
         context_text, short_id_map = await build_prioritization_context(
-            self.db, scope_question_id=question_id, graph=graph,
+            self.db, scope_question_id=question_id,
         )
-        subtree_ids = await collect_subtree_ids(question_id, self.db, graph=graph)
         if self._initial_call is not None:
             p_call = self._initial_call
             self._initial_call = None
@@ -380,8 +384,6 @@ class ExperimentalOrchestrator(BaseOrchestrator):
 
         result = await run_prioritization_call(
             task, context_text, p_call, self.db,
-
-            subtree_ids=subtree_ids,
             short_id_map=short_id_map,
             dispatch_types=list(get_available_calls_preset().phase1_scouts),
             system_prompt_override=build_system_prompt('two_phase_p1'),
@@ -457,17 +459,16 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         set_trace(trace)
         await trace.record(ContextBuiltEvent(budget=budget))
 
-        graph = await SubtreeGraph.load_for_root(self.db, question_id)
-        child_questions = await graph.get_child_questions(question_id)
-        parent_question = await graph.get_page(question_id)
+        child_questions = await self.db.get_child_questions(question_id)
+        parent_question = await self.db.get_page(question_id)
         if not parent_question:
             raise RuntimeError(
-                f'Parent question {question_id} not found in SubtreeGraph. '
+                f'Parent question {question_id} not found. '
                 'This usually means the question belongs to a different project '
                 'than the current DB scope.'
             )
 
-        parent_judgements = await graph.get_judgements_for_question(question_id)
+        parent_judgements = await self.db.get_judgements_for_question(question_id)
         parent_judgement = (
             max(parent_judgements, key=lambda j: j.created_at)
             if parent_judgements else None
@@ -524,10 +525,8 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             scores_text += '\n'.join(fruit_lines)
 
         context_text, short_id_map = await build_prioritization_context(
-            self.db, scope_question_id=question_id, graph=graph,
+            self.db, scope_question_id=question_id,
         )
-        subtree_ids = await collect_subtree_ids(question_id, self.db, graph=graph)
-
         dispatch_budget = budget - 1
         budget_line = f'You have a budget of **{dispatch_budget} budget units** to allocate.'
         if total_remaining is not None and total_remaining > dispatch_budget:
@@ -564,8 +563,6 @@ class ExperimentalOrchestrator(BaseOrchestrator):
 
         result = await run_prioritization_call(
             task, context_text, p_call, self.db,
-
-            subtree_ids=subtree_ids,
             short_id_map=short_id_map,
             dispatch_types=list(get_available_calls_preset().phase2_dispatch),
             extra_dispatch_defs=extra_defs or None,

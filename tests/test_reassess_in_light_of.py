@@ -47,7 +47,7 @@ async def test_resolve_in_light_of_swaps_question_for_judgement(tmp_db):
     await tmp_db.save_link(PageLink(
         from_page_id=judgement.id,
         to_page_id=question.id,
-        link_type=LinkType.RELATED,
+        link_type=LinkType.ANSWERS,
     ))
 
     resolved = await resolve_in_light_of([question.id[:8]], tmp_db)
@@ -132,7 +132,7 @@ async def test_reassess_question_resolves_question_to_judgement_in_context(
     await tmp_db.save_link(PageLink(
         from_page_id=judgement.id,
         to_page_id=sub_question.id,
-        link_type=LinkType.RELATED,
+        link_type=LinkType.ANSWERS,
     ))
 
     parent_call = Call(

@@ -95,13 +95,6 @@ uv run python main.py --evaluate QUESTION_ID
 # Use a specific evaluation prompt type (default: "default")
 uv run python main.py --evaluate QUESTION_ID --eval-type grounding
 
-# Find existing questions in the workspace that should be linked as subquestions
-# of a scope question. Returns proposed ids without creating links.
-uv run python main.py --link-subquestions QUESTION_ID
-
-# Override the linker agent's max exploration rounds (default: 6)
-uv run python main.py --link-subquestions QUESTION_ID --linker-max-rounds 4
-
 # Display the full output of a completed evaluation
 uv run python main.py --show-evaluation CALL_ID
 
@@ -225,9 +218,9 @@ uv run python scripts/run_call.py find-considerations "Test question" --workspac
 # Use smoke-test mode
 uv run python scripts/run_call.py find-considerations "Test question" --smoke-test
 
-# Stop after a specific stage (build_context or create_pages)
+# Stop after a specific stage (build_context or update_workspace)
 uv run python scripts/run_call.py find-considerations "Test question" --up-to-stage build_context
-uv run python scripts/run_call.py find-considerations "Test question" --up-to-stage create_pages
+uv run python scripts/run_call.py find-considerations "Test question" --up-to-stage update_workspace
 
 # A/B test a single call (requires .a.env and .b.env)
 uv run python scripts/run_call.py find-considerations "Test question" --ab --smoke-test
@@ -236,7 +229,7 @@ uv run python scripts/run_call.py find-considerations "Test question" --ab --smo
 uv run python scripts/run_call.py find-considerations "Test question" --name "context experiment"
 ```
 
-The `--up-to-stage` flag truncates the call lifecycle. Each call runs three stages in order: `build_context` → `create_pages` → `closing_review`. Passing `--up-to-stage build_context` runs only context assembly; `--up-to-stage create_pages` skips the closing review. Useful for inspecting context or page output in isolation.
+The `--up-to-stage` flag truncates the call lifecycle. Each call runs three stages in order: `build_context` → `update_workspace` → `closing_review`. Passing `--up-to-stage build_context` runs only context assembly; `--up-to-stage update_workspace` skips the closing review. Useful for inspecting context or page output in isolation.
 
 The `--ab` flag works the same as in `main.py` — it runs both arms concurrently with settings from `.a.env` and `.b.env`, and prints an AB trace URL.
 

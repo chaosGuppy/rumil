@@ -102,7 +102,7 @@ async def test_gather_connected_pages_finds_judgements(tmp_db):
     await tmp_db.save_link(PageLink(
         from_page_id=j.id,
         to_page_id=q.id,
-        link_type=LinkType.RELATED,
+        link_type=LinkType.ANSWERS,
     ))
 
     connected = await _gather_connected_pages(q.id, tmp_db)
@@ -141,7 +141,7 @@ async def test_get_latest_judgement_returns_most_recent(tmp_db):
         await tmp_db.save_link(PageLink(
             from_page_id=j.id,
             to_page_id=q.id,
-            link_type=LinkType.RELATED,
+            link_type=LinkType.ANSWERS,
         ))
 
     latest = await _get_latest_judgement(q.id, tmp_db)
@@ -248,7 +248,7 @@ async def test_phase_a_includes_judgement_connections(tmp_db):
     await tmp_db.save_link(PageLink(
         from_page_id=j.id,
         to_page_id=q.id,
-        link_type=LinkType.RELATED,
+        link_type=LinkType.ANSWERS,
     ))
     await tmp_db.save_link(PageLink(
         from_page_id=claim_on_j.id,
@@ -307,7 +307,7 @@ async def test_phase_a_deduplicates_shared_links(tmp_db):
     await tmp_db.save_link(PageLink(
         from_page_id=j.id,
         to_page_id=q.id,
-        link_type=LinkType.RELATED,
+        link_type=LinkType.ANSWERS,
     ))
     link_to_q = PageLink(
         from_page_id=shared.id,

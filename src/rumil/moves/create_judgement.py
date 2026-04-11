@@ -98,11 +98,14 @@ async def _link_and_supersede(
         PageLink(
             from_page_id=new_judgement_id,
             to_page_id=question_id,
-            link_type=LinkType.RELATED,
+            link_type=LinkType.ANSWERS,
         )
     )
     await supersede_old_judgements(
-        new_judgement_id, question_id, db, change_magnitude=change_magnitude,
+        new_judgement_id,
+        question_id,
+        db,
+        change_magnitude=change_magnitude,
     )
     log.info(
         "Judgement %s linked to question %s",
@@ -117,7 +120,9 @@ async def execute(payload: CreateJudgementPayload, call: Call, db: DB) -> MoveRe
         return result
 
     await _link_and_supersede(
-        result.created_page_id, call.scope_page_id, db,
+        result.created_page_id,
+        call.scope_page_id,
+        db,
         change_magnitude=payload.change_magnitude,
     )
     return result
@@ -135,7 +140,9 @@ async def execute_for_question(
         return result
 
     await _link_and_supersede(
-        result.created_page_id, resolved, db,
+        result.created_page_id,
+        resolved,
+        db,
         change_magnitude=payload.change_magnitude,
     )
     return result

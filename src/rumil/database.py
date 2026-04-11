@@ -1000,6 +1000,31 @@ class DB:
             if l.from_page_id in pages and pages[l.from_page_id].is_active()
         ]
 
+    async def get_considerations_for_questions(
+        self,
+        question_ids: Sequence[str],
+    ) -> dict[str, list[tuple[Page, PageLink]]]:
+        """Bulk-fetch considerations for many questions. Returns {question_id: [(claim, link)]}."""
+        result: dict[str, list[tuple[Page, PageLink]]] = {qid: [] for qid in question_ids}
+        if not question_ids:
+            return result
+        id_list = list(dict.fromkeys(question_ids))
+        links_by_target = await self.get_links_to_many(id_list)
+        consideration_links: list[PageLink] = []
+        for qid in id_list:
+            for link in links_by_target.get(qid, []):
+                if link.link_type == LinkType.CONSIDERATION:
+                    consideration_links.append(link)
+        if not consideration_links:
+            return result
+        page_ids = list({l.from_page_id for l in consideration_links})
+        pages = await self.get_pages_by_ids(page_ids)
+        for link in consideration_links:
+            page = pages.get(link.from_page_id)
+            if page and page.is_active():
+                result[link.to_page_id].append((page, link))
+        return result
+
     async def get_parent_question(self, question_id: str) -> Page | None:
         """Return the parent question, or None if this is a root question."""
         links = await self.get_links_to(question_id)

@@ -89,16 +89,29 @@ async def render_page_and_immediate_children(
 
     Pages whose IDs appear in *content_page_ids* are rendered at CONTENT
     detail regardless of the *detail* parameter.
+
+    Uses batched DB queries: O(1) round trips regardless of child count.
     """
     root = await db.get_page(root_id)
     if not root:
         return f'[Page {root_id} not found]'
 
+    if root.page_type != PageType.QUESTION:
+        return await format_page(root, detail, linked_detail=linked_detail, db=db)
+
     _content_ids = content_page_ids or set()
+
+    children = await db.get_child_questions(root_id)
+    all_question_ids = [root_id] + [c.id for c in children]
+    considerations_by_q, judgements_by_q = (
+        await db.get_considerations_for_questions(all_question_ids),
+        await db.get_judgements_for_questions(all_question_ids),
+    )
+
     parts: list[str] = []
     visited: set[str] = set()
 
-    async def _render_question(question: Page, depth: int, include_children: bool) -> None:
+    async def _render_question(question: Page, depth: int) -> None:
         if question.id in visited:
             parts.append(f'{"  " * depth}(cycle: `{question.id[:8]}`)')
             return
@@ -110,25 +123,24 @@ async def render_page_and_immediate_children(
             indent + await format_page(question, q_detail, linked_detail=None, db=db)
         )
 
-        considerations = await db.get_considerations_for_question(question.id)
-        if considerations:
-            con_items: list[tuple[str, Page]] = []
-            for claim, link in considerations:
-                visited.add(claim.id)
-                direction = f'({link.direction.value}) ' if link.direction else ''
-                line = (
-                    f'{indent}- {direction}'
-                    + await format_page(claim, linked_detail or PageDetail.HEADLINE, linked_detail=None, db=db)
-                )
-                if link.reasoning:
-                    line += f'\n{indent}  Reasoning: {link.reasoning}'
-                con_items.append((line, claim))
+        con_items: list[tuple[str, Page]] = []
+        for claim, link in considerations_by_q.get(question.id, []):
+            visited.add(claim.id)
+            direction = f'({link.direction.value}) ' if link.direction else ''
+            line = (
+                f'{indent}- {direction}'
+                + await format_page(claim, linked_detail or PageDetail.HEADLINE, linked_detail=None, db=db)
+            )
+            if link.reasoning:
+                line += f'\n{indent}  Reasoning: {link.reasoning}'
+            con_items.append((line, claim))
+        if con_items:
             parts.append('')
             hn = min(depth + 3, 6)
             grouped = group_by_credence(con_items, heading_level='#' * hn, separator='\n')
             parts.append(grouped)
 
-        all_judgements = await db.get_judgements_for_question(question.id)
+        all_judgements = judgements_by_q.get(question.id, [])
         judgements = (
             [max(all_judgements, key=lambda j: j.created_at)] if all_judgements else []
         )
@@ -142,22 +154,15 @@ async def render_page_and_immediate_children(
                     + await format_page(j, linked_detail or PageDetail.HEADLINE, linked_detail=None, db=db)
                 )
 
-        if not include_children:
-            return
+    await _render_question(root, 0)
 
-        children = await db.get_child_questions(question.id)
-        if children:
+    if children:
+        parts.append('')
+        parts.append('**Sub-questions:**')
+        parts.append('')
+        for child in children:
+            await _render_question(child, 1)
             parts.append('')
-            parts.append(f'{indent}**Sub-questions:**')
-            parts.append('')
-            for child in children:
-                await _render_question(child, depth + 1, include_children=False)
-                parts.append('')
-
-    if root.page_type == PageType.QUESTION:
-        await _render_question(root, 0, include_children=True)
-    else:
-        parts.append(await format_page(root, detail, linked_detail=linked_detail, db=db))
 
     return '\n'.join(parts)
 

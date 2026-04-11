@@ -3211,13 +3211,19 @@
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "hidden": {
+            "type": "boolean",
+            "title": "Hidden",
+            "default": false
           }
         },
         "type": "object",
         "required": [
           "name",
           "id",
-          "created_at"
+          "created_at",
+          "hidden"
         ],
         "title": "Project"
       },

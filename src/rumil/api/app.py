@@ -130,7 +130,12 @@ async def get_project(project_id: str):
     if not rows:
         raise HTTPException(status_code=404, detail="Project not found")
     r = rows[0]
-    return Project(id=r["id"], name=r["name"], created_at=r["created_at"])
+    return Project(
+        id=r["id"],
+        name=r["name"],
+        created_at=r["created_at"],
+        hidden=r.get("hidden", False),
+    )
 
 
 @app.get("/api/projects/{project_id}/runs", response_model=list[RunListItemOut])

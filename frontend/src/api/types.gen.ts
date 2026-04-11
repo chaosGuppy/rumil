@@ -1108,6 +1108,10 @@ export type Project = {
      * Created At
      */
     created_at: string;
+    /**
+     * Hidden
+     */
+    hidden: boolean;
 };
 
 /**

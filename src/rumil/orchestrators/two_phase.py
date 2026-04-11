@@ -11,7 +11,7 @@ from rumil.calls.common import mark_call_completed
 from rumil.calls.dispatches import DISPATCH_DEFS, DispatchDef, RECURSE_CLAIM_DISPATCH_DEF, RECURSE_DISPATCH_DEF
 from rumil.calls.prioritization import run_prioritization_call
 from rumil.constants import LAST_CALL_THRESHOLD, MIN_TWOPHASE_BUDGET
-from rumil.context import build_prioritization_context, collect_subtree_ids
+from rumil.context import build_prioritization_context
 from rumil.database import DB
 from rumil.llm import build_system_prompt
 from rumil.models import (
@@ -33,7 +33,6 @@ from rumil.orchestrators.common import (
     compute_priority_score,
     score_items_sequentially,
 )
-from rumil.page_graph import SubtreeGraph
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
 from rumil.tracing.trace_events import (
@@ -292,11 +291,9 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             question_id[:8], budget, phase1_budget,
         )
 
-        graph = await SubtreeGraph.load_for_root(self.db, question_id)
         context_text, short_id_map = await build_prioritization_context(
-            self.db, scope_question_id=question_id, graph=graph,
+            self.db, scope_question_id=question_id,
         )
-        subtree_ids = await collect_subtree_ids(question_id, self.db, graph=graph)
         if self._initial_call is not None:
             p_call = self._initial_call
             self._initial_call = None
@@ -350,8 +347,6 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
 
         result = await run_prioritization_call(
             task, context_text, p_call, self.db,
-
-            subtree_ids=subtree_ids,
             short_id_map=short_id_map,
             dispatch_types=list(get_available_calls_preset().phase1_scouts),
             system_prompt_override=build_system_prompt('two_phase_p1'),
@@ -428,18 +423,17 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         set_trace(trace)
         await trace.record(ContextBuiltEvent(budget=budget))
 
-        graph = await SubtreeGraph.load_for_root(self.db, question_id)
-        child_questions = await graph.get_child_questions(question_id)
-        parent_question = await graph.get_page(question_id)
+        child_questions = await self.db.get_child_questions(question_id)
+        parent_question = await self.db.get_page(question_id)
         if not parent_question:
             raise RuntimeError(
-                f'Parent question {question_id} not found in SubtreeGraph. '
+                f'Parent question {question_id} not found. '
                 'This usually means the question belongs to a different project '
                 'than the current DB scope.'
             )
         parent_headline = parent_question.headline
 
-        parent_judgements = await graph.get_judgements_for_question(question_id)
+        parent_judgements = await self.db.get_judgements_for_question(question_id)
         parent_judgement = (
             max(parent_judgements, key=lambda j: j.created_at)
             if parent_judgements else None
@@ -449,7 +443,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
 
         consideration_pages = [
             page for page, _link
-            in await graph.get_considerations_for_question(question_id)
+            in await self.db.get_considerations_for_question(question_id)
         ]
 
         scoring_tasks.append(score_items_sequentially(
@@ -539,9 +533,8 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             scores_text += '\n'.join(fruit_lines)
 
         context_text, short_id_map = await build_prioritization_context(
-            self.db, scope_question_id=question_id, graph=graph,
+            self.db, scope_question_id=question_id,
         )
-        subtree_ids = await collect_subtree_ids(question_id, self.db, graph=graph)
         dispatch_budget = budget if last_call else budget - 1
         budget_line = f'You have a budget of **{dispatch_budget} budget units** to allocate.'
         if last_call:
@@ -591,8 +584,6 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
 
         result = await run_prioritization_call(
             task, context_text, p_call, self.db,
-
-            subtree_ids=subtree_ids,
             short_id_map=short_id_map,
             dispatch_types=list(get_available_calls_preset().phase2_dispatch),
             extra_dispatch_defs=extra_defs or None,

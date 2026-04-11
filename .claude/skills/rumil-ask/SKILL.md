@@ -1,6 +1,6 @@
 ---
 name: rumil-ask
-description: Add a new research question to the active rumil workspace. Creates the question page via the cc-mediated envelope lane but does NOT run any research calls — chain with /rumil-run or /rumil-dispatch afterward to investigate. Use whenever the user wants to pose a new root question or add a sub-question (either explicitly via /rumil-ask or mid-conversation when they say things like "add a question about X" or "let's track a new question for X"). Pass the headline as the argument; optionally --parent <qid> for a subquestion, --abstract/--content for more detail.
+description: Add a new research question to the active rumil workspace. Creates the question page via the cc-mediated envelope lane but does NOT run any research calls — chain with /rumil-orchestrate or /rumil-dispatch afterward to investigate. Use whenever the user wants to pose a new root question or add a sub-question (either explicitly via /rumil-ask or mid-conversation when they say things like "add a question about X" or "let's track a new question for X"). Pass the headline as the argument; optionally --parent <qid> for a subquestion, --abstract/--content for more detail.
 allowed-tools: Bash
 argument-hint: "<headline> [--parent <qid>] [--abstract \"...\"] [--content \"...\"]"
 ---
@@ -16,8 +16,8 @@ the provenance unambiguous (same pattern as `apply_move CREATE_QUESTION`).
 
 - **Does not run any research calls.** This is just the ask. After it
   returns, chain with:
-  - `/rumil-run <id> --budget N` — fire the full orchestrator (multi-call
-    research loop)
+  - `/rumil-orchestrate <id> --budget N` — fire the full orchestrator
+    (multi-call research loop)
   - `/rumil-dispatch <call_type> <id>` — fire one targeted call
 - **Does not consume budget.** Creating a question is free.
 - **Does not open a chat.** If the user wants a scoping conversation
@@ -64,7 +64,7 @@ The script prints:
   fill up with CC-mediated moves
 - `• created question <short_id>  <headline>`
 - `• linked as child of <parent_id>` if `--parent` was set
-- The full new question ID and a suggested `/rumil-run <short_id>`
+- The full new question ID and a suggested `/rumil-orchestrate <short_id>`
   command as a hint
 
 Always gloss the new ID in your reply the way the memory rule requires
@@ -72,7 +72,7 @@ Always gloss the new ID in your reply the way the memory rule requires
 
 ### Natural next steps to offer
 
-- **Investigate now:** "want me to /rumil-run it? default budget 10"
+- **Investigate now:** "want me to /rumil-orchestrate it? default budget 10"
 - **Look at related workspace pages first:** `/rumil-search "<headline>"`
   to see if the workspace already has related material
 - **Just add and move on:** acknowledge and continue the conversation

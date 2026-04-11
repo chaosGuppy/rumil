@@ -5,7 +5,7 @@ page is owned by the current CC session's CLAUDE_CODE_DIRECT envelope
 Call, so the provenance is unambiguous in the trace.
 
 This script does **not** run any research calls. After it returns, chain
-with ``/rumil-run <id>`` (full orchestrator) or ``/rumil-dispatch
+with ``/rumil-orchestrate <id>`` (full orchestrator) or ``/rumil-dispatch
 <call_type> <id>`` (single call) to investigate.
 
 Usage:
@@ -211,7 +211,7 @@ async def main() -> None:
 
         print()
         print(f"question id: {page.id}")
-        print(f"to investigate: /rumil-run {page.id[:8]} --budget 10")
+        print(f"to investigate: /rumil-orchestrate {page.id[:8]} --budget 10")
     finally:
         await db.close()
 

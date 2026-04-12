@@ -36,7 +36,9 @@ async def main() -> None:
 
     db, ws = await make_db(workspace=args.workspace)
     try:
-        results = await search_pages(db, query, match_count=args.limit)
+        results = await search_pages(
+            db, query, match_threshold=0.3, match_count=args.limit
+        )
     finally:
         await db.close()
 

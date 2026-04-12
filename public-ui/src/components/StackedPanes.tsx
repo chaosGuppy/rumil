@@ -41,18 +41,36 @@ function buildPath(panes: PaneState[], worldview: Worldview): string {
   return paths.join(",");
 }
 
+function findNodeIndex(
+  nodes: WorldviewNode[],
+  shortId: string,
+): number | null {
+  function searchTree(node: WorldviewNode): boolean {
+    if (node.headline.includes(shortId)) return true;
+    return node.children.some(searchTree);
+  }
+  for (let i = 0; i < nodes.length; i++) {
+    if (searchTree(nodes[i])) return i;
+  }
+  return null;
+}
+
 function NodePane({
   pane,
   onExpand,
   activePanePath,
   onClose,
   depth,
+  onFocusNode,
+  focusedNodeId,
 }: {
   pane: PaneState;
   onExpand: (node: WorldviewNode, index: number) => void;
   activePanePath: string | null;
   onClose: () => void;
   depth: number;
+  onFocusNode?: (nodeId: string) => void;
+  focusedNodeId?: string | null;
 }) {
   return (
     <div style={{ padding: "28px 28px 32px" }}>
@@ -112,7 +130,9 @@ function NodePane({
               ? (node: WorldviewNode, idx: number) => onExpand(node, idx)
               : undefined
           }
+          onFocus={onFocusNode}
           isActive={activePanePath === String(i)}
+          isFocused={focusedNodeId ? child.headline.includes(focusedNodeId) : false}
           activeDepth={depth + 1}
         />
       ))}
@@ -120,7 +140,17 @@ function NodePane({
   );
 }
 
-export function StackedPanes({ worldview }: { worldview: Worldview }) {
+interface StackedPanesProps {
+  worldview: Worldview;
+  focusNodeId?: string | null;
+  onFocusHandled?: () => void;
+}
+
+export function StackedPanes({
+  worldview,
+  focusNodeId,
+  onFocusHandled,
+}: StackedPanesProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -148,6 +178,7 @@ export function StackedPanes({ worldview }: { worldview: Worldview }) {
   });
 
   const [activeRootIndex, setActiveRootIndex] = useState<number | null>(null);
+  const [focusedId, setFocusedId] = useState<string | null>(null);
 
   const updateUrl = useCallback(
     (newPanes: PaneState[]) => {
@@ -173,7 +204,22 @@ export function StackedPanes({ worldview }: { worldview: Worldview }) {
       ];
       setPanes(newPanes);
       setActiveRootIndex(index);
+      setFocusedId(null);
       updateUrl(newPanes);
+    },
+    [updateUrl],
+  );
+
+  const handleFocusRoot = useCallback(
+    (index: number) => {
+      setActiveRootIndex(index);
+      setPanes([]);
+      setFocusedId(null);
+      updateUrl([]);
+      const el = document.getElementById(`node-${index}`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
     },
     [updateUrl],
   );
@@ -189,6 +235,7 @@ export function StackedPanes({ worldview }: { worldview: Worldview }) {
         },
       ];
       setPanes(newPanes);
+      setFocusedId(null);
       updateUrl(newPanes);
     },
     [panes, updateUrl],
@@ -205,6 +252,33 @@ export function StackedPanes({ worldview }: { worldview: Worldview }) {
     },
     [panes, updateUrl],
   );
+
+  // Handle external focus requests (from chat refs)
+  useEffect(() => {
+    if (!focusNodeId) return;
+
+    setFocusedId(focusNodeId);
+
+    const rootIdx = findNodeIndex(worldview.nodes, focusNodeId);
+    if (rootIdx !== null) {
+      setActiveRootIndex(rootIdx);
+      setPanes([]);
+      updateUrl([]);
+      setTimeout(() => {
+        const el = document.getElementById(`node-${rootIdx}`);
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }
+      }, 50);
+    }
+
+    // Clear focus highlight after a few seconds
+    const timer = setTimeout(() => {
+      setFocusedId(null);
+      onFocusHandled?.();
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [focusNodeId, worldview.nodes, updateUrl, onFocusHandled]);
 
   useEffect(() => {
     if (lastPaneRef.current && panes.length > 0) {
@@ -225,18 +299,6 @@ export function StackedPanes({ worldview }: { worldview: Worldview }) {
       <div className="pane">
         <div style={{ padding: "48px 36px" }}>
           <header style={{ marginBottom: "40px" }}>
-            <div
-              style={{
-                fontFamily: "var(--font-mono-stack)",
-                fontSize: "10px",
-                letterSpacing: "0.12em",
-                textTransform: "uppercase",
-                color: "var(--fg-dim)",
-                marginBottom: "12px",
-              }}
-            >
-              Worldview
-            </div>
             <h1
               style={{
                 fontSize: "28px",
@@ -289,7 +351,9 @@ export function StackedPanes({ worldview }: { worldview: Worldview }) {
                       ? () => handleExpandFromRoot(node, i)
                       : undefined
                   }
+                  onFocus={() => handleFocusRoot(i)}
                   isActive={activeRootIndex === i}
+                  isFocused={focusedId ? node.headline.includes(focusedId) : false}
                   activeDepth={0}
                 />
               </div>
@@ -322,6 +386,7 @@ export function StackedPanes({ worldview }: { worldview: Worldview }) {
                   : null
               }
               onClose={() => handleClosePane(i)}
+              focusedNodeId={focusedId}
             />
           </div>
         );

@@ -8,7 +8,9 @@ interface WorldviewNodeProps {
   node: WorldviewNodeType;
   index: number;
   onExpandPane?: (node: WorldviewNodeType, index: number) => void;
+  onFocus?: (nodeId: string) => void;
   isActive?: boolean;
+  isFocused?: boolean;
   activeDepth?: number;
 }
 
@@ -49,14 +51,26 @@ export function WorldviewNodeCard({
   node,
   index,
   onExpandPane,
+  onFocus,
   isActive,
+  isFocused,
   activeDepth = 0,
 }: WorldviewNodeProps) {
   const hasChildren = node.children.length > 0;
 
+  const className = [
+    "node-card",
+    "fade-in",
+    `fade-in-delay-${Math.min(index + 1, 5)}`,
+    isActive ? "node-active" : "",
+    isFocused ? "node-focused" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
     <div
-      className={`node-card fade-in fade-in-delay-${Math.min(index + 1, 5)}${isActive ? " node-active" : ""}`}
+      className={className}
       data-type={node.node_type}
       style={isActive ? { "--active-tint": `var(--active-${activeDepth % 5})` } as React.CSSProperties : undefined}
     >
@@ -81,7 +95,9 @@ export function WorldviewNodeCard({
           margin: "0 0 6px 0",
           color: "var(--fg)",
           fontFamily: "var(--font-body-stack)",
+          cursor: onFocus ? "pointer" : undefined,
         }}
+        onClick={onFocus ? () => onFocus(node.headline) : undefined}
       >
         {node.headline}
       </h3>

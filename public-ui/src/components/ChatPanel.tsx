@@ -1,6 +1,9 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { SlashCommandDropdown, useSlashCommands } from "./SlashCommands";
 
 interface Message {
   id: string;
@@ -16,6 +19,8 @@ interface ChatPanelProps {
   questionHeadline: string;
   isOpen: boolean;
   onToggle: () => void;
+  onMessageSent?: () => void;
+  onNodeRef?: (nodeId: string) => void;
 }
 
 function formatTime(date: Date): string {
@@ -26,7 +31,68 @@ function formatTime(date: Date): string {
   });
 }
 
-function MessageEntry({ message }: { message: Message }) {
+const NODE_ID_RE = /\b([0-9a-f]{8})\b/g;
+
+function processChildren(
+  children: React.ReactNode,
+  onNodeRef?: (id: string) => void,
+): React.ReactNode {
+  if (!onNodeRef) return children;
+  if (!Array.isArray(children)) {
+    if (typeof children === "string") {
+      return <TextWithNodeRefs text={children} onNodeRef={onNodeRef} />;
+    }
+    return children;
+  }
+  return children.map((child, i) => {
+    if (typeof child === "string") {
+      return <TextWithNodeRefs key={i} text={child} onNodeRef={onNodeRef} />;
+    }
+    return child;
+  });
+}
+
+function TextWithNodeRefs({
+  text,
+  onNodeRef,
+}: {
+  text: string;
+  onNodeRef?: (id: string) => void;
+}) {
+  if (!onNodeRef) return <>{text}</>;
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  const re = new RegExp(NODE_ID_RE);
+  while ((match = re.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(text.slice(lastIndex, match.index));
+    }
+    const id = match[1];
+    parts.push(
+      <button
+        key={match.index}
+        onClick={() => onNodeRef(id)}
+        className="node-ref-link"
+      >
+        {id}
+      </button>,
+    );
+    lastIndex = re.lastIndex;
+  }
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex));
+  }
+  return <>{parts}</>;
+}
+
+function MessageEntry({
+  message,
+  onNodeRef,
+}: {
+  message: Message;
+  onNodeRef?: (id: string) => void;
+}) {
   const isUser = message.role === "user";
 
   return (
@@ -68,25 +134,39 @@ function MessageEntry({ message }: { message: Message }) {
         </span>
       </div>
       <div
+        className={isUser ? "" : "chat-markdown"}
         style={{
           fontSize: "14px",
           lineHeight: 1.6,
-          color: isUser ? "var(--fg)" : "var(--fg)",
           fontFamily: "var(--font-body-stack)",
           borderLeft: isUser ? "none" : "2px solid var(--border)",
           paddingLeft: isUser ? "0" : "10px",
         }}
       >
-        {message.content.split("\n").map((line, i) => (
-          <p
-            key={i}
-            style={{
-              margin: i === 0 ? "0" : "6px 0 0 0",
+        {isUser ? (
+          message.content.split("\n").map((line, i) => (
+            <p key={i} style={{ margin: i === 0 ? "0" : "6px 0 0 0" }}>
+              {line}
+            </p>
+          ))
+        ) : (
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={{
+              p: ({ children }) => (
+                <p>{processChildren(children, onNodeRef)}</p>
+              ),
+              li: ({ children }) => (
+                <li>{processChildren(children, onNodeRef)}</li>
+              ),
+              strong: ({ children }) => (
+                <strong>{processChildren(children, onNodeRef)}</strong>
+              ),
             }}
           >
-            {line}
-          </p>
-        ))}
+            {message.content}
+          </ReactMarkdown>
+        )}
       </div>
       {message.toolUses && message.toolUses.length > 0 && (
         <div
@@ -113,6 +193,8 @@ export function ChatPanel({
   questionHeadline,
   isOpen,
   onToggle,
+  onMessageSent,
+  onNodeRef,
 }: ChatPanelProps) {
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -153,6 +235,8 @@ export function ChatPanel({
   }, [onToggle]);
 
   const [isLoading, setIsLoading] = useState(false);
+  const { showDropdown, handleSelect: handleSlashSelect, handleDismiss } =
+    useSlashCommands(input, setInput, textareaRef);
 
   const handleSubmit = useCallback(async () => {
     const trimmed = input.trim();
@@ -201,6 +285,7 @@ export function ChatPanel({
         toolUses: data.tool_uses,
       };
       setMessages((prev) => [...prev, assistantMsg]);
+      onMessageSent?.();
     } catch (e) {
       const errorMsg: Message = {
         id: `err-${Date.now()}`,
@@ -291,13 +376,26 @@ export function ChatPanel({
           {/* messages */}
           <div className="chat-messages">
             {messages.map((msg) => (
-              <MessageEntry key={msg.id} message={msg} />
+              <MessageEntry key={msg.id} message={msg} onNodeRef={onNodeRef} />
             ))}
+            {isLoading && (
+              <div className="thinking-indicator">
+                <span className="thinking-dot" />
+                <span className="thinking-text">thinking</span>
+              </div>
+            )}
             <div ref={messagesEndRef} />
           </div>
 
           {/* input */}
-          <div className="chat-input-area">
+          <div className="chat-input-area" style={{ position: "relative" }}>
+            <SlashCommandDropdown
+              input={input}
+              cursorPosition={input.length}
+              onSelect={handleSlashSelect}
+              visible={showDropdown}
+              onDismiss={handleDismiss}
+            />
             <textarea
               ref={textareaRef}
               value={input}

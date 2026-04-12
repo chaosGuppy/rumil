@@ -3,7 +3,8 @@ export type WorldviewNodeType =
   | "hypothesis"
   | "evidence"
   | "uncertainty"
-  | "context";
+  | "context"
+  | "question";
 
 export interface WorldviewNode {
   node_type: WorldviewNodeType;

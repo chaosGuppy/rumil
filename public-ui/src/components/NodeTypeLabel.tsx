@@ -8,6 +8,7 @@ const TYPE_COLORS: Record<WorldviewNodeType, string> = {
   evidence: "var(--node-evidence)",
   uncertainty: "var(--node-uncertainty)",
   context: "var(--node-context)",
+  question: "var(--node-question)",
 };
 
 const TYPE_LABELS: Record<WorldviewNodeType, string> = {
@@ -16,6 +17,7 @@ const TYPE_LABELS: Record<WorldviewNodeType, string> = {
   evidence: "evidence",
   uncertainty: "uncertainty",
   context: "context",
+  question: "question",
 };
 
 export function NodeTypeLabel({ type }: { type: WorldviewNodeType }) {

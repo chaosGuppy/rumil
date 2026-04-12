@@ -1,11 +1,24 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useState, useCallback } from "react";
 import { MOCK_WORLDVIEW } from "@/lib/mock-data";
 import { StackedPanes } from "@/components/StackedPanes";
+import { ChatPanel } from "@/components/ChatPanel";
 
 function WorldviewContent() {
-  return <StackedPanes worldview={MOCK_WORLDVIEW} />;
+  const [chatOpen, setChatOpen] = useState(false);
+  const toggleChat = useCallback(() => setChatOpen((v) => !v), []);
+
+  return (
+    <div className="layout-with-chat">
+      <StackedPanes worldview={MOCK_WORLDVIEW} />
+      <ChatPanel
+        questionHeadline={MOCK_WORLDVIEW.question_headline}
+        isOpen={chatOpen}
+        onToggle={toggleChat}
+      />
+    </div>
+  );
 }
 
 export default function Page() {

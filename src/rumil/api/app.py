@@ -19,6 +19,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from rumil.database import DB, _row_to_call, _rows
 from rumil.models import Call, Page, PageLink, PageType, Project, Workspace
 from rumil.settings import get_settings
+from rumil.api.chat import ChatRequest, ChatResponse, handle_chat
 from rumil.api.schemas import (
     ABRunArmOut,
     ABRunTraceOut,
@@ -82,7 +83,7 @@ app.add_middleware(BasicAuthMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -586,3 +587,8 @@ async def get_page_run(page_id: str):
         created_at=run["created_at"],
         provenance_call_id=run.get("provenance_call_id", ""),
     )
+
+
+@app.post("/api/chat", response_model=ChatResponse)
+async def chat(request: ChatRequest) -> ChatResponse:
+    return await handle_chat(request)

@@ -1,0 +1,294 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-background: var(--bg);
+  --color-foreground: var(--fg);
+  --font-body: var(--font-body-stack);
+  --font-mono: var(--font-mono-stack);
+}
+
+:root {
+  --bg: #faf8f5;
+  --bg-pane: #ffffff;
+
+  /* depth-cycling active tints — visible, distinct, repeating */
+  --active-0: #ede8e2;
+  --active-1: #e0eaef;
+  --active-2: #ece2ef;
+  --active-3: #e2ede2;
+  --active-4: #efece2;
+  --fg: #2c2825;
+  --fg-muted: #8a8279;
+  --fg-dim: #b5ada3;
+  --border: #e8e3db;
+  --border-strong: #d4cdc2;
+  --accent: #6b5c4d;
+
+  /* node type accents — muted, earthy, distinct */
+  --node-claim: #5a7a6b;
+  --node-claim-bg: #f0f5f2;
+  --node-hypothesis: #7a6a5a;
+  --node-hypothesis-bg: #f5f2ef;
+  --node-evidence: #5a6a7a;
+  --node-evidence-bg: #f0f3f6;
+  --node-uncertainty: #8a6a5a;
+  --node-uncertainty-bg: #f6f2ef;
+  --node-context: #6a6a6a;
+  --node-context-bg: #f3f3f2;
+
+  /* credence meter */
+  --credence-fill: #5a7a6b;
+  --credence-empty: #e0dbd4;
+  --robustness-fill: #7a6a5a;
+
+  /* pane shadows */
+  --pane-shadow: 0 0 0 1px rgba(0,0,0,0.04),
+                 -4px 0 24px rgba(0,0,0,0.06),
+                 -1px 0 6px rgba(0,0,0,0.03);
+
+  --font-body-stack: 'Newsreader', 'Georgia', 'Times New Roman', serif;
+  --font-mono-stack: 'JetBrains Mono', 'Menlo', 'Consolas', monospace;
+
+  --pane-width: 640px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1a1816;
+    --bg-pane: #242220;
+
+    --active-0: #2e2a24;
+    --active-1: #242a30;
+    --active-2: #2c242e;
+    --active-3: #242e24;
+    --active-4: #2e2c24;
+    --fg: #e8e3db;
+    --fg-muted: #8a8279;
+    --fg-dim: #5a554e;
+    --border: #333028;
+    --border-strong: #443f36;
+    --accent: #c4b8a8;
+
+    --node-claim: #7aa08b;
+    --node-claim-bg: #1e2822;
+    --node-hypothesis: #a08a7a;
+    --node-hypothesis-bg: #282220;
+    --node-evidence: #7a8aa0;
+    --node-evidence-bg: #1e2228;
+    --node-uncertainty: #b08a7a;
+    --node-uncertainty-bg: #282220;
+    --node-context: #8a8a88;
+    --node-context-bg: #222222;
+
+    --credence-fill: #7aa08b;
+    --credence-empty: #3a3530;
+    --robustness-fill: #a08a7a;
+
+    --pane-shadow: 0 0 0 1px rgba(255,255,255,0.04),
+                   -4px 0 24px rgba(0,0,0,0.3),
+                   -1px 0 6px rgba(0,0,0,0.15);
+  }
+}
+
+/* base resets */
+* { box-sizing: border-box; }
+
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body-stack);
+  line-height: 1.7;
+  margin: 0;
+}
+
+/* scrollbar — overlay style, never interrupts layout */
+.pane {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--fg-dim);
+}
+
+/* stacked panes container */
+.pane-container {
+  display: flex;
+  height: 100vh;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x proximity;
+}
+
+.pane {
+  flex-shrink: 0;
+  width: var(--pane-width);
+  height: 100vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: var(--bg-pane);
+  border-left: 1px solid var(--border);
+  scroll-snap-align: start;
+  transition: opacity 0.3s ease;
+}
+
+.pane:first-child {
+  border-left: none;
+}
+
+/* connected pane — continuous with source, tinted by depth */
+.pane.pane-connected {
+  border-left: none;
+  background: var(--active-tint, var(--active-0));
+}
+
+/* prose overrides for worldview content */
+.worldview-prose {
+  font-family: var(--font-body-stack);
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--fg);
+}
+
+.worldview-prose p {
+  margin: 0.75em 0;
+}
+
+.worldview-prose strong {
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.worldview-prose em {
+  font-style: italic;
+  color: var(--fg-muted);
+}
+
+/* node card styling */
+.node-card {
+  position: relative;
+  padding: 20px 24px;
+  margin-bottom: 4px;
+  border-radius: 3px;
+  transition: background 0.08s;
+}
+
+.node-card:hover {
+  background: var(--bg-warm);
+}
+
+/* active state — warm band extends to pane edge, color set by --active-tint */
+.node-card.node-active {
+  background: var(--active-tint, var(--active-0));
+  margin-right: -36px;
+  padding-right: 60px;
+}
+
+/* expand affordance */
+.expand-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  margin-top: 8px;
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--fg-muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.expand-trigger:hover {
+  color: var(--fg);
+  border-color: var(--border-strong);
+  background: var(--bg-warm);
+}
+
+.expand-trigger svg {
+  width: 12px;
+  height: 12px;
+  transition: transform 0.2s;
+}
+
+/* credence badge — tufte style: numbers + thin bars */
+.credence-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+  color: var(--fg-muted);
+  letter-spacing: 0.01em;
+}
+
+.credence-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.credence-label {
+  font-variant-numeric: tabular-nums;
+}
+
+.credence-max {
+  color: var(--fg-dim);
+  font-size: 10px;
+}
+
+
+/* animations */
+@keyframes pane-enter {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.pane-entering {
+  animation: pane-enter 0.15s ease-out forwards;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in {
+  animation: fade-in 0.15s ease-out forwards;
+}
+
+.fade-in-delay-1 { animation-delay: 0.02s; opacity: 0; }
+.fade-in-delay-2 { animation-delay: 0.04s; opacity: 0; }
+.fade-in-delay-3 { animation-delay: 0.06s; opacity: 0; }
+.fade-in-delay-4 { animation-delay: 0.08s; opacity: 0; }
+.fade-in-delay-5 { animation-delay: 0.10s; opacity: 0; }
+
+/* inline expansion */
+.inline-children {
+  animation: fade-in 0.12s ease-out forwards;
+}

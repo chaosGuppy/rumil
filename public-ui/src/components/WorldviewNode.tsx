@@ -83,6 +83,19 @@ export function WorldviewNodeCard({
         }}
       >
         <NodeTypeLabel type={node.node_type} />
+        {node.importance !== undefined && node.importance > 0 && (
+          <span
+            style={{
+              fontFamily: "var(--font-mono-stack)",
+              fontSize: "10px",
+              color: node.importance >= 3 ? "var(--fg-dim)" : "var(--fg-muted)",
+              letterSpacing: "0.02em",
+              opacity: node.importance >= 4 ? 0.5 : 1,
+            }}
+          >
+            L{node.importance}
+          </span>
+        )}
         <CredenceBadge credence={node.credence} robustness={node.robustness} />
         <ProvenanceIndicator count={node.source_page_ids.length} />
       </div>

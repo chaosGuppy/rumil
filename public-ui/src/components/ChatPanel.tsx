@@ -235,12 +235,33 @@ export function ChatPanel({
   }, [onToggle]);
 
   const [isLoading, setIsLoading] = useState(false);
+  const [model, setModel] = useState<"sonnet" | "opus" | "haiku">("sonnet");
   const { showDropdown, handleSelect: handleSlashSelect, handleDismiss } =
     useSlashCommands(input, setInput, textareaRef);
 
   const handleSubmit = useCallback(async () => {
     const trimmed = input.trim();
     if (!trimmed || isLoading) return;
+
+    const modelCommands: Record<string, "sonnet" | "opus" | "haiku"> = {
+      "/sonnet": "sonnet",
+      "/opus": "opus",
+      "/haiku": "haiku",
+    };
+    if (modelCommands[trimmed]) {
+      setModel(modelCommands[trimmed]);
+      setInput("");
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `sys-${Date.now()}`,
+          role: "assistant",
+          content: `Switched to **${modelCommands[trimmed]}**.`,
+          timestamp: new Date(),
+        },
+      ]);
+      return;
+    }
 
     const userMsg: Message = {
       id: `user-${Date.now()}`,
@@ -269,6 +290,7 @@ export function ChatPanel({
           question_id: questionHeadline,
           messages: apiMessages,
           workspace: "default",
+          model,
         }),
       });
 
@@ -350,6 +372,9 @@ export function ChatPanel({
                 }}
               >
                 Chat
+                <span style={{ marginLeft: "8px", color: "var(--fg-dim)", fontSize: "9px", letterSpacing: "0.04em" }}>
+                  {model}
+                </span>
               </div>
               <div
                 style={{

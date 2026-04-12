@@ -46,6 +46,26 @@ export const COMMANDS: SlashCommand[] = [
     args: "<url> --for <question_id>",
     example: "/ingest https://arxiv.org/... --for f8a1b2c3",
   },
+  {
+    name: "review",
+    description: "Show pending suggestions in the review queue",
+    example: "/review",
+  },
+  {
+    name: "sonnet",
+    description: "Switch to Sonnet 4.6 (faster, cheaper)",
+    example: "/sonnet",
+  },
+  {
+    name: "opus",
+    description: "Switch to Opus 4.6 (most capable)",
+    example: "/opus",
+  },
+  {
+    name: "haiku",
+    description: "Switch to Haiku 4.5 (fastest, cheapest)",
+    example: "/haiku",
+  },
 ];
 
 interface SlashCommandDropdownProps {

@@ -605,7 +605,7 @@ async def run_orchestrator_step(
 
     for _ in range(8):
         response = await client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
             max_tokens=4096,
             temperature=0.5,
             system=system_prompt,
@@ -727,6 +727,23 @@ TOOLS: list[dict[str, Any]] = [
             "properties": {},
         },
     },
+    {
+        "name": "get_suggestions",
+        "description": (
+            "View the review queue — pending suggestions from the orchestrator "
+            "for cross-branch changes, re-leveling, tension resolution, etc."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "enum": ["pending", "accepted", "rejected"],
+                    "description": "Filter by status (default: pending)",
+                },
+            },
+        },
+    },
 ]
 
 
@@ -801,6 +818,29 @@ def execute_tool(
         tree = get_subtree(conn, root_id)
         output = format_tree(tree)
 
+    elif name == "get_suggestions":
+        status = tool_input.get("status", "pending")
+        rows = conn.execute(
+            "SELECT s.*, n.headline as target_headline FROM suggestions s "
+            "LEFT JOIN nodes n ON s.target_node_id = n.id "
+            "WHERE s.workspace_id = ? AND s.status = ? ORDER BY s.created_at DESC LIMIT 20",
+            (ws_id, status),
+        ).fetchall()
+        if not rows:
+            output = f"No {status} suggestions."
+        else:
+            lines = [f"{len(rows)} {status} suggestion(s):\n"]
+            for r in rows:
+                rd = dict(r)
+                target = rd.get("target_headline", rd.get("target_node_id", "?")[:8])
+                payload = json.loads(rd.get("payload", "{}"))
+                reasoning = payload.get("reasoning", "")[:150]
+                lines.append(f"  [{rd['id'][:8]}] {rd['suggestion_type']} → {target}")
+                if reasoning:
+                    lines.append(f"    {reasoning}")
+                lines.append("")
+            output = "\n".join(lines)
+
     else:
         output = f"Unknown tool: {name}"
 
@@ -813,10 +853,18 @@ def execute_tool(
     return output
 
 
+MODEL_MAP = {
+    "sonnet": "claude-sonnet-4-6",
+    "opus": "claude-opus-4-6",
+    "haiku": "claude-haiku-4-5-20251001",
+}
+
+
 class ChatRequest(BaseModel):
     question_id: str | None = None
     messages: list[dict[str, Any]]
     workspace: str = "default"
+    model: str = "sonnet"
 
 
 class ToolUseInfo(BaseModel):
@@ -1097,13 +1145,14 @@ async def chat(request: ChatRequest):
     system_prompt = prompt_path.read_text() if prompt_path.exists() else "You are a research assistant."
     full_system = f"{system_prompt}\n\n---\n\n# Current worldview\n\n{context}"
 
+    model_id = MODEL_MAP.get(request.model, MODEL_MAP["sonnet"])
     client = anthropic.AsyncAnthropic(api_key=api_key)
     messages = list(request.messages)
     tool_uses_log: list[ToolUseInfo] = []
 
     for _ in range(10):
         response = await client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model=model_id,
             max_tokens=4096,
             temperature=0.7,
             system=full_system,

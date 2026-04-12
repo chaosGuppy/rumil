@@ -3,6 +3,7 @@
 from pydantic import BaseModel, Field
 
 from rumil.database import DB
+from rumil.settings import get_settings
 from rumil.models import Call, MoveType, Page, PageLayer, PageType, Workspace
 from rumil.moves.base import (
     HEADLINE_DESCRIPTION,
@@ -37,7 +38,7 @@ async def execute(payload: ProposeConceptPayload, call: Call, db: DB) -> MoveRes
         headline=payload.headline,
         credence=payload.credence,
         robustness=payload.robustness,
-        provenance_model="claude-opus-4-6",
+        provenance_model=get_settings().model,
         provenance_call_type=call.call_type.value,
         provenance_call_id=call.id,
         extra={

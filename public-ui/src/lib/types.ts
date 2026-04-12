@@ -12,6 +12,7 @@ export interface WorldviewNode {
   content: string;
   credence: number | null;
   robustness: number | null;
+  importance?: number;
   source_page_ids: string[];
   children: WorldviewNode[];
 }

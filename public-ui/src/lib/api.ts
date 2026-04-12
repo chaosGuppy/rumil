@@ -9,6 +9,7 @@ interface ApiNode {
   content: string;
   credence: number | null;
   robustness: number | null;
+  importance?: number;
   source_ids: string;
   created_at: string;
   children: ApiNode[];
@@ -27,6 +28,7 @@ function transformNode(api: ApiNode): WorldviewNode {
     content: api.content,
     credence: api.credence,
     robustness: api.robustness,
+    importance: api.importance ?? 0,
     source_page_ids: sourceIds,
     children: api.children.map(transformNode),
   };

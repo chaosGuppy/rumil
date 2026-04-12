@@ -637,22 +637,24 @@ body {
 }
 
 .browser-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px;
   margin-bottom: 32px;
 }
 
 .browser-card {
-  display: block;
+  display: flex !important;
+  flex-direction: column;
   width: 100%;
   text-align: left;
   padding: 14px 18px;
   background: var(--bg-pane);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 6px;
   cursor: pointer;
   transition: background 0.08s, border-color 0.08s;
+  font-family: inherit;
 }
 
 .browser-card:hover {
@@ -672,6 +674,7 @@ body {
   font-size: 11px;
   color: var(--fg-muted);
   letter-spacing: 0.02em;
+  margin-top: 2px;
 }
 
 .browser-card-badge {
@@ -712,8 +715,10 @@ body {
 .browser-input-main { margin-bottom: 8px; }
 
 .browser-create-row {
-  display: flex;
+  display: flex !important;
+  flex-direction: row !important;
   gap: 8px;
+  align-items: center;
 }
 
 .browser-create-row .browser-input {

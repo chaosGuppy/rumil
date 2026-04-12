@@ -131,7 +131,7 @@ export default function QuestionStatsPage() {
         <div className="headline">{state.headline}</div>
         <div className="meta">
           <strong>{state.data.subgraph_page_count}</strong>{" "}
-          {state.data.subgraph_page_count === 1 ? "page" : "pages"} within 3 hops
+          {state.data.subgraph_page_count === 1 ? "page" : "pages"} within 2 hops
         </div>
         </div>
         <SubgraphView data={state.data.subgraph} anchorId={pageId} />
@@ -217,7 +217,7 @@ export default function QuestionStatsPage() {
       <div className="stats-header">
         <div>
           <h1>Statistics</h1>
-          <div className="subtitle">question neighborhood · 3 hops</div>
+          <div className="subtitle">question neighborhood · 2 hops</div>
         </div>
         <div className="stats-nav">
           <Link href={`/pages/${pageId}`}>Page</Link>

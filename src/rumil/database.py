@@ -1936,7 +1936,7 @@ class DB:
         return cast(dict[str, Any], result.data or {})
 
     async def get_question_stats(self, question_id: str) -> dict[str, Any]:
-        """Compute aggregate stats for the 3-hop undirected neighborhood of a question.
+        """Compute aggregate stats for the 2-hop undirected neighborhood of a question.
 
         Returns the same JSONB shape as get_project_stats plus a subgraph_page_count
         field. v1 is baseline-only: staged runs are not applied.

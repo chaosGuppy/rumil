@@ -210,7 +210,7 @@ async def test_project_stats_empty_project(tmp_db):
 async def linear_chain(tmp_db):
     """Build a chain q0 -- child -- q1 -- child -- q2 -- child -- q3 -- child -- q4.
 
-    Used to test the 3-hop boundary: from q0, we should see q0..q3 but not q4.
+    Used to test the 2-hop boundary: from q0, we should see q0..q2 but not q3/q4.
     """
     pages = []
     for i in range(5):
@@ -222,12 +222,12 @@ async def linear_chain(tmp_db):
 
 
 @pytest.mark.asyncio
-async def test_question_stats_three_hop_boundary(tmp_db, linear_chain):
+async def test_question_stats_two_hop_boundary(tmp_db, linear_chain):
     blob = await tmp_db.get_question_stats(linear_chain[0].id)
-    assert blob["subgraph_page_count"] == 4
-    assert blob["pages_total"] == 4
-    # Links within the subgraph: q0->q1, q1->q2, q2->q3 (q3->q4 is out).
-    assert blob["links_total"] == 3
+    assert blob["subgraph_page_count"] == 3
+    assert blob["pages_total"] == 3
+    # Links within the subgraph: q0->q1, q1->q2 (q2->q3 is out).
+    assert blob["links_total"] == 2
 
 
 @pytest.mark.asyncio
@@ -269,7 +269,7 @@ async def test_question_stats_nonexistent(tmp_db):
 async def test_question_stats_subgraph_depths(tmp_db, linear_chain):
     """Each node in the returned subgraph should report its min hop distance
     from the anchor. On a chain q0–q1–q2–q3–q4, scoping to q0 gives depths
-    0, 1, 2, 3 for q0..q3 respectively."""
+    0, 1, 2 for q0..q2 respectively."""
     blob = await tmp_db.get_question_stats(linear_chain[0].id)
     nodes = blob["subgraph"]["nodes"]
     depth_by_id = {n["id"]: n["depth"] for n in nodes}
@@ -277,7 +277,7 @@ async def test_question_stats_subgraph_depths(tmp_db, linear_chain):
     assert depth_by_id[linear_chain[0].id] == 0
     assert depth_by_id[linear_chain[1].id] == 1
     assert depth_by_id[linear_chain[2].id] == 2
-    assert depth_by_id[linear_chain[3].id] == 3
+    assert linear_chain[3].id not in depth_by_id
     assert linear_chain[4].id not in depth_by_id
 
 

@@ -21,6 +21,8 @@ interface ChatPanelProps {
   onToggle: () => void;
   onMessageSent?: () => void;
   onNodeRef?: (nodeId: string) => void;
+  onShowReview?: () => void;
+  workspace?: string;
 }
 
 function formatTime(date: Date): string {
@@ -195,6 +197,8 @@ export function ChatPanel({
   onToggle,
   onMessageSent,
   onNodeRef,
+  onShowReview,
+  workspace = "default",
 }: ChatPanelProps) {
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -263,6 +267,12 @@ export function ChatPanel({
       return;
     }
 
+    if (trimmed === "/review") {
+      setInput("");
+      onShowReview?.();
+      return;
+    }
+
     const userMsg: Message = {
       id: `user-${Date.now()}`,
       role: "user",
@@ -289,7 +299,7 @@ export function ChatPanel({
         body: JSON.stringify({
           question_id: questionHeadline,
           messages: apiMessages,
-          workspace: "default",
+          workspace,
           model,
         }),
       });

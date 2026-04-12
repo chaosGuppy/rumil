@@ -49,3 +49,61 @@ export async function fetchWorldview(
     generated_at: root.created_at,
   };
 }
+
+export interface WorkspaceInfo {
+  id: string;
+  name: string;
+  created_at: string;
+  node_count: number;
+  run_count: number;
+  pending_suggestions: number;
+}
+
+export async function fetchWorkspaces(): Promise<WorkspaceInfo[]> {
+  const res = await fetch(`${API_BASE}/api/workspaces`);
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  return res.json();
+}
+
+export async function createWorkspace(
+  name: string,
+  question: string,
+): Promise<{ id: string; name: string; root_node_id: string | null }> {
+  const res = await fetch(
+    `${API_BASE}/api/workspaces?name=${encodeURIComponent(name)}&question=${encodeURIComponent(question)}`,
+    { method: "POST" },
+  );
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  return res.json();
+}
+
+export interface Suggestion {
+  id: string;
+  suggestion_type: string;
+  target_node_id: string;
+  target_headline: string | null;
+  payload: string;
+  status: string;
+  created_at: string;
+}
+
+export async function fetchSuggestions(
+  workspace: string = "default",
+  status: string = "pending",
+): Promise<Suggestion[]> {
+  const res = await fetch(
+    `${API_BASE}/api/workspaces/${workspace}/suggestions?status=${status}`,
+  );
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  return res.json();
+}
+
+export async function respondToSuggestion(
+  id: string,
+  action: "accept" | "reject",
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/suggestions/${id}/${action}`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+}

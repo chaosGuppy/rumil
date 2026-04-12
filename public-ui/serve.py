@@ -744,6 +744,28 @@ TOOLS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "name": "run_orchestrator",
+        "description": (
+            "Run the research orchestrator on a branch to improve it. "
+            "The orchestrator assesses the branch and adds nodes, re-levels, "
+            "and suggests cross-branch changes. Returns a summary of what it did. "
+            "This is expensive — confirm with the user before calling."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "node_id": {
+                    "type": "string",
+                    "description": "Short ID of the branch to orchestrate. Omit to auto-pick the weakest branch.",
+                },
+                "dry_run": {
+                    "type": "boolean",
+                    "description": "If true, describe planned actions without executing. Default true.",
+                },
+            },
+        },
+    },
 ]
 
 
@@ -841,6 +863,34 @@ def execute_tool(
                 lines.append("")
             output = "\n".join(lines)
 
+    elif name == "run_orchestrator":
+        target_short = tool_input.get("node_id")
+        dry = tool_input.get("dry_run", True)
+        target_full = resolve_node_id(conn, target_short) if target_short else pick_next_branch(conn, ws_id)
+        if not target_full:
+            output = "No branch to orchestrate."
+        else:
+            target_node = conn.execute("SELECT headline FROM nodes WHERE id = ?", (target_full,)).fetchone()
+            target_headline = dict(target_node)["headline"] if target_node else "?"
+            # Mock async: return what the orchestrator would do without actually calling the LLM
+            health = get_branch_health(conn, target_full)
+            gaps: list[str] = []
+            if health["no_credence"] > 0:
+                gaps.append(f"{health['no_credence']} claims without credence scores")
+            if health["evidence"] < health["claims"]:
+                gaps.append(f"only {health['evidence']} evidence nodes for {health['claims']} claims")
+            if health["questions"] == 0:
+                gaps.append("no open questions identified")
+            if health["uncertainties"] == 0:
+                gaps.append("no uncertainties flagged")
+            gap_text = "; ".join(gaps) if gaps else "branch looks reasonably complete"
+            output = (
+                f"{'[dry-run] ' if dry else ''}Orchestrator targeting: {target_headline[:60]} [{target_full[:8]}]\n"
+                f"Branch health: {health['total']} nodes, depth {health['max_depth']}\n"
+                f"Gaps: {gap_text}\n"
+                f"{'Would investigate and add nodes to strengthen this branch.' if dry else 'Orchestrator run completed.'}"
+            )
+
     else:
         output = f"Unknown tool: {name}"
 
@@ -902,9 +952,40 @@ def healthz():
 @app.get("/api/workspaces")
 def list_workspaces():
     conn = get_db()
-    rows = conn.execute("SELECT * FROM workspaces ORDER BY created_at").fetchall()
+    rows = conn.execute(
+        "SELECT w.*, "
+        "(SELECT COUNT(*) FROM nodes n WHERE n.workspace_id = w.id) as node_count, "
+        "(SELECT COUNT(*) FROM runs r WHERE r.workspace_id = w.id) as run_count, "
+        "(SELECT COUNT(*) FROM suggestions s WHERE s.workspace_id = w.id AND s.status = 'pending') as pending_suggestions "
+        "FROM workspaces w ORDER BY w.created_at"
+    ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+@app.post("/api/workspaces")
+def create_workspace(name: str, question: str = ""):
+    conn = get_db()
+    existing = conn.execute("SELECT id FROM workspaces WHERE name = ?", (name,)).fetchone()
+    if existing:
+        conn.close()
+        return {"error": f"Workspace '{name}' already exists", "id": dict(existing)["id"]}
+    ws_id = new_id()
+    conn.execute(
+        "INSERT INTO workspaces (id, name, created_at) VALUES (?, ?, ?)",
+        (ws_id, name, now_iso()),
+    )
+    root_id = None
+    if question:
+        root_id = new_id()
+        conn.execute(
+            "INSERT INTO nodes (id, workspace_id, parent_id, node_type, headline, content, "
+            "importance, position, created_at) VALUES (?, ?, NULL, 'question', ?, '', 0, 0, ?)",
+            (root_id, ws_id, question, now_iso()),
+        )
+    conn.commit()
+    conn.close()
+    return {"id": ws_id, "name": name, "root_node_id": root_id}
 
 
 @app.get("/api/workspaces/{name}/tree")

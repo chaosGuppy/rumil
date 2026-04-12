@@ -611,6 +611,225 @@ body {
   letter-spacing: 0.04em;
 }
 
+/* workspace browser */
+.browser {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 80px 32px;
+  min-height: 100vh;
+}
+
+.browser-header { margin-bottom: 40px; }
+
+.browser-title {
+  font-family: var(--font-body-stack);
+  font-size: 32px;
+  font-weight: 400;
+  margin: 0 0 8px 0;
+  letter-spacing: -0.01em;
+}
+
+.browser-subtitle {
+  font-size: 15px;
+  color: var(--fg-muted);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.browser-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 32px;
+}
+
+.browser-card {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 14px 18px;
+  background: var(--bg-pane);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.08s, border-color 0.08s;
+}
+
+.browser-card:hover {
+  background: var(--active-0);
+  border-color: var(--border-strong);
+}
+
+.browser-card-name {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--fg);
+  margin-bottom: 2px;
+}
+
+.browser-card-stats {
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+  color: var(--fg-muted);
+  letter-spacing: 0.02em;
+}
+
+.browser-card-badge {
+  margin-left: 8px;
+  color: var(--node-uncertainty);
+  font-weight: 500;
+}
+
+.browser-create {
+  border-top: 1px solid var(--border);
+  padding-top: 24px;
+}
+
+.browser-create-label {
+  font-family: var(--font-mono-stack);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+  margin-bottom: 10px;
+}
+
+.browser-input {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: var(--font-body-stack);
+  font-size: 15px;
+  color: var(--fg);
+  background: var(--bg-pane);
+  outline: none;
+  transition: border-color 0.1s;
+}
+
+.browser-input:focus { border-color: var(--border-strong); }
+.browser-input::placeholder { color: var(--fg-dim); font-style: italic; }
+.browser-input-main { margin-bottom: 8px; }
+
+.browser-create-row {
+  display: flex;
+  gap: 8px;
+}
+
+.browser-create-row .browser-input {
+  font-size: 13px;
+  padding: 8px 12px;
+}
+
+.browser-create-btn {
+  padding: 8px 20px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--fg);
+  color: var(--bg);
+  font-family: var(--font-mono-stack);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: opacity 0.1s;
+}
+
+.browser-create-btn:disabled { opacity: 0.3; cursor: default; }
+.browser-create-btn:hover:not(:disabled) { opacity: 0.8; }
+
+.browser-loading, .view-loading, .view-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  font-family: var(--font-mono-stack);
+  font-size: 12px;
+  color: var(--fg-dim);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.view-error { color: var(--fg-muted); padding: 20px; text-align: center; }
+
+/* suggestion review */
+.review-tabs {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 20px;
+}
+
+.review-tab {
+  padding: 6px 14px;
+  border: none;
+  background: none;
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--fg-dim);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 0.1s;
+}
+
+.review-tab:hover { color: var(--fg-muted); }
+.review-tab-active { color: var(--fg); border-bottom-color: var(--accent); }
+
+.suggestion-card {
+  padding: 16px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.suggestion-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.suggestion-type {
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--node-hypothesis);
+  font-weight: 500;
+}
+
+.suggestion-target {
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+
+.suggestion-reasoning {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--fg);
+  margin-bottom: 10px;
+}
+
+.suggestion-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.suggestion-btn {
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: none;
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: all 0.08s;
+}
+
+.suggestion-accept { color: var(--node-claim); }
+.suggestion-accept:hover { background: var(--node-claim-bg); border-color: var(--node-claim); }
+.suggestion-reject { color: var(--fg-dim); }
+.suggestion-reject:hover { background: var(--active-0); }
+
 /* adjust pane container when chat is open */
 .layout-with-chat {
   display: flex;

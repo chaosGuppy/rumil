@@ -40,7 +40,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from ._format import truncate
+from ._format import short, truncate
 from ._runctx import make_db
 from .llm_helpers import (
     DEFAULT_META_MODEL,
@@ -403,10 +403,37 @@ async def main() -> None:
         action="store_true",
         help="Re-scan calls that are already in the scan log",
     )
+    parser.add_argument(
+        "--structural",
+        metavar="QUESTION_ID",
+        default=None,
+        help="Run graph health checks on a question's subtree (no LLM cost)",
+    )
     args = parser.parse_args()
 
     db, ws = await make_db(workspace=args.workspace)
     try:
+        if args.structural:
+            from .scan import collect_subtree, format_findings, graph_health
+
+            full_id = await db.resolve_page_id(args.structural)
+            if not full_id:
+                print(f"no question matching {args.structural!r} in workspace {ws!r}")
+                sys.exit(1)
+            question = await db.get_page(full_id)
+            if question is None:
+                print(f"page {short(full_id)} vanished mid-lookup")
+                sys.exit(1)
+            print(f"workspace: {ws}")
+            print(f"question:  {short(full_id)}  {truncate(question.headline, 80)}")
+            print()
+            data = await collect_subtree(db, full_id)
+            findings = graph_health(data)
+            actionable = [f for f in findings if f.severity > 0]
+            print(f"=== structural health ({len(actionable)} findings) ===")
+            print(format_findings(findings) if findings else "  (clean)")
+            return
+
         calls = await _fetch_recent_calls(db, args.limit)
         print(f"workspace: {ws}")
         print(f"scanned:   {len(calls)} recent calls")

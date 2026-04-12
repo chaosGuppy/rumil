@@ -16,6 +16,7 @@ from rumil.summary import build_research_tree
 
 from ._format import truncate
 from ._runctx import make_db
+from .scan import collect_subtree, format_compact, graph_health, rating_shape
 
 
 async def _recent_calls(db, question_id: str, limit: int = 8) -> list[dict]:
@@ -59,6 +60,13 @@ async def main() -> None:
         print("=== research subtree ===")
         tree = await build_research_tree(full_id, db, max_depth=args.depth)
         print(tree.rstrip())
+        print()
+
+        # Shape summary (compact)
+        scan_data = await collect_subtree(db, full_id)
+        findings = graph_health(scan_data) + rating_shape(scan_data)
+        compact = format_compact(findings)
+        print(f"shape: {compact}")
         print()
 
         # Embedding neighbors

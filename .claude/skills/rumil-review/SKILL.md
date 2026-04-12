@@ -6,10 +6,11 @@ argument-hint: "<question_id>"
 
 # rumil-review
 
-Loads a full review context for one question: its subtree, every
-recent call that targeted it (with compact trace summaries), and any
-existing confusion-scan verdicts from the scan log. Then you produce a
-punch list.
+Loads a full review context for one question: its subtree, shape
+diagnostics (structural health, rating distributions, self-reported
+call signals), every recent call that targeted it (with compact trace
+summaries), and any existing confusion-scan verdicts from the scan log.
+Then you produce a punch list.
 
 ## Context loading
 
@@ -20,9 +21,21 @@ PYTHONPATH=.claude/lib uv run python -m rumil_skills.gather_review_context $ARGU
 ## Your job
 
 Read the loaded context carefully — subtree first (to understand what
-the research is actually *about*), then the recent calls in
-reverse-chronological order (most recent first). Produce a **structured
-punch list** of problems worth fixing. Format each item as:
+the research is actually *about*), then the shape diagnostics (to
+understand the structural and distributional health), then the recent
+calls in reverse-chronological order (most recent first). Produce a
+**structured punch list** of problems worth fixing.
+
+The shape diagnostics section contains auto-detected findings from
+three scans: graph health (structural topology problems), rating shape
+(credence/robustness distribution issues), and review signals
+(aggregated self-reports from calls). Each finding has a severity and
+suggested action. Incorporate relevant findings into your punch list —
+don't just repeat them, but use them as evidence alongside your own
+reading of the subtree and calls. You may disagree with or downgrade
+a finding if the full context warrants it.
+
+Format each punch list item as:
 
 ```
 [severity 1-5] <short_id>  <what's wrong in one sentence>

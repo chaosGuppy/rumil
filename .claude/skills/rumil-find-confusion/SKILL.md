@@ -1,20 +1,25 @@
 ---
 name: rumil-find-confusion
-description: Scan recent rumil calls for signs of model confusion. Default mode uses fast, free heuristics (error events, non-complete status, exchange errors, cost outliers, thin output). Pass --deep for an LLM-based structured verdict on the top heuristic candidates, cached in scan log. Use when the user wants to review recent runs for quality, triage a batch of calls, or find specific traces worth inspecting.
+description: Scan recent rumil calls for signs of model confusion. Default mode uses fast, free heuristics (error events, non-complete status, exchange errors, cost outliers, thin output). Pass --deep for an LLM-based structured verdict on the top heuristic candidates, cached in scan log. Pass --structural <question_id> for graph health checks on a question's subtree (barren questions, orphans, load-bearing fragile claims). Use when the user wants to review recent runs for quality, triage a batch of calls, or find specific traces worth inspecting.
 allowed-tools: Bash
-argument-hint: "[--limit N] [--deep [--deep-limit K] [--model ...]] [--force-rescan]"
+argument-hint: "[--limit N] [--deep [--deep-limit K] [--model ...]] [--force-rescan] [--structural <question_id>]"
 ---
 
 # rumil-find-confusion
 
 Triages recent calls in the active workspace, surfacing ones that look
-off. Two modes:
+off. Three modes:
 
 **Heuristic (default)** — fast, deterministic, **no LLM cost** (only
 local Supabase reads + arithmetic). Scores each recent call by:
 - hard signals: non-complete status, trace error events, exchange errors
 - soft signals: cost outliers (> 3× median), thin output relative to
   input, multiple warnings
+
+**Structural (`--structural <question_id>`)** — graph health checks on
+a question's subtree. Detects barren questions, unjudged questions,
+orphaned claims, load-bearing fragile claims, dead-end decompositions,
+and chained supersession. Pure DB queries, **no LLM cost**.
 
 **Deep (`--deep`)** — for the top heuristic candidates, runs a meta LLM
 call with a shared system prompt (designed for prompt-cache reuse

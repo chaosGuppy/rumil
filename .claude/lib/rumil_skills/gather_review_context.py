@@ -27,6 +27,7 @@ from rumil.summary import build_research_tree
 
 from ._format import truncate
 from ._runctx import make_db
+from .scan import format_findings, scan_all
 from .scan_log import get_scan, load_scan_log
 
 
@@ -150,6 +151,13 @@ async def main() -> None:
         print("=== research subtree ===")
         tree = await build_research_tree(full_id, db, max_depth=args.depth)
         print(tree.rstrip())
+        print()
+
+        print("=== shape diagnostics ===")
+        _scan_data, scan_findings = await scan_all(db, full_id)
+        actionable = [f for f in scan_findings if f.severity > 0]
+        print(f"{len(actionable)} finding(s):")
+        print(format_findings(scan_findings))
         print()
 
         print("=== recent calls on this question ===")

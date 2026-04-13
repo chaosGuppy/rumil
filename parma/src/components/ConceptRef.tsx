@@ -2,9 +2,9 @@
 
 import { useState, useRef, useCallback, useMemo } from "react";
 import { useConcepts } from "./ConceptContext";
-import type { ConceptInfo } from "@/lib/api";
+import type { Page } from "@/lib/types";
 
-function ConceptRefInline({ concept }: { concept: ConceptInfo }) {
+function ConceptRefInline({ concept }: { concept: Page }) {
   const [open, setOpen] = useState(false);
   const refEl = useRef<HTMLSpanElement>(null);
   const popoverRef = useRef<HTMLSpanElement>(null);
@@ -60,12 +60,12 @@ export function TextWithConcepts({
     const filtered = concepts.filter(
       (c) => c.id !== excludeConceptId && c.headline.length > 2,
     );
-    if (filtered.length === 0) return { regex: null, conceptMap: new Map<string, ConceptInfo>() };
+    if (filtered.length === 0) return { regex: null, conceptMap: new Map<string, Page>() };
 
     const sorted = [...filtered].sort(
       (a, b) => b.headline.length - a.headline.length,
     );
-    const map = new Map<string, ConceptInfo>();
+    const map = new Map<string, Page>();
     const patterns: string[] = [];
     for (const c of sorted) {
       patterns.push(escapeRegex(c.headline));

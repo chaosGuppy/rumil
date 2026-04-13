@@ -12,9 +12,8 @@ import { SuggestionReview } from "@/components/SuggestionReview";
 import { SourcesView } from "@/components/SourcesView";
 import { SourceDrawer } from "@/components/SourceDrawer";
 import { ConceptProvider } from "@/components/ConceptContext";
-import { fetchWorldview, fetchWorkspaces } from "@/lib/api";
-import type { Worldview } from "@/lib/types";
-import type { WorkspaceInfo, SourceFull } from "@/lib/api";
+import { fetchProjects, fetchRootQuestions, fetchQuestionView } from "@/lib/api";
+import type { QuestionView, Page, Project } from "@/lib/types";
 
 const VIEW_MODES = ["panes", "article", "vertical", "sources"] as const;
 type ViewMode = (typeof VIEW_MODES)[number];
@@ -28,13 +27,13 @@ function ViewModeSwitcher({
   onChange,
   extra,
   onBack,
-  workspaceName,
+  label,
 }: {
   current: ViewMode;
   onChange: (mode: ViewMode) => void;
   extra?: React.ReactNode;
   onBack?: () => void;
-  workspaceName?: string;
+  label?: string;
 }) {
   return (
     <div className="view-switcher">
@@ -44,13 +43,15 @@ function ViewModeSwitcher({
             <button
               className="view-switcher-back"
               onClick={onBack}
-              title="Back to workspaces"
+              title="Back"
             >
               Home
             </button>
-            <span className="view-switcher-ws-name">
-              {workspaceName}
-            </span>
+            {label && (
+              <span className="view-switcher-ws-name">
+                {label}
+              </span>
+            )}
           </>
         )}
         {VIEW_MODES.map((mode) => (
@@ -68,111 +69,134 @@ function ViewModeSwitcher({
   );
 }
 
-function WorkspaceBrowser({
-  onSelect,
+function ProjectBrowser({
+  onSelectProject,
 }: {
-  onSelect: (name: string) => void;
+  onSelectProject: (project: Project) => void;
 }) {
-  const [workspaces, setWorkspaces] = useState<WorkspaceInfo[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
-  const [newName, setNewName] = useState("");
-  const [newQuestion, setNewQuestion] = useState("");
-  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
-    fetchWorkspaces()
-      .then(setWorkspaces)
-      .catch(() => setWorkspaces([]))
+    fetchProjects()
+      .then(setProjects)
+      .catch(() => setProjects([]))
       .finally(() => setLoading(false));
   }, []);
 
-  const handleCreate = useCallback(async () => {
-    if (!newQuestion.trim()) return;
-    setCreating(true);
-    const name = newName.trim() || newQuestion.trim().slice(0, 40).toLowerCase().replace(/[^a-z0-9]+/g, "-");
-    try {
-      const { createWorkspace } = await import("@/lib/api");
-      await createWorkspace(name, newQuestion.trim());
-      setNewName("");
-      setNewQuestion("");
-      const updated = await fetchWorkspaces();
-      setWorkspaces(updated);
-      onSelect(name);
-    } finally {
-      setCreating(false);
-    }
-  }, [newName, newQuestion, onSelect]);
-
   if (loading) {
     return (
-      <div className="browser-loading">Loading workspaces...</div>
+      <div className="browser-loading">Loading projects...</div>
     );
   }
 
   return (
     <div className="browser">
       <div className="browser-header">
-        <h1 className="browser-title">Worldview</h1>
+        <h1 className="browser-title">Research</h1>
         <p className="browser-subtitle">
-          Research workspaces. Pick one to explore, or start a new investigation.
+          Research projects. Pick one to explore.
         </p>
       </div>
 
-      {workspaces.length > 0 && (
+      {projects.length > 0 && (
         <div className="browser-list">
-          {workspaces.map((ws) => (
+          {projects.map((project) => (
             <button
-              key={ws.id}
+              key={project.id}
               className="browser-card"
-              onClick={() => onSelect(ws.name)}
+              onClick={() => onSelectProject(project)}
             >
-              <div className="browser-card-name">{ws.name}</div>
+              <div className="browser-card-name">{project.name}</div>
               <div className="browser-card-stats">
-                {ws.node_count} {ws.node_count === 1 ? "node" : "nodes"}
-                {ws.run_count > 0 && ` · ${ws.run_count} runs`}
-                {ws.pending_suggestions > 0 && (
-                  <span className="browser-card-badge">
-                    {ws.pending_suggestions} pending
-                  </span>
-                )}
+                {new Date(project.created_at).toLocaleDateString("en-US", {
+                  year: "numeric",
+                  month: "short",
+                  day: "numeric",
+                })}
               </div>
             </button>
           ))}
         </div>
       )}
 
-      <div className="browser-create">
-        <div className="browser-create-label">New investigation</div>
-        <input
-          type="text"
-          value={newQuestion}
-          onChange={(e) => setNewQuestion(e.target.value)}
-          placeholder="What question do you want to investigate?"
-          className="browser-input browser-input-main"
-          onKeyDown={(e) => e.key === "Enter" && handleCreate()}
-        />
-        <div className="browser-create-row">
-          <input
-            type="text"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            placeholder="Workspace name (auto-generated if blank)"
-            className="browser-input"
-          />
-          <button
-            className="browser-create-btn"
-            onClick={handleCreate}
-            disabled={!newQuestion.trim() || creating}
-          >
-            {creating ? "..." : "Start"}
-          </button>
+      {projects.length === 0 && (
+        <div style={{ padding: "20px 0", color: "var(--fg-muted)", fontSize: "14px" }}>
+          No projects found. Start the rumil API and create a workspace.
         </div>
+      )}
+    </div>
+  );
+}
+
+function QuestionPicker({
+  project,
+  questions,
+  onSelect,
+  onBack,
+}: {
+  project: Project;
+  questions: Page[];
+  onSelect: (question: Page) => void;
+  onBack: () => void;
+}) {
+  return (
+    <div className="browser">
+      <div className="browser-header">
+        <button
+          onClick={onBack}
+          style={{
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            fontFamily: "var(--font-mono-stack)",
+            fontSize: "11px",
+            color: "var(--fg-dim)",
+            padding: "0 0 8px 0",
+            letterSpacing: "0.04em",
+          }}
+        >
+          ← projects
+        </button>
+        <h1 className="browser-title">{project.name}</h1>
+        <p className="browser-subtitle">
+          {questions.length} root question{questions.length !== 1 ? "s" : ""}
+        </p>
+      </div>
+
+      <div className="browser-list">
+        {questions.map((q) => (
+          <button
+            key={q.id}
+            className="browser-card"
+            onClick={() => onSelect(q)}
+          >
+            <div className="browser-card-name">{q.headline}</div>
+            <div className="browser-card-stats">
+              {q.id.slice(0, 8)}
+              {" · "}
+              {new Date(q.created_at).toLocaleDateString("en-US", {
+                year: "numeric",
+                month: "short",
+                day: "numeric",
+              })}
+            </div>
+          </button>
+        ))}
       </div>
     </div>
   );
 }
 
-function WorldviewView({ workspace, onBack }: { workspace: string; onBack: () => void }) {
+function QuestionViewPage({
+  project,
+  questionId,
+  onBack,
+}: {
+  project: Project;
+  questionId: string;
+  onBack: () => void;
+}) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -180,12 +204,12 @@ function WorldviewView({ workspace, onBack }: { workspace: string; onBack: () =>
   const verticalRef = useRef<VerticalViewHandle>(null);
   const [chatOpen, setChatOpen] = useState(false);
   const toggleChat = useCallback(() => setChatOpen((v) => !v), []);
-  const [worldview, setWorldview] = useState<Worldview | null>(null);
+  const [view, setView] = useState<QuestionView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
   const [showReview, setShowReview] = useState(false);
-  const [drawerSource, setDrawerSource] = useState<SourceFull | null>(null);
+  const [drawerSource, setDrawerSource] = useState<Page | null>(null);
 
   const rawView = searchParams.get("view") ?? "panes";
   const viewMode: ViewMode = isViewMode(rawView) ? rawView : "panes";
@@ -198,8 +222,6 @@ function WorldviewView({ workspace, onBack }: { workspace: string; onBack: () =>
       } else {
         params.set("view", mode);
       }
-      params.delete("panes");
-      params.delete("expanded");
       const query = params.toString();
       router.replace(`${pathname}${query ? `?${query}` : ""}`, {
         scroll: false,
@@ -208,15 +230,15 @@ function WorldviewView({ workspace, onBack }: { workspace: string; onBack: () =>
     [searchParams, router, pathname],
   );
 
-  const refreshWorldview = useCallback(() => {
+  const refreshView = useCallback(() => {
     setRefreshKey((k) => k + 1);
   }, []);
 
   useEffect(() => {
     let cancelled = false;
-    fetchWorldview(workspace)
-      .then((wv) => {
-        if (!cancelled) setWorldview(wv);
+    fetchQuestionView(questionId)
+      .then((v) => {
+        if (!cancelled) setView(v);
       })
       .catch((e) => {
         if (!cancelled) setError(e.message);
@@ -224,32 +246,32 @@ function WorldviewView({ workspace, onBack }: { workspace: string; onBack: () =>
     return () => {
       cancelled = true;
     };
-  }, [refreshKey, workspace]);
+  }, [refreshKey, questionId]);
 
   if (error) {
     return (
       <div className="view-error">
-        Could not load worldview: {error}
+        Could not load view: {error}
         <br />
-        Is the API running? (uv run parma/serve.py)
+        Is the rumil API running? (./scripts/dev-api.sh)
       </div>
     );
   }
 
-  if (!worldview) {
-    return <div className="view-loading">Loading worldview...</div>;
+  if (!view) {
+    return <div className="view-loading">Loading research...</div>;
   }
 
   return (
-    <ConceptProvider workspace={workspace}>
+    <ConceptProvider projectId={project.id}>
       <div className="layout-with-chat">
       {showReview ? (
         <div className="pane-container">
           <div className="pane" style={{ minWidth: "500px" }}>
             <SuggestionReview
-              workspace={workspace}
+              projectId={project.id}
               onClose={() => setShowReview(false)}
-              onAction={refreshWorldview}
+              onAction={refreshView}
             />
           </div>
         </div>
@@ -259,7 +281,7 @@ function WorldviewView({ workspace, onBack }: { workspace: string; onBack: () =>
             current={viewMode}
             onChange={setViewMode}
             onBack={onBack}
-            workspaceName={workspace}
+            label={project.name}
             extra={viewMode === "vertical" ? (
               <>
                 <span className="view-switcher-sep" />
@@ -280,14 +302,15 @@ function WorldviewView({ workspace, onBack }: { workspace: string; onBack: () =>
           />
           {viewMode === "panes" && (
             <StackedPanes
-              worldview={worldview}
+              view={view}
               focusNodeId={focusNodeId}
               onFocusHandled={() => setFocusNodeId(null)}
+              onOpenSource={setDrawerSource}
             />
           )}
           {viewMode === "article" && (
             <ArticleView
-              worldview={worldview}
+              view={view}
               focusNodeId={focusNodeId}
               onFocusHandled={() => setFocusNodeId(null)}
               onOpenSource={setDrawerSource}
@@ -296,27 +319,28 @@ function WorldviewView({ workspace, onBack }: { workspace: string; onBack: () =>
           {viewMode === "vertical" && (
             <VerticalView
               ref={verticalRef}
-              worldview={worldview}
+              view={view}
               focusNodeId={focusNodeId}
               onFocusHandled={() => setFocusNodeId(null)}
             />
           )}
           {viewMode === "sources" && (
             <SourcesView
-              workspace={workspace}
+              projectId={project.id}
               onOpenDrawer={setDrawerSource}
             />
           )}
         </div>
       )}
       <ChatPanel
-        questionHeadline={worldview.question_headline}
+        questionId={questionId}
+        questionHeadline={view.question.headline}
         isOpen={chatOpen}
         onToggle={toggleChat}
-        onMessageSent={refreshWorldview}
+        onMessageSent={refreshView}
         onNodeRef={setFocusNodeId}
         onShowReview={() => setShowReview(true)}
-        workspace={workspace}
+        workspace={project.name}
       />
       <SourceDrawer
         source={drawerSource}
@@ -329,24 +353,114 @@ function WorldviewView({ workspace, onBack }: { workspace: string; onBack: () =>
 
 function AppContent() {
   const searchParams = useSearchParams();
-  const wsParam = searchParams.get("ws");
-  const [selectedWs, setSelectedWs] = useState<string | null>(wsParam);
+  const questionParam = searchParams.get("q");
 
-  const handleSelect = useCallback((name: string) => {
-    setSelectedWs(name);
-    window.history.replaceState(null, "", `?ws=${encodeURIComponent(name)}`);
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [questions, setQuestions] = useState<Page[] | null>(null);
+  const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(questionParam);
+  const [loadingQuestions, setLoadingQuestions] = useState(false);
+
+  const handleSelectProject = useCallback((project: Project) => {
+    setSelectedProject(project);
+    setSelectedQuestionId(null);
+    setLoadingQuestions(true);
+    window.history.replaceState(null, "", `?project=${encodeURIComponent(project.id)}`);
+
+    fetchRootQuestions(project.id)
+      .then((qs) => {
+        setQuestions(qs);
+        if (qs.length === 1) {
+          setSelectedQuestionId(qs[0].id);
+          window.history.replaceState(
+            null,
+            "",
+            `?project=${encodeURIComponent(project.id)}&q=${encodeURIComponent(qs[0].id)}`,
+          );
+        }
+      })
+      .catch(() => setQuestions([]))
+      .finally(() => setLoadingQuestions(false));
   }, []);
 
-  const handleBack = useCallback(() => {
-    setSelectedWs(null);
+  const handleSelectQuestion = useCallback((question: Page) => {
+    setSelectedQuestionId(question.id);
+    if (selectedProject) {
+      window.history.replaceState(
+        null,
+        "",
+        `?project=${encodeURIComponent(selectedProject.id)}&q=${encodeURIComponent(question.id)}`,
+      );
+    }
+  }, [selectedProject]);
+
+  const handleBackToProjects = useCallback(() => {
+    setSelectedProject(null);
+    setQuestions(null);
+    setSelectedQuestionId(null);
     window.history.replaceState(null, "", "/");
   }, []);
 
-  if (!selectedWs) {
-    return <WorkspaceBrowser onSelect={handleSelect} />;
+  const handleBackToQuestions = useCallback(() => {
+    setSelectedQuestionId(null);
+    if (selectedProject) {
+      window.history.replaceState(
+        null,
+        "",
+        `?project=${encodeURIComponent(selectedProject.id)}`,
+      );
+    }
+  }, [selectedProject]);
+
+  if (!selectedProject) {
+    return <ProjectBrowser onSelectProject={handleSelectProject} />;
   }
 
-  return <WorldviewView workspace={selectedWs} onBack={handleBack} />;
+  if (loadingQuestions) {
+    return <div className="view-loading">Loading questions...</div>;
+  }
+
+  if (selectedQuestionId) {
+    return (
+      <QuestionViewPage
+        project={selectedProject}
+        questionId={selectedQuestionId}
+        onBack={questions && questions.length > 1 ? handleBackToQuestions : handleBackToProjects}
+      />
+    );
+  }
+
+  if (questions && questions.length > 1) {
+    return (
+      <QuestionPicker
+        project={selectedProject}
+        questions={questions}
+        onSelect={handleSelectQuestion}
+        onBack={handleBackToProjects}
+      />
+    );
+  }
+
+  return (
+    <div className="view-error">
+      No questions found in this project.
+      <br />
+      <button
+        onClick={handleBackToProjects}
+        style={{
+          marginTop: "12px",
+          background: "none",
+          border: "1px solid var(--border)",
+          padding: "8px 16px",
+          cursor: "pointer",
+          fontFamily: "var(--font-mono-stack)",
+          fontSize: "12px",
+          color: "var(--fg-muted)",
+        }}
+      >
+        ← back to projects
+      </button>
+    </div>
+  );
 }
 
 export default function Page() {

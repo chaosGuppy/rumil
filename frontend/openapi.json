@@ -1289,6 +1289,44 @@
           }
         }
       }
+    },
+    "/api/chat": {
+      "post": {
+        "summary": "Chat",
+        "operationId": "chat_api_chat_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2041,6 +2079,54 @@
           "total"
         ],
         "title": "CallsForQuestion"
+      },
+      "ChatRequest": {
+        "properties": {
+          "question_id": {
+            "type": "string",
+            "title": "Question Id"
+          },
+          "messages": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Messages"
+          },
+          "workspace": {
+            "type": "string",
+            "title": "Workspace",
+            "default": "default"
+          }
+        },
+        "type": "object",
+        "required": [
+          "question_id",
+          "messages"
+        ],
+        "title": "ChatRequest"
+      },
+      "ChatResponse": {
+        "properties": {
+          "response": {
+            "type": "string",
+            "title": "Response"
+          },
+          "tool_uses": {
+            "items": {
+              "$ref": "#/components/schemas/ToolUseInfo"
+            },
+            "type": "array",
+            "title": "Tool Uses"
+          }
+        },
+        "type": "object",
+        "required": [
+          "response",
+          "tool_uses"
+        ],
+        "title": "ChatResponse"
       },
       "ClaimReassessedEventOut": {
         "properties": {
@@ -3122,6 +3208,17 @@
             "type": "object",
             "title": "Extra"
           },
+          "importance": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Importance"
+          },
           "abstract": {
             "type": "string",
             "title": "Abstract",
@@ -3159,6 +3256,7 @@
           "superseded_by",
           "is_superseded",
           "extra",
+          "importance",
           "abstract",
           "fruit_remaining"
         ],
@@ -4330,6 +4428,30 @@
           "response"
         ],
         "title": "ToolCallEventOut"
+      },
+      "ToolUseInfo": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "input": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Input"
+          },
+          "result": {
+            "type": "string",
+            "title": "Result"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "input",
+          "result"
+        ],
+        "title": "ToolUseInfo"
       },
       "UpdatePlanCreatedEventOut": {
         "properties": {

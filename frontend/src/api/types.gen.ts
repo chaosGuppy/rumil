@@ -389,6 +389,40 @@ export type CallsForQuestion = {
 };
 
 /**
+ * ChatRequest
+ */
+export type ChatRequest = {
+    /**
+     * Question Id
+     */
+    question_id: string;
+    /**
+     * Messages
+     */
+    messages: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Workspace
+     */
+    workspace?: string;
+};
+
+/**
+ * ChatResponse
+ */
+export type ChatResponse = {
+    /**
+     * Response
+     */
+    response: string;
+    /**
+     * Tool Uses
+     */
+    tool_uses: Array<ToolUseInfo>;
+};
+
+/**
  * ClaimReassessedEventOut
  */
 export type ClaimReassessedEventOut = {
@@ -1014,6 +1048,10 @@ export type Page = {
     extra: {
         [key: string]: unknown;
     };
+    /**
+     * Importance
+     */
+    importance: number | null;
     /**
      * Abstract
      */
@@ -1753,6 +1791,26 @@ export type ToolCallEventOut = {
      * Response
      */
     response: string;
+};
+
+/**
+ * ToolUseInfo
+ */
+export type ToolUseInfo = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Input
+     */
+    input: {
+        [key: string]: unknown;
+    };
+    /**
+     * Result
+     */
+    result: string;
 };
 
 /**
@@ -2764,3 +2822,28 @@ export type GetPageRunApiPagesPageIdRunGetResponses = {
 };
 
 export type GetPageRunApiPagesPageIdRunGetResponse = GetPageRunApiPagesPageIdRunGetResponses[keyof GetPageRunApiPagesPageIdRunGetResponses];
+
+export type ChatApiChatPostData = {
+    body: ChatRequest;
+    path?: never;
+    query?: never;
+    url: '/api/chat';
+};
+
+export type ChatApiChatPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ChatApiChatPostError = ChatApiChatPostErrors[keyof ChatApiChatPostErrors];
+
+export type ChatApiChatPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: ChatResponse;
+};
+
+export type ChatApiChatPostResponse = ChatApiChatPostResponses[keyof ChatApiChatPostResponses];

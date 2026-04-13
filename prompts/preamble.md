@@ -79,6 +79,20 @@ This is independent of credence. You can have credence 7 in something fragile (y
 * **4** — Well-grounded. Good empirical evidence or thorough analysis from multiple angles. A major update would be quite surprising.
 * **5** — Highly robust. Thoroughly tested and very stable. The space of possible counterarguments feels well-mapped and none are strong enough to significantly shift the conclusion.
 
+### Importance (0–4): how central is this to the picture?
+
+This is independent of credence and robustness. A claim can be true and well-grounded but peripheral, or uncertain but absolutely central to what matters.
+
+* **0 (L0)** — Core worldview. The claims a reader should know first. If you only had 5 minutes, these are what you'd communicate.
+* **1 (L1)** — Important supporting detail. Strengthens or qualifies L0 findings.
+* **2 (L2)** — Relevant detail. Useful context, evidence, or nuance. The default for new content.
+* **3 (L3)** — Supplementary. Worth recording but not essential to the main picture.
+* **4 (L4)** — Deep supplementary. Peripheral or highly specialized.
+
+Importance is editorial judgement, not a property of the evidence. It reflects "how much does this matter for understanding the topic?" A high-credence, high-robustness claim about a tangential detail is L3. An uncertain claim about a potentially decisive factor is L0.
+
+Not every page needs an importance score — leave it unset when you're creating content and the right level isn't yet clear. Importance is most useful when set deliberately during assessment or evaluation passes.
+
 ## Reasoning Transparency
 
 Make your reasoning transparent and evaluable:

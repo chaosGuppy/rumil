@@ -5,7 +5,7 @@ import { fetchSuggestions, respondToSuggestion } from "@/lib/api";
 import type { Suggestion } from "@/lib/api";
 
 interface SuggestionReviewProps {
-  workspace: string;
+  projectId: string;
   onClose: () => void;
   onAction: () => void;
 }
@@ -43,7 +43,7 @@ function SuggestionPreview({
     );
   }
 
-  if (type === "relevel_node") {
+  if (type === "relevel") {
     const newImp = payload.new_importance;
     if (newImp == null) return null;
     return (
@@ -132,22 +132,18 @@ function SuggestionCard({
   suggestion: Suggestion;
   onRespond: (id: string, action: "accept" | "reject") => void;
 }) {
-  let payload: Record<string, unknown> = {};
-  try {
-    payload = JSON.parse(suggestion.payload);
-  } catch {
-    /* empty */
-  }
+  const payload = suggestion.payload;
   const reasoning = (payload.reasoning as string) || "";
   const isPending = suggestion.status === "pending";
+  const targetId = suggestion.target_page_id?.slice(0, 8) ?? "";
 
   return (
     <div className="suggestion-card">
       <div className="suggestion-header">
         <span className="suggestion-type">{suggestion.suggestion_type}</span>
-        {suggestion.target_headline && (
+        {(suggestion.target_headline || targetId) && (
           <span className="suggestion-target">
-            on {suggestion.target_headline}
+            on {suggestion.target_headline ?? targetId}
           </span>
         )}
       </div>
@@ -176,7 +172,7 @@ function SuggestionCard({
 }
 
 export function SuggestionReview({
-  workspace,
+  projectId,
   onClose,
   onAction,
 }: SuggestionReviewProps) {
@@ -186,11 +182,11 @@ export function SuggestionReview({
 
   const load = useCallback(() => {
     setLoading(true);
-    fetchSuggestions(workspace, tab)
+    fetchSuggestions(projectId, tab)
       .then(setSuggestions)
       .catch(() => setSuggestions([]))
       .finally(() => setLoading(false));
-  }, [workspace, tab]);
+  }, [projectId, tab]);
 
   useEffect(() => {
     load();

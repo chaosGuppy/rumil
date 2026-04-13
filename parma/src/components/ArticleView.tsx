@@ -1,105 +1,102 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import type { WorldviewNode, Worldview } from "@/lib/types";
-import { partitionChildren } from "@/lib/types";
-import type { SourceFull } from "@/lib/api";
+import type { QuestionView, ViewItem, Page } from "@/lib/types";
 import { CredenceBadge } from "./CredenceBadge";
 import { LinkBadges } from "./LinkBadges";
-import { NodeTypeLabel, nodeColor } from "./NodeTypeLabel";
+import { NodeTypeLabel } from "./NodeTypeLabel";
 import { SourceBadge } from "./SourceBadge";
 import { TextWithConcepts } from "./ConceptRef";
-import { JudgementHistory } from "./JudgementHistory";
 
 interface ArticleViewProps {
-  worldview: Worldview;
+  view: QuestionView;
   focusNodeId?: string | null;
   onFocusHandled?: () => void;
-  onOpenSource?: (source: SourceFull) => void;
+  onOpenSource?: (source: Page) => void;
 }
 
-function isSupplementary(node: WorldviewNode): boolean {
-  return node.importance !== undefined && node.importance >= 3;
-}
+const SECTION_LABELS: Record<string, string> = {
+  current_position: "Current Position",
+  core_findings: "Core Findings",
+  live_hypotheses: "Live Hypotheses",
+  key_evidence: "Key Evidence",
+  key_uncertainties: "Key Uncertainties",
+  structural_framing: "Structural Framing",
+  supporting_detail: "Supporting Detail",
+  promotion_candidates: "Promotion Candidates",
+  demotion_candidates: "Demotion Candidates",
+};
 
-function collectSupplementary(node: WorldviewNode): WorldviewNode[] {
-  const result: WorldviewNode[] = [];
-  for (const child of node.children) {
-    if (child.superseded_by) continue;
-    if (isSupplementary(child)) {
-      result.push(child);
-    } else {
-      result.push(...collectSupplementary(child));
+function directionLabel(item: ViewItem): string | null {
+  for (const link of item.links) {
+    if (link.link_type === "consideration" && link.direction && link.direction !== "neutral") {
+      return link.direction;
     }
   }
-  return result;
+  return null;
 }
 
-function ArticleNode({
-  node,
-  depth,
+function ArticleItem({
+  item,
   onFocus,
   focusedId,
   onOpenSource,
 }: {
-  node: WorldviewNode;
-  depth: number;
+  item: ViewItem;
   onFocus: (headline: string) => void;
   focusedId: string | null;
-  onOpenSource?: (source: SourceFull) => void;
+  onOpenSource?: (source: Page) => void;
 }) {
-  if (isSupplementary(node)) return null;
-
-  const isFocused = focusedId ? node.headline.includes(focusedId) : false;
-  const { active, supersededJudgements } = partitionChildren(node.children);
-  const regular = active.filter((c) => !isSupplementary(c));
-  const Tag = (
-    depth === 0 ? "h2" : depth === 1 ? "h3" : "h4"
-  ) as "h2" | "h3" | "h4";
+  const page = item.page;
+  const isFocused = focusedId ? page.headline.includes(focusedId) : false;
+  const direction = directionLabel(item);
+  const citedSourceIds = item.links
+    .filter((l) => l.link_type === "cites")
+    .map((l) => l.to_page_id.slice(0, 8));
 
   return (
     <div
       className={[
         "article-node",
-        `article-depth-${Math.min(depth, 2)}`,
+        "article-depth-1",
         isFocused ? "node-focused" : "",
       ]
         .filter(Boolean)
         .join(" ")}
-      data-headline={node.headline}
+      data-headline={page.headline}
     >
-      <Tag className="article-heading" onClick={() => onFocus(node.headline)}>
-        {node.headline}
-      </Tag>
+      <h3 className="article-heading" onClick={() => onFocus(page.headline)}>
+        {page.headline}
+      </h3>
       <div className="article-meta">
-        <NodeTypeLabel type={node.node_type} />
-        {node.importance !== undefined && node.importance > 0 && (
-          <span className="article-label-dim">L{node.importance}</span>
+        <NodeTypeLabel type={page.page_type} />
+        {page.importance !== null && page.importance > 0 && (
+          <span className="article-label-dim">L{page.importance}</span>
         )}
-        <CredenceBadge credence={node.credence} robustness={node.robustness} />
-        <SourceBadge sourceIds={node.source_page_ids} onOpenDrawer={onOpenSource} />
-        <LinkBadges linksOut={node.links_out} linksIn={node.links_in} />
+        {direction && (
+          <span
+            style={{
+              fontFamily: "var(--font-mono-stack)",
+              fontSize: "10px",
+              color: direction === "supports" ? "var(--link-supports)" : "var(--link-opposes)",
+            }}
+          >
+            {direction}
+          </span>
+        )}
+        <CredenceBadge credence={page.credence} robustness={page.robustness} />
+        <SourceBadge sourceIds={citedSourceIds} onOpenDrawer={onOpenSource} />
+        <LinkBadges links={item.links} />
       </div>
       <div className="worldview-prose">
-        <p><TextWithConcepts text={node.content} excludeConceptId={node.id} /></p>
+        <p><TextWithConcepts text={page.content} excludeConceptId={page.id} /></p>
       </div>
-      {regular.map((child, i) => (
-        <ArticleNode
-          key={child.id ?? i}
-          node={child}
-          depth={depth + 1}
-          onFocus={onFocus}
-          focusedId={focusedId}
-          onOpenSource={onOpenSource}
-        />
-      ))}
-      <JudgementHistory supersededJudgements={supersededJudgements} />
     </div>
   );
 }
 
 export function ArticleView({
-  worldview,
+  view,
   focusNodeId,
   onFocusHandled,
   onOpenSource,
@@ -145,7 +142,7 @@ export function ArticleView({
       .querySelectorAll("[data-section]")
       .forEach((el) => observer.observe(el));
     return () => observer.disconnect();
-  }, [worldview]);
+  }, [view]);
 
   const scrollToSection = useCallback((index: number) => {
     document
@@ -156,18 +153,28 @@ export function ArticleView({
   return (
     <div className="article-layout">
       <nav className="article-toc">
-        <div className="article-toc-title">Contents</div>
-        {worldview.nodes.map((node, i) => (
+        <div className="article-toc-title">Sections</div>
+        {view.sections.map((section, i) => (
           <button
-            key={i}
+            key={section.name}
             className={`article-toc-item ${activeSection === i ? "active" : ""}`}
             onClick={() => scrollToSection(i)}
           >
             <span
               className="article-toc-dot"
-              style={{ background: nodeColor(node.node_type) }}
+              style={{ background: "var(--accent)" }}
             />
-            <span>{node.headline}</span>
+            <span>
+              {SECTION_LABELS[section.name] ?? section.name}
+              <span style={{
+                fontFamily: "var(--font-mono-stack)",
+                fontSize: "9px",
+                color: "var(--fg-dim)",
+                marginLeft: "6px",
+              }}>
+                {section.items.length}
+              </span>
+            </span>
           </button>
         ))}
       </nav>
@@ -175,71 +182,49 @@ export function ArticleView({
       <div className="article-scroll" ref={scrollRef}>
         <article className="article-content">
           <header className="article-header">
-            <h1>{worldview.question_headline}</h1>
-            {worldview.summary && (
+            <h1>{view.question.headline}</h1>
+            {view.question.abstract && (
               <div className="article-summary worldview-prose">
-                <p>{worldview.summary}</p>
+                <p>{view.question.abstract}</p>
               </div>
             )}
             <div className="article-date">
-              Generated{" "}
-              {new Date(worldview.generated_at).toLocaleDateString("en-US", {
-                year: "numeric",
-                month: "long",
-                day: "numeric",
-              })}
+              {view.health.total_pages} pages · depth {view.health.max_depth}
+              {view.health.missing_credence > 0 && ` · ${view.health.missing_credence} missing credence`}
             </div>
           </header>
 
-          {worldview.nodes.map((node, i) => {
-            const supplementary = collectSupplementary(node);
-            return (
-              <section
-                key={i}
-                id={`section-${i}`}
-                className="article-section"
-                data-section={i}
-              >
-                {i > 0 && <hr className="article-divider" />}
-                <ArticleNode
-                  node={node}
-                  depth={0}
+          {view.sections.map((section, i) => (
+            <section
+              key={section.name}
+              id={`section-${i}`}
+              className="article-section"
+              data-section={i}
+            >
+              {i > 0 && <hr className="article-divider" />}
+              <h2 className="article-heading" style={{ fontSize: "22px", marginBottom: "4px" }}>
+                {SECTION_LABELS[section.name] ?? section.name}
+              </h2>
+              <p style={{
+                fontSize: "13px",
+                color: "var(--fg-dim)",
+                margin: "0 0 20px 0",
+                fontFamily: "var(--font-mono-stack)",
+                letterSpacing: "0.02em",
+              }}>
+                {section.description}
+              </p>
+              {section.items.map((item) => (
+                <ArticleItem
+                  key={item.page.id}
+                  item={item}
                   onFocus={setFocusedId}
                   focusedId={focusedId}
                   onOpenSource={onOpenSource}
                 />
-                {supplementary.length > 0 && (
-                  <details className="article-supplementary">
-                    <summary className="article-supplementary-toggle">
-                      Supplementary
-                      <span className="article-supplementary-count">
-                        {supplementary.length}
-                      </span>
-                    </summary>
-                    <div className="article-supplementary-body">
-                      {supplementary.map((sNode, j) => (
-                        <div key={j} className="article-supplementary-item">
-                          <div className="article-meta">
-                            <NodeTypeLabel type={sNode.node_type} />
-                            <CredenceBadge
-                              credence={sNode.credence}
-                              robustness={sNode.robustness}
-                            />
-                          </div>
-                          <h4 className="article-supplementary-heading">
-                            {sNode.headline}
-                          </h4>
-                          <div className="worldview-prose">
-                            <p><TextWithConcepts text={sNode.content} excludeConceptId={sNode.id} /></p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </details>
-                )}
-              </section>
-            );
-          })}
+              ))}
+            </section>
+          ))}
         </article>
       </div>
     </div>

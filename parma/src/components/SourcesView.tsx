@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { fetchSources, fetchSourceByShortId } from "@/lib/api";
-import type { SourceInfo, SourceFull } from "@/lib/api";
+import { fetchSources, fetchPageByShortId } from "@/lib/api";
+import type { Page } from "@/lib/types";
 
 interface SourcesViewProps {
-  workspace: string;
-  onOpenDrawer: (source: SourceFull) => void;
+  projectId: string;
+  onOpenDrawer: (source: Page) => void;
 }
 
 function hostname(url: string): string {
@@ -17,21 +17,21 @@ function hostname(url: string): string {
   }
 }
 
-export function SourcesView({ workspace, onOpenDrawer }: SourcesViewProps) {
-  const [sources, setSources] = useState<SourceInfo[]>([]);
+export function SourcesView({ projectId, onOpenDrawer }: SourcesViewProps) {
+  const [sources, setSources] = useState<Page[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     setLoading(true);
-    fetchSources(workspace)
+    fetchSources(projectId)
       .then(setSources)
       .catch(() => setSources([]))
       .finally(() => setLoading(false));
-  }, [workspace]);
+  }, [projectId]);
 
   const handleOpen = useCallback(
-    async (source: SourceInfo) => {
-      const full = await fetchSourceByShortId(source.id.slice(0, 8));
+    async (source: Page) => {
+      const full = await fetchPageByShortId(source.id.slice(0, 8));
       if (full) onOpenDrawer(full);
     },
     [onOpenDrawer],
@@ -45,10 +45,10 @@ export function SourcesView({ workspace, onOpenDrawer }: SourcesViewProps) {
     );
   }
 
-  // Group by domain
-  const byDomain = new Map<string, SourceInfo[]>();
+  const byDomain = new Map<string, Page[]>();
   for (const s of sources) {
-    const domain = s.url ? hostname(s.url) : "unknown";
+    const url = (s.extra?.url as string) ?? "";
+    const domain = url ? hostname(url) : "unknown";
     const list = byDomain.get(domain) ?? [];
     list.push(s);
     byDomain.set(domain, list);
@@ -65,7 +65,7 @@ export function SourcesView({ workspace, onOpenDrawer }: SourcesViewProps) {
             <h1 className="sources-title">Sources</h1>
             <p className="sources-subtitle">
               {sources.length} source{sources.length !== 1 ? "s" : ""} in this
-              workspace. Click to read the full document.
+              project. Click to read the full document.
             </p>
           </header>
 
@@ -73,37 +73,40 @@ export function SourcesView({ workspace, onOpenDrawer }: SourcesViewProps) {
             <section key={domain} className="sources-domain-group">
               <h2 className="sources-domain-label">{domain}</h2>
               <div className="sources-list">
-                {domainSources.map((s) => (
-                  <button
-                    key={s.id}
-                    className="sources-card"
-                    onClick={() => handleOpen(s)}
-                  >
-                    <div className="sources-card-top">
-                      <span className="sources-card-id">
-                        {s.id.slice(0, 8)}
-                      </span>
-                      {s.url && (
-                        <a
-                          href={s.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="sources-card-ext"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          ↗
-                        </a>
-                      )}
-                    </div>
-                    <div className="sources-card-title">{s.title}</div>
-                    {s.abstract && (
-                      <div className="sources-card-abstract">
-                        {s.abstract.slice(0, 160)}
-                        {s.abstract.length > 160 ? "..." : ""}
+                {domainSources.map((s) => {
+                  const url = (s.extra?.url as string) ?? "";
+                  return (
+                    <button
+                      key={s.id}
+                      className="sources-card"
+                      onClick={() => handleOpen(s)}
+                    >
+                      <div className="sources-card-top">
+                        <span className="sources-card-id">
+                          {s.id.slice(0, 8)}
+                        </span>
+                        {url && (
+                          <a
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="sources-card-ext"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            ↗
+                          </a>
+                        )}
                       </div>
-                    )}
-                  </button>
-                ))}
+                      <div className="sources-card-title">{s.headline}</div>
+                      {s.abstract && (
+                        <div className="sources-card-abstract">
+                          {s.abstract.slice(0, 160)}
+                          {s.abstract.length > 160 ? "..." : ""}
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </section>
           ))}

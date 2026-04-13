@@ -1,30 +1,18 @@
 "use client";
 
-import type { WorldviewNodeType } from "@/lib/types";
+import type { PageType } from "@/lib/types";
 
-const TYPE_COLORS: Record<WorldviewNodeType, string> = {
+const TYPE_COLORS: Record<PageType, string> = {
   claim: "var(--node-claim)",
-  hypothesis: "var(--node-hypothesis)",
-  evidence: "var(--node-evidence)",
-  uncertainty: "var(--node-uncertainty)",
-  context: "var(--node-context)",
   question: "var(--node-question)",
   judgement: "var(--node-judgement)",
   concept: "var(--node-concept)",
+  source: "var(--node-evidence)",
+  wiki: "var(--node-context)",
+  summary: "var(--node-context)",
 };
 
-const TYPE_LABELS: Record<WorldviewNodeType, string> = {
-  claim: "claim",
-  hypothesis: "hypothesis",
-  evidence: "evidence",
-  uncertainty: "uncertainty",
-  context: "context",
-  question: "question",
-  judgement: "judgement",
-  concept: "concept",
-};
-
-export function NodeTypeLabel({ type }: { type: WorldviewNodeType }) {
+export function NodeTypeLabel({ type }: { type: PageType }) {
   return (
     <span
       style={{
@@ -32,15 +20,15 @@ export function NodeTypeLabel({ type }: { type: WorldviewNodeType }) {
         fontSize: "10px",
         letterSpacing: "0.06em",
         textTransform: "uppercase",
-        color: TYPE_COLORS[type],
+        color: TYPE_COLORS[type] ?? "var(--fg-dim)",
         userSelect: "none",
       }}
     >
-      {TYPE_LABELS[type]}
+      {type}
     </span>
   );
 }
 
-export function nodeColor(type: WorldviewNodeType): string {
-  return TYPE_COLORS[type];
+export function nodeColor(type: PageType): string {
+  return TYPE_COLORS[type] ?? "var(--fg-dim)";
 }

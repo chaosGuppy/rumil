@@ -1,314 +1,96 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import type { WorldviewNode, Worldview } from "@/lib/types";
-import { partitionChildren } from "@/lib/types";
-import { WorldviewNodeCard } from "./WorldviewNode";
-import { JudgementHistory } from "./JudgementHistory";
+import type { QuestionView, ViewItem, Page } from "@/lib/types";
+import { PageCard } from "./PageCard";
 
 interface PaneState {
-  parentNode: WorldviewNode;
-  parentIndex: number;
-  depth: number;
+  item: ViewItem;
+  itemIndex: number;
 }
 
-function resolveNode(
-  worldview: Worldview,
-  path: string,
-): WorldviewNode | null {
-  const parts = path.split(".").map(Number);
-  if (parts.some(isNaN)) return null;
-
-  let current: WorldviewNode | undefined = worldview.nodes[parts[0]];
-  for (let i = 1; i < parts.length; i++) {
-    if (!current) return null;
-    current = current.children[parts[i]];
-  }
-  return current ?? null;
-}
-
-function buildPath(panes: PaneState[], worldview: Worldview): string {
-  if (panes.length === 0) return "";
-
-  const paths: string[] = [];
-  for (const pane of panes) {
-    const rootIndex = worldview.nodes.indexOf(pane.parentNode);
-    if (rootIndex >= 0) {
-      paths.push(String(rootIndex));
-    } else {
-      paths.push(String(pane.parentIndex));
-    }
-  }
-  return paths.join(",");
-}
-
-function findNodeIndex(
-  nodes: WorldviewNode[],
-  shortId: string,
-): number | null {
-  function searchTree(node: WorldviewNode): boolean {
-    if (node.headline.includes(shortId)) return true;
-    return node.children.some(searchTree);
-  }
-  for (let i = 0; i < nodes.length; i++) {
-    if (searchTree(nodes[i])) return i;
-  }
-  return null;
-}
-
-function NodePane({
-  pane,
-  onExpand,
-  activePanePath,
-  onClose,
-  depth,
-  onFocusNode,
-  focusedNodeId,
-}: {
-  pane: PaneState;
-  onExpand: (node: WorldviewNode, index: number) => void;
-  activePanePath: string | null;
-  onClose: () => void;
-  depth: number;
-  onFocusNode?: (nodeId: string) => void;
-  focusedNodeId?: string | null;
-}) {
-  return (
-    <div style={{ padding: "28px 28px 32px" }}>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "baseline",
-          marginBottom: "20px",
-          paddingBottom: "16px",
-          borderBottom: "1px solid var(--border)",
-        }}
-      >
-        <h2
-          style={{
-            fontSize: "15px",
-            fontWeight: 500,
-            margin: 0,
-            color: "var(--fg)",
-            lineHeight: 1.4,
-          }}
-        >
-          {pane.parentNode.headline}
-        </h2>
-        <button
-          onClick={onClose}
-          style={{
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            padding: "4px 8px",
-            color: "var(--fg-dim)",
-            fontFamily: "var(--font-mono-stack)",
-            fontSize: "11px",
-            letterSpacing: "0.04em",
-            flexShrink: 0,
-          }}
-          onMouseEnter={(e) =>
-            (e.currentTarget.style.color = "var(--fg-muted)")
-          }
-          onMouseLeave={(e) =>
-            (e.currentTarget.style.color = "var(--fg-dim)")
-          }
-          aria-label="Close pane"
-        >
-          close
-        </button>
-      </div>
-
-      {(() => {
-        const { active, supersededJudgements } = partitionChildren(pane.parentNode.children);
-        return (
-          <>
-            {active.map((child, i) => (
-              <WorldviewNodeCard
-                key={child.id ?? i}
-                node={child}
-                index={i}
-                onExpandPane={
-                  child.children.length > 0
-                    ? (node: WorldviewNode, idx: number) => onExpand(node, idx)
-                    : undefined
-                }
-                onFocus={onFocusNode}
-                isActive={activePanePath === String(i)}
-                isFocused={focusedNodeId ? child.headline.includes(focusedNodeId) : false}
-                activeDepth={depth + 1}
-                supersededCount={
-                  child.node_type === "judgement" ? supersededJudgements.length : 0
-                }
-              />
-            ))}
-            <JudgementHistory supersededJudgements={supersededJudgements} />
-          </>
-        );
-      })()}
-    </div>
-  );
-}
+const SECTION_LABELS: Record<string, string> = {
+  current_position: "Current Position",
+  core_findings: "Core Findings",
+  live_hypotheses: "Live Hypotheses",
+  key_evidence: "Key Evidence",
+  key_uncertainties: "Key Uncertainties",
+  structural_framing: "Structural Framing",
+  supporting_detail: "Supporting Detail",
+  promotion_candidates: "Promotion Candidates",
+  demotion_candidates: "Demotion Candidates",
+};
 
 interface StackedPanesProps {
-  worldview: Worldview;
+  view: QuestionView;
   focusNodeId?: string | null;
   onFocusHandled?: () => void;
+  onOpenSource?: (source: Page) => void;
 }
 
 export function StackedPanes({
-  worldview,
+  view,
   focusNodeId,
   onFocusHandled,
+  onOpenSource,
 }: StackedPanesProps) {
-  const searchParams = useSearchParams();
-  const router = useRouter();
-  const pathname = usePathname();
   const containerRef = useRef<HTMLDivElement>(null);
   const lastPaneRef = useRef<HTMLDivElement>(null);
 
-  const [panes, setPanes] = useState<PaneState[]>(() => {
-    const panesParam = searchParams.get("panes");
-    if (!panesParam) return [];
-
-    const paths = panesParam.split(",");
-    const resolved: PaneState[] = [];
-    for (const path of paths) {
-      const node = resolveNode(worldview, path);
-      if (node && node.children.length > 0) {
-        const index = parseInt(path.split(".").pop() ?? "0", 10);
-        resolved.push({
-          parentNode: node,
-          parentIndex: index,
-          depth: resolved.length + 1,
-        });
-      }
-    }
-    return resolved;
-  });
-
-  const [activeRootIndex, setActiveRootIndex] = useState<number | null>(null);
+  const [detailPane, setDetailPane] = useState<PaneState | null>(null);
+  const [activeItemId, setActiveItemId] = useState<string | null>(null);
   const [focusedId, setFocusedId] = useState<string | null>(null);
 
-  const updateUrl = useCallback(
-    (newPanes: PaneState[]) => {
-      const path = buildPath(newPanes, worldview);
-      const params = new URLSearchParams(searchParams.toString());
-      if (path) {
-        params.set("panes", path);
-      } else {
-        params.delete("panes");
-      }
-      const query = params.toString();
-      router.replace(`${pathname}${query ? `?${query}` : ""}`, {
-        scroll: false,
-      });
+  const allItems = view.sections.flatMap((s) => s.items);
+
+  const openDetail = useCallback(
+    (item: ViewItem, index: number) => {
+      setDetailPane({ item, itemIndex: index });
+      setActiveItemId(item.page.id);
     },
-    [searchParams, router, pathname, worldview],
+    [],
   );
 
-  const handleExpandFromRoot = useCallback(
-    (node: WorldviewNode, index: number) => {
-      const newPanes = [
-        { parentNode: node, parentIndex: index, depth: 1 },
-      ];
-      setPanes(newPanes);
-      setActiveRootIndex(index);
-      setFocusedId(null);
-      updateUrl(newPanes);
-    },
-    [updateUrl],
-  );
+  const closeDetail = useCallback(() => {
+    setDetailPane(null);
+    setActiveItemId(null);
+  }, []);
 
-  const handleFocusRoot = useCallback(
-    (index: number) => {
-      setActiveRootIndex(index);
-      setPanes([]);
-      setFocusedId(null);
-      updateUrl([]);
-      const el = document.getElementById(`node-${index}`);
-      if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      }
-    },
-    [updateUrl],
-  );
-
-  const handleExpandFromPane = useCallback(
-    (paneDepth: number, node: WorldviewNode, childIndex: number) => {
-      const newPanes = [
-        ...panes.slice(0, paneDepth),
-        {
-          parentNode: node,
-          parentIndex: childIndex,
-          depth: paneDepth + 1,
-        },
-      ];
-      setPanes(newPanes);
-      setFocusedId(null);
-      updateUrl(newPanes);
-    },
-    [panes, updateUrl],
-  );
-
-  const handleClosePane = useCallback(
-    (depth: number) => {
-      const newPanes = panes.slice(0, depth);
-      setPanes(newPanes);
-      updateUrl(newPanes);
-      if (newPanes.length === 0) {
-        setActiveRootIndex(null);
-      }
-    },
-    [panes, updateUrl],
-  );
-
-  // Handle external focus requests (from chat refs)
   useEffect(() => {
     if (!focusNodeId) return;
-
     setFocusedId(focusNodeId);
 
-    const rootIdx = findNodeIndex(worldview.nodes, focusNodeId);
-    if (rootIdx !== null) {
-      setActiveRootIndex(rootIdx);
-      setPanes([]);
-      updateUrl([]);
+    const matchIndex = allItems.findIndex((item) =>
+      item.page.headline.includes(focusNodeId) || item.page.id.startsWith(focusNodeId),
+    );
+    if (matchIndex >= 0) {
+      setActiveItemId(allItems[matchIndex].page.id);
       setTimeout(() => {
-        const el = document.getElementById(`node-${rootIdx}`);
-        if (el) {
-          el.scrollIntoView({ behavior: "smooth", block: "nearest" });
-        }
+        const el = document.getElementById(`item-${allItems[matchIndex].page.id}`);
+        el?.scrollIntoView({ behavior: "smooth", block: "nearest" });
       }, 50);
     }
 
-    // Clear focus highlight after a few seconds
     const timer = setTimeout(() => {
       setFocusedId(null);
       onFocusHandled?.();
     }, 3000);
     return () => clearTimeout(timer);
-  }, [focusNodeId, worldview.nodes, updateUrl, onFocusHandled]);
+  }, [focusNodeId, allItems, onFocusHandled]);
 
   useEffect(() => {
-    if (lastPaneRef.current && panes.length > 0) {
+    if (lastPaneRef.current && detailPane) {
       lastPaneRef.current.scrollIntoView({
         behavior: "smooth",
         block: "nearest",
         inline: "start",
       });
     }
-  }, [panes.length]);
+  }, [detailPane]);
 
   return (
-    <div
-      ref={containerRef}
-      className="pane-container"
-    >
-      {/* Root pane — always full width */}
+    <div ref={containerRef} className="pane-container">
+      {/* Root pane — sections with items */}
       <div className="pane">
         <div style={{ padding: "48px 36px" }}>
           <header style={{ marginBottom: "40px" }}>
@@ -322,9 +104,9 @@ export function StackedPanes({
                 letterSpacing: "-0.01em",
               }}
             >
-              {worldview.question_headline}
+              {view.question.headline}
             </h1>
-            {worldview.summary && (
+            {view.question.abstract && (
               <div
                 className="worldview-prose"
                 style={{
@@ -334,7 +116,7 @@ export function StackedPanes({
                   paddingLeft: "16px",
                 }}
               >
-                <p style={{ margin: 0 }}>{worldview.summary}</p>
+                <p style={{ margin: 0 }}>{view.question.abstract}</p>
               </div>
             )}
             <div
@@ -346,76 +128,266 @@ export function StackedPanes({
                 letterSpacing: "0.04em",
               }}
             >
-              Generated{" "}
-              {new Date(worldview.generated_at).toLocaleDateString("en-US", {
-                year: "numeric",
-                month: "long",
-                day: "numeric",
-              })}
+              {view.health.total_pages} pages · depth {view.health.max_depth}
             </div>
           </header>
 
-          {(() => {
-            const { active: rootActive, supersededJudgements: rootSuperseded } =
-              partitionChildren(worldview.nodes);
-            return (
-              <div>
-                {rootActive.map((node, i) => (
-                  <div key={node.id ?? i} id={`node-${i}`}>
-                    <WorldviewNodeCard
-                      node={node}
-                      index={i}
-                      onExpandPane={
-                        node.children.length > 0
-                          ? () => handleExpandFromRoot(node, i)
-                          : undefined
-                      }
-                      onFocus={() => handleFocusRoot(i)}
-                      isActive={activeRootIndex === i}
-                      isFocused={focusedId ? node.headline.includes(focusedId) : false}
-                      activeDepth={0}
-                      supersededCount={
-                        node.node_type === "judgement" ? rootSuperseded.length : 0
-                      }
-                    />
-                  </div>
-                ))}
-                <JudgementHistory supersededJudgements={rootSuperseded} />
+          {view.sections.map((section, sectionIdx) => (
+            <div key={section.name} style={{ marginBottom: "32px" }}>
+              <div
+                style={{
+                  fontFamily: "var(--font-mono-stack)",
+                  fontSize: "10px",
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  color: "var(--fg-dim)",
+                  marginBottom: "4px",
+                }}
+              >
+                {SECTION_LABELS[section.name] ?? section.name}
               </div>
-            );
-          })()}
+              <div
+                style={{
+                  fontSize: "12px",
+                  color: "var(--fg-dim)",
+                  marginBottom: "16px",
+                  fontFamily: "var(--font-mono-stack)",
+                  letterSpacing: "0.02em",
+                }}
+              >
+                {section.description}
+              </div>
+              {section.items.map((item, i) => (
+                <div key={item.page.id} id={`item-${item.page.id}`}>
+                  <PageCard
+                    page={item.page}
+                    links={item.links}
+                    index={i}
+                    onSelect={() => openDetail(item, i)}
+                    onOpenSource={onOpenSource}
+                    isActive={activeItemId === item.page.id}
+                    isFocused={focusedId ? item.page.headline.includes(focusedId) || item.page.id.startsWith(focusedId) : false}
+                    activeDepth={sectionIdx}
+                  />
+                </div>
+              ))}
+            </div>
+          ))}
         </div>
       </div>
 
-      {/* Detail panes — continuous surface with source */}
-      {panes.map((pane, i) => {
-        const isLast = i === panes.length - 1;
-        const depthIndex = i % 5;
+      {/* Detail pane */}
+      {detailPane && (
+        <div
+          ref={lastPaneRef}
+          className="pane pane-connected pane-entering"
+          style={{ "--active-tint": `var(--active-0)` } as React.CSSProperties}
+        >
+          <div style={{ padding: "28px 28px 32px" }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "baseline",
+                marginBottom: "20px",
+                paddingBottom: "16px",
+                borderBottom: "1px solid var(--border)",
+              }}
+            >
+              <h2
+                style={{
+                  fontSize: "15px",
+                  fontWeight: 500,
+                  margin: 0,
+                  color: "var(--fg)",
+                  lineHeight: 1.4,
+                }}
+              >
+                {detailPane.item.page.headline}
+              </h2>
+              <button
+                onClick={closeDetail}
+                style={{
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  padding: "4px 8px",
+                  color: "var(--fg-dim)",
+                  fontFamily: "var(--font-mono-stack)",
+                  fontSize: "11px",
+                  letterSpacing: "0.04em",
+                  flexShrink: 0,
+                }}
+                onMouseEnter={(e) =>
+                  (e.currentTarget.style.color = "var(--fg-muted)")
+                }
+                onMouseLeave={(e) =>
+                  (e.currentTarget.style.color = "var(--fg-dim)")
+                }
+                aria-label="Close pane"
+              >
+                close
+              </button>
+            </div>
 
-        return (
-          <div
-            key={`${pane.parentNode.headline}-${i}`}
-            ref={isLast ? lastPaneRef : undefined}
-            className={`pane pane-connected ${isLast ? "pane-entering" : ""}`}
-            style={{ "--active-tint": `var(--active-${depthIndex})` } as React.CSSProperties}
-          >
-            <NodePane
-              pane={pane}
-              depth={i}
-              onExpand={(node, childIdx) =>
-                handleExpandFromPane(i + 1, node, childIdx)
-              }
-              activePanePath={
-                i + 1 < panes.length
-                  ? String(panes[i + 1].parentIndex)
-                  : null
-              }
-              onClose={() => handleClosePane(i)}
-              focusedNodeId={focusedId}
-            />
+            <DetailContent item={detailPane.item} />
           </div>
-        );
-      })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DetailContent({
+  item,
+}: {
+  item: ViewItem;
+}) {
+  const page = item.page;
+  const direction = item.links.find(
+    (l) => l.link_type === "consideration" && l.direction && l.direction !== "neutral",
+  )?.direction;
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: "10px", alignItems: "baseline", marginBottom: "16px", flexWrap: "wrap" }}>
+        <span
+          style={{
+            fontFamily: "var(--font-mono-stack)",
+            fontSize: "10px",
+            letterSpacing: "0.06em",
+            textTransform: "uppercase",
+            color: "var(--fg-dim)",
+          }}
+        >
+          {page.page_type}
+        </span>
+        {page.importance !== null && (
+          <span style={{ fontFamily: "var(--font-mono-stack)", fontSize: "10px", color: "var(--fg-dim)" }}>
+            L{page.importance}
+          </span>
+        )}
+        {direction && (
+          <span style={{
+            fontFamily: "var(--font-mono-stack)",
+            fontSize: "10px",
+            color: direction === "supports" ? "var(--link-supports)" : "var(--link-opposes)",
+          }}>
+            {direction}
+          </span>
+        )}
+        <span style={{ fontFamily: "var(--font-mono-stack)", fontSize: "9px", color: "var(--fg-dim)" }}>
+          {page.id.slice(0, 8)}
+        </span>
+      </div>
+
+      <div className="worldview-prose" style={{ marginBottom: "16px" }}>
+        <p style={{ fontSize: "15px", lineHeight: 1.7, margin: 0 }}>{page.content}</p>
+      </div>
+
+      {page.abstract && page.abstract !== page.content && (
+        <div style={{
+          padding: "12px 16px",
+          background: "var(--bg)",
+          borderRadius: "4px",
+          marginBottom: "16px",
+          fontSize: "13px",
+          color: "var(--fg-muted)",
+          fontStyle: "italic",
+          lineHeight: 1.6,
+        }}>
+          {page.abstract}
+        </div>
+      )}
+
+      <CredenceDetail credence={page.credence} robustness={page.robustness} />
+
+      {item.links.length > 0 && (
+        <div style={{ marginTop: "16px" }}>
+          <div style={{
+            fontFamily: "var(--font-mono-stack)",
+            fontSize: "10px",
+            letterSpacing: "0.06em",
+            textTransform: "uppercase",
+            color: "var(--fg-dim)",
+            marginBottom: "8px",
+          }}>
+            Links
+          </div>
+          {item.links.map((link) => (
+            <div key={link.id} style={{
+              fontSize: "12px",
+              color: "var(--fg-muted)",
+              padding: "4px 0",
+              fontFamily: "var(--font-mono-stack)",
+              letterSpacing: "0.02em",
+            }}>
+              {link.link_type}
+              {link.direction && ` (${link.direction})`}
+              {" → "}
+              {link.to_page_id.slice(0, 8)}
+              {link.reasoning && (
+                <span style={{ color: "var(--fg-dim)", marginLeft: "8px" }}>
+                  {link.reasoning.slice(0, 100)}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {page.provenance_call_type && (
+        <div style={{
+          marginTop: "16px",
+          fontFamily: "var(--font-mono-stack)",
+          fontSize: "10px",
+          color: "var(--fg-dim)",
+          letterSpacing: "0.04em",
+        }}>
+          Created by {page.provenance_call_type}
+          {" · "}
+          {new Date(page.created_at).toLocaleDateString("en-US", {
+            year: "numeric",
+            month: "short",
+            day: "numeric",
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CredenceDetail({ credence, robustness }: { credence: number | null; robustness: number | null }) {
+  if (credence === null && robustness === null) return null;
+
+  return (
+    <div style={{
+      display: "flex",
+      gap: "24px",
+      padding: "12px 0",
+      borderTop: "1px solid var(--border)",
+      borderBottom: "1px solid var(--border)",
+    }}>
+      {credence !== null && (
+        <div>
+          <div style={{ fontFamily: "var(--font-mono-stack)", fontSize: "10px", color: "var(--fg-dim)", letterSpacing: "0.06em", marginBottom: "4px" }}>
+            CREDENCE
+          </div>
+          <div style={{ fontFamily: "var(--font-mono-stack)", fontSize: "18px", color: "var(--credence-fill)" }}>
+            {credence}<span style={{ fontSize: "12px", color: "var(--fg-dim)" }}>/9</span>
+          </div>
+        </div>
+      )}
+      {robustness !== null && (
+        <div>
+          <div style={{ fontFamily: "var(--font-mono-stack)", fontSize: "10px", color: "var(--fg-dim)", letterSpacing: "0.06em", marginBottom: "4px" }}>
+            ROBUSTNESS
+          </div>
+          <div style={{ fontFamily: "var(--font-mono-stack)", fontSize: "18px", color: "var(--robustness-fill)" }}>
+            {robustness}<span style={{ fontSize: "12px", color: "var(--fg-dim)" }}>/5</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

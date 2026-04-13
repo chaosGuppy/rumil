@@ -35,6 +35,9 @@ from rumil.models import (
     PageLink,
     PageType,
     Project,
+    Suggestion,
+    SuggestionStatus,
+    SuggestionType,
     Workspace,
 )
 
@@ -94,7 +97,7 @@ _LINK_COLUMNS = (
 
 _SLIM_PAGE_COLUMNS = (
     'id,page_type,layer,workspace,headline,abstract,'
-    'epistemic_status,epistemic_type,credence,robustness,extra,is_superseded,'
+    'epistemic_status,epistemic_type,credence,robustness,importance,extra,is_superseded,'
     'project_id,created_at,superseded_by,run_id'
 )
 
@@ -112,6 +115,7 @@ def _row_to_page(row: dict[str, Any]) -> Page:
         epistemic_type=row.get("epistemic_type") or "",
         credence=row.get("credence"),
         robustness=row.get("robustness"),
+        importance=row.get("importance"),
         provenance_model=row.get("provenance_model") or "",
         provenance_call_type=row.get("provenance_call_type") or "",
         provenance_call_id=row.get("provenance_call_id") or "",
@@ -162,6 +166,27 @@ def _row_to_call(row: dict[str, Any]) -> Call:
         sequence_id=row.get("sequence_id"),
         sequence_position=row.get("sequence_position"),
         cost_usd=row.get("cost_usd"),
+    )
+
+
+def _row_to_suggestion(row: dict[str, Any]) -> Suggestion:
+    return Suggestion(
+        id=str(row["id"]),
+        project_id=row.get("project_id") or "",
+        workspace=row.get("workspace") or "research",
+        run_id=row.get("run_id") or "",
+        suggestion_type=SuggestionType(row["suggestion_type"]),
+        target_page_id=row["target_page_id"],
+        source_page_id=row.get("source_page_id"),
+        payload=row.get("payload") or {},
+        status=SuggestionStatus(row["status"]),
+        created_at=datetime.fromisoformat(row["created_at"]),
+        reviewed_at=(
+            datetime.fromisoformat(row["reviewed_at"])
+            if row.get("reviewed_at")
+            else None
+        ),
+        staged=bool(row.get("staged", False)),
     )
 
 
@@ -420,12 +445,21 @@ class DB:
                     "superseded_by": page.superseded_by,
                     "is_superseded": page.is_superseded,
                     "extra": page.extra,
+                    "importance": page.importance,
                     "fruit_remaining": page.fruit_remaining,
                     "run_id": self.run_id,
                     "staged": self.staged,
                     "abstract": page.abstract,
                 }
             )
+        )
+
+    async def update_page_importance(self, page_id: str, importance: int) -> None:
+        """Update the importance level on a page."""
+        await self._execute(
+            self.client.table("pages").update(
+                {"importance": importance}
+            ).eq("id", page_id)
         )
 
     async def update_page_extra(self, page_id: str, extra: dict) -> None:
@@ -2413,6 +2447,9 @@ class DB:
                 "run_id", self.run_id
             )
         )
+        await self._execute(
+            self.client.table("suggestions").delete().eq("run_id", self.run_id)
+        )
         for table in ["calls", "pages"]:
             await self._execute(
                 self.client.table(table).delete().eq("run_id", self.run_id)
@@ -2445,3 +2482,86 @@ class DB:
                     "id", self.project_id
                 )
             )
+
+    async def save_suggestion(self, suggestion: Suggestion) -> None:
+        """Save a suggestion to the database."""
+        await self._execute(
+            self.client.table("suggestions").upsert(
+                {
+                    "id": suggestion.id,
+                    "project_id": suggestion.project_id or self.project_id,
+                    "workspace": suggestion.workspace,
+                    "run_id": suggestion.run_id or self.run_id,
+                    "suggestion_type": suggestion.suggestion_type.value,
+                    "target_page_id": suggestion.target_page_id,
+                    "source_page_id": suggestion.source_page_id,
+                    "payload": suggestion.payload,
+                    "status": suggestion.status.value,
+                    "created_at": suggestion.created_at.isoformat(),
+                    "reviewed_at": (
+                        suggestion.reviewed_at.isoformat()
+                        if suggestion.reviewed_at
+                        else None
+                    ),
+                    "staged": suggestion.staged,
+                }
+            )
+        )
+
+    async def get_pending_suggestions(
+        self, target_page_id: str | None = None,
+    ) -> list[Suggestion]:
+        """Get pending suggestions, optionally filtered by target page."""
+        query = (
+            self.client.table("suggestions")
+            .select("*")
+            .eq("project_id", self.project_id)
+            .eq("status", "pending")
+        )
+        if target_page_id:
+            query = query.eq("target_page_id", target_page_id)
+        query = query.order("created_at", desc=True)
+        rows = _rows(await self._execute(query))
+        return [_row_to_suggestion(r) for r in rows]
+
+    async def get_suggestions(
+        self,
+        status: str = "pending",
+        target_page_id: str | None = None,
+    ) -> list[Suggestion]:
+        """Get suggestions filtered by status, optionally by target page."""
+        query = (
+            self.client.table("suggestions")
+            .select("*")
+            .eq("project_id", self.project_id)
+            .eq("status", status)
+        )
+        if target_page_id:
+            query = query.eq("target_page_id", target_page_id)
+        query = query.order("created_at", desc=True)
+        rows = _rows(await self._execute(query))
+        return [_row_to_suggestion(r) for r in rows]
+
+    async def get_suggestion(self, suggestion_id: str) -> Suggestion | None:
+        """Fetch a single suggestion by ID."""
+        rows = _rows(
+            await self._execute(
+                self.client.table("suggestions")
+                .select("*")
+                .eq("id", suggestion_id)
+            )
+        )
+        return _row_to_suggestion(rows[0]) if rows else None
+
+    async def update_suggestion_status(
+        self, suggestion_id: str, status: SuggestionStatus,
+    ) -> None:
+        """Update a suggestion's status (accept/reject/dismiss)."""
+        update: dict[str, Any] = {"status": status.value}
+        if status != SuggestionStatus.PENDING:
+            update["reviewed_at"] = datetime.now(timezone.utc).isoformat()
+        await self._execute(
+            self.client.table("suggestions")
+            .update(update)
+            .eq("id", suggestion_id)
+        )

@@ -201,6 +201,16 @@ class CreatePagePayload(BaseModel):
             "5=highly robust. See preamble for full rubric."
         ),
     )
+    importance: int | None = Field(
+        default=None,
+        description=(
+            "0-4 importance level. 0 = core worldview finding (L0), "
+            "1 = important supporting detail, 2 = relevant detail, "
+            "3 = supplementary, 4 = deep supplementary. "
+            "Depth in the question tree is structural; importance is editorial "
+            "judgement about how central this is. Leave unset if unsure."
+        ),
+    )
     workspace: str = Field("research", description="research or prioritization")
     supersedes: str | None = Field(
         None,
@@ -339,6 +349,7 @@ async def create_page(
         headline=payload.headline,
         credence=None if page_type == PageType.QUESTION else payload.credence,
         robustness=None if page_type == PageType.QUESTION else payload.robustness,
+        importance=payload.importance,
         fruit_remaining=fruit_remaining,
         provenance_model=get_settings().model,
         provenance_call_type=call.call_type.value,

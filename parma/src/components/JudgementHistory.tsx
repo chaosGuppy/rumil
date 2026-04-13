@@ -1,12 +1,12 @@
 "use client";
 
-import type { WorldviewNode } from "@/lib/types";
+import type { Page } from "@/lib/types";
 import { CredenceBadge } from "./CredenceBadge";
 import { NodeTypeLabel } from "./NodeTypeLabel";
 import { TextWithConcepts } from "./ConceptRef";
 
 interface JudgementHistoryProps {
-  supersededJudgements: WorldviewNode[];
+  supersededJudgements: Page[];
 }
 
 export function JudgementHistory({ supersededJudgements }: JudgementHistoryProps) {
@@ -18,17 +18,17 @@ export function JudgementHistory({ supersededJudgements }: JudgementHistoryProps
         {supersededJudgements.length} previous judgement{supersededJudgements.length > 1 ? "s" : ""}
       </summary>
       <div>
-        {supersededJudgements.map((node, i) => (
-          <div key={node.id ?? i} className="judgement-history-item">
+        {supersededJudgements.map((page, i) => (
+          <div key={page.id ?? i} className="judgement-history-item">
             <div className="judgement-history-meta">
               <NodeTypeLabel type="judgement" />
-              <CredenceBadge credence={node.credence} robustness={node.robustness} />
+              <CredenceBadge credence={page.credence} robustness={page.robustness} />
             </div>
-            <h4>{node.headline}</h4>
-            {node.content && (
+            <h4>{page.headline}</h4>
+            {page.content && (
               <div className="worldview-prose">
                 <p style={{ margin: 0 }}>
-                  <TextWithConcepts text={node.content} excludeConceptId={node.id} />
+                  <TextWithConcepts text={page.content} excludeConceptId={page.id} />
                 </p>
               </div>
             )}

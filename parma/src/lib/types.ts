@@ -1,62 +1,86 @@
-export type WorldviewNodeType =
+// Types matching rumil's API response shapes.
+// Page and PageLink mirror the Pydantic models in src/rumil/models.py.
+
+export type PageType =
+  | "source"
   | "claim"
-  | "hypothesis"
-  | "evidence"
-  | "uncertainty"
-  | "context"
   | "question"
   | "judgement"
-  | "concept";
+  | "concept"
+  | "wiki"
+  | "summary";
 
-export type LinkType = "supports" | "opposes" | "depends_on" | "related";
+export type LinkType =
+  | "consideration"
+  | "child_question"
+  | "supersedes"
+  | "related"
+  | "answers"
+  | "variant"
+  | "summarizes"
+  | "cites"
+  | "depends_on";
 
-export interface NodeLink {
+export type ConsiderationDirection = "supports" | "opposes" | "neutral";
+
+export type LinkRole = "direct" | "structural";
+
+export interface Page {
   id: string;
-  source_id: string;
-  target_id: string;
-  link_type: LinkType;
-  strength: number | null;
-  reasoning: string;
-}
-
-export interface WorldviewNode {
-  id?: string;
-  node_type: WorldviewNodeType;
+  page_type: PageType;
   headline: string;
   content: string;
+  abstract: string;
   credence: number | null;
   robustness: number | null;
-  importance?: number;
-  source_page_ids: string[];
-  created_by?: string;
-  superseded_by?: string | null;
-  links_out?: NodeLink[];
-  links_in?: NodeLink[];
-  children: WorldviewNode[];
+  importance: number | null;
+  superseded_by: string | null;
+  is_superseded: boolean;
+  provenance_call_type: string;
+  extra: Record<string, unknown>;
+  created_at: string;
 }
 
-export interface Worldview {
-  question_id: string;
-  question_headline: string;
-  summary: string;
-  nodes: WorldviewNode[];
-  generated_at: string;
+export interface PageLink {
+  id: string;
+  from_page_id: string;
+  to_page_id: string;
+  link_type: LinkType;
+  direction: ConsiderationDirection | null;
+  strength: number;
+  reasoning: string;
+  role: LinkRole;
 }
 
-export function partitionChildren(children: WorldviewNode[]): {
-  active: WorldviewNode[];
-  supersededJudgements: WorldviewNode[];
-} {
-  const active: WorldviewNode[] = [];
-  const supersededJudgements: WorldviewNode[] = [];
-  for (const child of children) {
-    if (child.superseded_by) {
-      if (child.node_type === "judgement") {
-        supersededJudgements.push(child);
-      }
-    } else {
-      active.push(child);
-    }
-  }
-  return { active, supersededJudgements };
+export interface ViewItem {
+  page: Page;
+  links: PageLink[];
+  section: string;
+}
+
+export interface ViewSection {
+  name: string;
+  description: string;
+  items: ViewItem[];
+}
+
+export interface ViewHealth {
+  total_pages: number;
+  missing_credence: number;
+  missing_importance: number;
+  child_questions_without_judgements: number;
+  max_depth: number;
+}
+
+export interface QuestionView {
+  question: Page;
+  sections: ViewSection[];
+  health: ViewHealth;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  created_at: string;
+  hidden: boolean;
 }

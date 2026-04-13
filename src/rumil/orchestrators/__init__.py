@@ -25,6 +25,7 @@ from rumil.orchestrators.common import (
 )
 from rumil.orchestrators.experimental import ExperimentalOrchestrator
 from rumil.orchestrators.two_phase import TwoPhaseOrchestrator
+from rumil.orchestrators.worldview import WorldviewOrchestrator
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
 
@@ -36,6 +37,8 @@ def Orchestrator(db: DB, broadcaster: Broadcaster | None = None) -> BaseOrchestr
         return TwoPhaseOrchestrator(db, broadcaster)
     if variant == "experimental":
         return ExperimentalOrchestrator(db, broadcaster)
+    if variant == "worldview":
+        return WorldviewOrchestrator(db, broadcaster)
     raise ValueError(f"Unknown prioritizer_variant: {variant}")
 
 
@@ -52,6 +55,7 @@ __all__ = [
     "SubquestionScore",
     "SubquestionScoringResult",
     "TwoPhaseOrchestrator",
+    "WorldviewOrchestrator",
     "assess_question",
     "compute_priority_score",
     "create_root_question",

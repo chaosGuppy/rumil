@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import type { SourceFull } from "@/lib/api";
+import type { Page } from "@/lib/types";
 
 interface SourceDrawerProps {
-  source: SourceFull | null;
+  source: Page | null;
   onClose: () => void;
 }
 
@@ -36,6 +36,7 @@ export function SourceDrawer({ source, onClose }: SourceDrawerProps) {
 
   if (!source) return null;
 
+  const url = (source.extra?.url as string) ?? "";
   const cleaned = formatContent(source.content);
   const paragraphs = cleaned
     .split(/\n\n+/)
@@ -56,16 +57,16 @@ export function SourceDrawer({ source, onClose }: SourceDrawerProps) {
 
         <div className="source-drawer-scroll" ref={scrollRef}>
           <article className="source-drawer-content">
-            <h1 className="source-drawer-title">{source.title}</h1>
+            <h1 className="source-drawer-title">{source.headline}</h1>
 
-            {source.url && (
+            {url && (
               <a
-                href={source.url}
+                href={url}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="source-drawer-link"
               >
-                {source.url}
+                {url}
                 <span>&thinsp;↗</span>
               </a>
             )}

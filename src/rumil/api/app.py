@@ -17,9 +17,21 @@ from pydantic import TypeAdapter, ValidationError
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from rumil.database import DB, _row_to_call, _rows
-from rumil.models import Call, Page, PageLink, PageType, Project, Workspace
+from rumil.models import (
+    Call,
+    LinkType,
+    Page,
+    PageLink,
+    PageType,
+    Project,
+    Suggestion,
+    SuggestionStatus,
+    SuggestionType,
+    Workspace,
+)
+from rumil.views import View, build_view
 from rumil.settings import get_settings
-from rumil.api.chat import ChatRequest, ChatResponse, handle_chat
+from rumil.api.chat import ChatRequest, ChatResponse, handle_chat, handle_chat_stream
 from rumil.api.schemas import (
     ABRunArmOut,
     ABRunTraceOut,
@@ -589,6 +601,127 @@ async def get_page_run(page_id: str):
     )
 
 
+@app.get("/api/projects/{project_id}/suggestions")
+async def list_suggestions(
+    project_id: str,
+    status: str = "pending",
+    target_page_id: str | None = None,
+):
+    db = await _get_db(project_id)
+    suggestions = await db.get_suggestions(
+        status=status,
+        target_page_id=target_page_id,
+    )
+    page_ids = list({s.target_page_id for s in suggestions if s.target_page_id})
+    pages = await db.get_pages_by_ids(page_ids) if page_ids else {}
+    result = []
+    for s in suggestions:
+        d = s.model_dump(mode="json")
+        page = pages.get(s.target_page_id)
+        d["target_headline"] = page.headline if page else None
+        result.append(d)
+    return result
+
+
+@app.post("/api/suggestions/{suggestion_id}/review")
+async def review_suggestion(suggestion_id: str, status: str = "accepted"):
+    if status not in ("accepted", "rejected", "dismissed"):
+        raise HTTPException(400, f"Invalid status: {status}")
+    db = await _get_db()
+    if status != "accepted":
+        await db.update_suggestion_status(suggestion_id, SuggestionStatus(status))
+        return {"ok": True, "status": status}
+    suggestion = await db.get_suggestion(suggestion_id)
+    if not suggestion:
+        raise HTTPException(404, "Suggestion not found")
+    result = await _apply_suggestion(db, suggestion)
+    await db.update_suggestion_status(suggestion_id, SuggestionStatus.ACCEPTED)
+    return {"ok": True, "status": "accepted", **result}
+
+
+async def _apply_suggestion(db: DB, suggestion: Suggestion) -> dict:
+    """Execute the mutation described by a suggestion."""
+    stype = suggestion.suggestion_type
+    payload = suggestion.payload
+    target = suggestion.target_page_id
+
+    if stype == SuggestionType.RELEVEL:
+        new_importance = payload.get("new_importance")
+        if new_importance is None:
+            raise HTTPException(400, "RELEVEL suggestion missing new_importance")
+        await db.update_page_importance(target, int(new_importance))
+        return {"action": "relevel", "page_id": target, "new_importance": new_importance}
+
+    if stype == SuggestionType.MERGE_DUPLICATE:
+        keep_id = payload.get("keep_node_id") or payload.get("keep_page_id")
+        supersede_id = payload.get("supersede_node_id") or payload.get("supersede_page_id")
+        if not keep_id or not supersede_id:
+            raise HTTPException(400, "MERGE_DUPLICATE suggestion missing keep/supersede IDs")
+        await db.supersede_page(str(supersede_id), str(keep_id))
+        return {"action": "merge_duplicate", "kept": keep_id, "superseded": supersede_id}
+
+    if stype == SuggestionType.RESOLVE_TENSION:
+        other_id = payload.get("other_node_id") or payload.get("other_page_id")
+        reasoning = payload.get("reasoning", "")
+        if not other_id:
+            raise HTTPException(400, "RESOLVE_TENSION suggestion missing other_node_id")
+        link = PageLink(
+            from_page_id=target,
+            to_page_id=str(other_id),
+            link_type=LinkType.RELATED,
+            reasoning=str(reasoning),
+        )
+        await db.save_link(link)
+        return {"action": "resolve_tension", "link_id": link.id}
+
+    if stype == SuggestionType.CASCADE_REVIEW:
+        return {"action": "cascade_review", "acknowledged": True}
+
+    if stype == SuggestionType.AUTO_INVESTIGATE:
+        return {"action": "auto_investigate", "deferred": True}
+
+    return {"action": "unknown"}
+
+
+@app.get("/api/questions/{question_id}/view")
+async def get_question_view(question_id: str, importance_threshold: int = 3):
+    db = await _get_db()
+    resolved = await db.resolve_page_id(question_id)
+    if not resolved:
+        raise HTTPException(404, f"Question {question_id} not found")
+    view = await build_view(db, resolved, importance_threshold=importance_threshold)
+    return {
+        "question": view.question,
+        "sections": [
+            {
+                "name": s.name,
+                "description": s.description,
+                "items": [
+                    {
+                        "page": item.page,
+                        "links": item.links,
+                        "section": item.section,
+                    }
+                    for item in s.items
+                ],
+            }
+            for s in view.sections
+        ],
+        "health": {
+            "total_pages": view.health.total_pages,
+            "missing_credence": view.health.missing_credence,
+            "missing_importance": view.health.missing_importance,
+            "child_questions_without_judgements": view.health.child_questions_without_judgements,
+            "max_depth": view.health.max_depth,
+        },
+    }
+
+
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest) -> ChatResponse:
     return await handle_chat(request)
+
+
+@app.post("/api/chat/stream")
+async def chat_stream(request: ChatRequest):
+    return await handle_chat_stream(request)

@@ -1,12 +1,12 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { fetchSourceByShortId } from "@/lib/api";
-import type { SourceFull } from "@/lib/api";
+import { fetchPageByShortId } from "@/lib/api";
+import type { Page } from "@/lib/types";
 
 interface SourceBadgeProps {
   sourceIds: string[];
-  onOpenDrawer?: (source: SourceFull) => void;
+  onOpenDrawer?: (source: Page) => void;
 }
 
 function SourcePill({
@@ -14,10 +14,10 @@ function SourcePill({
   onOpenDrawer,
 }: {
   shortId: string;
-  onOpenDrawer?: (source: SourceFull) => void;
+  onOpenDrawer?: (source: Page) => void;
 }) {
   const [popoverOpen, setPopoverOpen] = useState(false);
-  const [source, setSource] = useState<SourceFull | null>(null);
+  const [source, setSource] = useState<Page | null>(null);
   const [loading, setLoading] = useState(false);
   const pillRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -30,7 +30,7 @@ function SourcePill({
     setPopoverOpen(true);
     if (!source && !loading) {
       setLoading(true);
-      const result = await fetchSourceByShortId(shortId);
+      const result = await fetchPageByShortId(shortId);
       setSource(result);
       setLoading(false);
     }
@@ -52,6 +52,8 @@ function SourcePill({
     return () => document.removeEventListener("mousedown", handleOutside);
   }, [popoverOpen]);
 
+  const url = source?.extra?.url as string | undefined;
+
   return (
     <span style={{ position: "relative", display: "inline-block" }}>
       <button ref={pillRef} className="source-pill" onClick={handleClick}>
@@ -69,15 +71,15 @@ function SourcePill({
           )}
           {!loading && source && (
             <>
-              <div className="source-popover-title">{source.title}</div>
-              {source.url && (
+              <div className="source-popover-title">{source.headline}</div>
+              {url && (
                 <a
-                  href={source.url}
+                  href={url}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="source-popover-url"
                 >
-                  {new URL(source.url).hostname}
+                  {new URL(url).hostname}
                   <span className="source-popover-arrow">&thinsp;↗</span>
                 </a>
               )}

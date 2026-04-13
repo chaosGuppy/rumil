@@ -2,30 +2,30 @@
 
 import { createContext, useContext, useState, useEffect } from "react";
 import { fetchConcepts } from "@/lib/api";
-import type { ConceptInfo } from "@/lib/api";
+import type { Page } from "@/lib/types";
 
-const ConceptCtx = createContext<ConceptInfo[]>([]);
+const ConceptCtx = createContext<Page[]>([]);
 
 export function ConceptProvider({
-  workspace,
+  projectId,
   children,
 }: {
-  workspace: string;
+  projectId: string;
   children: React.ReactNode;
 }) {
-  const [concepts, setConcepts] = useState<ConceptInfo[]>([]);
+  const [concepts, setConcepts] = useState<Page[]>([]);
 
   useEffect(() => {
-    fetchConcepts(workspace)
+    fetchConcepts(projectId)
       .then(setConcepts)
       .catch(() => setConcepts([]));
-  }, [workspace]);
+  }, [projectId]);
 
   return (
     <ConceptCtx.Provider value={concepts}>{children}</ConceptCtx.Provider>
   );
 }
 
-export function useConcepts(): ConceptInfo[] {
+export function useConcepts(): Page[] {
   return useContext(ConceptCtx);
 }

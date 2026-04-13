@@ -375,6 +375,9 @@ class Page(BaseModel):
     superseded_by: str | None = None
     is_superseded: bool = False
     extra: dict = Field(default_factory=dict)
+    importance: int | None = (
+        None  # 0-4 editorial importance (0=core, 4=deep supplementary)
+    )
     abstract: str = ""
     fruit_remaining: int | None = None
 
@@ -425,3 +428,34 @@ class Call(BaseModel):
     sequence_id: str | None = None
     sequence_position: int | None = None
     cost_usd: float | None = None
+
+
+class SuggestionType(str, Enum):
+    CASCADE_REVIEW = "cascade_review"
+    RELEVEL = "relevel"
+    RESOLVE_TENSION = "resolve_tension"
+    MERGE_DUPLICATE = "merge_duplicate"
+    AUTO_INVESTIGATE = "auto_investigate"
+
+
+class SuggestionStatus(str, Enum):
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+    DISMISSED = "dismissed"
+
+
+class Suggestion(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    project_id: str = ""
+    workspace: str = "research"
+    run_id: str = ""
+    suggestion_type: SuggestionType
+    target_page_id: str
+    source_page_id: str | None = None
+    payload: dict = Field(default_factory=dict)
+    status: SuggestionStatus = SuggestionStatus.PENDING
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    reviewed_at: datetime | None = None
+    staged: bool = False

@@ -3,55 +3,25 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { RunPreview } from "./RunPreview";
+import { streamChatMessage } from "@/lib/api";
+import type { ChatToolUse } from "@/lib/api";
 import { SlashCommandDropdown, useSlashCommands } from "./SlashCommands";
-
-interface ToolUse {
-  name: string;
-  input: Record<string, unknown>;
-  result: string;
-}
 
 type MessageBlock =
   | { type: "text"; content: string }
-  | { type: "tool"; tool: ToolUse };
+  | { type: "tool"; tool: ChatToolUse };
 
 interface Message {
   id: string;
   role: "user" | "assistant";
-  content: string; // full text (for apiMessages compat)
+  content: string;
   timestamp: Date;
-  streaming?: boolean;
+  loading?: boolean;
   blocks?: MessageBlock[];
 }
 
-interface SSEEvent {
-  type: string;
-  data: Record<string, unknown>;
-}
-
-function* parseSSE(raw: string): Generator<SSEEvent> {
-  for (const block of raw.split("\n\n")) {
-    const lines = block.split("\n");
-    let type = "";
-    let data = "";
-    for (const line of lines) {
-      if (line.startsWith("event: ")) type = line.slice(7);
-      else if (line.startsWith("data: ")) data = line.slice(6);
-    }
-    if (type && data) {
-      try {
-        yield { type, data: JSON.parse(data) };
-      } catch {
-        /* skip malformed */
-      }
-    }
-  }
-}
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8099";
-
 interface ChatPanelProps {
+  questionId: string;
   questionHeadline: string;
   isOpen: boolean;
   onToggle: () => void;
@@ -124,38 +94,11 @@ function TextWithNodeRefs({
   return <>{parts}</>;
 }
 
-function tryParsePreview(result: string) {
-  try {
-    const data = JSON.parse(result);
-    if (data.scope_node && data.context_nodes) return data;
-  } catch { /* not JSON or not a preview */ }
-  return null;
-}
-
-function ToolBlock({ tu, onAction, onNodeRef }: {
-  tu: ToolUse;
-  onAction?: (text: string) => void;
-  onNodeRef?: (id: string) => void;
-}) {
-  if (tu.name === "preview_run" && tu.result) {
-    const preview = tryParsePreview(tu.result);
-    if (preview) {
-      return <RunPreview data={preview} onAction={onAction} onNodeRef={onNodeRef} />;
-    }
-  }
-  if (tu.name === "run_orchestrator" && tu.result) {
-    return (
-      <details className="rp-orch-result">
-        <summary>✓ {tu.name} — {tu.result.split("\n")[0].slice(0, 100)}</summary>
-        <pre className="rp-orch-detail">{tu.result}</pre>
-      </details>
-    );
-  }
-  const progress = (tu.input._progress as string) || "";
+function ToolBlock({ tu }: { tu: ChatToolUse }) {
   return (
     <div style={{ padding: "2px 0" }}>
-      {tu.result ? "✓" : "⟳"} {tu.name}
-      {tu.result ? ` — ${tu.result.slice(0, 80)}` : progress ? ` — ${progress}` : " …"}
+      {tu.result ? "\u2713" : "\u27F3"} {tu.name}
+      {tu.result ? ` \u2014 ${tu.result.slice(0, 80)}` : " \u2026"}
     </div>
   );
 }
@@ -182,11 +125,9 @@ function TextContent({ text, onNodeRef }: { text: string; onNodeRef?: (id: strin
 function MessageEntry({
   message,
   onNodeRef,
-  onAction,
 }: {
   message: Message;
   onNodeRef?: (id: string) => void;
-  onAction?: (text: string) => void;
 }) {
   const isUser = message.role === "user";
   const blocks = message.blocks;
@@ -227,7 +168,7 @@ function MessageEntry({
                 fontFamily: "var(--font-mono-stack)", fontSize: "10px",
                 color: "var(--fg-dim)", letterSpacing: "0.02em", margin: "6px 0",
               }}>
-                <ToolBlock tu={block.tool} onAction={onAction} onNodeRef={onNodeRef} />
+                <ToolBlock tu={block.tool} />
               </div>
             ),
           )}
@@ -238,7 +179,7 @@ function MessageEntry({
         </div>
       ) : null}
 
-      {message.streaming && !message.content && (!blocks || blocks.length === 0) && (
+      {message.loading && (
         <div className="thinking-indicator" style={{ marginTop: "4px" }}>
           <span className="thinking-dot" />
           <span className="thinking-text">thinking</span>
@@ -249,6 +190,7 @@ function MessageEntry({
 }
 
 export function ChatPanel({
+  questionId,
   questionHeadline,
   isOpen,
   onToggle,
@@ -262,7 +204,7 @@ export function ChatPanel({
       id: "initial",
       role: "assistant",
       content:
-        "Ask me about this worldview — I can explain the reasoning behind claims, surface tensions between findings, or discuss what the research might be missing.",
+        "Ask me about this worldview \u2014 I can explain the reasoning behind claims, surface tensions between findings, or discuss what the research might be missing.",
       timestamp: new Date(),
     },
   ]);
@@ -296,33 +238,12 @@ export function ChatPanel({
   }, [onToggle]);
 
   const [isLoading, setIsLoading] = useState(false);
-  const [model, setModel] = useState<"sonnet" | "opus" | "haiku">("sonnet");
   const { showDropdown, handleSelect: handleSlashSelect, handleDismiss } =
     useSlashCommands(input, setInput, textareaRef);
 
   const handleSubmit = useCallback(async () => {
     const trimmed = input.trim();
     if (!trimmed || isLoading) return;
-
-    const modelCommands: Record<string, "sonnet" | "opus" | "haiku"> = {
-      "/sonnet": "sonnet",
-      "/opus": "opus",
-      "/haiku": "haiku",
-    };
-    if (modelCommands[trimmed]) {
-      setModel(modelCommands[trimmed]);
-      setInput("");
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `sys-${Date.now()}`,
-          role: "assistant",
-          content: `Switched to **${modelCommands[trimmed]}**.`,
-          timestamp: new Date(),
-        },
-      ]);
-      return;
-    }
 
     if (trimmed === "/review") {
       setInput("");
@@ -353,7 +274,7 @@ export function ChatPanel({
         role: "assistant",
         content: "",
         timestamp: new Date(),
-        streaming: true,
+        loading: true,
         blocks: [],
       },
     ]);
@@ -363,117 +284,69 @@ export function ChatPanel({
         .filter((m) => m.id !== "initial")
         .map((m) => ({ role: m.role, content: m.content }));
 
-      const res = await fetch(`${API_BASE}/api/chat/stream`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          question_id: questionHeadline,
-          messages: apiMessages,
-          workspace,
-          model,
-        }),
-      });
-
-      if (!res.ok) {
-        throw new Error(`API error: ${res.status}`);
-      }
-
-      const reader = res.body!.getReader();
-      const decoder = new TextDecoder();
-      let fullText = "";
       let currentBlocks: MessageBlock[] = [];
-      let buffer = "";
+      let currentText = "";
 
-      const updateMessage = () => {
+      const updateMsg = () => {
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantId
-              ? { ...m, content: fullText, blocks: [...currentBlocks] }
+              ? { ...m, content: currentText, blocks: [...currentBlocks] }
               : m,
           ),
         );
       };
 
-      // Ensure the last block is a text block, return it
-      const ensureTextBlock = (): MessageBlock & { type: "text" } => {
-        const last = currentBlocks[currentBlocks.length - 1];
-        if (last && last.type === "text") return last;
-        const block: MessageBlock = { type: "text", content: "" };
-        currentBlocks = [...currentBlocks, block];
-        return block;
-      };
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-
-        const events = [...parseSSE(buffer)];
-        const lastDoubleNewline = buffer.lastIndexOf("\n\n");
-        buffer = lastDoubleNewline >= 0 ? buffer.slice(lastDoubleNewline + 2) : buffer;
-
-        for (const event of events) {
-          if (event.type === "text") {
-            const chunk = event.data.content as string;
-            fullText += chunk;
-            const textBlock = ensureTextBlock();
-            textBlock.content += chunk;
-            updateMessage();
-          } else if (event.type === "tool_use_start") {
-            const tool: ToolUse = { name: event.data.name as string, input: {}, result: "" };
-            currentBlocks = [...currentBlocks, { type: "tool", tool }];
-            updateMessage();
-          } else if (event.type === "tool_use_result") {
-            const toolName = event.data.name as string;
-            const toolResult = event.data.result as string;
-            // Find the matching pending tool block and fill in its result
-            let matched = false;
-            currentBlocks = currentBlocks.map((b) => {
-              if (!matched && b.type === "tool" && b.tool.name === toolName && !b.tool.result) {
-                matched = true;
-                return {
-                  type: "tool",
-                  tool: {
-                    name: b.tool.name,
-                    input: (event.data.input as Record<string, unknown>) || {},
-                    result: toolResult,
-                  },
-                };
-              }
-              return b;
-            });
-            updateMessage();
-            if (toolName === "create_node" || toolName === "run_orchestrator") {
-              onMessageSent?.();
-              const idMatch = toolResult.match(/node ([0-9a-f]{8})/);
-              if (idMatch) onNodeRef?.(idMatch[1]);
-            }
-          } else if (event.type === "orchestrator_progress") {
-            // Update the pending run_orchestrator tool block with progress
-            let matched = false;
-            currentBlocks = currentBlocks.map((b) => {
-              if (!matched && b.type === "tool" && b.tool.name === "run_orchestrator" && !b.tool.result) {
-                matched = true;
-                return {
-                  type: "tool" as const,
-                  tool: { ...b.tool, input: { ...b.tool.input, _progress: event.data.message as string } },
-                };
-              }
-              return b;
-            });
-            updateMessage();
-          } else if (event.type === "error") {
-            fullText += `\n\n*Error: ${event.data.message}*`;
-            const textBlock = ensureTextBlock();
-            textBlock.content += `\n\n*Error: ${event.data.message}*`;
-            updateMessage();
+      await streamChatMessage(questionId, apiMessages, (event) => {
+        if (event.type === "text") {
+          const chunk = event.data.content as string;
+          currentText += chunk;
+          const lastIdx = currentBlocks.length - 1;
+          if (lastIdx >= 0 && currentBlocks[lastIdx].type === "text") {
+            currentBlocks[lastIdx] = { type: "text", content: currentText };
+          } else {
+            currentBlocks.push({ type: "text", content: currentText });
           }
+          updateMsg();
+        } else if (event.type === "tool_use_start") {
+          currentText = "";
+          currentBlocks.push({
+            type: "tool",
+            tool: { name: event.data.name as string, input: {}, result: "" },
+          });
+          updateMsg();
+        } else if (event.type === "tool_use_result") {
+          currentText = "";
+          const name = event.data.name as string;
+          const input = (event.data.input as Record<string, unknown>) || {};
+          const result = event.data.result as string;
+          let matched = false;
+          currentBlocks = currentBlocks.map((b) => {
+            if (!matched && b.type === "tool" && b.tool.name === name && !b.tool.result) {
+              matched = true;
+              return { type: "tool" as const, tool: { name, input, result } };
+            }
+            return b;
+          });
+          updateMsg();
+          if (name === "create_question" || name === "dispatch_call") {
+            onMessageSent?.();
+          }
+        } else if (event.type === "error") {
+          currentText += `\n\n*Error: ${event.data.message}*`;
+          const lastIdx = currentBlocks.length - 1;
+          if (lastIdx >= 0 && currentBlocks[lastIdx].type === "text") {
+            currentBlocks[lastIdx] = { type: "text", content: currentText };
+          } else {
+            currentBlocks.push({ type: "text", content: currentText });
+          }
+          updateMsg();
         }
-      }
+      }, workspace);
 
       setMessages((prev) =>
         prev.map((m) =>
-          m.id === assistantId ? { ...m, streaming: false } : m,
+          m.id === assistantId ? { ...m, loading: false } : m,
         ),
       );
       onMessageSent?.();
@@ -483,10 +356,8 @@ export function ChatPanel({
           m.id === assistantId
             ? {
                 ...m,
-                streaming: false,
-                content:
-                  m.content ||
-                  `Failed to get response: ${e instanceof Error ? e.message : "unknown error"}. Is the API running?`,
+                loading: false,
+                content: `Failed to get response: ${e instanceof Error ? e.message : "unknown error"}. Is the API running?`,
               }
             : m,
         ),
@@ -494,7 +365,7 @@ export function ChatPanel({
     } finally {
       setIsLoading(false);
     }
-  }, [input, isLoading, messages, questionHeadline, onMessageSent, onNodeRef, workspace, model]);
+  }, [input, isLoading, messages, questionId, onMessageSent, onNodeRef, workspace, onShowReview]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -516,32 +387,21 @@ export function ChatPanel({
     [],
   );
 
-  const handleAction = useCallback(
-    (text: string) => {
-      setInput(text);
-      textareaRef.current?.focus();
-    },
-    [textareaRef],
-  );
-
   return (
     <div className={`chat-panel ${isOpen ? "chat-open" : "chat-closed"}`}>
-      {/* collapsed strip */}
       {!isOpen && (
         <button
           className="chat-toggle-strip"
           onClick={onToggle}
-          title="Open chat (⌘/)"
+          title="Open chat (\u2318/)"
         >
           <span className="chat-toggle-label">Chat</span>
-          <span className="chat-toggle-shortcut">⌘/</span>
+          <span className="chat-toggle-shortcut">\u2318/</span>
         </button>
       )}
 
-      {/* open panel */}
       {isOpen && (
         <div className="chat-inner">
-          {/* header */}
           <div className="chat-header">
             <div style={{ flex: 1, minWidth: 0 }}>
               <div
@@ -555,9 +415,6 @@ export function ChatPanel({
                 }}
               >
                 Chat
-                <span style={{ marginLeft: "8px", color: "var(--fg-dim)", fontSize: "9px", letterSpacing: "0.04em" }}>
-                  {model}
-                </span>
               </div>
               <div
                 style={{
@@ -575,21 +432,19 @@ export function ChatPanel({
             <button
               onClick={onToggle}
               className="chat-close-btn"
-              title="Close chat (⌘/)"
+              title="Close chat (\u2318/)"
             >
               close
             </button>
           </div>
 
-          {/* messages */}
           <div className="chat-messages">
             {messages.map((msg) => (
-              <MessageEntry key={msg.id} message={msg} onNodeRef={onNodeRef} onAction={handleAction} />
+              <MessageEntry key={msg.id} message={msg} onNodeRef={onNodeRef} />
             ))}
             <div ref={messagesEndRef} />
           </div>
 
-          {/* input */}
           <div className="chat-input-area" style={{ position: "relative" }}>
             <SlashCommandDropdown
               input={input}
@@ -612,7 +467,7 @@ export function ChatPanel({
               disabled={!input.trim() || isLoading}
               className="chat-send-btn"
             >
-              {isLoading ? "..." : "↵"}
+              {isLoading ? "..." : "\u21B5"}
             </button>
           </div>
         </div>

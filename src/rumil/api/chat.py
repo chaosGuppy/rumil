@@ -8,12 +8,14 @@ dispatch — the same capabilities as the CC skills layer, exposed via HTTP.
 import json
 import logging
 import uuid
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from pathlib import Path
 from typing import Any
 
+from fastapi.responses import StreamingResponse
+
 import anthropic
-from anthropic.types import TextBlock, ToolUseBlock
+from anthropic.types import TextBlock, TextDelta, ToolUseBlock
 from pydantic import BaseModel
 
 from rumil.context import build_embedding_based_context
@@ -354,3 +356,84 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
         )
     finally:
         await db.close()
+
+
+def _sse(event: str, data: dict[str, Any]) -> str:
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+async def handle_chat_stream(request: ChatRequest) -> StreamingResponse:
+    """Handle a streaming chat request, yielding SSE events."""
+    settings = get_settings()
+    db = await DB.create(
+        run_id=str(uuid.uuid4()),
+        prod=settings.is_prod_db,
+    )
+    project = await db.get_or_create_project(request.workspace)
+    db.project_id = project.id
+
+    full_id = await db.resolve_page_id(request.question_id)
+    if not full_id:
+        async def error_gen() -> AsyncIterator[str]:
+            yield _sse("error", {"message": f"No question found matching '{request.question_id}'"})
+        return StreamingResponse(error_gen(), media_type="text/event-stream")
+
+    system_prompt = (PROMPTS_DIR / "api_chat.md").read_text(encoding="utf-8")
+    context = await build_chat_context(full_id, db)
+    full_system = f"{system_prompt}\n\n---\n\n{context}"
+    client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
+    messages = list(request.messages)
+
+    async def generate() -> AsyncIterator[str]:
+        nonlocal messages
+        try:
+            for _ in range(10):
+                async with client.messages.stream(
+                    model=settings.model,
+                    max_tokens=4096,
+                    temperature=0.7,
+                    system=full_system,
+                    messages=messages,  # type: ignore[arg-type]
+                    tools=TOOLS,  # type: ignore[arg-type]
+                ) as stream:
+                    async for event in stream:
+                        if event.type == "content_block_delta":
+                            if isinstance(event.delta, TextDelta):
+                                yield _sse("text", {"content": event.delta.text})
+                        elif event.type == "content_block_start":
+                            if isinstance(event.content_block, ToolUseBlock):
+                                yield _sse("tool_use_start", {"name": event.content_block.name})
+
+                response = await stream.get_final_message()
+
+                tool_calls = [
+                    b for b in response.content if isinstance(b, ToolUseBlock)
+                ]
+                if not tool_calls:
+                    break
+
+                messages.append({"role": "assistant", "content": response.content})
+
+                tool_results = []
+                for tc in tool_calls:
+                    result_str = await _execute_tool(tc.name, tc.input, db)
+                    yield _sse("tool_use_result", {
+                        "name": tc.name,
+                        "input": tc.input,
+                        "result": result_str[:500],
+                    })
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": tc.id,
+                        "content": result_str,
+                    })
+                messages.append({"role": "user", "content": tool_results})
+
+            yield _sse("done", {})
+        except Exception as e:
+            log.error("Chat stream error: %s", e, exc_info=True)
+            yield _sse("error", {"message": str(e)})
+        finally:
+            await db.close()
+
+    return StreamingResponse(generate(), media_type="text/event-stream")

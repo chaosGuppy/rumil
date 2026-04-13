@@ -1,5 +1,5 @@
 # /// script
-# dependencies = ["fastapi", "uvicorn", "anthropic"]
+# dependencies = ["fastapi", "uvicorn", "anthropic", "httpx", "beautifulsoup4"]
 # ///
 """Lightweight worldview API server.
 
@@ -24,8 +24,10 @@ from collections.abc import Callable
 from typing import Any
 
 import anthropic
+import httpx
 import uvicorn
-from anthropic.types import TextBlock, ToolUseBlock
+from anthropic.types import ServerToolUseBlock, TextBlock, ToolUseBlock
+from bs4 import BeautifulSoup
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -36,7 +38,11 @@ import sys as _sys
 _sys.path.insert(0, str(Path(__file__).parent))
 
 from orchestrator import (
+    RESEARCH_STRATEGIES,
+    STRATEGIES,
     build_branch_context,
+    decide_next_phase,
+    decide_run_type,
     format_tree,
     get_branch_health,
     get_subtree,
@@ -50,7 +56,7 @@ from orchestrator import (
 from orchestrator.tracing import RunTracer
 
 DB_PATH = Path(__file__).parent / "worldview.db"
-PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
+PROMPTS_DIR = Path(__file__).parent / "orchestrator" / "prompts"
 
 def get_db() -> sqlite3.Connection:
     conn = sqlite3.connect(str(DB_PATH))
@@ -165,6 +171,42 @@ def init_db() -> None:
         CREATE INDEX IF NOT EXISTS idx_node_links_target ON node_links(target_id);
         CREATE INDEX IF NOT EXISTS idx_node_links_workspace ON node_links(workspace_id);
     """)
+
+    # Migrate nodes table if CHECK constraint is missing newer node types
+    schema_row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='nodes'"
+    ).fetchone()
+    if schema_row and "'concept'" not in schema_row[0]:
+        conn.executescript("""
+            PRAGMA foreign_keys=OFF;
+            DROP TABLE IF EXISTS nodes_new;
+            CREATE TABLE nodes_new (
+                id TEXT PRIMARY KEY,
+                workspace_id TEXT NOT NULL REFERENCES workspaces(id),
+                parent_id TEXT REFERENCES nodes(id),
+                node_type TEXT NOT NULL CHECK(node_type IN ('claim','hypothesis','evidence','uncertainty','context','question','judgement','concept')),
+                headline TEXT NOT NULL,
+                content TEXT NOT NULL DEFAULT '',
+                credence INTEGER CHECK(credence BETWEEN 1 AND 9),
+                robustness INTEGER CHECK(robustness BETWEEN 1 AND 5),
+                importance INTEGER NOT NULL DEFAULT 0,
+                position INTEGER NOT NULL DEFAULT 0,
+                source_ids TEXT NOT NULL DEFAULT '[]',
+                created_at TEXT NOT NULL,
+                created_by TEXT NOT NULL DEFAULT 'system',
+                superseded_by TEXT REFERENCES nodes(id)
+            );
+            INSERT INTO nodes_new SELECT id, workspace_id, parent_id, node_type, headline, content,
+                credence, robustness, importance, position, source_ids, created_at, created_by,
+                NULL FROM nodes;
+            DROP TABLE nodes;
+            ALTER TABLE nodes_new RENAME TO nodes;
+            CREATE INDEX IF NOT EXISTS idx_nodes_workspace ON nodes(workspace_id);
+            CREATE INDEX IF NOT EXISTS idx_nodes_parent ON nodes(parent_id);
+            CREATE INDEX IF NOT EXISTS idx_nodes_importance ON nodes(workspace_id, importance);
+            PRAGMA foreign_keys=ON;
+        """)
+
     conn.commit()
     conn.close()
 
@@ -176,6 +218,27 @@ def now_iso() -> str:
 def new_id() -> str:
     return uuid.uuid4().hex[:16]
 
+
+async def fetch_and_extract(url: str) -> tuple[str, str]:
+    """Fetch a URL and extract readable text. Returns (title, content)."""
+    async with httpx.AsyncClient(follow_redirects=True, timeout=30) as client:
+        resp = await client.get(url, headers={"User-Agent": "rumil-ingest/1.0"})
+        resp.raise_for_status()
+
+    soup = BeautifulSoup(resp.text, "html.parser")
+
+    for tag in soup(["script", "style", "nav", "footer", "header"]):
+        tag.decompose()
+
+    title_tag = soup.find("title")
+    title = title_tag.get_text(strip=True) if title_tag else url
+
+    body = soup.find("body") or soup
+    text = body.get_text(separator="\n", strip=True)
+    lines = [line for line in text.splitlines() if line.strip()]
+    content = "\n".join(lines)
+
+    return title, content
 
 
 def _seed_nodes_recursive(
@@ -378,6 +441,92 @@ TOOLS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "name": "start_research",
+        "description": (
+            "Start a sustained research program on a branch. Runs multiple "
+            "orchestrator steps, automatically alternating between explore, evaluate, "
+            "and cross-check phases based on what the branch needs. More thorough "
+            "than a single run_orchestrator call. Costs money proportional to budget. "
+            "Use for requests like 'investigate this deeply' or 'do a thorough job'."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "node_id": {
+                    "type": "string",
+                    "description": "Short ID of the branch to research.",
+                },
+                "budget": {
+                    "type": "integer",
+                    "description": "Max steps (default 5, max 10).",
+                },
+                "strategy": {
+                    "type": "string",
+                    "enum": ["full_cycle", "explore_only", "evaluate_only"],
+                    "description": (
+                        "full_cycle (default) auto-selects phases. "
+                        "explore_only/evaluate_only force one type."
+                    ),
+                },
+            },
+            "required": ["node_id"],
+        },
+    },
+    {
+        "name": "run_orchestrator_loop",
+        "description": (
+            "Run MULTIPLE orchestrator steps in sequence. Automatically picks "
+            "different branches and alternates run types. Costs more than a single "
+            "run. Confirm with the user before calling."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "steps": {
+                    "type": "integer",
+                    "description": "Number of steps to run (1-10). Default: 3.",
+                },
+                "strategy": {
+                    "type": "string",
+                    "enum": ["auto", "explore-only", "evaluate-only", "alternate"],
+                    "description": (
+                        "How to pick run types. auto (default) decides per-branch, "
+                        "explore-only/evaluate-only force one type, alternate switches."
+                    ),
+                },
+            },
+        },
+    },
+    {
+        "name": "ingest_source",
+        "description": (
+            "Ingest a URL as a source — fetch its content, create a Source record, "
+            "and optionally run extraction to pull evidence into a target branch. "
+            "Use when the user shares a URL and wants its findings added to the tree."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "The URL to fetch and ingest.",
+                },
+                "target_node_id": {
+                    "type": "string",
+                    "description": (
+                        "Short ID of the branch to extract evidence into. "
+                        "If omitted, the source is saved but no extraction run happens."
+                    ),
+                },
+                "title": {
+                    "type": "string",
+                    "description": "Override the auto-extracted title.",
+                },
+            },
+            "required": ["url"],
+        },
+    },
 ]
 
 
@@ -515,6 +664,37 @@ def execute_tool(
                 "ws_id": ws_id,
             })
 
+    elif name == "start_research":
+        target_short = tool_input.get("node_id")
+        target_full = resolve_node_id(conn, target_short) if target_short else None
+        if not target_full:
+            output = f"Node '{target_short}' not found."
+        else:
+            output = json.dumps({
+                "__async_research__": True,
+                "ws_id": ws_id,
+                "scope_id": target_full,
+                "budget": tool_input.get("budget", 5),
+                "strategy": tool_input.get("strategy", "full_cycle"),
+            })
+
+    elif name == "run_orchestrator_loop":
+        output = json.dumps({
+            "__async_orchestrate_loop__": True,
+            "ws_id": ws_id,
+            "steps": tool_input.get("steps", 3),
+            "strategy": tool_input.get("strategy", "auto"),
+        })
+
+    elif name == "ingest_source":
+        output = json.dumps({
+            "__async_ingest__": True,
+            "ws_id": ws_id,
+            "url": tool_input["url"],
+            "target_node_id": tool_input.get("target_node_id"),
+            "title": tool_input.get("title"),
+        })
+
     else:
         output = f"Unknown tool: {name}"
 
@@ -532,6 +712,12 @@ MODEL_MAP = {
     "opus": "claude-opus-4-6",
     "haiku": "claude-haiku-4-5-20251001",
 }
+
+
+class IngestRequest(BaseModel):
+    url: str
+    target_node_id: str | None = None
+    title: str | None = None
 
 
 class ChatRequest(BaseModel):
@@ -629,7 +815,13 @@ def get_workspace_tree(name: str):
         conn.close()
         return {"error": "no root node"}
     tree = get_subtree(conn, dict(root)["id"])
+    links = conn.execute(
+        "SELECT id, source_id, target_id, link_type, strength, reasoning "
+        "FROM node_links WHERE workspace_id = ?",
+        (ws_id,),
+    ).fetchall()
     conn.close()
+    tree["links"] = [dict(l) for l in links]
     return tree
 
 
@@ -690,9 +882,63 @@ def accept_suggestion(suggestion_id: str):
     sd = dict(sug)
     payload = json.loads(sd.get("payload", "{}"))
 
-    if sd["suggestion_type"] == "relevel_node" and sd["target_node_id"]:
+    target = sd["target_node_id"]
+    stype = sd["suggestion_type"]
+    result: dict[str, Any] = {"status": "accepted"}
+
+    if stype == "relevel_node" and target:
         new_imp = payload.get("new_importance", 0)
-        conn.execute("UPDATE nodes SET importance = ? WHERE id = ?", (new_imp, sd["target_node_id"]))
+        conn.execute("UPDATE nodes SET importance = ? WHERE id = ?", (new_imp, target))
+
+    elif stype == "add_to_branch" and target:
+        node_id = new_id()
+        conn.execute(
+            "INSERT INTO nodes (id, workspace_id, parent_id, node_type, headline, content, "
+            "credence, robustness, importance, position, created_at, created_by) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'suggestion')",
+            (
+                node_id, sd["workspace_id"], target,
+                payload.get("node_type", "claim"),
+                payload.get("headline", ""),
+                payload.get("content", ""),
+                payload.get("credence"),
+                payload.get("robustness"),
+                payload.get("importance", 2),
+                now_iso(),
+            ),
+        )
+        result["created_node_id"] = node_id
+
+    elif stype == "resolve_tension" and target:
+        other_id = payload.get("other_node_id")
+        if other_id:
+            link_id = new_id()
+            conn.execute(
+                "INSERT INTO node_links (id, workspace_id, source_id, target_id, link_type, "
+                "reasoning, created_at, created_by) VALUES (?, ?, ?, ?, 'opposes', ?, ?, 'suggestion')",
+                (
+                    link_id, sd["workspace_id"], target, other_id,
+                    payload.get("reasoning", ""),
+                    now_iso(),
+                ),
+            )
+            result["created_link_id"] = link_id
+
+    elif stype == "merge_duplicate" and target:
+        keep_id = payload.get("keep_node_id", target)
+        supersede_id = payload.get("supersede_node_id")
+        if not supersede_id:
+            supersede_id = target if keep_id != target else None
+        if supersede_id:
+            conn.execute(
+                "UPDATE nodes SET superseded_by = ? WHERE id = ?",
+                (keep_id, supersede_id),
+            )
+            result["superseded"] = supersede_id
+
+    elif stype == "cascade_review" and target:
+        result["cascade_target"] = target
+        result["suggest_evaluate"] = True
 
     conn.execute(
         "UPDATE suggestions SET status = 'accepted', reviewed_at = ? WHERE id = ?",
@@ -700,7 +946,7 @@ def accept_suggestion(suggestion_id: str):
     )
     conn.commit()
     conn.close()
-    return {"status": "accepted"}
+    return result
 
 
 @app.post("/api/suggestions/{suggestion_id}/reject")
@@ -713,6 +959,23 @@ def reject_suggestion(suggestion_id: str):
     conn.commit()
     conn.close()
     return {"status": "rejected"}
+
+
+@app.get("/api/workspaces/{name}/concepts")
+def list_concepts(name: str):
+    conn = get_db()
+    ws = conn.execute("SELECT id FROM workspaces WHERE name = ?", (name,)).fetchone()
+    if not ws:
+        conn.close()
+        return []
+    ws_id = dict(ws)["id"]
+    rows = conn.execute(
+        "SELECT id, headline, content FROM nodes "
+        "WHERE workspace_id = ? AND node_type = 'concept' ORDER BY headline",
+        (ws_id,),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 
 @app.get("/api/workspaces/{name}/sources")
@@ -752,6 +1015,128 @@ def get_source(source_id: str):
     if not row:
         return {"error": f"Source '{source_id}' not found"}
     return dict(row)
+
+
+@app.post("/api/workspaces/{name}/ingest")
+async def ingest_source(name: str, request: IngestRequest):
+    """Fetch a URL, create a Source record, and optionally run extraction."""
+    conn = get_db()
+    ws = conn.execute("SELECT id FROM workspaces WHERE name = ?", (name,)).fetchone()
+    if not ws:
+        conn.close()
+        return {"error": f"Workspace '{name}' not found"}
+    ws_id = dict(ws)["id"]
+
+    try:
+        title, content = await fetch_and_extract(request.url)
+    except httpx.HTTPError as e:
+        conn.close()
+        return {"error": f"Failed to fetch URL: {e}"}
+
+    if request.title:
+        title = request.title
+
+    source_id = new_id()
+    abstract = content[:500] if content else ""
+    conn.execute(
+        "INSERT INTO sources (id, workspace_id, title, url, abstract, content, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (source_id, ws_id, title, request.url, abstract, content, now_iso()),
+    )
+    conn.commit()
+
+    result: dict[str, Any] = {
+        "source_id": source_id,
+        "title": title,
+        "content_length": len(content),
+    }
+
+    if request.target_node_id:
+        target_full = resolve_node_id(conn, request.target_node_id)
+        if not target_full:
+            conn.close()
+            result["extraction_error"] = f"Target node '{request.target_node_id}' not found"
+            return result
+
+        api_key = _get_api_key()
+        if not api_key:
+            conn.close()
+            result["extraction_error"] = "ANTHROPIC_API_KEY not set"
+            return result
+
+        config = resolve_run_type("ingest")
+
+        target_node = conn.execute(
+            "SELECT headline FROM nodes WHERE id = ?", (target_full,)
+        ).fetchone()
+        target_headline = dict(target_node)["headline"] if target_node else "?"
+
+        run_id = new_id()
+        conn.execute(
+            "INSERT INTO runs (id, workspace_id, run_type, scope_node_id, started_at, status, description, config) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (run_id, ws_id, "ingest", target_full, now_iso(), "running",
+             f"ingest: {title[:50]} → {target_headline[:30]}",
+             json.dumps({"source_id": source_id, "url": request.url})),
+        )
+        conn.commit()
+
+        context = build_branch_context(
+            conn, target_full, layers=config["context_layers"], ws_id=ws_id,
+        )
+
+        source_section = (
+            f"# Source to Ingest\n\n"
+            f"**Source ID:** {source_id}\n"
+            f"**Title:** {title}\n"
+            f"**URL:** {request.url}\n\n"
+            f"Set `source_ids` to `[\"{source_id}\"]` on every node you create from this source.\n\n"
+            f"## Source Content\n\n{content[:30000]}"
+        )
+
+        user_message = (
+            f"# Target Branch: {target_headline}\n\n"
+            f"{context}\n\n"
+            f"---\n\n"
+            f"{source_section}\n\n"
+            f"---\n\n"
+            "Extract the relevant findings from this source into the target branch."
+        )
+
+        executor = make_tool_executor(
+            conn, ws_id, target_full, run_id,
+            resolve_node_id=resolve_node_id,
+            new_id=new_id,
+            now_iso=now_iso,
+        )
+
+        tracer = RunTracer(conn=conn, run_id=run_id)
+        run_result = await run_step(
+            system_prompt=config["system_prompt"],
+            user_message=user_message,
+            tools=config["tools"],
+            execute_tool=executor,
+            api_key=api_key,
+            max_rounds=config.get("max_rounds", 8),
+            max_tokens=config.get("max_tokens", 4096),
+            temperature=config.get("temperature", 0.3),
+            tracer=tracer,
+        )
+
+        tracer.finalize()
+        conn.execute(
+            "UPDATE runs SET status = 'completed', completed_at = ? WHERE id = ?",
+            (now_iso(), run_id),
+        )
+        conn.commit()
+
+        result["run_id"] = run_id
+        result["actions_taken"] = run_result.actions_taken
+        result["response"] = run_result.response
+        result["rounds_used"] = run_result.rounds_used
+
+    conn.close()
+    return result
 
 
 @app.get("/api/workspaces/{name}/branch-context/{node_id}")
@@ -882,9 +1267,9 @@ async def orchestrate(
         system_prompt += "\n\nDRY RUN: describe what you would do but tools will not actually mutate."
 
     user_message = (
-        f"# Branch: {scope_headline}\n\n"
+        f"# Scope: {scope_headline}\n\n"
         f"{context}\n\n"
-        "Assess this branch and make improvements. Start by inspecting, then act."
+        f"{config['user_task']}"
     )
 
     executor = make_tool_executor(
@@ -980,9 +1365,9 @@ async def _run_orchestrator_from_chat(
         system_prompt += "\n\nDRY RUN: describe what you would do but tools will not actually mutate."
 
     user_message = (
-        f"# Branch: {scope_headline}\n\n"
+        f"# Scope: {scope_headline}\n\n"
         f"{context}\n\n"
-        "Assess this branch and make improvements. Start by inspecting, then act."
+        f"{config['user_task']}"
     )
 
     executor = make_tool_executor(
@@ -1034,6 +1419,595 @@ async def _run_orchestrator_from_chat(
     )
 
 
+async def _run_loop_from_chat(
+    conn: sqlite3.Connection,
+    params: dict,
+    api_key: str | None,
+    chat_run_id: str,
+    on_progress: Callable[[str], None] | None = None,
+) -> str:
+    """Execute a multi-step orchestrator loop triggered from chat."""
+    if not api_key:
+        return "Cannot run loop: ANTHROPIC_API_KEY not set."
+
+    ws_id = params["ws_id"]
+    steps = max(1, min(params.get("steps", 3), 10))
+    strategy = params.get("strategy", "auto")
+
+    if strategy not in STRATEGIES:
+        return f"Unknown strategy '{strategy}'. Available: {', '.join(STRATEGIES)}"
+
+    loop_run_id = new_id()
+    conn.execute(
+        "INSERT INTO runs (id, workspace_id, run_type, started_at, status, description, config) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (loop_run_id, ws_id, "orchestrate-loop", now_iso(), "running",
+         f"loop from chat: {steps} steps, {strategy}",
+         json.dumps({"steps": steps, "strategy": strategy, "from_chat": chat_run_id})),
+    )
+    conn.commit()
+
+    if on_progress:
+        on_progress(f"starting {steps}-step loop ({strategy})...")
+
+    visited: list[str] = []
+    step_summaries: list[str] = []
+
+    for i in range(steps):
+        scope_id = pick_next_branch(conn, ws_id, exclude=visited)
+        if not scope_id:
+            if on_progress:
+                on_progress(f"step {i + 1}: no more branches, stopping")
+            break
+
+        run_type_name = decide_run_type(conn, ws_id, scope_id, strategy, step_index=i)
+        scope_node = conn.execute(
+            "SELECT headline FROM nodes WHERE id = ?", (scope_id,)
+        ).fetchone()
+        scope_headline = dict(scope_node)["headline"] if scope_node else "?"
+
+        if on_progress:
+            on_progress(f"step {i + 1}/{steps}: {run_type_name} on '{scope_headline[:40]}'...")
+
+        try:
+            step_result = await _run_loop_step(
+                conn, ws_id, scope_id, run_type_name, False, api_key, loop_run_id,
+            )
+            action_count = len(step_result["actions_taken"])
+            step_summaries.append(
+                f"  Step {i + 1}: {run_type_name} on '{scope_headline[:40]}' — "
+                f"{action_count} actions, {step_result['rounds_used']} rounds"
+            )
+            if on_progress:
+                on_progress(
+                    f"step {i + 1} done: {action_count} actions on '{scope_headline[:30]}'"
+                )
+        except Exception as e:
+            step_summaries.append(f"  Step {i + 1}: error — {e}")
+            if on_progress:
+                on_progress(f"step {i + 1} error: {e}")
+
+        visited.append(scope_id)
+
+    conn.execute(
+        "UPDATE runs SET status = 'completed', completed_at = ? WHERE id = ?",
+        (now_iso(), loop_run_id),
+    )
+    conn.commit()
+
+    return (
+        f"Loop completed ({len(step_summaries)}/{steps} steps, {strategy}):\n"
+        + "\n".join(step_summaries)
+    )
+
+
+async def _run_research_from_chat(
+    conn: sqlite3.Connection,
+    params: dict,
+    api_key: str | None,
+    chat_run_id: str,
+    on_progress: Callable[[str], None] | None = None,
+) -> str:
+    """Execute a multi-step research program on a single branch from chat."""
+    if not api_key:
+        return "Cannot run research: ANTHROPIC_API_KEY not set."
+
+    ws_id = params["ws_id"]
+    scope_id = params["scope_id"]
+    budget = max(1, min(params.get("budget", 5), 10))
+    strategy = params.get("strategy", "full_cycle")
+
+    if strategy not in RESEARCH_STRATEGIES:
+        return f"Unknown strategy '{strategy}'. Available: {', '.join(RESEARCH_STRATEGIES)}"
+
+    scope_node = conn.execute(
+        "SELECT headline FROM nodes WHERE id = ?", (scope_id,)
+    ).fetchone()
+    scope_headline = dict(scope_node)["headline"] if scope_node else "?"
+
+    research_run_id = new_id()
+    conn.execute(
+        "INSERT INTO runs (id, workspace_id, run_type, scope_node_id, started_at, status, description, config) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (research_run_id, ws_id, "research", scope_id, now_iso(), "running",
+         f"research: {budget} steps on '{scope_headline[:50]}'",
+         json.dumps({"budget": budget, "strategy": strategy, "from_chat": chat_run_id})),
+    )
+    conn.commit()
+
+    if on_progress:
+        on_progress(f"starting {budget}-step research on '{scope_headline[:40]}' ({strategy})...")
+
+    step_summaries: list[str] = []
+
+    for i in range(budget):
+        run_type_name = decide_next_phase(conn, ws_id, scope_id, strategy)
+
+        if on_progress:
+            on_progress(f"step {i + 1}/{budget}: {run_type_name} on '{scope_headline[:40]}'...")
+
+        try:
+            step_result = await _run_loop_step(
+                conn, ws_id, scope_id, run_type_name, False, api_key, research_run_id,
+            )
+            action_count = len(step_result["actions_taken"])
+            step_summaries.append(
+                f"  Step {i + 1}: {run_type_name} — "
+                f"{action_count} actions, {step_result['rounds_used']} rounds"
+            )
+            if on_progress:
+                on_progress(
+                    f"step {i + 1} done: {run_type_name}, {action_count} actions"
+                )
+        except Exception as e:
+            step_summaries.append(f"  Step {i + 1}: error — {e}")
+            if on_progress:
+                on_progress(f"step {i + 1} error: {e}")
+
+    conn.execute(
+        "UPDATE runs SET status = 'completed', completed_at = ? WHERE id = ?",
+        (now_iso(), research_run_id),
+    )
+    conn.commit()
+
+    return (
+        f"Research on '{scope_headline[:40]}' completed "
+        f"({len(step_summaries)}/{budget} steps, {strategy}):\n"
+        + "\n".join(step_summaries)
+    )
+
+
+async def _run_ingest_from_chat(
+    conn: sqlite3.Connection,
+    params: dict,
+    api_key: str | None,
+    chat_run_id: str,
+    on_progress: Callable[[str], None] | None = None,
+) -> str:
+    """Fetch a URL, create a Source, and optionally run extraction. Returns summary."""
+    ws_id = params["ws_id"]
+    url = params["url"]
+    target_short = params.get("target_node_id")
+    title_override = params.get("title")
+
+    if on_progress:
+        on_progress(f"fetching {url}...")
+
+    try:
+        title, content = await fetch_and_extract(url)
+    except httpx.HTTPError as e:
+        return f"Failed to fetch URL: {e}"
+
+    if title_override:
+        title = title_override
+
+    source_id = new_id()
+    abstract = content[:500] if content else ""
+    conn.execute(
+        "INSERT INTO sources (id, workspace_id, title, url, abstract, content, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (source_id, ws_id, title, url, abstract, content, now_iso()),
+    )
+    conn.commit()
+
+    summary = f"Source created: [{source_id[:8]}] {title} ({len(content)} chars)"
+
+    if on_progress:
+        on_progress(summary)
+
+    if not target_short:
+        return summary
+
+    target_full = resolve_node_id(conn, target_short)
+    if not target_full:
+        return f"{summary}\nExtraction skipped: target node '{target_short}' not found."
+
+    if not api_key:
+        return f"{summary}\nExtraction skipped: ANTHROPIC_API_KEY not set."
+
+    config = resolve_run_type("ingest")
+
+    target_node = conn.execute(
+        "SELECT headline FROM nodes WHERE id = ?", (target_full,)
+    ).fetchone()
+    target_headline = dict(target_node)["headline"] if target_node else "?"
+
+    run_id = new_id()
+    conn.execute(
+        "INSERT INTO runs (id, workspace_id, run_type, scope_node_id, started_at, status, description, config) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (run_id, ws_id, "ingest", target_full, now_iso(), "running",
+         f"ingest: {title[:50]} → {target_headline[:30]}",
+         json.dumps({"source_id": source_id, "url": url, "from_chat": chat_run_id})),
+    )
+    conn.commit()
+
+    if on_progress:
+        on_progress(f"extracting into '{target_headline[:40]}'...")
+
+    context = build_branch_context(
+        conn, target_full, layers=config["context_layers"], ws_id=ws_id,
+    )
+
+    source_section = (
+        f"# Source to Ingest\n\n"
+        f"**Source ID:** {source_id}\n"
+        f"**Title:** {title}\n"
+        f"**URL:** {url}\n\n"
+        f"Set `source_ids` to `[\"{source_id}\"]` on every node you create from this source.\n\n"
+        f"## Source Content\n\n{content[:30000]}"
+    )
+
+    user_message = (
+        f"# Target Branch: {target_headline}\n\n"
+        f"{context}\n\n"
+        f"---\n\n"
+        f"{source_section}\n\n"
+        f"---\n\n"
+        "Extract the relevant findings from this source into the target branch."
+    )
+
+    action_count = [0]
+
+    def on_action(action: dict) -> None:
+        action_count[0] += 1
+        tool_name = action.get("tool", "?")
+        result_preview = action.get("result", "")[:60]
+        if on_progress:
+            on_progress(f"[{action_count[0]}] {tool_name}: {result_preview}")
+
+    executor = make_tool_executor(
+        conn, ws_id, target_full, run_id,
+        resolve_node_id=resolve_node_id,
+        new_id=new_id,
+        now_iso=now_iso,
+    )
+
+    tracer = RunTracer(conn=conn, run_id=run_id)
+    run_result = await run_step(
+        system_prompt=config["system_prompt"],
+        user_message=user_message,
+        tools=config["tools"],
+        execute_tool=executor,
+        api_key=api_key,
+        max_rounds=config.get("max_rounds", 8),
+        max_tokens=config.get("max_tokens", 4096),
+        temperature=config.get("temperature", 0.3),
+        on_action=on_action,
+        tracer=tracer,
+    )
+
+    tracer.finalize()
+    conn.execute(
+        "UPDATE runs SET status = 'completed', completed_at = ? WHERE id = ?",
+        (now_iso(), run_id),
+    )
+    conn.commit()
+
+    actions_summary = "\n".join(
+        f"  {a['tool']}: {a['result'][:100]}" for a in run_result.actions_taken
+    )
+    return (
+        f"{summary}\n"
+        f"Extraction into '{target_headline[:40]}' ({run_result.rounds_used} rounds):\n"
+        f"{actions_summary}\n\n"
+        f"{run_result.response[:500]}"
+    )
+
+
+async def _run_loop_step(
+    conn: sqlite3.Connection,
+    ws_id: str,
+    scope_id: str,
+    run_type_name: str,
+    dry_run: bool,
+    api_key: str,
+    parent_run_id: str,
+) -> dict:
+    """Run a single orchestrator step within a loop. Returns step summary dict."""
+    config = resolve_run_type(run_type_name)
+
+    scope_node = conn.execute(
+        "SELECT headline FROM nodes WHERE id = ?", (scope_id,)
+    ).fetchone()
+    scope_headline = dict(scope_node)["headline"] if scope_node else "?"
+
+    step_run_id = new_id()
+    conn.execute(
+        "INSERT INTO runs (id, workspace_id, run_type, scope_node_id, started_at, status, description, config) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (step_run_id, ws_id, "orchestrate", scope_id, now_iso(), "running",
+         f"loop step ({run_type_name}): {scope_headline[:50]}",
+         json.dumps({"dry_run": dry_run, "run_type": run_type_name, "parent_run": parent_run_id})),
+    )
+    conn.commit()
+
+    context = build_branch_context(
+        conn, scope_id, layers=config["context_layers"], ws_id=ws_id,
+    )
+    system_prompt = config["system_prompt"]
+    if dry_run:
+        system_prompt += "\n\nDRY RUN: describe what you would do but tools will not actually mutate."
+
+    user_message = (
+        f"# Scope: {scope_headline}\n\n"
+        f"{context}\n\n"
+        f"{config['user_task']}"
+    )
+
+    executor = make_tool_executor(
+        conn, ws_id, scope_id, step_run_id,
+        dry_run=dry_run,
+        resolve_node_id=resolve_node_id,
+        new_id=new_id,
+        now_iso=now_iso,
+    )
+
+    tracer = RunTracer(conn=conn, run_id=step_run_id)
+    result = await run_step(
+        system_prompt=system_prompt,
+        user_message=user_message,
+        tools=config["tools"],
+        execute_tool=executor,
+        api_key=api_key,
+        max_rounds=config.get("max_rounds", 8),
+        max_tokens=config.get("max_tokens", 4096),
+        temperature=config.get("temperature", 0.5),
+        tracer=tracer,
+    )
+
+    trace_stats = tracer.finalize()
+    conn.execute(
+        "UPDATE runs SET status = 'completed', completed_at = ? WHERE id = ?",
+        (now_iso(), step_run_id),
+    )
+    conn.commit()
+
+    return {
+        "step_run_id": step_run_id,
+        "scope_node": scope_headline,
+        "scope_node_id": scope_id[:8],
+        "run_type": run_type_name,
+        "actions_taken": result.actions_taken,
+        "rounds_used": result.rounds_used,
+        "stop_reason": result.stop_reason,
+        "response": result.response[:300],
+        "cost_usd": trace_stats.get("total_cost_usd", 0),
+    }
+
+
+@app.post("/api/workspaces/{name}/orchestrate-loop")
+async def orchestrate_loop(
+    name: str,
+    steps: int = 3,
+    strategy: str = "auto",
+    dry_run: bool = True,
+):
+    """Run multiple orchestrator steps, picking branches and run types intelligently.
+
+    Returns SSE events: step_complete for each step, done with full summary.
+    Strategy: auto | explore-only | evaluate-only | alternate
+    """
+    api_key = _get_api_key()
+    if not api_key:
+        async def error_gen():
+            yield _sse("error", {"message": "ANTHROPIC_API_KEY not set."})
+        return StreamingResponse(error_gen(), media_type="text/event-stream")
+
+    if strategy not in STRATEGIES:
+        async def error_gen():
+            yield _sse("error", {"message": f"Unknown strategy '{strategy}'. Available: {', '.join(STRATEGIES)}"})
+        return StreamingResponse(error_gen(), media_type="text/event-stream")
+
+    steps = max(1, min(steps, 10))
+
+    conn = get_db()
+    ws = conn.execute("SELECT * FROM workspaces WHERE name = ?", (name,)).fetchone()
+    if not ws:
+        conn.close()
+        async def error_gen():
+            yield _sse("error", {"message": f"Workspace '{name}' not found."})
+        return StreamingResponse(error_gen(), media_type="text/event-stream")
+    ws_id = dict(ws)["id"]
+
+    loop_run_id = new_id()
+    conn.execute(
+        "INSERT INTO runs (id, workspace_id, run_type, started_at, status, description, config) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (loop_run_id, ws_id, "orchestrate-loop", now_iso(), "running",
+         f"loop: {steps} steps, {strategy}",
+         json.dumps({"steps": steps, "strategy": strategy, "dry_run": dry_run})),
+    )
+    conn.commit()
+
+    async def generate():
+        visited_branches: list[str] = []
+        step_results: list[dict] = []
+
+        yield _sse("loop_start", {
+            "run_id": loop_run_id, "steps": steps,
+            "strategy": strategy, "dry_run": dry_run,
+        })
+
+        for i in range(steps):
+            scope_id = pick_next_branch(conn, ws_id, exclude=visited_branches)
+            if not scope_id:
+                yield _sse("step_skipped", {
+                    "step": i + 1, "reason": "no more branches to process",
+                })
+                break
+
+            run_type_name = decide_run_type(conn, ws_id, scope_id, strategy, step_index=i)
+
+            yield _sse("step_start", {
+                "step": i + 1, "scope_node_id": scope_id[:8], "run_type": run_type_name,
+            })
+
+            try:
+                step_result = await _run_loop_step(
+                    conn, ws_id, scope_id, run_type_name, dry_run, api_key, loop_run_id,
+                )
+                step_result["step"] = i + 1
+                step_results.append(step_result)
+                yield _sse("step_complete", step_result)
+            except Exception as e:
+                yield _sse("step_error", {"step": i + 1, "error": str(e)})
+
+            visited_branches.append(scope_id)
+
+        conn.execute(
+            "UPDATE runs SET status = 'completed', completed_at = ? WHERE id = ?",
+            (now_iso(), loop_run_id),
+        )
+        conn.commit()
+
+        yield _sse("done", {
+            "run_id": loop_run_id,
+            "steps_completed": len(step_results),
+            "total_cost_usd": sum(r.get("cost_usd", 0) for r in step_results),
+            "summary": [
+                {
+                    "step": r["step"], "scope_node": r["scope_node"],
+                    "run_type": r["run_type"], "actions": len(r["actions_taken"]),
+                }
+                for r in step_results
+            ],
+        })
+        conn.close()
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+@app.post("/api/workspaces/{name}/research")
+async def research(
+    name: str,
+    node_id: str | None = None,
+    budget: int = 5,
+    strategy: str = "full_cycle",
+):
+    """Run a sustained research program on a single branch.
+
+    Unlike orchestrate-loop (which visits different branches), this runs
+    multiple steps on ONE branch, automatically transitioning between
+    explore, evaluate, and cross_check phases based on branch state.
+
+    Returns SSE events: step_start, step_complete, step_error, done.
+    """
+    api_key = _get_api_key()
+    if not api_key:
+        async def error_gen():
+            yield _sse("error", {"message": "ANTHROPIC_API_KEY not set."})
+        return StreamingResponse(error_gen(), media_type="text/event-stream")
+
+    if strategy not in RESEARCH_STRATEGIES:
+        async def error_gen():
+            yield _sse("error", {"message": f"Unknown strategy '{strategy}'. Available: {', '.join(RESEARCH_STRATEGIES)}"})
+        return StreamingResponse(error_gen(), media_type="text/event-stream")
+
+    budget = max(1, min(budget, 10))
+
+    conn = get_db()
+    ws = conn.execute("SELECT * FROM workspaces WHERE name = ?", (name,)).fetchone()
+    if not ws:
+        conn.close()
+        async def error_gen():
+            yield _sse("error", {"message": f"Workspace '{name}' not found."})
+        return StreamingResponse(error_gen(), media_type="text/event-stream")
+    ws_id = dict(ws)["id"]
+
+    if node_id:
+        scope_id = resolve_node_id(conn, node_id)
+    else:
+        scope_id = pick_next_branch(conn, ws_id)
+
+    if not scope_id:
+        conn.close()
+        async def error_gen():
+            yield _sse("error", {"message": "No branch to research."})
+        return StreamingResponse(error_gen(), media_type="text/event-stream")
+
+    scope_node = conn.execute("SELECT headline FROM nodes WHERE id = ?", (scope_id,)).fetchone()
+    scope_headline = dict(scope_node)["headline"] if scope_node else "?"
+
+    research_run_id = new_id()
+    conn.execute(
+        "INSERT INTO runs (id, workspace_id, run_type, scope_node_id, started_at, status, description, config) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (research_run_id, ws_id, "research", scope_id, now_iso(), "running",
+         f"research: {budget} steps on '{scope_headline[:50]}'",
+         json.dumps({"budget": budget, "strategy": strategy})),
+    )
+    conn.commit()
+
+    async def generate():
+        step_results: list[dict] = []
+
+        yield _sse("research_start", {
+            "run_id": research_run_id, "budget": budget,
+            "strategy": strategy, "scope_node_id": scope_id[:8],
+            "scope_headline": scope_headline,
+        })
+
+        for i in range(budget):
+            run_type_name = decide_next_phase(conn, ws_id, scope_id, strategy)
+
+            yield _sse("step_start", {
+                "step": i + 1, "scope_node_id": scope_id[:8], "run_type": run_type_name,
+            })
+
+            try:
+                step_result = await _run_loop_step(
+                    conn, ws_id, scope_id, run_type_name, False, api_key, research_run_id,
+                )
+                step_result["step"] = i + 1
+                step_results.append(step_result)
+                yield _sse("step_complete", step_result)
+            except Exception as e:
+                yield _sse("step_error", {"step": i + 1, "error": str(e)})
+
+        conn.execute(
+            "UPDATE runs SET status = 'completed', completed_at = ? WHERE id = ?",
+            (now_iso(), research_run_id),
+        )
+        conn.commit()
+
+        yield _sse("done", {
+            "run_id": research_run_id,
+            "steps_completed": len(step_results),
+            "total_cost_usd": sum(r.get("cost_usd", 0) for r in step_results),
+            "summary": [
+                {
+                    "step": r["step"], "scope_node": r["scope_node"],
+                    "run_type": r["run_type"], "actions": len(r["actions_taken"]),
+                }
+                for r in step_results
+            ],
+        })
+        conn.close()
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
     # Check environment, then secrets.env
@@ -1081,6 +2055,10 @@ async def chat(request: ChatRequest):
     )
     conn.commit()
 
+    tracer = RunTracer(conn=conn, run_id=run_id)
+    root_span = new_id()
+    tracer.span_begin(root_span, "chat_turn", "chat response")
+
     tree = get_subtree(conn, root_id)
     context = format_tree(tree)
 
@@ -1093,7 +2071,11 @@ async def chat(request: ChatRequest):
     messages = list(request.messages)
     tool_uses_log: list[ToolUseInfo] = []
 
-    for _ in range(10):
+    for round_num in range(10):
+        round_span = new_id()
+        tracer.span_begin(round_span, "round", f"round {round_num + 1}", parent_span_id=root_span)
+
+        t0 = time.monotonic()
         response = await client.messages.create(
             model=model_id,
             max_tokens=4096,
@@ -1101,6 +2083,26 @@ async def chat(request: ChatRequest):
             system=full_system,
             messages=messages,  # type: ignore[arg-type]
             tools=TOOLS,  # type: ignore[arg-type]
+        )
+        duration_ms = int((time.monotonic() - t0) * 1000)
+
+        usage = response.usage
+        tracer.record_model_event(
+            round_span,
+            model=model_id,
+            temperature=0.7,
+            max_tokens=4096,
+            input_messages=messages,
+            tools_offered=TOOLS,
+            output_content=[b.model_dump() for b in response.content],
+            stop_reason=response.stop_reason or "unknown",
+            usage={
+                "input_tokens": usage.input_tokens,
+                "output_tokens": usage.output_tokens,
+                "cache_read_input_tokens": getattr(usage, "cache_read_input_tokens", 0) or 0,
+                "cache_creation_input_tokens": getattr(usage, "cache_creation_input_tokens", 0) or 0,
+            },
+            duration_ms=duration_ms,
         )
 
         text_parts: list[str] = []
@@ -1112,6 +2114,9 @@ async def chat(request: ChatRequest):
                 tool_calls.append(block)
 
         if not tool_calls:
+            tracer.span_end(round_span)
+            tracer.span_end(root_span)
+            tracer.finalize()
             conn.execute(
                 "UPDATE runs SET status = 'completed', completed_at = ? WHERE id = ?",
                 (now_iso(), run_id),
@@ -1124,13 +2129,36 @@ async def chat(request: ChatRequest):
 
         tool_results = []
         for tc in tool_calls:
+            t_tool = time.monotonic()
             result_str = execute_tool(conn, ws_id, root_id, tc.name, tc.input, run_id)  # type: ignore[arg-type]
-            # Handle async orchestrator runs
             if tc.name == "run_orchestrator" and "__async_orchestrate__" in result_str:
                 params = json.loads(result_str)
                 result_str = await _run_orchestrator_from_chat(
                     conn, params, api_key, run_id,
                 )
+            elif tc.name == "run_orchestrator_loop" and "__async_orchestrate_loop__" in result_str:
+                params = json.loads(result_str)
+                result_str = await _run_loop_from_chat(
+                    conn, params, api_key, run_id,
+                )
+            elif tc.name == "start_research" and "__async_research__" in result_str:
+                params = json.loads(result_str)
+                result_str = await _run_research_from_chat(
+                    conn, params, api_key, run_id,
+                )
+            elif tc.name == "ingest_source" and "__async_ingest__" in result_str:
+                params = json.loads(result_str)
+                result_str = await _run_ingest_from_chat(
+                    conn, params, api_key, run_id,
+                )
+            tool_duration_ms = int((time.monotonic() - t_tool) * 1000)
+            tracer.record_tool_event(
+                round_span,
+                function_name=tc.name,
+                arguments=tc.input if isinstance(tc.input, dict) else {},
+                result=result_str,
+                duration_ms=tool_duration_ms,
+            )
             tool_uses_log.append(ToolUseInfo(name=tc.name, input=tc.input, result=result_str))  # type: ignore[arg-type]
             tool_results.append({
                 "type": "tool_result",
@@ -1138,8 +2166,11 @@ async def chat(request: ChatRequest):
                 "content": result_str,
             })
 
+        tracer.span_end(round_span)
         messages.append({"role": "user", "content": tool_results})
 
+    tracer.span_end(root_span)
+    tracer.finalize()
     conn.execute(
         "UPDATE runs SET status = 'completed', completed_at = ? WHERE id = ?",
         (now_iso(), run_id),
@@ -1208,6 +2239,10 @@ async def chat_stream(request: ChatRequest):
     )
     conn.commit()
 
+    tracer = RunTracer(conn=conn, run_id=run_id)
+    root_span = new_id()
+    tracer.span_begin(root_span, "chat_turn", "chat response")
+
     tree = get_subtree(conn, root_id)
     context = format_tree(tree)
 
@@ -1222,7 +2257,13 @@ async def chat_stream(request: ChatRequest):
     async def generate():
         nonlocal messages
         try:
-            for _ in range(10):
+            for round_num in range(10):
+                round_span = new_id()
+                tracer.span_begin(
+                    round_span, "round", f"round {round_num + 1}", parent_span_id=root_span
+                )
+
+                t0 = time.monotonic()
                 async with client.messages.stream(
                     model=model_id,
                     max_tokens=4096,
@@ -1239,17 +2280,41 @@ async def chat_stream(request: ChatRequest):
                             cb = event.content_block
                             if isinstance(cb, ToolUseBlock):
                                 yield _sse("tool_use_start", {"name": cb.name})
+                            elif isinstance(cb, ServerToolUseBlock):
+                                yield _sse("tool_use_start", {"name": cb.name})
 
                 response = await stream.get_final_message()
+                duration_ms = int((time.monotonic() - t0) * 1000)
+
+                usage = response.usage
+                tracer.record_model_event(
+                    round_span,
+                    model=model_id,
+                    temperature=0.7,
+                    max_tokens=4096,
+                    input_messages=messages,
+                    tools_offered=TOOLS,
+                    output_content=[b.model_dump() for b in response.content],
+                    stop_reason=response.stop_reason or "unknown",
+                    usage={
+                        "input_tokens": usage.input_tokens,
+                        "output_tokens": usage.output_tokens,
+                        "cache_read_input_tokens": getattr(usage, "cache_read_input_tokens", 0) or 0,
+                        "cache_creation_input_tokens": getattr(usage, "cache_creation_input_tokens", 0) or 0,
+                    },
+                    duration_ms=duration_ms,
+                )
 
                 tool_calls = [b for b in response.content if isinstance(b, ToolUseBlock)]
                 if not tool_calls:
+                    tracer.span_end(round_span)
                     break
 
                 messages.append({"role": "assistant", "content": response.content})
 
                 tool_results = []
                 for tc in tool_calls:
+                    t_tool = time.monotonic()
                     result_str = execute_tool(conn, ws_id, root_id, tc.name, tc.input, run_id)
                     if tc.name == "run_orchestrator" and "__async_orchestrate__" in result_str:
                         params = json.loads(result_str)
@@ -1260,6 +2325,41 @@ async def chat_stream(request: ChatRequest):
                         )
                         for pmsg in progress_msgs:
                             yield _sse("orchestrator_progress", {"message": pmsg})
+                    elif tc.name == "run_orchestrator_loop" and "__async_orchestrate_loop__" in result_str:
+                        params = json.loads(result_str)
+                        loop_progress: list[str] = []
+                        result_str = await _run_loop_from_chat(
+                            conn, params, api_key, run_id,
+                            on_progress=lambda msg: loop_progress.append(msg),
+                        )
+                        for pmsg in loop_progress:
+                            yield _sse("orchestrator_progress", {"message": pmsg})
+                    elif tc.name == "start_research" and "__async_research__" in result_str:
+                        params = json.loads(result_str)
+                        research_progress: list[str] = []
+                        result_str = await _run_research_from_chat(
+                            conn, params, api_key, run_id,
+                            on_progress=lambda msg: research_progress.append(msg),
+                        )
+                        for pmsg in research_progress:
+                            yield _sse("orchestrator_progress", {"message": pmsg})
+                    elif tc.name == "ingest_source" and "__async_ingest__" in result_str:
+                        params = json.loads(result_str)
+                        ingest_progress: list[str] = []
+                        result_str = await _run_ingest_from_chat(
+                            conn, params, api_key, run_id,
+                            on_progress=lambda msg: ingest_progress.append(msg),
+                        )
+                        for pmsg in ingest_progress:
+                            yield _sse("orchestrator_progress", {"message": pmsg})
+                    tool_duration_ms = int((time.monotonic() - t_tool) * 1000)
+                    tracer.record_tool_event(
+                        round_span,
+                        function_name=tc.name,
+                        arguments=tc.input if isinstance(tc.input, dict) else {},
+                        result=result_str,
+                        duration_ms=tool_duration_ms,
+                    )
                     yield _sse("tool_use_result", {
                         "name": tc.name,
                         "input": tc.input,
@@ -1270,10 +2370,16 @@ async def chat_stream(request: ChatRequest):
                         "tool_use_id": tc.id,
                         "content": result_str,
                     })
+                tracer.span_end(round_span)
                 messages.append({"role": "user", "content": tool_results})
 
+            tracer.span_end(root_span)
+            tracer.finalize()
             yield _sse("done", {})
         except Exception as e:
+            tracer.record_error(root_span, str(e))
+            tracer.span_end(root_span)
+            tracer.finalize()
             yield _sse("error", {"message": str(e)})
         finally:
             conn.execute(

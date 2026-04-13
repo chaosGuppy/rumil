@@ -139,7 +139,7 @@ body {
 /* stacked panes container */
 .pane-container {
   display: flex;
-  height: 100vh;
+  height: 100%;
   overflow-x: auto;
   overflow-y: hidden;
   scroll-snap-type: x proximity;
@@ -959,7 +959,7 @@ body {
 /* article view */
 .article-layout {
   display: flex;
-  height: 100vh;
+  height: 100%;
 }
 
 .article-toc {

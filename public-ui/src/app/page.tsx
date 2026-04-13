@@ -1,14 +1,53 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
-import { useSearchParams } from "next/navigation";
+import { useState, useCallback, useEffect, useRef } from "react";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Suspense } from "react";
 import { StackedPanes } from "@/components/StackedPanes";
+import { ArticleView } from "@/components/ArticleView";
+import { VerticalView } from "@/components/VerticalView";
+import type { VerticalViewHandle } from "@/components/VerticalView";
 import { ChatPanel } from "@/components/ChatPanel";
 import { SuggestionReview } from "@/components/SuggestionReview";
 import { fetchWorldview, fetchWorkspaces } from "@/lib/api";
 import type { Worldview } from "@/lib/types";
 import type { WorkspaceInfo } from "@/lib/api";
+
+const VIEW_MODES = ["panes", "article", "vertical"] as const;
+type ViewMode = (typeof VIEW_MODES)[number];
+
+function isViewMode(v: string): v is ViewMode {
+  return (VIEW_MODES as readonly string[]).includes(v);
+}
+
+function ViewModeSwitcher({
+  current,
+  onChange,
+  extra,
+}: {
+  current: ViewMode;
+  onChange: (mode: ViewMode) => void;
+  extra?: React.ReactNode;
+}) {
+  return (
+    <div className="view-switcher">
+      <div className="view-switcher-row">
+        {VIEW_MODES.map((mode) => (
+          <button
+            key={mode}
+            className={`view-switcher-btn ${current === mode ? "active" : ""}`}
+            onClick={() => onChange(mode)}
+          >
+            {mode}
+          </button>
+        ))}
+      </div>
+      {extra && (
+        <div className="view-switcher-extra">{extra}</div>
+      )}
+    </div>
+  );
+}
 
 function WorkspaceBrowser({
   onSelect,
@@ -115,6 +154,11 @@ function WorkspaceBrowser({
 }
 
 function WorldviewView({ workspace }: { workspace: string }) {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+
+  const verticalRef = useRef<VerticalViewHandle>(null);
   const [chatOpen, setChatOpen] = useState(false);
   const toggleChat = useCallback(() => setChatOpen((v) => !v), []);
   const [worldview, setWorldview] = useState<Worldview | null>(null);
@@ -122,6 +166,27 @@ function WorldviewView({ workspace }: { workspace: string }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
   const [showReview, setShowReview] = useState(false);
+
+  const rawView = searchParams.get("view") ?? "panes";
+  const viewMode: ViewMode = isViewMode(rawView) ? rawView : "panes";
+
+  const setViewMode = useCallback(
+    (mode: ViewMode) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (mode === "panes") {
+        params.delete("view");
+      } else {
+        params.set("view", mode);
+      }
+      params.delete("panes");
+      params.delete("expanded");
+      const query = params.toString();
+      router.replace(`${pathname}${query ? `?${query}` : ""}`, {
+        scroll: false,
+      });
+    },
+    [searchParams, router, pathname],
+  );
 
   const refreshWorldview = useCallback(() => {
     setRefreshKey((k) => k + 1);
@@ -168,11 +233,50 @@ function WorldviewView({ workspace }: { workspace: string }) {
           </div>
         </div>
       ) : (
-        <StackedPanes
-          worldview={worldview}
-          focusNodeId={focusNodeId}
-          onFocusHandled={() => setFocusNodeId(null)}
-        />
+        <div className="view-content">
+          <ViewModeSwitcher
+            current={viewMode}
+            onChange={setViewMode}
+            extra={viewMode === "vertical" ? (
+              <>
+                <button
+                  className="view-switcher-btn"
+                  onClick={() => verticalRef.current?.expandAll()}
+                >
+                  expand
+                </button>
+                <button
+                  className="view-switcher-btn"
+                  onClick={() => verticalRef.current?.collapseAll()}
+                >
+                  collapse
+                </button>
+              </>
+            ) : undefined}
+          />
+          {viewMode === "panes" && (
+            <StackedPanes
+              worldview={worldview}
+              focusNodeId={focusNodeId}
+              onFocusHandled={() => setFocusNodeId(null)}
+            />
+          )}
+          {viewMode === "article" && (
+            <ArticleView
+              worldview={worldview}
+              focusNodeId={focusNodeId}
+              onFocusHandled={() => setFocusNodeId(null)}
+            />
+          )}
+          {viewMode === "vertical" && (
+            <VerticalView
+              ref={verticalRef}
+              worldview={worldview}
+              focusNodeId={focusNodeId}
+              onFocusHandled={() => setFocusNodeId(null)}
+            />
+          )}
+        </div>
       )}
       <ChatPanel
         questionHeadline={worldview.question_headline}

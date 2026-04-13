@@ -15,19 +15,9 @@ from pydantic import BaseModel, Field
 if TYPE_CHECKING:
     from rumil.orchestrators.base import BaseOrchestrator
 
-from rumil.calls.assess_concept_types import (
-    SCREENING_FRUIT_THRESHOLD,
-    SCREENING_MAX_ROUNDS,
-    SCREENING_PHASE,
-    VALIDATION_FRUIT_THRESHOLD,
-    VALIDATION_MAX_ROUNDS,
-    VALIDATION_PHASE,
-)
-from rumil.calls.assess_concept import AssessConceptCall
 from rumil.calls.call_registry import ASSESS_CALL_CLASSES
 from rumil.calls.find_considerations import FindConsiderationsCall
 from rumil.calls.ingest import IngestCall
-from rumil.calls.scout_concepts import ScoutConceptsCall
 from rumil.calls.web_research import WebResearchCall
 from rumil.calls.summarize import summarize_question
 from rumil.constants import (
@@ -51,7 +41,6 @@ from rumil.models import (
     PageType,
     Workspace,
 )
-from rumil.page_graph import PageGraph
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
 
@@ -63,75 +52,6 @@ PRIORITIZATION_MOVES: list[MoveType] = [
     MoveType.CREATE_QUESTION,
     MoveType.LINK_CHILD_QUESTION,
 ]
-
-
-async def _count_subtree_questions(
-    question_id: str,
-    graph: PageGraph,
-    visited: set[str] | None = None,
-) -> int:
-    """Count all descendant questions (not including the question itself)."""
-    if visited is None:
-        visited = set()
-    visited.add(question_id)
-    children = await graph.get_child_questions(question_id)
-    count = 0
-    for child in children:
-        if child.id in visited:
-            continue
-        count += 1
-        count += await _count_subtree_questions(child.id, graph, visited)
-    return count
-
-
-async def _describe_considerations_on_page(
-    page_id: str,
-    graph: PageGraph,
-) -> tuple[str, str]:
-    """Build enriched descriptions of claims and questions linked to a page.
-
-    Returns (claims_text, questions_text) with research stats for each.
-    """
-    considerations = await graph.get_considerations_for_question(page_id)
-    child_questions = await graph.get_child_questions(page_id)
-
-    claim_lines = []
-    for page, link in considerations:
-        sub_considerations = await graph.get_considerations_for_question(page.id)
-        sub_questions = await graph.get_child_questions(page.id)
-        parts = []
-        if sub_considerations:
-            parts.append(f"{len(sub_considerations)} considerations")
-        if sub_questions:
-            parts.append(
-                f"{len(sub_questions)} subquestion{'s' if len(sub_questions) != 1 else ''}"
-            )
-        stats = ", ".join(parts) if parts else "no research yet"
-        direction = link.direction.value if link.direction else "neutral"
-        credence_tag = ""
-        if page.credence is not None:
-            credence_tag = f" C{page.credence}/R{page.robustness or 1}"
-        claim_lines.append(
-            f"- `{page.id}` — {page.headline} [{direction}{credence_tag}] ({stats})"
-        )
-
-    question_lines = []
-    for q in child_questions:
-        sub_considerations = await graph.get_considerations_for_question(q.id)
-        subtree_count = await _count_subtree_questions(q.id, graph)
-        parts = []
-        if sub_considerations:
-            parts.append(f"{len(sub_considerations)} considerations")
-        if subtree_count:
-            parts.append(
-                f"{subtree_count} subquestion{'s' if subtree_count != 1 else ''}"
-            )
-        stats = ", ".join(parts) if parts else "no research yet"
-        question_lines.append(f"- `{q.id}` — {q.headline} ({stats})")
-
-    claims_text = "\n".join(claim_lines) if claim_lines else "(none)"
-    questions_text = "\n".join(question_lines) if question_lines else "(none)"
-    return claims_text, questions_text
 
 
 def compute_priority_score(
@@ -644,138 +564,6 @@ async def assess_question(
     assess = cls(question_id, call, db, broadcaster=broadcaster)
     await assess.run()
     return call.id
-
-
-async def _run_assess_concept_loop(
-    concept_id: str,
-    db: DB,
-    phase: str,
-    max_rounds: int,
-    fruit_threshold: int,
-    parent_call_id: str | None = None,
-    broadcaster=None,
-) -> dict:
-    """Run assess_concept rounds until fruit drops below threshold or max_rounds reached.
-
-    Returns the review dict from the final round.
-    """
-    log.info(
-        "_run_assess_concept_loop: concept=%s, phase=%s, max_rounds=%d, threshold=%d",
-        concept_id[:8],
-        phase,
-        max_rounds,
-        fruit_threshold,
-    )
-    last_review: dict = {}
-    for i in range(max_rounds):
-        call = await db.create_call(
-            CallType.ASSESS_CONCEPT,
-            scope_page_id=concept_id,
-            parent_call_id=parent_call_id,
-        )
-        assess = AssessConceptCall(
-            concept_id, call, db, phase=phase, broadcaster=broadcaster
-        )
-        await assess.run()
-        last_review = assess.concept_assessment
-
-        remaining_fruit = last_review.get("remaining_fruit", 10)
-        log.info(
-            "Assess concept round %d/%d (%s): fruit=%d, score=%s",
-            i + 1,
-            max_rounds,
-            phase,
-            remaining_fruit,
-            last_review.get("score"),
-        )
-        if remaining_fruit <= fruit_threshold:
-            log.info(
-                "Concept fruit (%d) at or below threshold (%d), stopping %s phase",
-                remaining_fruit,
-                fruit_threshold,
-                phase,
-            )
-            break
-
-    return last_review
-
-
-async def run_concept_session(
-    question_id: str,
-    db: DB,
-    broadcaster=None,
-) -> None:
-    """Run a full concept-generation session for a research question.
-
-    1. Scout concepts — generate proposals for the question's subtree.
-    2. For each proposal: run stage-1 screening.
-    3. If screening passes: automatically run stage-2 validation.
-    """
-
-    log.info("run_concept_session: question=%s", question_id[:8])
-
-    scout_call = await db.create_call(
-        CallType.SCOUT_CONCEPTS,
-        scope_page_id=question_id,
-    )
-    scout = ScoutConceptsCall(question_id, scout_call, db, broadcaster=broadcaster)
-    await scout.run()
-    proposed_ids = scout.result.created_page_ids
-
-    log.info(
-        "Scout concepts complete: %d proposals for question=%s",
-        len(proposed_ids),
-        question_id[:8],
-    )
-
-    for concept_id in proposed_ids:
-        concept = await db.get_page(concept_id)
-        label = concept.headline[:60] if concept else concept_id[:8]
-        log.info("Screening concept: %s [%s]", label, concept_id[:8])
-
-        screening_review = await _run_assess_concept_loop(
-            concept_id,
-            db,
-            phase=SCREENING_PHASE,
-            max_rounds=SCREENING_MAX_ROUNDS,
-            fruit_threshold=SCREENING_FRUIT_THRESHOLD,
-            parent_call_id=scout_call.id,
-            broadcaster=broadcaster,
-        )
-
-        if not screening_review.get("screening_passed"):
-            log.info(
-                "Concept [%s] did not pass screening (score=%s)",
-                concept_id[:8],
-                screening_review.get("score"),
-            )
-            continue
-
-        log.info(
-            "Concept [%s] passed screening (score=%s), proceeding to validation",
-            concept_id[:8],
-            screening_review.get("score"),
-        )
-
-        validation_review = await _run_assess_concept_loop(
-            concept_id,
-            db,
-            phase=VALIDATION_PHASE,
-            max_rounds=VALIDATION_MAX_ROUNDS,
-            fruit_threshold=VALIDATION_FRUIT_THRESHOLD,
-            parent_call_id=scout_call.id,
-            broadcaster=broadcaster,
-        )
-
-        concept_page = await db.get_page(concept_id)
-        if concept_page and concept_page.is_superseded:
-            log.info("Concept [%s] was promoted to research workspace", concept_id[:8])
-        else:
-            log.info(
-                "Concept [%s] completed validation but was not promoted (score=%s)",
-                concept_id[:8],
-                validation_review.get("score"),
-            )
 
 
 async def web_research_question(

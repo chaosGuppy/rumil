@@ -20,7 +20,6 @@ from rumil.orchestrators.common import (
     score_items_sequentially,
     find_considerations_until_done,
     ingest_until_done,
-    run_concept_session,
     web_research_question,
 )
 from rumil.orchestrators.experimental import ExperimentalOrchestrator
@@ -58,6 +57,5 @@ __all__ = [
     "find_considerations_until_done",
     "score_items_sequentially",
     "ingest_until_done",
-    "run_concept_session",
     "web_research_question",
 ]

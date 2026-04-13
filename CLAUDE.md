@@ -74,9 +74,9 @@ Always use the supabase cli to create new migrations: `supabase migration new`.
 
 Architecture:
 - `CallRunner` (`stages.py`) — base class for all call types. Owns `run()` orchestration via `CallInfra` (bundles `CallTrace`, `MoveState`, DB, call). Subclasses set class-level `context_builder_cls`, `workspace_updater_cls`, `closing_reviewer_cls`, and `call_type` attributes, plus override `_make_*()` factory methods for parameterized stages and `task_description()`.
-- `ContextBuilder` ABC — `build_context(infra) -> ContextResult`. Implementations in `context_builders.py`: `EmbeddingContext`, `IngestEmbeddingContext`, `ScoutEmbeddingContext`, `ConceptScoutContext`, `ConceptAssessContext`, `WebResearchEmbeddingContext`, `BigAssessContext`.
+- `ContextBuilder` ABC — `build_context(infra) -> ContextResult`. Implementations in `context_builders.py`: `EmbeddingContext`, `IngestEmbeddingContext`, `ScoutEmbeddingContext`, `WebResearchEmbeddingContext`, `BigAssessContext`.
 - `WorkspaceUpdater` ABC — `update_workspace(infra, context) -> UpdateResult`. Reusable implementations in `page_creators.py`: `SimpleAgentLoop` (single-pass), `MultiRoundLoop` (multi-round with fruit checks), `WebResearchLoop` (server tools + scraping). Call-specific implementations may live in the call's own module (e.g. `LinkerWorkspaceUpdater` in `link_subquestions.py`).
-- `ClosingReviewer` ABC — `closing_review(infra, context, creation) -> None` (persists all results as side effects). Implementations in `closing_reviewers.py`: `StandardClosingReview`, `IngestClosingReview`, `WebResearchClosingReview`, `SinglePhaseScoutReview`, `ConceptAssessReview`.
+- `ClosingReviewer` ABC — `closing_review(infra, context, creation) -> None` (persists all results as side effects). Implementations in `closing_reviewers.py`: `StandardClosingReview`, `IngestClosingReview`, `WebResearchClosingReview`, `SinglePhaseScoutReview`.
 - Data types (`stages.py`): `CallInfra` (shared infra), `ContextResult` (context output), `UpdateResult` (workspace update output).
 
 The three phases:
@@ -100,7 +100,7 @@ To add a new call type: subclass `CallRunner`. Set `call_type`, override `_make_
 
 **Projects vs Workspace enum** — two separate concepts with confusingly similar names:
 - **Project** (`projects` table, `project_id` FK): The user-facing isolation mechanism. The CLI `--workspace <name>` flag resolves to a `Project` row via `db.get_or_create_project(name)`, then `db.project_id` is set. Every query on pages/calls/runs/links filters by `project_id`, so projects are fully isolated from each other.
-- **Workspace enum** (`models.Workspace`): An internal layer within a project — `RESEARCH` (default, normal pages), `PRIORITIZATION` (prioritization call outputs), `CONCEPT_STAGING` (concept proposals). This is orthogonal to project_id; every page has both.
+- **Workspace enum** (`models.Workspace`): An internal layer within a project — `RESEARCH` (default, normal pages), `PRIORITIZATION` (prioritization call outputs). This is orthogonal to project_id; every page has both.
 
 **Data models** (`src/rumil/models.py`): Pydantic BaseModels for Page, PageLink, Call, Project. Used directly as both internal models and FastAPI response types (no separate `*Out` duplicates). Fields with defaults use `_all_fields_required` schema helper so they appear required in the OpenAPI spec. Key enums: PageType, CallType, CallStage, LinkType, ConsiderationDirection, MoveType. MoveType is the source of truth for valid moves — the moves registry maps each to its `MoveDef`. `DISPATCHABLE_CALL_TYPES` defines which `CallType`s prioritization can dispatch (find_considerations/assess/prioritization) — the dispatch tool validates against it and the orchestrator dispatches on `CallType` enum values.
 

@@ -28,7 +28,6 @@ class PageType(str, Enum):
     CLAIM = "claim"
     QUESTION = "question"
     JUDGEMENT = "judgement"
-    CONCEPT = "concept"
     WIKI = "wiki"
     SUMMARY = "summary"
 
@@ -47,7 +46,6 @@ class PageLayer(str, Enum):
 class Workspace(str, Enum):
     RESEARCH = "research"
     PRIORITIZATION = "prioritization"
-    CONCEPT_STAGING = "concept_staging"
 
 
 class CallType(str, Enum):
@@ -58,8 +56,6 @@ class CallType(str, Enum):
     REFRAME = "reframe"
     MAINTAIN = "maintain"
     SUMMARIZE = "summarize"
-    SCOUT_CONCEPTS = "scout_concepts"
-    ASSESS_CONCEPT = "assess_concept"
     SCOUT_SUBQUESTIONS = "scout_subquestions"
     SCOUT_ESTIMATES = "scout_estimates"
     SCOUT_HYPOTHESES = "scout_hypotheses"
@@ -131,7 +127,6 @@ class MoveType(str, Enum):
     CREATE_SCOUT_QUESTION = "CREATE_SCOUT_QUESTION"
     CREATE_SUBQUESTION = "CREATE_SUBQUESTION"
     CREATE_JUDGEMENT = "CREATE_JUDGEMENT"
-    CREATE_CONCEPT = "CREATE_CONCEPT"
     CREATE_WIKI_PAGE = "CREATE_WIKI_PAGE"
     LINK_CONSIDERATION = "LINK_CONSIDERATION"
     LINK_CHILD_QUESTION = "LINK_CHILD_QUESTION"
@@ -142,8 +137,6 @@ class MoveType(str, Enum):
     LOAD_PAGE = "LOAD_PAGE"
     REMOVE_LINK = "REMOVE_LINK"
     CHANGE_LINK_ROLE = "CHANGE_LINK_ROLE"
-    PROPOSE_CONCEPT = "PROPOSE_CONCEPT"
-    PROMOTE_CONCEPT = "PROMOTE_CONCEPT"
     UPDATE_EPISTEMIC = "UPDATE_EPISTEMIC"
     LINK_DEPENDS_ON = "LINK_DEPENDS_ON"
 

@@ -18,6 +18,8 @@ from rumil.llm import LLMExchangeMetadata, structured_call
 from rumil.models import CallType, LinkType
 from rumil.moves.base import link_pages
 from rumil.scope_subquestion_linker.prompt import build_linker_prompt
+from rumil.scope_subquestion_linker.seed_selection import select_seed_questions
+from rumil.scope_subquestion_linker.subgraph import render_question_subgraph
 from rumil.scope_subquestion_linker.validation import validate_proposals
 from rumil.scope_subquestion_linker.tool import (
     LinkerResult,
@@ -32,20 +34,35 @@ from rumil.tracing.trace_events import (
     ProposedSubquestion,
     ReviewCompleteEvent,
 )
-from rumil.workspace_map import build_workspace_map
 
 log = logging.getLogger(__name__)
 
 
 class LinkerContextBuilder(ContextBuilder):
-    """Build workspace map + scope question details for the linker agent."""
+    """Select relevant seed questions, render their subgraphs, and build context."""
 
     async def build_context(self, infra: CallInfra) -> ContextResult:
+        settings = get_settings()
         scope = await infra.db.get_page(infra.question_id)
         if scope is None:
             raise ValueError(f"Scope question {infra.question_id} not found")
 
-        map_text, _ = await build_workspace_map(infra.db)
+        seeds = await select_seed_questions(
+            scope, infra.db, limit=settings.scope_subquestion_linker_seed_limit
+        )
+        log.info("LinkerContextBuilder: selected %d seed question(s)", len(seeds))
+
+        seed_blocks: list[str] = []
+        for seed in seeds:
+            sub = await render_question_subgraph(
+                seed.id,
+                infra.db,
+                max_pages=settings.scope_subquestion_linker_subgraph_max_pages,
+                exclude_ids={scope.id},
+            )
+            if sub:
+                seed_blocks.append(sub)
+        seed_block = "\n\n".join(seed_blocks)
 
         current_children = await infra.db.get_child_questions(infra.question_id)
         if current_children:
@@ -56,13 +73,13 @@ class LinkerContextBuilder(ContextBuilder):
             children_block = "(none)"
 
         context_text = (
-            "## Workspace Map\n\n"
-            f"{map_text}\n\n"
             "## Scope Question\n\n"
             f"`{scope.id[:8]}` -- {scope.headline}\n\n"
             f"{scope.content or scope.abstract}\n\n"
             "## Currently-Linked Subquestions\n\n"
-            f"{children_block}\n"
+            f"{children_block}\n\n"
+            "## Seed Subgraphs (most relevant top-level questions)\n\n"
+            f"{seed_block or '(none)'}\n"
         )
 
         await infra.trace.record(ContextBuiltEvent())

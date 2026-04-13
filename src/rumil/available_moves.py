@@ -137,10 +137,6 @@ PRESETS: dict[str, AvailableMoves] = {
             MoveType.LINK_DEPENDS_ON,
             MoveType.LOAD_PAGE,
         ],
-        CallType.SCOUT_CONCEPTS: [
-            MoveType.PROPOSE_CONCEPT,
-            MoveType.LOAD_PAGE,
-        ],
         CallType.WEB_RESEARCH: [
             MoveType.CREATE_CLAIM,
             MoveType.LINK_CONSIDERATION,
@@ -275,10 +271,6 @@ PRESETS: dict[str, AvailableMoves] = {
             MoveType.CREATE_CLAIM,
             MoveType.LINK_VARIANT,
             MoveType.LINK_DEPENDS_ON,
-            MoveType.LOAD_PAGE,
-        ],
-        CallType.SCOUT_CONCEPTS: [
-            MoveType.PROPOSE_CONCEPT,
             MoveType.LOAD_PAGE,
         ],
         CallType.WEB_RESEARCH: [

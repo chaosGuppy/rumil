@@ -37,7 +37,7 @@ Each call you receive is a specific, bounded task. You do that task, produce str
 
 ## Page Types
 
-The workspace contains Claims, Questions, Judgements, Concepts, Sources, and Wiki pages. Your tools describe each type and how to create them.
+The workspace contains Claims, Questions, Judgements, Sources, and Wiki pages. Your tools describe each type and how to create them.
 
 **Source** pages are ingested documents — they are created by the system, not by other research instances.
 

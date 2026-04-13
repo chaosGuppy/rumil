@@ -12,7 +12,9 @@ from rumil.calls.stages import (
     WorkspaceUpdater,
 )
 from rumil.constants import DEFAULT_VIEW_SECTIONS
+from rumil.database import DB
 from rumil.models import (
+    Call,
     CallType,
     LinkType,
     Page,
@@ -35,9 +37,9 @@ class CreateViewCall(CallRunner):
     closing_reviewer_cls = ViewClosingReview  # type: ignore[assignment]
     call_type = CallType.CREATE_VIEW
 
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, question_id: str, call: Call, db: DB, **kwargs) -> None:
         self._view_id: str = ""
-        super().__init__(*args, **kwargs)
+        super().__init__(question_id, call, db, **kwargs)
 
     async def _run_stages(self) -> None:
         """Create the View page infrastructure, then rebuild stages that need the view_id."""

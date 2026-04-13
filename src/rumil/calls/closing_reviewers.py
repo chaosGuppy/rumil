@@ -27,6 +27,7 @@ from rumil.llm import (
     build_system_prompt,
     build_user_message,
     structured_call,
+    text_call,
 )
 from rumil.models import CallType, MoveType, PageType
 from rumil.available_moves import get_moves_for_call
@@ -97,8 +98,6 @@ class ViewClosingReview(StandardClosingReview):
         context: ContextResult,
         creation: UpdateResult,
     ) -> None:
-        from rumil.llm import text_call
-
         items = await infra.db.get_view_items(self._view_id, min_importance=4)
         if items:
             item_lines: list[str] = []

@@ -5,17 +5,18 @@ Two new UIs (separate from existing `frontend/`), plus API work to back them.
 ## Architecture
 
 ```
-public-ui/         separate Next.js app + FastAPI backend (serve.py)
-                   self-contained: own SQLite DB, own Anthropic API integration
-                   no dependency on rumil core — intentionally separate for now
-operator-ui/       separate Next.js app — superset of public features + dev tools
-                   (not yet created)
-packages/          shared components extracted when operator-ui needs them
-                   (not yet created)
+public-ui/                 Next.js app + FastAPI backend (serve.py)
+                           self-contained: own SQLite DB, own Anthropic API integration
+                           no dependency on rumil core — intentionally separate for now
+  src/app/(public)/        public routes (worldview browser, views, chat)
+  src/app/(operator)/      operator routes (traces, quality tools)
+  src/components/          shared components
+  src/components/operator/ operator-only components (never imported by public routes)
 ```
 
-Security boundary: public app literally cannot render traces/prompts/orchestration
-because that code doesn't exist in its bundle.
+Operator UI lives in the same Next.js app via route groups. Next.js code-splits
+by route, so operator components never appear in the public JS bundle.
+Source co-location is fine — the bundle separation is what matters.
 
 ## Design Principles
 
@@ -126,29 +127,38 @@ but not a near-term goal.
 - Each suggestion shows type, target node, reasoning, accept/reject buttons
 - Accessible via `/review` slash command in chat
 
-## Operator UI
+## Operator UI (/traces, /quality, etc.)
 
-Same core experience as public UI (worldview + chat + model tools) but with
-visibility into the system's internals and quality controls. The chat model
-has the same capabilities plus cleanup/review tools.
+Same app as public UI (route groups), with operator routes at /traces etc.
+Operator components in `src/components/operator/`, never imported by public routes.
 
-### Additional Operator Capabilities
-- **Trace Inspector** — call trees, LLM exchanges verbatim, cost/tokens/duration.
-  Integrated with worldview (click a provenance link → see the call that made it).
-  Backed by: GET /api/runs/{run_id}/trace-tree, GET /api/calls/{call_id}/events
-- **Research Graph Explorer** — visual graph of pages and links. Filter by type,
-  credence, recency. Click node → page detail. Upgrade of current subgraph-view.
-- **Quality Dashboard** — confusion scan results, structured review punch lists,
-  graph health (barren questions, orphans), rating distributions.
-- **Cleanup Tools** — model can run grounding/feedback pipelines from chat.
-  Review → clean loop accessible through conversation.
+### Trace Viewer ✓ (mock data, pending backend instrumentation)
+- `/traces` — run list with type/status filters, cost/token summaries
+- `/traces/[runId]` — full trace detail with:
+  - Span-based event hierarchy (flat events reconstructed into tree)
+  - ModelEventCard: model name, config (temp/max_tokens), full input messages,
+    output, token breakdown (input/cache_read/cache_write/output), cost, duration
+  - ToolEventCard: function name, arguments, result, error, duration
+  - TokenBar: stacked horizontal bar with cache visibility
+  - MessageInspector: role-colored messages, collapsible system prompt,
+    tool_use/tool_result blocks as structured JSON
+- Types in `src/lib/operator-types.ts` (Inspect AI-inspired event model)
+- Currently uses mock data — needs serve.py `trace_events` table + instrumentation
 
-### What Operator Chat Adds Over Public Chat
-- Trace visibility: "show me the call that produced this claim"
-- Quality tools: "scan this question for confusion", "run a review"
-- Cleanup: "re-ground these weakly-sourced claims"
-- Raw page/link inspection: full graph navigation
-- Cost/budget visibility: "how much has this investigation cost?"
+### Trace Backend TODO
+- [ ] `trace_events` table in SQLite (event_type, span_id, parent_span_id, data JSON)
+- [ ] Instrument `client.messages.create`/`.stream` calls to record ModelEvents
+- [ ] Instrument tool execution to record ToolEvents with timing
+- [ ] `GET /api/operator/runs` — run list with aggregated cost/tokens
+- [ ] `GET /api/operator/runs/{run_id}` — full trace with events
+- [ ] Token usage + cost columns on `runs` table
+
+### Future Operator Features
+- **Quality Dashboard** — per-branch health, node counts, gap identification
+- **Node Editor** — direct editing of node properties without chat
+- **Research Graph Explorer** — visual graph navigation
+- **Power Chat** — chat with additional tools (edit_node, delete_node, etc.)
+- **Cost Tracking** — per-run and cumulative API costs
 
 ## API Status (serve.py)
 
@@ -175,16 +185,11 @@ has the same capabilities plus cleanup/review tools.
 - Public UI: eventually authenticated (track who initiated what)
 - Operator UI: authenticated + admin role
 
-## Shared Components (extract when building operator-ui)
+## Shared Components
 
-- WorldviewNode renderer (card, credence badge, type label)
-- Stacked panes navigation
-- Article view + ToC sidebar
-- Vertical view
-- Chat panel + slash commands
-- Suggestion review
-- View mode switcher
-- Workspace browser
+All shared components live in `src/components/` and are used by both
+public and operator routes. Operator-only components are in
+`src/components/operator/`.
 
 ## Open Questions
 

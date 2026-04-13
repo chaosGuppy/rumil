@@ -35,13 +35,21 @@ def _dummy_call():
 
 async def test_loads_page_by_short_id(tmp_db):
     page = await _make_page(tmp_db)
-    result = await execute(LoadPagePayload(page_id=page.id[:8]), _dummy_call(), tmp_db)
+    result = await execute(
+        LoadPagePayload(page_id=page.id[:8], detail="content"),
+        _dummy_call(),
+        tmp_db,
+    )
     assert "Test claim content" in result.message
 
 
 async def test_loads_page_by_full_id(tmp_db):
     page = await _make_page(tmp_db)
-    result = await execute(LoadPagePayload(page_id=page.id), _dummy_call(), tmp_db)
+    result = await execute(
+        LoadPagePayload(page_id=page.id, detail="content"),
+        _dummy_call(),
+        tmp_db,
+    )
     assert "Test claim content" in result.message
 
 

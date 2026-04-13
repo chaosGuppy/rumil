@@ -12,8 +12,21 @@ from rumil.moves.base import MoveDef, MoveResult
 log = logging.getLogger(__name__)
 
 
+_DETAIL_MAP: dict[str, PageDetail] = {
+    "abstract": PageDetail.ABSTRACT,
+    "content": PageDetail.CONTENT,
+}
+
+
 class LoadPagePayload(BaseModel):
     page_id: str = Field(description="Short ID (first 8 chars) from the workspace map")
+    detail: str = Field(
+        default="abstract",
+        description=(
+            "Level of detail: 'abstract' (short summary, default) "
+            "or 'content' (full text)"
+        ),
+    )
 
 
 async def execute(payload: LoadPagePayload, call: Call, db: DB) -> MoveResult:
@@ -26,11 +39,15 @@ async def execute(payload: LoadPagePayload, call: Call, db: DB) -> MoveResult:
     if not page:
         log.debug("load_page: page '%s' resolved but not loadable", page_id)
         return MoveResult(f"Page '{page_id}' not found.")
+    detail = _DETAIL_MAP.get(payload.detail, PageDetail.ABSTRACT)
     log.debug(
-        "load_page: loaded %s (%s, %d chars)",
-        full_id[:8], page.page_type.value, len(page.content),
+        "load_page: loaded %s (%s, detail=%s, %d chars)",
+        full_id[:8],
+        page.page_type.value,
+        detail.value,
+        len(page.content),
     )
-    return MoveResult(await format_page(page, PageDetail.CONTENT, db=db))
+    return MoveResult(await format_page(page, detail, db=db))
 
 
 MOVE = MoveDef(

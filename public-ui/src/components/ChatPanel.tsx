@@ -151,10 +151,11 @@ function ToolBlock({ tu, onAction, onNodeRef }: {
       </details>
     );
   }
+  const progress = (tu.input._progress as string) || "";
   return (
     <div style={{ padding: "2px 0" }}>
       {tu.result ? "✓" : "⟳"} {tu.name}
-      {tu.result ? ` — ${tu.result.slice(0, 80)}` : " …"}
+      {tu.result ? ` — ${tu.result.slice(0, 80)}` : progress ? ` — ${progress}` : " …"}
     </div>
   );
 }
@@ -447,6 +448,20 @@ export function ChatPanel({
               const idMatch = toolResult.match(/node ([0-9a-f]{8})/);
               if (idMatch) onNodeRef?.(idMatch[1]);
             }
+          } else if (event.type === "orchestrator_progress") {
+            // Update the pending run_orchestrator tool block with progress
+            let matched = false;
+            currentBlocks = currentBlocks.map((b) => {
+              if (!matched && b.type === "tool" && b.tool.name === "run_orchestrator" && !b.tool.result) {
+                matched = true;
+                return {
+                  type: "tool" as const,
+                  tool: { ...b.tool, input: { ...b.tool.input, _progress: event.data.message as string } },
+                };
+              }
+              return b;
+            });
+            updateMessage();
           } else if (event.type === "error") {
             fullText += `\n\n*Error: ${event.data.message}*`;
             const textBlock = ensureTextBlock();

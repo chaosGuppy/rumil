@@ -20,6 +20,7 @@ import uuid
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
+from collections.abc import Callable
 from typing import Any
 
 import anthropic
@@ -901,14 +902,19 @@ async def _run_orchestrator_from_chat(
     params: dict,
     api_key: str | None,
     chat_run_id: str,
+    on_progress: Callable[[str], None] | None = None,
 ) -> str:
-    """Execute an orchestrator run triggered from chat. Returns a summary string."""
+    """Execute an orchestrator run triggered from chat. Returns a summary string.
+
+    on_progress is called with a short status string after each tool action,
+    so the streaming handler can emit progress events.
+    """
     if not api_key:
         return "Cannot run orchestrator: ANTHROPIC_API_KEY not set."
 
     scope_id = params["scope_id"]
     run_type_name = params.get("run_type", "explore")
-    dry_run = params.get("dry_run", True)
+    dry_run = params.get("dry_run", False)
     ws_id = params["ws_id"]
 
     try:
@@ -931,6 +937,9 @@ async def _run_orchestrator_from_chat(
     )
     conn.commit()
 
+    if on_progress:
+        on_progress(f"starting {run_type_name} on '{scope_headline[:40]}'...")
+
     context = build_branch_context(
         conn, scope_id, layers=config["context_layers"], ws_id=ws_id,
     )
@@ -952,6 +961,15 @@ async def _run_orchestrator_from_chat(
         now_iso=now_iso,
     )
 
+    action_count = [0]  # mutable counter for closure
+
+    def on_action(action: dict) -> None:
+        action_count[0] += 1
+        tool_name = action.get("tool", "?")
+        result_preview = action.get("result", "")[:60]
+        if on_progress:
+            on_progress(f"[{action_count[0]}] {tool_name}: {result_preview}")
+
     result = await run_step(
         system_prompt=system_prompt,
         user_message=user_message,
@@ -961,6 +979,7 @@ async def _run_orchestrator_from_chat(
         max_rounds=config.get("max_rounds", 8),
         max_tokens=config.get("max_tokens", 4096),
         temperature=config.get("temperature", 0.5),
+        on_action=on_action,
     )
 
     conn.execute(
@@ -1199,9 +1218,13 @@ async def chat_stream(request: ChatRequest):
                     result_str = execute_tool(conn, ws_id, root_id, tc.name, tc.input, run_id)
                     if tc.name == "run_orchestrator" and "__async_orchestrate__" in result_str:
                         params = json.loads(result_str)
+                        progress_msgs: list[str] = []
                         result_str = await _run_orchestrator_from_chat(
                             conn, params, api_key, run_id,
+                            on_progress=lambda msg: progress_msgs.append(msg),
                         )
+                        for pmsg in progress_msgs:
+                            yield _sse("orchestrator_progress", {"message": pmsg})
                     yield _sse("tool_use_result", {
                         "name": tc.name,
                         "input": tc.input,

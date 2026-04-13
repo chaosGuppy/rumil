@@ -1147,6 +1147,20 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
           )}
         </div>
       )}
+
+      {event.event === "view_created" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">view</span>
+            <Link
+              href={`/pages/${event.view_id}`}
+              className="trace-page-chip"
+            >
+              {event.view_headline || event.view_id.slice(0, 8)}
+            </Link>
+          </div>
+        </div>
+      )}
     </div>
   );
 });

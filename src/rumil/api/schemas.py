@@ -36,6 +36,7 @@ from rumil.tracing.trace_events import (
     ToolCallEvent,
     UpdatePlanCreatedEvent,
     UpdateSubgraphComputedEvent,
+    ViewCreatedEvent,
     WarningEvent,
     WebResearchCompleteEvent,
 )
@@ -166,6 +167,10 @@ class LinkSubquestionsCompleteEventOut(
     pass
 
 
+class ViewCreatedEventOut(ViewCreatedEvent, _TraceEnvelopeMixin):
+    pass
+
+
 class PhaseSkippedEventOut(PhaseSkippedEvent, _TraceEnvelopeMixin):
     pass
 
@@ -195,6 +200,7 @@ TraceEventOut = Annotated[
     | WebResearchCompleteEventOut
     | RenderQuestionSubgraphEventOut
     | LinkSubquestionsCompleteEventOut
+    | ViewCreatedEventOut
     | PhaseSkippedEventOut,
     Field(discriminator="event"),
 ]

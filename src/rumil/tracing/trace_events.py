@@ -244,6 +244,14 @@ class LinkSubquestionsCompleteEvent(BaseModel):
     proposed: list[ProposedSubquestion] = []
 
 
+class ViewCreatedEvent(BaseModel):
+    event: Literal["view_created"] = "view_created"
+    view_id: str
+    view_headline: str = ""
+    question_id: str = ""
+    superseded_view_id: str | None = None
+
+
 class PhaseSkippedEvent(BaseModel):
     event: Literal["phase_skipped"] = "phase_skipped"
     phase: str = ""
@@ -275,6 +283,7 @@ TraceEvent = Annotated[
     | WebResearchCompleteEvent
     | RenderQuestionSubgraphEvent
     | LinkSubquestionsCompleteEvent
+    | ViewCreatedEvent
     | PhaseSkippedEvent,
     Field(discriminator="event"),
 ]

@@ -17,6 +17,7 @@ PRESETS: dict[str, AvailableMoves] = {
             MoveType.LINK_DEPENDS_ON,
             MoveType.LOAD_PAGE,
             MoveType.UPDATE_EPISTEMIC,
+            MoveType.PROPOSE_VIEW_ITEM,
         ],
         CallType.ASSESS: [
             MoveType.CREATE_CLAIM,
@@ -46,12 +47,14 @@ PRESETS: dict[str, AvailableMoves] = {
             MoveType.LINK_CONSIDERATION,
             MoveType.LINK_DEPENDS_ON,
             MoveType.LOAD_PAGE,
+            MoveType.PROPOSE_VIEW_ITEM,
         ],
         CallType.SCOUT_HYPOTHESES: [
             MoveType.CREATE_CLAIM,
             MoveType.LINK_CONSIDERATION,
             MoveType.LINK_DEPENDS_ON,
             MoveType.LOAD_PAGE,
+            MoveType.PROPOSE_VIEW_ITEM,
         ],
         CallType.SCOUT_ESTIMATES: [
             MoveType.CREATE_CLAIM,
@@ -59,6 +62,7 @@ PRESETS: dict[str, AvailableMoves] = {
             MoveType.LINK_CONSIDERATION,
             MoveType.LINK_DEPENDS_ON,
             MoveType.LOAD_PAGE,
+            MoveType.PROPOSE_VIEW_ITEM,
         ],
         CallType.SCOUT_ANALOGIES: [
             MoveType.CREATE_CLAIM,
@@ -67,6 +71,7 @@ PRESETS: dict[str, AvailableMoves] = {
             MoveType.LINK_RELATED,
             MoveType.LINK_DEPENDS_ON,
             MoveType.LOAD_PAGE,
+            MoveType.PROPOSE_VIEW_ITEM,
         ],
         CallType.SCOUT_PARADIGM_CASES: [
             MoveType.CREATE_CLAIM,
@@ -74,6 +79,7 @@ PRESETS: dict[str, AvailableMoves] = {
             MoveType.LINK_CONSIDERATION,
             MoveType.LINK_DEPENDS_ON,
             MoveType.LOAD_PAGE,
+            MoveType.PROPOSE_VIEW_ITEM,
         ],
         CallType.SCOUT_FACTCHECKS: [
             MoveType.CREATE_CLAIM,
@@ -81,6 +87,7 @@ PRESETS: dict[str, AvailableMoves] = {
             MoveType.LINK_CONSIDERATION,
             MoveType.LINK_DEPENDS_ON,
             MoveType.LOAD_PAGE,
+            MoveType.PROPOSE_VIEW_ITEM,
         ],
         CallType.SCOUT_WEB_QUESTIONS: [
             MoveType.CREATE_CLAIM,
@@ -88,6 +95,7 @@ PRESETS: dict[str, AvailableMoves] = {
             MoveType.LINK_CONSIDERATION,
             MoveType.LINK_DEPENDS_ON,
             MoveType.LOAD_PAGE,
+            MoveType.PROPOSE_VIEW_ITEM,
         ],
         CallType.SCOUT_DEEP_QUESTIONS: [
             MoveType.CREATE_CLAIM,
@@ -95,18 +103,21 @@ PRESETS: dict[str, AvailableMoves] = {
             MoveType.LINK_CONSIDERATION,
             MoveType.LINK_DEPENDS_ON,
             MoveType.LOAD_PAGE,
+            MoveType.PROPOSE_VIEW_ITEM,
         ],
         CallType.SCOUT_C_HOW_TRUE: [
             MoveType.CREATE_CLAIM,
             MoveType.LINK_CONSIDERATION,
             MoveType.LINK_DEPENDS_ON,
             MoveType.LOAD_PAGE,
+            MoveType.PROPOSE_VIEW_ITEM,
         ],
         CallType.SCOUT_C_HOW_FALSE: [
             MoveType.CREATE_CLAIM,
             MoveType.LINK_CONSIDERATION,
             MoveType.LINK_DEPENDS_ON,
             MoveType.LOAD_PAGE,
+            MoveType.PROPOSE_VIEW_ITEM,
         ],
         CallType.SCOUT_C_CRUXES: [
             MoveType.CREATE_CLAIM,
@@ -114,28 +125,33 @@ PRESETS: dict[str, AvailableMoves] = {
             MoveType.LINK_CONSIDERATION,
             MoveType.LINK_DEPENDS_ON,
             MoveType.LOAD_PAGE,
+            MoveType.PROPOSE_VIEW_ITEM,
         ],
         CallType.SCOUT_C_RELEVANT_EVIDENCE: [
             MoveType.CREATE_SCOUT_QUESTION,
             MoveType.LINK_CONSIDERATION,
             MoveType.LOAD_PAGE,
+            MoveType.PROPOSE_VIEW_ITEM,
         ],
         CallType.SCOUT_C_STRESS_TEST_CASES: [
             MoveType.CREATE_SCOUT_QUESTION,
             MoveType.LINK_CONSIDERATION,
             MoveType.LOAD_PAGE,
+            MoveType.PROPOSE_VIEW_ITEM,
         ],
         CallType.SCOUT_C_ROBUSTIFY: [
             MoveType.CREATE_CLAIM,
             MoveType.LINK_VARIANT,
             MoveType.LINK_DEPENDS_ON,
             MoveType.LOAD_PAGE,
+            MoveType.PROPOSE_VIEW_ITEM,
         ],
         CallType.SCOUT_C_STRENGTHEN: [
             MoveType.CREATE_CLAIM,
             MoveType.LINK_VARIANT,
             MoveType.LINK_DEPENDS_ON,
             MoveType.LOAD_PAGE,
+            MoveType.PROPOSE_VIEW_ITEM,
         ],
         CallType.SCOUT_CONCEPTS: [
             MoveType.PROPOSE_CONCEPT,
@@ -146,6 +162,12 @@ PRESETS: dict[str, AvailableMoves] = {
             MoveType.LINK_CONSIDERATION,
             MoveType.LINK_DEPENDS_ON,
             MoveType.LOAD_PAGE,
+            MoveType.PROPOSE_VIEW_ITEM,
+        ],
+        CallType.CREATE_VIEW: [
+            MoveType.CREATE_VIEW_ITEM,
+            MoveType.LOAD_PAGE,
+            MoveType.UPDATE_EPISTEMIC,
         ],
     },
     "judge-on-assess": {
@@ -167,6 +189,7 @@ PRESETS: dict[str, AvailableMoves] = {
             MoveType.LINK_DEPENDS_ON,
             MoveType.LOAD_PAGE,
             MoveType.UPDATE_EPISTEMIC,
+            MoveType.PROPOSE_VIEW_ITEM,
         ],
         CallType.INGEST: [
             MoveType.CREATE_CLAIM,
@@ -186,12 +209,14 @@ PRESETS: dict[str, AvailableMoves] = {
             MoveType.LINK_CONSIDERATION,
             MoveType.LINK_DEPENDS_ON,
             MoveType.LOAD_PAGE,
+            MoveType.PROPOSE_VIEW_ITEM,
         ],
         CallType.SCOUT_HYPOTHESES: [
             MoveType.CREATE_CLAIM,
             MoveType.LINK_CONSIDERATION,
             MoveType.LINK_DEPENDS_ON,
             MoveType.LOAD_PAGE,
+            MoveType.PROPOSE_VIEW_ITEM,
         ],
         CallType.SCOUT_ESTIMATES: [
             MoveType.CREATE_CLAIM,
@@ -199,6 +224,7 @@ PRESETS: dict[str, AvailableMoves] = {
             MoveType.LINK_CONSIDERATION,
             MoveType.LINK_DEPENDS_ON,
             MoveType.LOAD_PAGE,
+            MoveType.PROPOSE_VIEW_ITEM,
         ],
         CallType.SCOUT_ANALOGIES: [
             MoveType.CREATE_CLAIM,
@@ -207,6 +233,7 @@ PRESETS: dict[str, AvailableMoves] = {
             MoveType.LINK_RELATED,
             MoveType.LINK_DEPENDS_ON,
             MoveType.LOAD_PAGE,
+            MoveType.PROPOSE_VIEW_ITEM,
         ],
         CallType.SCOUT_PARADIGM_CASES: [
             MoveType.CREATE_CLAIM,
@@ -214,6 +241,7 @@ PRESETS: dict[str, AvailableMoves] = {
             MoveType.LINK_CONSIDERATION,
             MoveType.LINK_DEPENDS_ON,
             MoveType.LOAD_PAGE,
+            MoveType.PROPOSE_VIEW_ITEM,
         ],
         CallType.SCOUT_FACTCHECKS: [
             MoveType.CREATE_CLAIM,
@@ -221,6 +249,7 @@ PRESETS: dict[str, AvailableMoves] = {
             MoveType.LINK_CONSIDERATION,
             MoveType.LINK_DEPENDS_ON,
             MoveType.LOAD_PAGE,
+            MoveType.PROPOSE_VIEW_ITEM,
         ],
         CallType.SCOUT_WEB_QUESTIONS: [
             MoveType.CREATE_CLAIM,
@@ -228,6 +257,7 @@ PRESETS: dict[str, AvailableMoves] = {
             MoveType.LINK_CONSIDERATION,
             MoveType.LINK_DEPENDS_ON,
             MoveType.LOAD_PAGE,
+            MoveType.PROPOSE_VIEW_ITEM,
         ],
         CallType.SCOUT_DEEP_QUESTIONS: [
             MoveType.CREATE_CLAIM,
@@ -235,18 +265,21 @@ PRESETS: dict[str, AvailableMoves] = {
             MoveType.LINK_CONSIDERATION,
             MoveType.LINK_DEPENDS_ON,
             MoveType.LOAD_PAGE,
+            MoveType.PROPOSE_VIEW_ITEM,
         ],
         CallType.SCOUT_C_HOW_TRUE: [
             MoveType.CREATE_CLAIM,
             MoveType.LINK_CONSIDERATION,
             MoveType.LINK_DEPENDS_ON,
             MoveType.LOAD_PAGE,
+            MoveType.PROPOSE_VIEW_ITEM,
         ],
         CallType.SCOUT_C_HOW_FALSE: [
             MoveType.CREATE_CLAIM,
             MoveType.LINK_CONSIDERATION,
             MoveType.LINK_DEPENDS_ON,
             MoveType.LOAD_PAGE,
+            MoveType.PROPOSE_VIEW_ITEM,
         ],
         CallType.SCOUT_C_CRUXES: [
             MoveType.CREATE_CLAIM,
@@ -254,28 +287,33 @@ PRESETS: dict[str, AvailableMoves] = {
             MoveType.LINK_CONSIDERATION,
             MoveType.LINK_DEPENDS_ON,
             MoveType.LOAD_PAGE,
+            MoveType.PROPOSE_VIEW_ITEM,
         ],
         CallType.SCOUT_C_RELEVANT_EVIDENCE: [
             MoveType.CREATE_SCOUT_QUESTION,
             MoveType.LINK_CONSIDERATION,
             MoveType.LOAD_PAGE,
+            MoveType.PROPOSE_VIEW_ITEM,
         ],
         CallType.SCOUT_C_STRESS_TEST_CASES: [
             MoveType.CREATE_SCOUT_QUESTION,
             MoveType.LINK_CONSIDERATION,
             MoveType.LOAD_PAGE,
+            MoveType.PROPOSE_VIEW_ITEM,
         ],
         CallType.SCOUT_C_ROBUSTIFY: [
             MoveType.CREATE_CLAIM,
             MoveType.LINK_VARIANT,
             MoveType.LINK_DEPENDS_ON,
             MoveType.LOAD_PAGE,
+            MoveType.PROPOSE_VIEW_ITEM,
         ],
         CallType.SCOUT_C_STRENGTHEN: [
             MoveType.CREATE_CLAIM,
             MoveType.LINK_VARIANT,
             MoveType.LINK_DEPENDS_ON,
             MoveType.LOAD_PAGE,
+            MoveType.PROPOSE_VIEW_ITEM,
         ],
         CallType.SCOUT_CONCEPTS: [
             MoveType.PROPOSE_CONCEPT,
@@ -286,6 +324,12 @@ PRESETS: dict[str, AvailableMoves] = {
             MoveType.LINK_CONSIDERATION,
             MoveType.LINK_DEPENDS_ON,
             MoveType.LOAD_PAGE,
+            MoveType.PROPOSE_VIEW_ITEM,
+        ],
+        CallType.CREATE_VIEW: [
+            MoveType.CREATE_VIEW_ITEM,
+            MoveType.LOAD_PAGE,
+            MoveType.UPDATE_EPISTEMIC,
         ],
     },
 }

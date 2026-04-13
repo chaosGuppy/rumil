@@ -13,6 +13,7 @@ const PAGE_TYPES: PageType[] = [
   "question",
   "claim",
   "judgement",
+  "view",
   "source",
   "concept",
   "wiki",
@@ -57,6 +58,18 @@ const TYPE_CONFIG: Record<
     bg: "var(--type-wiki-bg)",
     bgHover: "var(--type-wiki-bg-hover)",
     border: "var(--type-wiki-border)",
+  },
+  view: {
+    accent: "var(--type-view)",
+    bg: "var(--type-view-bg)",
+    bgHover: "var(--type-view-bg-hover)",
+    border: "var(--type-view-border)",
+  },
+  view_item: {
+    accent: "var(--type-view-item)",
+    bg: "var(--type-view-item-bg)",
+    bgHover: "var(--type-view-item-bg-hover)",
+    border: "var(--type-view-item-border)",
   },
 };
 
@@ -720,6 +733,16 @@ export default function PagesIndexPage() {
           --type-wiki-bg: #f3f6f3;
           --type-wiki-bg-hover: #e9f0ea;
           --type-wiki-border: #a5c0a9;
+
+          --type-view: #7a5a8c;
+          --type-view-bg: #f6f3f8;
+          --type-view-bg-hover: #eee9f2;
+          --type-view-border: #b8a5c5;
+
+          --type-view-item: #8c6a9e;
+          --type-view-item-bg: #f7f4f9;
+          --type-view-item-bg-hover: #f0eaf4;
+          --type-view-item-border: #c0aece;
         }
 
         @media (prefers-color-scheme: dark) {
@@ -759,6 +782,16 @@ export default function PagesIndexPage() {
             --type-wiki-bg: #0b140d;
             --type-wiki-bg-hover: #111d14;
             --type-wiki-border: #1a2e1f;
+
+            --type-view: #a07ab8;
+            --type-view-bg: #140e18;
+            --type-view-bg-hover: #1c1424;
+            --type-view-border: #2e2038;
+
+            --type-view-item: #b08ac8;
+            --type-view-item-bg: #150f1a;
+            --type-view-item-bg-hover: #1e1526;
+            --type-view-item-border: #32243e;
           }
           .run-staged-badge {
             color: #6aaa9f;

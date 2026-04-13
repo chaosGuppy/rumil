@@ -84,6 +84,69 @@ class StandardClosingReview(ClosingReviewer):
         )
 
 
+class ViewClosingReview(StandardClosingReview):
+    """Closing review for View creation: generates the NL summary for importance-5 items."""
+
+    def __init__(self, call_type: CallType, view_id: str) -> None:
+        super().__init__(call_type)
+        self._view_id = view_id
+
+    async def closing_review(
+        self,
+        infra: CallInfra,
+        context: ContextResult,
+        creation: UpdateResult,
+    ) -> None:
+        from rumil.llm import text_call
+
+        items = await infra.db.get_view_items(self._view_id, min_importance=4)
+        if items:
+            item_lines: list[str] = []
+            for page, link in items:
+                imp = link.importance or 0
+                marker = " [IMPORTANCE 5 — FOCUS]" if imp == 5 else ""
+                item_lines.append(
+                    f"### [C{page.credence}/R{page.robustness} I{imp}]{marker} "
+                    f"{page.headline}\n\n{page.content}\n"
+                )
+            items_text = "\n".join(item_lines)
+
+            question = await infra.db.get_page(infra.question_id)
+            q_headline = question.headline if question else "the question"
+
+            summary = await text_call(
+                system_prompt=(
+                    "You are writing a concise natural-language summary for a View page. "
+                    "The View summarizes current understanding on a research question. "
+                    "Focus especially on the IMPORTANCE 5 items — these are the most "
+                    "critical things to know. Frame their interactions, tensions, and "
+                    "overall epistemic posture. The summary should orient a reader who "
+                    "will see the individual items listed below it, so focus on synthesis "
+                    "and framing rather than repeating items verbatim. "
+                    "Keep it to 2-4 paragraphs."
+                ),
+                user_message=(
+                    f"Question: {q_headline}\n\n"
+                    f"## View Items (importance 4+)\n\n{items_text}\n\n"
+                    "Write the NL summary for this View."
+                ),
+            )
+
+            await infra.db.update_page_content(self._view_id, summary)
+            log.info(
+                "View %s NL summary written (%d chars)",
+                self._view_id[:8],
+                len(summary),
+            )
+
+        await super().closing_review(infra, context, creation)
+
+    def _result_summary(self, creation: UpdateResult) -> str:
+        return (
+            f"View created. {len(creation.created_page_ids)} items."
+        )
+
+
 class IngestClosingReview(StandardClosingReview):
     """Closing review that includes the source filename in the summary."""
 

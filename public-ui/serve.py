@@ -30,6 +30,23 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+# Add orchestrator package to import path
+import sys as _sys
+_sys.path.insert(0, str(Path(__file__).parent))
+
+from orchestrator import (
+    build_branch_context,
+    format_tree,
+    get_branch_health,
+    get_subtree,
+    list_run_types,
+    make_tool_executor,
+    pick_next_branch,
+    preview_branch_context,
+    resolve_run_type,
+    run_step,
+)
+
 DB_PATH = Path(__file__).parent / "worldview.db"
 PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 
@@ -99,12 +116,24 @@ def init_db() -> None:
             created_at TEXT NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS sources (
+            id TEXT PRIMARY KEY,
+            workspace_id TEXT NOT NULL REFERENCES workspaces(id),
+            title TEXT NOT NULL,
+            url TEXT,
+            abstract TEXT NOT NULL DEFAULT '',
+            content TEXT NOT NULL DEFAULT '',
+            extra TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL
+        );
+
         CREATE INDEX IF NOT EXISTS idx_nodes_workspace ON nodes(workspace_id);
         CREATE INDEX IF NOT EXISTS idx_nodes_parent ON nodes(parent_id);
         CREATE INDEX IF NOT EXISTS idx_nodes_importance ON nodes(workspace_id, importance);
         CREATE INDEX IF NOT EXISTS idx_runs_workspace ON runs(workspace_id);
         CREATE INDEX IF NOT EXISTS idx_actions_run ON actions(run_id);
         CREATE INDEX IF NOT EXISTS idx_suggestions_workspace ON suggestions(workspace_id, status);
+        CREATE INDEX IF NOT EXISTS idx_sources_workspace ON sources(workspace_id);
     """)
     conn.commit()
     conn.close()
@@ -188,47 +217,6 @@ def seed_from_python_mock() -> None:
     print(f"  seeded workspace 'default': {count} nodes")
 
 
-def get_subtree(conn: sqlite3.Connection, node_id: str) -> dict:
-    """Load a node and its descendants as a nested dict."""
-    row = conn.execute("SELECT * FROM nodes WHERE id = ?", (node_id,)).fetchone()
-    if not row:
-        return {}
-    node = dict(row)
-    children = conn.execute(
-        "SELECT * FROM nodes WHERE parent_id = ? ORDER BY position",
-        (node_id,),
-    ).fetchall()
-    node["children"] = [get_subtree(conn, dict(c)["id"]) for c in children]
-    return node
-
-
-def format_tree(node: dict, depth: int = 0) -> str:
-    """Render a node tree as readable text for context injection."""
-    indent = "  " * depth
-    parts = []
-    ntype = node.get("node_type", "?")
-    headline = node.get("headline", "?")
-    nid = node.get("id", "?")[:8]
-    cred = node.get("credence")
-    rob = node.get("robustness")
-    scores = ""
-    if cred is not None:
-        scores += f" C{cred}"
-    if rob is not None:
-        scores += f"/R{rob}"
-
-    parts.append(f"{indent}[{ntype}] {headline} [{nid}]{scores}")
-
-    content = node.get("content", "")
-    if content and depth < 3:
-        for line in content.split("\n"):
-            parts.append(f"{indent}  {line}")
-
-    for child in node.get("children", []):
-        parts.append(format_tree(child, depth + 1))
-    return "\n".join(parts)
-
-
 def search_nodes(conn: sqlite3.Connection, ws_id: str, query: str, limit: int = 8) -> list[dict]:
     """Simple text search over nodes."""
     rows = conn.execute(
@@ -238,438 +226,6 @@ def search_nodes(conn: sqlite3.Connection, ws_id: str, query: str, limit: int = 
         (ws_id, f"%{query}%", f"%{query}%", limit),
     ).fetchall()
     return [dict(r) for r in rows]
-
-
-def get_ancestors(conn: sqlite3.Connection, node_id: str) -> list[dict]:
-    """Walk up parent_id chain to root. Returns [immediate_parent, ..., root]."""
-    ancestors: list[dict] = []
-    current_id = node_id
-    visited: set[str] = set()
-    while current_id:
-        if current_id in visited:
-            break
-        visited.add(current_id)
-        row = conn.execute("SELECT * FROM nodes WHERE id = ?", (current_id,)).fetchone()
-        if not row:
-            break
-        node = dict(row)
-        pid = node.get("parent_id")
-        if pid:
-            parent = conn.execute("SELECT * FROM nodes WHERE id = ?", (pid,)).fetchone()
-            if parent:
-                ancestors.append(dict(parent))
-            current_id = pid
-        else:
-            break
-    return ancestors
-
-
-def get_branch_context(
-    conn: sqlite3.Connection,
-    scope_node_id: str,
-    *,
-    max_importance: int = 3,
-) -> str:
-    """Build branch-scoped context for a research run.
-
-    Includes:
-    - Root node (always)
-    - Ancestors of the scope node
-    - The scope node's subtree, filtered by importance level
-    - Sibling nodes at ancestor level (headlines only)
-    """
-    parts: list[str] = []
-
-    ancestors = get_ancestors(conn, scope_node_id)
-    root = ancestors[-1] if ancestors else None
-    if not root:
-        row = conn.execute("SELECT * FROM nodes WHERE id = ?", (scope_node_id,)).fetchone()
-        if row:
-            root = dict(row)
-    if not root:
-        return "(empty context)"
-
-    parts.append("# Root")
-    parts.append(format_tree({"children": [], **root}, depth=0))
-    parts.append("")
-
-    if ancestors:
-        parts.append("# Ancestor chain")
-        for a in reversed(ancestors):
-            nid = a["id"][:8]
-            parts.append(f"  [{a['node_type']}] {a['headline']} [{nid}]")
-        parts.append("")
-
-        for a in ancestors[:-1]:
-            siblings = conn.execute(
-                "SELECT id, node_type, headline, importance FROM nodes "
-                "WHERE parent_id = ? AND id != ? ORDER BY position",
-                (a.get("parent_id", ""), a["id"]),
-            ).fetchall()
-            if siblings:
-                parts.append(f"# Siblings of {a['headline'][:40]}")
-                for s in siblings:
-                    sd = dict(s)
-                    parts.append(f"  [{sd['node_type']}] {sd['headline']} [{sd['id'][:8]}] L{sd['importance']}")
-                parts.append("")
-
-    parts.append("# Scoped branch (filtered to importance <= {})".format(max_importance))
-
-    def render_filtered(node: dict, depth: int = 0) -> None:
-        imp = node.get("importance", 0)
-        if imp > max_importance and depth > 0:
-            return
-        indent = "  " * depth
-        nid = node.get("id", "?")[:8]
-        scores = ""
-        if node.get("credence") is not None:
-            scores += f" C{node['credence']}"
-        if node.get("robustness") is not None:
-            scores += f"/R{node['robustness']}"
-        parts.append(f"{indent}[{node.get('node_type', '?')}] {node.get('headline', '?')} [{nid}] L{imp}{scores}")
-        if node.get("content") and depth < 4:
-            parts.append(f"{indent}  {node['content'][:300]}")
-        for child in node.get("children", []):
-            render_filtered(child, depth + 1)
-
-    scope_tree = get_subtree(conn, scope_node_id)
-    render_filtered(scope_tree)
-
-    return "\n".join(parts)
-
-
-def get_branch_health(conn: sqlite3.Connection, node_id: str) -> dict:
-    """Quick diagnostic of a branch's state."""
-    tree = get_subtree(conn, node_id)
-    stats: dict[str, int] = {"total": 0, "claims": 0, "hypotheses": 0,
-                              "evidence": 0, "uncertainties": 0, "questions": 0,
-                              "max_depth": 0, "leafs_without_content": 0,
-                              "no_credence": 0}
-
-    def walk(node: dict, depth: int = 0) -> None:
-        stats["total"] += 1
-        stats["max_depth"] = max(stats["max_depth"], depth)
-        nt = node.get("node_type", "")
-        if nt == "claim":
-            stats["claims"] += 1
-        elif nt == "hypothesis":
-            stats["hypotheses"] += 1
-        elif nt == "evidence":
-            stats["evidence"] += 1
-        elif nt == "uncertainty":
-            stats["uncertainties"] += 1
-        elif nt == "question":
-            stats["questions"] += 1
-        if nt in ("claim", "hypothesis") and not node.get("credence"):
-            stats["no_credence"] += 1
-        children = node.get("children", [])
-        if not children and not node.get("content"):
-            stats["leafs_without_content"] += 1
-        for c in children:
-            walk(c, depth + 1)
-
-    walk(tree)
-    return stats
-
-
-ORCHESTRATOR_TOOLS: list[dict[str, Any]] = [
-    {
-        "name": "add_node",
-        "description": (
-            "Add a new node to the current branch. This is a direct write — "
-            "the node will be immediately visible in the worldview."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "node_type": {
-                    "type": "string",
-                    "enum": ["claim", "hypothesis", "evidence", "uncertainty", "context", "question"],
-                },
-                "headline": {"type": "string"},
-                "content": {"type": "string", "description": "Detailed explanation"},
-                "parent_id": {"type": "string", "description": "Short ID of the parent node in this branch"},
-                "importance": {"type": "integer", "description": "0 = most important (L0), higher = less important"},
-                "credence": {"type": "integer", "description": "1-9 confidence (for claims/hypotheses)"},
-                "robustness": {"type": "integer", "description": "1-5 evidence quality"},
-            },
-            "required": ["node_type", "headline", "content", "parent_id"],
-        },
-    },
-    {
-        "name": "suggest_change",
-        "description": (
-            "Suggest a change that affects another branch or re-levels a node. "
-            "This is NOT applied immediately — it goes into a review queue."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "suggestion_type": {
-                    "type": "string",
-                    "enum": ["add_to_branch", "relevel_node", "resolve_tension", "merge_duplicate"],
-                    "description": "What kind of change",
-                },
-                "target_node_id": {"type": "string", "description": "Short ID of the node this affects"},
-                "reasoning": {"type": "string", "description": "Why this change should be made"},
-                "payload": {
-                    "type": "object",
-                    "description": "Details of the change (varies by type)",
-                },
-            },
-            "required": ["suggestion_type", "target_node_id", "reasoning"],
-        },
-    },
-    {
-        "name": "relevel_node",
-        "description": (
-            "Change the importance level of a node in the current branch. "
-            "Use when evidence has strengthened (move toward L0) or weakened (move toward L4+)."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "node_id": {"type": "string", "description": "Short ID"},
-                "new_importance": {"type": "integer", "description": "New L-level (0 = most important)"},
-                "reasoning": {"type": "string"},
-            },
-            "required": ["node_id", "new_importance", "reasoning"],
-        },
-    },
-    {
-        "name": "inspect_branch",
-        "description": "View the current branch's full context and health diagnostics.",
-        "input_schema": {
-            "type": "object",
-            "properties": {},
-        },
-    },
-]
-
-
-def execute_orchestrator_tool(
-    conn: sqlite3.Connection,
-    ws_id: str,
-    scope_node_id: str,
-    name: str,
-    tool_input: dict,
-    run_id: str,
-    *,
-    dry_run: bool = False,
-) -> str:
-    """Execute an orchestrator tool. When dry_run=True, describe what would happen but don't mutate."""
-    action_id = new_id()
-    prefix = "[dry-run] " if dry_run else ""
-
-    if name == "add_node":
-        parent_short = tool_input.get("parent_id", "")
-        parent_full = resolve_node_id(conn, parent_short)
-        if not parent_full:
-            output = f"Parent node '{parent_short}' not found"
-        elif dry_run:
-            output = (
-                f"{prefix}Would create [{tool_input.get('node_type', 'claim')}] "
-                f"under {parent_short}: {tool_input['headline']}"
-            )
-        else:
-            node_id = new_id()
-            conn.execute(
-                "INSERT INTO nodes (id, workspace_id, parent_id, node_type, headline, content, "
-                "credence, robustness, importance, position, created_at, created_by) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    node_id, ws_id, parent_full,
-                    tool_input.get("node_type", "claim"),
-                    tool_input["headline"],
-                    tool_input.get("content", ""),
-                    tool_input.get("credence"),
-                    tool_input.get("robustness"),
-                    tool_input.get("importance", 2),
-                    0, now_iso(), "orchestrator",
-                ),
-            )
-            conn.commit()
-            output = f"Created [{tool_input.get('node_type', 'claim')}] node {node_id[:8]}: {tool_input['headline']}"
-
-    elif name == "suggest_change":
-        if dry_run:
-            output = (
-                f"{prefix}Would queue suggestion: {tool_input.get('suggestion_type', '?')} "
-                f"on {tool_input.get('target_node_id', '?')}: {tool_input.get('reasoning', '')[:100]}"
-            )
-        else:
-            sug_id = new_id()
-            conn.execute(
-                "INSERT INTO suggestions (id, workspace_id, run_id, suggestion_type, "
-                "target_node_id, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (
-                    sug_id, ws_id, run_id,
-                    tool_input.get("suggestion_type", ""),
-                    resolve_node_id(conn, tool_input.get("target_node_id", "")) or "",
-                    json.dumps({"reasoning": tool_input.get("reasoning", ""), **tool_input.get("payload", {})}),
-                    now_iso(),
-                ),
-            )
-            conn.commit()
-            output = f"Queued suggestion {sug_id[:8]}: {tool_input.get('suggestion_type', '?')} on {tool_input.get('target_node_id', '?')}"
-
-    elif name == "relevel_node":
-        node_short = tool_input.get("node_id", "")
-        full_id = resolve_node_id(conn, node_short)
-        new_imp = tool_input.get("new_importance", 0)
-        if not full_id:
-            output = f"Node '{node_short}' not found"
-        elif dry_run:
-            output = f"{prefix}Would relevel {node_short} to L{new_imp}: {tool_input.get('reasoning', '')[:100]}"
-        else:
-            conn.execute("UPDATE nodes SET importance = ? WHERE id = ?", (new_imp, full_id))
-            conn.commit()
-            output = f"Releveled {node_short} to L{new_imp}"
-
-    elif name == "inspect_branch":
-        context = get_branch_context(conn, scope_node_id)
-        health = get_branch_health(conn, scope_node_id)
-        output = f"{context}\n\n# Branch health\n{json.dumps(health, indent=2)}"
-
-    else:
-        output = f"Unknown tool: {name}"
-
-    conn.execute(
-        "INSERT INTO actions (id, run_id, action_type, input_data, output_data, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        (action_id, run_id, f"orch:{name}", json.dumps(tool_input), output[:2000], now_iso()),
-    )
-    conn.commit()
-    return output
-
-
-async def run_orchestrator_step(
-    conn: sqlite3.Connection,
-    ws_id: str,
-    scope_node_id: str,
-    run_id: str,
-    api_key: str,
-    *,
-    dry_run: bool = True,
-) -> dict:
-    """Run one orchestrator step: assess a branch and produce improvements.
-
-    Returns {"actions_taken": [...], "response": "..."}.
-    """
-    context = get_branch_context(conn, scope_node_id)
-    health = get_branch_health(conn, scope_node_id)
-
-    scope_node = conn.execute("SELECT * FROM nodes WHERE id = ?", (scope_node_id,)).fetchone()
-    scope_headline = dict(scope_node)["headline"] if scope_node else "?"
-
-    pending = conn.execute(
-        "SELECT * FROM suggestions WHERE workspace_id = ? AND status = 'pending' "
-        "ORDER BY created_at LIMIT 10",
-        (ws_id,),
-    ).fetchall()
-    pending_text = ""
-    if pending:
-        pending_text = "\n\n# Pending suggestions\n"
-        for s in pending:
-            sd = dict(s)
-            pending_text += f"  [{sd['id'][:8]}] {sd['suggestion_type']}: {sd.get('payload', '')[:100]}\n"
-
-    system_prompt = (
-        "You are a research orchestrator improving a worldview tree branch.\n\n"
-        "Your job is to strengthen this branch by:\n"
-        "1. Adding missing evidence, claims, or questions where gaps exist\n"
-        "2. Re-leveling nodes whose importance has shifted (L0 = most important)\n"
-        "3. Suggesting changes for other branches when you notice tensions or connections\n"
-        "4. Flagging contradictions or unsupported claims\n\n"
-        "## Rules\n"
-        "- Add nodes to your own branch directly (add_node)\n"
-        "- For changes to other branches, use suggest_change\n"
-        "- Re-level nodes when evidence warrants it (relevel_node)\n"
-        "- Use inspect_branch to see context and health before acting\n"
-        "- Be conservative: a few high-quality additions beat many shallow ones\n"
-        "- Assign importance levels honestly: L0 for crucial findings, L3+ for supplementary\n"
-        "- Every claim should have credence and robustness scores\n\n"
-        f"{'DRY RUN: describe what you would do but tools will not actually mutate.' if dry_run else ''}\n"
-    )
-
-    user_message = (
-        f"# Branch: {scope_headline}\n\n"
-        f"## Current state\n{context}\n\n"
-        f"## Branch health\n{json.dumps(health, indent=2)}"
-        f"{pending_text}\n\n"
-        "Assess this branch and make improvements. Start by inspecting, then act."
-    )
-
-    client = anthropic.AsyncAnthropic(api_key=api_key)
-    messages: list[dict] = [{"role": "user", "content": user_message}]
-    actions_log: list[dict] = []
-
-    for _ in range(8):
-        response = await client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=4096,
-            temperature=0.5,
-            system=system_prompt,
-            messages=messages,  # type: ignore[arg-type]
-            tools=ORCHESTRATOR_TOOLS,  # type: ignore[arg-type]
-        )
-
-        text_parts: list[str] = []
-        tool_calls: list[ToolUseBlock] = []
-        for block in response.content:
-            if isinstance(block, TextBlock):
-                text_parts.append(block.text)
-            elif isinstance(block, ToolUseBlock):
-                tool_calls.append(block)
-
-        if not tool_calls:
-            return {"actions_taken": actions_log, "response": "\n".join(text_parts)}
-
-        messages.append({"role": "assistant", "content": response.content})  # type: ignore[arg-type]
-
-        tool_results = []
-        for tc in tool_calls:
-            result = execute_orchestrator_tool(
-                conn, ws_id, scope_node_id, tc.name, tc.input, run_id,  # type: ignore[arg-type]
-                dry_run=dry_run,
-            )
-            actions_log.append({"tool": tc.name, "input": tc.input, "result": result[:300]})  # type: ignore[arg-type]
-            tool_results.append({
-                "type": "tool_result",
-                "tool_use_id": tc.id,
-                "content": result,
-            })
-
-        messages.append({"role": "user", "content": tool_results})
-
-    return {"actions_taken": actions_log, "response": "Reached max orchestrator rounds."}
-
-
-def pick_next_branch(conn: sqlite3.Connection, ws_id: str) -> str | None:
-    """Simple prioritizer: pick the L0 branch with the worst health score."""
-    root = conn.execute(
-        "SELECT id FROM nodes WHERE workspace_id = ? AND parent_id IS NULL LIMIT 1",
-        (ws_id,),
-    ).fetchone()
-    if not root:
-        return None
-
-    children = conn.execute(
-        "SELECT id, headline FROM nodes WHERE parent_id = ? ORDER BY position",
-        (dict(root)["id"],),
-    ).fetchall()
-
-    best_id = None
-    worst_score = float("inf")
-    for child in children:
-        child_dict = dict(child)
-        health = get_branch_health(conn, child_dict["id"])
-        score = health["total"] + health["evidence"] * 2 - health["no_credence"] * 3 - health["leafs_without_content"] * 2
-        if score < worst_score:
-            worst_score = score
-            best_id = child_dict["id"]
-
-    return best_id
 
 
 TOOLS: list[dict[str, Any]] = [
@@ -746,12 +302,37 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "preview_run",
+        "description": (
+            "Show the user a visual preview of an orchestrator run. "
+            "This renders as an interactive component in chat — the user sees "
+            "the branch tree, which nodes are in context, health stats, and "
+            "action buttons to launch the run. Use this whenever the user asks "
+            "to preview, plan, or prepare a run. Always call this INSTEAD OF "
+            "run_orchestrator when the user wants to see what a run would do."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "node_id": {
+                    "type": "string",
+                    "description": "Short ID of branch to preview. Omit to auto-pick the weakest branch.",
+                },
+                "run_type": {
+                    "type": "string",
+                    "enum": ["explore", "evaluate"],
+                    "description": "Which run type to preview. Default: explore.",
+                },
+            },
+        },
+    },
+    {
         "name": "run_orchestrator",
         "description": (
-            "Run the research orchestrator on a branch to improve it. "
-            "The orchestrator assesses the branch and adds nodes, re-levels, "
-            "and suggests cross-branch changes. Returns a summary of what it did. "
-            "This is expensive — confirm with the user before calling."
+            "ACTUALLY RUN the orchestrator — calls the LLM, modifies the tree. "
+            "This is expensive and takes time. Only call after using preview_run "
+            "and getting explicit user confirmation. Never use this as a preview — "
+            "use preview_run for that."
         ),
         "input_schema": {
             "type": "object",
@@ -759,6 +340,11 @@ TOOLS: list[dict[str, Any]] = [
                 "node_id": {
                     "type": "string",
                     "description": "Short ID of the branch to orchestrate. Omit to auto-pick the weakest branch.",
+                },
+                "run_type": {
+                    "type": "string",
+                    "enum": ["explore", "evaluate"],
+                    "description": "Run type. Default: explore.",
                 },
                 "dry_run": {
                     "type": "boolean",
@@ -864,33 +450,45 @@ def execute_tool(
                 lines.append("")
             output = "\n".join(lines)
 
-    elif name == "run_orchestrator":
+    elif name == "preview_run":
         target_short = tool_input.get("node_id")
+        run_type = tool_input.get("run_type", "explore")
+        target_full = resolve_node_id(conn, target_short) if target_short else pick_next_branch(conn, ws_id)
+        if not target_full:
+            output = json.dumps({"error": "No branch to preview."})
+        else:
+            try:
+                config = resolve_run_type(run_type)
+            except ValueError as e:
+                output = json.dumps({"error": str(e)})
+            else:
+                preview = preview_branch_context(conn, target_full, ws_id=ws_id)
+                preview["run_type"] = run_type
+                preview["config"] = {
+                    "max_rounds": config.get("max_rounds", 8),
+                    "temperature": config.get("temperature", 0.5),
+                    "dry_run": True,
+                }
+                preview["tools_available"] = [t["name"] for t in config["tools"]]
+                output = json.dumps(preview)
+
+    elif name == "run_orchestrator":
+        # Async — handled by the chat endpoint. Return a sentinel with resolved params.
+        target_short = tool_input.get("node_id")
+        run_type = tool_input.get("run_type", "explore")
         dry = tool_input.get("dry_run", True)
         target_full = resolve_node_id(conn, target_short) if target_short else pick_next_branch(conn, ws_id)
         if not target_full:
             output = "No branch to orchestrate."
         else:
-            target_node = conn.execute("SELECT headline FROM nodes WHERE id = ?", (target_full,)).fetchone()
-            target_headline = dict(target_node)["headline"] if target_node else "?"
-            # Mock async: return what the orchestrator would do without actually calling the LLM
-            health = get_branch_health(conn, target_full)
-            gaps: list[str] = []
-            if health["no_credence"] > 0:
-                gaps.append(f"{health['no_credence']} claims without credence scores")
-            if health["evidence"] < health["claims"]:
-                gaps.append(f"only {health['evidence']} evidence nodes for {health['claims']} claims")
-            if health["questions"] == 0:
-                gaps.append("no open questions identified")
-            if health["uncertainties"] == 0:
-                gaps.append("no uncertainties flagged")
-            gap_text = "; ".join(gaps) if gaps else "branch looks reasonably complete"
-            output = (
-                f"{'[dry-run] ' if dry else ''}Orchestrator targeting: {target_headline[:60]} [{target_full[:8]}]\n"
-                f"Branch health: {health['total']} nodes, depth {health['max_depth']}\n"
-                f"Gaps: {gap_text}\n"
-                f"{'Would investigate and add nodes to strengthen this branch.' if dry else 'Orchestrator run completed.'}"
-            )
+            # Store resolved params for the async handler to pick up
+            output = json.dumps({
+                "__async_orchestrate__": True,
+                "scope_id": target_full,
+                "run_type": run_type,
+                "dry_run": dry,
+                "ws_id": ws_id,
+            })
 
     else:
         output = f"Unknown tool: {name}"
@@ -956,6 +554,7 @@ def list_workspaces():
     rows = conn.execute(
         "SELECT w.*, "
         "(SELECT COUNT(*) FROM nodes n WHERE n.workspace_id = w.id) as node_count, "
+        "(SELECT COUNT(*) FROM sources src WHERE src.workspace_id = w.id) as source_count, "
         "(SELECT COUNT(*) FROM runs r WHERE r.workspace_id = w.id) as run_count, "
         "(SELECT COUNT(*) FROM suggestions s WHERE s.workspace_id = w.id AND s.status = 'pending') as pending_suggestions "
         "FROM workspaces w ORDER BY w.created_at"
@@ -1091,6 +690,45 @@ def reject_suggestion(suggestion_id: str):
     return {"status": "rejected"}
 
 
+@app.get("/api/workspaces/{name}/sources")
+def list_sources(name: str):
+    conn = get_db()
+    ws = conn.execute("SELECT id FROM workspaces WHERE name = ?", (name,)).fetchone()
+    if not ws:
+        conn.close()
+        return []
+    ws_id = dict(ws)["id"]
+    rows = conn.execute(
+        "SELECT id, workspace_id, title, url, abstract, created_at "
+        "FROM sources WHERE workspace_id = ? ORDER BY created_at DESC",
+        (ws_id,),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+@app.get("/api/sources/short/{short_id}")
+def get_source_by_short_id(short_id: str):
+    conn = get_db()
+    row = conn.execute(
+        "SELECT * FROM sources WHERE id LIKE ?", (f"{short_id}%",)
+    ).fetchone()
+    conn.close()
+    if not row:
+        return {"error": f"No source matching '{short_id}'"}
+    return dict(row)
+
+
+@app.get("/api/sources/{source_id}")
+def get_source(source_id: str):
+    conn = get_db()
+    row = conn.execute("SELECT * FROM sources WHERE id = ?", (source_id,)).fetchone()
+    conn.close()
+    if not row:
+        return {"error": f"Source '{source_id}' not found"}
+    return dict(row)
+
+
 @app.get("/api/workspaces/{name}/branch-context/{node_id}")
 def get_branch_context_endpoint(name: str, node_id: str, max_importance: int = 3):
     conn = get_db()
@@ -1102,18 +740,66 @@ def get_branch_context_endpoint(name: str, node_id: str, max_importance: int = 3
     if not full_id:
         conn.close()
         return {"error": f"node {node_id} not found"}
-    context = get_branch_context(conn, full_id, max_importance=max_importance)
+    context = build_branch_context(conn, full_id, max_importance=max_importance)
     health = get_branch_health(conn, full_id)
     conn.close()
     return {"context": context, "health": health}
 
 
+@app.get("/api/workspaces/{name}/orchestrate-preview")
+def orchestrate_preview(
+    name: str,
+    node_id: str | None = None,
+    run_type: str = "explore",
+    max_importance: int = 2,
+):
+    """Preview what an orchestrator run would see — structured data for frontend rendering."""
+    try:
+        config = resolve_run_type(run_type)
+    except ValueError as e:
+        return {"error": str(e)}
+
+    conn = get_db()
+    ws = conn.execute("SELECT id FROM workspaces WHERE name = ?", (name,)).fetchone()
+    if not ws:
+        conn.close()
+        return {"error": "workspace not found"}
+    ws_id = dict(ws)["id"]
+
+    if node_id:
+        scope_id = resolve_node_id(conn, node_id)
+    else:
+        scope_id = pick_next_branch(conn, ws_id)
+
+    if not scope_id:
+        conn.close()
+        return {"error": "no branch to preview"}
+
+    preview = preview_branch_context(conn, scope_id, max_importance=max_importance, ws_id=ws_id)
+    conn.close()
+
+    preview["run_type"] = run_type
+    preview["config"] = {
+        "max_rounds": config.get("max_rounds", 8),
+        "temperature": config.get("temperature", 0.5),
+        "dry_run": True,
+    }
+    preview["tools_available"] = [t["name"] for t in config["tools"]]
+    return preview
+
+
 @app.post("/api/workspaces/{name}/orchestrate")
-async def orchestrate(name: str, node_id: str | None = None, dry_run: bool = True):
+async def orchestrate(
+    name: str,
+    node_id: str | None = None,
+    dry_run: bool = True,
+    run_type: str = "explore",
+):
     """Run one orchestrator step on a branch.
 
     If node_id is omitted, the prioritizer picks the weakest branch.
     dry_run=True (default) means tools describe actions but don't mutate.
+    run_type controls which prompt/tools/context layers are used (explore, evaluate).
     """
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
@@ -1126,6 +812,11 @@ async def orchestrate(name: str, node_id: str | None = None, dry_run: bool = Tru
                     break
     if not api_key:
         return {"error": "ANTHROPIC_API_KEY not set"}
+
+    try:
+        config = resolve_run_type(run_type)
+    except ValueError as e:
+        return {"error": str(e)}
 
     conn = get_db()
     ws = conn.execute("SELECT * FROM workspaces WHERE name = ?", (name,)).fetchone()
@@ -1151,11 +842,44 @@ async def orchestrate(name: str, node_id: str | None = None, dry_run: bool = Tru
         "INSERT INTO runs (id, workspace_id, run_type, scope_node_id, started_at, status, description, config) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (run_id, ws_id, "orchestrate", scope_id, now_iso(), "running",
-         f"orchestrate: {scope_headline[:60]}", json.dumps({"dry_run": dry_run})),
+         f"orchestrate ({run_type}): {scope_headline[:50]}",
+         json.dumps({"dry_run": dry_run, "run_type": run_type})),
     )
     conn.commit()
 
-    result = await run_orchestrator_step(conn, ws_id, scope_id, run_id, api_key, dry_run=dry_run)
+    context = build_branch_context(
+        conn, scope_id,
+        layers=config["context_layers"],
+        ws_id=ws_id,
+    )
+    system_prompt = config["system_prompt"]
+    if dry_run:
+        system_prompt += "\n\nDRY RUN: describe what you would do but tools will not actually mutate."
+
+    user_message = (
+        f"# Branch: {scope_headline}\n\n"
+        f"{context}\n\n"
+        "Assess this branch and make improvements. Start by inspecting, then act."
+    )
+
+    executor = make_tool_executor(
+        conn, ws_id, scope_id, run_id,
+        dry_run=dry_run,
+        resolve_node_id=resolve_node_id,
+        new_id=new_id,
+        now_iso=now_iso,
+    )
+
+    result = await run_step(
+        system_prompt=system_prompt,
+        user_message=user_message,
+        tools=config["tools"],
+        execute_tool=executor,
+        api_key=api_key,
+        max_rounds=config.get("max_rounds", 8),
+        max_tokens=config.get("max_tokens", 4096),
+        temperature=config.get("temperature", 0.5),
+    )
 
     conn.execute(
         "UPDATE runs SET status = 'completed', completed_at = ? WHERE id = ?",
@@ -1169,8 +893,96 @@ async def orchestrate(name: str, node_id: str | None = None, dry_run: bool = Tru
         "scope_node": scope_headline,
         "scope_node_id": scope_id[:8],
         "dry_run": dry_run,
-        **result,
+        "run_type": run_type,
+        "actions_taken": result.actions_taken,
+        "response": result.response,
+        "rounds_used": result.rounds_used,
+        "stop_reason": result.stop_reason,
     }
+
+
+async def _run_orchestrator_from_chat(
+    conn: sqlite3.Connection,
+    params: dict,
+    api_key: str | None,
+    chat_run_id: str,
+) -> str:
+    """Execute an orchestrator run triggered from chat. Returns a summary string."""
+    if not api_key:
+        return "Cannot run orchestrator: ANTHROPIC_API_KEY not set."
+
+    scope_id = params["scope_id"]
+    run_type_name = params.get("run_type", "explore")
+    dry_run = params.get("dry_run", True)
+    ws_id = params["ws_id"]
+
+    try:
+        config = resolve_run_type(run_type_name)
+    except ValueError as e:
+        return str(e)
+
+    scope_node = conn.execute(
+        "SELECT headline FROM nodes WHERE id = ?", (scope_id,)
+    ).fetchone()
+    scope_headline = dict(scope_node)["headline"] if scope_node else "?"
+
+    orch_run_id = new_id()
+    conn.execute(
+        "INSERT INTO runs (id, workspace_id, run_type, scope_node_id, started_at, status, description, config) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (orch_run_id, ws_id, "orchestrate", scope_id, now_iso(), "running",
+         f"orchestrate ({run_type_name}): {scope_headline[:50]}",
+         json.dumps({"dry_run": dry_run, "run_type": run_type_name, "from_chat": chat_run_id})),
+    )
+    conn.commit()
+
+    context = build_branch_context(
+        conn, scope_id, layers=config["context_layers"], ws_id=ws_id,
+    )
+    system_prompt = config["system_prompt"]
+    if dry_run:
+        system_prompt += "\n\nDRY RUN: describe what you would do but tools will not actually mutate."
+
+    user_message = (
+        f"# Branch: {scope_headline}\n\n"
+        f"{context}\n\n"
+        "Assess this branch and make improvements. Start by inspecting, then act."
+    )
+
+    executor = make_tool_executor(
+        conn, ws_id, scope_id, orch_run_id,
+        dry_run=dry_run,
+        resolve_node_id=resolve_node_id,
+        new_id=new_id,
+        now_iso=now_iso,
+    )
+
+    result = await run_step(
+        system_prompt=system_prompt,
+        user_message=user_message,
+        tools=config["tools"],
+        execute_tool=executor,
+        api_key=api_key,
+        max_rounds=config.get("max_rounds", 8),
+        max_tokens=config.get("max_tokens", 4096),
+        temperature=config.get("temperature", 0.5),
+    )
+
+    conn.execute(
+        "UPDATE runs SET status = 'completed', completed_at = ? WHERE id = ?",
+        (now_iso(), orch_run_id),
+    )
+    conn.commit()
+
+    actions_summary = "\n".join(
+        f"  {a['tool']}: {a['result'][:100]}" for a in result.actions_taken
+    )
+    return (
+        f"Orchestrator {run_type_name} on '{scope_headline[:40]}' "
+        f"({'dry run' if dry_run else 'live'}, {result.rounds_used} rounds):\n"
+        f"{actions_summary}\n\n"
+        f"{result.response[:500]}"
+    )
 
 
 @app.post("/api/chat", response_model=ChatResponse)
@@ -1264,6 +1076,12 @@ async def chat(request: ChatRequest):
         tool_results = []
         for tc in tool_calls:
             result_str = execute_tool(conn, ws_id, root_id, tc.name, tc.input, run_id)  # type: ignore[arg-type]
+            # Handle async orchestrator runs
+            if tc.name == "run_orchestrator" and "__async_orchestrate__" in result_str:
+                params = json.loads(result_str)
+                result_str = await _run_orchestrator_from_chat(
+                    conn, params, api_key, run_id,
+                )
             tool_uses_log.append(ToolUseInfo(name=tc.name, input=tc.input, result=result_str[:500]))  # type: ignore[arg-type]
             tool_results.append({
                 "type": "tool_result",
@@ -1384,6 +1202,11 @@ async def chat_stream(request: ChatRequest):
                 tool_results = []
                 for tc in tool_calls:
                     result_str = execute_tool(conn, ws_id, root_id, tc.name, tc.input, run_id)
+                    if tc.name == "run_orchestrator" and "__async_orchestrate__" in result_str:
+                        params = json.loads(result_str)
+                        result_str = await _run_orchestrator_from_chat(
+                            conn, params, api_key, run_id,
+                        )
                     yield _sse("tool_use_result", {
                         "name": tc.name,
                         "input": tc.input,

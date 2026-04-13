@@ -9,11 +9,13 @@ import { VerticalView } from "@/components/VerticalView";
 import type { VerticalViewHandle } from "@/components/VerticalView";
 import { ChatPanel } from "@/components/ChatPanel";
 import { SuggestionReview } from "@/components/SuggestionReview";
+import { SourcesView } from "@/components/SourcesView";
+import { SourceDrawer } from "@/components/SourceDrawer";
 import { fetchWorldview, fetchWorkspaces } from "@/lib/api";
 import type { Worldview } from "@/lib/types";
-import type { WorkspaceInfo } from "@/lib/api";
+import type { WorkspaceInfo, SourceFull } from "@/lib/api";
 
-const VIEW_MODES = ["panes", "article", "vertical"] as const;
+const VIEW_MODES = ["panes", "article", "vertical", "sources"] as const;
 type ViewMode = (typeof VIEW_MODES)[number];
 
 function isViewMode(v: string): v is ViewMode {
@@ -166,6 +168,7 @@ function WorldviewView({ workspace }: { workspace: string }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
   const [showReview, setShowReview] = useState(false);
+  const [drawerSource, setDrawerSource] = useState<SourceFull | null>(null);
 
   const rawView = searchParams.get("view") ?? "panes";
   const viewMode: ViewMode = isViewMode(rawView) ? rawView : "panes";
@@ -266,6 +269,7 @@ function WorldviewView({ workspace }: { workspace: string }) {
               worldview={worldview}
               focusNodeId={focusNodeId}
               onFocusHandled={() => setFocusNodeId(null)}
+              onOpenSource={setDrawerSource}
             />
           )}
           {viewMode === "vertical" && (
@@ -274,6 +278,12 @@ function WorldviewView({ workspace }: { workspace: string }) {
               worldview={worldview}
               focusNodeId={focusNodeId}
               onFocusHandled={() => setFocusNodeId(null)}
+            />
+          )}
+          {viewMode === "sources" && (
+            <SourcesView
+              workspace={workspace}
+              onOpenDrawer={setDrawerSource}
             />
           )}
         </div>
@@ -286,6 +296,10 @@ function WorldviewView({ workspace }: { workspace: string }) {
         onNodeRef={setFocusNodeId}
         onShowReview={() => setShowReview(true)}
         workspace={workspace}
+      />
+      <SourceDrawer
+        source={drawerSource}
+        onClose={() => setDrawerSource(null)}
       />
     </div>
   );

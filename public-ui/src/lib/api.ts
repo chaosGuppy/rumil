@@ -107,3 +107,39 @@ export async function respondToSuggestion(
   });
   if (!res.ok) throw new Error(`API error: ${res.status}`);
 }
+
+export interface SourceInfo {
+  id: string;
+  workspace_id: string;
+  title: string;
+  url: string;
+  abstract: string;
+  created_at: string;
+}
+
+export interface SourceFull extends SourceInfo {
+  content: string;
+  extra: string;
+}
+
+export async function fetchSources(
+  workspace: string,
+): Promise<SourceInfo[]> {
+  const res = await fetch(
+    `${API_BASE}/api/workspaces/${workspace}/sources`,
+  );
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchSourceByShortId(
+  shortId: string,
+): Promise<SourceFull | null> {
+  const res = await fetch(
+    `${API_BASE}/api/sources/short/${shortId}`,
+  );
+  if (!res.ok) return null;
+  const data = await res.json();
+  if (data.error) return null;
+  return data;
+}

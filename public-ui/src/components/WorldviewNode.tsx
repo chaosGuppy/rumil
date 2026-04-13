@@ -1,14 +1,17 @@
 "use client";
 
 import type { WorldviewNode as WorldviewNodeType } from "@/lib/types";
+import type { SourceFull } from "@/lib/api";
 import { CredenceBadge } from "./CredenceBadge";
 import { NodeTypeLabel } from "./NodeTypeLabel";
+import { SourceBadge } from "./SourceBadge";
 
 interface WorldviewNodeProps {
   node: WorldviewNodeType;
   index: number;
   onExpandPane?: (node: WorldviewNodeType, index: number) => void;
   onFocus?: (nodeId: string) => void;
+  onOpenSource?: (source: SourceFull) => void;
   isActive?: boolean;
   isFocused?: boolean;
   activeDepth?: number;
@@ -30,28 +33,13 @@ function ChevronRight() {
   );
 }
 
-function ProvenanceIndicator({ count }: { count: number }) {
-  if (count === 0) return null;
-  return (
-    <span
-      title={`${count} source${count > 1 ? "s" : ""} referenced`}
-      style={{
-        fontFamily: "var(--font-mono-stack)",
-        fontSize: "10px",
-        color: "var(--fg-dim)",
-        letterSpacing: "0.02em",
-      }}
-    >
-      {count} src
-    </span>
-  );
-}
 
 export function WorldviewNodeCard({
   node,
   index,
   onExpandPane,
   onFocus,
+  onOpenSource,
   isActive,
   isFocused,
   activeDepth = 0,
@@ -97,7 +85,7 @@ export function WorldviewNodeCard({
           </span>
         )}
         <CredenceBadge credence={node.credence} robustness={node.robustness} />
-        <ProvenanceIndicator count={node.source_page_ids.length} />
+        <SourceBadge sourceIds={node.source_page_ids} onOpenDrawer={onOpenSource} />
       </div>
 
       <h3

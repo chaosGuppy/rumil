@@ -2,13 +2,16 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import type { WorldviewNode, Worldview } from "@/lib/types";
+import type { SourceFull } from "@/lib/api";
 import { CredenceBadge } from "./CredenceBadge";
 import { NodeTypeLabel, nodeColor } from "./NodeTypeLabel";
+import { SourceBadge } from "./SourceBadge";
 
 interface ArticleViewProps {
   worldview: Worldview;
   focusNodeId?: string | null;
   onFocusHandled?: () => void;
+  onOpenSource?: (source: SourceFull) => void;
 }
 
 function isSupplementary(node: WorldviewNode): boolean {
@@ -32,11 +35,13 @@ function ArticleNode({
   depth,
   onFocus,
   focusedId,
+  onOpenSource,
 }: {
   node: WorldviewNode;
   depth: number;
   onFocus: (headline: string) => void;
   focusedId: string | null;
+  onOpenSource?: (source: SourceFull) => void;
 }) {
   if (isSupplementary(node)) return null;
 
@@ -66,11 +71,7 @@ function ArticleNode({
           <span className="article-label-dim">L{node.importance}</span>
         )}
         <CredenceBadge credence={node.credence} robustness={node.robustness} />
-        {node.source_page_ids.length > 0 && (
-          <span className="article-label-dim">
-            {node.source_page_ids.length} src
-          </span>
-        )}
+        <SourceBadge sourceIds={node.source_page_ids} onOpenDrawer={onOpenSource} />
       </div>
       <div className="worldview-prose">
         <p>{node.content}</p>
@@ -82,6 +83,7 @@ function ArticleNode({
           depth={depth + 1}
           onFocus={onFocus}
           focusedId={focusedId}
+          onOpenSource={onOpenSource}
         />
       ))}
     </div>
@@ -92,6 +94,7 @@ export function ArticleView({
   worldview,
   focusNodeId,
   onFocusHandled,
+  onOpenSource,
 }: ArticleViewProps) {
   const [activeSection, setActiveSection] = useState(0);
   const [focusedId, setFocusedId] = useState<string | null>(null);
@@ -193,6 +196,7 @@ export function ArticleView({
                   depth={0}
                   onFocus={setFocusedId}
                   focusedId={focusedId}
+                  onOpenSource={onOpenSource}
                 />
                 {supplementary.length > 0 && (
                   <details className="article-supplementary">

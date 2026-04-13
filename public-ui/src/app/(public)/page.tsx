@@ -39,13 +39,18 @@ function ViewModeSwitcher({
     <div className="view-switcher">
       <div className="view-switcher-row">
         {onBack && (
-          <button
-            className="view-switcher-back"
-            onClick={onBack}
-            title="Back to workspaces"
-          >
-            {workspaceName || "workspaces"} <span style={{ opacity: 0.5 }}>/</span>
-          </button>
+          <>
+            <button
+              className="view-switcher-back"
+              onClick={onBack}
+              title="Back to workspaces"
+            >
+              Home
+            </button>
+            <span className="view-switcher-ws-name">
+              {workspaceName}
+            </span>
+          </>
         )}
         {VIEW_MODES.map((mode) => (
           <button

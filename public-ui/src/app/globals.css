@@ -864,13 +864,15 @@ body {
 /* view mode switcher — segmented control, top-right overlay */
 .view-switcher {
   position: absolute;
-  top: 16px;
-  left: 20px;
+  top: 0;
+  left: 0;
+  right: 0;
   z-index: 10;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 4px;
+  padding: 10px 20px;
 }
 
 .view-switcher-row {
@@ -885,18 +887,33 @@ body {
 .view-switcher-back {
   font-family: var(--font-mono-stack);
   font-size: 10px;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--fg-dim);
   background: none;
   border: none;
-  padding: 4px 8px 4px 0;
+  padding: 4px 6px;
   cursor: pointer;
-  border-right: 1px solid var(--border);
-  margin-right: 2px;
   transition: color 0.1s;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: var(--border);
 }
 
-.view-switcher-back:hover { color: var(--fg); }
+.view-switcher-back:hover {
+  color: var(--fg-muted);
+  text-decoration-color: var(--fg-dim);
+}
+
+.view-switcher-ws-name {
+  font-family: var(--font-mono-stack);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--fg-muted);
+  padding: 4px 8px 4px 2px;
+  border-right: 1px solid var(--border);
+  margin-right: 2px;
+}
 
 .view-switcher-btn {
   font-family: var(--font-mono-stack);

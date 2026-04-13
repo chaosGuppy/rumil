@@ -48,12 +48,14 @@ from rumil.models import (
     ScoutParadigmCasesDispatchPayload,
     ScoutSubquestionsDispatchPayload,
     ScoutWebQuestionsDispatchPayload,
+    CreateViewDispatchPayload,
     WebResearchDispatchPayload,
 )
 from rumil.orchestrators.common import (
     _consume_budget,
     _create_broadcaster,
     assess_question,
+    create_view_for_question,
     find_considerations_until_done,
     web_research_question,
 )
@@ -270,18 +272,31 @@ class BaseOrchestrator(ABC):
             child_call_id = child_ids[0] if child_ids else None
 
         elif isinstance(p, AssessDispatchPayload):
-            log.info('Dispatch: assess on %s — %s', d_label, p.reason)
-            child_call_id = await assess_question(
-                resolved,
-                self.db,
-                parent_call_id=parent_call_id,
-                context_page_ids=p.context_page_ids,
-                broadcaster=self.broadcaster,
-                force=force,
-                call_id=call_id,
-                sequence_id=sequence_id,
-                sequence_position=sequence_position,
-            )
+            existing_view = await self.db.get_view_for_question(resolved)
+            if existing_view:
+                log.info('Dispatch: assess redirected to create_view for %s (has view) — %s', d_label, p.reason)
+                child_call_id = await create_view_for_question(
+                    resolved, self.db,
+                    parent_call_id=parent_call_id,
+                    context_page_ids=p.context_page_ids,
+                    broadcaster=self.broadcaster,
+                    force=force,
+                    call_id=call_id,
+                    sequence_id=sequence_id,
+                    sequence_position=sequence_position,
+                )
+            else:
+                log.info('Dispatch: assess on %s — %s', d_label, p.reason)
+                child_call_id = await assess_question(
+                    resolved, self.db,
+                    parent_call_id=parent_call_id,
+                    context_page_ids=p.context_page_ids,
+                    broadcaster=self.broadcaster,
+                    force=force,
+                    call_id=call_id,
+                    sequence_id=sequence_id,
+                    sequence_position=sequence_position,
+                )
 
         elif isinstance(p, ScoutSubquestionsDispatchPayload):
             log.info('Dispatch: scout_subquestions on %s (max_rounds=%d) — %s', d_label, p.max_rounds, p.reason)
@@ -438,6 +453,19 @@ class BaseOrchestrator(ABC):
             child_call_id = await web_research_question(
                 resolved, self.db,
                 parent_call_id=parent_call_id,
+                broadcaster=self.broadcaster,
+                force=force,
+                call_id=call_id,
+                sequence_id=sequence_id,
+                sequence_position=sequence_position,
+            )
+
+        elif isinstance(p, CreateViewDispatchPayload):
+            log.info('Dispatch: create_view on %s — %s', d_label, p.reason)
+            child_call_id = await create_view_for_question(
+                resolved, self.db,
+                parent_call_id=parent_call_id,
+                context_page_ids=p.context_page_ids,
                 broadcaster=self.broadcaster,
                 force=force,
                 call_id=call_id,

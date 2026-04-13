@@ -13,6 +13,8 @@ const KNOWN_PAGE_TYPES = [
   "source",
   "concept",
   "wiki",
+  "view",
+  "view_item",
 ] as const;
 
 function typeColor(t: string): string {

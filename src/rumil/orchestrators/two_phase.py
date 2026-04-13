@@ -31,6 +31,7 @@ from rumil.orchestrators.common import (
     SubquestionScore,
     assess_question,
     compute_priority_score,
+    create_view_for_question,
     score_items_sequentially,
 )
 from rumil.settings import get_settings
@@ -186,7 +187,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                 self._executed_since_last_plan = True
 
                 if self._invocation > 1 or last_call:
-                    await assess_question(
+                    await create_view_for_question(
                         root_question_id, self.db,
                         parent_call_id=self._parent_call_id,
                         broadcaster=self.broadcaster, force=True,
@@ -194,7 +195,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                         sequence_position=self._seq_position,
                     )
                     if self._sequence_id is not None:
-                        self._seq_position += 2
+                        self._seq_position += 1
 
                 if last_call:
                     break

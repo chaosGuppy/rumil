@@ -44,6 +44,18 @@ const TYPE_CONFIG: Record<
     bgHover: "var(--type-wiki-bg-hover)",
     border: "var(--type-wiki-border)",
   },
+  view: {
+    accent: "var(--type-view)",
+    bg: "var(--type-view-bg)",
+    bgHover: "var(--type-view-bg-hover)",
+    border: "var(--type-view-border)",
+  },
+  view_item: {
+    accent: "var(--type-view-item)",
+    bg: "var(--type-view-item-bg)",
+    bgHover: "var(--type-view-item-bg-hover)",
+    border: "var(--type-view-item-border)",
+  },
 };
 
 function LinkMeta({ link }: { link: PageLink }) {

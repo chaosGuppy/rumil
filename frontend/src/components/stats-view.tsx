@@ -66,6 +66,7 @@ const CALL_TYPE_COLORS: Record<string, string> = {
   concept_assess: "var(--type-concept)",
   scout: "var(--type-wiki)",
   web_research: "var(--type-wiki)",
+  create_view: "var(--type-view)",
 };
 
 const FALLBACK_PALETTE = [

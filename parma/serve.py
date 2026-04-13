@@ -1211,15 +1211,7 @@ async def orchestrate(
     dry_run=True (default) means tools describe actions but don't mutate.
     run_type controls which prompt/tools/context layers are used (explore, evaluate).
     """
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        secrets_path = Path(__file__).parent.parent / "secrets.env"
-        if secrets_path.exists():
-            for line in secrets_path.read_text().splitlines():
-                cleaned = line.removeprefix("export ").strip()
-                if cleaned.startswith("ANTHROPIC_API_KEY="):
-                    api_key = cleaned.split("=", 1)[1].strip()
-                    break
+    api_key = _get_api_key()
     if not api_key:
         return {"error": "ANTHROPIC_API_KEY not set"}
 
@@ -1312,6 +1304,27 @@ async def orchestrate(
         "rounds_used": result.rounds_used,
         "stop_reason": result.stop_reason,
     }
+
+
+_ASYNC_DISPATCH: dict[str, tuple[str, Callable]] = {}
+
+
+async def _resolve_async_tool(
+    result_str: str,
+    conn: sqlite3.Connection,
+    api_key: str | None,
+    chat_run_id: str,
+    on_progress: Callable[[str], None] | None = None,
+) -> str:
+    """If result_str contains an async sentinel, dispatch to the handler and return its output.
+
+    Otherwise returns result_str unchanged.
+    """
+    for sentinel, (_, handler) in _ASYNC_DISPATCH.items():
+        if sentinel in result_str:
+            params = json.loads(result_str)
+            return await handler(conn, params, api_key, chat_run_id, on_progress)
+    return result_str
 
 
 async def _run_orchestrator_from_chat(
@@ -1715,6 +1728,14 @@ async def _run_ingest_from_chat(
     )
 
 
+_ASYNC_DISPATCH.update({
+    "__async_orchestrate__": ("run_orchestrator", _run_orchestrator_from_chat),
+    "__async_orchestrate_loop__": ("run_orchestrator_loop", _run_loop_from_chat),
+    "__async_research__": ("start_research", _run_research_from_chat),
+    "__async_ingest__": ("ingest_source", _run_ingest_from_chat),
+})
+
+
 async def _run_loop_step(
     conn: sqlite3.Connection,
     ws_id: str,
@@ -2010,16 +2031,7 @@ async def research(
 
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
-    # Check environment, then secrets.env
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        secrets_path = Path(__file__).parent.parent / "secrets.env"
-        if secrets_path.exists():
-            for line in secrets_path.read_text().splitlines():
-                cleaned = line.removeprefix("export ").strip()
-                if cleaned.startswith("ANTHROPIC_API_KEY="):
-                    api_key = cleaned.split("=", 1)[1].strip()
-                    break
+    api_key = _get_api_key()
     if not api_key:
         return ChatResponse(
             response="ANTHROPIC_API_KEY not set. Export it and restart the server.",
@@ -2131,26 +2143,7 @@ async def chat(request: ChatRequest):
         for tc in tool_calls:
             t_tool = time.monotonic()
             result_str = execute_tool(conn, ws_id, root_id, tc.name, tc.input, run_id)  # type: ignore[arg-type]
-            if tc.name == "run_orchestrator" and "__async_orchestrate__" in result_str:
-                params = json.loads(result_str)
-                result_str = await _run_orchestrator_from_chat(
-                    conn, params, api_key, run_id,
-                )
-            elif tc.name == "run_orchestrator_loop" and "__async_orchestrate_loop__" in result_str:
-                params = json.loads(result_str)
-                result_str = await _run_loop_from_chat(
-                    conn, params, api_key, run_id,
-                )
-            elif tc.name == "start_research" and "__async_research__" in result_str:
-                params = json.loads(result_str)
-                result_str = await _run_research_from_chat(
-                    conn, params, api_key, run_id,
-                )
-            elif tc.name == "ingest_source" and "__async_ingest__" in result_str:
-                params = json.loads(result_str)
-                result_str = await _run_ingest_from_chat(
-                    conn, params, api_key, run_id,
-                )
+            result_str = await _resolve_async_tool(result_str, conn, api_key, run_id)
             tool_duration_ms = int((time.monotonic() - t_tool) * 1000)
             tracer.record_tool_event(
                 round_span,
@@ -2316,42 +2309,13 @@ async def chat_stream(request: ChatRequest):
                 for tc in tool_calls:
                     t_tool = time.monotonic()
                     result_str = execute_tool(conn, ws_id, root_id, tc.name, tc.input, run_id)
-                    if tc.name == "run_orchestrator" and "__async_orchestrate__" in result_str:
-                        params = json.loads(result_str)
-                        progress_msgs: list[str] = []
-                        result_str = await _run_orchestrator_from_chat(
-                            conn, params, api_key, run_id,
-                            on_progress=lambda msg: progress_msgs.append(msg),
-                        )
-                        for pmsg in progress_msgs:
-                            yield _sse("orchestrator_progress", {"message": pmsg})
-                    elif tc.name == "run_orchestrator_loop" and "__async_orchestrate_loop__" in result_str:
-                        params = json.loads(result_str)
-                        loop_progress: list[str] = []
-                        result_str = await _run_loop_from_chat(
-                            conn, params, api_key, run_id,
-                            on_progress=lambda msg: loop_progress.append(msg),
-                        )
-                        for pmsg in loop_progress:
-                            yield _sse("orchestrator_progress", {"message": pmsg})
-                    elif tc.name == "start_research" and "__async_research__" in result_str:
-                        params = json.loads(result_str)
-                        research_progress: list[str] = []
-                        result_str = await _run_research_from_chat(
-                            conn, params, api_key, run_id,
-                            on_progress=lambda msg: research_progress.append(msg),
-                        )
-                        for pmsg in research_progress:
-                            yield _sse("orchestrator_progress", {"message": pmsg})
-                    elif tc.name == "ingest_source" and "__async_ingest__" in result_str:
-                        params = json.loads(result_str)
-                        ingest_progress: list[str] = []
-                        result_str = await _run_ingest_from_chat(
-                            conn, params, api_key, run_id,
-                            on_progress=lambda msg: ingest_progress.append(msg),
-                        )
-                        for pmsg in ingest_progress:
-                            yield _sse("orchestrator_progress", {"message": pmsg})
+                    progress_msgs: list[str] = []
+                    result_str = await _resolve_async_tool(
+                        result_str, conn, api_key, run_id,
+                        on_progress=lambda msg: progress_msgs.append(msg),
+                    )
+                    for pmsg in progress_msgs:
+                        yield _sse("orchestrator_progress", {"message": pmsg})
                     tool_duration_ms = int((time.monotonic() - t_tool) * 1000)
                     tracer.record_tool_event(
                         round_span,

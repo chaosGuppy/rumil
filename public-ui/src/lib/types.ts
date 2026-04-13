@@ -14,6 +14,7 @@ export interface WorldviewNode {
   robustness: number | null;
   importance?: number;
   source_page_ids: string[];
+  created_by?: string;
   children: WorldviewNode[];
 }
 

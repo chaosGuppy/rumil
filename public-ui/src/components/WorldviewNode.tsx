@@ -86,6 +86,19 @@ export function WorldviewNodeCard({
         )}
         <CredenceBadge credence={node.credence} robustness={node.robustness} />
         <SourceBadge sourceIds={node.source_page_ids} onOpenDrawer={onOpenSource} />
+        {node.created_by && node.created_by !== "system" && node.created_by !== "rumil-import" && (
+          <span
+            style={{
+              fontFamily: "var(--font-mono-stack)",
+              fontSize: "9px",
+              color: "var(--fg-dim)",
+              letterSpacing: "0.04em",
+              opacity: 0.7,
+            }}
+          >
+            via {node.created_by}
+          </span>
+        )}
       </div>
 
       <h3

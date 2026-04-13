@@ -101,8 +101,6 @@ but not a near-term goal.
 | run_orchestrator | Run orchestrator step on a branch |
 
 **Chat TODO:**
-- [ ] Show research progress when orchestrator is running
-- [ ] Handle long-running orchestrator calls — progress indicator or SSE updates
 - [ ] Richer inspect experience (modal/panel when clicking node refs)
 
 ### Provenance Inspect (partial)
@@ -145,20 +143,11 @@ Operator components in `src/components/operator/`, never imported by public rout
 - Types in `src/lib/operator-types.ts` (Inspect AI-inspired event model)
 - Currently uses mock data — needs serve.py `trace_events` table + instrumentation
 
-### Trace Backend TODO
-- [ ] `trace_events` table in SQLite (event_type, span_id, parent_span_id, data JSON)
-- [ ] Instrument `client.messages.create`/`.stream` calls to record ModelEvents
-- [ ] Instrument tool execution to record ToolEvents with timing
-- [ ] `GET /api/operator/runs` — run list with aggregated cost/tokens
-- [ ] `GET /api/operator/runs/{run_id}` — full trace with events
-- [ ] Token usage + cost columns on `runs` table
-
 ### Future Operator Features
 - **Quality Dashboard** — per-branch health, node counts, gap identification
 - **Node Editor** — direct editing of node properties without chat
 - **Research Graph Explorer** — visual graph navigation
 - **Power Chat** — chat with additional tools (edit_node, delete_node, etc.)
-- **Cost Tracking** — per-run and cumulative API costs
 
 ## API Status (serve.py)
 
@@ -169,15 +158,19 @@ Operator components in `src/components/operator/`, never imported by public rout
 - [x] `POST /api/workspaces` — create workspace + root question
 - [x] `GET /api/workspaces/{name}/tree` — full worldview tree (nested JSON)
 - [x] `GET /api/workspaces/{name}/suggestions` — review queue by status
-- [x] `POST /api/suggestions/{id}/accept|reject` — act on suggestions
+- [x] `POST /api/suggestions/{id}/accept|reject` — act on suggestions (executes mutations)
 - [x] `GET /api/workspaces/{name}/branch-context/{node_id}` — branch context + health
 - [x] `POST /api/workspaces/{name}/orchestrate` — run orchestrator step (dry_run supported)
+- [x] `POST /api/workspaces/{name}/orchestrate-loop` — multi-step loop with strategy
+- [x] `POST /api/workspaces/{name}/research` — sustained research program with phase transitions (SSE progress)
+- [x] `POST /api/workspaces/{name}/ingest` — ingest a URL, extract into nodes
+- [x] `GET /api/workspaces/{name}/concepts` — concept nodes for hover references
 - [x] `GET /api/runs` — run history
 - [x] `GET /api/runs/{run_id}/actions` — actions within a run
+- [x] `GET /api/operator/runs` — run list with aggregated cost/tokens
+- [x] `GET /api/operator/runs/{run_id}` — full trace with events
 
 ### Not yet built
-- [ ] SSE/WebSocket for orchestrator progress (currently fire-and-forget)
-- [ ] Source ingestion endpoint (ingest a URL, extract into nodes)
 - [ ] Worldview caching/storage — currently rebuilds tree on every request
 
 ### Auth
@@ -196,5 +189,4 @@ public and operator routes. Operator-only components are in
 - Should the public UI eventually connect to rumil core, or stay independent?
 - How to handle worldview staleness — show "generated at" timestamp, or auto-refresh?
 - What's the right supplementary boundary? Fixed depth, or LLM-decided per tree?
-- Source ingestion — how should URLs/documents enter the system?
 - Multi-user — do different users see each other's chat history / suggestions?

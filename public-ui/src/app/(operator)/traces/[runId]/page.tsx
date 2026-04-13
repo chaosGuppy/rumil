@@ -1,31 +1,49 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { TraceDetail } from "@/components/operator/TraceDetail";
-import { MOCK_RUN_DETAILS } from "@/lib/operator-mock";
+import { fetchRunDetail } from "@/lib/operator-api";
+import type { RunDetail } from "@/lib/operator-types";
 
 export default function TraceDetailPage() {
   const { runId } = useParams<{ runId: string }>();
-  const run = MOCK_RUN_DETAILS[runId];
+  const [run, setRun] = useState<RunDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  if (!run) {
-    return (
-      <div className="op-trace-list-empty">
-        Run not found: {runId}
-        <br />
-        <Link href="/traces" style={{ color: "var(--accent)" }}>
-          Back to traces
-        </Link>
-      </div>
-    );
-  }
+  useEffect(() => {
+    fetchRunDetail(runId)
+      .then((data) => {
+        setRun(data);
+        setLoading(false);
+      })
+      .catch((e) => {
+        setError(e.message);
+        setLoading(false);
+      });
+  }, [runId]);
+
+  if (loading) return <div className="op-trace-list-empty">Loading trace...</div>;
+  if (error) return (
+    <div className="op-trace-list-empty">
+      Error: {error}
+      <br />
+      <Link href="/traces" style={{ color: "var(--accent)" }}>Back to traces</Link>
+    </div>
+  );
+  if (!run) return (
+    <div className="op-trace-list-empty">
+      Run not found: {runId}
+      <br />
+      <Link href="/traces" style={{ color: "var(--accent)" }}>Back to traces</Link>
+    </div>
+  );
 
   return (
     <div>
-      <Link href="/traces" className="op-back-link">
-        &larr; traces
-      </Link>
+      <Link href="/traces" className="op-back-link">&larr; traces</Link>
       <TraceDetail run={run} />
     </div>
   );

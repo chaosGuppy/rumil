@@ -47,6 +47,7 @@ from orchestrator import (
     resolve_run_type,
     run_step,
 )
+from orchestrator.tracing import RunTracer
 
 DB_PATH = Path(__file__).parent / "worldview.db"
 PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
@@ -128,6 +129,16 @@ def init_db() -> None:
             created_at TEXT NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS trace_events (
+            id TEXT PRIMARY KEY,
+            run_id TEXT NOT NULL REFERENCES runs(id),
+            event_type TEXT NOT NULL,
+            span_id TEXT NOT NULL,
+            parent_span_id TEXT,
+            timestamp TEXT NOT NULL,
+            data TEXT NOT NULL DEFAULT '{}'
+        );
+
         CREATE INDEX IF NOT EXISTS idx_nodes_workspace ON nodes(workspace_id);
         CREATE INDEX IF NOT EXISTS idx_nodes_parent ON nodes(parent_id);
         CREATE INDEX IF NOT EXISTS idx_nodes_importance ON nodes(workspace_id, importance);
@@ -135,6 +146,8 @@ def init_db() -> None:
         CREATE INDEX IF NOT EXISTS idx_actions_run ON actions(run_id);
         CREATE INDEX IF NOT EXISTS idx_suggestions_workspace ON suggestions(workspace_id, status);
         CREATE INDEX IF NOT EXISTS idx_sources_workspace ON sources(workspace_id);
+        CREATE INDEX IF NOT EXISTS idx_trace_events_run ON trace_events(run_id);
+        CREATE INDEX IF NOT EXISTS idx_trace_events_span ON trace_events(span_id);
     """)
     conn.commit()
     conn.close()
@@ -866,6 +879,7 @@ async def orchestrate(
         now_iso=now_iso,
     )
 
+    tracer = RunTracer(conn=conn, run_id=run_id)
     result = await run_step(
         system_prompt=system_prompt,
         user_message=user_message,
@@ -875,8 +889,10 @@ async def orchestrate(
         max_rounds=config.get("max_rounds", 8),
         max_tokens=config.get("max_tokens", 4096),
         temperature=config.get("temperature", 0.5),
+        tracer=tracer,
     )
 
+    tracer.finalize()
     conn.execute(
         "UPDATE runs SET status = 'completed', completed_at = ? WHERE id = ?",
         (now_iso(), run_id),
@@ -961,7 +977,8 @@ async def _run_orchestrator_from_chat(
         now_iso=now_iso,
     )
 
-    action_count = [0]  # mutable counter for closure
+    tracer = RunTracer(conn=conn, run_id=orch_run_id)
+    action_count = [0]
 
     def on_action(action: dict) -> None:
         action_count[0] += 1
@@ -980,8 +997,10 @@ async def _run_orchestrator_from_chat(
         max_tokens=config.get("max_tokens", 4096),
         temperature=config.get("temperature", 0.5),
         on_action=on_action,
+        tracer=tracer,
     )
 
+    trace_stats = tracer.finalize()
     conn.execute(
         "UPDATE runs SET status = 'completed', completed_at = ? WHERE id = ?",
         (now_iso(), orch_run_id),
@@ -1249,6 +1268,203 @@ async def chat_stream(request: ChatRequest):
             conn.close()
 
     return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+@app.get("/api/operator/runs")
+def operator_list_runs(
+    workspace: str | None = None,
+    run_type: str | None = None,
+    status: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """List runs with aggregated trace stats for the operator UI."""
+    conn = get_db()
+    conditions = []
+    params: list[object] = []
+    if workspace:
+        conditions.append("w.name = ?")
+        params.append(workspace)
+    if run_type:
+        conditions.append("r.run_type = ?")
+        params.append(run_type)
+    if status:
+        conditions.append("r.status = ?")
+        params.append(status)
+
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    count_row = conn.execute(
+        f"SELECT COUNT(*) FROM runs r JOIN workspaces w ON r.workspace_id = w.id {where}",
+        params,
+    ).fetchone()
+    total = count_row[0] if count_row else 0
+
+    rows = conn.execute(
+        f"SELECT r.*, w.name as workspace_name, n.headline as scope_node_headline "
+        f"FROM runs r "
+        f"JOIN workspaces w ON r.workspace_id = w.id "
+        f"LEFT JOIN nodes n ON r.scope_node_id = n.id "
+        f"{where} "
+        f"ORDER BY r.started_at DESC LIMIT ? OFFSET ?",
+        [*params, limit, offset],
+    ).fetchall()
+
+    runs = []
+    for row in rows:
+        rd = dict(row)
+        run_id = rd["id"]
+        trace_stats = conn.execute(
+            "SELECT "
+            "  COUNT(*) FILTER (WHERE event_type = 'model') as model_calls, "
+            "  COUNT(*) FILTER (WHERE event_type = 'tool') as tool_calls, "
+            "  COALESCE(SUM(CASE WHEN event_type = 'model' THEN json_extract(data, '$.cost_usd') END), 0) as total_cost, "
+            "  COALESCE(SUM(CASE WHEN event_type = 'model' THEN json_extract(data, '$.usage.input_tokens') END), 0) as input_tokens, "
+            "  COALESCE(SUM(CASE WHEN event_type = 'model' THEN json_extract(data, '$.usage.output_tokens') END), 0) as output_tokens, "
+            "  COALESCE(SUM(CASE WHEN event_type = 'model' THEN json_extract(data, '$.usage.cache_read_tokens') END), 0) as cache_read, "
+            "  COALESCE(SUM(CASE WHEN event_type = 'model' THEN json_extract(data, '$.usage.cache_write_tokens') END), 0) as cache_write "
+            "FROM trace_events WHERE run_id = ?",
+            (run_id,),
+        ).fetchone()
+        ts = dict(trace_stats) if trace_stats else {}
+
+        started = rd.get("started_at", "")
+        completed = rd.get("completed_at")
+        duration_ms = 0
+        if started and completed:
+            try:
+                from datetime import datetime as dt
+                t0 = dt.fromisoformat(started)
+                t1 = dt.fromisoformat(completed)
+                duration_ms = int((t1 - t0).total_seconds() * 1000)
+            except (ValueError, TypeError):
+                pass
+
+        runs.append({
+            "id": run_id,
+            "workspace_id": rd["workspace_id"],
+            "workspace_name": rd.get("workspace_name", ""),
+            "run_type": rd["run_type"],
+            "status": rd["status"],
+            "started_at": started,
+            "completed_at": completed,
+            "description": rd.get("description"),
+            "scope_node_headline": rd.get("scope_node_headline"),
+            "total_cost_usd": ts.get("total_cost", 0),
+            "total_usage": {
+                "input_tokens": int(ts.get("input_tokens", 0)),
+                "output_tokens": int(ts.get("output_tokens", 0)),
+                "cache_read_tokens": int(ts.get("cache_read", 0)),
+                "cache_write_tokens": int(ts.get("cache_write", 0)),
+            },
+            "model_call_count": int(ts.get("model_calls", 0)),
+            "tool_call_count": int(ts.get("tool_calls", 0)),
+            "duration_ms": duration_ms,
+        })
+
+    conn.close()
+    return {"runs": runs, "total": total}
+
+
+@app.get("/api/operator/runs/{run_id}")
+def operator_run_detail(run_id: str):
+    """Full run detail with all trace events for the operator UI."""
+    conn = get_db()
+    row = conn.execute(
+        "SELECT r.*, w.name as workspace_name, n.headline as scope_node_headline "
+        "FROM runs r "
+        "JOIN workspaces w ON r.workspace_id = w.id "
+        "LEFT JOIN nodes n ON r.scope_node_id = n.id "
+        "WHERE r.id = ?",
+        (run_id,),
+    ).fetchone()
+    if not row:
+        conn.close()
+        return {"error": "run not found"}
+    rd = dict(row)
+
+    event_rows = conn.execute(
+        "SELECT * FROM trace_events WHERE run_id = ? ORDER BY timestamp",
+        (run_id,),
+    ).fetchall()
+
+    events = []
+    total_cost = 0.0
+    total_input = 0
+    total_output = 0
+    total_cache_read = 0
+    total_cache_write = 0
+    model_calls = 0
+    tool_calls = 0
+
+    for er in event_rows:
+        ed = dict(er)
+        data = json.loads(ed.get("data", "{}"))
+        event: dict[str, Any] = {
+            "event_type": ed["event_type"],
+            "id": ed["id"],
+            "span_id": ed["span_id"],
+            "timestamp": ed["timestamp"],
+        }
+        if ed.get("parent_span_id"):
+            event["parent_span_id"] = ed["parent_span_id"]
+
+        if ed["event_type"] == "model":
+            event.update(data)
+            total_cost += data.get("cost_usd", 0)
+            usage = data.get("usage", {})
+            total_input += usage.get("input_tokens", 0)
+            total_output += usage.get("output_tokens", 0)
+            total_cache_read += usage.get("cache_read_tokens", 0)
+            total_cache_write += usage.get("cache_write_tokens", 0)
+            model_calls += 1
+        elif ed["event_type"] == "tool":
+            event.update(data)
+            tool_calls += 1
+        elif ed["event_type"] in ("span_begin", "span_end"):
+            event.update(data)
+        elif ed["event_type"] in ("info", "error"):
+            event.update(data)
+
+        events.append(event)
+
+    started = rd.get("started_at", "")
+    completed = rd.get("completed_at")
+    duration_ms = 0
+    if started and completed:
+        try:
+            from datetime import datetime as dt
+            t0 = dt.fromisoformat(started)
+            t1 = dt.fromisoformat(completed)
+            duration_ms = int((t1 - t0).total_seconds() * 1000)
+        except (ValueError, TypeError):
+            pass
+
+    config = json.loads(rd.get("config", "{}"))
+
+    conn.close()
+    return {
+        "id": run_id,
+        "workspace_id": rd["workspace_id"],
+        "workspace_name": rd.get("workspace_name", ""),
+        "run_type": rd["run_type"],
+        "status": rd["status"],
+        "started_at": started,
+        "completed_at": completed,
+        "description": rd.get("description"),
+        "scope_node_headline": rd.get("scope_node_headline"),
+        "total_cost_usd": total_cost,
+        "total_usage": {
+            "input_tokens": total_input,
+            "output_tokens": total_output,
+            "cache_read_tokens": total_cache_read,
+            "cache_write_tokens": total_cache_write,
+        },
+        "model_call_count": model_calls,
+        "tool_call_count": tool_calls,
+        "duration_ms": duration_ms,
+        "config": config,
+        "events": events,
+    }
 
 
 if __name__ == "__main__":

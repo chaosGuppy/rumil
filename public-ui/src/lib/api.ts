@@ -95,7 +95,7 @@ export async function fetchWorldview(
   return {
     question_id: root.id,
     question_headline: root.headline,
-    summary: root.content,
+    summary: root.content === root.headline ? "" : root.content,
     nodes,
     generated_at: root.created_at,
   };
@@ -152,11 +152,28 @@ export async function fetchSuggestions(
 export async function respondToSuggestion(
   id: string,
   action: "accept" | "reject",
-): Promise<void> {
+): Promise<Record<string, unknown>> {
   const res = await fetch(`${API_BASE}/api/suggestions/${id}/${action}`, {
     method: "POST",
   });
   if (!res.ok) throw new Error(`API error: ${res.status}`);
+  return res.json();
+}
+
+export interface ConceptInfo {
+  id: string;
+  headline: string;
+  content: string;
+}
+
+export async function fetchConcepts(
+  workspace: string,
+): Promise<ConceptInfo[]> {
+  const res = await fetch(
+    `${API_BASE}/api/workspaces/${workspace}/concepts`,
+  );
+  if (!res.ok) return [];
+  return res.json();
 }
 
 export interface SourceInfo {

@@ -11,6 +11,7 @@ import { ChatPanel } from "@/components/ChatPanel";
 import { SuggestionReview } from "@/components/SuggestionReview";
 import { SourcesView } from "@/components/SourcesView";
 import { SourceDrawer } from "@/components/SourceDrawer";
+import { ConceptProvider } from "@/components/ConceptContext";
 import { fetchWorldview, fetchWorkspaces } from "@/lib/api";
 import type { Worldview } from "@/lib/types";
 import type { WorkspaceInfo, SourceFull } from "@/lib/api";
@@ -127,7 +128,7 @@ function WorkspaceBrowser({
             >
               <div className="browser-card-name">{ws.name}</div>
               <div className="browser-card-stats">
-                {ws.node_count} nodes
+                {ws.node_count} {ws.node_count === 1 ? "node" : "nodes"}
                 {ws.run_count > 0 && ` · ${ws.run_count} runs`}
                 {ws.pending_suggestions > 0 && (
                   <span className="browser-card-badge">
@@ -240,7 +241,8 @@ function WorldviewView({ workspace, onBack }: { workspace: string; onBack: () =>
   }
 
   return (
-    <div className="layout-with-chat">
+    <ConceptProvider workspace={workspace}>
+      <div className="layout-with-chat">
       {showReview ? (
         <div className="pane-container">
           <div className="pane" style={{ minWidth: "500px" }}>
@@ -320,7 +322,8 @@ function WorldviewView({ workspace, onBack }: { workspace: string; onBack: () =>
         source={drawerSource}
         onClose={() => setDrawerSource(null)}
       />
-    </div>
+      </div>
+    </ConceptProvider>
   );
 }
 

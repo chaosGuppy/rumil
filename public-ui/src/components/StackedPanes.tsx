@@ -3,7 +3,9 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import type { WorldviewNode, Worldview } from "@/lib/types";
+import { partitionChildren } from "@/lib/types";
 import { WorldviewNodeCard } from "./WorldviewNode";
+import { JudgementHistory } from "./JudgementHistory";
 
 interface PaneState {
   parentNode: WorldviewNode;
@@ -120,22 +122,33 @@ function NodePane({
         </button>
       </div>
 
-      {pane.parentNode.children.map((child, i) => (
-        <WorldviewNodeCard
-          key={i}
-          node={child}
-          index={i}
-          onExpandPane={
-            child.children.length > 0
-              ? (node: WorldviewNode, idx: number) => onExpand(node, idx)
-              : undefined
-          }
-          onFocus={onFocusNode}
-          isActive={activePanePath === String(i)}
-          isFocused={focusedNodeId ? child.headline.includes(focusedNodeId) : false}
-          activeDepth={depth + 1}
-        />
-      ))}
+      {(() => {
+        const { active, supersededJudgements } = partitionChildren(pane.parentNode.children);
+        return (
+          <>
+            {active.map((child, i) => (
+              <WorldviewNodeCard
+                key={child.id ?? i}
+                node={child}
+                index={i}
+                onExpandPane={
+                  child.children.length > 0
+                    ? (node: WorldviewNode, idx: number) => onExpand(node, idx)
+                    : undefined
+                }
+                onFocus={onFocusNode}
+                isActive={activePanePath === String(i)}
+                isFocused={focusedNodeId ? child.headline.includes(focusedNodeId) : false}
+                activeDepth={depth + 1}
+                supersededCount={
+                  child.node_type === "judgement" ? supersededJudgements.length : 0
+                }
+              />
+            ))}
+            <JudgementHistory supersededJudgements={supersededJudgements} />
+          </>
+        );
+      })()}
     </div>
   );
 }
@@ -311,17 +324,19 @@ export function StackedPanes({
             >
               {worldview.question_headline}
             </h1>
-            <div
-              className="worldview-prose"
-              style={{
-                fontSize: "15px",
-                color: "var(--fg-muted)",
-                borderLeft: "2px solid var(--border)",
-                paddingLeft: "16px",
-              }}
-            >
-              <p style={{ margin: 0 }}>{worldview.summary}</p>
-            </div>
+            {worldview.summary && (
+              <div
+                className="worldview-prose"
+                style={{
+                  fontSize: "15px",
+                  color: "var(--fg-muted)",
+                  borderLeft: "2px solid var(--border)",
+                  paddingLeft: "16px",
+                }}
+              >
+                <p style={{ margin: 0 }}>{worldview.summary}</p>
+              </div>
+            )}
             <div
               style={{
                 marginTop: "12px",
@@ -340,25 +355,35 @@ export function StackedPanes({
             </div>
           </header>
 
-          <div>
-            {worldview.nodes.map((node, i) => (
-              <div key={i} id={`node-${i}`}>
-                <WorldviewNodeCard
-                  node={node}
-                  index={i}
-                  onExpandPane={
-                    node.children.length > 0
-                      ? () => handleExpandFromRoot(node, i)
-                      : undefined
-                  }
-                  onFocus={() => handleFocusRoot(i)}
-                  isActive={activeRootIndex === i}
-                  isFocused={focusedId ? node.headline.includes(focusedId) : false}
-                  activeDepth={0}
-                />
+          {(() => {
+            const { active: rootActive, supersededJudgements: rootSuperseded } =
+              partitionChildren(worldview.nodes);
+            return (
+              <div>
+                {rootActive.map((node, i) => (
+                  <div key={node.id ?? i} id={`node-${i}`}>
+                    <WorldviewNodeCard
+                      node={node}
+                      index={i}
+                      onExpandPane={
+                        node.children.length > 0
+                          ? () => handleExpandFromRoot(node, i)
+                          : undefined
+                      }
+                      onFocus={() => handleFocusRoot(i)}
+                      isActive={activeRootIndex === i}
+                      isFocused={focusedId ? node.headline.includes(focusedId) : false}
+                      activeDepth={0}
+                      supersededCount={
+                        node.node_type === "judgement" ? rootSuperseded.length : 0
+                      }
+                    />
+                  </div>
+                ))}
+                <JudgementHistory supersededJudgements={rootSuperseded} />
               </div>
-            ))}
-          </div>
+            );
+          })()}
         </div>
       </div>
 

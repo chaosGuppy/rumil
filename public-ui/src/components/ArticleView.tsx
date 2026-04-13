@@ -2,10 +2,14 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import type { WorldviewNode, Worldview } from "@/lib/types";
+import { partitionChildren } from "@/lib/types";
 import type { SourceFull } from "@/lib/api";
 import { CredenceBadge } from "./CredenceBadge";
+import { LinkBadges } from "./LinkBadges";
 import { NodeTypeLabel, nodeColor } from "./NodeTypeLabel";
 import { SourceBadge } from "./SourceBadge";
+import { TextWithConcepts } from "./ConceptRef";
+import { JudgementHistory } from "./JudgementHistory";
 
 interface ArticleViewProps {
   worldview: Worldview;
@@ -21,6 +25,7 @@ function isSupplementary(node: WorldviewNode): boolean {
 function collectSupplementary(node: WorldviewNode): WorldviewNode[] {
   const result: WorldviewNode[] = [];
   for (const child of node.children) {
+    if (child.superseded_by) continue;
     if (isSupplementary(child)) {
       result.push(child);
     } else {
@@ -46,7 +51,8 @@ function ArticleNode({
   if (isSupplementary(node)) return null;
 
   const isFocused = focusedId ? node.headline.includes(focusedId) : false;
-  const regular = node.children.filter((c) => !isSupplementary(c));
+  const { active, supersededJudgements } = partitionChildren(node.children);
+  const regular = active.filter((c) => !isSupplementary(c));
   const Tag = (
     depth === 0 ? "h2" : depth === 1 ? "h3" : "h4"
   ) as "h2" | "h3" | "h4";
@@ -72,13 +78,14 @@ function ArticleNode({
         )}
         <CredenceBadge credence={node.credence} robustness={node.robustness} />
         <SourceBadge sourceIds={node.source_page_ids} onOpenDrawer={onOpenSource} />
+        <LinkBadges linksOut={node.links_out} linksIn={node.links_in} />
       </div>
       <div className="worldview-prose">
-        <p>{node.content}</p>
+        <p><TextWithConcepts text={node.content} excludeConceptId={node.id} /></p>
       </div>
       {regular.map((child, i) => (
         <ArticleNode
-          key={i}
+          key={child.id ?? i}
           node={child}
           depth={depth + 1}
           onFocus={onFocus}
@@ -86,6 +93,7 @@ function ArticleNode({
           onOpenSource={onOpenSource}
         />
       ))}
+      <JudgementHistory supersededJudgements={supersededJudgements} />
     </div>
   );
 }
@@ -168,9 +176,11 @@ export function ArticleView({
         <article className="article-content">
           <header className="article-header">
             <h1>{worldview.question_headline}</h1>
-            <div className="article-summary worldview-prose">
-              <p>{worldview.summary}</p>
-            </div>
+            {worldview.summary && (
+              <div className="article-summary worldview-prose">
+                <p>{worldview.summary}</p>
+              </div>
+            )}
             <div className="article-date">
               Generated{" "}
               {new Date(worldview.generated_at).toLocaleDateString("en-US", {
@@ -220,7 +230,7 @@ export function ArticleView({
                             {sNode.headline}
                           </h4>
                           <div className="worldview-prose">
-                            <p>{sNode.content}</p>
+                            <p><TextWithConcepts text={sNode.content} excludeConceptId={sNode.id} /></p>
                           </div>
                         </div>
                       ))}

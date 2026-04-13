@@ -42,3 +42,21 @@ export interface Worldview {
   nodes: WorldviewNode[];
   generated_at: string;
 }
+
+export function partitionChildren(children: WorldviewNode[]): {
+  active: WorldviewNode[];
+  supersededJudgements: WorldviewNode[];
+} {
+  const active: WorldviewNode[] = [];
+  const supersededJudgements: WorldviewNode[] = [];
+  for (const child of children) {
+    if (child.superseded_by) {
+      if (child.node_type === "judgement") {
+        supersededJudgements.push(child);
+      }
+    } else {
+      active.push(child);
+    }
+  }
+  return { active, supersededJudgements };
+}

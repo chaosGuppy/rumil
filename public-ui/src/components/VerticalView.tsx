@@ -3,8 +3,13 @@
 import { useState, useEffect, useCallback, useImperativeHandle, forwardRef } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import type { WorldviewNode, Worldview } from "@/lib/types";
+import { partitionChildren } from "@/lib/types";
 import { CredenceBadge } from "./CredenceBadge";
+import { LinkBadges } from "./LinkBadges";
 import { NodeTypeLabel } from "./NodeTypeLabel";
+import { SourceBadge } from "./SourceBadge";
+import { TextWithConcepts } from "./ConceptRef";
+import { JudgementHistory } from "./JudgementHistory";
 
 interface VerticalViewProps {
   worldview: Worldview;
@@ -65,7 +70,8 @@ function VerticalNode({
 }) {
   const isExpanded = expanded.has(path);
   const isRoot = depth === 0;
-  const hasChildren = node.children.length > 0;
+  const { active: activeChildren, supersededJudgements } = partitionChildren(node.children);
+  const hasChildren = activeChildren.length > 0 || supersededJudgements.length > 0;
   const isFocused = focusedId ? node.headline.includes(focusedId) : false;
 
   return (
@@ -89,6 +95,8 @@ function VerticalNode({
             credence={node.credence}
             robustness={node.robustness}
           />
+          <SourceBadge sourceIds={node.source_page_ids} />
+          <LinkBadges linksOut={node.links_out} linksIn={node.links_in} />
           {node.importance !== undefined && node.importance > 0 && (
             <span className="vertical-label-dim">L{node.importance}</span>
           )}
@@ -96,7 +104,7 @@ function VerticalNode({
 
         {(isRoot || isExpanded) && (
           <div className="worldview-prose vertical-content">
-            <p>{node.content}</p>
+            <p><TextWithConcepts text={node.content} excludeConceptId={node.id} /></p>
           </div>
         )}
 
@@ -106,8 +114,8 @@ function VerticalNode({
               {isExpanded ? "\u25BE" : "\u25B8"}
             </span>
             <span>
-              {node.children.length}{" "}
-              {node.children.length === 1 ? "child" : "children"}
+              {activeChildren.length}{" "}
+              {activeChildren.length === 1 ? "child" : "children"}
             </span>
           </button>
         )}
@@ -118,9 +126,9 @@ function VerticalNode({
           className="vertical-children"
           style={{ borderColor: `var(--active-${depth % 5})` }}
         >
-          {node.children.map((child, i) => (
+          {activeChildren.map((child, i) => (
             <VerticalNode
-              key={i}
+              key={child.id ?? i}
               node={child}
               path={`${path}.${i}`}
               depth={depth + 1}
@@ -130,6 +138,7 @@ function VerticalNode({
               focusedId={focusedId}
             />
           ))}
+          <JudgementHistory supersededJudgements={supersededJudgements} />
         </div>
       )}
     </div>
@@ -233,16 +242,18 @@ export const VerticalView = forwardRef<VerticalViewHandle, VerticalViewProps>(
       <div className="vertical-scroll">
         <header className="vertical-header">
           <h1>{worldview.question_headline}</h1>
-          <div
-            className="worldview-prose"
-            style={{
-              color: "var(--fg-muted)",
-              borderLeft: "2px solid var(--border)",
-              paddingLeft: "16px",
-            }}
-          >
-            <p style={{ margin: 0 }}>{worldview.summary}</p>
-          </div>
+          {worldview.summary && (
+            <div
+              className="worldview-prose"
+              style={{
+                color: "var(--fg-muted)",
+                borderLeft: "2px solid var(--border)",
+                paddingLeft: "16px",
+              }}
+            >
+              <p style={{ margin: 0 }}>{worldview.summary}</p>
+            </div>
+          )}
           <div className="vertical-date">
             Generated{" "}
             {new Date(worldview.generated_at).toLocaleDateString("en-US", {

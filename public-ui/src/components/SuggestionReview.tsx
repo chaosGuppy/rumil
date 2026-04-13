@@ -10,6 +10,121 @@ interface SuggestionReviewProps {
   onAction: () => void;
 }
 
+function SuggestionPreview({
+  type,
+  payload,
+}: {
+  type: string;
+  payload: Record<string, unknown>;
+}) {
+  if (type === "add_to_branch") {
+    const nodeType = (payload.node_type as string) || "claim";
+    const headline = (payload.headline as string) || "";
+    const content = (payload.content as string) || "";
+    if (!headline && !content) return null;
+    return (
+      <div className="sug-preview">
+        <div className="sug-preview-label">will create</div>
+        <div className="sug-preview-node">
+          <span
+            className="sug-preview-type"
+            style={{ color: `var(--node-${nodeType}, var(--fg-dim))` }}
+          >
+            {nodeType}
+          </span>
+          {headline && <span className="sug-preview-headline">{headline}</span>}
+          {content && (
+            <div className="sug-preview-content">
+              {content.length > 200 ? content.slice(0, 200) + "..." : content}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (type === "relevel_node") {
+    const newImp = payload.new_importance;
+    if (newImp == null) return null;
+    return (
+      <div className="sug-preview">
+        <div className="sug-preview-label">importance change</div>
+        <div className="sug-preview-level">
+          <span className="sug-preview-arrow">→ L{String(newImp)}</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (type === "resolve_tension") {
+    const otherId = (payload.other_node_id as string) || "";
+    if (!otherId) return null;
+    return (
+      <div className="sug-preview">
+        <div className="sug-preview-label">will link as opposes</div>
+        <div className="sug-preview-tension">
+          <span className="sug-preview-id">{otherId.slice(0, 8)}</span>
+          <span className="sug-preview-arrow">↔</span>
+          <span>target</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (type === "merge_duplicate") {
+    const keepId = (payload.keep_node_id as string) || "";
+    const supersedeId = (payload.supersede_node_id as string) || "";
+    if (!keepId && !supersedeId) return null;
+    return (
+      <div className="sug-preview">
+        <div className="sug-preview-label">will merge</div>
+        <div className="sug-preview-merge">
+          {supersedeId && (
+            <span>
+              <span className="sug-preview-id">{supersedeId.slice(0, 8)}</span>
+              {" → superseded"}
+            </span>
+          )}
+          {keepId && (
+            <span>
+              <span className="sug-preview-id">{keepId.slice(0, 8)}</span>
+              {" kept"}
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (type === "cascade_review") {
+    const changedHl = (payload.changed_headline as string) || "?";
+    const changedId = ((payload.changed_node_id as string) || "").slice(0, 8);
+    const depHl = (payload.dependent_headline as string) || "?";
+    const changes = (payload.changes as Record<string, { old: unknown; new: unknown }>) || {};
+    const changeStrs = Object.entries(changes).map(([field, vals]) =>
+      field === "superseded" ? "judgement superseded" : `${field}: ${String(vals.old)}→${String(vals.new)}`
+    );
+    return (
+      <div className="sug-preview">
+        <div className="sug-preview-label">cascade: dependency changed</div>
+        <div style={{ fontSize: "12px", lineHeight: "1.5", color: "var(--fg-dim)" }}>
+          <div>
+            <strong>{depHl}</strong> depends on <strong>{changedHl}</strong>{" "}
+            <span style={{ opacity: 0.6 }}>[{changedId}]</span>
+          </div>
+          {changeStrs.length > 0 && (
+            <div style={{ marginTop: "4px", fontFamily: "var(--font-mono-stack)", fontSize: "11px" }}>
+              {changeStrs.join(", ")}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+}
+
 function SuggestionCard({
   suggestion,
   onRespond,
@@ -24,6 +139,7 @@ function SuggestionCard({
     /* empty */
   }
   const reasoning = (payload.reasoning as string) || "";
+  const isPending = suggestion.status === "pending";
 
   return (
     <div className="suggestion-card">
@@ -38,20 +154,23 @@ function SuggestionCard({
       {reasoning && (
         <div className="suggestion-reasoning">{reasoning}</div>
       )}
-      <div className="suggestion-actions">
-        <button
-          className="suggestion-btn suggestion-accept"
-          onClick={() => onRespond(suggestion.id, "accept")}
-        >
-          accept
-        </button>
-        <button
-          className="suggestion-btn suggestion-reject"
-          onClick={() => onRespond(suggestion.id, "reject")}
-        >
-          reject
-        </button>
-      </div>
+      <SuggestionPreview type={suggestion.suggestion_type} payload={payload} />
+      {isPending && (
+        <div className="suggestion-actions">
+          <button
+            className="suggestion-btn suggestion-accept"
+            onClick={() => onRespond(suggestion.id, "accept")}
+          >
+            accept
+          </button>
+          <button
+            className="suggestion-btn suggestion-reject"
+            onClick={() => onRespond(suggestion.id, "reject")}
+          >
+            reject
+          </button>
+        </div>
+      )}
     </div>
   );
 }

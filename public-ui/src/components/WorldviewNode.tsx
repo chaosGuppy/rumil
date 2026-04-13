@@ -3,8 +3,10 @@
 import type { WorldviewNode as WorldviewNodeType } from "@/lib/types";
 import type { SourceFull } from "@/lib/api";
 import { CredenceBadge } from "./CredenceBadge";
+import { LinkBadges } from "./LinkBadges";
 import { NodeTypeLabel } from "./NodeTypeLabel";
 import { SourceBadge } from "./SourceBadge";
+import { TextWithConcepts } from "./ConceptRef";
 
 interface WorldviewNodeProps {
   node: WorldviewNodeType;
@@ -15,6 +17,7 @@ interface WorldviewNodeProps {
   isActive?: boolean;
   isFocused?: boolean;
   activeDepth?: number;
+  supersededCount?: number;
 }
 
 function ChevronRight() {
@@ -43,7 +46,43 @@ export function WorldviewNodeCard({
   isActive,
   isFocused,
   activeDepth = 0,
+  supersededCount = 0,
 }: WorldviewNodeProps) {
+  if (node.node_type === "concept") {
+    const conceptHasChildren = node.children.length > 0;
+    return (
+      <div
+        className={[
+          "concept-node-card",
+          "fade-in",
+          `fade-in-delay-${Math.min(index + 1, 5)}`,
+          isFocused ? "node-focused" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+      >
+        <div className="concept-node-label">concept</div>
+        <h3>{node.headline}</h3>
+        <div className="worldview-prose">
+          <p style={{ margin: 0 }}>{node.content}</p>
+        </div>
+        {conceptHasChildren && onExpandPane && (
+          <button
+            className="expand-trigger"
+            onClick={() => onExpandPane(node, index)}
+            style={{ marginTop: "10px" }}
+          >
+            <span>
+              {node.children.length} detail
+              {node.children.length > 1 ? "s" : ""}
+            </span>
+            <ChevronRight />
+          </button>
+        )}
+      </div>
+    );
+  }
+
   const hasChildren = node.children.length > 0;
 
   const className = [
@@ -86,6 +125,7 @@ export function WorldviewNodeCard({
         )}
         <CredenceBadge credence={node.credence} robustness={node.robustness} />
         <SourceBadge sourceIds={node.source_page_ids} onOpenDrawer={onOpenSource} />
+        <LinkBadges linksOut={node.links_out} linksIn={node.links_in} />
         {node.created_by && node.created_by !== "system" && node.created_by !== "rumil-import" && (
           <span
             style={{
@@ -97,6 +137,11 @@ export function WorldviewNodeCard({
             }}
           >
             via {node.created_by}
+          </span>
+        )}
+        {node.node_type === "judgement" && supersededCount > 0 && (
+          <span className="judgement-supersedes">
+            supersedes {supersededCount} prior
           </span>
         )}
       </div>
@@ -117,7 +162,9 @@ export function WorldviewNodeCard({
       </h3>
 
       <div className="worldview-prose">
-        <p style={{ margin: 0, fontSize: "15px" }}>{node.content}</p>
+        <p style={{ margin: 0, fontSize: "15px" }}>
+          <TextWithConcepts text={node.content} excludeConceptId={node.id} />
+        </p>
       </div>
 
       {hasChildren && onExpandPane && (

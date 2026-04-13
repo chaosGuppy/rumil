@@ -61,10 +61,8 @@ function ViewModeSwitcher({
             {mode}
           </button>
         ))}
+        {extra}
       </div>
-      {extra && (
-        <div className="view-switcher-extra">{extra}</div>
-      )}
     </div>
   );
 }
@@ -262,6 +260,7 @@ function WorldviewView({ workspace, onBack }: { workspace: string; onBack: () =>
             workspaceName={workspace}
             extra={viewMode === "vertical" ? (
               <>
+                <span className="view-switcher-sep" />
                 <button
                   className="view-switcher-btn"
                   onClick={() => verticalRef.current?.expandAll()}

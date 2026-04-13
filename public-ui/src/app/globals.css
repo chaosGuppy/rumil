@@ -859,6 +859,14 @@ body {
   position: relative;
   height: 100vh;
   overflow: hidden;
+  padding-top: 44px;
+}
+
+.view-switcher-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 2px 2px;
+  background: var(--border);
 }
 
 /* view mode switcher — segmented control, top-right overlay */

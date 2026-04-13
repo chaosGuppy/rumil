@@ -329,10 +329,9 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "run_orchestrator",
         "description": (
-            "ACTUALLY RUN the orchestrator — calls the LLM, modifies the tree. "
-            "This is expensive and takes time. Only call after using preview_run "
-            "and getting explicit user confirmation. Never use this as a preview — "
-            "use preview_run for that."
+            "EXECUTE an orchestrator run — this calls the LLM, which uses tools "
+            "to add nodes, relevel, and suggest changes. Costs money and modifies "
+            "the tree. Call ONLY after preview_run and explicit user confirmation."
         ),
         "input_schema": {
             "type": "object",
@@ -345,10 +344,6 @@ TOOLS: list[dict[str, Any]] = [
                     "type": "string",
                     "enum": ["explore", "evaluate"],
                     "description": "Run type. Default: explore.",
-                },
-                "dry_run": {
-                    "type": "boolean",
-                    "description": "If true, describe planned actions without executing. Default true.",
                 },
             },
         },
@@ -476,7 +471,7 @@ def execute_tool(
         # Async — handled by the chat endpoint. Return a sentinel with resolved params.
         target_short = tool_input.get("node_id")
         run_type = tool_input.get("run_type", "explore")
-        dry = tool_input.get("dry_run", True)
+        dry = tool_input.get("dry_run", False)
         target_full = resolve_node_id(conn, target_short) if target_short else pick_next_branch(conn, ws_id)
         if not target_full:
             output = "No branch to orchestrate."
@@ -1082,7 +1077,7 @@ async def chat(request: ChatRequest):
                 result_str = await _run_orchestrator_from_chat(
                     conn, params, api_key, run_id,
                 )
-            tool_uses_log.append(ToolUseInfo(name=tc.name, input=tc.input, result=result_str[:500]))  # type: ignore[arg-type]
+            tool_uses_log.append(ToolUseInfo(name=tc.name, input=tc.input, result=result_str))  # type: ignore[arg-type]
             tool_results.append({
                 "type": "tool_result",
                 "tool_use_id": tc.id,
@@ -1210,7 +1205,7 @@ async def chat_stream(request: ChatRequest):
                     yield _sse("tool_use_result", {
                         "name": tc.name,
                         "input": tc.input,
-                        "result": result_str[:500],
+                        "result": result_str,
                     })
                     tool_results.append({
                         "type": "tool_result",
@@ -1234,4 +1229,10 @@ async def chat_stream(request: ChatRequest):
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8099)
+    uvicorn.run(
+        "serve:app",
+        host="0.0.0.0",
+        port=8099,
+        reload=True,
+        reload_dirs=[str(Path(__file__).parent)],
+    )

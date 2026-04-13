@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { RunPreview } from "./RunPreview";
 import { SlashCommandDropdown, useSlashCommands } from "./SlashCommands";
 
 interface ToolUse {
@@ -119,12 +120,22 @@ function TextWithNodeRefs({
   return <>{parts}</>;
 }
 
+function tryParsePreview(result: string) {
+  try {
+    const data = JSON.parse(result);
+    if (data.scope_node && data.context_nodes) return data;
+  } catch { /* not JSON or not a preview */ }
+  return null;
+}
+
 function MessageEntry({
   message,
   onNodeRef,
+  onAction,
 }: {
   message: Message;
   onNodeRef?: (id: string) => void;
+  onAction?: (text: string) => void;
 }) {
   const isUser = message.role === "user";
 
@@ -211,14 +222,29 @@ function MessageEntry({
             letterSpacing: "0.02em",
           }}
         >
-          {message.toolUses.map((tu, i) => (
-            <div key={i} style={{ padding: "2px 0" }}>
-              {tu.result ? "✓" : "⟳"} {tu.name}
-              {tu.result
-                ? ` — ${tu.result.slice(0, 80)}`
-                : " …"}
-            </div>
-          ))}
+          {message.toolUses.map((tu, i) => {
+            if (tu.name === "preview_run" && tu.result) {
+              const preview = tryParsePreview(tu.result);
+              if (preview) {
+                return (
+                  <RunPreview
+                    key={i}
+                    data={preview}
+                    onAction={onAction}
+                    onNodeRef={onNodeRef}
+                  />
+                );
+              }
+            }
+            return (
+              <div key={i} style={{ padding: "2px 0" }}>
+                {tu.result ? "✓" : "⟳"} {tu.name}
+                {tu.result
+                  ? ` — ${tu.result.slice(0, 80)}`
+                  : " …"}
+              </div>
+            );
+          })}
         </div>
       )}
       {message.streaming && !message.content && (
@@ -475,6 +501,14 @@ export function ChatPanel({
     [],
   );
 
+  const handleAction = useCallback(
+    (text: string) => {
+      setInput(text);
+      textareaRef.current?.focus();
+    },
+    [textareaRef],
+  );
+
   return (
     <div className={`chat-panel ${isOpen ? "chat-open" : "chat-closed"}`}>
       {/* collapsed strip */}
@@ -535,7 +569,7 @@ export function ChatPanel({
           {/* messages */}
           <div className="chat-messages">
             {messages.map((msg) => (
-              <MessageEntry key={msg.id} message={msg} onNodeRef={onNodeRef} />
+              <MessageEntry key={msg.id} message={msg} onNodeRef={onNodeRef} onAction={handleAction} />
             ))}
             <div ref={messagesEndRef} />
           </div>

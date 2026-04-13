@@ -35,10 +35,10 @@ export const COMMANDS: SlashCommand[] = [
     example: "/dispatch find-considerations f8a1b2c3",
   },
   {
-    name: "investigate",
-    description: "Run the full orchestrator on a question",
-    args: "<question_id> [--budget N]",
-    example: "/investigate f8a1b2c3 --budget 5",
+    name: "orchestrate",
+    description: "Preview and run the orchestrator on a branch",
+    args: "[branch_id] [--type explore|evaluate]",
+    example: "/orchestrate f8a1b2c3 --type evaluate",
   },
   {
     name: "ingest",

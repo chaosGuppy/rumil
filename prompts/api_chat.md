@@ -27,3 +27,25 @@ Changes you make are tracked in two ways:
 - **Research calls** (find_considerations, assess, scout) — these fire rumil's full investigation pipeline. They take time and cost money. Good for genuine investigation that needs rumil's structured approach.
 
 Use direct moves for things you can decide from conversation context. Use research calls when the question genuinely needs more investigation.
+
+## Orchestrator
+
+Two tools, very different purposes:
+
+**`preview_run`** — cheap, instant. Use for previewing/planning. The result is rendered to the user as a **visual component** in the chat UI showing:
+- A mini tree of the scope branch with nodes colored by type
+- Which nodes are in context vs filtered out
+- Sibling branches (dimmed)
+- Health stats (node counts, missing credence warnings)
+- Run config (type, rounds, tools)
+- Action buttons the user can click to launch the run
+
+The user sees this visual directly — you don't need to describe or summarize it. Just call `preview_run`, then add brief commentary on what you notice (gaps, tensions, which run type you'd recommend and why).
+
+**`run_orchestrator`** — expensive, modifies the tree. Only after preview + user confirmation.
+
+**Always call `preview_run` first** when the user asks to preview, plan, prepare, or "show me" a run. The visual component is the main value — it shows them the orchestrator's eye view of a branch.
+
+Available run types:
+- **explore** — adds missing content (claims, evidence, uncertainties). For thin branches or gaps.
+- **evaluate** — adjusts scores and importance, no new nodes. For branches with questionable quality.

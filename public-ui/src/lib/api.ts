@@ -1,4 +1,4 @@
-import type { Worldview, WorldviewNode } from "./types";
+import type { Worldview, WorldviewNode, NodeLink } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8099";
 
@@ -15,6 +15,15 @@ interface ApiNode {
   created_by: string;
   superseded_by?: string | null;
   children: ApiNode[];
+}
+
+interface ApiLink {
+  id: string;
+  source_id: string;
+  target_id: string;
+  link_type: string;
+  strength: number | null;
+  reasoning: string;
 }
 
 function transformNode(api: ApiNode): WorldviewNode {
@@ -39,18 +48,55 @@ function transformNode(api: ApiNode): WorldviewNode {
   };
 }
 
+function attachLinks(node: WorldviewNode, linksBySource: Map<string, NodeLink[]>, linksByTarget: Map<string, NodeLink[]>): void {
+  if (node.id) {
+    node.links_out = linksBySource.get(node.id) ?? [];
+    node.links_in = linksByTarget.get(node.id) ?? [];
+  }
+  for (const child of node.children) {
+    attachLinks(child, linksBySource, linksByTarget);
+  }
+}
+
 export async function fetchWorldview(
   workspace: string = "default",
 ): Promise<Worldview> {
   const res = await fetch(`${API_BASE}/api/workspaces/${workspace}/tree`);
   if (!res.ok) throw new Error(`API error: ${res.status}`);
-  const root: ApiNode = await res.json();
+  const data = await res.json();
+  const root: ApiNode = data;
+  const apiLinks: ApiLink[] = data.links ?? [];
+
+  const links: NodeLink[] = apiLinks.map((l) => ({
+    id: l.id,
+    source_id: l.source_id,
+    target_id: l.target_id,
+    link_type: l.link_type as NodeLink["link_type"],
+    strength: l.strength,
+    reasoning: l.reasoning,
+  }));
+
+  const linksBySource = new Map<string, NodeLink[]>();
+  const linksByTarget = new Map<string, NodeLink[]>();
+  for (const link of links) {
+    const src = linksBySource.get(link.source_id) ?? [];
+    src.push(link);
+    linksBySource.set(link.source_id, src);
+    const tgt = linksByTarget.get(link.target_id) ?? [];
+    tgt.push(link);
+    linksByTarget.set(link.target_id, tgt);
+  }
+
+  const nodes = root.children.map(transformNode);
+  for (const node of nodes) {
+    attachLinks(node, linksBySource, linksByTarget);
+  }
 
   return {
     question_id: root.id,
     question_headline: root.headline,
     summary: root.content,
-    nodes: root.children.map(transformNode),
+    nodes,
     generated_at: root.created_at,
   };
 }

@@ -21,10 +21,10 @@ _DETAIL_MAP: dict[str, PageDetail] = {
 class LoadPagePayload(BaseModel):
     page_id: str = Field(description="Short ID (first 8 chars) from the workspace map")
     detail: str = Field(
-        default="abstract",
+        default="content",
         description=(
-            "Level of detail: 'abstract' (short summary, default) "
-            "or 'content' (full text)"
+            "Level of detail: 'content' (full text, default) "
+            "or 'abstract' (short summary)"
         ),
     )
 
@@ -39,7 +39,7 @@ async def execute(payload: LoadPagePayload, call: Call, db: DB) -> MoveResult:
     if not page:
         log.debug("load_page: page '%s' resolved but not loadable", page_id)
         return MoveResult(f"Page '{page_id}' not found.")
-    detail = _DETAIL_MAP.get(payload.detail, PageDetail.ABSTRACT)
+    detail = _DETAIL_MAP.get(payload.detail, PageDetail.CONTENT)
     log.debug(
         "load_page: loaded %s (%s, detail=%s, %d chars)",
         full_id[:8],

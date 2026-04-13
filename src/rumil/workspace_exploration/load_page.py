@@ -20,21 +20,28 @@ _DETAIL_MAP: dict[str, PageDetail] = {
 }
 
 
-class _LoadPageInput(BaseModel):
-    page_id: str = Field(
-        description="Short ID (first 8 chars) or full UUID of a page",
-    )
-    detail: str = Field(
-        default="abstract",
-        description=(
-            "Level of detail: 'abstract' (short summary, default) "
-            "or 'content' (full text)"
-        ),
-    )
+def make_load_page_tool(
+    db: DB,
+    trace: CallTrace,
+    *,
+    default_detail: str = "content",
+) -> Tool:
+    """Build a page-loading tool that returns abstract or full content.
 
+    *default_detail* sets the detail level used when the LLM omits the
+    ``detail`` parameter (default ``"content"``).
+    """
 
-def make_load_page_tool(db: DB, trace: CallTrace) -> Tool:
-    """Build a page-loading tool that returns abstract or full content."""
+    class _LoadPageInput(BaseModel):
+        page_id: str = Field(
+            description="Short ID (first 8 chars) or full UUID of a page",
+        )
+        detail: str = Field(
+            default=default_detail,
+            description=(
+                "Level of detail: 'content' (full text) or 'abstract' (short summary)"
+            ),
+        )
 
     async def fn(args: dict) -> str:
         payload = _LoadPageInput.model_validate(args)
@@ -44,14 +51,14 @@ def make_load_page_tool(db: DB, trace: CallTrace) -> Tool:
         page = await db.get_page(full_id)
         if not page:
             return f"Page '{payload.page_id}' not found."
-        detail = _DETAIL_MAP.get(payload.detail, PageDetail.ABSTRACT)
+        detail = _DETAIL_MAP.get(payload.detail, PageDetail.CONTENT)
         return await format_page(page, detail, db=db)
 
     return Tool(
         name="load_page",
         description=(
-            "Load a page's abstract (default) or full content. Use 'abstract' "
-            "for a concise summary, 'content' for the full text."
+            "Load a page by short ID. Returns full content by default; "
+            "pass detail='abstract' for a concise summary."
         ),
         input_schema=_LoadPageInput.model_json_schema(),
         fn=fn,

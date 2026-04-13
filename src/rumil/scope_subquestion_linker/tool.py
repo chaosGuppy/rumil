@@ -33,13 +33,19 @@ class SubmitHolder:
     raw_inputs: list[dict] = field(default_factory=list)
 
 
-def make_render_subgraph_tool(db: DB, trace: CallTrace) -> Tool:
+def make_render_subgraph_tool(
+    db: DB,
+    trace: CallTrace,
+    *,
+    exclude_ids: set[str] | None = None,
+) -> Tool:
     """Build the subgraph exploration tool for the linker agent."""
     return make_explore_subgraph_tool(
         db,
         trace,
         max_pages=get_settings().scope_subquestion_linker_subgraph_max_pages,
         questions_only=True,
+        exclude_ids=exclude_ids,
     )
 
 

@@ -14,6 +14,8 @@ trips regardless of fan-out.
 """
 
 import logging
+from collections.abc import Sequence
+from dataclasses import dataclass
 
 from pydantic import BaseModel, Field
 
@@ -32,6 +34,14 @@ _BRANCH = "├── "
 _LAST = "└── "
 _PIPE = "│   "
 _GAP = "    "
+
+
+@dataclass
+class SubgraphResult:
+    """Return value from subgraph rendering, carrying both text and metadata."""
+
+    text: str
+    root_page: Page | None = None
 
 
 async def render_question_subgraph(
@@ -55,7 +65,7 @@ async def render_question_subgraph(
 
     O(depth) DB round trips regardless of fan-out.
     """
-    return await _render_subgraph_impl(
+    result = await _render_subgraph_impl(
         page_id, db,
         max_depth=max_depth,
         max_pages=max_pages,
@@ -63,6 +73,7 @@ async def render_question_subgraph(
         include_impact=include_impact,
         questions_only=True,
     )
+    return result.text
 
 
 async def render_subgraph(
@@ -83,7 +94,7 @@ async def render_subgraph(
 
     O(depth) DB round trips regardless of fan-out.
     """
-    return await _render_subgraph_impl(
+    result = await _render_subgraph_impl(
         page_id, db,
         max_depth=max_depth,
         max_pages=max_pages,
@@ -91,6 +102,7 @@ async def render_subgraph(
         include_impact=include_impact,
         questions_only=False,
     )
+    return result.text
 
 
 _SKIP_LINK_TYPES = frozenset({LinkType.SUPERSEDES})
@@ -105,7 +117,7 @@ async def _render_subgraph_impl(
     exclude_ids: set[str] | None,
     include_impact: bool,
     questions_only: bool,
-) -> str:
+) -> SubgraphResult:
     """Core BFS subgraph renderer shared by both public functions.
 
     When *questions_only* is True, walks only CHILD_QUESTION links from
@@ -118,16 +130,17 @@ async def _render_subgraph_impl(
     excluded = exclude_ids or set()
     resolved = await db.resolve_page_id(page_id)
     if resolved is None:
-        return f'[Page "{page_id}" not found]'
+        return SubgraphResult(f'[Page "{page_id}" not found]')
     if resolved in excluded:
-        return ""
+        return SubgraphResult("")
     root = await db.get_page(resolved)
     if root is None:
-        return f'[Page "{page_id}" not found]'
+        return SubgraphResult(f'[Page "{page_id}" not found]')
     if questions_only and root.page_type != PageType.QUESTION:
-        return (
+        return SubgraphResult(
             f"[Page `{resolved[:8]}` is not a question "
-            f"(type={root.page_type.value})]"
+            f"(type={root.page_type.value})]",
+            root_page=root,
         )
 
     pages_by_id: dict[str, Page] = {root.id: root}
@@ -157,8 +170,9 @@ async def _render_subgraph_impl(
 
         if depth == max_depth:
             for parent_id, child_ids in child_ids_by_parent.items():
-                if child_ids:
-                    overflow_by_parent[parent_id] = len(child_ids)
+                unvisited = [c for c in child_ids if c not in visited]
+                if unvisited:
+                    overflow_by_parent[parent_id] = len(unvisited)
             break
 
         if not next_ids:
@@ -186,8 +200,9 @@ async def _render_subgraph_impl(
             and len(pages_by_id) + len(new_pages) > max_pages
         ):
             for parent_id, child_ids in child_ids_by_parent.items():
-                if child_ids:
-                    overflow_by_parent[parent_id] = len(child_ids)
+                unvisited = [c for c in child_ids if c not in visited]
+                if unvisited:
+                    overflow_by_parent[parent_id] = len(unvisited)
             break
 
         for parent_id, child_ids in child_ids_by_parent.items():
@@ -226,11 +241,11 @@ async def _render_subgraph_impl(
         db=db,
         questions_only=questions_only,
     )
-    return "\n".join(lines)
+    return SubgraphResult("\n".join(lines), root_page=root)
 
 
 def _collect_question_children(
-    frontier: list[str],
+    frontier: Sequence[str],
     links_by_parent: dict[str, list],
     excluded: set[str],
     visited: set[str],
@@ -260,7 +275,7 @@ def _collect_question_children(
 
 
 async def _collect_all_neighbors(
-    frontier: list[str],
+    frontier: Sequence[str],
     db: DB,
     excluded: set[str],
     visited: set[str],
@@ -416,6 +431,7 @@ def make_explore_subgraph_tool(
     max_pages: int | None = None,
     include_impact: bool = False,
     questions_only: bool = True,
+    exclude_ids: set[str] | None = None,
 ) -> Tool:
     """Build a subgraph exploration tool.
 
@@ -424,13 +440,14 @@ def make_explore_subgraph_tool(
       considerations and judgements as leaf nodes.
     - *include_impact*: show impact scores on child-question links.
     - *max_pages*: cap on question pages loaded (defaults to setting).
+    - *exclude_ids*: page IDs to prune from the rendered tree.
     """
     effective_max = (
         max_pages
         if max_pages is not None
         else get_settings().explore_subgraph_default_max_pages
     )
-    renderer = render_question_subgraph if questions_only else render_subgraph
+    render = _render_subgraph_impl
     name = "explore_question_subgraph" if questions_only else "explore_subgraph"
     desc_suffix = (
         "Shows question headlines only."
@@ -443,30 +460,25 @@ def make_explore_subgraph_tool(
 
     async def fn(args: dict) -> str:
         payload = _ExploreSubgraphInput.model_validate(args)
-        text = await renderer(
+        result = await render(
             payload.page_id,
             db,
+            max_depth=6,
             max_pages=effective_max,
             include_impact=include_impact,
+            questions_only=questions_only,
+            exclude_ids=exclude_ids,
         )
 
-        headline = ""
-        recorded_id = payload.page_id
-        resolved = await db.resolve_page_id(payload.page_id)
-        if resolved:
-            recorded_id = resolved
-            page = await db.get_page(resolved)
-            if page:
-                headline = page.headline
-
+        root = result.root_page
         await trace.record(
             RenderQuestionSubgraphEvent(
-                page_id=recorded_id,
-                page_headline=headline,
-                response=text,
+                page_id=root.id if root else payload.page_id,
+                page_headline=root.headline if root else "",
+                response=result.text,
             )
         )
-        return text or f'[Page "{payload.page_id}" not found or not a question]'
+        return result.text or f'[Page "{payload.page_id}" not found or not a question]'
 
     return Tool(
         name=name,

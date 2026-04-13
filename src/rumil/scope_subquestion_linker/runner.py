@@ -120,7 +120,7 @@ async def run_scope_subquestion_linker(
         state = MoveState(call, db)
         holder = SubmitHolder()
         tools = [
-            make_render_subgraph_tool(db, trace),
+            make_render_subgraph_tool(db, trace, exclude_ids={scope.id}),
             make_submit_tool(holder),
         ]
 

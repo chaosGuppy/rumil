@@ -10,7 +10,12 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import anthropic
-from anthropic.types import TextBlock, ToolUseBlock
+from anthropic.types import (
+    ServerToolUseBlock,
+    TextBlock,
+    ToolUseBlock,
+    WebSearchToolResultBlock,
+)
 
 from orchestrator.tracing import RunTracer
 
@@ -36,6 +41,23 @@ def _serialize_content(content: object) -> list[dict[str, Any]]:
                     "id": block.id,
                     "name": block.name,
                     "input": block.input,
+                }
+            )
+        elif isinstance(block, ServerToolUseBlock):
+            result.append(
+                {
+                    "type": "server_tool_use",
+                    "id": block.id,
+                    "name": block.name,
+                    "input": block.input,
+                }
+            )
+        elif isinstance(block, WebSearchToolResultBlock):
+            result.append(
+                {
+                    "type": "web_search_tool_result",
+                    "tool_use_id": block.tool_use_id,
+                    "content": block.model_dump(mode="json")["content"],
                 }
             )
         elif isinstance(block, dict):
@@ -131,11 +153,33 @@ async def run_step(
 
         text_parts: list[str] = []
         tool_calls: list[ToolUseBlock] = []
+        has_server_tool = False
         for block in response.content:
             if isinstance(block, TextBlock):
                 text_parts.append(block.text)
             elif isinstance(block, ToolUseBlock):
                 tool_calls.append(block)
+            elif isinstance(block, ServerToolUseBlock):
+                has_server_tool = True
+                if tracer:
+                    tracer.record_tool_event(
+                        round_span,
+                        function_name=block.name,
+                        arguments=block.input if isinstance(block.input, dict) else {},
+                        result="(server-executed)",
+                        duration_ms=0,
+                    )
+            elif isinstance(block, WebSearchToolResultBlock):
+                search_content = block.model_dump(mode="json").get("content", [])
+                n_results = len([c for c in search_content if c.get("type") == "web_search_result"])
+                action = {
+                    "tool": "web_search",
+                    "input": {},
+                    "result": f"Web search returned {n_results} result(s)",
+                }
+                result.actions_taken.append(action)
+                if on_action:
+                    on_action(action)
 
         if not tool_calls:
             if tracer:

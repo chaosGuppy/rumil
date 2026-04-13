@@ -106,6 +106,14 @@ ADD_NODE: dict[str, Any] = {
                 "type": "integer",
                 "description": ROBUSTNESS_GUIDANCE,
             },
+            "source_ids": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "IDs of Source records this node draws from. Use when creating "
+                    "evidence nodes extracted from an ingested source."
+                ),
+            },
         },
         "required": ["node_type", "headline", "content", "parent_id"],
     },
@@ -185,7 +193,16 @@ SUGGEST_CHANGE: dict[str, Any] = {
             },
             "payload": {
                 "type": "object",
-                "description": "Details of the change (varies by type). For add_to_branch: include proposed node_type, headline, content. For relevel_node: include new_importance.",
+                "description": (
+                    "Details of the change — MUST include the fields needed to execute it. "
+                    "For add_to_branch: node_type (claim/hypothesis/evidence/uncertainty), "
+                    "headline, content, and optionally credence (1-9), robustness (1-5), "
+                    "importance (0-4, default 2). "
+                    "For relevel_node: new_importance (0-4). "
+                    "For resolve_tension: other_node_id (the second node in the tension). "
+                    "For merge_duplicate: keep_node_id (node to keep), supersede_node_id "
+                    "(node to mark as superseded)."
+                ),
             },
         },
         "required": ["suggestion_type", "target_node_id", "reasoning"],
@@ -295,13 +312,120 @@ LINK_NODES: dict[str, Any] = {
     },
 }
 
-ALL_TOOLS = [ADD_NODE, UPDATE_NODE, SUGGEST_CHANGE, RELEVEL_NODE, MOVE_NODE, LINK_NODES, INSPECT_BRANCH]
+SEARCH_WORKSPACE: dict[str, Any] = {
+    "name": "search_workspace",
+    "description": (
+        "Search the workspace for nodes outside your current branch. "
+        "Returns matching node IDs, types, and headlines. Use when you suspect "
+        "relevant evidence or claims exist elsewhere — don't search "
+        "speculatively, only when you have a specific thing to look for."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "What to search for — be specific.",
+            },
+        },
+        "required": ["query"],
+    },
+}
+
+WEB_SEARCH: dict[str, Any] = {
+    "type": "web_search_20250305",
+    "name": "web_search",
+    "max_uses": 5,
+}
+
+ALL_TOOLS = [ADD_NODE, UPDATE_NODE, SUGGEST_CHANGE, RELEVEL_NODE, MOVE_NODE, LINK_NODES, INSPECT_BRANCH, SEARCH_WORKSPACE]
 
 TOOL_SETS: dict[str, list[dict[str, Any]]] = {
-    "explore": [ADD_NODE, UPDATE_NODE, RELEVEL_NODE, LINK_NODES, SUGGEST_CHANGE, INSPECT_BRANCH],
-    "evaluate": [UPDATE_NODE, RELEVEL_NODE, LINK_NODES, SUGGEST_CHANGE, INSPECT_BRANCH],
+    "explore": [ADD_NODE, UPDATE_NODE, RELEVEL_NODE, LINK_NODES, WEB_SEARCH, SEARCH_WORKSPACE, SUGGEST_CHANGE, INSPECT_BRANCH],
+    "evaluate": [UPDATE_NODE, RELEVEL_NODE, LINK_NODES, SEARCH_WORKSPACE, SUGGEST_CHANGE, INSPECT_BRANCH],
     "restructure": [MOVE_NODE, RELEVEL_NODE, UPDATE_NODE, LINK_NODES, INSPECT_BRANCH],
+    "cross_check": [LINK_NODES, SEARCH_WORKSPACE, SUGGEST_CHANGE, UPDATE_NODE, INSPECT_BRANCH],
 }
+
+
+def _check_cascades(
+    conn: sqlite3.Connection,
+    ws_id: str,
+    run_id: str,
+    changed_node_id: str,
+    changes: dict[str, tuple[object, object]],
+    *,
+    _new_id: Callable[[], str] | None = None,
+    _now: Callable[[], str] | None = None,
+) -> None:
+    """Find nodes that depend_on the changed node and create cascade_review suggestions.
+
+    changes: dict mapping field name to (old_value, new_value). Only creates
+    suggestions when the delta crosses the threshold (2+ points for credence,
+    robustness, importance) or when a judgement is superseded (always cascades).
+    """
+    significant: dict[str, tuple[object, object]] = {}
+    for field, (old, new) in changes.items():
+        if field == "superseded":
+            significant[field] = (old, new)
+            continue
+        if old is None or new is None:
+            continue
+        try:
+            if abs(int(str(new)) - int(str(old))) >= 2:
+                significant[field] = (old, new)
+        except (ValueError, TypeError):
+            continue
+
+    if not significant:
+        return
+
+    dependents = conn.execute(
+        "SELECT nl.source_id, n.headline "
+        "FROM node_links nl "
+        "JOIN nodes n ON nl.source_id = n.id "
+        "WHERE nl.target_id = ? AND nl.link_type = 'depends_on' AND nl.workspace_id = ?",
+        (changed_node_id, ws_id),
+    ).fetchall()
+
+    if not dependents:
+        return
+
+    gen_id = _new_id or (lambda: __import__("uuid").uuid4().hex[:16])
+    gen_now = _now or (lambda: __import__("datetime").datetime.now(__import__("datetime").UTC).isoformat())
+
+    changed_headline = conn.execute(
+        "SELECT headline FROM nodes WHERE id = ?", (changed_node_id,)
+    ).fetchone()
+    changed_hl = dict(changed_headline)["headline"] if changed_headline else "?"
+
+    change_details = {
+        field: {"old": old, "new": new} for field, (old, new) in significant.items()
+    }
+
+    for dep in dependents:
+        dd = dict(dep)
+        sug_id = gen_id()
+        payload = json.dumps({
+            "changed_node_id": changed_node_id,
+            "changed_headline": changed_hl,
+            "changes": change_details,
+            "dependent_node_id": dd["source_id"],
+            "dependent_headline": dd["headline"],
+            "reasoning": (
+                f"Node '{changed_hl}' ({changed_node_id[:8]}) changed: "
+                + ", ".join(
+                    f"{f} {v['old']}→{v['new']}" for f, v in change_details.items()
+                )
+                + f". '{dd['headline']}' ({dd['source_id'][:8]}) depends on it."
+            ),
+        })
+        conn.execute(
+            "INSERT INTO suggestions (id, workspace_id, run_id, suggestion_type, "
+            "target_node_id, payload, created_at) VALUES (?, ?, ?, 'cascade_review', ?, ?, ?)",
+            (sug_id, ws_id, run_id, dd["source_id"], payload, gen_now()),
+        )
+    conn.commit()
 
 
 def make_tool_executor(
@@ -342,6 +466,8 @@ def make_tool_executor(
             output = _exec_link_nodes(conn, ws_id, tool_input, prefix, dry_run)
         elif name == "inspect_branch":
             output = _exec_inspect_branch(conn, scope_node_id, ws_id)
+        elif name == "search_workspace":
+            output = _exec_search_workspace(conn, ws_id, tool_input)
         else:
             output = f"Unknown tool: {name}"
 
@@ -366,23 +492,57 @@ def make_tool_executor(
                 f"under {parent_short}: {inp['headline']}"
             )
         node_id = _new_id()
+        node_type = inp.get("node_type", "claim")
+        source_ids = json.dumps(inp.get("source_ids", []))
         conn.execute(
             "INSERT INTO nodes (id, workspace_id, parent_id, node_type, headline, content, "
-            "credence, robustness, importance, position, created_at, created_by) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "credence, robustness, importance, position, source_ids, created_at, created_by) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 node_id, ws_id, parent_full,
-                inp.get("node_type", "claim"),
+                node_type,
                 inp["headline"],
                 inp.get("content", ""),
                 inp.get("credence"),
                 inp.get("robustness"),
                 inp.get("importance", 2),
-                0, _now(), "orchestrator",
+                0, source_ids, _now(), "orchestrator",
             ),
         )
+        superseded_id = None
+        if node_type == "judgement":
+            old = conn.execute(
+                "SELECT id FROM nodes WHERE parent_id = ? AND node_type = 'judgement' "
+                "AND superseded_by IS NULL AND id != ?",
+                (parent_full, node_id),
+            ).fetchone()
+            if old:
+                superseded_id = dict(old)["id"]
+                conn.execute(
+                    "UPDATE nodes SET superseded_by = ? WHERE id = ?",
+                    (node_id, superseded_id),
+                )
         conn.commit()
-        return f"Created [{inp.get('node_type', 'claim')}] node {node_id[:8]}: {inp['headline']}"
+
+        if superseded_id:
+            _check_cascades(
+                conn, ws_id, run_id, superseded_id,
+                {"superseded": (None, node_id)},
+                _new_id=_new_id, _now=_now,
+            )
+
+        if node_type == "question":
+            sug_id = _new_id()
+            conn.execute(
+                "INSERT INTO suggestions (id, workspace_id, run_id, suggestion_type, "
+                "target_node_id, payload, created_at) VALUES (?, ?, ?, 'auto_explore', ?, ?, ?)",
+                (sug_id, ws_id, run_id, node_id,
+                 json.dumps({"reasoning": "New question created — needs initial investigation"}),
+                 _now()),
+            )
+            conn.commit()
+
+        return f"Created [{node_type}] node {node_id[:8]}: {inp['headline']}"
 
     def _exec_update_node(
         conn: sqlite3.Connection, inp: dict, prefix: str, dry: bool,
@@ -406,9 +566,22 @@ def make_tool_executor(
             fields = ", ".join(f for f in ("headline", "content", "credence", "robustness") if f in inp)
             return f"{prefix}Would update {node_short} fields: {fields}. Reason: {inp.get('reasoning', '')[:100]}"
 
+        old_row = conn.execute(
+            "SELECT credence, robustness FROM nodes WHERE id = ?", (full_id,)
+        ).fetchone()
+        old = dict(old_row) if old_row else {}
+
         params.append(full_id)
         conn.execute(f"UPDATE nodes SET {', '.join(updates)} WHERE id = ?", params)
         conn.commit()
+
+        cascade_changes: dict[str, tuple[object, object]] = {}
+        for field in ("credence", "robustness"):
+            if field in inp and old.get(field) is not None:
+                cascade_changes[field] = (old[field], inp[field])
+        if cascade_changes:
+            _check_cascades(conn, ws_id, run_id, full_id, cascade_changes, _new_id=_new_id, _now=_now)
+
         fields = ", ".join(f for f in ("headline", "content", "credence", "robustness") if f in inp)
         return f"Updated {node_short} ({fields})"
 
@@ -448,8 +621,22 @@ def make_tool_executor(
             return f"Node '{node_short}' not found"
         if dry:
             return f"{prefix}Would relevel {node_short} to L{new_imp}: {inp.get('reasoning', '')[:100]}"
+
+        old_row = conn.execute(
+            "SELECT importance FROM nodes WHERE id = ?", (full_id,)
+        ).fetchone()
+        old_imp = dict(old_row).get("importance") if old_row else None
+
         conn.execute("UPDATE nodes SET importance = ? WHERE id = ?", (new_imp, full_id))
         conn.commit()
+
+        if old_imp is not None:
+            _check_cascades(
+                conn, ws_id, run_id, full_id,
+                {"importance": (old_imp, new_imp)},
+                _new_id=_new_id, _now=_now,
+            )
+
         return f"Releveled {node_short} to L{new_imp}"
 
     def _exec_move_node(
@@ -508,5 +695,22 @@ def make_tool_executor(
         context = build_branch_context(conn, scope_node_id, ws_id=ws_id)
         health = get_branch_health(conn, scope_node_id)
         return f"{context}\n\n# Branch health\n{json.dumps(health, indent=2)}"
+
+    def _exec_search_workspace(
+        conn: sqlite3.Connection, ws_id: str, inp: dict,
+    ) -> str:
+        query = inp.get("query", "")
+        if not query:
+            return "No query provided"
+        rows = conn.execute(
+            "SELECT id, node_type, headline FROM nodes "
+            "WHERE workspace_id = ? AND (headline LIKE ? OR content LIKE ?) "
+            "LIMIT 10",
+            (ws_id, f"%{query}%", f"%{query}%"),
+        ).fetchall()
+        if not rows:
+            return f"No nodes found matching '{query}'"
+        lines = [f"- [{r['node_type']}] {r['id'][:8]}: {r['headline']}" for r in rows]
+        return f"Found {len(rows)} matching nodes:\n" + "\n".join(lines)
 
     return execute

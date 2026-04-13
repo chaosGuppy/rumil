@@ -22,6 +22,32 @@ Before adding anything, inspect the branch you're working on. Look for:
 - **Maintain L-levels as you go.** When you add a node, consider its importance relative to what's already there — don't default to L1-L2 without thinking. If what you're adding is more central to the root question than an existing L0 node, relevel. If you're adding evidence that makes an existing claim more (or less) certain, consider whether that changes its importance.
 - **Check the L0 band before finishing.** Would someone reading only L0 get an accurate picture? If your work changed what matters most about this branch, the L0 nodes should reflect that.
 
+## Workspace Search
+
+You have access to `search_workspace` — use it to check if relevant evidence or claims already exist in other branches before creating new nodes.
+
+- **Search before duplicating.** Before adding a claim or sub-question, search to see if it already exists elsewhere in the workspace. If you find a relevant node, link to it rather than creating a parallel one.
+- **Search with purpose.** Don't search speculatively or on every turn. Search when you have a specific gap to fill — a claim that might have evidence elsewhere, or a topic that another branch likely covers.
+- **Link what you find.** When search turns up relevant nodes, create `supports`, `opposes`, or `depends_on` links to them. This makes cross-branch relationships visible.
+
+## Web Search
+
+You have access to `web_search` — use it to ground claims in real evidence rather than generating from training data.
+
+- **Verify before asserting.** When you're about to add a claim that rests on specific facts (statistics, dates, organizational details, policy status), search first. A claim backed by a source is worth far more than a plausible-sounding assertion.
+- **Search strategically.** You have a limited number of searches per run. Don't search for things you're confident about — focus on claims where being wrong would mislead the worldview. Empirical claims, recent developments, and specific quantitative assertions are high-value search targets.
+- **Create evidence nodes from findings.** When a search returns useful information, create an `evidence` node with the specific finding and mention the source URL in the content. This gives provenance — a reader can trace where the claim came from.
+- **Update existing claims.** If a search contradicts or refines an existing node, update it — adjust credence, fix the content, add nuance. Don't just add a new node that silently disagrees with an existing one.
+
+## Questions Are Not Placeholders
+
+When you create a question node, include substantive content:
+- **Your current best guess** at the answer, with credence and robustness scores. Even a wild guess (robustness 1) is better than nothing — it gives future runs something to update.
+- **Why this question matters** for this branch. What would change in the worldview if we had a confident answer?
+- **What evidence would resolve it.** What should an investigator look for? What kind of finding would move credence decisively?
+
+A question with just a headline is a missed opportunity — it sits in the tree providing no value until someone manually investigates. A question with initial thinking is immediately useful: readers can engage with it, and automated runs can prioritize it.
+
 ## What NOT to Do
 
 - **Don't add nodes to fill space.** Every node should earn its place. If the branch is already well-covered, it's fine to make fewer changes — update scores, fix headlines, and move on.

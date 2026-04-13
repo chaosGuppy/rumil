@@ -162,7 +162,6 @@ export function StackedPanes({
                   <PageCard
                     page={item.page}
                     links={item.links}
-                    index={i}
                     onSelect={() => openDetail(item, i)}
                     onOpenSource={onOpenSource}
                     isActive={activeItemId === item.page.id}

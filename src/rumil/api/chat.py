@@ -435,21 +435,14 @@ async def _execute_tool(
             return f"Question '{qid_short}' not found."
         if call_type_str not in _CALL_TYPE_MAP:
             return f"Unknown call type: {call_type_str}"
-        ct, cls = _CALL_TYPE_MAP[call_type_str]
-        call = await db.create_call(ct, scope_page_id=full_id)
-        runner = cls(full_id, call, db)
-
-        async def _run_call() -> None:
-            try:
-                await runner.run()
-            except Exception:
-                log.exception("Background call %s failed", call.id[:8])
-
-        asyncio.create_task(_run_call())
-        return (
-            f"Dispatched {call_type_str} call {call.id[:8]} on question {qid_short}. "
-            f"Running in background \u2014 results will appear in the view when complete."
-        )
+        question = await db.get_page(full_id)
+        headline = question.headline if question else qid_short
+        return json.dumps({
+            "__async_dispatch__": True,
+            "question_id": full_id,
+            "headline": headline,
+            "call_type": call_type_str,
+        })
 
     if name == "start_research":
         qid_short = tool_input["question_id"]
@@ -521,6 +514,36 @@ def _pick_call_type(total_pages: int, missing_credence: int, step: int) -> str:
     return "scout-subquestions"
 
 
+async def _run_dispatch(
+    db: DB,
+    params: dict[str, Any],
+    on_progress: Callable[[str], Any] | None = None,
+) -> str:
+    """Run a single call inline with progress updates."""
+    question_id = params["question_id"]
+    headline = params.get("headline", question_id[:8])
+    call_type_str = params["call_type"]
+
+    ct, cls = _CALL_TYPE_MAP[call_type_str]
+    call = await db.create_call(ct, scope_page_id=question_id)
+    runner = cls(question_id, call, db)
+
+    if on_progress:
+        on_progress(f"Running {call_type_str} on '{headline[:40]}'...")
+
+    try:
+        await runner.run()
+        if on_progress:
+            on_progress(f"{call_type_str} call {call.id[:8]} completed")
+        return (
+            f"{call_type_str} call {call.id[:8]} on '{headline[:40]}' completed. "
+            f"Refresh the view to see new findings."
+        )
+    except Exception as e:
+        log.exception("Dispatch call %s failed", call.id[:8])
+        return f"{call_type_str} call {call.id[:8]} failed: {e}"
+
+
 async def _run_research(
     db: DB,
     params: dict[str, Any],
@@ -568,6 +591,25 @@ async def _run_research(
         f"Research on '{headline[:40]}' completed ({len(step_summaries)}/{budget} steps):\n"
         + "\n".join(step_summaries)
     )
+
+
+_ASYNC_HANDLERS: dict[str, Callable[..., Any]] = {
+    "__async_dispatch__": _run_dispatch,
+    "__async_research__": _run_research,
+}
+
+
+async def _resolve_async(
+    result_str: str,
+    db: DB,
+    on_progress: Callable[[str], Any] | None = None,
+) -> str:
+    """If result contains an async sentinel, run the handler inline. Otherwise pass through."""
+    for sentinel, handler in _ASYNC_HANDLERS.items():
+        if f'"{sentinel}"' in result_str:
+            params = json.loads(result_str)
+            return await handler(db, params, on_progress=on_progress)
+    return result_str
 
 
 async def build_chat_context(
@@ -658,9 +700,7 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
             tool_results = []
             for tc in tool_calls:
                 result_str = await _execute_tool(tc.name, tc.input, db, full_id)
-                if '"__async_research__"' in result_str:
-                    params = json.loads(result_str)
-                    result_str = await _run_research(db, params)
+                result_str = await _resolve_async(result_str, db)
                 tool_uses_log.append(
                     ToolUseInfo(
                         name=tc.name,
@@ -746,11 +786,11 @@ async def handle_chat_stream(request: ChatRequest) -> StreamingResponse:
                 tool_results = []
                 for tc in tool_calls:
                     result_str = await _execute_tool(tc.name, tc.input, db, full_id)
-                    if '"__async_research__"' in result_str:
-                        params = json.loads(result_str)
-                        progress_q: asyncio.Queue[str | None] = asyncio.Queue()
+                    has_async = any(f'"{s}"' in result_str for s in _ASYNC_HANDLERS)
+                    if has_async:
+                        progress_q: asyncio.Queue[str] = asyncio.Queue()
                         task = asyncio.create_task(
-                            _run_research(db, params, on_progress=lambda m: progress_q.put_nowait(m))
+                            _resolve_async(result_str, db, on_progress=lambda m: progress_q.put_nowait(m))
                         )
                         while not task.done():
                             try:

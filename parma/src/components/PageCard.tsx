@@ -10,7 +10,6 @@ import { TextWithConcepts } from "./ConceptRef";
 interface PageCardProps {
   page: Page;
   links: PageLink[];
-  index: number;
   onSelect?: () => void;
   onOpenSource?: (source: Page) => void;
   isActive?: boolean;
@@ -30,7 +29,6 @@ function directionLabel(links: PageLink[]): string | null {
 export function PageCard({
   page,
   links,
-  index,
   onSelect,
   onOpenSource,
   isActive,
@@ -47,8 +45,6 @@ export function PageCard({
       <div
         className={[
           "concept-node-card",
-          "fade-in",
-          `fade-in-delay-${Math.min(index + 1, 5)}`,
           isFocused ? "node-focused" : "",
         ]
           .filter(Boolean)
@@ -65,8 +61,6 @@ export function PageCard({
 
   const className = [
     "node-card",
-    "fade-in",
-    `fade-in-delay-${Math.min(index + 1, 5)}`,
     isActive ? "node-active" : "",
     isFocused ? "node-focused" : "",
   ]

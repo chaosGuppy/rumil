@@ -5,12 +5,43 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { SlashCommandDropdown, useSlashCommands } from "./SlashCommands";
 
+interface ToolUse {
+  name: string;
+  input: Record<string, unknown>;
+  result: string;
+}
+
 interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
   timestamp: Date;
-  toolUses?: { name: string; input: Record<string, unknown>; result: string }[];
+  streaming?: boolean;
+  toolUses?: ToolUse[];
+}
+
+interface SSEEvent {
+  type: string;
+  data: Record<string, unknown>;
+}
+
+function* parseSSE(raw: string): Generator<SSEEvent> {
+  for (const block of raw.split("\n\n")) {
+    const lines = block.split("\n");
+    let type = "";
+    let data = "";
+    for (const line of lines) {
+      if (line.startsWith("event: ")) type = line.slice(7);
+      else if (line.startsWith("data: ")) data = line.slice(6);
+    }
+    if (type && data) {
+      try {
+        yield { type, data: JSON.parse(data) };
+      } catch {
+        /* skip malformed */
+      }
+    }
+  }
 }
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8099";
@@ -182,9 +213,18 @@ function MessageEntry({
         >
           {message.toolUses.map((tu, i) => (
             <div key={i} style={{ padding: "2px 0" }}>
-              used {tu.name}({Object.values(tu.input).join(", ")})
+              {tu.result ? "✓" : "⟳"} {tu.name}
+              {tu.result
+                ? ` — ${tu.result.slice(0, 80)}`
+                : " …"}
             </div>
           ))}
+        </div>
+      )}
+      {message.streaming && !message.content && (
+        <div className="thinking-indicator" style={{ marginTop: "4px" }}>
+          <span className="thinking-dot" />
+          <span className="thinking-text">thinking</span>
         </div>
       )}
     </div>
@@ -288,12 +328,25 @@ export function ChatPanel({
       textareaRef.current.style.height = "auto";
     }
 
+    const assistantId = `asst-${Date.now()}`;
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: assistantId,
+        role: "assistant",
+        content: "",
+        timestamp: new Date(),
+        streaming: true,
+        toolUses: [],
+      },
+    ]);
+
     try {
       const apiMessages = [...messages, userMsg]
         .filter((m) => m.id !== "initial")
         .map((m) => ({ role: m.role, content: m.content }));
 
-      const res = await fetch(`${API_BASE}/api/chat`, {
+      const res = await fetch(`${API_BASE}/api/chat/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -308,24 +361,95 @@ export function ChatPanel({
         throw new Error(`API error: ${res.status}`);
       }
 
-      const data = await res.json();
-      const assistantMsg: Message = {
-        id: `asst-${Date.now()}`,
-        role: "assistant",
-        content: data.response,
-        timestamp: new Date(),
-        toolUses: data.tool_uses,
-      };
-      setMessages((prev) => [...prev, assistantMsg]);
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let currentText = "";
+      let currentTools: ToolUse[] = [];
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const events = [...parseSSE(buffer)];
+        // Keep any incomplete trailing block (no double-newline at end)
+        const lastDoubleNewline = buffer.lastIndexOf("\n\n");
+        buffer = lastDoubleNewline >= 0 ? buffer.slice(lastDoubleNewline + 2) : buffer;
+
+        for (const event of events) {
+          if (event.type === "text") {
+            currentText += event.data.content as string;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId
+                  ? { ...m, content: currentText }
+                  : m,
+              ),
+            );
+          } else if (event.type === "tool_use_start") {
+            currentTools = [
+              ...currentTools,
+              { name: event.data.name as string, input: {}, result: "" },
+            ];
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId
+                  ? { ...m, toolUses: [...currentTools] }
+                  : m,
+              ),
+            );
+          } else if (event.type === "tool_use_result") {
+            currentTools = currentTools.map((tu) =>
+              tu.name === (event.data.name as string) && !tu.result
+                ? {
+                    name: tu.name,
+                    input: (event.data.input as Record<string, unknown>) || {},
+                    result: event.data.result as string,
+                  }
+                : tu,
+            );
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId
+                  ? { ...m, toolUses: [...currentTools] }
+                  : m,
+              ),
+            );
+          } else if (event.type === "error") {
+            currentText += `\n\n*Error: ${event.data.message}*`;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId
+                  ? { ...m, content: currentText }
+                  : m,
+              ),
+            );
+          }
+        }
+      }
+
+      // Mark streaming complete
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistantId ? { ...m, streaming: false } : m,
+        ),
+      );
       onMessageSent?.();
     } catch (e) {
-      const errorMsg: Message = {
-        id: `err-${Date.now()}`,
-        role: "assistant",
-        content: `Failed to get response: ${e instanceof Error ? e.message : "unknown error"}. Is the API running?`,
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, errorMsg]);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistantId
+            ? {
+                ...m,
+                streaming: false,
+                content:
+                  m.content ||
+                  `Failed to get response: ${e instanceof Error ? e.message : "unknown error"}. Is the API running?`,
+              }
+            : m,
+        ),
+      );
     } finally {
       setIsLoading(false);
     }
@@ -413,12 +537,6 @@ export function ChatPanel({
             {messages.map((msg) => (
               <MessageEntry key={msg.id} message={msg} onNodeRef={onNodeRef} />
             ))}
-            {isLoading && (
-              <div className="thinking-indicator">
-                <span className="thinking-dot" />
-                <span className="thinking-text">thinking</span>
-              </div>
-            )}
             <div ref={messagesEndRef} />
           </div>
 

@@ -5,14 +5,13 @@ Two new UIs (separate from existing `frontend/`), plus API work to back them.
 ## Architecture
 
 ```
-public-ui/         separate Next.js app — auditable, no operator code
+public-ui/         separate Next.js app + FastAPI backend (serve.py)
+                   self-contained: own SQLite DB, own Anthropic API integration
+                   no dependency on rumil core — intentionally separate for now
 operator-ui/       separate Next.js app — superset of public features + dev tools
                    (not yet created)
 packages/          shared components extracted when operator-ui needs them
                    (not yet created)
-
-src/rumil/api/     existing read-only API — needs new endpoints for both UIs
-src/rumil/worldview.py   worldview generation (exists, no API endpoint yet)
 ```
 
 Security boundary: public app literally cannot render traces/prompts/orchestration
@@ -35,28 +34,34 @@ See memory file `project_worldview_ui_principles.md` for the full set.
 
 Three ways to render the same worldview tree. User picks, URL encodes the mode.
 
-**Stacked Panes (current)**
+**Stacked Panes** ✓
 - Horizontal pane navigation, depth-cycling active colors
 - Continuous color from active card → detail pane
+- URL state in `?panes=` param (dot-notation paths)
 - Best for: deep exploration on wide screens
 
-**Article View (TODO)**
+**Article View** ✓
 - Single scrollable column, everything above supplementary level inline
-- ToC sidebar nav
-- Supplementary material collapsed/expandable at end of each section
+- ToC sidebar nav with IntersectionObserver-tracked active state
+- Supplementary material (L3+) collapsed in `<details>` elements
 - Best for: reading start-to-finish, sharing, printing
 
-**Vertical View (TODO)**
+**Vertical View** ✓
 - Single column with indentation for depth
 - Expanding a node indents its children below
 - No side-by-side panes — depth shown through nesting
+- URL state in `?expanded=` param
 - Best for: narrow viewports, mobile, quick scanning
 
-### Chat Panel (in progress)
+### Chat Panel ✓
 - Right-side collapsible panel, ~38% width
 - Scoped to current question/worldview
 - Cmd+/ toggle
 - Transcript style (editorial, not messaging app)
+- Model selection (sonnet/opus/haiku) via slash commands
+- Slash command autocomplete with arrow key nav
+- Clickable 8-char node ID refs in assistant text → scroll/highlight in view
+- Tool use shown inline (tool name, input, result)
 
 This is the primary interaction surface. The worldview is the artifact the
 chat helps you understand, interrogate, and extend. Users arrive, ask
@@ -66,89 +71,60 @@ questions, the system investigates, the worldview updates.
 reason about the workspace, decide what to investigate, and take action.
 Example interactions:
 
-- "Gather context on the question about compute governance and see if
-  dispatching anything on the graph would help"
-  → model searches workspace, reads relevant pages, inspects graph shape,
-    then proposes or fires specific calls (find_considerations, scout, etc.)
-
-- "How can we run an orchestrator to dive in more on interpretability?"
-  → model finds the right question, explains what orchestrate would do,
-    confirms budget, then fires it
-
 - "Add a subquestion about whether export controls are sustainable long-term"
-  → model creates the question, links it under the right parent
+  → model creates the node, links it under the right parent
 
 - "What's the weakest claim in this worldview?"
-  → model inspects credence/robustness scores, traces evidence chains,
-    identifies thin spots
+  → model inspects credence/robustness scores, identifies thin spots
 
-**Architecture — reuses CC skills layer directly:**
+- "Run the orchestrator on the interpretability branch"
+  → model runs orchestrator step, adds/relevels nodes, queues suggestions
 
-The API chat endpoint wraps the same Python code that backs the CC skills.
-Two-lane provenance model is preserved:
+**Architecture — self-contained backend (serve.py):**
 
-- **CC-mediated lane**: direct mutations via chat envelope (apply_move).
-  CREATE_QUESTION, CREATE_CLAIM, LINK_*, FLAG. Cheap decisions from broad
-  context. All grouped under one CLAUDE_CODE_DIRECT Call for provenance.
-
-- **Rumil-mediated lane**: full pipeline calls via dispatch_call.py.
-  find_considerations, assess, scout-*, web_research. Expensive structured
-  investigation through rumil's context builders, prompts, and agent loops.
+The API chat endpoint talks directly to Claude via the Anthropic SDK, with
+tool definitions for workspace operations. All state lives in a local SQLite
+DB. This is intentionally decoupled from rumil core — no dependency on the
+rumil DB, skills layer, or provenance model. Future integration is possible
+but not a near-term goal.
 
 **Model tools:**
 
-| Tool | What it does | Lane |
-|------|-------------|------|
-| search_workspace | Embedding search, returns relevant pages | read |
-| get_page | Fetch page by short ID — content, scores, links | read |
-| get_question_shape | Graph health for a question — children, considerations, gaps | read |
-| create_question | Add a question to the workspace | cc-mediated |
-| create_claim | Add a claim linked to a question | cc-mediated |
-| link_pages | Create a link between pages | cc-mediated |
-| dispatch_call | Fire one rumil call (find_considerations, assess, etc.) | rumil-mediated |
-| orchestrate | Run full orchestrator with budget | rumil-mediated |
-| ingest_source | Ingest a URL as source, extract considerations | rumil-mediated |
-
-**Context loaded at chat start** (same pattern as show_question.py):
-- Worldview tree (the distilled summary)
-- Research subtree (build_research_tree, depth 3)
-- Embedding-based workspace neighbors
-- Recent calls on the question (last 8)
-
-**Backing code** (all in .claude/lib/rumil_skills/, importable):
-- _runctx.py — DB setup, run creation, chat envelope lifecycle
-- apply_move.py — cc-mediated move execution with schema validation
-- dispatch_call.py — rumil-mediated call dispatch
-- show_question.py — context loader (subtree + neighbors + calls)
-- scan.py — graph health checks
+| Tool | What it does |
+|------|-------------|
+| search_workspace | Text search over node headlines + content |
+| get_node | Fetch node by short ID with subtree |
+| create_node | Add a new node to the tree |
+| list_workspace | Print full tree structure |
+| get_suggestions | View the review queue |
+| run_orchestrator | Run orchestrator step on a branch |
 
 **Chat TODO:**
-- [ ] Build POST /api/chat endpoint with SSE streaming
-- [ ] Wrap CC skills backing code as API-callable tools
-- [ ] Create chat envelope for each API session
-- [ ] Wire frontend ChatPanel to streaming endpoint
-- [ ] Show tool use inline (searching, dispatching, creating)
-- [ ] Show research progress when calls are dispatched
-- [ ] Let model reference worldview nodes (click to scroll/expand)
-- [ ] Handle long-running calls (dispatch/orchestrate) — poll or SSE updates
+- [ ] Show research progress when orchestrator is running
+- [ ] Handle long-running orchestrator calls — progress indicator or SSE updates
+- [ ] Richer inspect experience (modal/panel when clicking node refs)
 
-### Provenance Inspect (TODO)
-- Click any source page ID ([f8a1b2c3]) in the worldview → see original page
+### Provenance Inspect (partial)
+- `/inspect <id>` slash command exists, `get_node` backend tool exists
+- Missing: frontend modal/panel to display the result richly
 - Could be: slide-over pane, modal, or inline popover
-- Show: page content, credence/robustness, who created it, what call
-- Needs: API endpoint to fetch page by short ID (exists: GET /api/pages/short/{short_id})
+- Show: node content, credence/robustness, type, children
 
-### Search (TODO)
-- Embedding-based semantic search, primarily accessed through chat
+### Search ✓ (via chat)
+- Text search over headlines + content, accessed via `/search` in chat
 - Model searches on behalf of user, surfaces results in conversation
-- Also possible as standalone UI (search bar → results page)
-- Needs: API endpoint for embedding search (does not exist yet)
+- No standalone search UI — chat is the primary interface
 
-### Question Browser (TODO)
-- Landing page listing workspace questions
-- Click a question → generate/load its worldview
-- Can also ask a new question from here (or from chat)
-- Needs: worldview generation endpoint or pre-generated worldviews
+### Workspace Browser ✓
+- Landing page listing workspaces with node count, run count, pending suggestions
+- Click workspace → load its worldview tree
+- Create new workspace + root question from the browser
+
+### Suggestion Review ✓
+- Review queue for orchestrator-generated suggestions
+- Tabs: pending / accepted / rejected
+- Each suggestion shows type, target node, reasoning, accept/reject buttons
+- Accessible via `/review` slash command in chat
 
 ## Operator UI
 
@@ -174,43 +150,46 @@ has the same capabilities plus cleanup/review tools.
 - Raw page/link inspection: full graph navigation
 - Cost/budget visibility: "how much has this investigation cost?"
 
-## API Work Needed
+## API Status (serve.py)
 
-### For Both UIs (public chat needs all of these)
-- [ ] `POST /api/chat` — streaming chat endpoint. Model gets tools for everything below.
-      Context: worldview + research tree + workspace search. Streaming via SSE.
-- [ ] `GET /api/questions/{id}/worldview` — generate or serve cached worldview
-- [ ] `GET /api/search?q=...` — embedding-based semantic search
-- [ ] `POST /api/questions` — create a new question (user asks via chat)
-- [ ] `POST /api/questions/{id}/dispatch` — fire a single call type
-- [ ] `POST /api/questions/{id}/orchestrate` — run orchestrator with budget
-- [ ] `POST /api/questions/{id}/ingest` — ingest a source URL
-- [ ] Worldview caching/storage — avoid regenerating on every request
-- [ ] SSE or WebSocket for research progress (calls running, completing)
+### Implemented
+- [x] `POST /api/chat` — tool-calling chat with Claude, up to 10 tool rounds
+- [x] `POST /api/chat/stream` — SSE streaming variant
+- [x] `GET /api/workspaces` — list workspaces with stats
+- [x] `POST /api/workspaces` — create workspace + root question
+- [x] `GET /api/workspaces/{name}/tree` — full worldview tree (nested JSON)
+- [x] `GET /api/workspaces/{name}/suggestions` — review queue by status
+- [x] `POST /api/suggestions/{id}/accept|reject` — act on suggestions
+- [x] `GET /api/workspaces/{name}/branch-context/{node_id}` — branch context + health
+- [x] `POST /api/workspaces/{name}/orchestrate` — run orchestrator step (dry_run supported)
+- [x] `GET /api/runs` — run history
+- [x] `GET /api/runs/{run_id}/actions` — actions within a run
 
-### Operator-Only Endpoints
-- [ ] `GET /api/questions/{id}/health` — graph health + scan results
-- [ ] `GET /api/questions/{id}/review` — structured review output
-- [ ] Trace/call endpoints already exist in current API
+### Not yet built
+- [ ] SSE/WebSocket for orchestrator progress (currently fire-and-forget)
+- [ ] Source ingestion endpoint (ingest a URL, extract into nodes)
+- [ ] Worldview caching/storage — currently rebuilds tree on every request
 
 ### Auth
-- Public UI: authenticated (track who initiated what, per deployment desiderata)
-- Operator UI: authenticated + admin role (sees traces, costs, can cleanup)
-- Current API has optional basic auth — extend with proper user tracking
+- No auth yet — everything open for local dev
+- Public UI: eventually authenticated (track who initiated what)
+- Operator UI: authenticated + admin role
 
 ## Shared Components (extract when building operator-ui)
 
 - WorldviewNode renderer (card, credence badge, type label)
 - Stacked panes navigation
-- Chat panel
-- Provenance popover
+- Article view + ToC sidebar
+- Vertical view
+- Chat panel + slash commands
+- Suggestion review
 - View mode switcher
-- Question list/browser
+- Workspace browser
 
 ## Open Questions
 
-- Should worldviews be stored as WIKI pages in the DB, or as a separate table?
-- How often to regenerate worldviews? On-demand vs. after each research run?
-- Should the public UI show the research graph at all, or only the distilled worldview?
+- Should the public UI eventually connect to rumil core, or stay independent?
 - How to handle worldview staleness — show "generated at" timestamp, or auto-refresh?
 - What's the right supplementary boundary? Fixed depth, or LLM-decided per tree?
+- Source ingestion — how should URLs/documents enter the system?
+- Multi-user — do different users see each other's chat history / suggestions?

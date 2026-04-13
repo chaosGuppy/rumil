@@ -27,6 +27,7 @@ import uvicorn
 from anthropic.types import TextBlock, ToolUseBlock
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 DB_PATH = Path(__file__).parent / "worldview.db"
@@ -1279,6 +1280,134 @@ async def chat(request: ChatRequest):
     conn.commit()
     conn.close()
     return ChatResponse(response="Reached maximum tool rounds.", tool_uses=tool_uses_log)
+
+
+def _get_api_key() -> str | None:
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        secrets_path = Path(__file__).parent.parent / "secrets.env"
+        if secrets_path.exists():
+            for line in secrets_path.read_text().splitlines():
+                cleaned = line.removeprefix("export ").strip()
+                if cleaned.startswith("ANTHROPIC_API_KEY="):
+                    api_key = cleaned.split("=", 1)[1].strip()
+                    break
+    return api_key
+
+
+def _sse(event: str, data: dict[str, Any]) -> str:
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+@app.post("/api/chat/stream")
+async def chat_stream(request: ChatRequest):
+
+    api_key = _get_api_key()
+    if not api_key:
+        async def error_gen():
+            yield _sse("error", {"message": "ANTHROPIC_API_KEY not set."})
+        return StreamingResponse(error_gen(), media_type="text/event-stream")
+
+    conn = get_db()
+    ws = conn.execute(
+        "SELECT * FROM workspaces WHERE name = ?", (request.workspace,)
+    ).fetchone()
+    if not ws:
+        conn.close()
+        async def error_gen():
+            yield _sse("error", {"message": f"Workspace '{request.workspace}' not found."})
+        return StreamingResponse(error_gen(), media_type="text/event-stream")
+
+    ws_dict = dict(ws)
+    ws_id = ws_dict["id"]
+
+    root = conn.execute(
+        "SELECT * FROM nodes WHERE workspace_id = ? AND parent_id IS NULL ORDER BY position LIMIT 1",
+        (ws_id,),
+    ).fetchone()
+    if not root:
+        conn.close()
+        async def error_gen():
+            yield _sse("error", {"message": "No root node in workspace."})
+        return StreamingResponse(error_gen(), media_type="text/event-stream")
+
+    root_dict = dict(root)
+    root_id = root_dict["id"]
+
+    run_id = new_id()
+    conn.execute(
+        "INSERT INTO runs (id, workspace_id, started_at, status, description) VALUES (?, ?, ?, ?, ?)",
+        (run_id, ws_id, now_iso(), "running", "chat"),
+    )
+    conn.commit()
+
+    tree = get_subtree(conn, root_id)
+    context = format_tree(tree)
+
+    prompt_path = PROMPTS_DIR / "api_chat.md"
+    system_prompt = prompt_path.read_text() if prompt_path.exists() else "You are a research assistant."
+    full_system = f"{system_prompt}\n\n---\n\n# Current worldview\n\n{context}"
+
+    model_id = MODEL_MAP.get(request.model, MODEL_MAP["sonnet"])
+    client = anthropic.AsyncAnthropic(api_key=api_key)
+    messages = list(request.messages)
+
+    async def generate():
+        nonlocal messages
+        try:
+            for _ in range(10):
+                async with client.messages.stream(
+                    model=model_id,
+                    max_tokens=4096,
+                    temperature=0.7,
+                    system=full_system,
+                    messages=messages,  # type: ignore[arg-type]
+                    tools=TOOLS,  # type: ignore[arg-type]
+                ) as stream:
+                    async for event in stream:
+                        if event.type == "content_block_delta":
+                            if event.delta.type == "text_delta":
+                                yield _sse("text", {"content": event.delta.text})
+                        elif event.type == "content_block_start":
+                            cb = event.content_block
+                            if isinstance(cb, ToolUseBlock):
+                                yield _sse("tool_use_start", {"name": cb.name})
+
+                response = await stream.get_final_message()
+
+                tool_calls = [b for b in response.content if isinstance(b, ToolUseBlock)]
+                if not tool_calls:
+                    break
+
+                messages.append({"role": "assistant", "content": response.content})
+
+                tool_results = []
+                for tc in tool_calls:
+                    result_str = execute_tool(conn, ws_id, root_id, tc.name, tc.input, run_id)
+                    yield _sse("tool_use_result", {
+                        "name": tc.name,
+                        "input": tc.input,
+                        "result": result_str[:500],
+                    })
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": tc.id,
+                        "content": result_str,
+                    })
+                messages.append({"role": "user", "content": tool_results})
+
+            yield _sse("done", {})
+        except Exception as e:
+            yield _sse("error", {"message": str(e)})
+        finally:
+            conn.execute(
+                "UPDATE runs SET status = 'completed', completed_at = ? WHERE id = ?",
+                (now_iso(), run_id),
+            )
+            conn.commit()
+            conn.close()
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 
 if __name__ == "__main__":

@@ -238,12 +238,33 @@ export function ChatPanel({
   }, [onToggle]);
 
   const [isLoading, setIsLoading] = useState(false);
+  const [model, setModel] = useState<"sonnet" | "opus" | "haiku">("sonnet");
   const { showDropdown, handleSelect: handleSlashSelect, handleDismiss } =
     useSlashCommands(input, setInput, textareaRef);
 
   const handleSubmit = useCallback(async () => {
     const trimmed = input.trim();
     if (!trimmed || isLoading) return;
+
+    const modelCommands: Record<string, "sonnet" | "opus" | "haiku"> = {
+      "/sonnet": "sonnet",
+      "/opus": "opus",
+      "/haiku": "haiku",
+    };
+    if (modelCommands[trimmed]) {
+      setModel(modelCommands[trimmed]);
+      setInput("");
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `sys-${Date.now()}`,
+          role: "assistant" as const,
+          content: `Switched to **${modelCommands[trimmed]}**.`,
+          timestamp: new Date(),
+        },
+      ]);
+      return;
+    }
 
     if (trimmed === "/review") {
       setInput("");
@@ -332,6 +353,16 @@ export function ChatPanel({
           if (name === "create_question" || name === "dispatch_call") {
             onMessageSent?.();
           }
+        } else if (event.type === "orchestrator_progress") {
+          const msg = event.data.message as string;
+          const lastIdx = currentBlocks.length - 1;
+          if (lastIdx >= 0 && currentBlocks[lastIdx].type === "tool" && !currentBlocks[lastIdx].tool.result) {
+            currentBlocks[lastIdx] = {
+              type: "tool" as const,
+              tool: { ...currentBlocks[lastIdx].tool, input: { ...currentBlocks[lastIdx].tool.input, _progress: msg } },
+            };
+          }
+          updateMsg();
         } else if (event.type === "error") {
           currentText += `\n\n*Error: ${event.data.message}*`;
           const lastIdx = currentBlocks.length - 1;
@@ -342,7 +373,7 @@ export function ChatPanel({
           }
           updateMsg();
         }
-      }, workspace);
+      }, workspace, model);
 
       setMessages((prev) =>
         prev.map((m) =>
@@ -415,6 +446,9 @@ export function ChatPanel({
                 }}
               >
                 Chat
+                <span style={{ marginLeft: "8px", color: "var(--fg-dim)", fontSize: "9px", letterSpacing: "0.04em" }}>
+                  {model}
+                </span>
               </div>
               <div
                 style={{

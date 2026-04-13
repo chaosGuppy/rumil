@@ -141,7 +141,7 @@ export async function sendChatMessage(
   return res.json();
 }
 
-export type ChatStreamEventType = "text" | "tool_use_start" | "tool_use_result" | "done" | "error";
+export type ChatStreamEventType = "text" | "tool_use_start" | "tool_use_result" | "orchestrator_progress" | "done" | "error";
 
 export interface ChatStreamEvent {
   type: ChatStreamEventType;
@@ -153,6 +153,7 @@ export async function streamChatMessage(
   messages: { role: string; content: string }[],
   onEvent: (event: ChatStreamEvent) => void,
   workspace: string = "default",
+  model: string = "sonnet",
 ): Promise<void> {
   const res = await fetch(`${API_BASE}/api/chat/stream`, {
     method: "POST",
@@ -161,6 +162,7 @@ export async function streamChatMessage(
       question_id: questionId,
       messages,
       workspace,
+      model,
     }),
   });
   if (!res.ok) throw new Error(`API error: ${res.status}`);

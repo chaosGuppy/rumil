@@ -5,10 +5,11 @@ The model sees the research context and can search, inspect, create, and
 dispatch — the same capabilities as the CC skills layer, exposed via HTTP.
 """
 
+import asyncio
 import json
 import logging
 import uuid
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -18,22 +19,43 @@ import anthropic
 from anthropic.types import TextBlock, TextDelta, ToolUseBlock
 from pydantic import BaseModel
 
+from rumil.calls import (
+    ASSESS_CALL_CLASSES,
+    FindConsiderationsCall,
+    IngestCall,
+    WebResearchCall,
+    ScoutAnalogiesCall,
+    ScoutEstimatesCall,
+    ScoutHypothesesCall,
+    ScoutSubquestionsCall,
+)
+from rumil.calls.stages import CallRunner
 from rumil.context import build_embedding_based_context
 from rumil.database import DB
 from rumil.embeddings import embed_query, search_pages_by_vector
-from rumil.models import CallType, MoveType, Page
+from rumil.models import CallType, MoveType, Page, PageLayer, PageType, Workspace
 from rumil.moves.registry import MOVES
+from rumil.scraper import scrape_url
 from rumil.settings import get_settings
 from rumil.summary import build_research_tree
+from rumil.views import build_view
 
 log = logging.getLogger(__name__)
 PROMPTS_DIR = Path(__file__).parent.parent.parent.parent / "prompts"
+
+
+MODEL_MAP: dict[str, str] = {
+    "sonnet": "claude-sonnet-4-6",
+    "opus": "claude-opus-4-6",
+    "haiku": "claude-haiku-4-5-20251001",
+}
 
 
 class ChatRequest(BaseModel):
     question_id: str
     messages: list[dict[str, Any]]
     workspace: str = "default"
+    model: str = "sonnet"
 
 
 class ToolUseInfo(BaseModel):
@@ -112,13 +134,63 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "list_workspace",
+        "description": (
+            "Show all root questions in the workspace with page counts "
+            "and health stats. Use to get an overview of the research state."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "get_suggestions",
+        "description": (
+            "View the review queue — pending suggestions from research calls "
+            "for re-leveling, tension resolution, duplicate merging, etc."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "enum": ["pending", "accepted", "rejected"],
+                    "description": "Filter by status (default: pending)",
+                },
+            },
+        },
+    },
+    {
+        "name": "preview_run",
+        "description": (
+            "Show a preview of what a research call would see — the question's "
+            "health stats, section breakdown, and recommendation for what call "
+            "type to run next. Use this before dispatch_call to help the user "
+            "decide what to investigate."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "question_id": {
+                    "type": "string",
+                    "description": (
+                        "Short ID of the question to preview. "
+                        "Omit to auto-pick the current question."
+                    ),
+                },
+            },
+        },
+    },
+    {
         "name": "dispatch_call",
         "description": (
             "Fire a rumil research call against a question. This runs the "
             "full investigation pipeline (LLM calls, context building, etc.) "
-            "and costs real money. Available call types: find-considerations, "
-            "assess, web-research, scout-subquestions, scout-hypotheses, "
-            "scout-estimates, scout-analogies."
+            "and COSTS REAL MONEY. Confirm with the user before calling. "
+            "The call runs in the background — results appear in the view. "
+            "Available call types: find-considerations, assess, web-research, "
+            "scout-subquestions, scout-hypotheses, scout-estimates, scout-analogies."
         ),
         "input_schema": {
             "type": "object",
@@ -144,7 +216,67 @@ TOOLS: list[dict[str, Any]] = [
             "required": ["question_id", "call_type"],
         },
     },
+    {
+        "name": "ingest_source",
+        "description": (
+            "Ingest a URL as a source — fetch its content, create a Source page, "
+            "and optionally run extraction to pull evidence into a target question. "
+            "COSTS REAL MONEY if extraction is requested. Use when the user shares "
+            "a URL and wants its findings added to the research."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "The URL to fetch and ingest",
+                },
+                "target_question_id": {
+                    "type": "string",
+                    "description": (
+                        "Short ID of the question to extract evidence into. "
+                        "If omitted, the source is saved but no extraction happens."
+                    ),
+                },
+            },
+            "required": ["url"],
+        },
+    },
+    {
+        "name": "start_research",
+        "description": (
+            "Start a sustained research program on a question. Runs multiple "
+            "research calls in sequence (find-considerations, assess, scouts) "
+            "automatically choosing the right type for each step based on the "
+            "question's state. More thorough than a single dispatch_call. "
+            "COSTS REAL MONEY proportional to budget. Confirm with the user first."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "question_id": {
+                    "type": "string",
+                    "description": "Short ID of the question to research",
+                },
+                "budget": {
+                    "type": "integer",
+                    "description": "Max number of calls to run (default 3, max 10)",
+                },
+            },
+            "required": ["question_id"],
+        },
+    },
 ]
+
+_CALL_TYPE_MAP: dict[str, tuple[CallType, type[CallRunner]]] = {
+    "find-considerations": (CallType.FIND_CONSIDERATIONS, FindConsiderationsCall),
+    "assess": (CallType.ASSESS, ASSESS_CALL_CLASSES["default"]),
+    "web-research": (CallType.WEB_RESEARCH, WebResearchCall),
+    "scout-subquestions": (CallType.SCOUT_SUBQUESTIONS, ScoutSubquestionsCall),
+    "scout-hypotheses": (CallType.SCOUT_HYPOTHESES, ScoutHypothesesCall),
+    "scout-estimates": (CallType.SCOUT_ESTIMATES, ScoutEstimatesCall),
+    "scout-analogies": (CallType.SCOUT_ANALOGIES, ScoutAnalogiesCall),
+}
 
 
 def _format_page(page: Page) -> str:
@@ -164,6 +296,7 @@ async def _execute_tool(
     name: str,
     tool_input: dict[str, Any],
     db: DB,
+    scope_question_id: str = "",
 ) -> str:
     """Execute a tool call and return the result as a string."""
     if name == "search_workspace":
@@ -197,7 +330,7 @@ async def _execute_tool(
                 target_label = (
                     f"{target.id[:8]} ({target.headline})" if target else link.to_page_id[:8]
                 )
-                result += f"  → {link.link_type.value}: {target_label}\n"
+                result += f"  \u2192 {link.link_type.value}: {target_label}\n"
         return result
 
     if name == "create_question":
@@ -234,16 +367,207 @@ async def _execute_tool(
 
         return "\n".join(response_parts)
 
+    if name == "list_workspace":
+        questions = await db.get_root_questions(Workspace.RESEARCH)
+        if not questions:
+            return "No root questions in this workspace."
+        lines = [f"{len(questions)} root question(s):\n"]
+        for q in questions:
+            counts = await db.count_pages_for_question(q.id)
+            total = counts.get("considerations", 0) + counts.get("judgements", 0)
+            lines.append(
+                f"  [{q.id[:8]}] {q.headline}"
+                f"  ({total} pages)"
+            )
+        return "\n".join(lines)
+
+    if name == "get_suggestions":
+        status = tool_input.get("status", "pending")
+        suggestions = await db.get_suggestions(status=status)
+        if not suggestions:
+            return f"No {status} suggestions."
+        page_ids = list({s.target_page_id for s in suggestions if s.target_page_id})
+        pages = await db.get_pages_by_ids(page_ids) if page_ids else {}
+        lines = [f"{len(suggestions)} {status} suggestion(s):\n"]
+        for s in suggestions[:20]:
+            target = pages.get(s.target_page_id)
+            target_label = target.headline if target else s.target_page_id[:8]
+            reasoning = (s.payload.get("reasoning") or "")[:150]
+            lines.append(f"  [{s.id[:8]}] {s.suggestion_type.value} \u2192 {target_label}")
+            if reasoning:
+                lines.append(f"    {reasoning}")
+            lines.append("")
+        return "\n".join(lines)
+
+    if name == "preview_run":
+        qid_short = tool_input.get("question_id") or scope_question_id[:8]
+        full_id = await db.resolve_page_id(qid_short)
+        if not full_id:
+            return f"Question '{qid_short}' not found."
+        try:
+            view = await build_view(db, full_id)
+        except ValueError as e:
+            return str(e)
+        h = view.health
+        section_summary = ", ".join(
+            f"{s.name.replace('_', ' ')}({len(s.items)})" for s in view.sections
+        )
+        recommendation = "find-considerations" if h.total_pages < 5 else "assess"
+        if h.child_questions_without_judgements > 2:
+            recommendation = "find-considerations"
+        lines = [
+            f"Preview for: {view.question.headline} [{view.question.id[:8]}]\n",
+            f"Pages: {h.total_pages}",
+            f"Max depth: {h.max_depth}",
+            f"Missing credence: {h.missing_credence}",
+            f"Missing importance: {h.missing_importance}",
+            f"Child questions without judgements: {h.child_questions_without_judgements}",
+            f"\nSections: {section_summary}",
+            f"\nRecommended call type: {recommendation}",
+        ]
+        return "\n".join(lines)
+
     if name == "dispatch_call":
+        qid_short = tool_input["question_id"]
+        call_type_str = tool_input["call_type"]
+        full_id = await db.resolve_page_id(qid_short)
+        if not full_id:
+            return f"Question '{qid_short}' not found."
+        if call_type_str not in _CALL_TYPE_MAP:
+            return f"Unknown call type: {call_type_str}"
+        ct, cls = _CALL_TYPE_MAP[call_type_str]
+        call = await db.create_call(ct, scope_page_id=full_id)
+        runner = cls(full_id, call, db)
+
+        async def _run_call() -> None:
+            try:
+                await runner.run()
+            except Exception:
+                log.exception("Background call %s failed", call.id[:8])
+
+        asyncio.create_task(_run_call())
         return (
-            f"[dispatch_call is not yet wired in the API. "
-            f"Requested: {tool_input['call_type']} on {tool_input['question_id']}. "
-            f"Use the CLI for now: "
-            f"PYTHONPATH=.claude/lib uv run python -m rumil_skills.dispatch_call "
-            f"{tool_input['call_type']} {tool_input['question_id']}]"
+            f"Dispatched {call_type_str} call {call.id[:8]} on question {qid_short}. "
+            f"Running in background \u2014 results will appear in the view when complete."
         )
 
+    if name == "start_research":
+        qid_short = tool_input["question_id"]
+        budget = max(1, min(tool_input.get("budget", 3), 10))
+        full_id = await db.resolve_page_id(qid_short)
+        if not full_id:
+            return f"Question '{qid_short}' not found."
+        question = await db.get_page(full_id)
+        if not question:
+            return f"Question '{qid_short}' not found."
+        return json.dumps({
+            "__async_research__": True,
+            "question_id": full_id,
+            "headline": question.headline,
+            "budget": budget,
+        })
+
+    if name == "ingest_source":
+        url = tool_input["url"]
+        target_short = tool_input.get("target_question_id")
+        scraped = await scrape_url(url)
+        if not scraped:
+            return f"Failed to fetch URL: {url}"
+        source_page = Page(
+            page_type=PageType.SOURCE,
+            layer=PageLayer.SQUIDGY,
+            workspace=Workspace.RESEARCH,
+            headline=scraped.title or url,
+            content=scraped.content,
+            extra={"url": url},
+            project_id=db.project_id,
+        )
+        await db.save_page(source_page)
+        result_parts = [f"Created source page {source_page.id[:8]}: {scraped.title or url}"]
+        if target_short:
+            full_id = await db.resolve_page_id(target_short)
+            if full_id:
+                call = await db.create_call(CallType.INGEST, scope_page_id=full_id)
+                runner = IngestCall(source_page, full_id, call, db)
+
+                async def _run_ingest() -> None:
+                    try:
+                        await runner.run()
+                    except Exception:
+                        log.exception("Ingest call %s failed", call.id[:8])
+
+                asyncio.create_task(_run_ingest())
+                result_parts.append(
+                    f"Dispatched ingest extraction call {call.id[:8]} "
+                    f"targeting question {target_short}."
+                )
+            else:
+                result_parts.append(f"Target question '{target_short}' not found \u2014 source saved but no extraction.")
+        return "\n".join(result_parts)
+
     return f"Unknown tool: {name}"
+
+
+def _pick_call_type(total_pages: int, missing_credence: int, step: int) -> str:
+    """Simple heuristic for what call to run next."""
+    if total_pages < 5:
+        return "find-considerations"
+    if step == 0 and missing_credence > 3:
+        return "assess"
+    if step % 3 == 0:
+        return "find-considerations"
+    if step % 3 == 1:
+        return "assess"
+    return "scout-subquestions"
+
+
+async def _run_research(
+    db: DB,
+    params: dict[str, Any],
+    on_progress: Callable[[str], Any] | None = None,
+) -> str:
+    """Run a multi-step research program on a single question."""
+    question_id = params["question_id"]
+    headline = params.get("headline", question_id[:8])
+    budget = params.get("budget", 3)
+
+    if on_progress:
+        on_progress(f"Starting {budget}-step research on '{headline[:40]}'...")
+
+    step_summaries: list[str] = []
+    for i in range(budget):
+        try:
+            view = await build_view(db, question_id)
+            call_type_str = _pick_call_type(
+                view.health.total_pages, view.health.missing_credence, i
+            )
+        except Exception:
+            call_type_str = "find-considerations"
+
+        if on_progress:
+            on_progress(f"Step {i + 1}/{budget}: {call_type_str} on '{headline[:30]}'...")
+
+        if call_type_str not in _CALL_TYPE_MAP:
+            step_summaries.append(f"  Step {i + 1}: unknown call type {call_type_str}")
+            continue
+
+        ct, cls = _CALL_TYPE_MAP[call_type_str]
+        call = await db.create_call(ct, scope_page_id=question_id)
+        runner = cls(question_id, call, db)
+        try:
+            await runner.run()
+            step_summaries.append(f"  Step {i + 1}: {call_type_str} \u2014 call {call.id[:8]} completed")
+            if on_progress:
+                on_progress(f"Step {i + 1} done: {call_type_str} call {call.id[:8]}")
+        except Exception as e:
+            step_summaries.append(f"  Step {i + 1}: {call_type_str} \u2014 error: {e}")
+            if on_progress:
+                on_progress(f"Step {i + 1} error: {e}")
+
+    return (
+        f"Research on '{headline[:40]}' completed ({len(step_summaries)}/{budget} steps):\n"
+        + "\n".join(step_summaries)
+    )
 
 
 async def build_chat_context(
@@ -300,13 +624,14 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
         context = await build_chat_context(full_id, db)
         full_system = f"{system_prompt}\n\n---\n\n{context}"
 
+        model_id = MODEL_MAP.get(request.model, MODEL_MAP["sonnet"])
         client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
         messages = list(request.messages)
         tool_uses_log: list[ToolUseInfo] = []
 
         for _ in range(10):
             response = await client.messages.create(
-                model=settings.model,
+                model=model_id,
                 max_tokens=4096,
                 temperature=0.7,
                 system=full_system,
@@ -332,7 +657,10 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
 
             tool_results = []
             for tc in tool_calls:
-                result_str = await _execute_tool(tc.name, tc.input, db)
+                result_str = await _execute_tool(tc.name, tc.input, db, full_id)
+                if '"__async_research__"' in result_str:
+                    params = json.loads(result_str)
+                    result_str = await _run_research(db, params)
                 tool_uses_log.append(
                     ToolUseInfo(
                         name=tc.name,
@@ -381,6 +709,7 @@ async def handle_chat_stream(request: ChatRequest) -> StreamingResponse:
     system_prompt = (PROMPTS_DIR / "api_chat.md").read_text(encoding="utf-8")
     context = await build_chat_context(full_id, db)
     full_system = f"{system_prompt}\n\n---\n\n{context}"
+    model_id = MODEL_MAP.get(request.model, MODEL_MAP["sonnet"])
     client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
     messages = list(request.messages)
 
@@ -389,7 +718,7 @@ async def handle_chat_stream(request: ChatRequest) -> StreamingResponse:
         try:
             for _ in range(10):
                 async with client.messages.stream(
-                    model=settings.model,
+                    model=model_id,
                     max_tokens=4096,
                     temperature=0.7,
                     system=full_system,
@@ -416,7 +745,22 @@ async def handle_chat_stream(request: ChatRequest) -> StreamingResponse:
 
                 tool_results = []
                 for tc in tool_calls:
-                    result_str = await _execute_tool(tc.name, tc.input, db)
+                    result_str = await _execute_tool(tc.name, tc.input, db, full_id)
+                    if '"__async_research__"' in result_str:
+                        params = json.loads(result_str)
+                        progress_q: asyncio.Queue[str | None] = asyncio.Queue()
+                        task = asyncio.create_task(
+                            _run_research(db, params, on_progress=lambda m: progress_q.put_nowait(m))
+                        )
+                        while not task.done():
+                            try:
+                                msg = await asyncio.wait_for(progress_q.get(), timeout=0.5)
+                                yield _sse("orchestrator_progress", {"message": msg})
+                            except asyncio.TimeoutError:
+                                continue
+                        result_str = await task
+                        while not progress_q.empty():
+                            yield _sse("orchestrator_progress", {"message": progress_q.get_nowait()})
                     yield _sse("tool_use_result", {
                         "name": tc.name,
                         "input": tc.input,

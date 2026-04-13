@@ -44,7 +44,7 @@ The user sees this visual directly — you don't need to describe or summarize i
 
 **`run_orchestrator`** — expensive, modifies the tree. Only after preview + user confirmation.
 
-**Always call `preview_run` first** when the user asks to preview, plan, prepare, or "show me" a run. The visual component is the main value — it shows them the orchestrator's eye view of a branch.
+**Call `preview_run` first** when the user asks to preview, plan, prepare, or "show me" a run. But if you've already shown a preview in this conversation and the user says to go ahead ("run it", "fire it", "yes"), just call `run_orchestrator` directly — don't preview again.
 
 Available run types:
 - **explore** — adds missing content (claims, evidence, uncertainties). For thin branches or gaps.

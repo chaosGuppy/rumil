@@ -12,13 +12,17 @@ interface ToolUse {
   result: string;
 }
 
+type MessageBlock =
+  | { type: "text"; content: string }
+  | { type: "tool"; tool: ToolUse };
+
 interface Message {
   id: string;
   role: "user" | "assistant";
-  content: string;
+  content: string; // full text (for apiMessages compat)
   timestamp: Date;
   streaming?: boolean;
-  toolUses?: ToolUse[];
+  blocks?: MessageBlock[];
 }
 
 interface SSEEvent {
@@ -128,6 +132,52 @@ function tryParsePreview(result: string) {
   return null;
 }
 
+function ToolBlock({ tu, onAction, onNodeRef }: {
+  tu: ToolUse;
+  onAction?: (text: string) => void;
+  onNodeRef?: (id: string) => void;
+}) {
+  if (tu.name === "preview_run" && tu.result) {
+    const preview = tryParsePreview(tu.result);
+    if (preview) {
+      return <RunPreview data={preview} onAction={onAction} onNodeRef={onNodeRef} />;
+    }
+  }
+  if (tu.name === "run_orchestrator" && tu.result) {
+    return (
+      <details className="rp-orch-result">
+        <summary>✓ {tu.name} — {tu.result.split("\n")[0].slice(0, 100)}</summary>
+        <pre className="rp-orch-detail">{tu.result}</pre>
+      </details>
+    );
+  }
+  return (
+    <div style={{ padding: "2px 0" }}>
+      {tu.result ? "✓" : "⟳"} {tu.name}
+      {tu.result ? ` — ${tu.result.slice(0, 80)}` : " …"}
+    </div>
+  );
+}
+
+function TextContent({ text, onNodeRef }: { text: string; onNodeRef?: (id: string) => void }) {
+  return (
+    <div className="chat-markdown" style={{
+      fontSize: "14px", lineHeight: 1.6, fontFamily: "var(--font-body-stack)",
+    }}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          p: ({ children }) => <p>{processChildren(children, onNodeRef)}</p>,
+          li: ({ children }) => <li>{processChildren(children, onNodeRef)}</li>,
+          strong: ({ children }) => <strong>{processChildren(children, onNodeRef)}</strong>,
+        }}
+      >
+        {text}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
 function MessageEntry({
   message,
   onNodeRef,
@@ -138,116 +188,56 @@ function MessageEntry({
   onAction?: (text: string) => void;
 }) {
   const isUser = message.role === "user";
+  const blocks = message.blocks;
 
   return (
-    <div
-      style={{
-        padding: "12px 0",
-        borderBottom: "1px solid var(--border)",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "baseline",
-          gap: "8px",
-          marginBottom: "4px",
-        }}
-      >
-        <span
-          style={{
-            fontFamily: "var(--font-mono-stack)",
-            fontSize: "10px",
-            letterSpacing: "0.06em",
-            textTransform: "uppercase",
-            color: isUser ? "var(--accent)" : "var(--node-claim)",
-            fontWeight: 500,
-          }}
-        >
+    <div style={{ padding: "12px 0", borderBottom: "1px solid var(--border)" }}>
+      <div style={{
+        display: "flex", alignItems: "baseline", gap: "8px", marginBottom: "4px",
+      }}>
+        <span style={{
+          fontFamily: "var(--font-mono-stack)", fontSize: "10px",
+          letterSpacing: "0.06em", textTransform: "uppercase",
+          color: isUser ? "var(--accent)" : "var(--node-claim)", fontWeight: 500,
+        }}>
           {isUser ? "You" : "Rumil"}
         </span>
-        <span
-          style={{
-            fontFamily: "var(--font-mono-stack)",
-            fontSize: "9px",
-            color: "var(--fg-dim)",
-            letterSpacing: "0.02em",
-          }}
-        >
+        <span style={{
+          fontFamily: "var(--font-mono-stack)", fontSize: "9px",
+          color: "var(--fg-dim)", letterSpacing: "0.02em",
+        }}>
           {formatTime(message.timestamp)}
         </span>
       </div>
-      <div
-        className={isUser ? "" : "chat-markdown"}
-        style={{
-          fontSize: "14px",
-          lineHeight: 1.6,
-          fontFamily: "var(--font-body-stack)",
-          borderLeft: isUser ? "none" : "2px solid var(--border)",
-          paddingLeft: isUser ? "0" : "10px",
-        }}
-      >
-        {isUser ? (
-          message.content.split("\n").map((line, i) => (
-            <p key={i} style={{ margin: i === 0 ? "0" : "6px 0 0 0" }}>
-              {line}
-            </p>
-          ))
-        ) : (
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
-            components={{
-              p: ({ children }) => (
-                <p>{processChildren(children, onNodeRef)}</p>
-              ),
-              li: ({ children }) => (
-                <li>{processChildren(children, onNodeRef)}</li>
-              ),
-              strong: ({ children }) => (
-                <strong>{processChildren(children, onNodeRef)}</strong>
-              ),
-            }}
-          >
-            {message.content}
-          </ReactMarkdown>
-        )}
-      </div>
-      {message.toolUses && message.toolUses.length > 0 && (
-        <div
-          style={{
-            marginTop: "8px",
-            fontFamily: "var(--font-mono-stack)",
-            fontSize: "10px",
-            color: "var(--fg-dim)",
-            letterSpacing: "0.02em",
-          }}
-        >
-          {message.toolUses.map((tu, i) => {
-            if (tu.name === "preview_run" && tu.result) {
-              const preview = tryParsePreview(tu.result);
-              if (preview) {
-                return (
-                  <RunPreview
-                    key={i}
-                    data={preview}
-                    onAction={onAction}
-                    onNodeRef={onNodeRef}
-                  />
-                );
-              }
-            }
-            return (
-              <div key={i} style={{ padding: "2px 0" }}>
-                {tu.result ? "✓" : "⟳"} {tu.name}
-                {tu.result
-                  ? ` — ${tu.result.slice(0, 80)}`
-                  : " …"}
-              </div>
-            );
-          })}
+
+      {isUser ? (
+        <div style={{ fontSize: "14px", lineHeight: 1.6, fontFamily: "var(--font-body-stack)" }}>
+          {message.content.split("\n").map((line, i) => (
+            <p key={i} style={{ margin: i === 0 ? "0" : "6px 0 0 0" }}>{line}</p>
+          ))}
         </div>
-      )}
-      {message.streaming && !message.content && (
+      ) : blocks && blocks.length > 0 ? (
+        <div style={{ borderLeft: "2px solid var(--border)", paddingLeft: "10px" }}>
+          {blocks.map((block, i) =>
+            block.type === "text" ? (
+              block.content.trim() ? <TextContent key={i} text={block.content} onNodeRef={onNodeRef} /> : null
+            ) : (
+              <div key={i} style={{
+                fontFamily: "var(--font-mono-stack)", fontSize: "10px",
+                color: "var(--fg-dim)", letterSpacing: "0.02em", margin: "6px 0",
+              }}>
+                <ToolBlock tu={block.tool} onAction={onAction} onNodeRef={onNodeRef} />
+              </div>
+            ),
+          )}
+        </div>
+      ) : message.content ? (
+        <div style={{ borderLeft: "2px solid var(--border)", paddingLeft: "10px" }}>
+          <TextContent text={message.content} onNodeRef={onNodeRef} />
+        </div>
+      ) : null}
+
+      {message.streaming && !message.content && (!blocks || blocks.length === 0) && (
         <div className="thinking-indicator" style={{ marginTop: "4px" }}>
           <span className="thinking-dot" />
           <span className="thinking-text">thinking</span>
@@ -363,7 +353,7 @@ export function ChatPanel({
         content: "",
         timestamp: new Date(),
         streaming: true,
-        toolUses: [],
+        blocks: [],
       },
     ]);
 
@@ -389,9 +379,28 @@ export function ChatPanel({
 
       const reader = res.body!.getReader();
       const decoder = new TextDecoder();
-      let currentText = "";
-      let currentTools: ToolUse[] = [];
+      let fullText = "";
+      let currentBlocks: MessageBlock[] = [];
       let buffer = "";
+
+      const updateMessage = () => {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId
+              ? { ...m, content: fullText, blocks: [...currentBlocks] }
+              : m,
+          ),
+        );
+      };
+
+      // Ensure the last block is a text block, return it
+      const ensureTextBlock = (): MessageBlock & { type: "text" } => {
+        const last = currentBlocks[currentBlocks.length - 1];
+        if (last && last.type === "text") return last;
+        const block: MessageBlock = { type: "text", content: "" };
+        currentBlocks = [...currentBlocks, block];
+        return block;
+      };
 
       while (true) {
         const { done, value } = await reader.read();
@@ -399,63 +408,54 @@ export function ChatPanel({
         buffer += decoder.decode(value, { stream: true });
 
         const events = [...parseSSE(buffer)];
-        // Keep any incomplete trailing block (no double-newline at end)
         const lastDoubleNewline = buffer.lastIndexOf("\n\n");
         buffer = lastDoubleNewline >= 0 ? buffer.slice(lastDoubleNewline + 2) : buffer;
 
         for (const event of events) {
           if (event.type === "text") {
-            currentText += event.data.content as string;
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === assistantId
-                  ? { ...m, content: currentText }
-                  : m,
-              ),
-            );
+            const chunk = event.data.content as string;
+            fullText += chunk;
+            const textBlock = ensureTextBlock();
+            textBlock.content += chunk;
+            updateMessage();
           } else if (event.type === "tool_use_start") {
-            currentTools = [
-              ...currentTools,
-              { name: event.data.name as string, input: {}, result: "" },
-            ];
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === assistantId
-                  ? { ...m, toolUses: [...currentTools] }
-                  : m,
-              ),
-            );
+            const tool: ToolUse = { name: event.data.name as string, input: {}, result: "" };
+            currentBlocks = [...currentBlocks, { type: "tool", tool }];
+            updateMessage();
           } else if (event.type === "tool_use_result") {
-            currentTools = currentTools.map((tu) =>
-              tu.name === (event.data.name as string) && !tu.result
-                ? {
-                    name: tu.name,
+            const toolName = event.data.name as string;
+            const toolResult = event.data.result as string;
+            // Find the matching pending tool block and fill in its result
+            let matched = false;
+            currentBlocks = currentBlocks.map((b) => {
+              if (!matched && b.type === "tool" && b.tool.name === toolName && !b.tool.result) {
+                matched = true;
+                return {
+                  type: "tool",
+                  tool: {
+                    name: b.tool.name,
                     input: (event.data.input as Record<string, unknown>) || {},
-                    result: event.data.result as string,
-                  }
-                : tu,
-            );
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === assistantId
-                  ? { ...m, toolUses: [...currentTools] }
-                  : m,
-              ),
-            );
+                    result: toolResult,
+                  },
+                };
+              }
+              return b;
+            });
+            updateMessage();
+            if (toolName === "create_node" || toolName === "run_orchestrator") {
+              onMessageSent?.();
+              const idMatch = toolResult.match(/node ([0-9a-f]{8})/);
+              if (idMatch) onNodeRef?.(idMatch[1]);
+            }
           } else if (event.type === "error") {
-            currentText += `\n\n*Error: ${event.data.message}*`;
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === assistantId
-                  ? { ...m, content: currentText }
-                  : m,
-              ),
-            );
+            fullText += `\n\n*Error: ${event.data.message}*`;
+            const textBlock = ensureTextBlock();
+            textBlock.content += `\n\n*Error: ${event.data.message}*`;
+            updateMessage();
           }
         }
       }
 
-      // Mark streaming complete
       setMessages((prev) =>
         prev.map((m) =>
           m.id === assistantId ? { ...m, streaming: false } : m,
@@ -479,7 +479,7 @@ export function ChatPanel({
     } finally {
       setIsLoading(false);
     }
-  }, [input, isLoading, messages, questionHeadline]);
+  }, [input, isLoading, messages, questionHeadline, onMessageSent, onNodeRef, workspace, model]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {

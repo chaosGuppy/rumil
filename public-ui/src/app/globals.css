@@ -2431,6 +2431,31 @@ details[open] > .article-supplementary-toggle::before {
   color: var(--bg);
 }
 
+.rp-orch-result {
+  padding: 2px 0;
+  cursor: pointer;
+}
+
+.rp-orch-result summary {
+  list-style: none;
+}
+
+.rp-orch-result summary::-webkit-details-marker { display: none; }
+
+.rp-orch-detail {
+  margin: 4px 0;
+  padding: 8px;
+  background: var(--bg-pane);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--fg-muted);
+  max-height: 200px;
+  overflow-y: auto;
+}
+
 /* ── source badges & popovers ─────────────── */
 
 .source-badge-group {

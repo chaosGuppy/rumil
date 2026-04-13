@@ -865,11 +865,11 @@ body {
 .view-switcher {
   position: absolute;
   top: 16px;
-  right: 20px;
+  left: 20px;
   z-index: 10;
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 4px;
 }
 
@@ -881,6 +881,22 @@ body {
   border-radius: 4px;
   padding: 2px;
 }
+
+.view-switcher-back {
+  font-family: var(--font-mono-stack);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--fg-dim);
+  background: none;
+  border: none;
+  padding: 4px 8px 4px 0;
+  cursor: pointer;
+  border-right: 1px solid var(--border);
+  margin-right: 2px;
+  transition: color 0.1s;
+}
+
+.view-switcher-back:hover { color: var(--fg); }
 
 .view-switcher-btn {
   font-family: var(--font-mono-stack);

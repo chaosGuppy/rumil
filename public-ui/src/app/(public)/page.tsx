@@ -26,14 +26,27 @@ function ViewModeSwitcher({
   current,
   onChange,
   extra,
+  onBack,
+  workspaceName,
 }: {
   current: ViewMode;
   onChange: (mode: ViewMode) => void;
   extra?: React.ReactNode;
+  onBack?: () => void;
+  workspaceName?: string;
 }) {
   return (
     <div className="view-switcher">
       <div className="view-switcher-row">
+        {onBack && (
+          <button
+            className="view-switcher-back"
+            onClick={onBack}
+            title="Back to workspaces"
+          >
+            {workspaceName || "workspaces"} <span style={{ opacity: 0.5 }}>/</span>
+          </button>
+        )}
         {VIEW_MODES.map((mode) => (
           <button
             key={mode}
@@ -155,7 +168,7 @@ function WorkspaceBrowser({
   );
 }
 
-function WorldviewView({ workspace }: { workspace: string }) {
+function WorldviewView({ workspace, onBack }: { workspace: string; onBack: () => void }) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -240,6 +253,8 @@ function WorldviewView({ workspace }: { workspace: string }) {
           <ViewModeSwitcher
             current={viewMode}
             onChange={setViewMode}
+            onBack={onBack}
+            workspaceName={workspace}
             extra={viewMode === "vertical" ? (
               <>
                 <button
@@ -315,11 +330,16 @@ function AppContent() {
     window.history.replaceState(null, "", `?ws=${encodeURIComponent(name)}`);
   }, []);
 
+  const handleBack = useCallback(() => {
+    setSelectedWs(null);
+    window.history.replaceState(null, "", "/");
+  }, []);
+
   if (!selectedWs) {
     return <WorkspaceBrowser onSelect={handleSelect} />;
   }
 
-  return <WorldviewView workspace={selectedWs} />;
+  return <WorldviewView workspace={selectedWs} onBack={handleBack} />;
 }
 
 export default function Page() {

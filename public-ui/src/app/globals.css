@@ -37,6 +37,10 @@
   --node-context-bg: #f3f3f2;
   --node-question: #7a5a8a;
   --node-question-bg: #f4f0f6;
+  --node-judgement: #8a5a6a;
+  --node-judgement-bg: #f5f0f2;
+  --node-concept: #5a7a7a;
+  --node-concept-bg: #f0f4f4;
 
   /* credence meter */
   --credence-fill: #5a7a6b;
@@ -88,6 +92,10 @@
     --node-context-bg: #222222;
     --node-question: #a07ab0;
     --node-question-bg: #262028;
+    --node-judgement: #b07a8a;
+    --node-judgement-bg: #281e22;
+    --node-concept: #7aa0a0;
+    --node-concept-bg: #1e2828;
 
     --credence-fill: #7aa08b;
     --credence-empty: #3a3530;

@@ -13,6 +13,7 @@ interface ApiNode {
   source_ids: string;
   created_at: string;
   created_by: string;
+  superseded_by?: string | null;
   children: ApiNode[];
 }
 
@@ -24,6 +25,7 @@ function transformNode(api: ApiNode): WorldviewNode {
     /* empty */
   }
   return {
+    id: api.id,
     node_type: api.node_type as WorldviewNode["node_type"],
     headline: api.headline,
     content: api.content,
@@ -32,6 +34,7 @@ function transformNode(api: ApiNode): WorldviewNode {
     importance: api.importance ?? 0,
     source_page_ids: sourceIds,
     created_by: api.created_by || "system",
+    superseded_by: api.superseded_by || null,
     children: api.children.map(transformNode),
   };
 }

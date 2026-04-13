@@ -73,7 +73,7 @@ def init_db() -> None:
             id TEXT PRIMARY KEY,
             workspace_id TEXT NOT NULL REFERENCES workspaces(id),
             parent_id TEXT REFERENCES nodes(id),
-            node_type TEXT NOT NULL CHECK(node_type IN ('claim','hypothesis','evidence','uncertainty','context','question')),
+            node_type TEXT NOT NULL CHECK(node_type IN ('claim','hypothesis','evidence','uncertainty','context','question','judgement','concept')),
             headline TEXT NOT NULL,
             content TEXT NOT NULL DEFAULT '',
             credence INTEGER CHECK(credence BETWEEN 1 AND 9),
@@ -81,6 +81,19 @@ def init_db() -> None:
             importance INTEGER NOT NULL DEFAULT 0,
             position INTEGER NOT NULL DEFAULT 0,
             source_ids TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT NOT NULL,
+            created_by TEXT NOT NULL DEFAULT 'system',
+            superseded_by TEXT REFERENCES nodes(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS node_links (
+            id TEXT PRIMARY KEY,
+            workspace_id TEXT NOT NULL REFERENCES workspaces(id),
+            source_id TEXT NOT NULL REFERENCES nodes(id),
+            target_id TEXT NOT NULL REFERENCES nodes(id),
+            link_type TEXT NOT NULL CHECK(link_type IN ('supports','opposes','depends_on','related')),
+            strength INTEGER CHECK(strength BETWEEN 1 AND 5),
+            reasoning TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL,
             created_by TEXT NOT NULL DEFAULT 'system'
         );
@@ -148,6 +161,9 @@ def init_db() -> None:
         CREATE INDEX IF NOT EXISTS idx_sources_workspace ON sources(workspace_id);
         CREATE INDEX IF NOT EXISTS idx_trace_events_run ON trace_events(run_id);
         CREATE INDEX IF NOT EXISTS idx_trace_events_span ON trace_events(span_id);
+        CREATE INDEX IF NOT EXISTS idx_node_links_source ON node_links(source_id);
+        CREATE INDEX IF NOT EXISTS idx_node_links_target ON node_links(target_id);
+        CREATE INDEX IF NOT EXISTS idx_node_links_workspace ON node_links(workspace_id);
     """)
     conn.commit()
     conn.close()

@@ -34,8 +34,21 @@ The worldview tree is a hierarchical structure of nodes, organized by importance
 - **hypothesis** — A claim that is specifically under investigation or hasn't converged yet. Use when the tree is actively tracking competing possibilities. A hypothesis signals "this might be true and we're still working it out," whereas a claim says "the evidence supports this."
 - **evidence** — A concrete finding, data point, or source-backed observation. Evidence nodes don't assert a conclusion; they report what was found. They support or challenge claims and hypotheses above them.
 - **uncertainty** — An identified gap, tension, or unresolved question within a branch. Use when the tree has surfaced something important that it can't yet answer. Uncertainties are not failures — they're honest markers of where the frontier is.
-- **context** — Background or framing that helps interpret other nodes. Use sparingly. If a reader needs orientation to make sense of a branch — definitions, scope boundaries, methodological notes — context nodes provide it. But most of the tree should be substantive, not contextual.
-- **question** — A research question that could spawn its own investigation. Questions mark places where the tree would benefit from dedicated work. They're invitations, not assertions.
+- **context** — Background or framing that helps interpret other nodes. Use sparingly — only when a reader would be genuinely confused without it.
+- **question** — A research question that could spawn its own investigation. Questions mark places where the tree would benefit from dedicated work.
+- **judgement** — A synthesized position on a branch's question or claim. Judgements are the "bottom line" — what the accumulated evidence and analysis supports. A branch should have at most one active judgement; creating a new one supersedes the previous. Include key dependencies and sensitivity analysis in the content.
+- **concept** — A reusable definition or framework that needs consistent meaning across branches. Concepts appear as lightweight references (hover definitions) in the UI rather than taking up space in the tree. Use when a term could be interpreted differently across branches and consistency matters.
+
+## Links
+
+Beyond the tree structure (parent-child), nodes can have typed links that express relationships across the graph:
+
+- **supports** — source provides evidence or reasoning for target. Use when a finding in one place strengthens a claim elsewhere.
+- **opposes** — source provides evidence or reasoning against target. Use when findings are in tension.
+- **depends_on** — source's truth rests on target's truth. If the target turns out to be wrong, the source is in trouble. This builds a dependency graph for propagating updates.
+- **related** — weaker association. Neither directionally supporting nor opposing, but relevant to understanding.
+
+Links are directional (source → target) and carry a strength (1-5). Use `link_nodes` to create them. The most important links to create are `depends_on` (makes the reasoning chain explicit) and `opposes` (makes tensions visible).
 
 ## Credence and Robustness
 

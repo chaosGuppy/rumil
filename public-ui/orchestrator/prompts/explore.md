@@ -28,3 +28,18 @@ Before adding anything, inspect the branch you're working on. Look for:
 - **Don't duplicate existing nodes in different words.** Read the branch carefully. If a consideration is already represented, strengthen the existing node rather than creating a parallel one.
 - **Don't add context nodes unless they genuinely help interpretation.** Context is the lowest-value node type. It should appear only when a reader would be genuinely confused without it — not as padding or to demonstrate thoroughness.
 - **Don't hedge your way to vacuity.** "This is a complex issue with many factors" is not a useful node. If you can't be specific, you probably don't have something worth adding yet.
+
+## Links and Relationships
+
+As you add nodes, look for relationships worth making explicit:
+
+- **`depends_on`** — when a claim's truth rests on another claim. These are the most valuable links to create because they make the reasoning chain visible. If an upstream claim is later undermined, everything that depends on it needs revisiting.
+- **`opposes`** — when you find evidence or claims that are in tension with existing nodes, especially in other branches. Creating opposing links makes tensions visible rather than leaving them implicit.
+- **`supports`** — when evidence from elsewhere in the tree strengthens a claim in this branch.
+
+Don't create links for every connection — focus on the load-bearing ones.
+
+## Judgements and Concepts
+
+- **Create a judgement** when a branch has accumulated enough research to state a position. A judgement synthesizes the claims and evidence into a bottom line. If a prior judgement exists and the picture has changed, create a new one (it supersedes the old). Not every branch needs a judgement — only create one when you have enough to say something substantive.
+- **Create a concept** when a term needs consistent definition across branches. Concepts are lightweight — they appear as hover definitions in the UI, not as tree cards. Use when ambiguity would cause confusion (e.g., "alignment tax", "regulatory capture", "frontier model").

@@ -45,7 +45,9 @@ NODE_TYPE_GUIDANCE = (
     "evidence = concrete finding, data point, or source-backed observation. "
     "uncertainty = identified gap, tension, or open question within the branch. "
     "context = background/framing that helps interpret other nodes. "
-    "question = research question that could spawn its own investigation."
+    "question = research question that could spawn its own investigation. "
+    "judgement = synthesized position on a branch, supersedes prior judgements on the same scope. "
+    "concept = reusable definition or framework referenced across branches."
 )
 
 IMPORTANCE_GUIDANCE = (
@@ -71,7 +73,7 @@ ADD_NODE: dict[str, Any] = {
         "properties": {
             "node_type": {
                 "type": "string",
-                "enum": ["claim", "hypothesis", "evidence", "uncertainty", "context", "question"],
+                "enum": ["claim", "hypothesis", "evidence", "uncertainty", "context", "question", "judgement", "concept"],
                 "description": NODE_TYPE_GUIDANCE,
             },
             "headline": {
@@ -250,12 +252,55 @@ INSPECT_BRANCH: dict[str, Any] = {
     },
 }
 
-ALL_TOOLS = [ADD_NODE, UPDATE_NODE, SUGGEST_CHANGE, RELEVEL_NODE, MOVE_NODE, INSPECT_BRANCH]
+LINK_NODES: dict[str, Any] = {
+    "name": "link_nodes",
+    "description": (
+        "Create a typed link between two nodes. Links express relationships "
+        "beyond the tree structure — support, opposition, dependency, or "
+        "association. Use when you notice that a node in this branch bears on "
+        "a node elsewhere, or when you want to make a dependency explicit. "
+        "Links are directional: source → target."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "source_id": {
+                "type": "string",
+                "description": "Short ID of the source node (the one making the claim or providing evidence).",
+            },
+            "target_id": {
+                "type": "string",
+                "description": "Short ID of the target node (the one being supported, opposed, or depended on).",
+            },
+            "link_type": {
+                "type": "string",
+                "enum": ["supports", "opposes", "depends_on", "related"],
+                "description": (
+                    "supports = source provides evidence or reasoning for target. "
+                    "opposes = source provides evidence or reasoning against target. "
+                    "depends_on = source's truth rests on target's truth (if target is wrong, source is in trouble). "
+                    "related = weaker association, neither directionally supporting nor opposing."
+                ),
+            },
+            "strength": {
+                "type": "integer",
+                "description": "1-5 how strongly this relationship holds. 1 = weak/tangential, 5 = decisive.",
+            },
+            "reasoning": {
+                "type": "string",
+                "description": "Why this link exists — what's the relationship?",
+            },
+        },
+        "required": ["source_id", "target_id", "link_type", "reasoning"],
+    },
+}
+
+ALL_TOOLS = [ADD_NODE, UPDATE_NODE, SUGGEST_CHANGE, RELEVEL_NODE, MOVE_NODE, LINK_NODES, INSPECT_BRANCH]
 
 TOOL_SETS: dict[str, list[dict[str, Any]]] = {
-    "explore": [ADD_NODE, UPDATE_NODE, RELEVEL_NODE, SUGGEST_CHANGE, INSPECT_BRANCH],
-    "evaluate": [UPDATE_NODE, RELEVEL_NODE, SUGGEST_CHANGE, INSPECT_BRANCH],
-    "restructure": [MOVE_NODE, RELEVEL_NODE, UPDATE_NODE, INSPECT_BRANCH],
+    "explore": [ADD_NODE, UPDATE_NODE, RELEVEL_NODE, LINK_NODES, SUGGEST_CHANGE, INSPECT_BRANCH],
+    "evaluate": [UPDATE_NODE, RELEVEL_NODE, LINK_NODES, SUGGEST_CHANGE, INSPECT_BRANCH],
+    "restructure": [MOVE_NODE, RELEVEL_NODE, UPDATE_NODE, LINK_NODES, INSPECT_BRANCH],
 }
 
 
@@ -293,6 +338,8 @@ def make_tool_executor(
             output = _exec_relevel_node(conn, tool_input, prefix, dry_run)
         elif name == "move_node":
             output = _exec_move_node(conn, tool_input, prefix, dry_run)
+        elif name == "link_nodes":
+            output = _exec_link_nodes(conn, ws_id, tool_input, prefix, dry_run)
         elif name == "inspect_branch":
             output = _exec_inspect_branch(conn, scope_node_id, ws_id)
         else:
@@ -424,6 +471,36 @@ def make_tool_executor(
         conn.execute("UPDATE nodes SET parent_id = ? WHERE id = ?", (new_parent_full, full_id))
         conn.commit()
         return f"Moved {node_short} under {new_parent_short}"
+
+    def _exec_link_nodes(
+        conn: sqlite3.Connection, ws_id: str, inp: dict, prefix: str, dry: bool,
+    ) -> str:
+        source_short = inp.get("source_id", "")
+        target_short = inp.get("target_id", "")
+        source_full = _resolve(conn, source_short)
+        target_full = _resolve(conn, target_short)
+        if not source_full:
+            return f"Source node '{source_short}' not found"
+        if not target_full:
+            return f"Target node '{target_short}' not found"
+        link_type = inp.get("link_type", "related")
+        if dry:
+            return (
+                f"{prefix}Would link {source_short} —[{link_type}]→ {target_short}: "
+                f"{inp.get('reasoning', '')[:100]}"
+            )
+        link_id = _new_id()
+        conn.execute(
+            "INSERT INTO node_links (id, workspace_id, source_id, target_id, link_type, "
+            "strength, reasoning, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                link_id, ws_id, source_full, target_full,
+                link_type, inp.get("strength"), inp.get("reasoning", ""),
+                _now(), "orchestrator",
+            ),
+        )
+        conn.commit()
+        return f"Linked {source_short} —[{link_type}]→ {target_short}"
 
     def _exec_inspect_branch(
         conn: sqlite3.Connection, scope_node_id: str, ws_id: str,

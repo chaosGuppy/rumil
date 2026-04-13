@@ -8,7 +8,7 @@ graph into a well-structured worldview tree with thematic branches, concise
 content, proper node types, and importance levels. Also imports sources.
 
 Usage:
-    uv run public-ui/import_from_rumil.py /tmp/rumil_export.json --workspace forethought
+    uv run parma/import_from_rumil.py /tmp/rumil_export.json --workspace forethought
 """
 
 import json
@@ -298,7 +298,7 @@ def insert_sources(conn: sqlite3.Connection, ws_id: str, data: dict) -> int:
 
 def main() -> None:
     if len(sys.argv) < 2:
-        print("Usage: uv run public-ui/import_from_rumil.py <export.json> [--workspace NAME]")
+        print("Usage: uv run parma/import_from_rumil.py <export.json> [--workspace NAME]")
         sys.exit(1)
 
     export_path = sys.argv[1]

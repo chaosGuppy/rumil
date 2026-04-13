@@ -4,7 +4,7 @@
 """Lightweight worldview API server.
 
 SQLite-backed, no external dependencies beyond the Anthropic API.
-Run with: uv run public-ui/serve.py
+Run with: uv run parma/serve.py
 
 Data model:
   - workspaces: named containers

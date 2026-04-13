@@ -5,7 +5,7 @@ Two new UIs (separate from existing `frontend/`), plus API work to back them.
 ## Architecture
 
 ```
-public-ui/                 Next.js app + FastAPI backend (serve.py)
+parma/                     Next.js app + FastAPI backend (serve.py)
                            self-contained: own SQLite DB, own Anthropic API integration
                            no dependency on rumil core — intentionally separate for now
   src/app/(public)/        public routes (worldview browser, views, chat)

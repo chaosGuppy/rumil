@@ -231,7 +231,7 @@ function WorldviewView({ workspace, onBack }: { workspace: string; onBack: () =>
       <div className="view-error">
         Could not load worldview: {error}
         <br />
-        Is the API running? (uv run public-ui/serve.py)
+        Is the API running? (uv run parma/serve.py)
       </div>
     );
   }

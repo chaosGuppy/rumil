@@ -19,7 +19,8 @@ Before adding anything, inspect the branch you're working on. Look for:
 - **Always set credence and robustness** on claims and hypotheses. No exceptions. If you don't know what score to give, that's useful information — give your best estimate and set robustness low.
 - **Add evidence, not just claims.** The most common failure mode is adding layers of assertion without grounding. If you find yourself creating a claim supported only by another claim, stop and look for evidence instead.
 - **Use `suggest_change`** when your work in one branch has implications for another. Don't silently leave cross-branch tensions unaddressed — surface them as suggestions for the next run.
-- **Set importance levels honestly.** New nodes should usually enter at L1-L3. Promoting something to L0 is a strong statement that it belongs in the core worldview; do it only when warranted.
+- **Maintain L-levels as you go.** When you add a node, consider its importance relative to what's already there — don't default to L1-L2 without thinking. If what you're adding is more central to the root question than an existing L0 node, relevel. If you're adding evidence that makes an existing claim more (or less) certain, consider whether that changes its importance.
+- **Check the L0 band before finishing.** Would someone reading only L0 get an accurate picture? If your work changed what matters most about this branch, the L0 nodes should reflect that.
 
 ## What NOT to Do
 

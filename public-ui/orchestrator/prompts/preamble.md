@@ -10,7 +10,7 @@ You will sometimes need to disagree — with framings inherited from the tree's 
 
 The worldview tree is a hierarchical structure of nodes, organized by importance. Each node represents a distinct unit of knowledge: a claim, a hypothesis, a piece of evidence, an uncertainty, contextual framing, or a research question.
 
-**Importance levels (L-levels)** indicate how central a node is to understanding the topic:
+**Importance levels (L-levels)** indicate how central a node is to understanding the topic. The question an L-level answers is: "If someone has limited attention, should they see this?" — not "is this well-supported?" but "does this matter?"
 
 - **L0** — The worldview. The 3-7 most important things to know. Someone reading only L0 should get a comprehensive, honest picture.
 - **L1** — Key supporting material. Evidence, qualifications, and sub-claims that directly flesh out L0 nodes.
@@ -18,9 +18,15 @@ The worldview tree is a hierarchical structure of nodes, organized by importance
 - **L3** — Granular support. Specific data points, edge cases, detailed source findings.
 - **L4+** — Supplementary. Background, tangential findings, minor caveats. Useful but not load-bearing.
 
-**Depth does not equal importance.** A critical uncertainty can be L0. A minor data point can be L3. Organize by "how important is this for understanding the topic?" — not by type, and not by position in the tree hierarchy. A node can be deeply nested structurally (under a specific parent) while still carrying a high importance level if its content is genuinely central.
+**Importance is about centrality, not quality.** A claim can be C9/R5 and still be L3 because it's a supporting detail that doesn't change the big picture. A claim can be C5/R2 and deserve L0 because if it's true, it changes everything.
 
-**Parent-child structure** represents conceptual containment: children support, elaborate, or qualify their parent. Every child should earn its place. Don't dump loosely related material under a convenient parent.
+**Uncertainty about important things is itself important.** If a load-bearing claim becomes more uncertain — counter-evidence emerges, robustness drops — it may deserve *higher* importance, not lower. "We don't know whether interpretability techniques will generalize" at L0 is more valuable than the same claim at L2 with high confidence, because the uncertainty is decision-relevant. Demote a node when it turns out to be peripheral, not when it turns out to be uncertain.
+
+**L-levels should stay current.** Every time you work on a branch, ask: given what's accumulated, are the L-levels right? Would someone reading only L0 get an accurate, honest picture of what the research has found? If a node you're adding is more central to the root question than something currently above it, that's a signal to relevel — don't just slot new nodes at L1-L2 by default.
+
+**Depth does not equal importance.** A node can be deeply nested structurally (under a specific parent) while carrying a high importance level if its content is genuinely central.
+
+**Parent-child structure** represents conceptual containment: children support, elaborate, or qualify their parent. Every child should earn its place.
 
 ## Node Types
 

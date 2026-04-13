@@ -22,17 +22,17 @@ RUN_TYPES: dict[str, dict[str, Any]] = {
         "description": "Generative: expand and strengthen a branch by adding missing content",
         "prompts": ["preamble.md", "explore.md"],
         "tool_set": "explore",
-        "context_layers": ["root", "ancestors", "branch", "health", "pending"],
+        "context_layers": ["root", "ancestors", "branch", "health", "worldview", "history", "pending"],
         "runner": {
             "max_rounds": 8,
             "temperature": 0.5,
         },
     },
     "evaluate": {
-        "description": "Evaluative: assess quality, adjust scores and importance — no new nodes",
+        "description": "Evaluative: assess importance levels, scores, and structure — no new nodes",
         "prompts": ["preamble.md", "evaluate.md"],
         "tool_set": "evaluate",
-        "context_layers": ["root", "branch", "health"],
+        "context_layers": ["root", "branch", "worldview", "health", "siblings", "history"],
         "runner": {
             "max_rounds": 6,
             "temperature": 0.3,

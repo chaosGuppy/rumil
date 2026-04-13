@@ -261,6 +261,153 @@ def _layer_pending(
     return "\n".join(parts)
 
 
+def _layer_worldview(
+    conn: sqlite3.Connection, scope_node_id: str, **kwargs: object
+) -> str:
+    """Surface the L0 band and promotion/demotion candidates for L-level reasoning."""
+    tree = get_subtree(conn, scope_node_id)
+    l0_nodes: list[dict] = []
+    promote_candidates: list[dict] = []
+    demote_candidates: list[dict] = []
+    buried_uncertainties: list[dict] = []
+
+    def scan(node: dict, depth: int = 0) -> None:
+        imp = node.get("importance", 0)
+        nt = node.get("node_type", "")
+        cred = node.get("credence")
+        rob = node.get("robustness")
+
+        if imp == 0 and depth > 0:
+            l0_nodes.append(node)
+            if rob is not None and rob <= 2:
+                demote_candidates.append(node)
+        elif (
+            imp >= 2 and cred is not None and rob is not None and cred >= 7 and rob >= 3
+        ):
+            promote_candidates.append(node)
+        if nt == "uncertainty" and imp >= 2:
+            buried_uncertainties.append(node)
+
+        for child in node.get("children", []):
+            scan(child, depth + 1)
+
+    scan(tree)
+
+    if not l0_nodes and not promote_candidates and not buried_uncertainties:
+        return ""
+
+    parts = ["# Worldview status (L-level review)"]
+
+    if l0_nodes:
+        parts.append("## Current L0 band")
+        for n in l0_nodes:
+            nid = n.get("id", "?")[:8]
+            scores = ""
+            if n.get("credence") is not None:
+                scores += f" C{n['credence']}"
+            if n.get("robustness") is not None:
+                scores += f"/R{n['robustness']}"
+            parts.append(
+                f"  [{n.get('node_type', '?')}] {n.get('headline', '?')} [{nid}]{scores}"
+            )
+
+    if demote_candidates:
+        parts.append("## Demotion candidates (L0 with low robustness)")
+        for n in demote_candidates:
+            nid = n.get("id", "?")[:8]
+            parts.append(
+                f"  [{nid}] {n.get('headline', '?')} — "
+                f"R{n.get('robustness', '?')} at L0, is this earned?"
+            )
+
+    if promote_candidates:
+        parts.append("## Promotion candidates (L1+ with high credence + robustness)")
+        for n in promote_candidates:
+            nid = n.get("id", "?")[:8]
+            parts.append(
+                f"  [{nid}] {n.get('headline', '?')} — "
+                f"L{n.get('importance', '?')} C{n.get('credence', '?')}/R{n.get('robustness', '?')}"
+            )
+
+    if buried_uncertainties:
+        parts.append(
+            "## Buried uncertainties (L2+ uncertainties that may deserve higher importance)"
+        )
+        for n in buried_uncertainties:
+            nid = n.get("id", "?")[:8]
+            parts.append(
+                f"  [{nid}] {n.get('headline', '?')} — L{n.get('importance', '?')}"
+            )
+
+    return "\n".join(parts)
+
+
+def _layer_history(
+    conn: sqlite3.Connection, scope_node_id: str, *, ws_id: str = "", **kwargs: object
+) -> str:
+    """Recent run history and suggestion signals for this branch."""
+    if not ws_id:
+        return ""
+
+    runs = conn.execute(
+        "SELECT run_type, status, started_at, description FROM runs "
+        "WHERE workspace_id = ? AND scope_node_id = ? "
+        "ORDER BY started_at DESC LIMIT 5",
+        (ws_id, scope_node_id),
+    ).fetchall()
+
+    accepted = conn.execute(
+        "SELECT suggestion_type, payload FROM suggestions "
+        "WHERE workspace_id = ? AND status = 'accepted' "
+        "ORDER BY reviewed_at DESC LIMIT 5",
+        (ws_id,),
+    ).fetchall()
+
+    rejected = conn.execute(
+        "SELECT suggestion_type, payload FROM suggestions "
+        "WHERE workspace_id = ? AND status = 'rejected' "
+        "ORDER BY reviewed_at DESC LIMIT 5",
+        (ws_id,),
+    ).fetchall()
+
+    if not runs and not accepted and not rejected:
+        return ""
+
+    parts = ["# Research history"]
+
+    if runs:
+        parts.append("## Recent runs on this branch")
+        for r in runs:
+            rd = dict(r)
+            parts.append(
+                f"  {rd.get('run_type', '?')} ({rd.get('status', '?')}) — {rd.get('description', '')[:80]}"
+            )
+
+    if accepted:
+        parts.append("## Recently accepted suggestions (user valued these)")
+        for s in accepted:
+            sd = dict(s)
+            import json as _json
+
+            payload = _json.loads(sd.get("payload", "{}"))
+            parts.append(
+                f"  {sd.get('suggestion_type', '?')}: {payload.get('reasoning', '')[:80]}"
+            )
+
+    if rejected:
+        parts.append("## Recently rejected suggestions (user disagreed)")
+        for s in rejected:
+            sd = dict(s)
+            import json as _json
+
+            payload = _json.loads(sd.get("payload", "{}"))
+            parts.append(
+                f"  {sd.get('suggestion_type', '?')}: {payload.get('reasoning', '')[:80]}"
+            )
+
+    return "\n".join(parts)
+
+
 LAYER_BUILDERS = {
     "root": _layer_root,
     "ancestors": _layer_ancestors,
@@ -268,6 +415,8 @@ LAYER_BUILDERS = {
     "health": _layer_health,
     "siblings": _layer_siblings,
     "pending": _layer_pending,
+    "worldview": _layer_worldview,
+    "history": _layer_history,
 }
 
 

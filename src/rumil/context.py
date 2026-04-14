@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 
 from rumil.database import DB
 from rumil.embeddings import embed_query, search_pages_by_vector
-from rumil.models import Page, PageDetail, PageType
+from rumil.models import Page, PageDetail, PageLink, PageType
 from rumil.settings import get_settings
 
 log = logging.getLogger(__name__)
@@ -370,6 +370,72 @@ async def format_page(
             )
 
     return "\n".join(lines)
+
+
+async def render_view(
+    view: Page,
+    items_with_links: Sequence[tuple[Page, PageLink]],
+    min_importance: int = 5,
+) -> str:
+    """Render a View page at the given importance threshold.
+
+    - min_importance=5: NL summary only (no individual items)
+    - min_importance=4: NL summary + programmatic rendering of all items at 4+
+    - min_importance=3: NL summary + all items at 3+
+    - min_importance=2: NL summary + all items at 2+
+
+    Whenever items are rendered programmatically, importance-5 items are
+    always included alongside lower-tier ones.
+    """
+    parts: list[str] = [f"## View: {view.headline}", ""]
+
+    if view.content:
+        parts.append(view.content)
+        parts.append("")
+
+    if min_importance >= 5:
+        return "\n".join(parts)
+
+    filtered = [
+        (page, link)
+        for page, link in items_with_links
+        if link.importance is not None and link.importance >= min_importance
+    ]
+    if not filtered:
+        return "\n".join(parts)
+
+    sections_order = view.sections or []
+    section_index = {s: i for i, s in enumerate(sections_order)}
+
+    by_section: dict[str, list[tuple[Page, PageLink]]] = {}
+    for page, link in filtered:
+        sec = link.section or "other"
+        by_section.setdefault(sec, []).append((page, link))
+
+    ordered_sections = sorted(
+        by_section.keys(),
+        key=lambda s: section_index.get(s, 999),
+    )
+
+    parts.append("### View Items")
+    parts.append("")
+    for sec in ordered_sections:
+        label = sec.replace("_", " ").title()
+        parts.append(f"#### {label}")
+        parts.append("")
+        items = by_section[sec]
+        items.sort(key=lambda pair: pair[1].position or 0)
+        for page, link in items:
+            imp = link.importance or 0
+            c = page.credence if page.credence is not None else "?"
+            r = page.robustness if page.robustness is not None else "?"
+            parts.append(f"- [C{c}/R{r} I{imp}] `{page.id[:8]}` — {page.headline}")
+            if page.content:
+                for line in page.content.strip().split("\n"):
+                    parts.append(f"  {line}")
+            parts.append("")
+
+    return "\n".join(parts)
 
 
 async def _build_dependency_signal(db: DB) -> str | None:

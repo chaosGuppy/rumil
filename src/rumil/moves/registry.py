@@ -21,6 +21,8 @@ from rumil.moves.remove_link import MOVE as _remove_link
 from rumil.moves.change_link_role import MOVE as _change_link_role
 from rumil.moves.update_epistemic import MOVE as _update_epistemic
 from rumil.moves.link_depends_on import MOVE as _link_depends_on
+from rumil.moves.create_view_item import MOVE as _create_view_item
+from rumil.moves.propose_view_item import MOVE as _propose_view_item
 
 MOVES: dict[MoveType, MoveDef] = {
     m.move_type: m
@@ -42,5 +44,7 @@ MOVES: dict[MoveType, MoveDef] = {
         _change_link_role,
         _update_epistemic,
         _link_depends_on,
+        _create_view_item,
+        _propose_view_item,
     ]
 }

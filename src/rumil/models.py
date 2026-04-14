@@ -30,6 +30,9 @@ class PageType(str, Enum):
     JUDGEMENT = "judgement"
     WIKI = "wiki"
     SUMMARY = "summary"
+    VIEW = "view"
+    VIEW_ITEM = "view_item"
+    VIEW_META = "view_meta"
 
 
 class PageDetail(str, Enum):
@@ -76,6 +79,7 @@ class CallType(str, Enum):
     GROUNDING_FEEDBACK = "grounding_feedback"
     FEEDBACK_UPDATE = "feedback_update"
     LINK_SUBQUESTIONS = "link_subquestions"
+    CREATE_VIEW = "create_view"
 
 
 # The subset of CallTypes that prioritization can dispatch.
@@ -99,6 +103,7 @@ DISPATCHABLE_CALL_TYPES: set[CallType] = {
     CallType.SCOUT_C_ROBUSTIFY,
     CallType.SCOUT_C_STRENGTHEN,
     CallType.WEB_RESEARCH,
+    CallType.CREATE_VIEW,
 }
 
 
@@ -119,6 +124,9 @@ class LinkType(str, Enum):
     SUMMARIZES = "summarizes"  # summary page covers a question subtree
     CITES = "cites"  # claim cites a source
     DEPENDS_ON = "depends_on"  # claim/judgement -> claim/judgement: source page's conclusions rest on target being true/valid
+    VIEW_ITEM = "view_item"  # view -> view_item: item belongs to this view
+    VIEW_OF = "view_of"  # view -> question: this view covers this question
+    META_FOR = "meta_for"  # view_meta -> view_item or view: meta annotation
 
 
 class MoveType(str, Enum):
@@ -139,6 +147,8 @@ class MoveType(str, Enum):
     CHANGE_LINK_ROLE = "CHANGE_LINK_ROLE"
     UPDATE_EPISTEMIC = "UPDATE_EPISTEMIC"
     LINK_DEPENDS_ON = "LINK_DEPENDS_ON"
+    CREATE_VIEW_ITEM = "CREATE_VIEW_ITEM"
+    PROPOSE_VIEW_ITEM = "PROPOSE_VIEW_ITEM"
 
 
 class CallStage(str, Enum):
@@ -294,6 +304,10 @@ class ScoutCStrengthenDispatchPayload(ScopeOnlyDispatchPayload, MultiRoundFields
     pass
 
 
+class CreateViewDispatchPayload(BaseDispatchPayload):
+    pass
+
+
 class WebResearchDispatchPayload(BaseDispatchPayload):
     pass
 
@@ -370,6 +384,8 @@ class Page(BaseModel):
     extra: dict = Field(default_factory=dict)
     abstract: str = ""
     fruit_remaining: int | None = None
+    sections: list[str] | None = None  # VIEW pages: ordered section names
+    meta_type: str | None = None  # VIEW_META pages: priority/annotation/proposal
 
     def is_active(self) -> bool:
         return not self.is_superseded
@@ -385,6 +401,9 @@ class PageLink(BaseModel):
     strength: float = 2.5  # 0-5
     reasoning: str = ""
     role: LinkRole = LinkRole.DIRECT
+    importance: int | None = None  # VIEW_ITEM links: 1-5
+    section: str | None = None  # VIEW_ITEM links: section name
+    position: int | None = None  # VIEW_ITEM links: order within section
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 

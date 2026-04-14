@@ -37,10 +37,7 @@ PRESETS: dict[str, AvailableMoves] = {
             MoveType.LINK_DEPENDS_ON,
             MoveType.LOAD_PAGE,
         ],
-        CallType.PRIORITIZATION: [
-            MoveType.CREATE_SUBQUESTION,
-            MoveType.LINK_CHILD_QUESTION,
-        ],
+        CallType.PRIORITIZATION: [],
         CallType.SCOUT_SUBQUESTIONS: [
             MoveType.CREATE_CLAIM,
             MoveType.CREATE_SCOUT_QUESTION,
@@ -195,10 +192,7 @@ PRESETS: dict[str, AvailableMoves] = {
             MoveType.LINK_DEPENDS_ON,
             MoveType.LOAD_PAGE,
         ],
-        CallType.PRIORITIZATION: [
-            MoveType.CREATE_SUBQUESTION,
-            MoveType.LINK_CHILD_QUESTION,
-        ],
+        CallType.PRIORITIZATION: [],
         CallType.SCOUT_SUBQUESTIONS: [
             MoveType.CREATE_CLAIM,
             MoveType.CREATE_SCOUT_QUESTION,

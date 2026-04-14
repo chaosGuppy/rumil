@@ -11,6 +11,7 @@ from rumil.models import (
     AssessDispatchPayload,
     BaseDispatchPayload,
     CallType,
+    CreateViewDispatchPayload,
     Dispatch,
     FindConsiderationsMode,
     PrioritizationDispatchPayload,
@@ -393,6 +394,17 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
             "subquestion, so 2 total)."
         ),
         schema=WebResearchDispatchPayload,
+    ),
+    CallType.CREATE_VIEW: DispatchDef(
+        call_type=CallType.CREATE_VIEW,
+        name="dispatch_create_view",
+        description=(
+            "Synthesize a structured View page (sectioned, importance-ranked "
+            "summary of findings) for a question. Use when a question has "
+            "accumulated enough evidence that a distilled view would be "
+            "valuable. Budget cost: exactly 1."
+        ),
+        schema=CreateViewDispatchPayload,
     ),
 }
 

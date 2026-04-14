@@ -96,6 +96,39 @@ async def test_dispatch_records_run_with_origin(
     assert config.get("skill") == "rumil-dispatch"
 
 
+@pytest.mark.llm
+async def test_dispatch_origin_survives_call_lifecycle(
+    monkeypatch, patch_make_db, tmp_db, question_page
+):
+    """origin=claude-code in call_params must survive the full call lifecycle."""
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "dispatch_call",
+            "find-considerations",
+            question_page.id,
+            "--budget",
+            "1",
+            "--max-rounds",
+            "1",
+            "--smoke-test",
+        ],
+    )
+    await dispatch_call.main()
+
+    calls = await tmp_db._execute(
+        tmp_db.client.table("calls")
+        .select("*")
+        .eq("scope_page_id", question_page.id)
+        .eq("run_id", tmp_db.run_id)
+    )
+    rows = list(getattr(calls, "data", None) or [])
+    assert len(rows) >= 1
+    params = rows[0].get("call_params") or {}
+    assert params.get("origin") == "claude-code"
+    assert params.get("skill") == "rumil-dispatch"
+
+
 async def test_dispatch_unknown_question_exits(monkeypatch, patch_make_db, capsys):
     monkeypatch.setattr(
         "sys.argv",

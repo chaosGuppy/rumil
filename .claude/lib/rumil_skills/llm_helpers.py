@@ -26,11 +26,7 @@ from rumil.settings import get_settings
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 
-# Default meta-call model. Sonnet is the right balance for trace
-# review — cheaper than the main research model, still strong at
-# reading long structured context and producing calibrated verdicts.
-# Overridable per-call via ``model`` kwarg.
-DEFAULT_META_MODEL = "claude-sonnet-4-6"
+DEFAULT_META_MODEL = "claude-opus-4-6"
 
 
 def load_prompt(name: str) -> str:

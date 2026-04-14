@@ -3,20 +3,27 @@
 Living planning document for the Claude Code skill system that drives
 rumil from CC. Updated as ideas land, ship, or get dropped.
 
-Last major update: after committing `f389003` (increment 2 — inspection,
+Last major update: 2026-04-13, refreshed to reflect the source lane
+(`rumil-read` / `rumil-ingest` / `rumil-ask`), `rumil-orchestrate`,
+`rumil-load-run`, `rumil-quick-search`, and the standalone `scan`
+module wired into `rumil-find-confusion --structural`. Previous major
+update was after committing `f389003` (increment 2 — inspection,
 review, and clean skills + apply_move friction fixes).
 
 ## Where we are now
 
-Two commits in, the spine is functionally complete:
+The spine has grown a source/ingest lane and a structural-health lane
+on top of the original inspection / triage / chat / act / iterate
+shape:
 
 | Category | Skills |
 |---|---|
-| **Read / inspect** | `rumil-list`, `rumil-show`, `rumil-page`, `rumil-search`, `rumil-trace`, `rumil-workspace` |
-| **Triage** | `rumil-find-confusion` (heuristic + `--deep`) |
+| **Read / inspect** | `rumil-list`, `rumil-show`, `rumil-page`, `rumil-search`, `rumil-quick-search`, `rumil-trace`, `rumil-load-run`, `rumil-workspace` |
+| **Triage** | `rumil-find-confusion` (heuristic + `--deep` + `--structural`) |
 | **Discuss** | `rumil-chat`, `rumil-review` |
-| **Act (rumil-mediated)** | `rumil-dispatch` |
-| **Act (cc-mediated)** | `rumil-clean`, `apply_move` (via envelope) |
+| **Act (rumil-mediated)** | `rumil-dispatch`, `rumil-orchestrate` |
+| **Act (cc-mediated)** | `rumil-ask`, `rumil-ingest`, `rumil-clean`, `apply_move` (via envelope) |
+| **Sources (view-only)** | `rumil-read` (fetch / preview / `--save`) |
 | **Iterate** | `rumil-prompt-edit` |
 | **Meta / subagents** | `rumil-system`, `rumil-researcher`, `rumil-explorer` |
 
@@ -25,7 +32,36 @@ envelope records `MovesExecutedEvent`s with hydrated PageRefs, so
 cc-mediated mutations are visible in the rumil frontend exactly like
 rumil-internal calls. Scan log persists confusion verdicts so `--deep`
 scans amortize. `open_run` captures `git_head` so runs are
-code-state-aware.
+code-state-aware. The new `scan` module (`scan.py`) gives
+zero-LLM-cost graph-health, rating-shape, and review-signal checks;
+`rumil-find-confusion --structural <qid>` is its current entry point.
+
+## What shipped since the last major update
+
+Captured here so the backlog below stays focused on what's still open:
+
+- **Source / ingest lane:** `rumil-read` (view-only fetch with optional
+  `--save` to a Source page), `rumil-ingest` (commit a source +
+  extract considerations), `rumil-ask` (create a question via the
+  envelope lane).
+- **Orchestrator from CC:** `rumil-orchestrate` (renamed from
+  `rumil-run`) fires a full multi-call orchestrator loop with a budget,
+  tagged `origin=claude-code`. `--orchestrator` selects the variant.
+- **Run loading:** `rumil-load-run` resolves a run_id (or trace URL)
+  into a tree of every call in the run.
+- **Lightweight search:** `rumil-quick-search` for cheap workspace
+  lookup (similarity threshold lowered to 0.3 in `1e0120f`).
+- **Structural / distributional health:** new `scan.py` module —
+  `graph_health`, `rating_shape`, `review_signals` — exposed via
+  `rumil-find-confusion --structural <qid>`.
+- **Quality-of-life:** chat envelope scoped to its workspace
+  (`d7c2f97`); rumil skills default to unstaged writes (`5d6f381`);
+  `rumil-read` honors `--workspace` in all modes (`7531dd9`);
+  `dispatch` fixed to pass `fruit_threshold` for find-considerations
+  (`52b58b8`); `trace.py` defers call-id resolution to
+  `db.resolve_call_id` (N3 — done).
+- **Conversational style:** `rumil-chat` got explicit guidance on tone
+  / pacing (`bc1be74`).
 
 The things we're explicitly *not* doing yet:
 - No remote / prod database access (gated behind `RUMIL_ALLOW_PROD=1`)
@@ -163,16 +199,6 @@ the calls on the question you're reviewing, not the whole workspace.
 
 **Size:** 30 minutes.
 
-### N9. Drop the throwaway test pages from the workspace
-
-**What:** Manually delete `68df0eee`, `50671cfc`, and the test envelope
-pages left over from smoke tests during increment 1 and 2 development.
-
-**Why:** They're noise. They showed up in `rumil-list` and will keep
-doing so until cleaned up.
-
-**Size:** 5 minutes.
-
 ## Medium-term: capabilities worth building
 
 Each of these is half-day to day-plus. They unlock new workflows rather
@@ -263,21 +289,24 @@ the scoped question. SKILL.md guidance for when to offer this.
 
 **Size:** Day.
 
-### M5. `rumil-health` workspace view
+### M5. Workspace-level aggregation on top of `scan`
 
-**What:** Aggregate view of workspace state: how many questions have
-stale judgements (judgement created before N considerations), how many
-calls are flagged confused, which call types have the highest confusion
-rate, budget burn by run.
+**What:** Question-level structural / rating / review-signal checks
+shipped in `scan.py` (exposed via `rumil-find-confusion --structural`).
+What's still missing is the workspace-wide view: which call types have
+the highest confusion rate across all questions, how many questions
+have stale judgements, which assess variants are regressing, budget
+burn by run.
 
 **Why:** Triage at the workspace level, not the question level. Signals
 "this workspace needs attention" or "the assess call is getting
 confused a lot recently — probably a prompt regression".
 
-**Shape:** New script + skill. Reads the same tables everything else
-does. Could eventually drive prompt-edit priorities.
+**Shape:** Extend `scan.py` with workspace-scoped checks, or a thin
+aggregator that runs per-question scans across a project and rolls up.
+Same tables, same patterns; no new schema.
 
-**Size:** Day.
+**Size:** Half-day, now that the per-question scan primitives exist.
 
 ### M6. `rumil-explorer` subagent actually used by `rumil-review`
 
@@ -431,51 +460,16 @@ chance.
    Something like "did this envelope produce useful mutations or
    mostly noise?"
 
-5. **Meta-model default.** I set `DEFAULT_META_MODEL = "claude-sonnet-4-6"`
-   in `llm_helpers.py`. Reasonable for deep confusion scans, but maybe
-   different skills want different defaults (prompt-edit might want
-   opus for the subtlety, find_confusion might want haiku for bulk).
-   Worth a per-skill override, or keep it global?
-
-6. **How should CC sessions be discoverable from the rumil frontend?**
+5. **How should CC sessions be discoverable from the rumil frontend?**
    The envelope is there as a Call, but nothing distinguishes it
    visually from a regular call in the frontend's trace list — except
    the call_type string. Worth a small frontend change to render
    `claude_code_direct` calls with a distinct icon / color?
 
-7. **What counts as "enough use" to start building visions (V1–V5)?**
+6. **What counts as "enough use" to start building visions (V1–V5)?**
    I keep saying "wait until we have real usage" but haven't defined
    the threshold. Maybe: 3-5 real review cycles + 10+ cc-mediated
    envelopes + at least one prompt edit that actually shipped?
-
-## What I'd prioritize first
-
-If I had to rank for next session:
-
-1. **Run a real loop end-to-end.** Pick one question in the workspace,
-   do `find-confusion --deep` → `trace` → `review` → `clean` or
-   `prompt-edit`, and keep a running list of every wall I hit. Commit
-   the fixes as I go. This is the highest-leverage thing because it
-   generates a stream of targeted fixes that would otherwise take weeks
-   of speculation to invent.
-
-2. **N1 (rumil-runs)** and **N2 (scan log in rumil-show)** — each ~30
-   minutes to an hour, both genuinely useful, both remove frictions I
-   already know exist.
-
-3. **M3 (cross-skill chaining)** — the conversation pattern change, not
-   the big infrastructure version. This is the thing that makes the
-   skill system feel cohesive instead of a bag of tools, and it's
-   mostly SKILL.md edits.
-
-4. Answer the open questions above, at least 1-3.
-
-**Not priorities right now:**
-
-- Visions (V1-V5) — premature, but worth holding
-- `rumil-health` (M5) — will be more useful after more accumulated data
-- Session write-back (M4) — needs design iteration, we don't know what
-  shape the artifact should be yet
 
 ---
 

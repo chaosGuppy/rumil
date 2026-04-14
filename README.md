@@ -144,6 +144,9 @@ uv run python main.py "Your question" --available-moves default --budget 10
 # 'default' = standard scouts, 'multi-subquestion' = replaces generic subquestions scout with web-questions and deep-questions scouts
 uv run python main.py "Your question" --available-calls multi-subquestion --budget 20
 
+# Tune how many considerations each ingest call extracts (default: 4)
+uv run python main.py --ingest FILE --for-question QUESTION_ID --ingest-num-claims 6 --budget 5
+
 # Suppress info-level logging (only warnings and errors)
 uv run python main.py "Your question" --budget 5 -q
 

@@ -181,24 +181,6 @@ def graph_health(data: SubtreeData) -> list[Finding]:
             ))
 
     for claim in data.claims:
-        outgoing_cons = [
-            l for l in data.links_from.get(claim.id, [])
-            if l.link_type == LinkType.CONSIDERATION
-        ]
-        if not outgoing_cons:
-            findings.append(Finding(
-                category="graph_health",
-                severity=2,
-                code="orphaned_claim",
-                description=(
-                    f"{short(claim)} ({truncate(claim.headline, 60)}) "
-                    f"not linked as consideration to any question"
-                ),
-                page_ids=[claim.id],
-                suggested_action="inspect",
-            ))
-
-    for claim in data.claims:
         deps = _depends_on_inbound(data, claim.id)
         if (
             len(deps) >= 2

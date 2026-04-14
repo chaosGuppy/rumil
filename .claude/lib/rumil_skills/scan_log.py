@@ -1,9 +1,9 @@
 """State file tracking which calls have been LLM-scanned for confusion.
 
-Persists to .claude/state/rumil-scan-log.json so repeat invocations of
-find_confusion don't re-scan the same traces (each deep scan costs real
-money). The log is per-worktree so different branches can have different
-scan coverage.
+Persists to .claude/state/rumil-scan-log.json as a single JSON object so
+repeat invocations of find_confusion don't re-scan the same traces (each
+deep scan costs real money). The log is per-worktree so different
+branches can have different scan coverage.
 
 Schema:
 

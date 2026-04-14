@@ -1,20 +1,23 @@
 """Fire one rumil call as Claude Code.
 
 This is the *rumil-mediated* lane: a normal rumil call (find_considerations,
-assess, scout, web_research, prioritize) with all the usual context-building,
-prompts, and tools. Claude Code is just the trigger. The run is tagged with
-origin=claude-code in runs.config and calls.call_params so it's distinguishable
-from a main.py-initiated run.
+assess, scout, web_research, prioritize, create_view) with all the usual
+context-building, prompts, and tools. Claude Code is just the trigger. The
+run is tagged with origin=claude-code in runs.config and calls.call_params
+so it's distinguishable from a main.py-initiated run.
 
 Usage:
     PYTHONPATH=.claude/lib uv run python -m rumil_skills.dispatch_call \\
         <call_type> <question_id> [--budget N] [--smoke-test]
 
 Call types:
-    find-considerations  assess  prioritize  web-research
+    find-considerations  assess  prioritize  web-research  create-view
     scout-subquestions  scout-estimates  scout-hypotheses  scout-analogies
     scout-paradigm-cases  scout-factchecks  scout-web-questions
     scout-deep-questions
+    scout-c-how-true  scout-c-how-false  scout-c-cruxes
+    scout-c-relevant-evidence  scout-c-stress-test-cases
+    scout-c-robustify  scout-c-strengthen
 """
 
 from __future__ import annotations
@@ -26,9 +29,17 @@ import sys
 
 from rumil.calls.assess import AssessCall
 from rumil.calls.call_registry import ASSESS_CALL_CLASSES
+from rumil.calls.create_view import CreateViewCall
 from rumil.calls.find_considerations import FindConsiderationsCall
 from rumil.calls.prioritization import run_prioritization
 from rumil.calls.scout_analogies import ScoutAnalogiesCall
+from rumil.calls.scout_c_cruxes import ScoutCCruxesCall
+from rumil.calls.scout_c_how_false import ScoutCHowFalseCall
+from rumil.calls.scout_c_how_true import ScoutCHowTrueCall
+from rumil.calls.scout_c_relevant_evidence import ScoutCRelevantEvidenceCall
+from rumil.calls.scout_c_robustify import ScoutCRobustifyCall
+from rumil.calls.scout_c_strengthen import ScoutCStrengthenCall
+from rumil.calls.scout_c_stress_test_cases import ScoutCStressTestCasesCall
 from rumil.calls.scout_deep_questions import ScoutDeepQuestionsCall
 from rumil.calls.scout_estimates import ScoutEstimatesCall
 from rumil.calls.scout_factchecks import ScoutFactchecksCall
@@ -55,6 +66,19 @@ _SCOUT_MAP: dict[str, tuple[CallType, type[CallRunner]]] = {
     "scout-factchecks": (CallType.SCOUT_FACTCHECKS, ScoutFactchecksCall),
     "scout-web-questions": (CallType.SCOUT_WEB_QUESTIONS, ScoutWebQuestionsCall),
     "scout-deep-questions": (CallType.SCOUT_DEEP_QUESTIONS, ScoutDeepQuestionsCall),
+    "scout-c-how-true": (CallType.SCOUT_C_HOW_TRUE, ScoutCHowTrueCall),
+    "scout-c-how-false": (CallType.SCOUT_C_HOW_FALSE, ScoutCHowFalseCall),
+    "scout-c-cruxes": (CallType.SCOUT_C_CRUXES, ScoutCCruxesCall),
+    "scout-c-relevant-evidence": (
+        CallType.SCOUT_C_RELEVANT_EVIDENCE,
+        ScoutCRelevantEvidenceCall,
+    ),
+    "scout-c-stress-test-cases": (
+        CallType.SCOUT_C_STRESS_TEST_CASES,
+        ScoutCStressTestCasesCall,
+    ),
+    "scout-c-robustify": (CallType.SCOUT_C_ROBUSTIFY, ScoutCRobustifyCall),
+    "scout-c-strengthen": (CallType.SCOUT_C_STRENGTHEN, ScoutCStrengthenCall),
 }
 
 CALL_TYPES = [
@@ -62,6 +86,7 @@ CALL_TYPES = [
     "assess",
     "prioritize",
     "web-research",
+    "create-view",
     *_SCOUT_MAP.keys(),
 ]
 
@@ -120,6 +145,14 @@ async def _dispatch(
         call.call_params = _tag_call_params(call, "rumil-dispatch")
         await db.save_call(call)
         runner = WebResearchCall(question_id, call, db)
+        await runner.run()
+        return call
+
+    if call_type_str == "create-view":
+        call = await db.create_call(CallType.CREATE_VIEW, scope_page_id=question_id)
+        call.call_params = _tag_call_params(call, "rumil-dispatch")
+        await db.save_call(call)
+        runner = CreateViewCall(question_id, call, db)
         await runner.run()
         return call
 

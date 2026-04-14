@@ -375,10 +375,11 @@ def rating_shape(data: SubtreeData) -> list[Finding]:
     type_counts = Counter(p.page_type.value for p in data.pages.values())
     call_type_counts: dict[str, int] = {}
     summary_parts = [f"{n} rated claims, mean C{mean_c:.1f}/R{mean_r:.1f}"]
-    for ptype in ["claim", "question", "judgement", "source", "concept"]:
+    PLURALS = {"summary": "summaries"}
+    for ptype in ["claim", "question", "judgement", "source", "concept", "wiki", "summary", "view", "view_item", "view_meta"]:
         c = type_counts.get(ptype, 0)
         if c:
-            summary_parts.append(f"{c} {ptype}s")
+            summary_parts.append(f"{c} {PLURALS.get(ptype, ptype + 's')}")
 
     findings.append(Finding(
         category="rating_shape",

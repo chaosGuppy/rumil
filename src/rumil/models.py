@@ -80,6 +80,7 @@ class CallType(str, Enum):
     GROUNDING_FEEDBACK = "grounding_feedback"
     FEEDBACK_UPDATE = "feedback_update"
     LINK_SUBQUESTIONS = "link_subquestions"
+    AB_EVAL = "ab_eval"
 
 
 # The subset of CallTypes that prioritization can dispatch.
@@ -377,6 +378,7 @@ class Page(BaseModel):
     extra: dict = Field(default_factory=dict)
     abstract: str = ""
     fruit_remaining: int | None = None
+    run_id: str = ""
 
     def is_active(self) -> bool:
         return not self.is_superseded
@@ -393,6 +395,7 @@ class PageLink(BaseModel):
     reasoning: str = ""
     role: LinkRole = LinkRole.DIRECT
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    run_id: str = ""
 
 
 class CallSequence(BaseModel):

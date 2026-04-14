@@ -89,7 +89,7 @@ _db_retry = retry(
 
 _LINK_COLUMNS = (
     'id,from_page_id,to_page_id,link_type,direction,'
-    'strength,reasoning,role,created_at'
+    'strength,reasoning,role,created_at,run_id'
 )
 
 _SLIM_PAGE_COLUMNS = (
@@ -121,6 +121,7 @@ def _row_to_page(row: dict[str, Any]) -> Page:
         extra=row.get("extra") or {},
         abstract=row.get("abstract") or "",
         fruit_remaining=row.get("fruit_remaining"),
+        run_id=row.get("run_id") or "",
     )
 
 
@@ -137,6 +138,7 @@ def _row_to_link(row: dict[str, Any]) -> PageLink:
         reasoning=row["reasoning"] or "",
         role=LinkRole(row.get("role", "direct")),
         created_at=datetime.fromisoformat(row["created_at"]),
+        run_id=row.get("run_id") or "",
     )
 
 
@@ -2047,6 +2049,15 @@ class DB:
         if rows and rows[0].get("run_id"):
             return {"run_id": rows[0]["run_id"], "created_at": rows[0]["created_at"]}
         return None
+
+    async def get_run(self, run_id: str) -> dict[str, Any] | None:
+        """Fetch a row from the runs table by run_id."""
+        rows = _rows(
+            await self._execute(
+                self.client.table("runs").select("*").eq("id", run_id)
+            )
+        )
+        return rows[0] if rows else None
 
     async def create_run(
         self,

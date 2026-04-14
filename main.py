@@ -773,6 +773,17 @@ async def cmd_ab(
     print(f"\nAB test complete: {frontend}/ab-traces/{ab_run_id}")
 
 
+async def cmd_ab_eval(
+    run_id_a: str,
+    run_id_b: str,
+    db: DB,
+) -> None:
+    """Run A/B evaluation agents comparing two staged runs."""
+    from rumil.ab_eval import run_ab_eval
+
+    await run_ab_eval(run_id_a, run_id_b, db)
+
+
 async def cmd_scope(
     question_text: str,
     budget: int | None,
@@ -1184,6 +1195,25 @@ async def async_main():
         "of modifying the database directly",
     )
     parser.add_argument(
+        "--run-id-file",
+        dest="run_id_file",
+        metavar="PATH",
+        help="Write the run_id to this file after DB creation (for scripted capture)",
+    )
+    parser.add_argument(
+        "--env-file",
+        dest="env_file",
+        metavar="PATH",
+        help="Load settings from this env file in addition to .env",
+    )
+    parser.add_argument(
+        "--ab-eval",
+        dest="ab_eval_ids",
+        nargs=2,
+        metavar=("RUN_ID_A", "RUN_ID_B"),
+        help="Run A/B evaluation agents comparing two staged runs",
+    )
+    parser.add_argument(
         "--stage-run",
         dest="stage_run_id",
         metavar="RUN_ID",
@@ -1223,6 +1253,9 @@ async def async_main():
     )
     logging.getLogger("rumil").setLevel(log_level)
 
+    if args.env_file:
+        _settings_var.set(Settings.from_env_files(".env", args.env_file))
+
     if args.available_moves is not None:
         get_settings().available_moves = args.available_moves
     if args.available_calls is not None:
@@ -1242,6 +1275,9 @@ async def async_main():
         run_id=str(uuid.uuid4()), prod=args.prod_db, staged=args.staged
     )
 
+    if args.run_id_file:
+        Path(args.run_id_file).write_text(db.run_id, encoding="utf-8")
+
     if args.list_workspaces:
         await cmd_list_workspaces(db)
         return
@@ -1257,6 +1293,10 @@ async def async_main():
     if args.commit_run_id:
         await db.commit_staged_run(args.commit_run_id)
         print(f"Run {args.commit_run_id} has been committed.")
+        return
+
+    if args.ab_eval_ids:
+        await cmd_ab_eval(args.ab_eval_ids[0], args.ab_eval_ids[1], db)
         return
 
     if args.list:

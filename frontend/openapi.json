@@ -1897,7 +1897,8 @@
           "evaluate",
           "grounding_feedback",
           "feedback_update",
-          "link_subquestions"
+          "link_subquestions",
+          "ab_eval"
         ],
         "title": "CallType"
       },
@@ -3001,6 +3002,11 @@
               }
             ],
             "title": "Fruit Remaining"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "default": ""
           }
         },
         "type": "object",
@@ -3024,7 +3030,8 @@
           "is_superseded",
           "extra",
           "abstract",
-          "fruit_remaining"
+          "fruit_remaining",
+          "run_id"
         ],
         "title": "Page"
       },
@@ -3127,6 +3134,11 @@
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "default": ""
           }
         },
         "type": "object",
@@ -3139,7 +3151,8 @@
           "strength",
           "reasoning",
           "role",
-          "created_at"
+          "created_at",
+          "run_id"
         ],
         "title": "PageLink"
       },

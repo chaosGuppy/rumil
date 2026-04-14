@@ -1077,6 +1077,17 @@ async def async_main():
         help="Available-calls preset name (default: 'default'). Controls which scout/dispatch types the two-phase orchestrator uses.",
     )
     parser.add_argument(
+        "--ingest-num-claims",
+        dest="ingest_num_claims",
+        type=int,
+        default=None,
+        help=(
+            "Target number of considerations to extract per ingest call "
+            "(default: 4). The prompt uses 'approximately', so the model "
+            "will still apply quality-over-quantity judgement."
+        ),
+    )
+    parser.add_argument(
         "--smoke-test",
         dest="smoke_test",
         action="store_true",
@@ -1144,6 +1155,8 @@ async def async_main():
         get_settings().available_moves = args.available_moves
     if args.available_calls is not None:
         get_settings().available_calls = args.available_calls
+    if args.ingest_num_claims is not None:
+        get_settings().ingest_num_claims = args.ingest_num_claims
     if args.smoke_test:
         get_settings().rumil_smoke_test = "1"
     if args.prod_db:

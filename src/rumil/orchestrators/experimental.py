@@ -58,10 +58,11 @@ class ExperimentalOrchestrator(BaseOrchestrator):
 
     Currently an exact copy of TwoPhaseOrchestrator.
 
-    Phase 1: Fan out with specialized scouts (subquestions, estimates,
-    hypotheses, analogies), then assess.
-    Phase 2: Score generated subquestions for impact and remaining fruit,
-    then dispatch targeted follow-up (scout, web research, or recurse).
+    Initial prioritization: Fan out with specialized scouts (subquestions,
+    estimates, hypotheses, analogies), then assess.
+    Main phase prioritization: Score generated subquestions for impact and
+    remaining fruit, then dispatch targeted follow-up (scout, web research,
+    or recurse).
     """
 
     def __init__(
@@ -97,19 +98,20 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         question_id: str,
         parent_call_id: str | None = None,
     ) -> str:
-        """Eagerly create the phase-1 prioritization call record.
+        """Eagerly create the initial_prioritization call record.
 
         Sets ``_call_id`` so the parent can reference this child's call
-        before ``run()`` begins. ``_phase1`` reuses the pre-created call.
+        before ``run()`` begins. ``_initial_prioritization`` reuses the
+        pre-created call.
         """
         budget = self._effective_budget(await self.db.budget_remaining())
         budget = await self._paced_budget(budget)
-        phase1_budget = budget
+        initial_prioritization_budget = budget
         p_call = await self.db.create_call(
             CallType.PRIORITIZATION,
             scope_page_id=question_id,
             parent_call_id=parent_call_id,
-            budget_allocated=phase1_budget,
+            budget_allocated=initial_prioritization_budget,
             workspace=Workspace.PRIORITIZATION,
         )
         self._call_id = p_call.id
@@ -222,7 +224,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         )
 
     async def _cancel_initial_call(self) -> None:
-        """Mark the eagerly-created phase-1 call as complete when phase 1 is skipped."""
+        """Mark the eagerly-created initial_prioritization call as complete when it is skipped."""
         if self._initial_call is None:
             return
         call = self._initial_call
@@ -235,11 +237,12 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         trace = CallTrace(call.id, self.db, broadcaster=self.broadcaster)
         set_trace(trace)
         await trace.record(PhaseSkippedEvent(
-            phase='phase1',
+            phase='initial_prioritization',
             reason='Question already has research.',
         ))
         await mark_call_completed(
-            call, self.db, 'Phase 1 skipped — question already has research.',
+            call, self.db,
+            'Initial prioritization skipped — question already has research.',
         )
 
     async def _get_next_batch(
@@ -252,7 +255,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         if self._invocation == 0:
             self._invocation += 1
             if await self._is_new_question(question_id):
-                return await self._phase1(
+                return await self._initial_prioritization(
                     question_id, budget, parent_call_id,
                     total_remaining=total_remaining,
                 )
@@ -266,7 +269,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
 
         self._executed_since_last_plan = False
         self._invocation += 1
-        return await self._phase2(
+        return await self._main_phase_prioritization(
             question_id, budget, self._parent_call_id,
             total_remaining=total_remaining,
         )
@@ -319,17 +322,18 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             )
             await self._run_subquestion_linker(question_id, parent_call_id)
 
-    async def _phase1(
+    async def _initial_prioritization(
         self,
         question_id: str,
         budget: int,
         parent_call_id: str | None,
         total_remaining: int | None = None,
     ) -> PrioritizationResult:
-        phase1_budget = budget
+        initial_prioritization_budget = budget
         log.info(
-            'ExperimentalOrchestrator phase1: question=%s, budget=%d, phase1_budget=%d',
-            question_id[:8], budget, phase1_budget,
+            'ExperimentalOrchestrator initial_prioritization: question=%s, '
+            'budget=%d, initial_prioritization_budget=%d',
+            question_id[:8], budget, initial_prioritization_budget,
         )
 
         await self._run_subquestion_linker(question_id, parent_call_id)
@@ -350,7 +354,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
                 CallType.PRIORITIZATION,
                 scope_page_id=question_id,
                 parent_call_id=parent_call_id,
-                budget_allocated=phase1_budget,
+                budget_allocated=initial_prioritization_budget,
                 workspace=Workspace.PRIORITIZATION,
                 sequence_id=self._sequence_id,
                 sequence_position=self._seq_position if self._sequence_id else None,
@@ -359,13 +363,13 @@ class ExperimentalOrchestrator(BaseOrchestrator):
                 self._seq_position += 1
         trace = CallTrace(p_call.id, self.db, broadcaster=self.broadcaster)
         set_trace(trace)
-        await trace.record(ContextBuiltEvent(budget=phase1_budget))
+        await trace.record(ContextBuiltEvent(budget=initial_prioritization_budget))
 
         budget_line = (
-            f'You have a budget of **{phase1_budget} research calls** to distribute '
-            'among the dispatch tools below.'
+            f'You have a budget of **{initial_prioritization_budget} research calls** '
+            'to distribute among the dispatch tools below.'
         )
-        if total_remaining is not None and total_remaining > phase1_budget:
+        if total_remaining is not None and total_remaining > initial_prioritization_budget:
             budget_line += (
                 f' The overall question has **{total_remaining} budget remaining** '
                 'across future rounds.'
@@ -385,23 +389,26 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         result = await run_prioritization_call(
             task, context_text, p_call, self.db,
             short_id_map=short_id_map,
-            dispatch_types=list(get_available_calls_preset().phase1_scouts),
-            system_prompt=build_system_prompt('two_phase_p1'),
+            dispatch_types=list(
+                get_available_calls_preset().initial_prioritization_scouts,
+            ),
+            system_prompt=build_system_prompt('two_phase_initial_prioritization'),
         )
 
         dispatches = list(result.dispatches)
         if not dispatches:
             log.warning(
-                'Phase 1 produced no dispatches, synthesizing default scouts '
-                'for question=%s', question_id[:8],
+                'Initial prioritization produced no dispatches, synthesizing '
+                'default scouts for question=%s', question_id[:8],
             )
-            for ct in get_available_calls_preset().phase1_scouts[:phase1_budget]:
+            preset = get_available_calls_preset()
+            for ct in preset.initial_prioritization_scouts[:initial_prioritization_budget]:
                 ddef = DISPATCH_DEFS[ct]
                 dispatches.append(Dispatch(
                     call_type=ct,
                     payload=ddef.schema(
                         question_id=question_id,
-                        reason='fallback — phase 1 produced no dispatches',
+                        reason='fallback — initial prioritization produced no dispatches',
                     ),
                 ))
         sequences: list[list[Dispatch]] = [[d] for d in dispatches]
@@ -418,13 +425,14 @@ class ExperimentalOrchestrator(BaseOrchestrator):
 
         await mark_call_completed(
             p_call, self.db,
-            f'Phase 1 complete. Planned {len(sequences)} concurrent sequences.',
+            f'Initial prioritization complete. Planned {len(sequences)} '
+            'concurrent sequences.',
         )
 
         self._call_id = p_call.id
 
         log.info(
-            'ExperimentalOrchestrator phase1 complete: %d sequences',
+            'ExperimentalOrchestrator initial_prioritization complete: %d sequences',
             len(sequences),
         )
         return PrioritizationResult(
@@ -432,7 +440,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             call_id=p_call.id,
         )
 
-    async def _phase2(
+    async def _main_phase_prioritization(
         self,
         question_id: str,
         budget: int,
@@ -440,7 +448,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         total_remaining: int | None = None,
     ) -> PrioritizationResult:
         log.info(
-            'ExperimentalOrchestrator phase2: question=%s, budget=%d',
+            'ExperimentalOrchestrator main_phase_prioritization: question=%s, budget=%d',
             question_id[:8], budget,
         )
 
@@ -564,9 +572,13 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         result = await run_prioritization_call(
             task, context_text, p_call, self.db,
             short_id_map=short_id_map,
-            dispatch_types=list(get_available_calls_preset().phase2_dispatch),
+            dispatch_types=list(
+                get_available_calls_preset().main_phase_prioritization_dispatch,
+            ),
             extra_dispatch_defs=extra_defs or None,
-            system_prompt=build_system_prompt('two_phase_p2'),
+            system_prompt=build_system_prompt(
+                'two_phase_main_phase_prioritization',
+            ),
             dispatch_budget=dispatch_budget,
         )
 
@@ -597,7 +609,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
                     call_type=CallType.ASSESS,
                     payload=AssessDispatchPayload(
                         question_id=d.payload.question_id,
-                        reason='Auto-assess after phase-2 dispatch',
+                        reason='Auto-assess after main_phase_prioritization dispatch',
                     ),
                 )
                 sequences.append([d, assess])
@@ -637,14 +649,15 @@ class ExperimentalOrchestrator(BaseOrchestrator):
 
         await mark_call_completed(
             p_call, self.db,
-            f'Phase 2 complete. Planned {len(sequences)} concurrent sequences, '
-            f'{len(children)} recursive children.',
+            f'Main phase prioritization complete. Planned {len(sequences)} '
+            f'concurrent sequences, {len(children)} recursive children.',
         )
 
         self._call_id = p_call.id
 
         log.info(
-            'ExperimentalOrchestrator phase2 complete: %d sequences, %d children',
+            'ExperimentalOrchestrator main_phase_prioritization complete: '
+            '%d sequences, %d children',
             len(sequences), len(children),
         )
         return PrioritizationResult(

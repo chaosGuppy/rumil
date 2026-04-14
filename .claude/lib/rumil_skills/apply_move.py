@@ -47,16 +47,29 @@ import json
 import sys
 import types
 import typing
+from datetime import UTC, datetime
+from typing import Any
 
 from pydantic import BaseModel
 
-from rumil.models import MoveType
+from rumil.database import DB
+from rumil.models import Call, MoveType
+from rumil.moves.base import MoveResult
 from rumil.moves.registry import MOVES
 from rumil.tracing.trace_events import MoveTraceItem, MovesExecutedEvent, PageRef
-from rumil.tracing.tracer import CallTrace
 
 from ._format import print_event, print_trace, truncate
 from ._runctx import ensure_chat_envelope
+
+
+class TraceRecordError(RuntimeError):
+    """Raised when a move landed in the DB but its trace event could not be recorded.
+
+    The caller should treat this as a hard failure: the envelope call now looks
+    empty (or incomplete) in the frontend even though the mutation is live in
+    the workspace.
+    """
+
 
 # Allowlist of moves that only *add* to the workspace. Keeps rumil-clean
 # and /rumil-chat safe-by-default: no destructive or in-place edits.
@@ -243,10 +256,10 @@ async def _page_refs_with_headlines(db, created_page_ids: list[str]) -> list[Pag
 
 
 async def _record_envelope_trace_event(
-    db,
+    db: DB,
     envelope_call_id: str,
     move_type: MoveType,
-    validated_payload,
+    validated_payload: BaseModel,
     created_page_ids: list[str],
     message: str,
 ) -> None:
@@ -254,7 +267,9 @@ async def _record_envelope_trace_event(
 
     Without this, cc-mediated mutations hit the DB but don't show up
     in the rumil frontend's trace view — making the envelope call look
-    empty even after many moves have been applied.
+    empty even after many moves have been applied. The caller must treat
+    a raised ``TraceRecordError`` as a loud failure: the move has already
+    landed, but the envelope is now out of sync with reality.
     """
     headline = _extract_trace_headline(validated_payload, message)
     page_refs = await _page_refs_with_headlines(db, created_page_ids)
@@ -264,15 +279,56 @@ async def _record_envelope_trace_event(
         page_refs=page_refs,
     )
     event = MovesExecutedEvent(moves=[trace_item])
-    trace = CallTrace(envelope_call_id, db)
+    dumped = event.model_dump()
+    dumped["ts"] = datetime.now(UTC).isoformat()
+    dumped["call_id"] = envelope_call_id
     try:
-        await trace.record(event)
+        await db.save_call_trace(envelope_call_id, [dumped])
     except Exception as e:
-        # Don't fail the whole move just because the trace write hiccupped.
-        print(
-            f"  warning: failed to record trace event: {e}",
-            file=sys.stderr,
-        )
+        raise TraceRecordError(str(e)) from e
+
+
+async def apply_validated_move(
+    *,
+    db: DB,
+    envelope_call: Call,
+    move_type: MoveType,
+    payload: dict[str, Any],
+) -> MoveResult:
+    """Execute a validated move against an already-opened envelope.
+
+    Preconditions: ``payload`` has already been schema-validated for ``move_type``,
+    the ``--accreting-only`` gate has already been checked, the envelope is open
+    and live, and the caller owns the DB lifecycle (creation and cleanup).
+
+    Raises ``TraceRecordError`` if the move lands in the DB but its trace event
+    fails to record — the mutation is live but the envelope's frontend view is
+    now incomplete.
+    """
+    move_def = MOVES.get(move_type)
+    if move_def is None:
+        raise ValueError(f"move {move_type} has no MoveDef in the registry")
+    validated = move_def.schema(**payload)
+    result = await move_def.execute(validated, envelope_call, db)
+
+    created_ids: list[str] = []
+    if result.created_page_id:
+        created_ids.append(result.created_page_id)
+        print_event("•", f"created page {result.created_page_id[:8]}")
+    if result.extra_created_ids:
+        for pid in result.extra_created_ids:
+            created_ids.append(pid)
+            print_event("•", f"also created {pid[:8]}")
+
+    await _record_envelope_trace_event(
+        db,
+        envelope_call_id=envelope_call.id,
+        move_type=move_type,
+        validated_payload=validated,
+        created_page_ids=created_ids,
+        message=result.message,
+    )
+    return result
 
 
 async def main() -> None:
@@ -362,7 +418,7 @@ async def main() -> None:
         sys.exit(2)
 
     try:
-        validated = move_def.schema(**payload_dict)
+        move_def.schema(**payload_dict)
     except Exception as e:
         print(f"payload validation failed: {e}", file=sys.stderr)
         print(file=sys.stderr)
@@ -389,27 +445,24 @@ async def main() -> None:
         print(f"envelope:  call={call.id[:8]} run={db.run_id[:8]}")
         print_trace(db.run_id, label="trace url")
         print_event("⚙", f"cc-mediated move: {move_type.value}")
-        result = await move_def.execute(validated, call, db)
-
-        created_ids: list[str] = []
-        if result.created_page_id:
-            created_ids.append(result.created_page_id)
-            print_event("•", f"created page {result.created_page_id[:8]}")
-        if result.extra_created_ids:
-            for pid in result.extra_created_ids:
-                created_ids.append(pid)
-                print_event("•", f"also created {pid[:8]}")
-
-        # Register the move on the envelope's trace so the rumil frontend
-        # sees what happened — the envelope otherwise looks empty.
-        await _record_envelope_trace_event(
-            db,
-            envelope_call_id=call.id,
-            move_type=move_type,
-            validated_payload=validated,
-            created_page_ids=created_ids,
-            message=result.message,
-        )
+        try:
+            result = await apply_validated_move(
+                db=db,
+                envelope_call=call,
+                move_type=move_type,
+                payload=payload_dict,
+            )
+        except TraceRecordError as e:
+            print(
+                f"ERROR: move applied to DB but trace event failed to record: {e}",
+                file=sys.stderr,
+            )
+            print(
+                f"       the envelope may be incomplete in the frontend; "
+                f"inspect run {db.run_id}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
         print()
         print(result.message.rstrip())

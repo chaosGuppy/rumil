@@ -24,6 +24,8 @@ from rumil.moves.propose_concept import MOVE as _propose_concept
 from rumil.moves.promote_concept import MOVE as _promote_concept
 from rumil.moves.update_epistemic import MOVE as _update_epistemic
 from rumil.moves.link_depends_on import MOVE as _link_depends_on
+from rumil.moves.create_view_item import MOVE as _create_view_item
+from rumil.moves.propose_view_item import MOVE as _propose_view_item
 
 MOVES: dict[MoveType, MoveDef] = {
     m.move_type: m
@@ -48,5 +50,7 @@ MOVES: dict[MoveType, MoveDef] = {
         _promote_concept,
         _update_epistemic,
         _link_depends_on,
+        _create_view_item,
+        _propose_view_item,
     ]
 }

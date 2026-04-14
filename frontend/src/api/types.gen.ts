@@ -325,6 +325,8 @@ export type CallTraceOut = {
     } & RenderQuestionSubgraphEventOut) | ({
         event: 'link_subquestions_complete';
     } & LinkSubquestionsCompleteEventOut) | ({
+        event: 'view_created';
+    } & ViewCreatedEventOut) | ({
         event: 'phase_skipped';
     } & PhaseSkippedEventOut)>;
     /**
@@ -344,7 +346,7 @@ export type CallTraceOut = {
 /**
  * CallType
  */
-export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_concepts' | 'assess_concept' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'claude_code_direct';
+export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_concepts' | 'assess_concept' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'claude_code_direct' | 'create_view';
 
 /**
  * CallTypeFruitScoreItem
@@ -894,7 +896,7 @@ export type LinkSubquestionsCompleteEventOut = {
 /**
  * LinkType
  */
-export type LinkType = 'consideration' | 'child_question' | 'supersedes' | 'related' | 'answers' | 'variant' | 'summarizes' | 'cites' | 'depends_on';
+export type LinkType = 'consideration' | 'child_question' | 'supersedes' | 'related' | 'answers' | 'variant' | 'summarizes' | 'cites' | 'depends_on' | 'view_item' | 'view_of' | 'meta_for';
 
 /**
  * LinkedPageOut
@@ -1022,6 +1024,14 @@ export type Page = {
      * Fruit Remaining
      */
     fruit_remaining: number | null;
+    /**
+     * Sections
+     */
+    sections: Array<string> | null;
+    /**
+     * Meta Type
+     */
+    meta_type: string | null;
 };
 
 /**
@@ -1086,6 +1096,18 @@ export type PageLink = {
     reasoning: string;
     role: LinkRole;
     /**
+     * Importance
+     */
+    importance: number | null;
+    /**
+     * Section
+     */
+    section: string | null;
+    /**
+     * Position
+     */
+    position: number | null;
+    /**
      * Created At
      */
     created_at: string;
@@ -1108,7 +1130,7 @@ export type PageRef = {
 /**
  * PageType
  */
-export type PageType = 'source' | 'claim' | 'question' | 'judgement' | 'concept' | 'wiki' | 'summary';
+export type PageType = 'source' | 'claim' | 'question' | 'judgement' | 'concept' | 'wiki' | 'summary' | 'view' | 'view_item' | 'view_meta';
 
 /**
  * PaginatedPagesOut
@@ -1841,6 +1863,40 @@ export type ValidationError = {
     ctx?: {
         [key: string]: unknown;
     };
+};
+
+/**
+ * ViewCreatedEventOut
+ */
+export type ViewCreatedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'view_created';
+    /**
+     * View Id
+     */
+    view_id: string;
+    /**
+     * View Headline
+     */
+    view_headline: string;
+    /**
+     * Question Id
+     */
+    question_id: string;
+    /**
+     * Superseded View Id
+     */
+    superseded_view_id: string | null;
 };
 
 /**
@@ -2619,6 +2675,8 @@ export type GetCallEventsApiCallsCallIdEventsGetResponses = {
     } & RenderQuestionSubgraphEventOut) | ({
         event: 'link_subquestions_complete';
     } & LinkSubquestionsCompleteEventOut) | ({
+        event: 'view_created';
+    } & ViewCreatedEventOut) | ({
         event: 'phase_skipped';
     } & PhaseSkippedEventOut)>;
 };

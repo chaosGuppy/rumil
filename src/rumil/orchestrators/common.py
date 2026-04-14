@@ -646,6 +646,38 @@ async def assess_question(
     return call.id
 
 
+async def create_view_for_question(
+    question_id: str,
+    db: DB,
+    parent_call_id: str | None = None,
+    context_page_ids: list | None = None,
+    broadcaster=None,
+    force: bool = False,
+    call_id: str | None = None,
+    sequence_id: str | None = None,
+    sequence_position: int | None = None,
+) -> str | None:
+    """Run a CreateView call on a question. Returns call ID, or None if no budget."""
+    from rumil.calls.create_view import CreateViewCall
+
+    log.info("create_view_for_question: question=%s", question_id[:8])
+    if not await _consume_budget(db, force=force):
+        return None
+
+    call = await db.create_call(
+        CallType.CREATE_VIEW,
+        scope_page_id=question_id,
+        parent_call_id=parent_call_id,
+        context_page_ids=context_page_ids,
+        call_id=call_id,
+        sequence_id=sequence_id,
+        sequence_position=sequence_position,
+    )
+    instance = CreateViewCall(question_id, call, db, broadcaster=broadcaster)
+    await instance.run()
+    return call.id
+
+
 async def _run_assess_concept_loop(
     concept_id: str,
     db: DB,

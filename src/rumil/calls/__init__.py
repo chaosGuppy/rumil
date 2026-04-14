@@ -23,6 +23,7 @@ from rumil.calls.scout_c_stress_test_cases import ScoutCStressTestCasesCall
 from rumil.calls.scout_deep_questions import ScoutDeepQuestionsCall
 from rumil.calls.scout_web_questions import ScoutWebQuestionsCall
 from rumil.calls.link_subquestions import LinkSubquestionsCall
+from rumil.calls.create_view import CreateViewCall
 
 __all__ = [
     "CallRunner",
@@ -48,5 +49,6 @@ __all__ = [
     "ScoutCStrengthenCall",
     "ScoutCStressTestCasesCall",
     "LinkSubquestionsCall",
+    "CreateViewCall",
     "run_prioritization",
 ]

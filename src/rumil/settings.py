@@ -69,6 +69,8 @@ class Settings(BaseSettings):
     feedback_investigation_budget: int = _capture_field(default=30)
 
     sonnet_model: str = _capture_field(default="claude-sonnet-4-6")
+    explore_subgraph_default_max_pages: int = _capture_field(default=30)
+
     scope_subquestion_linker_max_rounds: int = _capture_field(default=6)
     scope_subquestion_linker_seed_limit: int = _capture_field(default=10)
     scope_subquestion_linker_subgraph_max_pages: int = _capture_field(default=40)
@@ -79,6 +81,11 @@ class Settings(BaseSettings):
     max_api_retries_429: int | None = _capture_field(default=None)
     max_api_retries_500: int | None = _capture_field(default=None)
     max_api_retries_529: int | None = _capture_field(default=None)
+
+    view_importance_5_cap: int = _capture_field(default=5)
+    view_importance_4_cap: int = _capture_field(default=10)
+    view_importance_3_cap: int = _capture_field(default=25)
+    view_importance_2_cap: int = _capture_field(default=50)
 
     full_page_char_budget: int = _capture_field(default=10_000)
     abstract_page_char_budget: int = _capture_field(default=10_000)

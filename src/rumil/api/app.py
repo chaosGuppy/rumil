@@ -269,7 +269,7 @@ async def get_project_stats(project_id: str):
 
 @app.get("/api/pages/{page_id}/stats", response_model=QuestionStatsOut)
 async def get_question_stats(page_id: str):
-    """Aggregate stats over the 3-hop undirected neighborhood around a question.
+    """Aggregate stats over the 2-hop undirected neighborhood around a question.
 
     Returns 404 if the target page is not a question. v1 is baseline-only.
     """

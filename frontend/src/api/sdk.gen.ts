@@ -100,7 +100,7 @@ export const getProjectStatsApiProjectsProjectIdStatsGet = <ThrowOnError extends
 /**
  * Get Question Stats
  *
- * Aggregate stats over the 3-hop undirected neighborhood around a question.
+ * Aggregate stats over the 2-hop undirected neighborhood around a question.
  *
  * Returns 404 if the target page is not a question. v1 is baseline-only.
  */

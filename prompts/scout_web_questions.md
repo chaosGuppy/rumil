@@ -18,7 +18,7 @@ For each web question target:
    - **Comparison**: "How does [X] compare to [Y] on [specific metric]?" — for finding a concrete comparison.
    - **Current state**: "What is the current [policy/status/approach] of [entity] regarding [X]?" — for establishing present-day facts.
 
-2. **Link it as a child** of the parent question using `link_child_question`.
+2. Create the question using `create_question`. It will be automatically linked as a child of the parent question.
 
 ### Factual claims (1-3)
 
@@ -31,9 +31,8 @@ Alongside your questions, produce claims about concrete facts that you are confi
    - Assumptions about the real world that could be replaced with actual data
    - Categories where knowing concrete examples would sharpen the reasoning
    - Areas where the current state of affairs (policies, technologies, markets) matters but hasn't been established
-2. For each target, create a question using `create_question` that is specific enough for a web search to answer.
-3. Link each question as a child of the parent using `link_child_question`.
-4. Create factual claims you are confident in that are non-obvious and important for the parent question. Use `create_claim` and `link_consideration`.
+2. For each target, create a question using `create_question` that is specific enough for a web search to answer. It is automatically linked as a child of the parent question.
+3. Create factual claims you are confident in that are non-obvious and important for the parent question. Use `create_claim` and `link_consideration`.
 
 ## What Makes a Good Web Question
 

@@ -86,7 +86,6 @@ class CallType(str, Enum):
 DISPATCHABLE_CALL_TYPES: set[CallType] = {
     CallType.FIND_CONSIDERATIONS,
     CallType.ASSESS,
-    CallType.PRIORITIZATION,
     CallType.SCOUT_SUBQUESTIONS,
     CallType.SCOUT_ESTIMATES,
     CallType.SCOUT_HYPOTHESES,
@@ -103,7 +102,6 @@ DISPATCHABLE_CALL_TYPES: set[CallType] = {
     CallType.SCOUT_C_ROBUSTIFY,
     CallType.SCOUT_C_STRENGTHEN,
     CallType.WEB_RESEARCH,
-    CallType.CREATE_VIEW,
 }
 
 
@@ -221,10 +219,6 @@ class AssessDispatchPayload(BaseDispatchPayload):
     pass
 
 
-class PrioritizationDispatchPayload(BaseDispatchPayload, PrioritizationFields):
-    pass
-
-
 def _hide_question_id(schema: dict) -> None:  # type: ignore[type-arg]
     props = schema.get("properties", {})
     props.pop("question_id", None)
@@ -334,12 +328,8 @@ class InlineAssessDispatch(_DispatchBase):
     call_type: Literal["assess"] = "assess"
 
 
-class InlinePrioritizationDispatch(_DispatchBase, PrioritizationFields):
-    call_type: Literal["prioritization"] = "prioritization"
-
-
 InlineDispatch = Annotated[
-    InlineScoutDispatch | InlineAssessDispatch | InlinePrioritizationDispatch,
+    InlineScoutDispatch | InlineAssessDispatch,
     Discriminator("call_type"),
 ]
 

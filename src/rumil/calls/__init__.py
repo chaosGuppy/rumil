@@ -3,7 +3,6 @@
 from rumil.calls.assess import AssessCall, BigAssessCall
 from rumil.calls.call_registry import ASSESS_CALL_CLASSES
 from rumil.calls.ingest import IngestCall
-from rumil.calls.prioritization import run_prioritization
 from rumil.calls.find_considerations import FindConsiderationsCall
 from rumil.calls.stages import CallRunner
 from rumil.calls.web_research import WebResearchCall
@@ -50,5 +49,4 @@ __all__ = [
     "ScoutCStressTestCasesCall",
     "LinkSubquestionsCall",
     "CreateViewCall",
-    "run_prioritization",
 ]

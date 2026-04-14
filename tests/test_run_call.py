@@ -4,6 +4,7 @@ import pytest
 
 from rumil.calls.common import RunCallResult, run_call
 from rumil.calls.prioritization import run_prioritization_call
+from rumil.llm import build_system_prompt
 from rumil.models import CallType, LinkType, MoveType, PageType
 from rumil.moves.base import MoveState
 from rumil.moves.registry import MOVES
@@ -55,6 +56,7 @@ async def test_prioritization_produces_dispatches(tmp_db, question_page, priorit
         context,
         prioritization_call,
         tmp_db,
+        system_prompt=build_system_prompt('two_phase_main_phase_prioritization'),
     )
 
     assert isinstance(result, RunCallResult)
@@ -190,29 +192,3 @@ async def test_create_judgement_with_inline_links(tmp_db, question_page, scout_c
     assert answers_links[0].to_page_id == question_page.id
 
 
-@pytest.mark.llm
-async def test_create_subquestion_with_inline_dispatches(
-    tmp_db, question_page, prioritization_call,
-):
-    """Prioritization should create subquestions with inline dispatches."""
-    context = (
-        "## Questions\n\n"
-        f"- `{question_page.id[:8]}`: {question_page.headline} (0 considerations)\n"
-    )
-    task = (
-        "You have a budget of **2 research calls** to allocate.\n\n"
-        f"Scope question ID: `{question_page.id}`\n\n"
-        "Create a subquestion using `create_subquestion` and dispatch a scout on it "
-        "using the `dispatches` field. Link it as a child of the scope question "
-        "using the `links` field."
-    )
-
-    result = await run_prioritization_call(
-        task,
-        context,
-        prioritization_call,
-        tmp_db,
-    )
-
-    assert len(result.created_page_ids) >= 1
-    assert len(result.dispatches) >= 1

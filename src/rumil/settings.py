@@ -69,6 +69,13 @@ class Settings(BaseSettings):
     feedback_investigation_budget: int = _capture_field(default=30)
 
     sonnet_model: str = _capture_field(default="claude-sonnet-4-6")
+    global_prio_budget_fraction: float = _capture_field(default=0.2)
+    global_prio_local_variant: str = _capture_field(default="experimental")
+    global_prio_trigger_threshold: int = _capture_field(default=5)
+    global_prio_explore_rounds: int = _capture_field(default=3)
+    global_prio_subgraph_max_pages: int = _capture_field(default=30)
+    explore_subgraph_default_max_pages: int = _capture_field(default=30)
+
     scope_subquestion_linker_max_rounds: int = _capture_field(default=6)
     scope_subquestion_linker_seed_limit: int = _capture_field(default=10)
     scope_subquestion_linker_subgraph_max_pages: int = _capture_field(default=40)

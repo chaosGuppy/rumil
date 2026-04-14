@@ -56,7 +56,7 @@ async def test_prioritization_produces_dispatches(tmp_db, question_page, priorit
         context,
         prioritization_call,
         tmp_db,
-        system_prompt=build_system_prompt('two_phase_p2'),
+        system_prompt=build_system_prompt('two_phase_main_phase_prioritization'),
     )
 
     assert isinstance(result, RunCallResult)

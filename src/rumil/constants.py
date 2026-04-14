@@ -19,6 +19,16 @@ DEFAULT_INGEST_MAX_ROUNDS = 5
 SMOKE_TEST_MAX_ROUNDS = 1
 SMOKE_TEST_INGEST_MAX_ROUNDS = 1
 
+DEFAULT_VIEW_SECTIONS: list[str] = [
+    "broader_context",
+    "confident_views",
+    "live_hypotheses",
+    "key_evidence",
+    "assessments",
+    "key_uncertainties",
+    "other",
+]
+
 
 def compute_round_budget(total: int, used: int) -> int:
     """Decide how much budget to allocate to a single prioritization round.

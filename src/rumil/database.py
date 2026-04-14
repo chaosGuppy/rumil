@@ -92,7 +92,7 @@ _db_retry = retry(
 
 _LINK_COLUMNS = (
     'id,from_page_id,to_page_id,link_type,direction,'
-    'strength,reasoning,role,created_at'
+    'strength,reasoning,role,importance,section,position,created_at'
 )
 
 _SLIM_PAGE_COLUMNS = (
@@ -125,6 +125,8 @@ def _row_to_page(row: dict[str, Any]) -> Page:
         extra=row.get("extra") or {},
         abstract=row.get("abstract") or "",
         fruit_remaining=row.get("fruit_remaining"),
+        sections=row.get("sections"),
+        meta_type=row.get("meta_type"),
     )
 
 
@@ -140,6 +142,9 @@ def _row_to_link(row: dict[str, Any]) -> PageLink:
         strength=row["strength"],
         reasoning=row["reasoning"] or "",
         role=LinkRole(row.get("role", "direct")),
+        importance=row.get("importance"),
+        section=row.get("section"),
+        position=row.get("position"),
         created_at=datetime.fromisoformat(row["created_at"]),
     )
 
@@ -204,12 +209,13 @@ def _row_to_call_sequence(row: dict[str, Any]) -> CallSequence:
 class MutationState:
     """Cached mutation events for a staged run, keyed by target_id."""
 
-    __slots__ = ("superseded_pages", "deleted_links", "link_role_overrides")
+    __slots__ = ("superseded_pages", "deleted_links", "link_role_overrides", "page_content_overrides")
 
     def __init__(self) -> None:
         self.superseded_pages: dict[str, str] = {}
         self.deleted_links: set[str] = set()
         self.link_role_overrides: dict[str, LinkRole] = {}
+        self.page_content_overrides: dict[str, str] = {}
 
 
 class DB:
@@ -324,6 +330,8 @@ class DB:
                 state.deleted_links.add(tid)
             elif et == "change_link_role":
                 state.link_role_overrides[tid] = LinkRole(payload["new_role"])
+            elif et == "update_page_content":
+                state.page_content_overrides[tid] = payload.get("new_content", "")
         self._mutation_cache = state
         return state
 
@@ -333,15 +341,18 @@ class DB:
     async def _apply_page_events(self, pages: Sequence[Page]) -> list[Page]:
         """Overlay mutation events onto a batch of pages."""
         state = await self._load_mutation_state()
-        if not state.superseded_pages:
+        if not state.superseded_pages and not state.page_content_overrides:
             return list(pages)
         result: list[Page] = []
         for p in pages:
+            updates: dict = {}
             if p.id in state.superseded_pages:
-                p = p.model_copy(update={
-                    "is_superseded": True,
-                    "superseded_by": state.superseded_pages[p.id],
-                })
+                updates["is_superseded"] = True
+                updates["superseded_by"] = state.superseded_pages[p.id]
+            if p.id in state.page_content_overrides:
+                updates["content"] = state.page_content_overrides[p.id]
+            if updates:
+                p = p.model_copy(update=updates)
             result.append(p)
         return result
 
@@ -447,6 +458,8 @@ class DB:
                     "extra": page.extra,
                     "importance": page.importance,
                     "fruit_remaining": page.fruit_remaining,
+                    "sections": page.sections,
+                    "meta_type": page.meta_type,
                     "run_id": self.run_id,
                     "staged": self.staged,
                     "abstract": page.abstract,
@@ -461,6 +474,22 @@ class DB:
                 {"importance": importance}
             ).eq("id", page_id)
         )
+
+    async def update_page_content(self, page_id: str, new_content: str) -> None:
+        """Update a page's content field with mutation event recording."""
+        page = await self.get_page(page_id)
+        if not page:
+            return
+        await self.record_mutation_event(
+            "update_page_content", page_id,
+            {"old_content": page.content, "new_content": new_content},
+        )
+        if not self.staged:
+            await self._execute(
+                self.client.table("pages").update(
+                    {"content": new_content}
+                ).eq("id", page_id)
+            )
 
     async def update_page_extra(self, page_id: str, extra: dict) -> None:
         """Update the extra JSONB field on a page in place."""
@@ -900,6 +929,9 @@ class DB:
                     "strength": link.strength,
                     "reasoning": link.reasoning,
                     "role": link.role.value,
+                    "importance": link.importance,
+                    "section": link.section,
+                    "position": link.position,
                     "created_at": link.created_at.isoformat(),
                     "run_id": self.run_id,
                     "staged": self.staged,
@@ -921,6 +953,71 @@ class DB:
         query = self._staged_filter(query)
         rows = _rows(await self._execute(query))
         return await self._apply_link_events([_row_to_link(r) for r in rows])
+
+    async def get_view_for_question(self, question_id: str) -> Page | None:
+        """Find the active (non-superseded) View page for a question."""
+        query = (
+            self.client.table("page_links")
+            .select(_LINK_COLUMNS)
+            .eq("to_page_id", question_id)
+            .eq("link_type", LinkType.VIEW_OF.value)
+        )
+        query = self._staged_filter(query)
+        rows = _rows(await self._execute(query))
+        links = await self._apply_link_events([_row_to_link(r) for r in rows])
+        if not links:
+            return None
+        view_ids = [link.from_page_id for link in links]
+        pages = await self.get_pages_by_ids(view_ids)
+        for view_id in view_ids:
+            page = pages.get(view_id)
+            if page and not page.is_superseded:
+                return page
+        return None
+
+    async def get_view_items(
+        self,
+        view_id: str,
+        min_importance: int | None = None,
+    ) -> list[tuple[Page, PageLink]]:
+        """Get VIEW_ITEM pages linked to a View, with their link metadata.
+
+        Returns (page, link) tuples sorted by section order then position.
+        If *min_importance* is set, only items with importance >= that value
+        are returned.  Items with importance=NULL (unscored proposals) are
+        excluded when a minimum is specified.
+        """
+        links = await self.get_links_from(view_id)
+        item_links = [
+            link for link in links if link.link_type == LinkType.VIEW_ITEM
+        ]
+        if min_importance is not None:
+            item_links = [
+                link for link in item_links
+                if link.importance is not None and link.importance >= min_importance
+            ]
+        if not item_links:
+            return []
+        item_ids = [link.to_page_id for link in item_links]
+        pages_by_id = await self.get_pages_by_ids(item_ids)
+
+        view_page = await self.get_page(view_id)
+        section_order: dict[str, int] = {}
+        if view_page and view_page.sections:
+            section_order = {s: i for i, s in enumerate(view_page.sections)}
+
+        results: list[tuple[Page, PageLink]] = []
+        for link in item_links:
+            page = pages_by_id.get(link.to_page_id)
+            if page and not page.is_superseded:
+                results.append((page, link))
+        results.sort(
+            key=lambda pair: (
+                section_order.get(pair[1].section or "", 999),
+                pair[1].position or 0,
+            )
+        )
+        return results
 
     async def get_links_from(self, page_id: str) -> list[PageLink]:
         query = self.client.table("page_links").select("*").eq("from_page_id", page_id)

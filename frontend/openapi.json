@@ -686,7 +686,7 @@
     "/api/pages/{page_id}/stats": {
       "get": {
         "summary": "Get Question Stats",
-        "description": "Aggregate stats over the 3-hop undirected neighborhood around a question.\n\nReturns 404 if the target page is not a question. v1 is baseline-only.",
+        "description": "Aggregate stats over the 2-hop undirected neighborhood around a question.\n\nReturns 404 if the target page is not a question. v1 is baseline-only.",
         "operationId": "get_question_stats_api_pages__page_id__stats_get",
         "parameters": [
           {
@@ -1052,6 +1052,9 @@
                         "$ref": "#/components/schemas/LinkSubquestionsCompleteEventOut"
                       },
                       {
+                        "$ref": "#/components/schemas/ViewCreatedEventOut"
+                      },
+                      {
                         "$ref": "#/components/schemas/PhaseSkippedEventOut"
                       }
                     ],
@@ -1082,6 +1085,7 @@
                         "web_research_complete": "#/components/schemas/WebResearchCompleteEventOut",
                         "render_question_subgraph": "#/components/schemas/RenderQuestionSubgraphEventOut",
                         "link_subquestions_complete": "#/components/schemas/LinkSubquestionsCompleteEventOut",
+                        "view_created": "#/components/schemas/ViewCreatedEventOut",
                         "phase_skipped": "#/components/schemas/PhaseSkippedEventOut"
                       }
                     }
@@ -1906,6 +1910,9 @@
                   "$ref": "#/components/schemas/LinkSubquestionsCompleteEventOut"
                 },
                 {
+                  "$ref": "#/components/schemas/ViewCreatedEventOut"
+                },
+                {
                   "$ref": "#/components/schemas/PhaseSkippedEventOut"
                 }
               ],
@@ -1935,6 +1942,7 @@
                   "tool_call": "#/components/schemas/ToolCallEventOut",
                   "update_plan_created": "#/components/schemas/UpdatePlanCreatedEventOut",
                   "update_subgraph_computed": "#/components/schemas/UpdateSubgraphComputedEventOut",
+                  "view_created": "#/components/schemas/ViewCreatedEventOut",
                   "warning": "#/components/schemas/WarningEventOut",
                   "web_research_complete": "#/components/schemas/WebResearchCompleteEventOut"
                 }
@@ -2015,7 +2023,8 @@
           "evaluate",
           "grounding_feedback",
           "feedback_update",
-          "link_subquestions"
+          "link_subquestions",
+          "create_view"
         ],
         "title": "CallType"
       },
@@ -3026,7 +3035,10 @@
           "variant",
           "summarizes",
           "cites",
-          "depends_on"
+          "depends_on",
+          "view_item",
+          "view_of",
+          "meta_for"
         ],
         "title": "LinkType"
       },
@@ -3234,6 +3246,31 @@
               }
             ],
             "title": "Fruit Remaining"
+          },
+          "sections": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sections"
+          },
+          "meta_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meta Type"
           }
         },
         "type": "object",
@@ -3258,7 +3295,9 @@
           "extra",
           "importance",
           "abstract",
-          "fruit_remaining"
+          "fruit_remaining",
+          "sections",
+          "meta_type"
         ],
         "title": "Page"
       },
@@ -3357,6 +3396,39 @@
             "$ref": "#/components/schemas/LinkRole",
             "default": "direct"
           },
+          "importance": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Importance"
+          },
+          "section": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Section"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -3373,6 +3445,9 @@
           "strength",
           "reasoning",
           "role",
+          "importance",
+          "section",
+          "position",
           "created_at"
         ],
         "title": "PageLink"
@@ -3404,7 +3479,10 @@
           "judgement",
           "concept",
           "wiki",
-          "summary"
+          "summary",
+          "view",
+          "view_item",
+          "view_meta"
         ],
         "title": "PageType"
       },
@@ -4583,6 +4661,60 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "ViewCreatedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "view_created",
+            "title": "Event",
+            "default": "view_created"
+          },
+          "view_id": {
+            "type": "string",
+            "title": "View Id"
+          },
+          "view_headline": {
+            "type": "string",
+            "title": "View Headline",
+            "default": ""
+          },
+          "question_id": {
+            "type": "string",
+            "title": "Question Id",
+            "default": ""
+          },
+          "superseded_view_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Superseded View Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "view_id",
+          "view_headline",
+          "question_id",
+          "superseded_view_id"
+        ],
+        "title": "ViewCreatedEventOut"
       },
       "WarningEventOut": {
         "properties": {

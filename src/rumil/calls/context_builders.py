@@ -90,6 +90,63 @@ async def _do_phase1(
     return context_text, phase1_ids
 
 
+class CreateViewContext(ContextBuilder):
+    """Context for View creation: loads the question, all its considerations,
+    judgements, child question judgements, and any unscored View item proposals."""
+
+    async def build_context(self, infra: CallInfra) -> ContextResult:
+        question = await infra.db.get_page(infra.question_id)
+        query = question.headline if question else infra.question_id
+
+        result = await build_embedding_based_context(
+            query,
+            infra.db,
+            scope_question_id=infra.question_id,
+            require_judgement_for_questions=True,
+        )
+        working_page_ids = result.page_ids
+        preloaded_ids = list(infra.call.context_page_ids or [])
+
+        context_text = result.context_text
+
+        existing_view = await infra.db.get_view_for_question(infra.question_id)
+        if existing_view:
+            items = await infra.db.get_view_items(existing_view.id)
+            if items:
+                parts = ["\n\n---\n\n## Existing View Items (to update/supersede)\n"]
+                for page, link in items:
+                    imp = f"I{link.importance}" if link.importance else "unscored"
+                    parts.append(
+                        f"\n### [{page.page_type.value.upper()} C{page.credence}/R{page.robustness} {imp}] "
+                        f"`{page.id[:8]}` — {page.headline}\n\n"
+                        f"{page.content}\n"
+                    )
+                context_text += "\n".join(parts)
+
+        if preloaded_ids:
+            pages_by_id = await infra.db.get_pages_by_ids(preloaded_ids)
+            parts_pre: list[str] = []
+            for pid in preloaded_ids:
+                page = pages_by_id.get(pid)
+                if page:
+                    parts_pre += [
+                        "",
+                        "---",
+                        "",
+                        f"## Pre-loaded Page: `{pid[:8]}`",
+                        "",
+                        await format_page(page, PageDetail.CONTENT, db=infra.db),
+                    ]
+            context_text += "\n".join(parts_pre)
+
+        await _record_context_built(infra, working_page_ids, preloaded_ids)
+        return ContextResult(
+            context_text=context_text,
+            working_page_ids=working_page_ids,
+            preloaded_ids=preloaded_ids,
+        )
+
+
 class EmbeddingContext(ContextBuilder):
     """Embedding-based context (no phase1). Used by embedding variants."""
 

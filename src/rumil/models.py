@@ -84,6 +84,7 @@ class CallType(str, Enum):
     FEEDBACK_UPDATE = "feedback_update"
     LINK_SUBQUESTIONS = "link_subquestions"
     CREATE_VIEW = "create_view"
+    CHAT_DIRECT = "chat_direct"
 
 
 # The subset of CallTypes that prioritization can dispatch.

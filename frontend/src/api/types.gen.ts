@@ -346,7 +346,7 @@ export type CallTraceOut = {
 /**
  * CallType
  */
-export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_concepts' | 'assess_concept' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'create_view';
+export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_concepts' | 'assess_concept' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'create_view' | 'chat_direct';
 
 /**
  * CallTypeFruitScoreItem
@@ -408,6 +408,10 @@ export type ChatRequest = {
      * Workspace
      */
     workspace?: string;
+    /**
+     * Model
+     */
+    model?: string;
 };
 
 /**
@@ -2881,6 +2885,109 @@ export type GetPageRunApiPagesPageIdRunGetResponses = {
 
 export type GetPageRunApiPagesPageIdRunGetResponse = GetPageRunApiPagesPageIdRunGetResponses[keyof GetPageRunApiPagesPageIdRunGetResponses];
 
+export type ListSuggestionsApiProjectsProjectIdSuggestionsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Project Id
+         */
+        project_id: string;
+    };
+    query?: {
+        /**
+         * Status
+         */
+        status?: string;
+        /**
+         * Target Page Id
+         */
+        target_page_id?: string | null;
+    };
+    url: '/api/projects/{project_id}/suggestions';
+};
+
+export type ListSuggestionsApiProjectsProjectIdSuggestionsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListSuggestionsApiProjectsProjectIdSuggestionsGetError = ListSuggestionsApiProjectsProjectIdSuggestionsGetErrors[keyof ListSuggestionsApiProjectsProjectIdSuggestionsGetErrors];
+
+export type ListSuggestionsApiProjectsProjectIdSuggestionsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type ReviewSuggestionApiSuggestionsSuggestionIdReviewPostData = {
+    body?: never;
+    path: {
+        /**
+         * Suggestion Id
+         */
+        suggestion_id: string;
+    };
+    query?: {
+        /**
+         * Status
+         */
+        status?: string;
+    };
+    url: '/api/suggestions/{suggestion_id}/review';
+};
+
+export type ReviewSuggestionApiSuggestionsSuggestionIdReviewPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReviewSuggestionApiSuggestionsSuggestionIdReviewPostError = ReviewSuggestionApiSuggestionsSuggestionIdReviewPostErrors[keyof ReviewSuggestionApiSuggestionsSuggestionIdReviewPostErrors];
+
+export type ReviewSuggestionApiSuggestionsSuggestionIdReviewPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type GetQuestionViewApiQuestionsQuestionIdViewGetData = {
+    body?: never;
+    path: {
+        /**
+         * Question Id
+         */
+        question_id: string;
+    };
+    query?: {
+        /**
+         * Importance Threshold
+         */
+        importance_threshold?: number;
+    };
+    url: '/api/questions/{question_id}/view';
+};
+
+export type GetQuestionViewApiQuestionsQuestionIdViewGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetQuestionViewApiQuestionsQuestionIdViewGetError = GetQuestionViewApiQuestionsQuestionIdViewGetErrors[keyof GetQuestionViewApiQuestionsQuestionIdViewGetErrors];
+
+export type GetQuestionViewApiQuestionsQuestionIdViewGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
 export type ChatApiChatPostData = {
     body: ChatRequest;
     path?: never;
@@ -2905,3 +3012,26 @@ export type ChatApiChatPostResponses = {
 };
 
 export type ChatApiChatPostResponse = ChatApiChatPostResponses[keyof ChatApiChatPostResponses];
+
+export type ChatStreamApiChatStreamPostData = {
+    body: ChatRequest;
+    path?: never;
+    query?: never;
+    url: '/api/chat/stream';
+};
+
+export type ChatStreamApiChatStreamPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ChatStreamApiChatStreamPostError = ChatStreamApiChatStreamPostErrors[keyof ChatStreamApiChatStreamPostErrors];
+
+export type ChatStreamApiChatStreamPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};

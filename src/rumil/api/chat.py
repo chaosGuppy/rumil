@@ -345,7 +345,7 @@ async def _execute_tool(
         validated = move_def.schema(**payload)
 
         call = await db.create_call(
-            CallType.CLAUDE_CODE_DIRECT, scope_page_id=None
+            CallType.CHAT_DIRECT, scope_page_id=None
         )
         result = await move_def.execute(validated, call, db)
 

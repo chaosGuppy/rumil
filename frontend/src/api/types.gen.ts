@@ -346,7 +346,7 @@ export type CallTraceOut = {
 /**
  * CallType
  */
-export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_concepts' | 'assess_concept' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'create_view';
+export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'create_view';
 
 /**
  * CallTypeFruitScoreItem
@@ -1130,7 +1130,7 @@ export type PageRef = {
 /**
  * PageType
  */
-export type PageType = 'source' | 'claim' | 'question' | 'judgement' | 'concept' | 'wiki' | 'summary' | 'view' | 'view_item' | 'view_meta';
+export type PageType = 'source' | 'claim' | 'question' | 'judgement' | 'wiki' | 'summary' | 'view' | 'view_item' | 'view_meta';
 
 /**
  * PaginatedPagesOut
@@ -1952,7 +1952,7 @@ export type WebResearchCompleteEventOut = {
 /**
  * Workspace
  */
-export type Workspace = 'research' | 'prioritization' | 'concept_staging';
+export type Workspace = 'research' | 'prioritization';
 
 export type HealthzHealthzGetData = {
     body?: never;

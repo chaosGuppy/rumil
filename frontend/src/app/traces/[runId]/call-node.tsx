@@ -67,8 +67,6 @@ const CALL_TYPE_ACCENT: Record<string, string> = {
   reframe: "#c46b6b",
   maintain: "#7a8a9e",
   summarize: "#8a9e7a",
-  scout_concepts: "#4a9ec4",
-  assess_concept: "#b48ad4",
   scout_subquestions: "#3d8cb5",
   scout_estimates: "#6b9fd4",
   scout_hypotheses: "#4d8fba",

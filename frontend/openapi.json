@@ -1964,8 +1964,6 @@
           "reframe",
           "maintain",
           "summarize",
-          "scout_concepts",
-          "assess_concept",
           "scout_subquestions",
           "scout_estimates",
           "scout_hypotheses",
@@ -3379,7 +3377,6 @@
           "claim",
           "question",
           "judgement",
-          "concept",
           "wiki",
           "summary",
           "view",
@@ -4669,8 +4666,7 @@
         "type": "string",
         "enum": [
           "research",
-          "prioritization",
-          "concept_staging"
+          "prioritization"
         ],
         "title": "Workspace"
       }

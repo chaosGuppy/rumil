@@ -445,7 +445,7 @@ class DB:
         """Update a page's content field with mutation event recording."""
         page = await self.get_page(page_id)
         if not page:
-            return
+            raise ValueError(f"update_page_content: page {page_id} not found")
         await self.record_mutation_event(
             "update_page_content", page_id,
             {"old_content": page.content, "new_content": new_content},
@@ -2278,6 +2278,26 @@ class DB:
                     .eq("id", tid)
                 )
 
+            elif et == "update_page_content":
+                if "old_content" not in payload:
+                    log.warning(
+                        "Cannot revert content update for page %s: no old_content in event payload",
+                        tid,
+                    )
+                    continue
+                page_rows = _rows(await self._execute(
+                    self.client.table("pages")
+                    .select("run_id")
+                    .eq("id", tid)
+                ))
+                if page_rows and page_rows[0].get("run_id") == run_id:
+                    continue
+                await self._execute(
+                    self.client.table("pages")
+                    .update({"content": payload["old_content"]})
+                    .eq("id", tid)
+                )
+
     async def commit_staged_run(self, run_id: str) -> None:
         """Commit a staged run, making its effects visible to all readers.
 
@@ -2351,6 +2371,20 @@ class DB:
                 await self._execute(
                     self.client.table("page_links")
                     .update({"role": new_role})
+                    .eq("id", tid)
+                )
+
+            elif et == "update_page_content":
+                if "new_content" not in payload:
+                    log.warning(
+                        "Cannot apply content update for page %s: "
+                        "no new_content in event payload",
+                        tid,
+                    )
+                    continue
+                await self._execute(
+                    self.client.table("pages")
+                    .update({"content": payload["new_content"]})
                     .eq("id", tid)
                 )
 

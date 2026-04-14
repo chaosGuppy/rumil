@@ -3,28 +3,28 @@
 Living planning document for the Claude Code skill system that drives
 rumil from CC. Updated as ideas land, ship, or get dropped.
 
-Last major update: 2026-04-13, refreshed to reflect the source lane
-(`rumil-read` / `rumil-ingest` / `rumil-ask`), `rumil-orchestrate`,
-`rumil-load-run`, `rumil-quick-search`, and the standalone `scan`
-module wired into `rumil-find-confusion --structural`. Previous major
-update was after committing `f389003` (increment 2 — inspection,
-review, and clean skills + apply_move friction fixes).
+Last major update: 2026-04-14, trimmed the skill surface: `rumil-chat`
+and `rumil-prompt-edit` removed; `rumil-quick-search` folded into
+`rumil-search` as the default (fast top-N) mode with `--full` for the
+context-builder mode. Previous update (2026-04-13) added the source
+lane (`rumil-read` / `rumil-ingest` / `rumil-ask`), `rumil-orchestrate`,
+`rumil-load-run`, and the standalone `scan` module wired into
+`rumil-find-confusion --structural`.
 
 ## Where we are now
 
 The spine has grown a source/ingest lane and a structural-health lane
-on top of the original inspection / triage / chat / act / iterate
-shape:
+on top of the original inspection / triage / act / iterate shape:
 
 | Category | Skills |
 |---|---|
-| **Read / inspect** | `rumil-list`, `rumil-show`, `rumil-page`, `rumil-search`, `rumil-quick-search`, `rumil-trace`, `rumil-load-run`, `rumil-workspace` |
+| **Read / inspect** | `rumil-list`, `rumil-show`, `rumil-page`, `rumil-search` (quick default, `--full` opts into context builder), `rumil-trace`, `rumil-load-run`, `rumil-workspace` |
 | **Triage** | `rumil-find-confusion` (heuristic + `--deep` + `--structural`) |
-| **Discuss** | `rumil-chat`, `rumil-review` |
+| **Discuss** | `rumil-review` |
 | **Act (rumil-mediated)** | `rumil-dispatch`, `rumil-orchestrate` |
 | **Act (cc-mediated)** | `rumil-ask`, `rumil-ingest`, `rumil-clean`, `apply_move` (via envelope) |
 | **Sources (view-only)** | `rumil-read` (fetch / preview / `--save`) |
-| **Iterate** | `rumil-prompt-edit` |
+| **Iterate** | edit `prompts/*.md` directly after reading a trace |
 | **Meta / subagents** | `rumil-system`, `rumil-researcher`, `rumil-explorer` |
 
 Both provenance lanes are wired and traceable. The `CLAUDE_CODE_DIRECT`
@@ -49,8 +49,14 @@ Captured here so the backlog below stays focused on what's still open:
   tagged `origin=claude-code`. `--orchestrator` selects the variant.
 - **Run loading:** `rumil-load-run` resolves a run_id (or trace URL)
   into a tree of every call in the run.
-- **Lightweight search:** `rumil-quick-search` for cheap workspace
-  lookup (similarity threshold lowered to 0.3 in `1e0120f`).
+- **Search consolidation (2026-04-14):** `rumil-quick-search` merged
+  into `rumil-search` — quick top-N with similarity scores is now the
+  default, `--full` opts into the multi-tier context builder. Previously
+  shipped as a separate skill (`1e0120f`, threshold 0.3).
+- **Skill trim (2026-04-14):** `rumil-chat` deleted — it was framing-only
+  over `rumil-show` + the conversation. `rumil-prompt-edit` deleted — its
+  body was mostly instructions; the workflow (read a trace, edit
+  `prompts/*.md`) uses tools Claude already has.
 - **Structural / distributional health:** new `scan.py` module —
   `graph_health`, `rating_shape`, `review_signals` — exposed via
   `rumil-find-confusion --structural <qid>`.
@@ -60,8 +66,6 @@ Captured here so the backlog below stays focused on what's still open:
   `dispatch` fixed to pass `fruit_threshold` for find-considerations
   (`52b58b8`); `trace.py` defers call-id resolution to
   `db.resolve_call_id` (N3 — done).
-- **Conversational style:** `rumil-chat` got explicit guidance on tone
-  / pacing (`bc1be74`).
 
 The things we're explicitly *not* doing yet:
 - No remote / prod database access (gated behind `RUMIL_ALLOW_PROD=1`)
@@ -90,9 +94,9 @@ These have paid off so far and should keep shaping future work:
    it take ≤10 seconds to notice when something went wrong.
 
 4. **Accreting by default in cc-mediated work.** The allowlist on
-   `apply_move --accreting-only` means `rumil-clean` and `rumil-chat`
-   build up workspace state but can't destroy or mutate in place.
-   Destructive moves require explicit opt-out.
+   `apply_move --accreting-only` means `rumil-clean` and other
+   cc-mediated skills build up workspace state but can't destroy or
+   mutate in place. Destructive moves require explicit opt-out.
 
 5. **Skills compose through the user.** One skill, one purpose. Chaining
    is the user's job. This keeps each skill's body small and its behavior
@@ -138,21 +142,6 @@ question immediately shows whether the producing calls are suspect.
 **Shape:** One import + one DB-free lookup per call row. ~20 lines.
 
 **Size:** 30 minutes.
-
-### N4. `rumil-prompt-edit` — script-backed file lookup
-
-**What:** Replace the hardcoded call_type → prompt-file mapping table in
-`rumil-prompt-edit`'s SKILL.md with a tiny helper script that introspects
-`rumil.llm.build_system_prompt` (or reads `prompts/` directly) to return
-the file(s) used for a given call type. The skill body calls the helper
-instead of hardcoding.
-
-**Why:** The table drifts when prompts are added, renamed, or
-restructured. Introspection is authoritative.
-
-**Shape:** `prompt_file_for.py` helper + SKILL.md edit.
-
-**Size:** 1 hour.
 
 ### N5. `apply_move --envelope-status` shortcut
 
@@ -246,10 +235,10 @@ makes the triage loop tighter.
 ### M3. Cross-skill chaining (opt-in)
 
 **What:** Selected skills can *offer* to chain. `rumil-review` ends with
-"4 items suggest prompt edits — want me to walk them as a prompt-edit
-session?" and on yes, pivots into `rumil-prompt-edit` for each in turn.
-`rumil-find-confusion` ends with "top candidate is call X on question Y —
-want me to /rumil-trace it?".
+"top item is call X on question Y — want me to /rumil-trace it and look
+at the prompt?" and on yes, loads the trace and opens the relevant
+`prompts/*.md` for editing. `rumil-find-confusion` ends with "top
+candidate is call X on question Y — want me to /rumil-trace it?".
 
 **Why:** The user becoming the orchestrator between every pair of skills
 is friction. But automatic chaining is risky — it hides decisions. A
@@ -267,9 +256,10 @@ model-mediated skills.
 
 ### M4. Session write-back as rumil source pages
 
-**What:** When a meaningful `rumil-chat` or `rumil-review` session ends,
-offer to write the session transcript (or a summary of it) as a rumil
-source page via the ingest move, scoped to the question being discussed.
+**What:** When a meaningful `rumil-review` session (or any extended CC
+conversation about a question) ends, offer to write the transcript — or
+a summary of it — as a rumil source page via the ingest move, scoped to
+the question being discussed.
 
 **Why:** cc-mediated sessions currently evaporate. The work Claude and
 the user did together informs claims and flags but the reasoning isn't
@@ -333,7 +323,7 @@ accumulated usage to know what's actually wanted.
 
 ### V1. Prompt A/B as a first-class workflow
 
-Today `rumil-prompt-edit` → commit → `rumil-dispatch` → compare traces
+Today edit `prompts/*.md` → commit → `rumil-dispatch` → compare traces
 manually. Vision: `rumil-prompt-ab <before_call_id> <after_call_id>`
 shows a side-by-side diff of the two calls' outputs + traces, maybe with
 a meta-LLM verdict on whether the second is better. Requires capturing
@@ -418,9 +408,11 @@ archetype.
   reimplement what rumil already does — always prefer the rumil-side
   method over a local copy. (N3 was the first instance: `trace.py` had
   its own call-id resolver, now deferred to `db.resolve_call_id`.)
-- **"Which file/function am I supposed to look at"** — the prompt-file
-  mapping in `rumil-prompt-edit` is the current case. Replace hardcoded
-  tables with introspection where possible (N4).
+- **"Which file/function am I supposed to look at"** — when a mapping
+  (e.g. call_type → prompt file) appears in prose inside a SKILL.md or
+  doc, it will drift. Replace hardcoded tables with introspection against
+  the authoritative source (`rumil.llm.build_system_prompt`, the
+  `prompts/` directory listing, etc.).
 - **Scripts silently missing new enum values.** My `dispatch_call`'s
   scout map duplicates `scripts/run_call.py`'s. Adding a new scout type
   won't break either script — it just won't appear in them. Worth a

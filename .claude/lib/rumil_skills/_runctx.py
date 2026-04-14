@@ -231,7 +231,7 @@ async def ensure_chat_envelope(
         db,
         name="chat envelope",
         question_id=scope_question_id,
-        skill="rumil-chat",
+        skill="cc-envelope",
         budget=1,
         extra_config={"envelope": True},
     )

@@ -72,7 +72,7 @@ class TraceRecordError(RuntimeError):
 
 
 # Allowlist of moves that only *add* to the workspace. Keeps rumil-clean
-# and /rumil-chat safe-by-default: no destructive or in-place edits.
+# and other cc-mediated skills safe-by-default: no destructive or in-place edits.
 ACCRETING_MOVES: frozenset[MoveType] = frozenset(
     {
         MoveType.CREATE_CLAIM,

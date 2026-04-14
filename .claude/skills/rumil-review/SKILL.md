@@ -90,4 +90,5 @@ to three considerations created after it".
 - "trace the top one" → suggest `/rumil-trace <call_id>`
 - "let's fix it" → suggest `/rumil-clean <question_id>` for a guided
   accreting-only cleanup, or individual `/rumil-dispatch` calls for
-  re-runs, or `/rumil-prompt-edit <call_id>` for prompt fixes
+  re-runs. For prompt-level fixes, pull the trace with `/rumil-trace
+  <call_id>` and edit the relevant `prompts/*.md` directly.

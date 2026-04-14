@@ -34,9 +34,40 @@ def patch_make_db(monkeypatch, tmp_db):
     return tmp_db
 
 
-async def test_search_workspace_finds_seeded_page(
+async def test_quick_mode_finds_seeded_claim(
     capsys, monkeypatch, patch_make_db, tmp_db
 ):
+    page = Page(
+        page_type=PageType.CLAIM,
+        layer=PageLayer.SQUIDGY,
+        workspace=Workspace.RESEARCH,
+        content="Photosynthesis converts sunlight into chemical energy in plants.",
+        headline="Photosynthesis converts light to energy",
+    )
+    await tmp_db.save_page(page)
+    await embed_and_store_page(tmp_db, page)
+
+    monkeypatch.setattr(
+        "sys.argv", ["search_workspace", "how", "plants", "use", "sunlight"]
+    )
+    await search_workspace.main()
+    out = capsys.readouterr().out
+
+    assert "test-workspace" in out
+    assert "results for:" in out
+    assert page.id[:8] in out
+
+
+async def test_quick_mode_no_results(capsys, monkeypatch, patch_make_db):
+    monkeypatch.setattr("sys.argv", ["search_workspace", "completely", "unrelated"])
+    await search_workspace.main()
+    out = capsys.readouterr().out
+
+    assert "test-workspace" in out
+    assert "No matching pages found" in out
+
+
+async def test_full_mode_finds_seeded_page(capsys, monkeypatch, patch_make_db, tmp_db):
     page = Page(
         page_type=PageType.CLAIM,
         layer=PageLayer.SQUIDGY,
@@ -50,7 +81,7 @@ async def test_search_workspace_finds_seeded_page(
     await embed_and_store_page(tmp_db, page, field_name="abstract")
 
     monkeypatch.setattr(
-        "sys.argv", ["search_workspace", "cellular", "energy", "source"]
+        "sys.argv", ["search_workspace", "--full", "cellular", "energy", "source"]
     )
     await search_workspace.main()
     out = capsys.readouterr().out
@@ -60,8 +91,10 @@ async def test_search_workspace_finds_seeded_page(
     assert page.id[:8] in out
 
 
-async def test_search_workspace_empty(capsys, monkeypatch, patch_make_db):
-    monkeypatch.setattr("sys.argv", ["search_workspace", "obscure", "topic", "nothing"])
+async def test_full_mode_empty(capsys, monkeypatch, patch_make_db):
+    monkeypatch.setattr(
+        "sys.argv", ["search_workspace", "--full", "obscure", "topic", "nothing"]
+    )
     await search_workspace.main()
     out = capsys.readouterr().out
 

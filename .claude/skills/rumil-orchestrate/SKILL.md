@@ -114,5 +114,5 @@ The orchestrator can run for many minutes. The script streams:
 - **Read the research:** `/rumil-review <id>` — structured punch list
 - **Debug something that looked off:** `/rumil-find-confusion` — scan
   recent calls for model confusion; follow up with `/rumil-trace` on
-  the top candidate
-- **Iterate on prompts if a call misbehaved:** `/rumil-prompt-edit <call_id>`
+  the top candidate, then edit the relevant `prompts/*.md` directly
+  if a prompt is the root cause

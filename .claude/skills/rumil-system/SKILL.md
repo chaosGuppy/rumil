@@ -1,6 +1,6 @@
 ---
 name: rumil-system
-description: Background knowledge for working with the rumil research workspace from Claude Code. Explains the two-lane provenance model (rumil-mediated vs cc-mediated), when to use which rumil-* skill, how workspace/session state works, and the visibility/attribution story. Auto-load this whenever the user asks about rumil, wants to inspect research, dispatch a call, chat with a question, apply moves, or review a trace.
+description: Background knowledge for working with the rumil research workspace from Claude Code. Explains the two-lane provenance model (rumil-mediated vs cc-mediated), when to use which rumil-* skill, how workspace/session state works, and the visibility/attribution story. Auto-load this whenever the user asks about rumil, wants to inspect research, dispatch a call, discuss a question, apply moves, or review a trace.
 user-invocable: false
 ---
 
@@ -53,10 +53,10 @@ purely to give the move a well-defined owner in the trace.
 - `calls.call_params.origin = "claude-code"`
 - `calls.call_params.envelope = true`
 
-**Use when:** during `/rumil-chat` the user decides they want a
-specific mutation right now (add a subquestion, link two pages, flag a
-page, mark a duplicate) and there's no value in running a full rumil
-call to mint it.
+**Use when:** mid-conversation the user decides they want a specific
+mutation right now (add a subquestion, link two pages, flag a page,
+mark a duplicate) and there's no value in running a full rumil call to
+mint it. `/rumil-ask` and `/rumil-clean` use this lane.
 
 ### Why the split matters
 
@@ -104,8 +104,8 @@ Model-mediated skills (you interpret intent, then act):
 
 - `/rumil-dispatch <call_type> <qid>` — fire one rumil call
   (rumil-mediated lane)
-- `/rumil-chat <qid>` — discuss a question with the user, can apply
-  moves (cc-mediated lane)
+- `/rumil-review <qid>` / `/rumil-clean <qid>` — audit research and
+  apply accreting-only fixes (cc-mediated lane)
 
 ## Session state
 

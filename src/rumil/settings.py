@@ -67,6 +67,7 @@ class Settings(BaseSettings):
     grounding_update_budget: int = _capture_field(default=10)
     feedback_update_budget: int = _capture_field(default=10)
     feedback_investigation_budget: int = _capture_field(default=30)
+    ingest_num_claims: int = _capture_field(default=4)
 
     sonnet_model: str = _capture_field(default="claude-sonnet-4-6")
     explore_subgraph_default_max_pages: int = _capture_field(default=30)

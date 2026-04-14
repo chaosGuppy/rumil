@@ -343,6 +343,8 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             'your only turn and you will not get another chance. Distribute your budget '
             'among the scouting dispatch tools, weighting towards types that seem most '
             'useful for this question and skipping types that are clearly irrelevant. '
+            'For each scout you indend to dispatch now, you MUST call its tool on the curret turn, '
+            'in parallel with all others you intend to dispatch at this point. '
             'Do not do anything else — just dispatch.'
         )
 
@@ -573,7 +575,8 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             'Plan conservatively: your total worst-case cost across all dispatches '
             f'must not exceed {dispatch_budget}.\n\n'
             f'{scores_text}\n\n'
-            'You must make all your dispatch calls now — this is your only turn. '
+            'For each call you indend to dispatch now, you MUST call its tool on the curret turn, '
+            'in parallel with all others you intend to dispatch at this point. '
             f'Each recurse call must have a budget of at least {MIN_TWOPHASE_BUDGET}.'
             f'{ingest_hint}'
         )

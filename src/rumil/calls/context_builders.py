@@ -19,7 +19,6 @@ from rumil.calls.common import (
 )
 from rumil.calls.stages import CallInfra, ContextBuilder, ContextResult
 from rumil.context import (
-    build_call_context,
     build_embedding_based_context,
     format_page,
 )
@@ -38,12 +37,9 @@ from rumil.models import (
     PageDetail,
     PageLink,
     PageType,
-
 )
 from rumil.settings import get_settings
-from rumil.page_graph import PageGraph
 from rumil.tracing.trace_events import ContextBuiltEvent
-from rumil.workspace_map import build_workspace_map
 
 log = logging.getLogger(__name__)
 
@@ -88,6 +84,63 @@ async def _do_phase1(
         extra_text = await _format_loaded_pages(phase1_ids, infra.db)
         context_text += "\n\n## Loaded Pages\n\n" + extra_text
     return context_text, phase1_ids
+
+
+class CreateViewContext(ContextBuilder):
+    """Context for View creation: loads the question, all its considerations,
+    judgements, child question judgements, and any unscored View item proposals."""
+
+    async def build_context(self, infra: CallInfra) -> ContextResult:
+        question = await infra.db.get_page(infra.question_id)
+        query = question.headline if question else infra.question_id
+
+        result = await build_embedding_based_context(
+            query,
+            infra.db,
+            scope_question_id=infra.question_id,
+            require_judgement_for_questions=True,
+        )
+        working_page_ids = result.page_ids
+        preloaded_ids = list(infra.call.context_page_ids or [])
+
+        context_text = result.context_text
+
+        existing_view = await infra.db.get_view_for_question(infra.question_id)
+        if existing_view:
+            items = await infra.db.get_view_items(existing_view.id)
+            if items:
+                parts = ["\n\n---\n\n## Existing View Items (to update/supersede)\n"]
+                for page, link in items:
+                    imp = f"I{link.importance}" if link.importance else "unscored"
+                    parts.append(
+                        f"\n### [{page.page_type.value.upper()} C{page.credence}/R{page.robustness} {imp}] "
+                        f"`{page.id[:8]}` — {page.headline}\n\n"
+                        f"{page.content}\n"
+                    )
+                context_text += "\n".join(parts)
+
+        if preloaded_ids:
+            pages_by_id = await infra.db.get_pages_by_ids(preloaded_ids)
+            parts_pre: list[str] = []
+            for pid in preloaded_ids:
+                page = pages_by_id.get(pid)
+                if page:
+                    parts_pre += [
+                        "",
+                        "---",
+                        "",
+                        f"## Pre-loaded Page: `{pid[:8]}`",
+                        "",
+                        await format_page(page, PageDetail.CONTENT, db=infra.db),
+                    ]
+            context_text += "\n".join(parts_pre)
+
+        await _record_context_built(infra, working_page_ids, preloaded_ids)
+        return ContextResult(
+            context_text=context_text,
+            working_page_ids=working_page_ids,
+            preloaded_ids=preloaded_ids,
+        )
 
 
 class EmbeddingContext(ContextBuilder):
@@ -174,127 +227,6 @@ class IngestEmbeddingContext(ContextBuilder):
         )
 
 
-class ConceptScoutContext(ContextBuilder):
-    """Graph context + concept registry + phase1. Used by ScoutConceptsCall."""
-
-    def __init__(self, call_type: CallType) -> None:
-        self._call_type = call_type
-
-    async def build_context(self, infra: CallInfra) -> ContextResult:
-        preloaded_ids = infra.call.context_page_ids or []
-        graph = await PageGraph.load(infra.db)
-        context_text, _, working_page_ids = await build_call_context(
-            infra.question_id,
-            infra.db,
-            extra_page_ids=preloaded_ids,
-            graph=graph,
-        )
-
-        registry = await infra.db.get_concept_registry()
-        if registry:
-            lines = ["## Concept Registry", ""]
-            lines.append(
-                "The following concepts have already been proposed (do not re-propose them):"
-            )
-            lines.append("")
-            for concept in registry:
-                extra = concept.extra or {}
-                stage = extra.get("stage", "proposed")
-                score = extra.get("score")
-                promoted = extra.get("promoted", False)
-                status = (
-                    "promoted"
-                    if promoted
-                    else (f"score={score}" if score is not None else stage)
-                )
-                lines.append(f"- [{status}] `{concept.id[:8]}` — {concept.headline}")
-            context_text += "\n\n" + "\n".join(lines)
-
-        await _record_context_built(infra, working_page_ids, preloaded_ids)
-        context_text, phase1_ids = await _do_phase1(
-            infra,
-            self._call_type,
-            context_text,
-        )
-        return ContextResult(
-            context_text=context_text,
-            working_page_ids=working_page_ids,
-            preloaded_ids=preloaded_ids,
-            phase1_ids=phase1_ids,
-        )
-
-
-class ConceptAssessContext(ContextBuilder):
-    """Workspace map + concept page + assessment history + phase1.
-    Used by AssessConceptCall.
-    """
-
-    def __init__(self, phase: str) -> None:
-        self._phase = phase
-
-    async def build_context(self, infra: CallInfra) -> ContextResult:
-        concept = await infra.db.get_page(infra.question_id)
-        if not concept:
-            return ContextResult(
-                context_text=f"[Concept page {infra.question_id} not found]",
-                working_page_ids=[],
-            )
-
-        map_text, _ = await build_workspace_map(infra.db)
-        concept_text = await format_page(concept, PageDetail.HEADLINE, db=infra.db)
-
-        extra = concept.extra or {}
-        assessment_rounds = extra.get("assessment_rounds", [])
-        history_section = ""
-        if assessment_rounds:
-            lines = ["## Previous Assessment Rounds", ""]
-            for i, r in enumerate(assessment_rounds):
-                lines.append(
-                    f"Round {i + 1} ({r.get('phase', '?')}): "
-                    f"score={r.get('score', '?')}, "
-                    f"remaining_fruit={r.get('remaining_fruit', '?')}"
-                )
-                if r.get("what_worked"):
-                    lines.append(f"  Worked: {r['what_worked']}")
-                if r.get("what_didnt"):
-                    lines.append(f"  Didn't: {r['what_didnt']}")
-            history_section = "\n\n" + "\n".join(lines)
-
-        context_text = (
-            "\n\n".join(
-                [
-                    map_text,
-                    "---",
-                    "## Concept Under Assessment",
-                    "",
-                    concept_text,
-                ]
-            )
-            + history_section
-        )
-
-        working_page_ids = [infra.question_id]
-        preloaded_ids = infra.call.context_page_ids or []
-        await infra.trace.record(
-            ContextBuiltEvent(
-                working_context_page_ids=await resolve_page_refs(
-                    working_page_ids,
-                    infra.db,
-                ),
-                preloaded_page_ids=await resolve_page_refs(preloaded_ids, infra.db),
-            )
-        )
-        context_text, phase1_ids = await _do_phase1(
-            infra,
-            CallType.ASSESS_CONCEPT,
-            context_text,
-        )
-        return ContextResult(
-            context_text=context_text,
-            working_page_ids=working_page_ids,
-            preloaded_ids=preloaded_ids,
-            phase1_ids=phase1_ids,
-        )
 
 
 class WebResearchEmbeddingContext(ContextBuilder):

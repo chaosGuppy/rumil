@@ -67,8 +67,6 @@ const CALL_TYPE_ACCENT: Record<string, string> = {
   reframe: "#c46b6b",
   maintain: "#7a8a9e",
   summarize: "#8a9e7a",
-  scout_concepts: "#4a9ec4",
-  assess_concept: "#b48ad4",
   scout_subquestions: "#3d8cb5",
   scout_estimates: "#6b9fd4",
   scout_hypotheses: "#4d8fba",
@@ -1145,6 +1143,20 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
               <span className="trace-kv-value">{event.reason}</span>
             </div>
           )}
+        </div>
+      )}
+
+      {event.event === "view_created" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">view</span>
+            <Link
+              href={`/pages/${event.view_id}`}
+              className="trace-page-chip"
+            >
+              {event.view_headline || event.view_id.slice(0, 8)}
+            </Link>
+          </div>
         </div>
       )}
     </div>

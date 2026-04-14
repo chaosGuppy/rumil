@@ -67,6 +67,7 @@ class Settings(BaseSettings):
     grounding_update_budget: int = _capture_field(default=10)
     feedback_update_budget: int = _capture_field(default=10)
     feedback_investigation_budget: int = _capture_field(default=30)
+    ingest_num_claims: int = _capture_field(default=4)
 
     sonnet_model: str = _capture_field(default="claude-sonnet-4-6")
     global_prio_budget_fraction: float = _capture_field(default=0.2)
@@ -74,17 +75,24 @@ class Settings(BaseSettings):
     global_prio_trigger_threshold: int = _capture_field(default=5)
     global_prio_explore_rounds: int = _capture_field(default=3)
     global_prio_subgraph_max_pages: int = _capture_field(default=30)
+
     explore_subgraph_default_max_pages: int = _capture_field(default=30)
 
     scope_subquestion_linker_max_rounds: int = _capture_field(default=6)
     scope_subquestion_linker_seed_limit: int = _capture_field(default=10)
     scope_subquestion_linker_subgraph_max_pages: int = _capture_field(default=40)
+    linker_cache_invalidation_threshold: int = _capture_field(default=100)
 
     max_db_retries: int = _capture_field(default=60)
     max_api_retries: int = _capture_field(default=60)
     max_api_retries_429: int | None = _capture_field(default=None)
     max_api_retries_500: int | None = _capture_field(default=None)
     max_api_retries_529: int | None = _capture_field(default=None)
+
+    view_importance_5_cap: int = _capture_field(default=5)
+    view_importance_4_cap: int = _capture_field(default=10)
+    view_importance_3_cap: int = _capture_field(default=25)
+    view_importance_2_cap: int = _capture_field(default=50)
 
     full_page_char_budget: int = _capture_field(default=10_000)
     abstract_page_char_budget: int = _capture_field(default=10_000)

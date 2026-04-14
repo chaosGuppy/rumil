@@ -11,15 +11,15 @@ from rumil.settings import get_settings
 class AvailableCallsPreset:
     """Which call types are available in each phase of the two-phase orchestrator."""
 
-    phase1_scouts: Sequence[CallType]
-    phase2_dispatch: Sequence[CallType]
+    initial_prioritization_scouts: Sequence[CallType]
+    main_phase_prioritization_dispatch: Sequence[CallType]
     claim_phase1_scouts: Sequence[CallType] = ()
     claim_phase2_dispatch: Sequence[CallType] = ()
 
 
 AVAILABLE_CALLS_PRESETS: dict[str, AvailableCallsPreset] = {
     "default": AvailableCallsPreset(
-        phase1_scouts=[
+        initial_prioritization_scouts=[
             CallType.SCOUT_SUBQUESTIONS,
             CallType.SCOUT_ESTIMATES,
             CallType.SCOUT_HYPOTHESES,
@@ -27,7 +27,7 @@ AVAILABLE_CALLS_PRESETS: dict[str, AvailableCallsPreset] = {
             CallType.SCOUT_PARADIGM_CASES,
             CallType.SCOUT_FACTCHECKS,
         ],
-        phase2_dispatch=[
+        main_phase_prioritization_dispatch=[
             CallType.FIND_CONSIDERATIONS,
             CallType.WEB_RESEARCH,
             CallType.SCOUT_SUBQUESTIONS,
@@ -58,7 +58,7 @@ AVAILABLE_CALLS_PRESETS: dict[str, AvailableCallsPreset] = {
         ],
     ),
     "simple": AvailableCallsPreset(
-        phase1_scouts=[
+        initial_prioritization_scouts=[
             CallType.SCOUT_ESTIMATES,
             CallType.SCOUT_ANALOGIES,
             CallType.SCOUT_PARADIGM_CASES,
@@ -66,7 +66,7 @@ AVAILABLE_CALLS_PRESETS: dict[str, AvailableCallsPreset] = {
             CallType.SCOUT_WEB_QUESTIONS,
             CallType.SCOUT_DEEP_QUESTIONS,
         ],
-        phase2_dispatch=[
+        main_phase_prioritization_dispatch=[
             CallType.FIND_CONSIDERATIONS,
             CallType.WEB_RESEARCH,
             CallType.SCOUT_ESTIMATES,
@@ -97,7 +97,7 @@ AVAILABLE_CALLS_PRESETS: dict[str, AvailableCallsPreset] = {
         ],
     ),
     "multi-subquestion": AvailableCallsPreset(
-        phase1_scouts=[
+        initial_prioritization_scouts=[
             CallType.SCOUT_ESTIMATES,
             CallType.SCOUT_HYPOTHESES,
             CallType.SCOUT_ANALOGIES,
@@ -106,7 +106,7 @@ AVAILABLE_CALLS_PRESETS: dict[str, AvailableCallsPreset] = {
             CallType.SCOUT_WEB_QUESTIONS,
             CallType.SCOUT_DEEP_QUESTIONS,
         ],
-        phase2_dispatch=[
+        main_phase_prioritization_dispatch=[
             CallType.FIND_CONSIDERATIONS,
             CallType.WEB_RESEARCH,
             CallType.SCOUT_ESTIMATES,

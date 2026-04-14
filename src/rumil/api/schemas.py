@@ -36,6 +36,7 @@ from rumil.tracing.trace_events import (
     ToolCallEvent,
     UpdatePlanCreatedEvent,
     UpdateSubgraphComputedEvent,
+    ViewCreatedEvent,
     WarningEvent,
     WebResearchCompleteEvent,
 )
@@ -166,6 +167,10 @@ class LinkSubquestionsCompleteEventOut(
     pass
 
 
+class ViewCreatedEventOut(ViewCreatedEvent, _TraceEnvelopeMixin):
+    pass
+
+
 class PhaseSkippedEventOut(PhaseSkippedEvent, _TraceEnvelopeMixin):
     pass
 
@@ -195,6 +200,7 @@ TraceEventOut = Annotated[
     | WebResearchCompleteEventOut
     | RenderQuestionSubgraphEventOut
     | LinkSubquestionsCompleteEventOut
+    | ViewCreatedEventOut
     | PhaseSkippedEventOut,
     Field(discriminator="event"),
 ]
@@ -326,3 +332,66 @@ class ABRunTraceOut(BaseModel):
 class RealtimeConfigOut(BaseModel):
     url: str
     anon_key: str
+
+
+class DegreeCell(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    avg_out: float
+    avg_in: float
+
+
+class CallsForQuestion(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    question_id: str
+    headline: str | None
+    by_type: dict[str, int]
+    total: int
+
+
+class StatsOut(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    pages_total: int
+    pages_by_type: dict[str, int]
+    links_total: int
+    links_by_type: dict[str, int]
+    degree_matrix: dict[str, dict[str, DegreeCell]]
+    robustness_histogram: dict[str, int]
+    credence_histogram: dict[str, int]
+    calls_per_question: list[CallsForQuestion]
+
+
+class ProjectStatsOut(StatsOut):
+    project_id: str
+
+
+class SubgraphNode(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    id: str
+    page_type: str
+    headline: str | None
+    depth: int
+
+
+class SubgraphEdge(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    from_page_id: str
+    to_page_id: str
+    link_type: str
+
+
+class Subgraph(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    nodes: list[SubgraphNode]
+    edges: list[SubgraphEdge]
+
+
+class QuestionStatsOut(StatsOut):
+    question_id: str
+    subgraph_page_count: int
+    subgraph: Subgraph

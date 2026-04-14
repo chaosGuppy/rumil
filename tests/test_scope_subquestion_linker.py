@@ -15,7 +15,7 @@ from rumil.models import (
 )
 from rumil.scope_subquestion_linker.runner import run_scope_subquestion_linker
 from rumil.scope_subquestion_linker.seed_selection import select_seed_questions
-from rumil.scope_subquestion_linker.subgraph import render_question_subgraph
+from rumil.workspace_exploration import render_question_subgraph
 from rumil.scope_subquestion_linker.tool import SUBMIT_TOOL_NAME
 
 

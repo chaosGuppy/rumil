@@ -5,11 +5,6 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 
-from rumil.calls.assess_concept_types import (
-    ConceptAssessmentReview,
-    REVIEW_SYSTEM_PROMPT,
-    VALIDATION_PHASE,
-)
 from rumil.calls.common import (
     PageSummaryItem,
     ReviewResponse,
@@ -21,12 +16,13 @@ from rumil.calls.common import (
     run_single_call,
     save_page_abstracts,
 )
-from rumil.calls.stages import CallInfra, ClosingReviewer, ContextResult, CreationResult
+from rumil.calls.stages import CallInfra, ClosingReviewer, ContextResult, UpdateResult
 from rumil.llm import (
     LLMExchangeMetadata,
     build_system_prompt,
     build_user_message,
     structured_call,
+    text_call,
 )
 from rumil.models import CallType, MoveType, PageType
 from rumil.available_moves import get_moves_for_call
@@ -48,7 +44,7 @@ class StandardClosingReview(ClosingReviewer):
         self,
         infra: CallInfra,
         context: ContextResult,
-        creation: CreationResult,
+        creation: UpdateResult,
     ) -> None:
         review_context = format_moves_for_review(creation.moves)
         review = await run_closing_review(
@@ -77,10 +73,71 @@ class StandardClosingReview(ClosingReviewer):
         summary = self._result_summary(creation)
         await mark_call_completed(infra.call, infra.db, summary)
 
-    def _result_summary(self, creation: CreationResult) -> str:
+    def _result_summary(self, creation: UpdateResult) -> str:
         return (
             f"{self._call_type.value.capitalize()} complete. "
             f"Created {len(creation.created_page_ids)} pages."
+        )
+
+
+class ViewClosingReview(StandardClosingReview):
+    """Closing review for View creation: generates the NL summary for importance-5 items."""
+
+    def __init__(self, call_type: CallType, view_id: str) -> None:
+        super().__init__(call_type)
+        self._view_id = view_id
+
+    async def closing_review(
+        self,
+        infra: CallInfra,
+        context: ContextResult,
+        creation: UpdateResult,
+    ) -> None:
+        items = await infra.db.get_view_items(self._view_id, min_importance=4)
+        if items:
+            item_lines: list[str] = []
+            for page, link in items:
+                imp = link.importance or 0
+                marker = " [IMPORTANCE 5 — FOCUS]" if imp == 5 else ""
+                item_lines.append(
+                    f"### [C{page.credence}/R{page.robustness} I{imp}]{marker} "
+                    f"{page.headline}\n\n{page.content}\n"
+                )
+            items_text = "\n".join(item_lines)
+
+            question = await infra.db.get_page(infra.question_id)
+            q_headline = question.headline if question else "the question"
+
+            summary = await text_call(
+                system_prompt=(
+                    "You are writing a concise natural-language summary for a View page. "
+                    "The View summarizes current understanding on a research question. "
+                    "Focus especially on the IMPORTANCE 5 items — these are the most "
+                    "critical things to know. Frame their interactions, tensions, and "
+                    "overall epistemic posture. The summary should orient a reader who "
+                    "will see the individual items listed below it, so focus on synthesis "
+                    "and framing rather than repeating items verbatim. "
+                    "Keep it to 2-4 paragraphs."
+                ),
+                user_message=(
+                    f"Question: {q_headline}\n\n"
+                    f"## View Items (importance 4+)\n\n{items_text}\n\n"
+                    "Write the NL summary for this View."
+                ),
+            )
+
+            await infra.db.update_page_content(self._view_id, summary)
+            log.info(
+                "View %s NL summary written (%d chars)",
+                self._view_id[:8],
+                len(summary),
+            )
+
+        await super().closing_review(infra, context, creation)
+
+    def _result_summary(self, creation: UpdateResult) -> str:
+        return (
+            f"View created. {len(creation.created_page_ids)} items."
         )
 
 
@@ -91,7 +148,7 @@ class IngestClosingReview(StandardClosingReview):
         super().__init__(call_type)
         self._filename = filename
 
-    def _result_summary(self, creation: CreationResult) -> str:
+    def _result_summary(self, creation: UpdateResult) -> str:
         return (
             f"Ingest complete. Created {len(creation.created_page_ids)} "
             f"pages from '{self._filename}'."
@@ -105,7 +162,7 @@ class WebResearchClosingReview(StandardClosingReview):
         super().__init__(call_type)
         self._page_creator = page_creator
 
-    def _result_summary(self, creation: CreationResult) -> str:
+    def _result_summary(self, creation: UpdateResult) -> str:
         source_count = (
             len(self._page_creator.source_page_ids)
             if self._page_creator is not None
@@ -248,7 +305,7 @@ class SinglePhaseScoutReview(ClosingReviewer):
         self,
         infra: CallInfra,
         context: ContextResult,
-        creation: CreationResult,
+        creation: UpdateResult,
     ) -> None:
         if not creation.messages:
             infra.call.review_json = {}
@@ -293,134 +350,3 @@ class SinglePhaseScoutReview(ClosingReviewer):
         await mark_call_completed(infra.call, infra.db, summary)
 
 
-class ConceptAssessReview(ClosingReviewer):
-    """Concept assessment closing review. Used by AssessConceptCall."""
-
-    def __init__(self, phase: str) -> None:
-        self._phase = phase
-        self.concept_assessment: dict = {}
-
-    async def closing_review(
-        self,
-        infra: CallInfra,
-        context: ContextResult,
-        creation: CreationResult,
-    ) -> None:
-        review_context = format_moves_for_review(creation.moves)
-        review_task = (
-            f"You have just completed an assess_concept call ({self._phase} phase).\n\n"
-            f"Here is your output from that call:\n{review_context}\n\n"
-            "Please review your assessment and provide structured feedback."
-        )
-
-        user_message = build_user_message(context.context_text, review_task)
-        meta = LLMExchangeMetadata(
-            call_id=infra.call.id,
-            phase="closing_review",
-            user_message=user_message,
-        )
-        try:
-            result = await structured_call(
-                system_prompt=REVIEW_SYSTEM_PROMPT,
-                user_message=user_message,
-                response_model=ConceptAssessmentReview,
-                metadata=meta,
-                db=infra.db,
-            )
-            review = result.parsed.model_dump() if result.parsed else None
-        except Exception as e:
-            log.error(
-                "Concept closing review failed for call=%s: %s",
-                infra.call.id[:8],
-                e,
-                exc_info=True,
-            )
-            trace = get_trace()
-            if trace:
-                await trace.record(
-                    ErrorEvent(
-                        message=f"Concept closing review failed: {e}",
-                        phase="closing_review",
-                    )
-                )
-            infra.call.review_json = {}
-            await mark_call_completed(
-                infra.call,
-                infra.db,
-                f"Assess concept complete ({self._phase}). Review failed.",
-            )
-            return
-
-        if not review:
-            infra.call.review_json = {}
-            await mark_call_completed(
-                infra.call,
-                infra.db,
-                f"Assess concept complete ({self._phase}). No review.",
-            )
-            return
-
-        log.info(
-            "Concept review (%s): score=%s, screening_passed=%s, fruit=%s",
-            self._phase,
-            review.get("score"),
-            review.get("screening_passed"),
-            review.get("remaining_fruit"),
-        )
-
-        self.concept_assessment = review
-        infra.call.review_json = review
-
-        await infra.trace.record(
-            ReviewCompleteEvent(
-                remaining_fruit=review.get("remaining_fruit"),
-                confidence=review.get("confidence_in_output"),
-            )
-        )
-
-        await self._persist_assessment_round(infra, review)
-
-        score = review.get("score")
-        screening = review.get("screening_passed")
-        summary = (
-            f"Assess concept complete ({self._phase}). "
-            f"score={score}, screening_passed={screening}."
-        )
-        await mark_call_completed(infra.call, infra.db, summary)
-
-    async def _persist_assessment_round(
-        self,
-        infra: CallInfra,
-        review: dict,
-    ) -> None:
-        concept = await infra.db.get_page(infra.question_id)
-        if not concept:
-            return
-        extra = dict(concept.extra or {})
-        rounds = list(extra.get("assessment_rounds", []))
-        rounds.append(
-            {
-                "phase": self._phase,
-                "call_id": infra.call.id,
-                "score": review.get("score"),
-                "remaining_fruit": review.get("remaining_fruit"),
-                "screening_passed": review.get("screening_passed"),
-                "what_worked": review.get("what_worked", ""),
-                "what_didnt": review.get("what_didnt", ""),
-                "could_existing_claims_be_restated": review.get(
-                    "could_existing_claims_be_restated"
-                ),
-                "did_it_reveal_new_considerations": review.get(
-                    "did_it_reveal_new_considerations"
-                ),
-                "did_it_resolve_existing_tensions": review.get(
-                    "did_it_resolve_existing_tensions"
-                ),
-                "suggested_refinements": review.get("suggested_refinements", ""),
-            }
-        )
-        extra["assessment_rounds"] = rounds
-        extra["score"] = review.get("score")
-        extra["screening_passed"] = review.get("screening_passed")
-        extra["stage"] = "validated" if self._phase == VALIDATION_PHASE else "screened"
-        await infra.db.update_page_extra(infra.question_id, extra)

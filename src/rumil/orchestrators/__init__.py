@@ -17,10 +17,10 @@ from rumil.orchestrators.common import (
     assess_question,
     compute_priority_score,
     create_root_question,
+    create_view_for_question,
     score_items_sequentially,
     find_considerations_until_done,
     ingest_until_done,
-    run_concept_session,
     web_research_question,
 )
 from rumil.orchestrators.experimental import ExperimentalOrchestrator
@@ -54,10 +54,10 @@ __all__ = [
     "TwoPhaseOrchestrator",
     "assess_question",
     "compute_priority_score",
+    "create_view_for_question",
     "create_root_question",
     "find_considerations_until_done",
     "score_items_sequentially",
     "ingest_until_done",
-    "run_concept_session",
     "web_research_question",
 ]

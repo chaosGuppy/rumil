@@ -27,14 +27,6 @@ class UpdateEpistemicPayload(BaseModel):
     robustness: int | None = Field(
         default=None, description="1-5 robustness score (resilience of view)"
     )
-    importance: int | None = Field(
-        default=None,
-        description=(
-            "0-4 importance level. 0 = core worldview finding (L0), "
-            "1 = important supporting detail, 2 = relevant detail, "
-            "3 = supplementary, 4 = deep supplementary."
-        ),
-    )
     reasoning: str = Field(description="Why this update is warranted")
 
 
@@ -94,7 +86,6 @@ async def execute(payload: UpdateEpistemicPayload, call: Call, db: DB) -> MoveRe
 
     old_credence = page.credence
     old_robustness = page.robustness
-    old_importance = page.importance
     parts: list[str] = []
 
     if payload.credence is not None and payload.robustness is not None:
@@ -115,15 +106,6 @@ async def execute(payload: UpdateEpistemicPayload, call: Call, db: DB) -> MoveRe
             payload.robustness,
         )
 
-    if payload.importance is not None:
-        await db.update_page_importance(page_id, payload.importance)
-        parts.append(f"L{payload.importance}")
-        log.info(
-            "Importance updated: page=%s L%d",
-            payload.page_id[:8],
-            payload.importance,
-        )
-
     if not parts:
         return MoveResult("No scores provided to update.")
 
@@ -132,8 +114,6 @@ async def execute(payload: UpdateEpistemicPayload, call: Call, db: DB) -> MoveRe
         cascade_changes["credence"] = (old_credence, payload.credence)
     if payload.robustness is not None and old_robustness is not None:
         cascade_changes["robustness"] = (old_robustness, payload.robustness)
-    if payload.importance is not None and old_importance is not None:
-        cascade_changes["importance"] = (old_importance, payload.importance)
     if cascade_changes:
         suggestions = await check_cascades(
             db,
@@ -151,11 +131,8 @@ MOVE = MoveDef(
     move_type=MoveType.UPDATE_EPISTEMIC,
     name="update_epistemic",
     description=(
-        "Update scores on an existing page: credence, robustness, and/or "
-        "importance. Provide credence+robustness together to update epistemic "
-        "scores. Provide importance (0-4) to change how central the page is: "
-        "0=core worldview, 1=important, 2=relevant, 3=supplementary, 4=deep "
-        "supplementary. Can update any combination."
+        "Update epistemic scores on an existing page. Provide "
+        "credence+robustness together with reasoning for the update."
     ),
     schema=UpdateEpistemicPayload,
     execute=execute,

@@ -12,7 +12,6 @@ from rumil.models import (
     CallType,
     Dispatch,
     DISPATCHABLE_CALL_TYPES,
-    PrioritizationDispatchPayload,
     ScopeOnlyDispatchPayload,
     ScoutDispatchPayload,
     FindConsiderationsMode,
@@ -27,7 +26,6 @@ from rumil.settings import get_settings, override_settings
 def test_dispatchable_types_include_expected():
     assert CallType.FIND_CONSIDERATIONS in DISPATCHABLE_CALL_TYPES
     assert CallType.ASSESS in DISPATCHABLE_CALL_TYPES
-    assert CallType.PRIORITIZATION in DISPATCHABLE_CALL_TYPES
 
 
 def test_ingest_not_dispatchable():
@@ -102,11 +100,6 @@ def test_assess_payload_has_no_extras():
     p = AssessDispatchPayload(question_id="abc")
     assert p.question_id == "abc"
     assert p.reason == ""
-
-
-def test_prioritization_payload_requires_budget():
-    p = PrioritizationDispatchPayload(question_id="abc", budget=10)
-    assert p.budget == 10
 
 
 def test_targeted_dispatch_defs_have_question_id():

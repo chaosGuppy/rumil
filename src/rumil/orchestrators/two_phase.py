@@ -350,7 +350,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             task, context_text, p_call, self.db,
             short_id_map=short_id_map,
             dispatch_types=list(get_available_calls_preset().phase1_scouts),
-            system_prompt_override=build_system_prompt('two_phase_p1'),
+            system_prompt=build_system_prompt('two_phase_p1'),
         )
 
         dispatches = list(result.dispatches)
@@ -588,7 +588,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             short_id_map=short_id_map,
             dispatch_types=list(get_available_calls_preset().phase2_dispatch),
             extra_dispatch_defs=extra_defs or None,
-            system_prompt_override=build_system_prompt('two_phase_p2'),
+            system_prompt=build_system_prompt('two_phase_p2'),
             dispatch_budget=dispatch_budget,
         )
 

@@ -221,9 +221,12 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         return result
 
     async def _needs_initial_prioritization(self, question_id: str) -> bool:
-        """Run initial_prioritization iff no judgement answers the question yet."""
+        """Run initial_prioritization iff no judgement or view answers the question yet."""
         judgements = await self.db.get_judgements_for_question(question_id)
-        return not judgements
+        if judgements:
+            return False
+        view = await self.db.get_view_for_question(question_id)
+        return view is None
 
     async def _cancel_initial_call(self) -> None:
         """Mark the eagerly-created initial_prioritization call as complete when it is skipped."""
@@ -240,11 +243,11 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         set_trace(trace)
         await trace.record(PhaseSkippedEvent(
             phase='initial_prioritization',
-            reason='Question already has a judgement.',
+            reason='Question already has a judgement or view.',
         ))
         await mark_call_completed(
             call, self.db,
-            'Initial prioritization skipped — question already has a judgement.',
+            'Initial prioritization skipped — question already has a judgement or view.',
         )
 
     async def _get_next_batch(

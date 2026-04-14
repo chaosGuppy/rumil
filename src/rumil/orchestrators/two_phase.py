@@ -19,7 +19,6 @@ from rumil.models import (
     Call,
     CallType,
     Dispatch,
-    LinkType,
     RecurseClaimDispatchPayload,
     RecurseDispatchPayload,
     Workspace,
@@ -221,13 +220,10 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             self._consumed += len(sequence)
         return result
 
-    async def _is_new_question(self, question_id: str) -> bool:
-        """A question is 'new' if it only has parent-pointer or inline-citation links."""
-        links = await self.db.get_links_to(question_id)
-        return all(
-            l.link_type in (LinkType.CHILD_QUESTION, LinkType.RELATED)
-            for l in links
-        )
+    async def _needs_initial_prioritization(self, question_id: str) -> bool:
+        """Run initial_prioritization iff no judgement answers the question yet."""
+        judgements = await self.db.get_judgements_for_question(question_id)
+        return not judgements
 
     async def _cancel_initial_call(self) -> None:
         """Mark the eagerly-created initial_prioritization call as complete when it is skipped."""
@@ -244,11 +240,11 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         set_trace(trace)
         await trace.record(PhaseSkippedEvent(
             phase='initial_prioritization',
-            reason='Question already has research.',
+            reason='Question already has a judgement.',
         ))
         await mark_call_completed(
             call, self.db,
-            'Initial prioritization skipped — question already has research.',
+            'Initial prioritization skipped — question already has a judgement.',
         )
 
     async def _get_next_batch(
@@ -261,7 +257,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
     ) -> PrioritizationResult:
         if self._invocation == 0:
             self._invocation += 1
-            if await self._is_new_question(question_id):
+            if await self._needs_initial_prioritization(question_id):
                 return await self._initial_prioritization(
                     question_id, budget, parent_call_id,
                     total_remaining=total_remaining,

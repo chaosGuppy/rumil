@@ -47,7 +47,6 @@ import json
 import sys
 import types
 import typing
-from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel
@@ -57,18 +56,17 @@ from rumil.models import Call, MoveType
 from rumil.moves.base import MoveResult
 from rumil.moves.registry import MOVES
 from rumil.tracing.trace_events import MoveTraceItem, MovesExecutedEvent, PageRef
+from rumil.tracing.tracer import CallTrace, TraceRecordError
 
 from ._format import print_event, print_trace, truncate
 from ._runctx import ensure_chat_envelope
 
-
-class TraceRecordError(RuntimeError):
-    """Raised when a move landed in the DB but its trace event could not be recorded.
-
-    The caller should treat this as a hard failure: the envelope call now looks
-    empty (or incomplete) in the frontend even though the mutation is live in
-    the workspace.
-    """
+__all__ = [
+    "ACCRETING_MOVES",
+    "TraceRecordError",
+    "apply_validated_move",
+    "main",
+]
 
 
 # Allowlist of moves that only *add* to the workspace. Keeps rumil-clean
@@ -279,13 +277,7 @@ async def _record_envelope_trace_event(
         page_refs=page_refs,
     )
     event = MovesExecutedEvent(moves=[trace_item])
-    dumped = event.model_dump()
-    dumped["ts"] = datetime.now(UTC).isoformat()
-    dumped["call_id"] = envelope_call_id
-    try:
-        await db.save_call_trace(envelope_call_id, [dumped])
-    except Exception as e:
-        raise TraceRecordError(str(e)) from e
+    await CallTrace(envelope_call_id, db).record_strict(event)
 
 
 async def apply_validated_move(

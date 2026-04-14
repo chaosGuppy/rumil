@@ -148,7 +148,9 @@ class LinkerWorkspaceUpdater(WorkspaceUpdater):
         proposed = [
             ProposedSubquestion(id=p.id, headline=p.headline) for p in proposed_pages
         ]
-        await infra.trace.record(LinkSubquestionsCompleteEvent(proposed=proposed))
+        await infra.trace.record_strict(
+            LinkSubquestionsCompleteEvent(proposed=proposed)
+        )
 
         return UpdateResult(
             created_page_ids=[],
@@ -241,7 +243,7 @@ class LinkerClosingReviewer(ClosingReviewer):
             "remaining_linkable_questions": remaining,
             "brief_reasoning": reasoning,
         }
-        await infra.trace.record(ReviewCompleteEvent(remaining_fruit=remaining))
+        await infra.trace.record_strict(ReviewCompleteEvent(remaining_fruit=remaining))
         await mark_call_completed(
             infra.call,
             infra.db,

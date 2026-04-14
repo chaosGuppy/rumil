@@ -91,7 +91,7 @@ class CreateViewCall(CallRunner):
             view.id[:8],
             self.infra.question_id[:8],
         )
-        await self.infra.trace.record(
+        await self.infra.trace.record_strict(
             ViewCreatedEvent(
                 view_id=view.id,
                 view_headline=view.headline,

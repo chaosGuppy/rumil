@@ -67,7 +67,7 @@ class StandardClosingReview(ClosingReviewer):
                 review.get("confidence_in_output", "?"),
             )
             await log_page_ratings(review, infra.db)
-            await infra.trace.record(
+            await infra.trace.record_strict(
                 ReviewCompleteEvent(
                     remaining_fruit=review.get("remaining_fruit"),
                     confidence=review.get("confidence_in_output"),
@@ -341,7 +341,7 @@ class SinglePhaseScoutReview(ClosingReviewer):
         )
 
         infra.call.review_json = review_data
-        await infra.trace.record(
+        await infra.trace.record_strict(
             ReviewCompleteEvent(
                 remaining_fruit=creation.last_fruit_score,
                 confidence=review_data.get("confidence_in_output"),
@@ -433,7 +433,7 @@ class ConceptAssessReview(ClosingReviewer):
         self.concept_assessment = review
         infra.call.review_json = review
 
-        await infra.trace.record(
+        await infra.trace.record_strict(
             ReviewCompleteEvent(
                 remaining_fruit=review.get("remaining_fruit"),
                 confidence=review.get("confidence_in_output"),

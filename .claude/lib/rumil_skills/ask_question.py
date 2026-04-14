@@ -47,7 +47,7 @@ from rumil.tracing.trace_events import (
     MovesExecutedEvent,
     PageRef,
 )
-from rumil.tracing.tracer import CallTrace
+from rumil.tracing.tracer import CallTrace, TraceRecordError
 
 from ._format import print_event, print_trace, truncate
 from ._runctx import ensure_chat_envelope, resolve_workspace
@@ -202,12 +202,18 @@ async def main() -> None:
         )
         event = MovesExecutedEvent(moves=[trace_item])
         try:
-            await CallTrace(envelope.id, db).record(event)
-        except Exception as e:
+            await CallTrace(envelope.id, db).record_strict(event)
+        except TraceRecordError as e:
             print(
-                f"  warning: failed to record trace event: {e}",
+                f"ERROR: question created in DB but trace event failed to record: {e}",
                 file=sys.stderr,
             )
+            print(
+                f"       the envelope may be incomplete in the frontend; "
+                f"inspect run {db.run_id}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
         print()
         print(f"question id: {page.id}")

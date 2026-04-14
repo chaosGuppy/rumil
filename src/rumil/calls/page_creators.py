@@ -1,4 +1,4 @@
-"""PageCreator implementations for all call types."""
+"""WorkspaceUpdater implementations for all call types."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from rumil.calls.common import (
     extract_loaded_page_ids,
     run_agent_loop,
 )
-from rumil.calls.stages import CallInfra, ContextResult, CreationResult, PageCreator
+from rumil.calls.stages import CallInfra, ContextResult, UpdateResult, WorkspaceUpdater
 from rumil.llm import (
     LLMExchangeMetadata,
     Tool,
@@ -43,7 +43,7 @@ from rumil.settings import get_settings
 log = logging.getLogger(__name__)
 
 
-class SimpleAgentLoop(PageCreator):
+class SimpleAgentLoop(WorkspaceUpdater):
     """Single-pass agent loop. Used by most call types."""
 
     def __init__(
@@ -60,11 +60,11 @@ class SimpleAgentLoop(PageCreator):
         self._max_rounds = max_rounds
         self._prompt_name = prompt_name
 
-    async def create_pages(
+    async def update_workspace(
         self,
         infra: CallInfra,
         context: ContextResult,
-    ) -> CreationResult:
+    ) -> UpdateResult:
         settings = get_settings()
         max_rounds = self._max_rounds
         if max_rounds is None:
@@ -95,10 +95,11 @@ class SimpleAgentLoop(PageCreator):
             db=infra.db,
             state=infra.state,
             max_rounds=max_rounds,
+            cache=True,
         )
 
         log.info(
-            "create_pages complete: type=%s, pages_created=%d, dispatches=%d, moves=%d",
+            "update_workspace complete: type=%s, pages_created=%d, dispatches=%d, moves=%d",
             self._call_type.value,
             len(infra.state.created_page_ids),
             len(infra.state.dispatches),
@@ -118,7 +119,7 @@ class SimpleAgentLoop(PageCreator):
             dict.fromkeys([*context.preloaded_ids, *context.phase1_ids, *phase2_loaded])
         )
 
-        return CreationResult(
+        return UpdateResult(
             created_page_ids=infra.state.created_page_ids,
             moves=infra.state.moves,
             all_loaded_ids=all_loaded_ids,
@@ -178,7 +179,7 @@ class _FruitCheck(BaseModel):
     )
 
 
-class MultiRoundLoop(PageCreator):
+class MultiRoundLoop(WorkspaceUpdater):
     """Multi-round loop with fruit checking and conversation resumption."""
 
     def __init__(
@@ -197,11 +198,11 @@ class MultiRoundLoop(PageCreator):
         self._call_type = call_type
         self._task_description = task_description
 
-    async def create_pages(
+    async def update_workspace(
         self,
         infra: CallInfra,
         context: ContextResult,
-    ) -> CreationResult:
+    ) -> UpdateResult:
         infra.state.context_page_ids = (
             set(context.working_page_ids)
             | set(context.preloaded_ids)
@@ -302,7 +303,7 @@ class MultiRoundLoop(PageCreator):
                 )
                 break
 
-        return CreationResult(
+        return UpdateResult(
             created_page_ids=infra.state.created_page_ids,
             moves=infra.state.moves,
             all_loaded_ids=[],
@@ -348,7 +349,7 @@ class MultiRoundLoop(PageCreator):
         return 5
 
 
-class WebResearchLoop(PageCreator):
+class WebResearchLoop(WorkspaceUpdater):
     """Multi-round web research loop with server tools."""
 
     def __init__(
@@ -360,11 +361,11 @@ class WebResearchLoop(PageCreator):
         self._available_moves = available_moves
         self.source_page_ids: dict[str, str] = {}
 
-    async def create_pages(
+    async def update_workspace(
         self,
         infra: CallInfra,
         context: ContextResult,
-    ) -> CreationResult:
+    ) -> UpdateResult:
         settings = get_settings()
         max_rounds = 2 if settings.is_smoke_test else 5
         client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
@@ -396,7 +397,7 @@ class WebResearchLoop(PageCreator):
         messages: list[dict] = [{"role": "user", "content": user_message}]
 
         log.debug(
-            "Web research create_pages starting: "
+            "Web research update_workspace starting: "
             "system_prompt=%d chars, user_message=%d chars, "
             "server_tools=%d, custom_tools=%d, all_tool_defs=%d",
             len(system_prompt),
@@ -463,12 +464,12 @@ class WebResearchLoop(PageCreator):
                 break
 
         log.info(
-            "Web research create_pages complete: %d pages created, %d sources",
+            "Web research update_workspace complete: %d pages created, %d sources",
             len(infra.state.created_page_ids),
             len(self.source_page_ids),
         )
 
-        return CreationResult(
+        return UpdateResult(
             created_page_ids=infra.state.created_page_ids,
             moves=infra.state.moves,
             all_loaded_ids=[],

@@ -643,6 +643,86 @@
         }
       }
     },
+    "/api/projects/{project_id}/stats": {
+      "get": {
+        "summary": "Get Project Stats",
+        "description": "Aggregate stats over all pages/links/calls in a project.\n\nv1 is baseline-only: rows with staged=true or is_superseded=true are excluded,\nand staged_run_id is not accepted.",
+        "operationId": "get_project_stats_api_projects__project_id__stats_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectStatsOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/pages/{page_id}/stats": {
+      "get": {
+        "summary": "Get Question Stats",
+        "description": "Aggregate stats over the 2-hop undirected neighborhood around a question.\n\nReturns 404 if the target page is not a question. v1 is baseline-only.",
+        "operationId": "get_question_stats_api_pages__page_id__stats_get",
+        "parameters": [
+          {
+            "name": "page_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Page Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionStatsOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{project_id}/questions": {
       "get": {
         "summary": "List Root Questions",
@@ -972,6 +1052,9 @@
                         "$ref": "#/components/schemas/LinkSubquestionsCompleteEventOut"
                       },
                       {
+                        "$ref": "#/components/schemas/ViewCreatedEventOut"
+                      },
+                      {
                         "$ref": "#/components/schemas/PhaseSkippedEventOut"
                       }
                     ],
@@ -1002,6 +1085,7 @@
                         "web_research_complete": "#/components/schemas/WebResearchCompleteEventOut",
                         "render_question_subgraph": "#/components/schemas/RenderQuestionSubgraphEventOut",
                         "link_subquestions_complete": "#/components/schemas/LinkSubquestionsCompleteEventOut",
+                        "view_created": "#/components/schemas/ViewCreatedEventOut",
                         "phase_skipped": "#/components/schemas/PhaseSkippedEventOut"
                       }
                     }
@@ -1788,6 +1872,9 @@
                   "$ref": "#/components/schemas/LinkSubquestionsCompleteEventOut"
                 },
                 {
+                  "$ref": "#/components/schemas/ViewCreatedEventOut"
+                },
+                {
                   "$ref": "#/components/schemas/PhaseSkippedEventOut"
                 }
               ],
@@ -1817,6 +1904,7 @@
                   "tool_call": "#/components/schemas/ToolCallEventOut",
                   "update_plan_created": "#/components/schemas/UpdatePlanCreatedEventOut",
                   "update_subgraph_computed": "#/components/schemas/UpdateSubgraphComputedEventOut",
+                  "view_created": "#/components/schemas/ViewCreatedEventOut",
                   "warning": "#/components/schemas/WarningEventOut",
                   "web_research_complete": "#/components/schemas/WebResearchCompleteEventOut"
                 }
@@ -1876,8 +1964,6 @@
           "reframe",
           "maintain",
           "summarize",
-          "scout_concepts",
-          "assess_concept",
           "scout_subquestions",
           "scout_estimates",
           "scout_hypotheses",
@@ -1898,7 +1984,8 @@
           "grounding_feedback",
           "feedback_update",
           "link_subquestions",
-          "ab_eval"
+          "ab_eval",
+          "create_view"
         ],
         "title": "CallType"
       },
@@ -1924,6 +2011,44 @@
           "call_type"
         ],
         "title": "CallTypeFruitScoreItem"
+      },
+      "CallsForQuestion": {
+        "properties": {
+          "question_id": {
+            "type": "string",
+            "title": "Question Id"
+          },
+          "headline": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Headline"
+          },
+          "by_type": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "By Type"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "question_id",
+          "headline",
+          "by_type",
+          "total"
+        ],
+        "title": "CallsForQuestion"
       },
       "ClaimReassessedEventOut": {
         "properties": {
@@ -2102,6 +2227,24 @@
           "scout_mode"
         ],
         "title": "ContextBuiltEventOut"
+      },
+      "DegreeCell": {
+        "properties": {
+          "avg_out": {
+            "type": "number",
+            "title": "Avg Out"
+          },
+          "avg_in": {
+            "type": "number",
+            "title": "Avg In"
+          }
+        },
+        "type": "object",
+        "required": [
+          "avg_out",
+          "avg_in"
+        ],
+        "title": "DegreeCell"
       },
       "DispatchExecutedEventOut": {
         "properties": {
@@ -2805,7 +2948,10 @@
           "variant",
           "summarizes",
           "cites",
-          "depends_on"
+          "depends_on",
+          "view_item",
+          "view_of",
+          "meta_for"
         ],
         "title": "LinkType"
       },
@@ -3003,6 +3149,31 @@
             ],
             "title": "Fruit Remaining"
           },
+          "sections": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sections"
+          },
+          "meta_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meta Type"
+          },
           "run_id": {
             "type": "string",
             "title": "Run Id",
@@ -3031,6 +3202,8 @@
           "extra",
           "abstract",
           "fruit_remaining",
+          "sections",
+          "meta_type",
           "run_id"
         ],
         "title": "Page"
@@ -3130,6 +3303,39 @@
             "$ref": "#/components/schemas/LinkRole",
             "default": "direct"
           },
+          "importance": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Importance"
+          },
+          "section": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Section"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -3151,6 +3357,9 @@
           "strength",
           "reasoning",
           "role",
+          "importance",
+          "section",
+          "position",
           "created_at",
           "run_id"
         ],
@@ -3181,9 +3390,11 @@
           "claim",
           "question",
           "judgement",
-          "concept",
           "wiki",
-          "summary"
+          "summary",
+          "view",
+          "view_item",
+          "view_meta"
         ],
         "title": "PageType"
       },
@@ -3285,6 +3496,80 @@
         ],
         "title": "Project"
       },
+      "ProjectStatsOut": {
+        "properties": {
+          "pages_total": {
+            "type": "integer",
+            "title": "Pages Total"
+          },
+          "pages_by_type": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Pages By Type"
+          },
+          "links_total": {
+            "type": "integer",
+            "title": "Links Total"
+          },
+          "links_by_type": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Links By Type"
+          },
+          "degree_matrix": {
+            "additionalProperties": {
+              "additionalProperties": {
+                "$ref": "#/components/schemas/DegreeCell"
+              },
+              "type": "object"
+            },
+            "type": "object",
+            "title": "Degree Matrix"
+          },
+          "robustness_histogram": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Robustness Histogram"
+          },
+          "credence_histogram": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Credence Histogram"
+          },
+          "calls_per_question": {
+            "items": {
+              "$ref": "#/components/schemas/CallsForQuestion"
+            },
+            "type": "array",
+            "title": "Calls Per Question"
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "pages_total",
+          "pages_by_type",
+          "links_total",
+          "links_by_type",
+          "degree_matrix",
+          "robustness_histogram",
+          "credence_histogram",
+          "calls_per_question",
+          "project_id"
+        ],
+        "title": "ProjectStatsOut"
+      },
       "ProposedSubquestion": {
         "properties": {
           "id": {
@@ -3302,6 +3587,89 @@
           "id"
         ],
         "title": "ProposedSubquestion"
+      },
+      "QuestionStatsOut": {
+        "properties": {
+          "pages_total": {
+            "type": "integer",
+            "title": "Pages Total"
+          },
+          "pages_by_type": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Pages By Type"
+          },
+          "links_total": {
+            "type": "integer",
+            "title": "Links Total"
+          },
+          "links_by_type": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Links By Type"
+          },
+          "degree_matrix": {
+            "additionalProperties": {
+              "additionalProperties": {
+                "$ref": "#/components/schemas/DegreeCell"
+              },
+              "type": "object"
+            },
+            "type": "object",
+            "title": "Degree Matrix"
+          },
+          "robustness_histogram": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Robustness Histogram"
+          },
+          "credence_histogram": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Credence Histogram"
+          },
+          "calls_per_question": {
+            "items": {
+              "$ref": "#/components/schemas/CallsForQuestion"
+            },
+            "type": "array",
+            "title": "Calls Per Question"
+          },
+          "question_id": {
+            "type": "string",
+            "title": "Question Id"
+          },
+          "subgraph_page_count": {
+            "type": "integer",
+            "title": "Subgraph Page Count"
+          },
+          "subgraph": {
+            "$ref": "#/components/schemas/Subgraph"
+          }
+        },
+        "type": "object",
+        "required": [
+          "pages_total",
+          "pages_by_type",
+          "links_total",
+          "links_by_type",
+          "degree_matrix",
+          "robustness_histogram",
+          "credence_histogram",
+          "calls_per_question",
+          "question_id",
+          "subgraph_page_count",
+          "subgraph"
+        ],
+        "title": "QuestionStatsOut"
       },
       "RealtimeConfigOut": {
         "properties": {
@@ -3877,6 +4245,88 @@
         ],
         "title": "SubagentStartedEventOut"
       },
+      "Subgraph": {
+        "properties": {
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/SubgraphNode"
+            },
+            "type": "array",
+            "title": "Nodes"
+          },
+          "edges": {
+            "items": {
+              "$ref": "#/components/schemas/SubgraphEdge"
+            },
+            "type": "array",
+            "title": "Edges"
+          }
+        },
+        "type": "object",
+        "required": [
+          "nodes",
+          "edges"
+        ],
+        "title": "Subgraph"
+      },
+      "SubgraphEdge": {
+        "properties": {
+          "from_page_id": {
+            "type": "string",
+            "title": "From Page Id"
+          },
+          "to_page_id": {
+            "type": "string",
+            "title": "To Page Id"
+          },
+          "link_type": {
+            "type": "string",
+            "title": "Link Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "from_page_id",
+          "to_page_id",
+          "link_type"
+        ],
+        "title": "SubgraphEdge"
+      },
+      "SubgraphNode": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "page_type": {
+            "type": "string",
+            "title": "Page Type"
+          },
+          "headline": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Headline"
+          },
+          "depth": {
+            "type": "integer",
+            "title": "Depth"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "page_type",
+          "headline",
+          "depth"
+        ],
+        "title": "SubgraphNode"
+      },
       "SubquestionScoreItem": {
         "properties": {
           "question_id": {
@@ -4100,6 +4550,60 @@
         ],
         "title": "ValidationError"
       },
+      "ViewCreatedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "view_created",
+            "title": "Event",
+            "default": "view_created"
+          },
+          "view_id": {
+            "type": "string",
+            "title": "View Id"
+          },
+          "view_headline": {
+            "type": "string",
+            "title": "View Headline",
+            "default": ""
+          },
+          "question_id": {
+            "type": "string",
+            "title": "Question Id",
+            "default": ""
+          },
+          "superseded_view_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Superseded View Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "view_id",
+          "view_headline",
+          "question_id",
+          "superseded_view_id"
+        ],
+        "title": "ViewCreatedEventOut"
+      },
       "WarningEventOut": {
         "properties": {
           "ts": {
@@ -4175,8 +4679,7 @@
         "type": "string",
         "enum": [
           "research",
-          "prioritization",
-          "concept_staging"
+          "prioritization"
         ],
         "title": "Workspace"
       }

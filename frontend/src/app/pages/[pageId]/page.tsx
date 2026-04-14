@@ -49,6 +49,18 @@ const TYPE_CONFIG: Record<
     bgHover: "var(--type-wiki-bg-hover)",
     border: "var(--type-wiki-border)",
   },
+  view: {
+    accent: "var(--type-view)",
+    bg: "var(--type-view-bg)",
+    bgHover: "var(--type-view-bg-hover)",
+    border: "var(--type-view-border)",
+  },
+  view_item: {
+    accent: "var(--type-view-item)",
+    bg: "var(--type-view-item-bg)",
+    bgHover: "var(--type-view-item-bg-hover)",
+    border: "var(--type-view-item-border)",
+  },
 };
 
 function stagedQs(stagedRunId?: string): string {
@@ -164,6 +176,92 @@ async function getPageRun(pageId: string): Promise<RunSummaryOut | null> {
   return res.json();
 }
 
+function titleCase(sec: string): string {
+  return sec
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function ViewItemsSection({
+  linksFrom,
+  sections,
+  stagedRunId,
+}: {
+  linksFrom: LinkedPageOut[];
+  sections: string[];
+  stagedRunId?: string;
+}) {
+  const viewItems = linksFrom.filter(
+    (lp) => lp.link.link_type === "view_item" && lp.page.page_type === "view_item"
+  );
+  if (viewItems.length === 0) return null;
+
+  const bySection = new Map<string, LinkedPageOut[]>();
+  for (const item of viewItems) {
+    const sec = item.link.section || "other";
+    const list = bySection.get(sec) ?? [];
+    list.push(item);
+    bySection.set(sec, list);
+  }
+  for (const list of bySection.values()) {
+    list.sort((a, b) => (a.link.position ?? 0) - (b.link.position ?? 0));
+  }
+
+  const orderedSections = sections.length > 0
+    ? sections.filter((s) => bySection.has(s))
+    : Array.from(bySection.keys());
+
+  return (
+    <div className="view-items-section">
+      {orderedSections.map((sec) => {
+        const items = bySection.get(sec) ?? [];
+        return (
+          <div key={sec} className="view-section">
+            <h3 className="view-section-heading">
+              {titleCase(sec)}
+            </h3>
+            <div className="view-items-list">
+              {items.map((lp) => {
+                const imp = lp.link.importance;
+                const cfg = TYPE_CONFIG.view_item;
+                return (
+                  <Link
+                    key={lp.page.id}
+                    href={`/pages/${lp.page.id}${stagedRunId ? `?staged_run_id=${stagedRunId}` : ""}`}
+                    className={`view-item-card${imp != null && imp >= 5 ? " view-item-important" : ""}`}
+                  >
+                    <div
+                      className="view-item-accent"
+                      style={{ background: cfg.accent }}
+                    />
+                    <div className="view-item-body">
+                      <div className="view-item-scores">
+                        {lp.page.credence != null && (
+                          <span className="view-item-score">
+                            C{lp.page.credence}/R{lp.page.robustness}
+                          </span>
+                        )}
+                        {imp != null && (
+                          <span className={`view-item-importance${imp >= 5 ? " importance-high" : imp >= 4 ? " importance-mid" : ""}`}>
+                            I{imp}
+                          </span>
+                        )}
+                      </div>
+                      <span className="view-item-headline">
+                        {lp.page.headline}
+                      </span>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function AssociationBoxes({
   page,
   linksFrom,
@@ -179,6 +277,15 @@ function AssociationBoxes({
   if (page.page_type === "question") {
     for (const lp of linksTo) {
       if (
+        lp.link.link_type === "view_of" &&
+        lp.page.page_type === "view" &&
+        !lp.page.is_superseded
+      ) {
+        items.push({ lp, label: "view" });
+      }
+    }
+    for (const lp of linksTo) {
+      if (
         lp.link.link_type === "answers" &&
         lp.page.page_type === "judgement" &&
         !lp.page.is_superseded
@@ -190,6 +297,15 @@ function AssociationBoxes({
     for (const lp of linksFrom) {
       if (
         lp.link.link_type === "answers" &&
+        lp.page.page_type === "question"
+      ) {
+        items.push({ lp, label: "question" });
+      }
+    }
+  } else if (page.page_type === "view") {
+    for (const lp of linksFrom) {
+      if (
+        lp.link.link_type === "view_of" &&
         lp.page.page_type === "question"
       ) {
         items.push({ lp, label: "question" });
@@ -330,6 +446,14 @@ export default async function PageDetailPage({
             ) : page.is_superseded ? (
               <span className="superseded-tag">superseded</span>
             ) : null}
+            {page.page_type === "question" && (
+              <Link
+                href={`/pages/${pageId}/stats${stagedRunId ? `?staged_run_id=${stagedRunId}` : ""}`}
+                className="page-stats-link"
+              >
+                Stats
+              </Link>
+            )}
           </div>
           <h1 className="page-summary">{page.headline}</h1>
           <AssociationBoxes page={page} linksFrom={links_from} linksTo={links_to} stagedRunId={stagedRunId} />
@@ -379,6 +503,14 @@ export default async function PageDetailPage({
             {processedContent}
           </Markdown>
         </div>
+
+        {page.page_type === "view" && (
+          <ViewItemsSection
+            linksFrom={links_from}
+            sections={page.sections ?? []}
+            stagedRunId={stagedRunId}
+          />
+        )}
 
         {page.credence != null && (
           <div className="page-meta-row">
@@ -482,6 +614,22 @@ const styles = `
     align-items: center;
     gap: 0.5rem;
     margin-bottom: 0.75rem;
+  }
+  .page-stats-link {
+    margin-left: auto;
+    font-family: var(--font-geist-mono), monospace;
+    font-size: 0.65rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-muted);
+    text-decoration: none;
+    border: 1px solid var(--color-border);
+    padding: 0.3rem 0.6rem;
+    transition: all 0.12s ease;
+  }
+  .page-stats-link:hover {
+    color: var(--color-foreground);
+    border-color: var(--color-accent);
   }
   .page-type-badge {
     font-size: 0.7rem;
@@ -1025,6 +1173,16 @@ const styles = `
     --type-wiki-bg: #f3f6f3;
     --type-wiki-bg-hover: #e9f0ea;
     --type-wiki-border: #a5c0a9;
+
+    --type-view: #7a5a8c;
+    --type-view-bg: #f6f3f8;
+    --type-view-bg-hover: #eee9f2;
+    --type-view-border: #b8a5c5;
+
+    --type-view-item: #8c6a9e;
+    --type-view-item-bg: #f7f4f9;
+    --type-view-item-bg-hover: #f0eaf4;
+    --type-view-item-border: #c0aece;
   }
 
   @media (prefers-color-scheme: dark) {
@@ -1069,6 +1227,16 @@ const styles = `
       --type-wiki-bg: #0b140d;
       --type-wiki-bg-hover: #111d14;
       --type-wiki-border: #1a2e1f;
+
+      --type-view: #a07ab8;
+      --type-view-bg: #140e18;
+      --type-view-bg-hover: #1c1424;
+      --type-view-border: #2e2038;
+
+      --type-view-item: #b08ac8;
+      --type-view-item-bg: #150f1a;
+      --type-view-item-bg-hover: #1e1526;
+      --type-view-item-border: #32243e;
     }
   }
 
@@ -1120,5 +1288,76 @@ const styles = `
   }
   .staged-banner-clear:hover {
     opacity: 1;
+  }
+
+  .view-items-section {
+    margin-top: 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+  .view-section-heading {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-muted);
+    margin: 0 0 0.5rem 0;
+    font-family: var(--font-geist-mono), monospace;
+  }
+  .view-items-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+  .view-item-card {
+    display: flex;
+    align-items: stretch;
+    border: 1px solid var(--type-view-item-border);
+    border-radius: 6px;
+    background: var(--type-view-item-bg);
+    text-decoration: none;
+    color: inherit;
+    transition: background 0.12s ease, border-color 0.12s ease;
+    overflow: hidden;
+  }
+  .view-item-card:hover {
+    background: var(--type-view-item-bg-hover);
+  }
+  .view-item-important {
+    border-color: var(--type-view-item);
+  }
+  .view-item-accent {
+    width: 3px;
+    flex-shrink: 0;
+  }
+  .view-item-body {
+    padding: 0.5rem 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    min-width: 0;
+  }
+  .view-item-scores {
+    display: flex;
+    gap: 0.5rem;
+    font-size: 0.65rem;
+    font-family: var(--font-geist-mono), monospace;
+    color: var(--color-muted);
+  }
+  .view-item-importance {
+    font-weight: 500;
+  }
+  .view-item-importance.importance-high {
+    color: var(--type-view);
+    font-weight: 700;
+  }
+  .view-item-importance.importance-mid {
+    color: var(--type-view-item);
+    font-weight: 600;
+  }
+  .view-item-headline {
+    font-size: 0.85rem;
+    line-height: 1.35;
   }
 `;

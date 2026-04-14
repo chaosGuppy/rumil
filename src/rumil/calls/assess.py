@@ -3,7 +3,12 @@
 from rumil.calls.closing_reviewers import StandardClosingReview
 from rumil.calls.context_builders import BigAssessContext, EmbeddingContext
 from rumil.calls.page_creators import SimpleAgentLoop
-from rumil.calls.stages import CallRunner, ClosingReviewer, ContextBuilder, PageCreator
+from rumil.calls.stages import (
+    CallRunner,
+    ClosingReviewer,
+    ContextBuilder,
+    WorkspaceUpdater,
+)
 from rumil.models import CallType
 
 
@@ -11,7 +16,7 @@ class AssessCall(CallRunner):
     """Assess a question: weigh considerations and produce a judgement."""
 
     context_builder_cls = EmbeddingContext
-    page_creator_cls = SimpleAgentLoop
+    workspace_updater_cls = SimpleAgentLoop
     closing_reviewer_cls = StandardClosingReview
     call_type = CallType.ASSESS
 
@@ -21,7 +26,7 @@ class AssessCall(CallRunner):
             require_judgement_for_questions=True,
         )
 
-    def _make_page_creator(self) -> PageCreator:
+    def _make_workspace_updater(self) -> WorkspaceUpdater:
         return SimpleAgentLoop(
             self.call_type,
             self.task_description(),
@@ -58,7 +63,7 @@ class BigAssessCall(AssessCall):
     def _make_context_builder(self) -> ContextBuilder:
         return BigAssessContext(self.call_type)
 
-    def _make_page_creator(self) -> PageCreator:
+    def _make_workspace_updater(self) -> WorkspaceUpdater:
         return SimpleAgentLoop(
             self.call_type,
             self.task_description(),

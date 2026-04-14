@@ -3,7 +3,12 @@
 from rumil.calls.closing_reviewers import StandardClosingReview
 from rumil.calls.context_builders import EmbeddingContext
 from rumil.calls.page_creators import MultiRoundLoop
-from rumil.calls.stages import CallRunner, ClosingReviewer, ContextBuilder, PageCreator
+from rumil.calls.stages import (
+    CallRunner,
+    ClosingReviewer,
+    ContextBuilder,
+    WorkspaceUpdater,
+)
 from rumil.models import CallType
 
 
@@ -11,14 +16,14 @@ class ScoutCRelevantEvidenceCall(CallRunner):
     """Identify evidence worth gathering that bears on important cruxes."""
 
     context_builder_cls = EmbeddingContext
-    page_creator_cls = MultiRoundLoop
+    workspace_updater_cls = MultiRoundLoop
     closing_reviewer_cls = StandardClosingReview
     call_type = CallType.SCOUT_C_RELEVANT_EVIDENCE
 
     def _make_context_builder(self) -> ContextBuilder:
         return EmbeddingContext(self.call_type)
 
-    def _make_page_creator(self) -> PageCreator:
+    def _make_workspace_updater(self) -> WorkspaceUpdater:
         return MultiRoundLoop(
             self._max_rounds,
             self._fruit_threshold,

@@ -13,7 +13,6 @@ from rumil.models import (
     CallType,
     Dispatch,
     FindConsiderationsMode,
-    PrioritizationDispatchPayload,
     RecurseClaimDispatchPayload,
     RecurseDispatchPayload,
     ScopeOnlyDispatchPayload,
@@ -178,15 +177,6 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
             "subquestion, so 2 total)."
         ),
         schema=AssessDispatchPayload,
-    ),
-    CallType.PRIORITIZATION: DispatchDef(
-        call_type=CallType.PRIORITIZATION,
-        name="dispatch_prioritization",
-        description=(
-            "Dispatch a sub-prioritization for a question. Delegates structured "
-            "investigation. Budget cost: exactly the budget you assign."
-        ),
-        schema=PrioritizationDispatchPayload,
     ),
     CallType.SCOUT_SUBQUESTIONS: DispatchDef(
         call_type=CallType.SCOUT_SUBQUESTIONS,

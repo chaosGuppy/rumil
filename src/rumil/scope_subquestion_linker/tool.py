@@ -7,10 +7,9 @@ from pydantic import BaseModel, Field, ValidationError
 
 from rumil.database import DB
 from rumil.llm import Tool
-from rumil.scope_subquestion_linker.subgraph import render_question_subgraph
 from rumil.settings import get_settings
-from rumil.tracing.trace_events import RenderQuestionSubgraphEvent
 from rumil.tracing.tracer import CallTrace
+from rumil.workspace_exploration import make_explore_subgraph_tool
 
 log = logging.getLogger(__name__)
 
@@ -34,52 +33,19 @@ class SubmitHolder:
     raw_inputs: list[dict] = field(default_factory=list)
 
 
-class _RenderSubgraphInput(BaseModel):
-    page_id: str = Field(
-        description="Short ID (first 8 chars) or full UUID of a question page",
-    )
-
-
-def make_render_subgraph_tool(db: DB, trace: CallTrace) -> Tool:
-    """Build the `render_question_subgraph` Tool, closing over *db* and *trace*."""
-
-    async def fn(args: dict) -> str:
-        payload = _RenderSubgraphInput.model_validate(args)
-        text = await render_question_subgraph(
-            payload.page_id,
-            db,
-            max_pages=get_settings().scope_subquestion_linker_subgraph_max_pages,
-        )
-
-        headline = ""
-        recorded_id = payload.page_id
-        resolved = await db.resolve_page_id(payload.page_id)
-        if resolved:
-            recorded_id = resolved
-            page = await db.get_page(resolved)
-            if page:
-                headline = page.headline
-
-        await trace.record(
-            RenderQuestionSubgraphEvent(
-                page_id=recorded_id,
-                page_headline=headline,
-                response=text,
-            )
-        )
-        return text
-
-    return Tool(
-        name="render_question_subgraph",
-        description=(
-            "Render a subgraph of the question graph rooted at the given question "
-            "page, returning headlines only. Walks deeper into sparser branches and "
-            "stops once a fixed page budget is reached; truncated branches are "
-            "marked with an overflow count. Use this to drill into any question "
-            "short ID you see in the seed subgraphs or in earlier tool results."
-        ),
-        input_schema=_RenderSubgraphInput.model_json_schema(),
-        fn=fn,
+def make_render_subgraph_tool(
+    db: DB,
+    trace: CallTrace,
+    *,
+    exclude_ids: set[str] | None = None,
+) -> Tool:
+    """Build the subgraph exploration tool for the linker agent."""
+    return make_explore_subgraph_tool(
+        db,
+        trace,
+        max_pages=get_settings().scope_subquestion_linker_subgraph_max_pages,
+        questions_only=True,
+        exclude_ids=exclude_ids,
     )
 
 

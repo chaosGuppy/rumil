@@ -7,6 +7,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from rumil.database import DB
+from rumil.settings import get_settings
 from rumil.llm import LLMExchangeMetadata, build_user_message, structured_call
 from rumil.models import (
     Call,
@@ -40,11 +41,7 @@ TASK = (
     "best answer or stance, and the main caveat. Must make sense with zero prior context.\n\n"
     "ABSTRACT (~200 words): Fully self-contained. Include the core conclusion, "
     "key supporting and opposing considerations, the status of child questions, and "
-    "critical uncertainties. Preserve epistemic qualifications.\n\n"
-    "Format your response exactly as:\n"
-    "CONTENT: <text>\n\n"
-    "HEADLINE: <text>\n\n"
-    "ABSTRACT: <text>"
+    "critical uncertainties. Preserve epistemic qualifications."
 )
 
 
@@ -296,7 +293,7 @@ async def summarize_question(
             abstract=data.abstract,
             credence=5,
             robustness=2,
-            provenance_model="claude-sonnet-4-6",
+            provenance_model=get_settings().model,
             provenance_call_type=CallType.SUMMARIZE.value,
             provenance_call_id=call.id,
         )

@@ -350,7 +350,7 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
             task, context_text, p_call, self.db,
             short_id_map=short_id_map,
             dispatch_types=list(get_available_calls_preset().claim_phase1_scouts),
-            system_prompt_override=build_system_prompt('claim_investigation_p1'),
+            system_prompt=build_system_prompt('claim_investigation_p1'),
         )
 
         dispatches = list(result.dispatches)
@@ -545,7 +545,7 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
             short_id_map=short_id_map,
             dispatch_types=list(get_available_calls_preset().claim_phase2_dispatch),
             extra_dispatch_defs=extra_defs or None,
-            system_prompt_override=build_system_prompt('claim_investigation_p2'),
+            system_prompt=build_system_prompt('claim_investigation_p2'),
             dispatch_budget=budget,
         )
 

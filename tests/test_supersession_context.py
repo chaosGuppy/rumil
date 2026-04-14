@@ -11,7 +11,6 @@ from rumil.models import (
     PageType,
     Workspace,
 )
-from rumil.page_graph import PageGraph
 
 
 def _claim(headline: str = "A claim", **overrides) -> Page:
@@ -187,32 +186,3 @@ async def test_format_page_include_superseding_false(tmp_db):
     assert "Full content of: Old claim" in text
 
 
-async def test_page_graph_resolve_single_hop():
-    old = _claim("Old")
-    new = _claim("New")
-    old_superseded = old.model_copy(update={
-        "is_superseded": True,
-        "superseded_by": new.id,
-    })
-    graph = PageGraph(pages=[new], links=[])
-    result = await graph.resolve_supersession_chain(old_superseded)
-    assert result is not None
-    assert result.id == new.id
-
-
-async def test_page_graph_returns_none_for_active_page():
-    active = _claim("Active")
-    graph = PageGraph(pages=[active], links=[])
-    result = await graph.resolve_supersession_chain(active)
-    assert result is None
-
-
-async def test_page_graph_returns_none_when_target_missing():
-    old = _claim("Old")
-    old_superseded = old.model_copy(update={
-        "is_superseded": True,
-        "superseded_by": "missing-id",
-    })
-    graph = PageGraph(pages=[], links=[])
-    result = await graph.resolve_supersession_chain(old_superseded)
-    assert result is None

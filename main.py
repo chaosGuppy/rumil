@@ -35,9 +35,8 @@ from rumil.models import (
     PageType,
     Workspace,
 )
-from rumil.orchestrators import Orchestrator, create_root_question, run_concept_session
+from rumil.orchestrators import Orchestrator, create_root_question
 from rumil.report import generate_report, save_report
-from rumil.scope_subquestion_linker import run_scope_subquestion_linker
 from rumil.settings import Settings, _settings_var, get_settings
 from rumil.sources import create_source_page, run_ingest_calls
 from rumil.summary import generate_summary, save_summary
@@ -190,40 +189,6 @@ async def cmd_ingest(
     print(f"\nIngest complete. {made} extraction call{'s' if made != 1 else ''} made.")
     print(f"Budget used: {used}/{total}")
     print("\nRun --map or --chat to explore the results.")
-
-
-async def cmd_link_subquestions(
-    question_id: str,
-    db: DB,
-    *,
-    max_rounds: int | None = None,
-) -> None:
-
-    resolved = await db.resolve_page_id(question_id)
-    if not resolved:
-        print(
-            f"Error: question '{question_id}' not found. "
-            "Run --list to see existing questions."
-        )
-        sys.exit(1)
-    question = await db.get_page(resolved)
-    if not question:
-        print(f"Error: question '{question_id}' not found.")
-        sys.exit(1)
-    if question.project_id and question.project_id != db.project_id:
-        db.project_id = question.project_id
-
-    frontend = get_settings().frontend_url.rstrip("/")
-    print(f"\nLinking subquestions for: {question.headline[:80]}")
-    print(f"Trace: {frontend}/traces/{db.run_id}\n")
-
-    call = await run_scope_subquestion_linker(question.id, db, max_rounds=max_rounds)
-    proposed = (call.review_json or {}).get("proposed_subquestion_ids", [])
-    print(f"\nProposed {len(proposed)} subquestion(s) (call {call.id[:8]}):")
-    for pid in proposed:
-        page = await db.get_page(pid)
-        headline = page.headline if page else "(unknown)"
-        print(f"  - `{pid[:8]}` -- {headline}")
 
 
 async def cmd_evaluate(question_id: str, db: DB, *, eval_type: str = "default") -> None:
@@ -907,27 +872,6 @@ async def cmd_continue(
     await _print_summary(db)
 
 
-async def cmd_concepts(question_id: str, db: DB) -> None:
-    question = await db.get_page(question_id)
-    if not question:
-        print(
-            f"Error: question '{question_id}' not found. Run --list to see existing questions."
-        )
-        sys.exit(1)
-    print(f"\nRunning concept session for: {question.headline[:80]}")
-    print(f"Question ID: {question_id}")
-    print("(Concept generation does not consume research budget)\n")
-    await run_concept_session(question_id, db)
-    registry = await db.get_concept_registry()
-    promoted = [p for p in registry if p.extra.get("promoted")]
-    print("\nConcept session complete.")
-    print(f"Registry: {len(registry)} total proposals, {len(promoted)} promoted.")
-    if promoted:
-        print("\nPromoted concepts:")
-        for p in promoted:
-            print(f"  {p.id[:8]}  {p.headline}")
-
-
 async def _print_summary(db: DB) -> None:
     total, used = await db.get_budget()
     print(f"\nPages written to: {PAGES_DIR}")
@@ -1009,27 +953,6 @@ async def async_main():
         help="Evaluate the judgement quality for a question",
     )
     parser.add_argument(
-        "--link-subquestions",
-        dest="link_subquestions_id",
-        metavar="QUESTION_ID",
-        help=(
-            "Run the subquestion-linker agent to find existing questions in the "
-            "workspace that should be linked as subquestions of the given scope "
-            "question. Returns proposed ids without creating links."
-        ),
-    )
-    parser.add_argument(
-        "--linker-max-rounds",
-        dest="linker_max_rounds",
-        type=int,
-        default=None,
-        metavar="N",
-        help=(
-            "Override the max exploration rounds for --link-subquestions "
-            "(default: scope_subquestion_linker_max_rounds setting)."
-        ),
-    )
-    parser.add_argument(
         "--eval-type",
         dest="eval_type",
         default="default",
@@ -1088,12 +1011,6 @@ async def async_main():
         dest="chat_first",
         action="store_true",
         help="Enter continuation chat before resuming investigation (use with --continue)",
-    )
-    parser.add_argument(
-        "--concepts",
-        dest="concepts_id",
-        metavar="QUESTION_ID",
-        help="Run a concept-generation session for a question",
     )
     parser.add_argument(
         "--add-question",
@@ -1169,6 +1086,17 @@ async def async_main():
         dest="available_calls",
         default=None,
         help="Available-calls preset name (default: 'default'). Controls which scout/dispatch types the two-phase orchestrator uses.",
+    )
+    parser.add_argument(
+        "--ingest-num-claims",
+        dest="ingest_num_claims",
+        type=int,
+        default=None,
+        help=(
+            "Target number of considerations to extract per ingest call "
+            "(default: 4). The prompt uses 'approximately', so the model "
+            "will still apply quality-over-quantity judgement."
+        ),
     )
     parser.add_argument(
         "--smoke-test",
@@ -1260,6 +1188,8 @@ async def async_main():
         get_settings().available_moves = args.available_moves
     if args.available_calls is not None:
         get_settings().available_calls = args.available_calls
+    if args.ingest_num_claims is not None:
+        get_settings().ingest_num_claims = args.ingest_num_claims
     if args.smoke_test:
         get_settings().rumil_smoke_test = "1"
     if args.prod_db:
@@ -1305,11 +1235,6 @@ async def async_main():
     elif args.evaluate_id:
         await cmd_evaluate(args.evaluate_id, db, eval_type=args.eval_type)
         return
-    elif args.link_subquestions_id:
-        await cmd_link_subquestions(
-            args.link_subquestions_id, db, max_rounds=args.linker_max_rounds
-        )
-        return
     elif args.ground_call_id:
         await cmd_ground(args.ground_call_id, db, from_stage=args.from_stage)
         return
@@ -1329,8 +1254,6 @@ async def async_main():
     elif args.show_evaluation_id:
         await cmd_show_evaluation(args.show_evaluation_id, db)
         return
-    elif args.concepts_id:
-        await cmd_concepts(args.concepts_id, db)
     elif args.scope_question:
         await cmd_scope(
             args.scope_question,

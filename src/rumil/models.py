@@ -28,9 +28,11 @@ class PageType(str, Enum):
     CLAIM = "claim"
     QUESTION = "question"
     JUDGEMENT = "judgement"
-    CONCEPT = "concept"
     WIKI = "wiki"
     SUMMARY = "summary"
+    VIEW = "view"
+    VIEW_ITEM = "view_item"
+    VIEW_META = "view_meta"
 
 
 class PageDetail(str, Enum):
@@ -47,7 +49,6 @@ class PageLayer(str, Enum):
 class Workspace(str, Enum):
     RESEARCH = "research"
     PRIORITIZATION = "prioritization"
-    CONCEPT_STAGING = "concept_staging"
 
 
 class CallType(str, Enum):
@@ -58,8 +59,6 @@ class CallType(str, Enum):
     REFRAME = "reframe"
     MAINTAIN = "maintain"
     SUMMARIZE = "summarize"
-    SCOUT_CONCEPTS = "scout_concepts"
-    ASSESS_CONCEPT = "assess_concept"
     SCOUT_SUBQUESTIONS = "scout_subquestions"
     SCOUT_ESTIMATES = "scout_estimates"
     SCOUT_HYPOTHESES = "scout_hypotheses"
@@ -81,13 +80,13 @@ class CallType(str, Enum):
     FEEDBACK_UPDATE = "feedback_update"
     LINK_SUBQUESTIONS = "link_subquestions"
     AB_EVAL = "ab_eval"
+    CREATE_VIEW = "create_view"
 
 
 # The subset of CallTypes that prioritization can dispatch.
 DISPATCHABLE_CALL_TYPES: set[CallType] = {
     CallType.FIND_CONSIDERATIONS,
     CallType.ASSESS,
-    CallType.PRIORITIZATION,
     CallType.SCOUT_SUBQUESTIONS,
     CallType.SCOUT_ESTIMATES,
     CallType.SCOUT_HYPOTHESES,
@@ -124,6 +123,9 @@ class LinkType(str, Enum):
     SUMMARIZES = "summarizes"  # summary page covers a question subtree
     CITES = "cites"  # claim cites a source
     DEPENDS_ON = "depends_on"  # claim/judgement -> claim/judgement: source page's conclusions rest on target being true/valid
+    VIEW_ITEM = "view_item"  # view -> view_item: item belongs to this view
+    VIEW_OF = "view_of"  # view -> question: this view covers this question
+    META_FOR = "meta_for"  # view_meta -> view_item or view: meta annotation
 
 
 class MoveType(str, Enum):
@@ -132,7 +134,6 @@ class MoveType(str, Enum):
     CREATE_SCOUT_QUESTION = "CREATE_SCOUT_QUESTION"
     CREATE_SUBQUESTION = "CREATE_SUBQUESTION"
     CREATE_JUDGEMENT = "CREATE_JUDGEMENT"
-    CREATE_CONCEPT = "CREATE_CONCEPT"
     CREATE_WIKI_PAGE = "CREATE_WIKI_PAGE"
     LINK_CONSIDERATION = "LINK_CONSIDERATION"
     LINK_CHILD_QUESTION = "LINK_CHILD_QUESTION"
@@ -143,15 +144,15 @@ class MoveType(str, Enum):
     LOAD_PAGE = "LOAD_PAGE"
     REMOVE_LINK = "REMOVE_LINK"
     CHANGE_LINK_ROLE = "CHANGE_LINK_ROLE"
-    PROPOSE_CONCEPT = "PROPOSE_CONCEPT"
-    PROMOTE_CONCEPT = "PROMOTE_CONCEPT"
     UPDATE_EPISTEMIC = "UPDATE_EPISTEMIC"
     LINK_DEPENDS_ON = "LINK_DEPENDS_ON"
+    CREATE_VIEW_ITEM = "CREATE_VIEW_ITEM"
+    PROPOSE_VIEW_ITEM = "PROPOSE_VIEW_ITEM"
 
 
 class CallStage(str, Enum):
     BUILD_CONTEXT = "build_context"
-    CREATE_PAGES = "create_pages"
+    UPDATE_WORKSPACE = "update_workspace"
     CLOSING_REVIEW = "closing_review"
 
 
@@ -216,10 +217,6 @@ class ScoutDispatchPayload(BaseDispatchPayload, _ScoutFields):
 
 
 class AssessDispatchPayload(BaseDispatchPayload):
-    pass
-
-
-class PrioritizationDispatchPayload(BaseDispatchPayload, PrioritizationFields):
     pass
 
 
@@ -302,6 +299,10 @@ class ScoutCStrengthenDispatchPayload(ScopeOnlyDispatchPayload, MultiRoundFields
     pass
 
 
+class CreateViewDispatchPayload(BaseDispatchPayload):
+    pass
+
+
 class WebResearchDispatchPayload(BaseDispatchPayload):
     pass
 
@@ -328,12 +329,8 @@ class InlineAssessDispatch(_DispatchBase):
     call_type: Literal["assess"] = "assess"
 
 
-class InlinePrioritizationDispatch(_DispatchBase, PrioritizationFields):
-    call_type: Literal["prioritization"] = "prioritization"
-
-
 InlineDispatch = Annotated[
-    InlineScoutDispatch | InlineAssessDispatch | InlinePrioritizationDispatch,
+    InlineScoutDispatch | InlineAssessDispatch,
     Discriminator("call_type"),
 ]
 
@@ -378,6 +375,8 @@ class Page(BaseModel):
     extra: dict = Field(default_factory=dict)
     abstract: str = ""
     fruit_remaining: int | None = None
+    sections: list[str] | None = None  # VIEW pages: ordered section names
+    meta_type: str | None = None  # VIEW_META pages: priority/annotation/proposal
     run_id: str = ""
 
     def is_active(self) -> bool:
@@ -394,6 +393,9 @@ class PageLink(BaseModel):
     strength: float = 2.5  # 0-5
     reasoning: str = ""
     role: LinkRole = LinkRole.DIRECT
+    importance: int | None = None  # VIEW_ITEM links: 1-5
+    section: str | None = None  # VIEW_ITEM links: section name
+    position: int | None = None  # VIEW_ITEM links: order within section
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     run_id: str = ""
 

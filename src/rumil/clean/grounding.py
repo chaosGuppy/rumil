@@ -410,6 +410,7 @@ async def _run_web_search_task(
                 server_tools,
                 metadata=meta,
                 db=db,
+                cache=True,
             )
             response = api_resp.message
 

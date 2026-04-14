@@ -5,7 +5,12 @@ from collections.abc import Sequence
 from rumil.calls.closing_reviewers import SinglePhaseScoutReview
 from rumil.calls.context_builders import EmbeddingContext
 from rumil.calls.page_creators import MultiRoundLoop
-from rumil.calls.stages import CallRunner, ClosingReviewer, ContextBuilder, PageCreator
+from rumil.calls.stages import (
+    CallRunner,
+    ClosingReviewer,
+    ContextBuilder,
+    WorkspaceUpdater,
+)
 from rumil.database import DB
 from rumil.models import Call, CallStage, CallType, FindConsiderationsMode
 
@@ -14,7 +19,7 @@ class FindConsiderationsCall(CallRunner):
     """Multi-round scout session with fruit checking."""
 
     context_builder_cls = EmbeddingContext
-    page_creator_cls = MultiRoundLoop
+    workspace_updater_cls = MultiRoundLoop
     closing_reviewer_cls = SinglePhaseScoutReview
     call_type = CallType.FIND_CONSIDERATIONS
 
@@ -46,14 +51,14 @@ class FindConsiderationsCall(CallRunner):
 
     @property
     def rounds_completed(self) -> int:
-        if self.creation_result is not None:
-            return self.creation_result.rounds_completed
+        if self.update_result is not None:
+            return self.update_result.rounds_completed
         return 0
 
     def _make_context_builder(self) -> ContextBuilder:
         return EmbeddingContext(self.call_type)
 
-    def _make_page_creator(self) -> PageCreator:
+    def _make_workspace_updater(self) -> WorkspaceUpdater:
         return MultiRoundLoop(
             self._max_rounds,
             self._fruit_threshold,

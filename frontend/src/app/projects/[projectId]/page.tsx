@@ -13,8 +13,8 @@ const PAGE_TYPES: PageType[] = [
   "question",
   "claim",
   "judgement",
+  "view",
   "source",
-  "concept",
   "wiki",
 ];
 
@@ -46,17 +46,23 @@ const TYPE_CONFIG: Record<
     bgHover: "var(--type-source-bg-hover)",
     border: "var(--type-source-border)",
   },
-  concept: {
-    accent: "var(--type-concept)",
-    bg: "var(--type-concept-bg)",
-    bgHover: "var(--type-concept-bg-hover)",
-    border: "var(--type-concept-border)",
-  },
   wiki: {
     accent: "var(--type-wiki)",
     bg: "var(--type-wiki-bg)",
     bgHover: "var(--type-wiki-bg-hover)",
     border: "var(--type-wiki-border)",
+  },
+  view: {
+    accent: "var(--type-view)",
+    bg: "var(--type-view-bg)",
+    bgHover: "var(--type-view-bg-hover)",
+    border: "var(--type-view-border)",
+  },
+  view_item: {
+    accent: "var(--type-view-item)",
+    bg: "var(--type-view-item-bg)",
+    bgHover: "var(--type-view-item-bg-hover)",
+    border: "var(--type-view-item-border)",
   },
 };
 
@@ -183,6 +189,11 @@ export default function PagesIndexPage() {
         .pages-header {
           margin-top: 1.5rem;
           margin-bottom: 2rem;
+          display: flex;
+          align-items: baseline;
+          justify-content: space-between;
+          gap: 1rem;
+          flex-wrap: wrap;
         }
         .pages-header h1 {
           font-size: 1.6rem;
@@ -194,6 +205,25 @@ export default function PagesIndexPage() {
           font-size: 0.85rem;
           color: var(--color-muted);
           font-family: var(--font-geist-mono), monospace;
+        }
+        .pages-header-nav {
+          display: flex;
+          gap: 0.5rem;
+          font-family: var(--font-geist-mono), monospace;
+          font-size: 0.7rem;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+        }
+        .pages-header-nav a {
+          color: var(--color-muted);
+          text-decoration: none;
+          border: 1px solid var(--color-border);
+          padding: 0.35rem 0.7rem;
+          transition: all 0.12s ease;
+        }
+        .pages-header-nav a:hover {
+          color: var(--color-foreground);
+          border-color: var(--color-accent);
         }
 
         .controls {
@@ -687,15 +717,20 @@ export default function PagesIndexPage() {
           --type-source-bg-hover: #ededef;
           --type-source-border: #c0c3c8;
 
-          --type-concept: #4a7f78;
-          --type-concept-bg: #f2f6f5;
-          --type-concept-bg-hover: #e8efed;
-          --type-concept-border: #a3bdb8;
-
           --type-wiki: #4e7f56;
           --type-wiki-bg: #f3f6f3;
           --type-wiki-bg-hover: #e9f0ea;
           --type-wiki-border: #a5c0a9;
+
+          --type-view: #7a5a8c;
+          --type-view-bg: #f6f3f8;
+          --type-view-bg-hover: #eee9f2;
+          --type-view-border: #b8a5c5;
+
+          --type-view-item: #8c6a9e;
+          --type-view-item-bg: #f7f4f9;
+          --type-view-item-bg-hover: #f0eaf4;
+          --type-view-item-border: #c0aece;
         }
 
         @media (prefers-color-scheme: dark) {
@@ -726,15 +761,20 @@ export default function PagesIndexPage() {
             --type-source-bg-hover: #171819;
             --type-source-border: #242628;
 
-            --type-concept: #6aaa9f;
-            --type-concept-bg: #0b1413;
-            --type-concept-bg-hover: #111d1b;
-            --type-concept-border: #1a2e2a;
-
             --type-wiki: #6fa877;
             --type-wiki-bg: #0b140d;
             --type-wiki-bg-hover: #111d14;
             --type-wiki-border: #1a2e1f;
+
+            --type-view: #a07ab8;
+            --type-view-bg: #140e18;
+            --type-view-bg-hover: #1c1424;
+            --type-view-border: #2e2038;
+
+            --type-view-item: #b08ac8;
+            --type-view-item-bg: #150f1a;
+            --type-view-item-bg-hover: #1e1526;
+            --type-view-item-border: #32243e;
           }
           .run-staged-badge {
             color: #6aaa9f;
@@ -774,8 +814,13 @@ export default function PagesIndexPage() {
       <WorkspaceIndicator projectId={projectId} projectName={projectName} />
 
       <div className="pages-header">
-        <h1>Pages</h1>
-        <div className="subtitle">{totalCount} total</div>
+        <div>
+          <h1>Pages</h1>
+          <div className="subtitle">{totalCount} total</div>
+        </div>
+        <div className="pages-header-nav">
+          <Link href={`/projects/${projectId}/stats`}>Stats</Link>
+        </div>
       </div>
 
       {runs.length > 0 && (

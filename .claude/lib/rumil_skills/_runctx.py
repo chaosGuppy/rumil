@@ -177,7 +177,7 @@ async def open_run(
     if extra_config:
         config.update(extra_config)
     await db.create_run(
-        name=f"[cc] {name}",
+        name=name,
         question_id=question_id,
         config=config,
     )

@@ -34,7 +34,6 @@ the broader CC conversation.
 - `runs.config.origin = "claude-code"`
 - `runs.config.skill = "rumil-dispatch"`
 - `calls.call_params.origin = "claude-code"`
-- `runs.name` is prefixed `[cc]`
 - `runs.config.git_head` records the code state the run used
 
 **Use when:** the user wants real research progress — more

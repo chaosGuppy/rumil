@@ -17,7 +17,7 @@ from rumil.calls.dispatches import (
 )
 from rumil.database import DB
 from rumil.available_moves import get_moves_for_call
-from rumil.llm import build_system_prompt, build_user_message
+from rumil.llm import build_user_message
 from rumil.models import Call, CallStatus, CallType, MoveType
 from rumil.moves.base import MoveState
 from rumil.moves.registry import MOVES
@@ -32,11 +32,11 @@ async def run_prioritization_call(
     call: Call,
     db: DB,
     *,
+    system_prompt: str,
     available_moves: list[MoveType] | None = None,
     short_id_map: dict[str, str] | None = None,
     dispatch_types: Sequence[CallType] | None = None,
     extra_dispatch_defs: Sequence[DispatchDef] | None = None,
-    system_prompt_override: str | None = None,
     dispatch_budget: int | None = None,
 ) -> RunCallResult:
     """Run a prioritization call with tool use (single LLM round).
@@ -55,9 +55,6 @@ async def run_prioritization_call(
         available_moves = list(get_moves_for_call(CallType.PRIORITIZATION))
 
     state = MoveState(call, db)
-    system_prompt = system_prompt_override or build_system_prompt(
-        CallType.PRIORITIZATION.value
-    )
 
     allowed_fc_modes = get_settings().allowed_find_considerations_modes
     state._dispatch_validators.append(make_mode_validator(allowed_fc_modes))

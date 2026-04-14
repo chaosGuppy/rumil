@@ -10,9 +10,6 @@ Usage:
     # Assess an existing question
     uv run python scripts/run_call.py assess --question-id <UUID>
 
-    # Prioritization on an existing question
-    uv run python scripts/run_call.py prioritize --question-id <UUID> --budget 5
-
     # Override find-considerations params
     uv run python scripts/run_call.py find-considerations "Why is water wet?" --mode concrete --max-rounds 3
 
@@ -71,7 +68,7 @@ _SCOUT_CALL_TYPES: dict[str, tuple[CallType, type[CallRunner]]] = {
 
 
 async def run_call(args: argparse.Namespace, db: DB, question_id: str) -> None:
-    """Execute a single call (find-considerations/assess/prioritize) against the given DB."""
+    """Execute a single call (find-considerations/assess/etc.) against the given DB."""
     settings = get_settings()
 
     call_type = args.call_type
@@ -287,7 +284,6 @@ def main() -> None:
         choices=[
             "find-considerations",
             "assess",
-            "prioritize",
             "robustify",
             "web-research",
             "link-subquestions",

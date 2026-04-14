@@ -10,7 +10,7 @@ For each paradigm case (aim for 1–3):
 
 1. **A claim** describing the case and why it is relevant. Explain what happened, what makes it a paradigm case for the question at hand, and what it reveals about the dynamics, mechanisms, or principles involved. Set credence and robustness to reflect how well-established the case is.
 
-2. **A subquestion** asking about the implications, limits, or details of the case — e.g. "What does [case] reveal about [mechanism in the parent question]?" or "How representative is [case] of the broader phenomenon?". Link it as a child of the parent question.
+2. **A subquestion** asking about the implications, limits, or details of the case — e.g. "What does [case] reveal about [mechanism in the parent question]?" or "How representative is [case] of the broader phenomenon?". Created via `create_question`, it is automatically linked as a child of the parent question.
 
 3. Optionally, **link related** pages if the case connects to existing claims or questions elsewhere in the workspace.
 

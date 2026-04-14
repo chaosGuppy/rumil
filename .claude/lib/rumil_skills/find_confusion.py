@@ -127,15 +127,29 @@ async def _fetch_recent_calls(db, limit: int) -> list[dict[str, Any]]:
     return list(getattr(rows, "data", None) or [])
 
 
-async def _fetch_exchanges(db, call_id: str) -> list[dict[str, Any]]:
+async def _fetch_exchanges_many(
+    db, call_ids: list[str]
+) -> dict[str, list[dict[str, Any]]]:
+    """Fetch all exchanges for the given call_ids in a single round trip.
+
+    Returns a dict keyed by call_id. Each value is exchanges ordered by
+    ``(round, created_at)`` to match the prior single-call fetch. call_ids
+    with no exchanges are absent from the result.
+    """
+    if not call_ids:
+        return {}
     rows = await db._execute(
         db.client.table("call_llm_exchanges")
         .select("*")
-        .eq("call_id", call_id)
-        .order("round")
-        .order("created_at")
+        .in_("call_id", list(set(call_ids)))
     )
-    return list(getattr(rows, "data", None) or [])
+    data = list(getattr(rows, "data", None) or [])
+    by_call: dict[str, list[dict[str, Any]]] = {}
+    for ex in data:
+        by_call.setdefault(ex["call_id"], []).append(ex)
+    for exs in by_call.values():
+        exs.sort(key=lambda ex: (ex.get("round") or 0, ex.get("created_at") or ""))
+    return by_call
 
 
 def _median(values: list[float]) -> float:
@@ -149,11 +163,25 @@ def _median(values: list[float]) -> float:
     return s[mid]
 
 
-async def _score_heuristics(db, calls: list[dict[str, Any]]) -> list[HeuristicResult]:
-    """Assign heuristic signals + scores to each call."""
+async def _score_heuristics(
+    db,
+    calls: list[dict[str, Any]],
+    exchanges_by_call: dict[str, list[dict[str, Any]]] | None = None,
+) -> list[HeuristicResult]:
+    """Assign heuristic signals + scores to each call.
+
+    If ``exchanges_by_call`` is provided, reuse it; otherwise batch-fetch
+    exchanges for all ``calls`` in a single round trip.
+    """
     costs = [c["cost_usd"] for c in calls if c.get("cost_usd") is not None]
     cost_median = _median(costs)
     results: list[HeuristicResult] = []
+
+    if exchanges_by_call is None:
+        scored_ids = [
+            c["id"] for c in calls if c.get("call_type") != "claude_code_direct"
+        ]
+        exchanges_by_call = await _fetch_exchanges_many(db, scored_ids)
 
     for c in calls:
         signals: list[HeuristicSignal] = []
@@ -219,8 +247,8 @@ async def _score_heuristics(db, calls: list[dict[str, Any]]) -> list[HeuristicRe
                 )
             )
 
-        # Soft: exchange-level signals (requires a second query per call)
-        exchanges = await _fetch_exchanges(db, c["id"])
+        # Soft: exchange-level signals (fetched once in a single batched query).
+        exchanges = exchanges_by_call.get(c["id"], [])
         exchange_errors = [ex for ex in exchanges if ex.get("error")]
         if exchange_errors:
             signals.append(
@@ -331,13 +359,12 @@ def _format_trace_for_llm(
 
 
 async def _deep_scan_one(
-    db,
     call_row: dict[str, Any],
+    exchanges: list[dict[str, Any]],
     *,
     system_prompt: str,
     model: str,
 ) -> ConfusionVerdict | None:
-    exchanges = await _fetch_exchanges(db, call_row["id"])
     user_message = _format_trace_for_llm(call_row, exchanges)
     try:
         result = await meta_structured_call(
@@ -438,7 +465,11 @@ async def main() -> None:
         calls = await _fetch_recent_calls(db, args.limit)
         print(f"workspace: {ws}")
         print(f"scanned:   {len(calls)} recent calls")
-        heuristic = await _score_heuristics(db, calls)
+        scorable_ids = [
+            c["id"] for c in calls if c.get("call_type") != "claude_code_direct"
+        ]
+        exchanges_by_call = await _fetch_exchanges_many(db, scorable_ids)
+        heuristic = await _score_heuristics(db, calls, exchanges_by_call)
         print(f"flagged:   {len(heuristic)} by heuristics")
         print()
 
@@ -498,7 +529,10 @@ async def main() -> None:
             if not call_row:
                 continue
             verdict = await _deep_scan_one(
-                db, call_row, system_prompt=system_prompt, model=model
+                call_row,
+                exchanges_by_call.get(cid, []),
+                system_prompt=system_prompt,
+                model=model,
             )
             if verdict is None:
                 continue

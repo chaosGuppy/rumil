@@ -69,6 +69,8 @@ ACCRETING_MOVES: frozenset[MoveType] = frozenset(
         MoveType.CREATE_JUDGEMENT,
         MoveType.CREATE_CONCEPT,
         MoveType.CREATE_WIKI_PAGE,
+        MoveType.CREATE_VIEW_ITEM,
+        MoveType.PROPOSE_VIEW_ITEM,
         MoveType.LINK_CONSIDERATION,
         MoveType.LINK_CHILD_QUESTION,
         MoveType.LINK_RELATED,

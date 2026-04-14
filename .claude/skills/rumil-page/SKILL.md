@@ -1,6 +1,6 @@
 ---
 name: rumil-page
-description: Inspect a single rumil page by short ID — full content, provenance (which call created it), epistemic scores, superseded state, and all incoming/outgoing links with target headlines resolved. Use whenever you see a non-question page's short ID (a claim, judgement, concept, wiki page, source) in a trace, punch list, or conversation and want to read its actual content and how it connects. Complements rumil-show which is question-specific.
+description: Inspect a single rumil page by short ID — full content, provenance (which call created it), epistemic scores, superseded state, and all incoming/outgoing links with target headlines resolved. Use whenever you see a non-question page's short ID (a claim, judgement, concept, view, view_item, view_meta, wiki page, source) in a trace, punch list, or conversation and want to read its actual content and how it connects. Complements rumil-show which is question-specific.
 allowed-tools: Bash
 argument-hint: "<page_id> [--no-links] [--content-limit N]"
 ---
@@ -25,9 +25,9 @@ know what it actually says, not just the headline.
 
 Use `rumil-show` for questions (it gives a subtree + embedding
 neighbors + recent calls). Use `rumil-page` for everything else —
-claims, judgements, concepts, wiki pages, sources, summaries. Either
-one works on a question ID too; `rumil-show` just has more
-question-specific surface.
+claims, judgements, concepts, views, view_items, view_meta, wiki
+pages, sources, summaries. Either one works on a question ID too;
+`rumil-show` just has more question-specific surface.
 
 ```!
 PYTHONPATH=.claude/lib uv run python -m rumil_skills.show_page $ARGUMENTS

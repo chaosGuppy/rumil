@@ -8,8 +8,8 @@ user-invocable: false
 
 Rumil is an LLM-powered research workspace in this repo. Users pose
 questions; rumil investigates them by dispatching structured calls that
-produce pages (claims, questions, judgements, concepts) linked into a
-research graph. See `CLAUDE.md` for the architecture.
+produce pages (claims, questions, judgements, concepts, views) linked
+into a research graph. See `CLAUDE.md` for the architecture.
 
 This skill is background knowledge. It loads whenever the user is doing
 rumil-related work in Claude Code so you don't need to rediscover these
@@ -64,6 +64,29 @@ A future reviewer looking at a claim needs to know whether it came from
 a careful rumil assess call or from a Claude Code conversation where
 the context might have been sprawling. The CallType + call_params tags
 make this unambiguous. Respect the split.
+
+## View pages
+
+A `view` page is a curated, sectioned summary of a question's current
+understanding — produced by the `create_view` call and updated as
+research progresses. Two related page types and three link types show
+up alongside:
+
+- `view_item` — an atomic claim/observation inside a View, scored with
+  credence/robustness like any page.
+- `view_meta` — priority/annotation/proposal notes about a View or a
+  specific view_item. Not epistemically scored; carries a `meta_type`.
+- `VIEW_ITEM` link (view → view_item) — carries `importance` (1-5),
+  `section`, and `position`. Importance lives on the link because an
+  item's role can differ across Views.
+- `VIEW_OF` link (view → question) — this view covers that question.
+- `META_FOR` link (view_meta → view_item or view) — meta annotation.
+
+When these page types or link types appear in trace output, subtrees,
+or punch lists, read them as "the question's distilled view," not as
+ordinary judgements. A question with a View is meant to be understood
+through the View first; dig into the considerations only when the View
+is silent or you need to verify it.
 
 ## The rumil-* skill surface
 

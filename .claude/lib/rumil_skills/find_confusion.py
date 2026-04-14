@@ -44,6 +44,7 @@ from ._format import short, truncate
 from ._runctx import make_db
 from .llm_helpers import (
     DEFAULT_META_MODEL,
+    resolved_meta_model,
     load_prompt,
     meta_structured_call,
 )
@@ -487,7 +488,7 @@ async def main() -> None:
 
         print(f"=== deep scanning {len(candidate_ids)} call(s) ===")
         system_prompt = load_prompt("confusion_scan_system.md")
-        model = args.model or DEFAULT_META_MODEL
+        model = resolved_meta_model(args.model)
 
         # Keep a by-id map for quick re-lookup
         calls_by_id = {c["id"]: c for c in calls}

@@ -4,13 +4,46 @@ import uuid
 
 import pytest
 
+from rumil.calls.scout_analogies import ScoutAnalogiesCall
+from rumil.calls.scout_c_cruxes import ScoutCCruxesCall
+from rumil.calls.scout_c_how_false import ScoutCHowFalseCall
+from rumil.calls.scout_c_how_true import ScoutCHowTrueCall
+from rumil.calls.scout_c_relevant_evidence import ScoutCRelevantEvidenceCall
+from rumil.calls.scout_c_robustify import ScoutCRobustifyCall
+from rumil.calls.scout_c_strengthen import ScoutCStrengthenCall
+from rumil.calls.scout_c_stress_test_cases import ScoutCStressTestCasesCall
+from rumil.calls.scout_deep_questions import ScoutDeepQuestionsCall
+from rumil.calls.scout_estimates import ScoutEstimatesCall
+from rumil.calls.scout_factchecks import ScoutFactchecksCall
+from rumil.calls.scout_hypotheses import ScoutHypothesesCall
+from rumil.calls.scout_paradigm_cases import ScoutParadigmCasesCall
+from rumil.calls.scout_subquestions import ScoutSubquestionsCall
+from rumil.calls.scout_web_questions import ScoutWebQuestionsCall
 from rumil.database import DB
 from rumil.models import (
     AssessDispatchPayload,
+    BaseDispatchPayload,
     CallType,
+    CreateViewDispatchPayload,
     Dispatch,
     FindConsiderationsMode,
+    ScoutAnalogiesDispatchPayload,
+    ScoutCCruxesDispatchPayload,
+    ScoutCHowFalseDispatchPayload,
+    ScoutCHowTrueDispatchPayload,
+    ScoutCRelevantEvidenceDispatchPayload,
+    ScoutCRobustifyDispatchPayload,
+    ScoutCStrengthenDispatchPayload,
+    ScoutCStressTestCasesDispatchPayload,
+    ScoutDeepQuestionsDispatchPayload,
     ScoutDispatchPayload,
+    ScoutEstimatesDispatchPayload,
+    ScoutFactchecksDispatchPayload,
+    ScoutHypothesesDispatchPayload,
+    ScoutParadigmCasesDispatchPayload,
+    ScoutSubquestionsDispatchPayload,
+    ScoutWebQuestionsDispatchPayload,
+    WebResearchDispatchPayload,
 )
 from rumil.orchestrators import (
     BaseOrchestrator,
@@ -280,3 +313,446 @@ async def test_concurrent_dispatch_failure_recorded_in_trace(
     error_events = [e for e in trace_json if e.get("event") == "error"]
     assert len(error_events) >= 1
     assert "Simulated connection failure" in error_events[0]["message"]
+
+
+# ---------------------------------------------------------------------------
+# Behavioral unit tests for _execute_dispatch.
+#
+# These tests pin the current dispatch routing: for each payload type, which
+# underlying helper/call class is invoked, and which payload fields are
+# forwarded. They are written against the pre-refactor isinstance chain in
+# orchestrators/base.py so the refactor to a registry can be proved
+# behavior-preserving. Tests mock the call-side helpers; no real LLM work
+# happens. A real DB is used so resolve_page_id and page_label do not need
+# to be mocked.
+# ---------------------------------------------------------------------------
+
+
+SCOUT_FAMILY_CASES: list[tuple[type, CallType, type]] = [
+    (
+        ScoutSubquestionsDispatchPayload,
+        CallType.SCOUT_SUBQUESTIONS,
+        ScoutSubquestionsCall,
+    ),
+    (ScoutEstimatesDispatchPayload, CallType.SCOUT_ESTIMATES, ScoutEstimatesCall),
+    (ScoutHypothesesDispatchPayload, CallType.SCOUT_HYPOTHESES, ScoutHypothesesCall),
+    (ScoutAnalogiesDispatchPayload, CallType.SCOUT_ANALOGIES, ScoutAnalogiesCall),
+    (
+        ScoutParadigmCasesDispatchPayload,
+        CallType.SCOUT_PARADIGM_CASES,
+        ScoutParadigmCasesCall,
+    ),
+    (ScoutFactchecksDispatchPayload, CallType.SCOUT_FACTCHECKS, ScoutFactchecksCall),
+    (
+        ScoutWebQuestionsDispatchPayload,
+        CallType.SCOUT_WEB_QUESTIONS,
+        ScoutWebQuestionsCall,
+    ),
+    (
+        ScoutDeepQuestionsDispatchPayload,
+        CallType.SCOUT_DEEP_QUESTIONS,
+        ScoutDeepQuestionsCall,
+    ),
+    (ScoutCHowTrueDispatchPayload, CallType.SCOUT_C_HOW_TRUE, ScoutCHowTrueCall),
+    (ScoutCHowFalseDispatchPayload, CallType.SCOUT_C_HOW_FALSE, ScoutCHowFalseCall),
+    (ScoutCCruxesDispatchPayload, CallType.SCOUT_C_CRUXES, ScoutCCruxesCall),
+    (
+        ScoutCRelevantEvidenceDispatchPayload,
+        CallType.SCOUT_C_RELEVANT_EVIDENCE,
+        ScoutCRelevantEvidenceCall,
+    ),
+    (
+        ScoutCStressTestCasesDispatchPayload,
+        CallType.SCOUT_C_STRESS_TEST_CASES,
+        ScoutCStressTestCasesCall,
+    ),
+    (ScoutCRobustifyDispatchPayload, CallType.SCOUT_C_ROBUSTIFY, ScoutCRobustifyCall),
+    (
+        ScoutCStrengthenDispatchPayload,
+        CallType.SCOUT_C_STRENGTHEN,
+        ScoutCStrengthenCall,
+    ),
+]
+
+
+@pytest.fixture
+def mocked_helpers(mocker):
+    """Patch every helper that _execute_dispatch may delegate to.
+
+    Patches are applied at the handler namespace (dispatch_handlers) because
+    that is where the handlers import these names from. Patching at the
+    import site (not the definition site) avoids leaking mocks into unrelated
+    callers of the same helpers.
+    """
+    return {
+        "find_considerations": mocker.patch(
+            "rumil.orchestrators.dispatch_handlers.find_considerations_until_done",
+            return_value=(0, ["child-fc-id"]),
+        ),
+        "assess": mocker.patch(
+            "rumil.orchestrators.dispatch_handlers.assess_question",
+            return_value="child-assess-id",
+        ),
+        "web_research": mocker.patch(
+            "rumil.orchestrators.dispatch_handlers.web_research_question",
+            return_value="child-web-id",
+        ),
+        "create_view": mocker.patch(
+            "rumil.orchestrators.dispatch_handlers.create_view_for_question",
+            return_value="child-view-id",
+        ),
+        "simple": mocker.patch.object(
+            BaseOrchestrator,
+            "_run_simple_call_dispatch",
+            return_value="child-simple-id",
+        ),
+    }
+
+
+async def _make_orch(db) -> "ScriptedOrchestrator":
+    orch = ScriptedOrchestrator(db, batches=[])
+    await orch._setup()
+    return orch
+
+
+async def test_execute_dispatch_find_considerations_forwards_fields(
+    tmp_db,
+    question_page,
+    mocked_helpers,
+):
+    orch = await _make_orch(tmp_db)
+    dispatch = Dispatch(
+        call_type=CallType.FIND_CONSIDERATIONS,
+        payload=ScoutDispatchPayload(
+            question_id=question_page.id,
+            reason="test-reason",
+            context_page_ids=["ctx-1"],
+            mode=FindConsiderationsMode.CONCRETE,
+            max_rounds=3,
+            fruit_threshold=2,
+        ),
+    )
+
+    resolved, child_id = await orch._execute_dispatch(
+        dispatch,
+        question_page.id,
+        parent_call_id="parent-1",
+        force=True,
+        call_id="pre-1",
+        sequence_id="seq-1",
+        sequence_position=4,
+    )
+
+    assert resolved == question_page.id
+    assert child_id == "child-fc-id"
+    mocked_helpers["find_considerations"].assert_called_once()
+    kwargs = mocked_helpers["find_considerations"].call_args.kwargs
+    assert mocked_helpers["find_considerations"].call_args.args[0] == question_page.id
+    assert kwargs["max_rounds"] == 3
+    assert kwargs["fruit_threshold"] == 2
+    assert kwargs["mode"] == FindConsiderationsMode.CONCRETE
+    assert kwargs["parent_call_id"] == "parent-1"
+    assert kwargs["context_page_ids"] == ["ctx-1"]
+    assert kwargs["force"] is True
+    assert kwargs["call_id"] == "pre-1"
+    assert kwargs["sequence_id"] == "seq-1"
+    assert kwargs["sequence_position"] == 4
+    mocked_helpers["assess"].assert_not_called()
+    mocked_helpers["create_view"].assert_not_called()
+    mocked_helpers["simple"].assert_not_called()
+
+
+async def test_execute_dispatch_find_considerations_returns_none_when_no_child_ids(
+    tmp_db,
+    question_page,
+    mocker,
+):
+    """When find_considerations_until_done returns an empty child list,
+    _execute_dispatch should return None as the child_call_id."""
+    mocker.patch(
+        "rumil.orchestrators.dispatch_handlers.find_considerations_until_done",
+        return_value=(0, []),
+    )
+    mocker.patch(
+        "rumil.orchestrators.dispatch_handlers.assess_question",
+        return_value="not-this",
+    )
+
+    orch = await _make_orch(tmp_db)
+    dispatch = Dispatch(
+        call_type=CallType.FIND_CONSIDERATIONS,
+        payload=ScoutDispatchPayload(
+            question_id=question_page.id,
+            mode=FindConsiderationsMode.ALTERNATE,
+            reason="no-children",
+        ),
+    )
+
+    resolved, child_id = await orch._execute_dispatch(
+        dispatch,
+        question_page.id,
+        parent_call_id=None,
+    )
+
+    assert resolved == question_page.id
+    assert child_id is None
+
+
+async def test_execute_dispatch_assess_without_view_calls_assess_question(
+    tmp_db,
+    question_page,
+    mocked_helpers,
+    mocker,
+):
+    mocker.patch.object(DB, "get_view_for_question", return_value=None)
+
+    orch = await _make_orch(tmp_db)
+    dispatch = Dispatch(
+        call_type=CallType.ASSESS,
+        payload=AssessDispatchPayload(
+            question_id=question_page.id,
+            reason="assess-reason",
+            context_page_ids=["cpi"],
+        ),
+    )
+
+    resolved, child_id = await orch._execute_dispatch(
+        dispatch,
+        question_page.id,
+        parent_call_id="parent-2",
+        force=False,
+        call_id="pre-2",
+        sequence_id="seq-2",
+        sequence_position=1,
+    )
+
+    assert resolved == question_page.id
+    assert child_id == "child-assess-id"
+    mocked_helpers["assess"].assert_called_once()
+    kwargs = mocked_helpers["assess"].call_args.kwargs
+    assert mocked_helpers["assess"].call_args.args[0] == question_page.id
+    assert kwargs["parent_call_id"] == "parent-2"
+    assert kwargs["context_page_ids"] == ["cpi"]
+    assert kwargs["force"] is False
+    assert kwargs["call_id"] == "pre-2"
+    assert kwargs["sequence_id"] == "seq-2"
+    assert kwargs["sequence_position"] == 1
+    mocked_helpers["create_view"].assert_not_called()
+    mocked_helpers["simple"].assert_not_called()
+
+
+async def test_execute_dispatch_assess_with_existing_view_redirects_to_create_view(
+    tmp_db,
+    question_page,
+    mocked_helpers,
+    mocker,
+):
+    """When the target question already has a view, assess should redirect
+    to create_view_for_question (iterative view update) instead of assess_question."""
+    mocker.patch.object(
+        DB,
+        "get_view_for_question",
+        return_value={"id": "some-view-id"},
+    )
+
+    orch = await _make_orch(tmp_db)
+    dispatch = Dispatch(
+        call_type=CallType.ASSESS,
+        payload=AssessDispatchPayload(
+            question_id=question_page.id,
+            reason="redirect-reason",
+            context_page_ids=["ctx-a", "ctx-b"],
+        ),
+    )
+
+    resolved, child_id = await orch._execute_dispatch(
+        dispatch,
+        question_page.id,
+        parent_call_id="parent-3",
+        force=True,
+        call_id="pre-3",
+    )
+
+    assert resolved == question_page.id
+    assert child_id == "child-view-id"
+    mocked_helpers["create_view"].assert_called_once()
+    kwargs = mocked_helpers["create_view"].call_args.kwargs
+    assert mocked_helpers["create_view"].call_args.args[0] == question_page.id
+    assert kwargs["parent_call_id"] == "parent-3"
+    assert kwargs["context_page_ids"] == ["ctx-a", "ctx-b"]
+    assert kwargs["force"] is True
+    assert kwargs["call_id"] == "pre-3"
+    mocked_helpers["assess"].assert_not_called()
+    mocked_helpers["simple"].assert_not_called()
+
+
+async def test_execute_dispatch_create_view_calls_create_view(
+    tmp_db,
+    question_page,
+    mocked_helpers,
+    mocker,
+):
+    # Ensure existing-view check doesn't short-circuit the assess path.
+    # (CreateViewDispatchPayload doesn't go through the assess branch, but
+    # guard anyway so the test is order-independent.)
+    mocker.patch.object(DB, "get_view_for_question", return_value=None)
+
+    orch = await _make_orch(tmp_db)
+    dispatch = Dispatch(
+        call_type=CallType.CREATE_VIEW,
+        payload=CreateViewDispatchPayload(
+            question_id=question_page.id,
+            reason="view-reason",
+            context_page_ids=["cv-1"],
+        ),
+    )
+
+    resolved, child_id = await orch._execute_dispatch(
+        dispatch,
+        question_page.id,
+        parent_call_id="parent-4",
+        force=False,
+        call_id="pre-4",
+        sequence_id="seq-4",
+        sequence_position=0,
+    )
+
+    assert resolved == question_page.id
+    assert child_id == "child-view-id"
+    mocked_helpers["create_view"].assert_called_once()
+    kwargs = mocked_helpers["create_view"].call_args.kwargs
+    assert mocked_helpers["create_view"].call_args.args[0] == question_page.id
+    assert kwargs["parent_call_id"] == "parent-4"
+    assert kwargs["context_page_ids"] == ["cv-1"]
+    assert kwargs["force"] is False
+    assert kwargs["call_id"] == "pre-4"
+    assert kwargs["sequence_id"] == "seq-4"
+    assert kwargs["sequence_position"] == 0
+    mocked_helpers["assess"].assert_not_called()
+    mocked_helpers["simple"].assert_not_called()
+
+
+async def test_execute_dispatch_web_research_calls_web_research(
+    tmp_db,
+    question_page,
+    mocked_helpers,
+):
+    orch = await _make_orch(tmp_db)
+    dispatch = Dispatch(
+        call_type=CallType.WEB_RESEARCH,
+        payload=WebResearchDispatchPayload(
+            question_id=question_page.id,
+            reason="web-reason",
+        ),
+    )
+
+    resolved, child_id = await orch._execute_dispatch(
+        dispatch,
+        question_page.id,
+        parent_call_id="parent-5",
+        force=True,
+        call_id="pre-5",
+        sequence_id="seq-5",
+        sequence_position=2,
+    )
+
+    assert resolved == question_page.id
+    assert child_id == "child-web-id"
+    mocked_helpers["web_research"].assert_called_once()
+    kwargs = mocked_helpers["web_research"].call_args.kwargs
+    assert mocked_helpers["web_research"].call_args.args[0] == question_page.id
+    assert kwargs["parent_call_id"] == "parent-5"
+    assert kwargs["force"] is True
+    assert kwargs["call_id"] == "pre-5"
+    assert kwargs["sequence_id"] == "seq-5"
+    assert kwargs["sequence_position"] == 2
+    mocked_helpers["simple"].assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "payload_cls,expected_call_type,expected_call_cls",
+    SCOUT_FAMILY_CASES,
+    ids=[c[1].value for c in SCOUT_FAMILY_CASES],
+)
+async def test_execute_dispatch_scout_family(
+    payload_cls,
+    expected_call_type,
+    expected_call_cls,
+    tmp_db,
+    question_page,
+    mocked_helpers,
+):
+    """Every scope-only scout payload should route to _run_simple_call_dispatch
+    with the correct CallType and CallRunner class, forwarding max_rounds
+    and fruit_threshold from the payload."""
+    orch = await _make_orch(tmp_db)
+    payload = payload_cls(
+        question_id=question_page.id,
+        reason="scout-reason",
+        max_rounds=4,
+        fruit_threshold=3,
+    )
+    dispatch = Dispatch(call_type=expected_call_type, payload=payload)
+
+    resolved, child_id = await orch._execute_dispatch(
+        dispatch,
+        question_page.id,
+        parent_call_id="parent-s",
+        force=True,
+        call_id="pre-s",
+        sequence_id="seq-s",
+        sequence_position=5,
+    )
+
+    assert resolved == question_page.id
+    assert child_id == "child-simple-id"
+
+    mocked_helpers["simple"].assert_called_once()
+    call = mocked_helpers["simple"].call_args
+    # _run_simple_call_dispatch signature: (question_id, call_type, cls, parent_call_id, ...)
+    assert call.args[0] == question_page.id
+    assert call.args[1] == expected_call_type
+    assert call.args[2] is expected_call_cls
+    assert call.args[3] == "parent-s"
+    assert call.kwargs["force"] is True
+    assert call.kwargs["call_id"] == "pre-s"
+    assert call.kwargs["sequence_id"] == "seq-s"
+    assert call.kwargs["sequence_position"] == 5
+    assert call.kwargs["max_rounds"] == 4
+    assert call.kwargs["fruit_threshold"] == 3
+    # Other helpers should not have been touched.
+    mocked_helpers["find_considerations"].assert_not_called()
+    mocked_helpers["assess"].assert_not_called()
+    mocked_helpers["web_research"].assert_not_called()
+    mocked_helpers["create_view"].assert_not_called()
+
+
+async def test_execute_dispatch_unknown_payload_type_returns_none(
+    tmp_db,
+    question_page,
+    mocked_helpers,
+):
+    """A payload type that _execute_dispatch doesn't handle should leave
+    child_call_id as None (current behavior — the chain simply falls through).
+    This test exists to lock in that silent-fall-through behavior so the
+    refactor doesn't accidentally introduce a KeyError."""
+
+    class UnknownPayload(BaseDispatchPayload):
+        pass
+
+    orch = await _make_orch(tmp_db)
+    dispatch = Dispatch(
+        call_type=CallType.ASSESS,  # call_type field isn't what the chain keys on
+        payload=UnknownPayload(question_id=question_page.id),
+    )
+
+    resolved, child_id = await orch._execute_dispatch(
+        dispatch,
+        question_page.id,
+        parent_call_id=None,
+    )
+
+    assert resolved == question_page.id
+    assert child_id is None
+    for mock in mocked_helpers.values():
+        mock.assert_not_called()

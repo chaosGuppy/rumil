@@ -480,7 +480,9 @@ export type CallTraceOut = {
         event: 'view_created';
     } & ViewCreatedEventOut) | ({
         event: 'phase_skipped';
-    } & PhaseSkippedEventOut)>;
+    } & PhaseSkippedEventOut) | ({
+        event: 'update_view_phase_completed';
+    } & UpdateViewPhaseCompletedEventOut)>;
     /**
      * Children
      */
@@ -498,7 +500,7 @@ export type CallTraceOut = {
 /**
  * CallType
  */
-export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'ab_eval' | 'create_view';
+export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'ab_eval' | 'create_view' | 'update_view';
 
 /**
  * CallTypeFruitScoreItem
@@ -2004,6 +2006,44 @@ export type UpdateSubgraphComputedEventOut = {
 };
 
 /**
+ * UpdateViewPhaseCompletedEventOut
+ */
+export type UpdateViewPhaseCompletedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'update_view_phase_completed';
+    /**
+     * Phase
+     */
+    phase: string;
+    /**
+     * Items Processed
+     */
+    items_processed: number;
+    /**
+     * Items Modified
+     */
+    items_modified: number;
+    /**
+     * Items Created
+     */
+    items_created: number;
+    /**
+     * Items Removed
+     */
+    items_removed: number;
+};
+
+/**
  * ValidationError
  */
 export type ValidationError = {
@@ -2844,7 +2884,9 @@ export type GetCallEventsApiCallsCallIdEventsGetResponses = {
         event: 'view_created';
     } & ViewCreatedEventOut) | ({
         event: 'phase_skipped';
-    } & PhaseSkippedEventOut)>;
+    } & PhaseSkippedEventOut) | ({
+        event: 'update_view_phase_completed';
+    } & UpdateViewPhaseCompletedEventOut)>;
 };
 
 export type GetCallEventsApiCallsCallIdEventsGetResponse = GetCallEventsApiCallsCallIdEventsGetResponses[keyof GetCallEventsApiCallsCallIdEventsGetResponses];
@@ -2882,9 +2924,23 @@ export type GetAbRunTraceApiAbRunsAbRunIdTraceGetResponse = GetAbRunTraceApiAbRu
 export type ListAbEvalsApiAbEvalsGetData = {
     body?: never;
     path?: never;
-    query?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
     url: '/api/ab-evals';
 };
+
+export type ListAbEvalsApiAbEvalsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListAbEvalsApiAbEvalsGetError = ListAbEvalsApiAbEvalsGetErrors[keyof ListAbEvalsApiAbEvalsGetErrors];
 
 export type ListAbEvalsApiAbEvalsGetResponses = {
     /**
@@ -2905,7 +2961,12 @@ export type GetAbEvalApiAbEvalsEvalIdGetData = {
          */
         eval_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
     url: '/api/ab-evals/{eval_id}';
 };
 

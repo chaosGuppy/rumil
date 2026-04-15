@@ -57,6 +57,7 @@ from rumil.orchestrators.common import (
     assess_question,
     create_view_for_question,
     find_considerations_until_done,
+    update_view_for_question,
     web_research_question,
 )
 from rumil.settings import get_settings
@@ -274,8 +275,8 @@ class BaseOrchestrator(ABC):
         elif isinstance(p, AssessDispatchPayload):
             existing_view = await self.db.get_view_for_question(resolved)
             if existing_view:
-                log.info('Dispatch: assess redirected to create_view for %s (has view) — %s', d_label, p.reason)
-                child_call_id = await create_view_for_question(
+                log.info('Dispatch: assess redirected to update_view for %s (has view) — %s', d_label, p.reason)
+                child_call_id = await update_view_for_question(
                     resolved, self.db,
                     parent_call_id=parent_call_id,
                     context_page_ids=p.context_page_ids,

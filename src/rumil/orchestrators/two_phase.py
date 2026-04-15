@@ -32,6 +32,7 @@ from rumil.orchestrators.common import (
     compute_priority_score,
     create_view_for_question,
     score_items_sequentially,
+    update_view_for_question,
 )
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
@@ -188,13 +189,25 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                 self._executed_since_last_plan = True
 
                 if self._invocation > 1 or last_call:
-                    await create_view_for_question(
-                        root_question_id, self.db,
-                        parent_call_id=self._parent_call_id,
-                        broadcaster=self.broadcaster, force=True,
-                        sequence_id=self._sequence_id,
-                        sequence_position=self._seq_position,
+                    existing_view = await self.db.get_view_for_question(
+                        root_question_id
                     )
+                    if existing_view:
+                        await update_view_for_question(
+                            root_question_id, self.db,
+                            parent_call_id=self._parent_call_id,
+                            broadcaster=self.broadcaster, force=True,
+                            sequence_id=self._sequence_id,
+                            sequence_position=self._seq_position,
+                        )
+                    else:
+                        await create_view_for_question(
+                            root_question_id, self.db,
+                            parent_call_id=self._parent_call_id,
+                            broadcaster=self.broadcaster, force=True,
+                            sequence_id=self._sequence_id,
+                            sequence_position=self._seq_position,
+                        )
                     if self._sequence_id is not None:
                         self._seq_position += 1
 

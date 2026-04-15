@@ -13,9 +13,13 @@ from __future__ import annotations
 import pytest
 import pytest_asyncio
 
-from rumil.models import Call, CallType, Workspace
+from rumil import settings as settings_mod
+from rumil.calls.common import record_round_moves
+from rumil.models import Call, CallType, Move, MoveType, Workspace
+from rumil.moves.base import MoveState
+from rumil.moves.create_claim import CreateClaimPayload
 from rumil.tracing.trace_events import WarningEvent
-from rumil.tracing.tracer import CallTrace, TraceRecordError
+from rumil.tracing.tracer import CallTrace, TraceRecordError, set_trace
 
 
 @pytest_asyncio.fixture
@@ -88,8 +92,6 @@ async def test_record_strict_chains_original_exception(tmp_db, trace_call, mocke
 async def test_record_strict_disabled_returns_without_raising(
     tmp_db, trace_call, mocker, monkeypatch
 ):
-    from rumil import settings as settings_mod
-
     mocker.patch.object(
         tmp_db,
         "save_call_trace",
@@ -101,8 +103,6 @@ async def test_record_strict_disabled_returns_without_raising(
 
 
 async def test_record_disabled_returns_without_writing(tmp_db, trace_call, mocker):
-    from rumil import settings as settings_mod
-
     save_spy = mocker.patch.object(tmp_db, "save_call_trace")
     with settings_mod.override_settings(tracing_enabled=False):
         trace = CallTrace(trace_call.id, tmp_db)
@@ -115,12 +115,6 @@ async def test_record_round_moves_raises_when_trace_fails(tmp_db, trace_call, mo
     tools have already executed and written to the DB, a failing trace write
     fails loud rather than leaving the trace out of sync with DB state.
     """
-    from rumil.calls.common import record_round_moves
-    from rumil.models import Move, MoveType
-    from rumil.moves.base import MoveState
-    from rumil.moves.create_claim import CreateClaimPayload
-    from rumil.tracing.tracer import set_trace
-
     state = MoveState(call=trace_call, db=tmp_db)
     payload = CreateClaimPayload(
         headline="post-mutation trace failure",

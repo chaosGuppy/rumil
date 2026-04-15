@@ -1,0 +1,518 @@
+.ab-evals-page {
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: 2rem;
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+.ab-evals-header {
+  margin-bottom: 2rem;
+}
+.ab-evals-header h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0 0 0.2rem 0;
+}
+.ab-evals-subtitle {
+  font-size: 0.8rem;
+  color: var(--color-muted);
+  font-family: var(--font-geist-mono), monospace;
+}
+
+.ab-evals-count {
+  font-size: 0.75rem;
+  color: var(--color-muted);
+  margin-bottom: 0.75rem;
+  font-family: var(--font-geist-mono), monospace;
+}
+
+.ab-evals-list {
+  display: grid;
+  gap: 1px;
+  background: var(--color-border);
+  border: 1px solid var(--color-border);
+}
+
+.ab-eval-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 1rem;
+  padding: 0.75rem 0.85rem;
+  background: var(--background);
+  text-decoration: none;
+  color: inherit;
+  transition: background 0.1s ease;
+  animation: abRowFadeIn 0.2s ease both;
+}
+.ab-eval-row:hover {
+  background: var(--color-surface);
+}
+
+@keyframes abRowFadeIn {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.ab-eval-row-main {
+  min-width: 0;
+}
+
+.ab-eval-question {
+  font-size: 0.88rem;
+  font-weight: 500;
+  line-height: 1.35;
+  margin-bottom: 0.35rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ab-eval-preview {
+  font-size: 0.75rem;
+  color: var(--color-muted);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ab-eval-row-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.ab-eval-date {
+  font-size: 0.7rem;
+  font-family: var(--font-geist-mono), monospace;
+  color: var(--color-muted);
+  opacity: 0.7;
+}
+
+.ab-eval-pref-dots {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+}
+
+.ab-eval-pref-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+.ab-eval-pref-dot[data-pref="a-strong"] { background: #3d7a54; }
+.ab-eval-pref-dot[data-pref="a-somewhat"] { background: #5a9e6e; }
+.ab-eval-pref-dot[data-pref="a-slight"] { background: #88c49a; }
+.ab-eval-pref-dot[data-pref="indifferent"] { background: var(--color-muted); }
+.ab-eval-pref-dot[data-pref="b-slight"] { background: #88a4c4; }
+.ab-eval-pref-dot[data-pref="b-somewhat"] { background: #5a7e9e; }
+.ab-eval-pref-dot[data-pref="b-strong"] { background: #3d5a7a; }
+.ab-eval-pref-dot[data-pref="unknown"] { background: var(--color-border); }
+
+@media (prefers-color-scheme: dark) {
+  .ab-eval-pref-dot[data-pref="a-strong"] { background: #5cb87a; }
+  .ab-eval-pref-dot[data-pref="a-somewhat"] { background: #78c890; }
+  .ab-eval-pref-dot[data-pref="a-slight"] { background: #9ad4a8; }
+  .ab-eval-pref-dot[data-pref="indifferent"] { background: #666; }
+  .ab-eval-pref-dot[data-pref="b-slight"] { background: #9ab4d4; }
+  .ab-eval-pref-dot[data-pref="b-somewhat"] { background: #78a0c8; }
+  .ab-eval-pref-dot[data-pref="b-strong"] { background: #5c88b8; }
+  .ab-eval-pref-dot[data-pref="unknown"] { background: #333; }
+}
+
+.ab-evals-empty {
+  padding: 4rem 1rem;
+  text-align: center;
+  color: var(--color-muted);
+  font-size: 0.85rem;
+  font-family: var(--font-geist-mono), monospace;
+  line-height: 1.6;
+}
+
+
+/* ---- Detail page ---- */
+
+.ab-eval-detail {
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: 2rem;
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+.ab-eval-back {
+  font-size: 0.8rem;
+  color: var(--color-muted);
+  text-decoration: none;
+  margin-bottom: 1rem;
+  display: inline-block;
+}
+.ab-eval-back:hover {
+  color: var(--foreground);
+}
+
+.ab-eval-detail-header {
+  margin-bottom: 2rem;
+}
+.ab-eval-detail-header h1 {
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0.5rem 0 0.75rem 0;
+  line-height: 1.3;
+}
+
+.ab-eval-runs-bar {
+  display: flex;
+  gap: 1.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.ab-eval-run-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  font-family: var(--font-geist-mono), monospace;
+  color: var(--color-muted);
+  text-decoration: none;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  transition: border-color 0.1s, color 0.1s;
+}
+.ab-eval-run-link:hover {
+  border-color: var(--color-accent);
+  color: var(--foreground);
+}
+
+.ab-eval-run-label {
+  font-weight: 600;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.ab-eval-run-label[data-arm="a"] { color: #5a9e6e; }
+.ab-eval-run-label[data-arm="b"] { color: #5a7e9e; }
+
+@media (prefers-color-scheme: dark) {
+  .ab-eval-run-label[data-arm="a"] { color: #78c890; }
+  .ab-eval-run-label[data-arm="b"] { color: #78a0c8; }
+}
+
+.ab-eval-meta {
+  font-size: 0.7rem;
+  color: var(--color-muted);
+  font-family: var(--font-geist-mono), monospace;
+  margin-top: 0.5rem;
+}
+
+.ab-eval-section-label {
+  font-size: 0.7rem;
+  font-family: var(--font-geist-mono), monospace;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 0.5rem;
+}
+
+.ab-eval-assessment {
+  margin-bottom: 2.5rem;
+}
+.ab-eval-assessment-body {
+  font-size: 0.88rem;
+  line-height: 1.65;
+  color: var(--foreground);
+}
+.ab-eval-assessment-body p {
+  margin: 0 0 0.75rem 0;
+}
+.ab-eval-assessment-body p:last-child {
+  margin-bottom: 0;
+}
+
+.ab-eval-pref-summary {
+  margin-bottom: 2.5rem;
+}
+
+.ab-eval-pref-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 1px;
+  background: var(--color-border);
+  border: 1px solid var(--color-border);
+}
+
+.ab-eval-pref-card {
+  padding: 0.65rem 0.75rem;
+  background: var(--background);
+}
+
+.ab-eval-pref-card-name {
+  font-size: 0.72rem;
+  font-weight: 500;
+  margin-bottom: 0.3rem;
+  color: var(--foreground);
+}
+
+.ab-eval-pref-badge {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-family: var(--font-geist-mono), monospace;
+  padding: 0.15rem 0.4rem;
+  border-radius: 2px;
+  font-weight: 500;
+}
+.ab-eval-pref-badge[data-pref="a-strong"] { background: #3d7a54; color: #fff; }
+.ab-eval-pref-badge[data-pref="a-somewhat"] { background: #5a9e6e; color: #fff; }
+.ab-eval-pref-badge[data-pref="a-slight"] { background: #d4edda; color: #2a5e3a; }
+.ab-eval-pref-badge[data-pref="indifferent"] { background: var(--color-surface); color: var(--color-muted); }
+.ab-eval-pref-badge[data-pref="b-slight"] { background: #d4e0ed; color: #2a4a5e; }
+.ab-eval-pref-badge[data-pref="b-somewhat"] { background: #5a7e9e; color: #fff; }
+.ab-eval-pref-badge[data-pref="b-strong"] { background: #3d5a7a; color: #fff; }
+.ab-eval-pref-badge[data-pref="unknown"] { background: var(--color-surface); color: var(--color-dim); }
+
+@media (prefers-color-scheme: dark) {
+  .ab-eval-pref-badge[data-pref="a-strong"] { background: #2d5a3e; color: #a8e6be; }
+  .ab-eval-pref-badge[data-pref="a-somewhat"] { background: #2a4e38; color: #9ad4a8; }
+  .ab-eval-pref-badge[data-pref="a-slight"] { background: #1a2e22; color: #78c890; }
+  .ab-eval-pref-badge[data-pref="indifferent"] { background: #1a1a1a; color: #666; }
+  .ab-eval-pref-badge[data-pref="b-slight"] { background: #1a222e; color: #78a0c8; }
+  .ab-eval-pref-badge[data-pref="b-somewhat"] { background: #2a3e4e; color: #9ab4d4; }
+  .ab-eval-pref-badge[data-pref="b-strong"] { background: #2d3e5a; color: #a8bee6; }
+}
+
+
+/* ---- Dimension sections ---- */
+
+.ab-eval-dimensions {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--color-border);
+  border: 1px solid var(--color-border);
+}
+
+.ab-eval-dim {
+  background: var(--background);
+}
+
+.ab-eval-dim-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.1s;
+}
+.ab-eval-dim-header:hover {
+  background: var(--color-surface);
+}
+
+.ab-eval-dim-toggle {
+  font-size: 0.65rem;
+  color: var(--color-muted);
+  width: 1rem;
+  text-align: center;
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+.ab-eval-dim[data-open="true"] .ab-eval-dim-toggle {
+  transform: rotate(90deg);
+}
+
+.ab-eval-dim-name {
+  font-size: 0.82rem;
+  font-weight: 500;
+  flex: 1;
+}
+
+.ab-eval-dim-body {
+  display: none;
+  padding: 0 0.75rem 0.75rem 0.75rem;
+}
+.ab-eval-dim[data-open="true"] .ab-eval-dim-body {
+  display: block;
+}
+
+.ab-eval-dim-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 0.75rem;
+}
+
+.ab-eval-dim-tab {
+  font-size: 0.7rem;
+  font-family: var(--font-geist-mono), monospace;
+  padding: 0.4rem 0.75rem;
+  cursor: pointer;
+  color: var(--color-muted);
+  border-bottom: 2px solid transparent;
+  background: none;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+  transition: color 0.1s, border-color 0.1s;
+}
+.ab-eval-dim-tab:hover {
+  color: var(--foreground);
+}
+.ab-eval-dim-tab[data-active="true"] {
+  color: var(--foreground);
+  border-bottom-color: var(--foreground);
+}
+
+.ab-eval-dim-content {
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+.ab-eval-dim-content p {
+  margin: 0 0 0.6rem 0;
+}
+.ab-eval-dim-content p:last-child {
+  margin-bottom: 0;
+}
+.ab-eval-dim-content h1,
+.ab-eval-dim-content h2,
+.ab-eval-dim-content h3 {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin: 1rem 0 0.4rem 0;
+}
+.ab-eval-dim-content h1:first-child,
+.ab-eval-dim-content h2:first-child,
+.ab-eval-dim-content h3:first-child {
+  margin-top: 0;
+}
+.ab-eval-dim-content ul,
+.ab-eval-dim-content ol {
+  margin: 0 0 0.6rem 1.2rem;
+  padding: 0;
+}
+.ab-eval-dim-content li {
+  margin-bottom: 0.25rem;
+}
+.ab-eval-dim-content table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+  margin: 0.5rem 0;
+}
+.ab-eval-dim-content th,
+.ab-eval-dim-content td {
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--color-border);
+  text-align: left;
+}
+.ab-eval-dim-content th {
+  background: var(--color-surface);
+  font-weight: 600;
+}
+.ab-eval-dim-content code {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.88em;
+  background: var(--color-surface);
+  padding: 0.1em 0.3em;
+  border-radius: 2px;
+}
+.ab-eval-dim-content strong {
+  font-weight: 600;
+}
+
+.ab-eval-dim-eval-links {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.ab-eval-dim-eval-link {
+  font-size: 0.68rem;
+  font-family: var(--font-geist-mono), monospace;
+  color: var(--color-muted);
+  text-decoration: none;
+  padding: 0.15rem 0.35rem;
+  border: 1px solid var(--color-border);
+  border-radius: 2px;
+  transition: border-color 0.1s, color 0.1s;
+}
+.ab-eval-dim-eval-link:hover {
+  border-color: var(--color-accent);
+  color: var(--foreground);
+}
+
+
+/* ---- Traces section ---- */
+
+.ab-eval-traces-section {
+  margin-bottom: 1.5rem;
+}
+
+
+/* ---- Config diff ---- */
+
+.ab-eval-config-section {
+  margin-bottom: 2rem;
+}
+
+.ab-eval-config-table {
+  font-size: 0.72rem;
+  font-family: var(--font-geist-mono), monospace;
+  border: 1px solid var(--color-border);
+  background: var(--color-border);
+  display: grid;
+  grid-template-columns: auto 1fr 1fr;
+  gap: 1px;
+}
+
+.ab-eval-config-row {
+  display: contents;
+}
+
+.ab-eval-config-key,
+.ab-eval-config-val {
+  padding: 0.25rem 0.5rem;
+  background: var(--background);
+}
+
+.ab-eval-config-header-row .ab-eval-config-key,
+.ab-eval-config-header-row .ab-eval-config-val {
+  background: var(--color-surface);
+  font-weight: 600;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.65rem;
+}
+
+.ab-eval-config-key {
+  color: var(--color-muted);
+  white-space: nowrap;
+}
+
+.ab-eval-config-val {
+  word-break: break-all;
+}
+
+.ab-eval-config-diff-row .ab-eval-config-key {
+  color: var(--foreground);
+  font-weight: 500;
+}
+
+.ab-eval-config-val-diff {
+  background: #fefce8;
+  color: var(--foreground);
+  font-weight: 500;
+}
+
+@media (prefers-color-scheme: dark) {
+  .ab-eval-config-val-diff {
+    background: #1a1800;
+  }
+}

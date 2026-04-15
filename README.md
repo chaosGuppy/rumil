@@ -191,6 +191,62 @@ uv run python main.py --ab "Your question" --budget 10 --workspace ab-scratch
 
 Pages created by each arm are isolated — arm A cannot see pages created by arm B, and vice versa. Shared pages (like the root question) are visible to both arms. The frontend shows a side-by-side trace comparison with config diff highlighting.
 
+### Branch-based A/B testing
+
+For comparing code changes across branches (rather than config changes), use `scripts/ab_branch.sh`. This creates git worktrees for each branch, runs staged investigations concurrently, then launches evaluation agents that compare the results.
+
+```bash
+scripts/ab_branch.sh \
+  --branch-a feature-x \
+  --branch-b feature-y \
+  --env-a .a.env \
+  --env-b .b.env \
+  --workspace ab-scratch \
+  -- "'Is the sky blue?' --budget 10 --smoke-test"
+```
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--branch-a` | Yes | Git branch for arm A |
+| `--branch-b` | Yes | Git branch for arm B |
+| `--env-a` | No (default: `.env`) | Env file for arm A |
+| `--env-b` | No (default: `.env`) | Env file for arm B |
+| `--eval-branch` | No (default: current branch) | Branch to run evaluation agents from |
+| `--workspace` | No | Workspace name passed to main.py |
+
+The script runs 5 concurrent evaluation agents that compare the runs on: grounding & factual correctness, subquestion relevance, consistency, research progress, and general quality. Each agent independently evaluates both arms, then a comparison LLM produces a structured preference rating (7-point scale from "A strongly preferred" to "B strongly preferred"). A final LLM synthesizes all comparisons into an overall assessment.
+
+Reports are saved to `data/ab-reports/` and to the `ab_eval_reports` database table. View them in the frontend at `/ab-evals`.
+
+### A/B evaluation (standalone)
+
+You can also run the evaluation agents independently against any two staged runs:
+
+```bash
+uv run python main.py --ab-eval RUN_ID_A RUN_ID_B
+```
+
+### A/B evaluation UI
+
+The frontend at `/ab-evals` provides:
+
+- **Index page**: Lists all evaluations with question headline, colored preference indicators, and assessment preview
+- **Detail page**: Overall assessment, preference summary grid, expandable per-dimension reports (with tabs for Comparison / Run A Report / Run B Report), links to all traces (research runs and evaluation agent runs), and side-by-side config diff highlighting differences between arms
+
+### Run config tracking
+
+Every run automatically captures its configuration (model, budget, call variants, available moves, git commit, etc.) to the `runs` table. This config is displayed:
+
+- On every trace page, as a key-value table above the trace viewer
+- On A/B eval detail pages, as a side-by-side comparison with amber highlighting for values that differ between arms
+
+### Utility flags
+
+| Flag | Description |
+|------|-------------|
+| `--run-id-file PATH` | Write the run_id to a file after DB creation (for scripted capture) |
+| `--env-file PATH` | Load settings from this env file in addition to `.env` |
+
 ### Testing individual calls
 
 `scripts/run_call.py` runs a single call type (find-considerations, assess, prioritize) against the local database, useful for development and debugging without the full orchestrator loop.

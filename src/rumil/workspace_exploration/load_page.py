@@ -25,6 +25,7 @@ def make_load_page_tool(
     trace: CallTrace,
     *,
     default_detail: str = "content",
+    highlight_run_id: str | None = None,
 ) -> Tool:
     """Build a page-loading tool that returns abstract or full content.
 
@@ -52,7 +53,12 @@ def make_load_page_tool(
         if not page:
             return f"Page '{payload.page_id}' not found."
         detail = _DETAIL_MAP.get(payload.detail, PageDetail.CONTENT)
-        return await format_page(page, detail, db=db)
+        return await format_page(
+            page,
+            detail,
+            db=db,
+            highlight_run_id=highlight_run_id,
+        )
 
     return Tool(
         name="load_page",

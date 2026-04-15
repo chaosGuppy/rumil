@@ -117,6 +117,7 @@ async def _render_subgraph_impl(
     exclude_ids: set[str] | None,
     include_impact: bool,
     questions_only: bool,
+    highlight_run_id: str | None = None,
 ) -> SubgraphResult:
     """Core BFS subgraph renderer shared by both public functions.
 
@@ -147,6 +148,7 @@ async def _render_subgraph_impl(
     children_by_parent: dict[str, list[str]] = {}
     overflow_by_parent: dict[str, int] = {}
     impact_by_child: dict[str, int | None] = {}
+    link_run_id_by_edge: dict[tuple[str, str], str] = {}
     visited: set[str] = {root.id}
 
     frontier: list[str] = [root.id]
@@ -161,11 +163,13 @@ async def _render_subgraph_impl(
                 excluded,
                 visited,
                 impact_by_child if include_impact else None,
+                link_run_id_by_edge if highlight_run_id else None,
             )
         else:
             child_ids_by_parent, next_ids = await _collect_all_neighbors(
                 frontier, db, excluded, visited,
                 impact_by_child if include_impact else None,
+                link_run_id_by_edge if highlight_run_id else None,
             )
 
         if depth == max_depth:
@@ -226,6 +230,7 @@ async def _render_subgraph_impl(
     lines: list[str] = []
     await _emit(
         root.id,
+        parent_id=None,
         prefix="",
         connector="",
         child_prefix="",
@@ -236,10 +241,12 @@ async def _render_subgraph_impl(
         overflow_by_parent=overflow_by_parent,
         robustness_by_question=robustness_by_question,
         impact_by_child=impact_by_child if include_impact else None,
+        link_run_id_by_edge=link_run_id_by_edge if highlight_run_id else None,
         seen_on_path=set(),
         lines=lines,
         db=db,
         questions_only=questions_only,
+        highlight_run_id=highlight_run_id,
     )
     return SubgraphResult("\n".join(lines), root_page=root)
 
@@ -250,6 +257,7 @@ def _collect_question_children(
     excluded: set[str],
     visited: set[str],
     impact_by_child: dict[str, int | None] | None,
+    link_run_id_by_edge: dict[tuple[str, str], str] | None = None,
 ) -> tuple[dict[str, list[str]], set[str]]:
     """Collect CHILD_QUESTION children for questions-only mode."""
     child_ids_by_parent: dict[str, list[str]] = {}
@@ -268,6 +276,10 @@ def _collect_question_children(
                     impact_by_child[l.to_page_id] = getattr(
                         l, "impact_on_parent_question", None
                     )
+        if link_run_id_by_edge is not None:
+            for l in child_links:
+                if l.run_id:
+                    link_run_id_by_edge[(parent_id, l.to_page_id)] = l.run_id
         for cid in child_ids:
             if cid not in visited:
                 next_ids.add(cid)
@@ -280,6 +292,7 @@ async def _collect_all_neighbors(
     excluded: set[str],
     visited: set[str],
     impact_by_child: dict[str, int | None] | None,
+    link_run_id_by_edge: dict[tuple[str, str], str] | None = None,
 ) -> tuple[dict[str, list[str]], set[str]]:
     """Collect all neighbors (both directions, all link types except SUPERSEDES)."""
     outgoing = await db.get_links_from_many(frontier)
@@ -308,6 +321,8 @@ async def _collect_all_neighbors(
                 impact_by_child[target] = getattr(
                     link, "impact_on_parent_question", None
                 )
+            if link_run_id_by_edge is not None and link.run_id:
+                link_run_id_by_edge[(parent_id, target)] = link.run_id
 
         for link in incoming.get(parent_id, []):
             if link.link_type in _SKIP_LINK_TYPES:
@@ -317,6 +332,8 @@ async def _collect_all_neighbors(
                 continue
             seen_children.add(source)
             child_ids.append(source)
+            if link_run_id_by_edge is not None and link.run_id:
+                link_run_id_by_edge[(parent_id, source)] = link.run_id
 
         child_ids_by_parent[parent_id] = child_ids
         for cid in child_ids:
@@ -329,6 +346,7 @@ async def _collect_all_neighbors(
 async def _emit(
     node_id: str,
     *,
+    parent_id: str | None,
     prefix: str,
     connector: str,
     child_prefix: str,
@@ -339,10 +357,12 @@ async def _emit(
     overflow_by_parent: dict[str, int],
     robustness_by_question: dict[str, int | None],
     impact_by_child: dict[str, int | None] | None,
+    link_run_id_by_edge: dict[tuple[str, str], str] | None,
     seen_on_path: set[str],
     lines: list[str],
     db: DB,
     questions_only: bool,
+    highlight_run_id: str | None = None,
 ) -> None:
     if node_id in seen_on_path:
         lines.append(
@@ -353,7 +373,8 @@ async def _emit(
     if page is None:
         return
     headline = await format_page(
-        page, PageDetail.HEADLINE, linked_detail=None, db=db
+        page, PageDetail.HEADLINE, linked_detail=None, db=db,
+        highlight_run_id=highlight_run_id,
     )
 
     annotations: list[str] = []
@@ -367,6 +388,13 @@ async def _emit(
         impact_val = impact_by_child[node_id]
         if impact_val is not None:
             annotations.append(f"impact: {impact_val}/10")
+    if (
+        link_run_id_by_edge is not None
+        and parent_id is not None
+        and highlight_run_id
+        and link_run_id_by_edge.get((parent_id, node_id)) == highlight_run_id
+    ):
+        annotations.append("LINKED BY THIS RUN")
 
     suffix = f" ({', '.join(annotations)})" if annotations else ""
     lines.append(f"{prefix}{connector}{headline}{suffix}")
@@ -395,6 +423,7 @@ async def _emit(
         next_child_prefix = child_prefix + (_GAP if is_last else _PIPE)
         await _emit(
             child_id,
+            parent_id=node_id,
             prefix=child_prefix,
             connector=next_connector,
             child_prefix=next_child_prefix,
@@ -405,10 +434,12 @@ async def _emit(
             overflow_by_parent=overflow_by_parent,
             robustness_by_question=robustness_by_question,
             impact_by_child=impact_by_child,
+            link_run_id_by_edge=link_run_id_by_edge,
             seen_on_path=seen_next,
             lines=lines,
             db=db,
             questions_only=questions_only,
+            highlight_run_id=highlight_run_id,
         )
     if overflow:
         noun = "more sub-Q(s)" if questions_only else "more"
@@ -432,6 +463,7 @@ def make_explore_subgraph_tool(
     include_impact: bool = False,
     questions_only: bool = True,
     exclude_ids: set[str] | None = None,
+    highlight_run_id: str | None = None,
 ) -> Tool:
     """Build a subgraph exploration tool.
 
@@ -468,6 +500,7 @@ def make_explore_subgraph_tool(
             include_impact=include_impact,
             questions_only=questions_only,
             exclude_ids=exclude_ids,
+            highlight_run_id=highlight_run_id,
         )
 
         root = result.root_page

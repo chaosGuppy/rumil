@@ -116,7 +116,7 @@ def _tree_header() -> str:
         f"{'status':<{_COL_STATUS}}  "
         f"{'cost':>{_COL_COST}}  "
         f"{'scope':<{_COL_SCOPE}}  "
-        f"created"
+        "created"
     )
 
 

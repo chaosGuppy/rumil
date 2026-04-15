@@ -430,7 +430,7 @@ async def main() -> None:
     if args.dry_run:
         print(f"[dry-run] move: {move_type.value}")
         print(
-            f"[dry-run] accreting: "
+            "[dry-run] accreting: "
             f"{'yes' if move_type in ACCRETING_MOVES else 'NO (destructive/in-place)'}"
         )
         print("[dry-run] payload:")
@@ -456,7 +456,7 @@ async def main() -> None:
                 file=sys.stderr,
             )
             print(
-                f"       the envelope may be incomplete in the frontend; "
+                "       the envelope may be incomplete in the frontend; "
                 f"inspect run {db.run_id}",
                 file=sys.stderr,
             )

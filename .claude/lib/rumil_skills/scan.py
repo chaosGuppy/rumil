@@ -174,7 +174,7 @@ def graph_health(data: SubtreeData) -> list[Finding]:
                 code="unjudged_question",
                 description=(
                     f"{short(q)} ({headline}) has {len(cons)} considerations "
-                    f"but no judgement"
+                    "but no judgement"
                 ),
                 page_ids=[q.id],
                 suggested_action="dispatch assess",
@@ -241,7 +241,7 @@ def graph_health(data: SubtreeData) -> list[Finding]:
                     code="chained_supersession",
                     description=(
                         f"{short(page)} superseded by {short(link.from_page_id)} "
-                        f"which is itself superseded — possible churn"
+                        "which is itself superseded — possible churn"
                     ),
                     page_ids=[page.id, link.from_page_id],
                     suggested_action="inspect",
@@ -306,9 +306,9 @@ def rating_shape(data: SubtreeData) -> list[Finding]:
             severity=4,
             code="dimensions_collapsing",
             description=(
-                f"Credence and robustness are near-perfectly correlated "
+                "Credence and robustness are near-perfectly correlated "
                 f"(Spearman rho={rho:.2f}, n={n}). The two dimensions "
-                f"may not be providing independent signal."
+                "may not be providing independent signal."
             ),
             suggested_action="inspect prompt guidance for credence/robustness",
         ))
@@ -322,9 +322,9 @@ def rating_shape(data: SubtreeData) -> list[Finding]:
             severity=2,
             code="empty_quadrants",
             description=(
-                f"No claims in 'high credence / low robustness' or "
+                "No claims in 'high credence / low robustness' or "
                 f"'low credence / high robustness' quadrants (n={n}). "
-                f"Ratings may track a single axis."
+                "Ratings may track a single axis."
             ),
             suggested_action="inspect",
         ))
@@ -433,7 +433,7 @@ async def review_signals(db: DB, data: SubtreeData) -> list[Finding]:
             code="inadequate_context",
             description=(
                 f"{len(inadequate_context)}/{len(calls)} calls reported "
-                f"inadequate context"
+                "inadequate context"
             ),
             page_ids=[c["id"] for c in inadequate_context],
             suggested_action="inspect context_builder or prompt",

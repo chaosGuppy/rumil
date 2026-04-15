@@ -10,7 +10,7 @@ For each analogy (aim for 1–3):
 
 1. **A claim** describing the analogy and why it may be relevant. Explain the structural parallel: what features of the analogous situation map onto the current question, and what the analogy would predict or suggest if it holds. **Also name the most important ways the analogy might break down — where the structural parallel is weakest, or where the analogous situation differs in ways that could change the conclusion.** Set credence to reflect how strong you think the parallel is, and robustness to reflect how thoroughly you've examined it.
 
-2. **A subquestion** asking about the relevance, limits, or details of the analogy — e.g. "How closely does [analogy] parallel [situation in the parent question]?" or "What does the [analogous case] suggest about [specific aspect]?". Link it as a child of the parent question.
+2. **A subquestion** asking about the relevance, limits, or details of the analogy — e.g. "How closely does [analogy] parallel [situation in the parent question]?" or "What does the [analogous case] suggest about [specific aspect]?". Created via `create_question`, it is automatically linked as a child of the parent question.
 
 3. Optionally, **link related** pages if the analogy connects to existing claims or questions elsewhere in the workspace.
 
@@ -18,7 +18,7 @@ For each analogy (aim for 1–3):
 
 1. Read the parent question and consider: what other domains, historical episodes, or known situations share structural features with this question?
 2. For each analogy, create a claim describing it using `create_claim`, then `link_consideration` to the parent question.
-3. Create a subquestion for further exploration using `create_question` and `link_child_question`.
+3. Create a subquestion for further exploration using `create_question`. It is automatically linked as a child of the parent question.
 4. If the analogy connects to existing pages in the workspace, use `link_related` to make those connections visible.
 
 ## What Makes a Good Analogy

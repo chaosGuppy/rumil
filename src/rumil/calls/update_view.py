@@ -1116,7 +1116,7 @@ class UpdateViewCall(CallRunner):
             sum(1 for l in old_links if l.link_type == LinkType.VIEW_ITEM),
         )
 
-        await self.infra.trace.record(
+        await self.infra.trace.record_strict(
             ViewCreatedEvent(
                 view_id=new_view.id,
                 view_headline=new_view.headline,

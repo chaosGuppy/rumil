@@ -927,6 +927,41 @@ class DB:
                 return page
         return None
 
+    async def get_views_for_questions(
+        self,
+        question_ids: Sequence[str],
+    ) -> dict[str, Page | None]:
+        """Bulk-fetch the active (non-superseded) View page for many questions.
+
+        Returns {question_id: view_page_or_None}. Issues two batched queries
+        (links + pages) regardless of input size.
+        """
+        result: dict[str, Page | None] = {qid: None for qid in question_ids}
+        if not question_ids:
+            return result
+        id_list = list(dict.fromkeys(question_ids))
+        links_by_target = await self.get_links_to_many(id_list)
+        view_from_ids: list[str] = []
+        view_links_by_question: dict[str, list[PageLink]] = {}
+        for qid in id_list:
+            qlinks = [
+                l for l in links_by_target.get(qid, [])
+                if l.link_type == LinkType.VIEW_OF
+            ]
+            if qlinks:
+                view_links_by_question[qid] = qlinks
+                view_from_ids.extend(l.from_page_id for l in qlinks)
+        if not view_from_ids:
+            return result
+        pages = await self.get_pages_by_ids(list(dict.fromkeys(view_from_ids)))
+        for qid, qlinks in view_links_by_question.items():
+            for link in qlinks:
+                page = pages.get(link.from_page_id)
+                if page and not page.is_superseded:
+                    result[qid] = page
+                    break
+        return result
+
     async def get_view_items(
         self,
         view_id: str,
@@ -1062,6 +1097,47 @@ class DB:
         if not candidates:
             return None
         return max(candidates, key=lambda p: p.created_at)
+
+    async def get_latest_summaries_for_questions(
+        self,
+        question_ids: Sequence[str],
+    ) -> dict[str, Page | None]:
+        """Bulk-fetch the most recent active SUMMARY page for many questions.
+
+        Returns {question_id: summary_page_or_None}. Issues two batched queries
+        (links + pages) regardless of input size.
+        """
+        result: dict[str, Page | None] = {qid: None for qid in question_ids}
+        if not question_ids:
+            return result
+        id_list = list(dict.fromkeys(question_ids))
+        links_by_target = await self.get_links_to_many(id_list)
+        summary_from_ids: list[str] = []
+        summary_links_by_question: dict[str, list[PageLink]] = {}
+        for qid in id_list:
+            qlinks = [
+                l for l in links_by_target.get(qid, [])
+                if l.link_type == LinkType.SUMMARIZES
+            ]
+            if qlinks:
+                summary_links_by_question[qid] = qlinks
+                summary_from_ids.extend(l.from_page_id for l in qlinks)
+        if not summary_from_ids:
+            return result
+        pages = await self.get_pages_by_ids(
+            list(dict.fromkeys(summary_from_ids))
+        )
+        for qid, qlinks in summary_links_by_question.items():
+            candidates = [
+                pages[l.from_page_id]
+                for l in qlinks
+                if l.from_page_id in pages
+                and pages[l.from_page_id].is_active()
+                and pages[l.from_page_id].page_type == PageType.SUMMARY
+            ]
+            if candidates:
+                result[qid] = max(candidates, key=lambda p: p.created_at)
+        return result
 
     async def get_considerations_for_question(
         self,

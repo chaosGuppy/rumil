@@ -17,6 +17,8 @@ A View is a curated, structured summary of the workspace's current best understa
 
 You will be asked to review View items in batches across several phases. Apply your judgement carefully — small, well-justified changes are better than sweeping revisions.
 
+The context may include a **Child Investigation Results** section showing the latest findings from recursive sub-question investigations. Items marked **[NEW]** were produced since the View was last updated. These results should inform your review — new findings may confirm, contradict, or refine existing View items, or may reveal gaps needing new items.
+
 <!-- PHASE:score_unscored — DO NOT RENAME THIS MARKER -->
 ## Phase: Score Unscored Proposals
 

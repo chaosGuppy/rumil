@@ -4,10 +4,12 @@ Build context text from workspace pages for injection into LLM prompts.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from datetime import datetime
 
 from rumil.database import DB
 from rumil.embeddings import embed_query, search_pages_by_vector
@@ -473,6 +475,139 @@ async def render_view(
             parts.append("")
 
     return "\n".join(parts)
+
+
+async def render_child_investigation_results(
+    db: DB,
+    parent_question_id: str,
+    last_view_created_at: datetime | None,
+) -> tuple[str, list[str]]:
+    """Render investigation results from child questions for the View updater.
+
+    Returns (rendered_section_text, page_ids_used). If there are no child
+    questions, returns ("", []).
+
+    Detail level varies by newness (created after *last_view_created_at*):
+    - NEW View: NL content + compact I4/I5 item headlines
+    - Old View: NL content only
+    - NEW Summary/Judgement: full content
+    - Old Summary/Judgement: abstract only
+    """
+    children = await db.get_child_questions(parent_question_id)
+    if not children:
+        return "", []
+
+    child_ids = [c.id for c in children]
+    views_map, summaries_map, judgements_map = await asyncio.gather(
+        db.get_views_for_questions(child_ids),
+        db.get_latest_summaries_for_questions(child_ids),
+        db.get_judgements_for_questions(child_ids),
+    )
+
+    def _is_new(page: Page) -> bool:
+        if last_view_created_at is None:
+            return True
+        return page.created_at > last_view_created_at
+
+    new_view_ids: list[str] = []
+    for cid in child_ids:
+        v = views_map.get(cid)
+        if v and _is_new(v):
+            new_view_ids.append(v.id)
+    view_items_map: dict[str, list[tuple[Page, PageLink]]] = {}
+    if new_view_ids:
+        items_results = await asyncio.gather(
+            *(db.get_view_items(vid, min_importance=4) for vid in new_view_ids)
+        )
+        for vid, items in zip(new_view_ids, items_results):
+            view_items_map[vid] = items
+
+    entries: list[tuple[bool, str, list[str]]] = []
+    for child in children:
+        cid = child.id
+        view = views_map.get(cid)
+        summary = summaries_map.get(cid)
+        judgements = judgements_map.get(cid, [])
+        latest_judgement = (
+            max(judgements, key=lambda p: p.created_at) if judgements else None
+        )
+
+        new = False
+        page_ids: list[str] = []
+        lines: list[str] = [f"### `{cid[:8]}` — {child.headline}"]
+
+        if view:
+            new = _is_new(view)
+            page_ids.append(view.id)
+            lines.append(f"**Status:** View available{' [NEW]' if new else ''}")
+            if view.content:
+                lines.append("")
+                lines.append(view.content)
+            if new and view.id in view_items_map:
+                items = view_items_map[view.id]
+                if items:
+                    lines.append("")
+                    lines.append("**Key items:**")
+                    for page, link in items:
+                        imp = link.importance or 0
+                        c = page.credence if page.credence is not None else "?"
+                        r = page.robustness if page.robustness is not None else "?"
+                        lines.append(
+                            f"- [C{c}/R{r} I{imp}] `{page.id[:8]}` "
+                            f"— {page.headline}"
+                        )
+                        page_ids.append(page.id)
+        elif summary:
+            new = _is_new(summary)
+            page_ids.append(summary.id)
+            lines.append(
+                f"**Status:** Summary available{' [NEW]' if new else ''}"
+            )
+            lines.append("")
+            if new:
+                lines.append(summary.content or summary.abstract or "")
+            else:
+                lines.append(summary.abstract or "")
+        elif latest_judgement:
+            new = _is_new(latest_judgement)
+            page_ids.append(latest_judgement.id)
+            c = latest_judgement.credence if latest_judgement.credence is not None else "?"
+            r = latest_judgement.robustness if latest_judgement.robustness is not None else "?"
+            lines.append(
+                f"**Status:** Judgement available{' [NEW]' if new else ''}"
+            )
+            lines.append(
+                f"[JUDGEMENT C{c}/R{r}] {latest_judgement.headline}"
+            )
+            lines.append("")
+            if new:
+                lines.append(latest_judgement.content or latest_judgement.abstract or "")
+            else:
+                lines.append(latest_judgement.abstract or "")
+        else:
+            continue
+
+        entries.append((new, "\n".join(lines), page_ids))
+
+    if not entries:
+        return "", []
+
+    entries.sort(key=lambda e: (not e[0], e[1]))
+
+    all_page_ids: list[str] = []
+    parts = [
+        "## Child Investigation Results",
+        "",
+        "The following sub-questions have been investigated. "
+        "Items marked [NEW] have been updated since the last View revision.",
+        "",
+    ]
+    for _, text, pids in entries:
+        parts.append(text)
+        parts.append("")
+        all_page_ids.extend(pids)
+
+    return "\n".join(parts), all_page_ids
 
 
 async def _build_dependency_signal(db: DB) -> str | None:

@@ -20,7 +20,7 @@ from rumil.calls.stages import (
     WorkspaceUpdater,
 )
 from rumil.constants import DEFAULT_VIEW_SECTIONS
-from rumil.context import build_embedding_based_context
+from rumil.context import build_embedding_based_context, render_child_investigation_results
 from rumil.database import DB
 from rumil.embeddings import embed_and_store_page
 from rumil.llm import LLMExchangeMetadata, structured_call
@@ -195,12 +195,26 @@ def _render_item_full(
 class UpdateViewContext(ContextBuilder):
     """Context for View update: embedding-based with raised similarity floors."""
 
-    def __init__(self, view_id: str) -> None:
+    def __init__(self, view_id: str, old_view_id: str | None = None) -> None:
         self._view_id = view_id
+        self._old_view_id = old_view_id
 
     async def build_context(self, infra: CallInfra) -> ContextResult:
         question = await infra.db.get_page(infra.question_id)
         query = question.headline if question else infra.question_id
+
+        old_view = (
+            await infra.db.get_page(self._old_view_id)
+            if self._old_view_id
+            else None
+        )
+        last_view_created_at = old_view.created_at if old_view else None
+
+        child_section, child_page_ids = await render_child_investigation_results(
+            infra.db,
+            infra.question_id,
+            last_view_created_at,
+        )
 
         items = await infra.db.get_view_items(self._view_id)
         item_ids = [page.id for page, _ in items]
@@ -213,6 +227,8 @@ class UpdateViewContext(ContextBuilder):
                 if link.link_type in (LinkType.CITES, LinkType.DEPENDS_ON):
                     cited_ids.add(link.to_page_id)
 
+        exclude_ids = cited_ids | set(item_ids) | set(child_page_ids)
+
         result = await build_embedding_based_context(
             query,
             infra.db,
@@ -221,13 +237,17 @@ class UpdateViewContext(ContextBuilder):
             full_page_similarity_floor=0.6,
             abstract_page_similarity_floor=0.5,
             summary_page_similarity_floor=0.4,
-            exclude_page_ids=cited_ids | set(item_ids),
+            exclude_page_ids=exclude_ids,
         )
+
+        context_text = result.context_text
+        if child_section:
+            context_text = child_section + "\n\n" + context_text
 
         preloaded_ids = list(infra.call.context_page_ids or [])
         return ContextResult(
-            context_text=result.context_text,
-            working_page_ids=result.page_ids,
+            context_text=context_text,
+            working_page_ids=result.page_ids + child_page_ids,
             preloaded_ids=preloaded_ids,
         )
 
@@ -1128,7 +1148,7 @@ class UpdateViewCall(CallRunner):
         return existing_view.id, new_view.id
 
     def _make_context_builder(self) -> ContextBuilder:
-        return UpdateViewContext(self._view_id)
+        return UpdateViewContext(self._view_id, old_view_id=self._old_view_id)
 
     def _make_workspace_updater(self) -> WorkspaceUpdater:
         return UpdateViewWorkspaceUpdater(self._view_id, self.call_type)

@@ -14,7 +14,7 @@ You are performing a **Scout Subquestions** call — an initial exploration of a
 
 1. Read the parent question and existing context carefully.
 2. Identify the most informative axes of decomposition — the subquestions whose answers would do the most to resolve the parent.
-3. For each subquestion, use `create_question` and then `link_child_question` to connect it to the parent.
+3. For each subquestion, use `create_question`. It is automatically linked as a child of the parent question.
 4. Where you can offer even a tentative answer or relevant consideration, use `create_claim` and `link_consideration` to attach it to the parent question (or to a subquestion, if it bears more directly there).
 
 ## Quality Bar

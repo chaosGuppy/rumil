@@ -19,7 +19,7 @@ For each deep question target:
    - **Counterfactual**: "How would [outcome] change if [assumption] were false?" — for questions that probe the sensitivity of conclusions.
    - **Normative**: "What should [actor] prioritize given [constraints]?" — for questions that require value judgements or multi-criteria reasoning.
 
-2. **Link it as a child** of the parent question using `link_child_question`.
+2. Create the question using `create_question`. It will be automatically linked as a child of the parent question.
 
 ### High-level claims (1-3)
 
@@ -33,9 +33,8 @@ Alongside your questions, produce claims about high-level insights, structural o
    - Assumptions whose implications haven't been traced through
    - Places where the reasoning could go in multiple directions and the choice matters
    - Important "so what" questions that connect evidence to conclusions
-2. For each target, create a question using `create_question` that makes the required reasoning clear.
-3. Link each question as a child of the parent using `link_child_question`.
-4. Create high-level claims you are confident in that are non-obvious and important for the parent question. Use `create_claim` and `link_consideration`.
+2. For each target, create a question using `create_question` that makes the required reasoning clear. It is automatically linked as a child of the parent question.
+3. Create high-level claims you are confident in that are non-obvious and important for the parent question. Use `create_claim` and `link_consideration`.
 
 ## What Makes a Good Deep Question
 

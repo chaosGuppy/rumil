@@ -229,9 +229,12 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         return result
 
     async def _needs_initial_prioritization(self, question_id: str) -> bool:
-        """Run initial_prioritization iff no judgement answers the question yet."""
+        """Run initial_prioritization iff no judgement or view answers the question yet."""
         judgements = await self.db.get_judgements_for_question(question_id)
-        return not judgements
+        if judgements:
+            return False
+        view = await self.db.get_view_for_question(question_id)
+        return view is None
 
     async def _cancel_initial_call(self) -> None:
         """Mark the eagerly-created initial_prioritization call as complete when it is skipped."""
@@ -249,13 +252,13 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         await trace.record(
             PhaseSkippedEvent(
                 phase="initial_prioritization",
-                reason="Question already has a judgement.",
+                reason="Question already has a judgement or view.",
             )
         )
         await mark_call_completed(
             call,
             self.db,
-            "Initial prioritization skipped — question already has a judgement.",
+            "Initial prioritization skipped — question already has a judgement or view.",
         )
 
     async def _get_next_batch(
@@ -279,8 +282,6 @@ class ExperimentalOrchestrator(BaseOrchestrator):
 
         if not self._executed_since_last_plan:
             return PrioritizationResult(dispatch_sequences=[])
-
-        await self._maybe_rerun_linker(question_id, self._parent_call_id)
 
         self._executed_since_last_plan = False
         self._invocation += 1
@@ -358,12 +359,6 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             initial_prioritization_budget,
         )
 
-        await self._run_subquestion_linker(question_id, parent_call_id)
-
-        context_text, short_id_map = await build_prioritization_context(
-            self.db,
-            scope_question_id=question_id,
-        )
         if self._initial_call is not None:
             p_call = self._initial_call
             self._initial_call = None
@@ -384,6 +379,13 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             )
             if self._sequence_id is not None:
                 self._seq_position += 1
+
+        await self._run_subquestion_linker(question_id, p_call.id)
+
+        context_text, short_id_map = await build_prioritization_context(
+            self.db,
+            scope_question_id=question_id,
+        )
         trace = CallTrace(p_call.id, self.db, broadcaster=self.broadcaster)
         set_trace(trace)
         await trace.record(ContextBuiltEvent(budget=initial_prioritization_budget))
@@ -409,7 +411,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             "your only turn and you will not get another chance. Distribute your budget "
             "among the scouting dispatch tools, weighting towards types that seem most "
             "useful for this question and skipping types that are clearly irrelevant. "
-            "For each scout you indend to dispatch now, you MUST call its tool on the curret turn, "
+            "For each scout you intend to dispatch now, you MUST call its tool on the current turn, "
             "in parallel with all others you intend to dispatch at this point. "
             "Do not do anything else — just dispatch."
         )
@@ -503,6 +505,9 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         )
         if self._sequence_id is not None:
             self._seq_position += 1
+
+        await self._maybe_rerun_linker(question_id, p_call.id)
+
         trace = CallTrace(p_call.id, self.db, broadcaster=self.broadcaster)
         set_trace(trace)
         await trace.record(ContextBuiltEvent(budget=budget))
@@ -601,7 +606,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             "Plan conservatively: your total worst-case cost across all dispatches "
             f"must not exceed {dispatch_budget}.\n\n"
             f"{scores_text}\n\n"
-            "For each call you indend to dispatch now, you MUST call its tool on the curret turn, "
+            "For each call you intend to dispatch now, you MUST call its tool on the current turn, "
             "in parallel with all others you intend to dispatch at this point. "
             f"Each recurse call must have a budget of at least {MIN_TWOPHASE_BUDGET}."
         )

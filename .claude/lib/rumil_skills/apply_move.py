@@ -80,7 +80,6 @@ ACCRETING_MOVES: frozenset[MoveType] = frozenset(
         MoveType.CREATE_SCOUT_QUESTION,
         MoveType.CREATE_SUBQUESTION,
         MoveType.CREATE_JUDGEMENT,
-        MoveType.CREATE_CONCEPT,
         MoveType.CREATE_WIKI_PAGE,
         MoveType.CREATE_VIEW_ITEM,
         MoveType.PROPOSE_VIEW_ITEM,
@@ -91,7 +90,6 @@ ACCRETING_MOVES: frozenset[MoveType] = frozenset(
         MoveType.LINK_DEPENDS_ON,
         MoveType.FLAG_FUNNINESS,
         MoveType.REPORT_DUPLICATE,
-        MoveType.PROPOSE_CONCEPT,
         MoveType.LOAD_PAGE,  # read-only, harmless
     }
 )

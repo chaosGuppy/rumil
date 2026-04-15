@@ -41,7 +41,6 @@ from rumil.models import (
     PageType,
     Workspace,
 )
-from rumil.moves.base import write_page_file
 from rumil.tracing.trace_events import (
     MoveTraceItem,
     MovesExecutedEvent,
@@ -171,7 +170,6 @@ async def main() -> None:
             extra={"status": "open"},
         )
         await db.save_page(page)
-        write_page_file(page)
         try:
             await embed_and_store_page(db, page, field_name="abstract")
         except Exception as e:

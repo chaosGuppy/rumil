@@ -117,7 +117,7 @@ async def test_dispatch_unknown_question_exits(monkeypatch, patch_make_db, capsy
 def test_dispatch_call_type_choices_coverage():
     assert "find-considerations" in dispatch_call.CALL_TYPES
     assert "assess" in dispatch_call.CALL_TYPES
-    assert "prioritize" in dispatch_call.CALL_TYPES
+    assert "web-research" in dispatch_call.CALL_TYPES
     for scout_name in dispatch_call._SCOUT_MAP:
         assert scout_name in dispatch_call.CALL_TYPES
 

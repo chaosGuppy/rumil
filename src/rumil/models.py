@@ -79,7 +79,9 @@ class CallType(str, Enum):
     GROUNDING_FEEDBACK = "grounding_feedback"
     FEEDBACK_UPDATE = "feedback_update"
     LINK_SUBQUESTIONS = "link_subquestions"
+    AB_EVAL = "ab_eval"
     CREATE_VIEW = "create_view"
+    UPDATE_VIEW = "update_view"
     # Envelope call for mutations made from Claude Code's broader context
     # (not a rumil-internal call with carefully scoped prompt). Never
     # dispatchable from prioritization — only created by .claude/ skills.
@@ -306,6 +308,10 @@ class CreateViewDispatchPayload(BaseDispatchPayload):
     pass
 
 
+class UpdateViewDispatchPayload(BaseDispatchPayload):
+    pass
+
+
 class WebResearchDispatchPayload(BaseDispatchPayload):
     pass
 
@@ -380,6 +386,7 @@ class Page(BaseModel):
     fruit_remaining: int | None = None
     sections: list[str] | None = None  # VIEW pages: ordered section names
     meta_type: str | None = None  # VIEW_META pages: priority/annotation/proposal
+    run_id: str = ""
 
     def is_active(self) -> bool:
         return not self.is_superseded
@@ -399,6 +406,7 @@ class PageLink(BaseModel):
     section: str | None = None  # VIEW_ITEM links: section name
     position: int | None = None  # VIEW_ITEM links: order within section
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    run_id: str = ""
 
 
 class CallSequence(BaseModel):

@@ -15,7 +15,7 @@ For each fact-check target (aim for 1-3):
    - **Lookup**: "What is the actual [quantity/date/figure] for [X]?" — for finding the real value of something estimated or assumed.
    - **Search**: "Are there known examples of [type of thing]?" — for finding concrete instances of a category or phenomenon mentioned in the workspace.
 
-2. **Link it as a child** of the parent question using `link_child_question`.
+2. Create the question using `create_question`. It will be automatically linked as a child of the parent question.
 
 ## How to Proceed
 
@@ -24,8 +24,7 @@ For each fact-check target (aim for 1-3):
    - Quantities that are estimated or assumed rather than sourced
    - Categories or phenomena where real examples would strengthen the analysis
    - Claims with low credence or low robustness that could be resolved with evidence
-2. For each target, create a question using `create_question` that is specific enough for a web search to answer.
-3. Link each question as a child of the parent using `link_child_question`.
+2. For each target, create a question using `create_question` that is specific enough for a web search to answer. It is automatically linked as a child of the parent question.
 
 ## What Makes a Good Fact-Check Target
 

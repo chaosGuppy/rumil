@@ -312,13 +312,17 @@ async def test_apply_item_score_updates_link(tmp_db, view_setup, call_infra):
     updater = UpdateViewWorkspaceUpdater(v.id, CallType.UPDATE_VIEW)
 
     target = items[0]
+    view_items = await tmp_db.get_view_items(v.id)
+    target_page, target_link = next(
+        (p, l) for p, l in view_items if p.id == target.id
+    )
     score = UnscoredItemScore(
         item_id=target.id[:8],
         importance=5,
         section="confident_views",
     )
 
-    changed = await updater._apply_item_score(tmp_db, score)
+    changed = await updater._apply_item_score(tmp_db, score, target_page, target_link)
     assert changed
 
     result_items = await tmp_db.get_view_items(v.id)
@@ -339,6 +343,10 @@ async def test_apply_item_score_updates_credence_robustness(
     updater = UpdateViewWorkspaceUpdater(v.id, CallType.UPDATE_VIEW)
 
     target = items[1]
+    view_items = await tmp_db.get_view_items(v.id)
+    target_page, target_link = next(
+        (p, l) for p, l in view_items if p.id == target.id
+    )
     score = UnscoredItemScore(
         item_id=target.id[:8],
         importance=4,
@@ -347,25 +355,12 @@ async def test_apply_item_score_updates_credence_robustness(
         robustness=4,
     )
 
-    await updater._apply_item_score(tmp_db, score)
+    await updater._apply_item_score(tmp_db, score, target_page, target_link)
 
     updated_page = await tmp_db.get_page(target.id)
     assert updated_page is not None
     assert updated_page.credence == 8
     assert updated_page.robustness == 4
-
-
-async def test_apply_item_score_returns_false_for_missing_item(
-    tmp_db, view_setup, call_infra,
-):
-    _, v, _ = view_setup
-    updater = UpdateViewWorkspaceUpdater(v.id, CallType.UPDATE_VIEW)
-    score = UnscoredItemScore(
-        item_id="deadbeef",
-        importance=3,
-        section="other",
-    )
-    assert await updater._apply_item_score(tmp_db, score) is False
 
 
 async def test_apply_demotion_lowers_importance(tmp_db, view_setup, call_infra):
@@ -374,12 +369,16 @@ async def test_apply_demotion_lowers_importance(tmp_db, view_setup, call_infra):
     updater = UpdateViewWorkspaceUpdater(v.id, CallType.UPDATE_VIEW)
 
     target = items[0]
+    view_items = await tmp_db.get_view_items(v.id)
+    _, target_link = next(
+        (p, l) for p, l in view_items if p.id == target.id
+    )
     demotion = DemotionChoice(
         item_id=target.id[:8],
         new_importance=1,
         reasoning="Not central",
     )
-    await updater._apply_demotion(tmp_db, demotion)
+    await updater._apply_demotion(tmp_db, demotion, target.id, target_link)
 
     result_items = await tmp_db.get_view_items(v.id)
     for page, link in result_items:
@@ -396,7 +395,11 @@ async def test_unlink_item_removes_link_preserves_page(tmp_db, view_setup, call_
     updater = UpdateViewWorkspaceUpdater(v.id, CallType.UPDATE_VIEW)
 
     target = items[0]
-    did_unlink = await updater._unlink_item(tmp_db, target.id[:8])
+    view_items = await tmp_db.get_view_items(v.id)
+    _, target_link = next(
+        (p, l) for p, l in view_items if p.id == target.id
+    )
+    did_unlink = await updater._unlink_item(tmp_db, target.id, target_link)
     assert did_unlink
 
     result_items = await tmp_db.get_view_items(v.id)
@@ -408,35 +411,23 @@ async def test_unlink_item_removes_link_preserves_page(tmp_db, view_setup, call_
     assert not page.is_superseded
 
 
-async def test_unlink_item_returns_false_for_unknown(tmp_db, view_setup, call_infra):
-    _, v, _ = view_setup
-    updater = UpdateViewWorkspaceUpdater(v.id, CallType.UPDATE_VIEW)
-    assert await updater._unlink_item(tmp_db, "deadbeef") is False
-
-
-async def test_find_view_item_link(tmp_db, view_setup, call_infra):
-    _, v, items = view_setup
-    updater = UpdateViewWorkspaceUpdater(v.id, CallType.UPDATE_VIEW)
-
-    link = await updater._find_view_item_link(tmp_db, items[0].id)
-    assert link is not None
-    assert link.link_type == LinkType.VIEW_ITEM
-    assert link.to_page_id == items[0].id
-
-    missing = await updater._find_view_item_link(tmp_db, "nonexistent-id")
-    assert missing is None
-
-
 async def test_apply_item_review_keep_returns_false(tmp_db, view_setup, call_infra):
     """A 'keep' review should be a no-op."""
     _, v, items = view_setup
     updater = UpdateViewWorkspaceUpdater(v.id, CallType.UPDATE_VIEW)
 
+    target = items[0]
+    view_items = await tmp_db.get_view_items(v.id)
+    target_page, target_link = next(
+        (p, l) for p, l in view_items if p.id == target.id
+    )
     review = ItemReview(
-        item_id=items[0].id[:8],
+        item_id=target.id[:8],
         action="keep",
     )
-    changed = await updater._apply_item_review(call_infra, review)
+    changed = await updater._apply_item_review(
+        call_infra, review, target.id, target_page, target_link
+    )
     assert changed is False
 
 
@@ -446,6 +437,10 @@ async def test_apply_item_review_adjust(tmp_db, view_setup, call_infra):
     updater = UpdateViewWorkspaceUpdater(v.id, CallType.UPDATE_VIEW)
 
     target = items[1]
+    view_items = await tmp_db.get_view_items(v.id)
+    target_page, target_link = next(
+        (p, l) for p, l in view_items if p.id == target.id
+    )
     review = ItemReview(
         item_id=target.id[:8],
         action="adjust",
@@ -453,7 +448,9 @@ async def test_apply_item_review_adjust(tmp_db, view_setup, call_infra):
         new_section="confident_views",
         new_credence=9,
     )
-    changed = await updater._apply_item_review(call_infra, review)
+    changed = await updater._apply_item_review(
+        call_infra, review, target.id, target_page, target_link
+    )
     assert changed
 
     result_items = await tmp_db.get_view_items(v.id)
@@ -476,6 +473,10 @@ async def test_apply_item_review_supersede(tmp_db, view_setup, call_infra):
     updater = UpdateViewWorkspaceUpdater(v.id, CallType.UPDATE_VIEW)
 
     target = items[2]
+    view_items = await tmp_db.get_view_items(v.id)
+    target_page, target_link = next(
+        (p, l) for p, l in view_items if p.id == target.id
+    )
     review = ItemReview(
         item_id=target.id[:8],
         action="supersede",
@@ -484,7 +485,9 @@ async def test_apply_item_review_supersede(tmp_db, view_setup, call_infra):
         new_importance=4,
         new_section="live_hypotheses",
     )
-    changed = await updater._apply_item_review(call_infra, review)
+    changed = await updater._apply_item_review(
+        call_infra, review, target.id, target_page, target_link
+    )
     assert changed
 
     old_page = await tmp_db.get_page(target.id)

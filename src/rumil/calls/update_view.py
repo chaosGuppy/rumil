@@ -301,6 +301,8 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
             )
             return messages
 
+        link_by_target = {page.id: link for page, link in items}
+        page_by_id = {page.id: page for page, link in items}
         batch_sizes = _split_into_batches(len(unscored), SCORE_BATCH_SIZE)
         batch_response_model = pydantic.create_model(
             "UnscoredScoreBatch",
@@ -362,9 +364,32 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
 
             if result.parsed:
                 parsed_dict = result.parsed.model_dump()
-                for raw_score in parsed_dict.get("scores", []):
-                    score = UnscoredItemScore(**raw_score)
-                    changed = await self._apply_item_score(infra.db, score)
+                scores = [
+                    UnscoredItemScore(**raw)
+                    for raw in parsed_dict.get("scores", [])
+                ]
+                resolved_map = await infra.db.resolve_page_ids(
+                    [s.item_id for s in scores]
+                )
+                for score in scores:
+                    resolved = resolved_map.get(score.item_id)
+                    if not resolved:
+                        log.warning(
+                            "Score target %s not found", score.item_id
+                        )
+                        continue
+                    link = link_by_target.get(resolved)
+                    page = page_by_id.get(resolved)
+                    if not link or not page:
+                        log.warning(
+                            "No VIEW_ITEM link from view %s to %s",
+                            self._view_id[:8],
+                            resolved[:8],
+                        )
+                        continue
+                    changed = await self._apply_item_score(
+                        infra.db, score, page, link
+                    )
                     if changed:
                         modified_count += 1
 
@@ -444,12 +469,16 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
 
             if result.parsed:
                 parsed_dict = result.parsed.model_dump()
+                review_ids: list[str] = []
                 for raw_flag in parsed_dict.get("flags", []):
                     flag = TriageFlag(**raw_flag)
                     if flag.flag == "review":
-                        resolved = await infra.db.resolve_page_id(flag.item_id)
-                        if resolved:
-                            flagged_ids.append(resolved)
+                        review_ids.append(flag.item_id)
+                if review_ids:
+                    resolved_map = await infra.db.resolve_page_ids(
+                        review_ids
+                    )
+                    flagged_ids.extend(resolved_map.values())
 
         await infra.trace.record(
             UpdateViewPhaseCompletedEvent(
@@ -480,6 +509,8 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
             )
             return messages, []
 
+        link_by_target = {page.id: link for page, link in items}
+        page_by_id = {page.id: page for page, link in items}
         flagged_item_ids = [page.id for page, _ in flagged]
         links_by_item = await infra.db.get_links_from_many(flagged_item_ids)
         cited_page_ids: set[str] = set()
@@ -544,10 +575,31 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
             )
 
             if result.parsed:
+                resolved_map = await infra.db.resolve_page_ids(
+                    [r.item_id for r in result.parsed.item_reviews]
+                )
                 for review in result.parsed.item_reviews:
-                    changed = await self._apply_item_review(infra, review)
+                    resolved = resolved_map.get(review.item_id)
+                    if not resolved:
+                        log.warning(
+                            "Review target %s not found", review.item_id
+                        )
+                        continue
+                    page = page_by_id.get(resolved)
+                    link = link_by_target.get(resolved)
+                    if not page:
+                        log.warning(
+                            "Page %s not found in view items",
+                            resolved[:8],
+                        )
+                        continue
+                    changed = await self._apply_item_review(
+                        infra, review, resolved, page, link
+                    )
                     if changed:
                         modified_count += 1
+                    if review.action == "supersede" and resolved in link_by_target:
+                        del link_by_target[resolved]
 
                 for proposal in result.parsed.proposed_items:
                     new_id = await self._create_proposed_item(infra, proposal)
@@ -643,9 +695,33 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
 
             if result.parsed:
                 parsed_dict = result.parsed.model_dump()
-                for raw_demotion in parsed_dict.get("demotions", []):
-                    demotion = DemotionChoice(**raw_demotion)
-                    await self._apply_demotion(infra.db, demotion)
+                demotions = [
+                    DemotionChoice(**raw)
+                    for raw in parsed_dict.get("demotions", [])
+                ]
+                link_by_page = {p.id: l for p, l in at_level}
+                resolved_map = await infra.db.resolve_page_ids(
+                    [d.item_id for d in demotions]
+                )
+                for demotion in demotions:
+                    resolved = resolved_map.get(demotion.item_id)
+                    if not resolved:
+                        log.warning(
+                            "Demotion target %s not found",
+                            demotion.item_id,
+                        )
+                        continue
+                    link = link_by_page.get(resolved)
+                    if not link:
+                        log.warning(
+                            "No VIEW_ITEM link from view %s to %s",
+                            self._view_id[:8],
+                            resolved[:8],
+                        )
+                        continue
+                    await self._apply_demotion(
+                        infra.db, demotion, resolved, link
+                    )
 
         if not any_enforced:
             await infra.trace.record(
@@ -678,6 +754,8 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
                 )
             )
             return messages
+
+        link_by_target = {page.id: link for page, link in items}
 
         compact_lines = [_render_item_compact(page, link) for page, link in low]
         batch_text = (
@@ -718,11 +796,27 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
         removed = 0
         if result.parsed:
             parsed_dict = result.parsed.model_dump()
-            for raw_decision in parsed_dict.get("decisions", []):
-                decision = PruneDecision(**raw_decision)
-                if decision.action == "remove":
+            decisions = [
+                PruneDecision(**raw)
+                for raw in parsed_dict.get("decisions", [])
+            ]
+            remove_decisions = [d for d in decisions if d.action == "remove"]
+            if remove_decisions:
+                resolved_map = await infra.db.resolve_page_ids(
+                    [d.item_id for d in remove_decisions]
+                )
+                for decision in remove_decisions:
+                    resolved = resolved_map.get(decision.item_id)
+                    if not resolved:
+                        log.warning(
+                            "Prune target %s not found", decision.item_id
+                        )
+                        continue
+                    link = link_by_target.get(resolved)
+                    if not link:
+                        continue
                     did_remove = await self._unlink_item(
-                        infra.db, decision.item_id
+                        infra.db, resolved, link
                     )
                     if did_remove:
                         removed += 1
@@ -737,92 +831,66 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
         return messages
 
     async def _apply_item_score(
-        self, db: DB, score: UnscoredItemScore
+        self, db: DB, score: UnscoredItemScore, page: Page, link: PageLink
     ) -> bool:
         """Apply importance/section scores to a VIEW_ITEM link. Returns True if changed."""
-        resolved = await db.resolve_page_id(score.item_id)
-        if not resolved:
-            log.warning("Score target %s not found", score.item_id)
-            return False
-
-        links = await db.get_links_from(self._view_id)
-        for link in links:
-            if link.link_type == LinkType.VIEW_ITEM and link.to_page_id == resolved:
-                link.importance = score.importance
-                link.section = score.section
-                await db.save_link(link)
-                break
-        else:
-            log.warning(
-                "No VIEW_ITEM link found from view %s to %s",
-                self._view_id[:8],
-                resolved[:8],
-            )
-            return False
+        link.importance = score.importance
+        link.section = score.section
+        await db.save_link(link)
 
         if score.credence is not None or score.robustness is not None:
-            page = await db.get_page(resolved)
-            if page:
-                if score.credence is not None:
-                    page.credence = score.credence
-                if score.robustness is not None:
-                    page.robustness = score.robustness
-                await db.save_page(page)
+            if score.credence is not None:
+                page.credence = score.credence
+            if score.robustness is not None:
+                page.robustness = score.robustness
+            await db.save_page(page)
 
         return True
 
     async def _apply_item_review(
-        self, infra: CallInfra, review: ItemReview
+        self,
+        infra: CallInfra,
+        review: ItemReview,
+        resolved_id: str,
+        page: Page,
+        link: PageLink | None,
     ) -> bool:
         """Apply a deep review decision. Returns True if item was modified."""
         if review.action == "keep":
             return False
 
-        resolved = await infra.db.resolve_page_id(review.item_id)
-        if not resolved:
-            log.warning("Review target %s not found", review.item_id)
-            return False
-
         if review.action == "adjust":
-            links = await infra.db.get_links_from(self._view_id)
-            for link in links:
-                if (
-                    link.link_type == LinkType.VIEW_ITEM
-                    and link.to_page_id == resolved
-                ):
-                    if review.new_importance is not None:
-                        link.importance = review.new_importance
-                    if review.new_section is not None:
-                        link.section = review.new_section
-                    await infra.db.save_link(link)
-                    break
+            if link:
+                if review.new_importance is not None:
+                    link.importance = review.new_importance
+                if review.new_section is not None:
+                    link.section = review.new_section
+                await infra.db.save_link(link)
 
-            page = await infra.db.get_page(resolved)
-            if page:
-                changed = False
-                if review.new_credence is not None:
-                    page.credence = review.new_credence
-                    changed = True
-                if review.new_robustness is not None:
-                    page.robustness = review.new_robustness
-                    changed = True
-                if changed:
-                    await infra.db.save_page(page)
+            changed = False
+            if review.new_credence is not None:
+                page.credence = review.new_credence
+                changed = True
+            if review.new_robustness is not None:
+                page.robustness = review.new_robustness
+                changed = True
+            if changed:
+                await infra.db.save_page(page)
             return True
 
         if review.action == "supersede":
-            return await self._supersede_item(infra, resolved, review)
+            return await self._supersede_item(infra, page, review, link)
 
         return False
 
     async def _supersede_item(
-        self, infra: CallInfra, old_page_id: str, review: ItemReview
+        self,
+        infra: CallInfra,
+        old_page: Page,
+        review: ItemReview,
+        old_link: PageLink | None,
     ) -> bool:
         """Create a new VIEW_ITEM superseding the old one."""
-        old_page = await infra.db.get_page(old_page_id)
-        if not old_page:
-            return False
-
         new_page = Page(
             page_type=PageType.VIEW_ITEM,
             layer=PageLayer.WIKI,
@@ -852,9 +920,8 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
                 exc_info=True,
             )
 
-        await infra.db.supersede_page(old_page_id, new_page.id)
+        await infra.db.supersede_page(old_page.id, new_page.id)
 
-        old_link = await self._find_view_item_link(infra.db, old_page_id)
         importance = review.new_importance
         section = review.new_section
         if old_link:
@@ -877,7 +944,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
 
         log.info(
             "Superseded view item %s -> %s",
-            old_page_id[:8],
+            old_page.id[:8],
             new_page.id[:8],
         )
         return True
@@ -945,50 +1012,27 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
         )
         return new_page.id
 
-    async def _apply_demotion(self, db: DB, demotion: DemotionChoice) -> None:
+    async def _apply_demotion(
+        self, db: DB, demotion: DemotionChoice, resolved_id: str, link: PageLink
+    ) -> None:
         """Lower an item's importance score."""
-        resolved = await db.resolve_page_id(demotion.item_id)
-        if not resolved:
-            log.warning("Demotion target %s not found", demotion.item_id)
-            return
+        link.importance = demotion.new_importance
+        await db.save_link(link)
+        log.info(
+            "Demoted %s to I%d: %s",
+            resolved_id[:8],
+            demotion.new_importance,
+            demotion.reasoning[:80],
+        )
 
-        link = await self._find_view_item_link(db, resolved)
-        if link:
-            link.importance = demotion.new_importance
-            await db.save_link(link)
-            log.info(
-                "Demoted %s to I%d: %s",
-                resolved[:8],
-                demotion.new_importance,
-                demotion.reasoning[:80],
-            )
-
-    async def _unlink_item(self, db: DB, item_id_short: str) -> bool:
+    async def _unlink_item(
+        self, db: DB, resolved_id: str, link: PageLink
+    ) -> bool:
         """Remove a VIEW_ITEM link from the View. Returns True if unlinked."""
-        resolved = await db.resolve_page_id(item_id_short)
-        if not resolved:
-            log.warning("Prune target %s not found", item_id_short)
-            return False
+        await db.delete_link(link.id)
+        log.info("Unlinked view item %s from view", resolved_id[:8])
+        return True
 
-        link = await self._find_view_item_link(db, resolved)
-        if link:
-            await db.delete_link(link.id)
-            log.info("Unlinked view item %s from view", resolved[:8])
-            return True
-        return False
-
-    async def _find_view_item_link(
-        self, db: DB, item_page_id: str
-    ) -> PageLink | None:
-        """Find the VIEW_ITEM link from the current View to a specific item."""
-        links = await db.get_links_from(self._view_id)
-        for link in links:
-            if (
-                link.link_type == LinkType.VIEW_ITEM
-                and link.to_page_id == item_page_id
-            ):
-                return link
-        return None
 
 
 class UpdateViewCall(CallRunner):

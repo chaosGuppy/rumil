@@ -1304,7 +1304,7 @@ class DB:
         parent_call_id: str | None = None,
         budget_allocated: int | None = None,
         workspace: Workspace = Workspace.RESEARCH,
-        context_page_ids: list | None = None,
+        context_page_ids: Sequence[str] | None = None,
         call_id: str | None = None,
         sequence_id: str | None = None,
         sequence_position: int | None = None,
@@ -1323,7 +1323,7 @@ class DB:
             parent_call_id=parent_call_id,
             budget_allocated=budget_allocated,
             status=CallStatus.PENDING,
-            context_page_ids=context_page_ids or [],
+            context_page_ids=list(context_page_ids) if context_page_ids else [],
             sequence_id=sequence_id,
             sequence_position=sequence_position,
         )

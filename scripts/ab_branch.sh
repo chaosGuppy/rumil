@@ -143,8 +143,16 @@ if ! git rev-parse --verify "$BRANCH_B" >/dev/null 2>&1; then
 fi
 
 # Resolve env file paths to absolute before cd'ing into worktrees
-ENV_A="$(cd "$REPO_ROOT" && realpath "$ENV_A")"
-ENV_B="$(cd "$REPO_ROOT" && realpath "$ENV_B")"
+if [[ -f "$REPO_ROOT/$ENV_A" ]]; then
+    ENV_A="$(cd "$REPO_ROOT" && realpath "$ENV_A")"
+else
+    ENV_A=""
+fi
+if [[ -f "$REPO_ROOT/$ENV_B" ]]; then
+    ENV_B="$(cd "$REPO_ROOT" && realpath "$ENV_B")"
+else
+    ENV_B=""
+fi
 
 # Build COMMAND from --continue if used
 if [[ -n "$CONTINUE_ID" ]]; then
@@ -178,11 +186,9 @@ if ! git worktree add "$WT_B" "$BRANCH_B" 2>&1; then
     exit 1
 fi
 
-# Copy env files into worktrees (main.py loads .env from CWD)
+# Copy base .env into worktrees (main.py loads .env from CWD)
 cp "$REPO_ROOT/.env" "$WT_A/.env" 2>/dev/null || true
 cp "$REPO_ROOT/.env" "$WT_B/.env" 2>/dev/null || true
-cp "$ENV_A" "$WT_A/" 2>/dev/null || true
-cp "$ENV_B" "$WT_B/" 2>/dev/null || true
 
 # Build workspace flag if provided
 WS_FLAG=()
@@ -190,14 +196,24 @@ if [[ -n "$WORKSPACE" ]]; then
     WS_FLAG=("--workspace" "$WORKSPACE")
 fi
 
+# Build env-file flags (only if file was found)
+ENV_FLAG_A=()
+if [[ -n "$ENV_A" ]]; then
+    ENV_FLAG_A=("--env-file" "$ENV_A")
+fi
+ENV_FLAG_B=()
+if [[ -n "$ENV_B" ]]; then
+    ENV_FLAG_B=("--env-file" "$ENV_B")
+fi
+
 # Run both arms concurrently
 echo ""
 echo "Starting arm A..."
-(cd "$WT_A" && uv run python main.py "${COMMAND[@]}" --staged --env-file "$ENV_A" --run-id-file "$RUNID_FILE_A" "${WS_FLAG[@]}") &
+(cd "$WT_A" && uv run python main.py "${COMMAND[@]}" --staged "${ENV_FLAG_A[@]}" --run-id-file "$RUNID_FILE_A" "${WS_FLAG[@]}") &
 PID_A=$!
 
 echo "Starting arm B..."
-(cd "$WT_B" && uv run python main.py "${COMMAND[@]}" --staged --env-file "$ENV_B" --run-id-file "$RUNID_FILE_B" "${WS_FLAG[@]}") &
+(cd "$WT_B" && uv run python main.py "${COMMAND[@]}" --staged "${ENV_FLAG_B[@]}" --run-id-file "$RUNID_FILE_B" "${WS_FLAG[@]}") &
 PID_B=$!
 
 # Wait for both arms; if either fails, the trap will kill the other

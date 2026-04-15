@@ -535,8 +535,8 @@ async def get_ab_run_trace(ab_run_id: str):
     "/api/ab-evals",
     response_model=list[ABEvalReportListItemOut],
 )
-async def list_ab_evals():
-    db = await _get_db()
+async def list_ab_evals(project_id: str = ""):
+    db = await _get_db(project_id)
     rows = await db.list_ab_eval_reports()
 
     question_ids = {
@@ -581,8 +581,8 @@ async def list_ab_evals():
     "/api/ab-evals/{eval_id}",
     response_model=ABEvalReportOut,
 )
-async def get_ab_eval(eval_id: str):
-    db = await _get_db()
+async def get_ab_eval(eval_id: str, project_id: str = ""):
+    db = await _get_db(project_id)
     row = await db.get_ab_eval_report(eval_id)
     if not row:
         raise HTTPException(status_code=404, detail="AB eval report not found")

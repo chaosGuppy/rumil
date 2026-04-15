@@ -18,6 +18,7 @@ import sys
 import uuid
 from pathlib import Path
 
+from rumil.ab_eval import run_ab_eval
 from rumil.chat import run_chat, run_continuation_chat, run_scoping_chat
 from rumil.clean import run_feedback_update, run_grounding_feedback
 from rumil.constants import MIN_TWOPHASE_BUDGET
@@ -728,7 +729,6 @@ async def cmd_ab_eval(
     db: DB,
 ) -> None:
     """Run A/B evaluation agents comparing two staged runs."""
-    from rumil.ab_eval import run_ab_eval
 
     await run_ab_eval(run_id_a, run_id_b, db)
 

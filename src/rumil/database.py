@@ -2424,13 +2424,14 @@ class DB:
 
     async def get_ab_eval_report(self, report_id: str) -> dict[str, Any] | None:
         """Get a single AB evaluation report by ID."""
-        rows = _rows(
-            await self._execute(
-                self.client.table("ab_eval_reports")
-                .select("*")
-                .eq("id", report_id)
-            )
+        q = (
+            self.client.table("ab_eval_reports")
+            .select("*")
+            .eq("id", report_id)
         )
+        if self.project_id:
+            q = q.eq("project_id", str(self.project_id))
+        rows = _rows(await self._execute(q))
         return rows[0] if rows else None
 
     async def list_runs_for_project(self, project_id: str, limit: int = 50) -> list[dict[str, Any]]:

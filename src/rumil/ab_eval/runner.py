@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -249,7 +250,7 @@ async def run_single_eval_agent(
 
 
 async def _generate_overall_assessment(
-    agent_reports: list[tuple[ABEvalAgentSpec, str, str, str, str]],
+    agent_reports: Sequence[tuple[ABEvalAgentSpec, str, str, str, str]],
 ) -> str:
     """Generate an LLM-written overall assessment from per-dimension comparisons."""
     final_prompt = (_PROMPTS_DIR / "ab-eval-final-report.md").read_text()

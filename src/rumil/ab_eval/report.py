@@ -21,7 +21,7 @@ def format_agent_report(
         f"# {spec.display_name}\n\n"
         f"## Run A Report\n\n{report_a}\n\n"
         f"## Run B Report\n\n{report_b}\n\n"
-        f"## Comparison\n\n"
+        "## Comparison\n\n"
         f"**Preference: {preference}**\n\n"
         f"{comparison}\n"
     )

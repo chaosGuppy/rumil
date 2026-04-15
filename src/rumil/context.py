@@ -343,12 +343,23 @@ async def format_page(
         for claim, link in considerations:
             if claim.id in _exclude:
                 continue
-            line = "- " + await format_page(
-                claim,
-                linked_detail,
-                db=db,
-                linked_detail=None,
-                highlight_run_id=highlight_run_id,
+            _link_highlighted = (
+                highlight_run_id
+                and link.run_id
+                and link.run_id == highlight_run_id
+                and claim.run_id != highlight_run_id
+            )
+            link_tag = " [LINKED BY THIS RUN]" if _link_highlighted else ""
+            line = (
+                "- "
+                + await format_page(
+                    claim,
+                    linked_detail,
+                    db=db,
+                    linked_detail=None,
+                    highlight_run_id=highlight_run_id,
+                )
+                + link_tag
             )
             if link.reasoning:
                 line += f"\n  Reasoning: {link.reasoning}"

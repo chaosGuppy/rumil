@@ -22,7 +22,7 @@ Assess the following dimensions:
 
 ## How to work
 
-1. Use `explore_page` to navigate the workspace graph, starting from the root question
+1. Use `explore_subgraph` to navigate the workspace graph, starting from the root question. Use `load_page` to read the full content of individual pages
 2. Identify the top-level judgement and trace its reasoning chain
 3. Look for claims marked `[ADDED BY THIS RUN]` that point in different directions
 4. Check whether contradictions are acknowledged and handled

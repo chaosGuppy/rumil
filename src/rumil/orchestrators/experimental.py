@@ -280,7 +280,8 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         if not self._executed_since_last_plan:
             return PrioritizationResult(dispatch_sequences=[])
 
-        await self._maybe_rerun_linker(question_id, self._parent_call_id)
+        if get_settings().subquestion_linker_enabled:
+            await self._maybe_rerun_linker(question_id, self._parent_call_id)
 
         self._executed_since_last_plan = False
         self._invocation += 1
@@ -358,7 +359,8 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             initial_prioritization_budget,
         )
 
-        await self._run_subquestion_linker(question_id, parent_call_id)
+        if get_settings().subquestion_linker_enabled:
+            await self._run_subquestion_linker(question_id, parent_call_id)
 
         context_text, short_id_map = await build_prioritization_context(
             self.db,

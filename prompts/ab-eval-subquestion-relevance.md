@@ -22,7 +22,7 @@ Assess the following dimensions:
 
 ## How to work
 
-1. Use `explore_page` to navigate the workspace graph, starting from the root question
+1. Use `explore_subgraph` to navigate the workspace graph, starting from the root question. Use `load_page` to read the full content of individual pages
 2. Map out the question hierarchy created by this run (items marked `[ADDED BY THIS RUN]`)
 3. For each parent-child question relationship, assess informativeness
 4. Look for coverage gaps and redundancy across sibling questions

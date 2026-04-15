@@ -3,14 +3,17 @@
 import asyncio
 import logging
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
+
+from claude_agent_sdk import tool as sdk_tool
 
 from rumil.ab_eval.agents import ABEvalAgentSpec, EVAL_AGENTS
 from rumil.ab_eval.report import format_aggregate_report, save_ab_report
 from rumil.database import DB
-from rumil.explore_tool import make_explore_tool
 from rumil.evaluate.explore import explore_page_impl
-from rumil.llm import text_call
+from rumil.llm import Tool, text_call
+from rumil.workspace_exploration import make_explore_subgraph_tool, make_load_page_tool
 from rumil.models import Call, CallStatus, CallType
 from rumil.sdk_agent import SdkAgentConfig, run_sdk_agent
 from rumil.tracing.broadcast import Broadcaster
@@ -20,6 +23,17 @@ log = logging.getLogger(__name__)
 
 _PROMPTS_DIR = Path(__file__).resolve().parents[3] / "prompts"
 _TOOL_SERVER_NAME = "ab-eval-tools"
+
+
+def _wrap_as_mcp_tool(llm_tool: Tool):
+    """Wrap a rumil.llm.Tool as an SdkMcpTool for the Claude Agent SDK."""
+
+    @sdk_tool(llm_tool.name, llm_tool.description, llm_tool.input_schema)
+    async def wrapped(args: dict) -> dict:
+        result = await llm_tool.fn(args)
+        return {"content": [{"type": "text", "text": result}]}
+
+    return wrapped
 
 
 @dataclass
@@ -68,7 +82,21 @@ async def _run_arm_evaluation(
         arm_db,
         highlight_run_id=run_id,
     )
-    explore_tool = make_explore_tool(arm_db, highlight_run_id=run_id)
+    explore_llm_tool = make_explore_subgraph_tool(
+        arm_db,
+        trace,
+        questions_only=False,
+        highlight_run_id=run_id,
+    )
+    load_page_llm_tool = make_load_page_tool(
+        arm_db,
+        trace,
+        highlight_run_id=run_id,
+    )
+    mcp_tools = [
+        _wrap_as_mcp_tool(explore_llm_tool),
+        _wrap_as_mcp_tool(load_page_llm_tool),
+    ]
 
     system_prompt = _build_system_prompt(spec)
     user_prompt = (
@@ -78,14 +106,16 @@ async def _run_arm_evaluation(
         f"Here is the local graph around the root question:\n\n{initial_context}"
     )
 
-    explore_fqname = f"mcp__{_TOOL_SERVER_NAME}__explore_page"
-    allowed = [explore_fqname] + list(spec.extra_tools)
+    allowed = [
+        f"mcp__{_TOOL_SERVER_NAME}__{t.name}"
+        for t in [explore_llm_tool, load_page_llm_tool]
+    ] + list(spec.extra_tools)
 
     config = SdkAgentConfig(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
         server_name=_TOOL_SERVER_NAME,
-        mcp_tools=[explore_tool],
+        mcp_tools=mcp_tools,
         call=call,
         call_type=CallType.AB_EVAL,
         scope_page_id=question_id,
@@ -100,7 +130,10 @@ async def _run_arm_evaluation(
         result = await run_sdk_agent(config)
         report_text = "\n\n".join(result.all_assistant_text)
         call.status = CallStatus.COMPLETE
+        call.completed_at = datetime.now(UTC)
         call.result_summary = report_text[:500]
+        if trace.total_cost_usd > 0:
+            call.cost_usd = trace.total_cost_usd
         await parent_db.save_call(call)
     except Exception:
         log.exception(
@@ -162,7 +195,8 @@ async def run_single_eval_agent(
     spec: ABEvalAgentSpec,
     run_id_a: str,
     run_id_b: str,
-    question_id: str,
+    question_id_a: str,
+    question_id_b: str,
     db: DB,
     broadcaster: Broadcaster | None = None,
 ) -> ABEvalResult:
@@ -175,7 +209,7 @@ async def run_single_eval_agent(
                 spec,
                 "A",
                 run_id_a,
-                question_id,
+                question_id_a,
                 db,
                 broadcaster,
             )
@@ -185,7 +219,7 @@ async def run_single_eval_agent(
                 spec,
                 "B",
                 run_id_b,
-                question_id,
+                question_id_b,
                 db,
                 broadcaster,
             )
@@ -229,18 +263,22 @@ async def run_ab_eval(
 
     question_id_a = run_a.get("question_id")
     question_id_b = run_b.get("question_id")
+    if not question_id_a:
+        raise ValueError(f"Run {run_id_a} has no question_id")
+    if not question_id_b:
+        raise ValueError(f"Run {run_id_b} has no question_id")
     if question_id_a != question_id_b:
-        log.warning(
-            "Runs target different questions: %s vs %s",
+        log.info(
+            "Runs target different questions: %s vs %s (each arm "
+            "will be evaluated against its own root question)",
             question_id_a,
             question_id_b,
         )
-    question_id = question_id_a or question_id_b
-    if not question_id:
-        raise ValueError("Neither run has a question_id")
 
     print(f"\nA/B Evaluation: {run_id_a[:8]} vs {run_id_b[:8]}")
-    print(f"Question: {question_id}")
+    print(f"Question A: {question_id_a}")
+    if question_id_b != question_id_a:
+        print(f"Question B: {question_id_b}")
     print(f"Running {len(EVAL_AGENTS)} evaluation agents concurrently...\n")
 
     results: list[ABEvalResult] = []
@@ -251,7 +289,8 @@ async def run_ab_eval(
                     spec,
                     run_id_a,
                     run_id_b,
-                    question_id,
+                    question_id_a,
+                    question_id_b,
                     db,
                     broadcaster,
                 )

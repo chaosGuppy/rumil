@@ -19,7 +19,7 @@ EVAL_AGENTS: Sequence[ABEvalAgentSpec] = [
         name="grounding",
         display_name="Grounding & Factual Correctness",
         prompt_file="ab-eval-grounding.md",
-        extra_tools=["Bash"],
+        extra_tools=["WebSearch"],
     ),
     ABEvalAgentSpec(
         name="subquestion_relevance",

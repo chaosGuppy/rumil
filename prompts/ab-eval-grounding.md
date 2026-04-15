@@ -12,7 +12,7 @@ Assess the following dimensions:
 
 1. **Source backing**: To what extent are claims that could be backed up by sources actually backed up? Are citations present where they should be? Do the cited sources actually support what they are cited for?
 
-2. **Factual accuracy**: Are the factual claims made by this run correct? Use the Bash tool with curl to verify specific factual claims against external sources when you can. Focus on claims that are load-bearing for the analysis.
+2. **Factual accuracy**: Are the factual claims made by this run correct? Use WebSearch to verify specific factual claims against external sources when you can. Focus on claims that are load-bearing for the analysis.
 
 3. **Specificity of evidence**: Does the run make vague appeals to evidence ("studies show", "experts agree") without pinning down what specifically supports the claim? Or does it get specific?
 
@@ -20,9 +20,9 @@ Assess the following dimensions:
 
 ## How to work
 
-1. Use `explore_page` to navigate the workspace graph, starting from the root question
+1. Use `explore_subgraph` to navigate the workspace graph, starting from the root question. Use `load_page` to read the full content of individual pages
 2. Identify claims marked `[ADDED BY THIS RUN]`
-3. For factual claims that are load-bearing, verify them using Bash (curl) where possible
+3. For factual claims that are load-bearing, verify them using WebSearch where possible
 4. Assess source quality and citation accuracy
 5. Note both strengths and weaknesses
 

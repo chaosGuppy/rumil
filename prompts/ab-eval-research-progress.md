@@ -16,13 +16,13 @@ Assess the following dimensions:
 
 3. **Substantial updates**: To what extent did the run produce findings that should substantially update our view on the question? Were there claims or judgements with high credence and robustness that moved the needle?
 
-4. **Depth vs breadth**: Did the run go deep where it mattered, or did it spread itself thin across many topics without achieving depth on any? Is the depth proportional to the importance of the subtopic?
+4. **Depth vs breadth**: Were the depth and breadth of investigation appropriate? Did the run go deep where it mattered, or spread itself thin? Conversely, did it tunnel too narrowly into one subtopic while neglecting important angles? Is the allocation of depth proportional to the importance of each subtopic?
 
 5. **Advancing beyond the obvious**: Did the run go beyond surface-level observations that anyone could make? Did it produce analysis that reflects genuine intellectual work rather than restating common knowledge or the question's own framing?
 
 ## How to work
 
-1. Use `explore_page` to navigate the workspace graph, starting from the root question
+1. Use `explore_subgraph` to navigate the workspace graph, starting from the root question. Use `load_page` to read the full content of individual pages
 2. Examine the claims, judgements, and subquestions marked `[ADDED BY THIS RUN]`
 3. Assess whether each major output represents genuine progress or is relatively obvious
 4. Look for moments where the analysis took a non-obvious turn that paid off

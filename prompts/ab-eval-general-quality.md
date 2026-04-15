@@ -19,25 +19,21 @@ Do not comment on these four areas. Instead, focus on everything else that affec
 
 ## Your task
 
-Look for anything that seems "off", "broken", "a bit weird", or "buggy" about the run's outputs. Consider:
+Look for anything that seems "off", "broken", "a bit weird", or "buggy" about the run's outputs. Examples of things to look for include:
 
-1. **Writing quality**: Is the content well-written, clear, and appropriately concise? Or is it verbose, vague, repetitive, or hard to follow?
+- **Structural issues**: Are links appropriate? Is the graph structure sensible, or are there orphaned pages, missing links, or confusing relationships?
 
-2. **Structural issues**: Are pages well-organized? Are links appropriate? Is the graph structure sensible, or are there orphaned pages, missing links, or confusing relationships?
+- **Calibration**: Are credence and robustness scores well-calibrated relative to the actual strength of the evidence and reasoning? Are there scores that feel obviously too high or too low?
 
-3. **Calibration**: Are credence and robustness scores well-calibrated relative to the actual strength of the evidence and reasoning? Are there scores that feel obviously too high or too low?
+- **Headline quality**: Do headlines follow the workspace conventions? Are they informative out of context, or do they use vague, context-dependent language?
 
-4. **Headline quality**: Do headlines follow the workspace conventions? Are they informative out of context, or do they use vague, context-dependent language?
+- **Epistemic hygiene**: Does the run distinguish between inference and evidence? Does it flag uncertainty appropriately? Does it avoid the failure modes described in the preamble (restating questions as analysis, performative hedging, etc.)?
 
-5. **Epistemic hygiene**: Does the run distinguish between inference and evidence? Does it flag uncertainty appropriately? Does it avoid the failure modes described in the preamble (restating questions as analysis, performative hedging, etc.)?
-
-6. **Appropriate scope**: Does each page have appropriate scope, or are some trying to do too much? Are there pages that should have been split or combined?
-
-7. **Anything else**: Anything that looks wrong, weird, or could be improved that does not fall into the four excluded categories.
+These are not exhaustive -- use your judgement to flag any quality issues you notice beyond the four excluded dimensions.
 
 ## How to work
 
-1. Use `explore_page` to navigate the workspace graph, starting from the root question
+1. Use `explore_subgraph` to navigate the workspace graph, starting from the root question. Use `load_page` to read the full content of individual pages
 2. Read through the content marked `[ADDED BY THIS RUN]`
 3. Note anything that strikes you as a quality issue
 4. Be specific -- cite page IDs and give concrete examples

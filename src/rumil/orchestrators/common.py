@@ -598,6 +598,38 @@ async def create_view_for_question(
     return call.id
 
 
+async def update_view_for_question(
+    question_id: str,
+    db: DB,
+    parent_call_id: str | None = None,
+    context_page_ids: list | None = None,
+    broadcaster=None,
+    force: bool = False,
+    call_id: str | None = None,
+    sequence_id: str | None = None,
+    sequence_position: int | None = None,
+) -> str | None:
+    """Run an UpdateView call on a question with an existing View. Returns call ID."""
+    from rumil.calls.update_view import UpdateViewCall
+
+    log.info("update_view_for_question: question=%s", question_id[:8])
+    if not await _consume_budget(db, force=force):
+        return None
+
+    call = await db.create_call(
+        CallType.UPDATE_VIEW,
+        scope_page_id=question_id,
+        parent_call_id=parent_call_id,
+        context_page_ids=context_page_ids,
+        call_id=call_id,
+        sequence_id=sequence_id,
+        sequence_position=sequence_position,
+    )
+    instance = UpdateViewCall(question_id, call, db, broadcaster=broadcaster)
+    await instance.run()
+    return call.id
+
+
 async def web_research_question(
     question_id: str,
     db: DB,

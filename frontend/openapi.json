@@ -1056,6 +1056,9 @@
                       },
                       {
                         "$ref": "#/components/schemas/PhaseSkippedEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/UpdateViewPhaseCompletedEventOut"
                       }
                     ],
                     "discriminator": {
@@ -1086,7 +1089,8 @@
                         "render_question_subgraph": "#/components/schemas/RenderQuestionSubgraphEventOut",
                         "link_subquestions_complete": "#/components/schemas/LinkSubquestionsCompleteEventOut",
                         "view_created": "#/components/schemas/ViewCreatedEventOut",
-                        "phase_skipped": "#/components/schemas/PhaseSkippedEventOut"
+                        "phase_skipped": "#/components/schemas/PhaseSkippedEventOut",
+                        "update_view_phase_completed": "#/components/schemas/UpdateViewPhaseCompletedEventOut"
                       }
                     }
                   },
@@ -1876,6 +1880,9 @@
                 },
                 {
                   "$ref": "#/components/schemas/PhaseSkippedEventOut"
+                },
+                {
+                  "$ref": "#/components/schemas/UpdateViewPhaseCompletedEventOut"
                 }
               ],
               "discriminator": {
@@ -1904,6 +1911,7 @@
                   "tool_call": "#/components/schemas/ToolCallEventOut",
                   "update_plan_created": "#/components/schemas/UpdatePlanCreatedEventOut",
                   "update_subgraph_computed": "#/components/schemas/UpdateSubgraphComputedEventOut",
+                  "update_view_phase_completed": "#/components/schemas/UpdateViewPhaseCompletedEventOut",
                   "view_created": "#/components/schemas/ViewCreatedEventOut",
                   "warning": "#/components/schemas/WarningEventOut",
                   "web_research_complete": "#/components/schemas/WebResearchCompleteEventOut"
@@ -1984,7 +1992,8 @@
           "grounding_feedback",
           "feedback_update",
           "link_subquestions",
-          "create_view"
+          "create_view",
+          "update_view"
         ],
         "title": "CallType"
       },
@@ -4496,6 +4505,61 @@
           "nodes"
         ],
         "title": "UpdateSubgraphComputedEventOut"
+      },
+      "UpdateViewPhaseCompletedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "update_view_phase_completed",
+            "title": "Event",
+            "default": "update_view_phase_completed"
+          },
+          "phase": {
+            "type": "string",
+            "title": "Phase",
+            "default": ""
+          },
+          "items_processed": {
+            "type": "integer",
+            "title": "Items Processed",
+            "default": 0
+          },
+          "items_modified": {
+            "type": "integer",
+            "title": "Items Modified",
+            "default": 0
+          },
+          "items_created": {
+            "type": "integer",
+            "title": "Items Created",
+            "default": 0
+          },
+          "items_removed": {
+            "type": "integer",
+            "title": "Items Removed",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "phase",
+          "items_processed",
+          "items_modified",
+          "items_created",
+          "items_removed"
+        ],
+        "title": "UpdateViewPhaseCompletedEventOut"
       },
       "ValidationError": {
         "properties": {

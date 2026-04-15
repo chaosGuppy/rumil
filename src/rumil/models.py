@@ -80,6 +80,7 @@ class CallType(str, Enum):
     FEEDBACK_UPDATE = "feedback_update"
     LINK_SUBQUESTIONS = "link_subquestions"
     CREATE_VIEW = "create_view"
+    UPDATE_VIEW = "update_view"
 
 
 # The subset of CallTypes that prioritization can dispatch.
@@ -299,6 +300,10 @@ class ScoutCStrengthenDispatchPayload(ScopeOnlyDispatchPayload, MultiRoundFields
 
 
 class CreateViewDispatchPayload(BaseDispatchPayload):
+    pass
+
+
+class UpdateViewDispatchPayload(BaseDispatchPayload):
     pass
 
 

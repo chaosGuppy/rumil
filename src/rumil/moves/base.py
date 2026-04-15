@@ -468,7 +468,7 @@ async def extract_and_link_citations(
             link_type = LinkType.CITES
             from_id, to_id = page_id, resolved
         elif cited_page.page_type in (PageType.CLAIM, PageType.JUDGEMENT):
-            if citing_type in (PageType.CLAIM, PageType.JUDGEMENT):
+            if citing_type in (PageType.CLAIM, PageType.JUDGEMENT, PageType.VIEW_ITEM):
                 link_type = LinkType.DEPENDS_ON
                 from_id, to_id = page_id, resolved
             else:

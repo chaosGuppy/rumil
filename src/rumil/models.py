@@ -82,6 +82,10 @@ class CallType(str, Enum):
     AB_EVAL = "ab_eval"
     CREATE_VIEW = "create_view"
     UPDATE_VIEW = "update_view"
+    # Envelope call for mutations made from Claude Code's broader context
+    # (not a rumil-internal call with carefully scoped prompt). Never
+    # dispatchable from prioritization — only created by .claude/ skills.
+    CLAUDE_CODE_DIRECT = "claude_code_direct"
 
 
 # The subset of CallTypes that prioritization can dispatch.

@@ -2282,7 +2282,8 @@
           "link_subquestions",
           "ab_eval",
           "create_view",
-          "update_view"
+          "update_view",
+          "claude_code_direct"
         ],
         "title": "CallType"
       },

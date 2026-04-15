@@ -13,7 +13,7 @@ from datetime import datetime
 
 from rumil.database import DB
 from rumil.embeddings import embed_query, search_pages_by_vector
-from rumil.models import LinkType, Page, PageDetail, PageLink, PageType
+from rumil.models import Page, PageDetail, PageLink, PageType
 from rumil.settings import get_settings
 
 log = logging.getLogger(__name__)
@@ -585,9 +585,12 @@ async def render_child_investigation_results(
             else:
                 lines.append(latest_judgement.abstract or "")
         else:
-            lines.append("**Status:** Not yet investigated")
+            continue
 
         entries.append((new, "\n".join(lines), page_ids))
+
+    if not entries:
+        return "", []
 
     entries.sort(key=lambda e: (not e[0], e[1]))
 

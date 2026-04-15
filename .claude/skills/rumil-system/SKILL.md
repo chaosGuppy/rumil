@@ -147,11 +147,39 @@ discussion. Apply this across every rumil skill's output.
 - **Terse logging**: scripts print one line per significant event. When
   you relay skill output to the user, keep it scannable — don't paraphrase
   the trace URL away.
-- **Git state**: `runs.config.git_head` captures the sha at invocation
-  time, so later reviews can correlate a run to the exact code that
-  produced it. Useful when iterating on prompts.
+- **Git state**: every run records the sha at invocation time, so later
+  reviews can correlate a run to the exact code that produced it. Key
+  name differs by lane: cc-mediated uses `runs.config.git_head`;
+  rumil-mediated uses `runs.config.git_commit` (set by
+  `Settings.capture_config()`).
 - **Local-only by default**: every script refuses `--prod` unless
   `RUMIL_ALLOW_PROD=1` is set in the shell. Don't try to bypass this.
+
+## One-off DB queries
+
+To inspect the workspace DB directly (e.g. checking what was written to
+`runs.config`), use this pattern — `DB.create` is async, the sync client
+lives on `db.client`, and `_execute` adds retry/backoff:
+
+```python
+import asyncio
+from rumil.database import DB
+
+async def main():
+    db = await DB.create(run_id="scratch", prod=False, staged=False)
+    res = await db._execute(
+        db.client.table("runs").select("id,config").limit(10)
+    )
+    print(res.data)
+
+asyncio.run(main())
+```
+
+Schema gotchas:
+- `call_type` is on `calls`, not `runs`.
+- `runs.config` shape depends on lane — cc-mediated has
+  `{origin, skill, cc_session, git_head}`; rumil-mediated has the fields
+  from `Settings.capture_config()` (`model`, budgets, `git_commit`, …).
 
 ## When NOT to use these skills
 

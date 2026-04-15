@@ -11,6 +11,7 @@ from rumil.calls.stages import (
 )
 from rumil.database import DB
 from rumil.models import Call, CallStage, CallType, Page
+from rumil.settings import get_settings
 
 
 class IngestCall(CallRunner):
@@ -52,8 +53,11 @@ class IngestCall(CallRunner):
         return IngestClosingReview(self.call_type, self._filename)
 
     def task_description(self) -> str:
+        n = get_settings().ingest_num_claims
         return (
-            "Extract considerations from the source document above for this question.\n\n"
+            f"Extract approximately {n} considerations from the source document "
+            "above for this question. Quality over quantity — produce fewer if "
+            "only fewer genuinely matter.\n\n"
             f"Question ID: `{self.infra.question_id}`\n"
             f"Source page ID: `{self._source_page.id}`"
         )

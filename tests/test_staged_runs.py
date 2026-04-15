@@ -631,3 +631,144 @@ async def test_commit_staged_run_validation(project_id):
 
     await helper.delete_run_data()
     await run_db.delete_run_data()
+
+
+async def test_update_page_content_accepted_by_constraint(baseline_db, observer_db):
+    """update_page_content() inserts a mutation event and applies the direct page update."""
+    page = await _make_page(baseline_db, "headline")
+    original_content = page.content
+    new_content = "rewritten content body"
+
+    await baseline_db.update_page_content(page.id, new_content=new_content)
+
+    events = (
+        await baseline_db._execute(
+            baseline_db.client.table("mutation_events")
+            .select("event_type, target_id, payload")
+            .eq("run_id", baseline_db.run_id)
+            .eq("target_id", page.id)
+        )
+    ).data
+    assert len(events) == 1
+    assert events[0]["event_type"] == "update_page_content"
+    assert events[0]["payload"]["old_content"] == original_content
+    assert events[0]["payload"]["new_content"] == new_content
+
+    obs_page = await observer_db.get_page(page.id)
+    assert obs_page is not None
+    assert obs_page.content == new_content
+
+
+async def test_stage_run_reverts_update_page_content(project_id):
+    """stage_run() restores a baseline page's original content after a non-staged update."""
+    baseline = await _make_db(project_id, staged=False)
+    await baseline.init_budget(100)
+    run_db = await _make_db(project_id, staged=False)
+    await run_db.init_budget(100)
+    observer = await _make_db(project_id, staged=False)
+
+    page = await _make_page(baseline, "headline")
+    original_content = page.content
+    new_content = "run-written content"
+
+    await run_db.update_page_content(page.id, new_content=new_content)
+
+    # Before staging: observer sees the updated content
+    obs_page = await observer.get_page(page.id)
+    assert obs_page is not None
+    assert obs_page.content == new_content
+
+    await observer.stage_run(run_db.run_id)
+
+    # After staging: observer sees original content again
+    obs_page = await observer.get_page(page.id)
+    assert obs_page is not None
+    assert obs_page.content == original_content
+
+    await baseline.delete_run_data()
+    await run_db.delete_run_data()
+    await observer.delete_run_data()
+
+
+async def test_commit_staged_run_applies_update_page_content(project_id):
+    """commit_staged_run() propagates a staged content update to baseline readers."""
+    baseline = await _make_db(project_id, staged=False)
+    await baseline.init_budget(100)
+    staged_db = await _make_db(project_id, staged=True)
+    await staged_db.init_budget(100)
+    await _register_run(staged_db)
+    helper = await _make_db(project_id, staged=False)
+
+    page = await _make_page(baseline, "headline")
+    original_content = page.content
+    new_content = "committed content"
+
+    await staged_db.update_page_content(page.id, new_content=new_content)
+
+    # Before commit: observer still sees the original content
+    observer = await _make_db(project_id, staged=False)
+    obs_page = await observer.get_page(page.id)
+    assert obs_page is not None
+    assert obs_page.content == original_content
+
+    await helper.commit_staged_run(staged_db.run_id)
+
+    # After commit: observer sees the staged content
+    obs_page = await observer.get_page(page.id)
+    assert obs_page is not None
+    assert obs_page.content == new_content
+
+    await baseline.delete_run_data()
+    await staged_db.delete_run_data()
+    await helper.delete_run_data()
+    await observer.delete_run_data()
+
+
+async def test_staged_update_page_content_is_isolated(baseline_db, staged_db, observer_db):
+    """A staged run updating a baseline page's content only affects that staged run's view."""
+    page = await _make_page(baseline_db, "headline")
+    original_content = page.content
+    new_content = "staged edit"
+
+    await staged_db.update_page_content(page.id, new_content=new_content)
+
+    staged_page = await staged_db.get_page(page.id)
+    assert staged_page is not None
+    assert staged_page.content == new_content
+
+    obs_page = await observer_db.get_page(page.id)
+    assert obs_page is not None
+    assert obs_page.content == original_content
+
+
+async def test_retroactively_staged_update_page_content_visible_to_staged_reader(project_id):
+    """After retroactive staging, a staged reader still sees the updated content via event replay."""
+    baseline = await _make_db(project_id, staged=False)
+    await baseline.init_budget(100)
+    run_db = await _make_db(project_id, staged=False)
+    await run_db.init_budget(100)
+    helper = await _make_db(project_id, staged=False)
+
+    page = await _make_page(baseline, "headline")
+    original_content = page.content
+    new_content = "run-written content"
+
+    await run_db.update_page_content(page.id, new_content=new_content)
+
+    await helper.stage_run(run_db.run_id)
+
+    staged_reader = await DB.create(run_id=run_db.run_id, staged=True)
+    staged_reader.project_id = project_id
+    reader_page = await staged_reader.get_page(page.id)
+    assert reader_page is not None
+    assert reader_page.content == new_content
+
+    observer = await _make_db(project_id, staged=False)
+    obs_page = await observer.get_page(page.id)
+    assert obs_page is not None
+    assert obs_page.content == original_content
+
+    await baseline.delete_run_data()
+    await run_db.delete_run_data()
+    await helper.delete_run_data()
+    await observer.delete_run_data()

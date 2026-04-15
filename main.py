@@ -18,12 +18,12 @@ import sys
 import uuid
 from pathlib import Path
 
+from rumil.ab_eval import run_ab_eval
 from rumil.chat import run_chat, run_continuation_chat, run_scoping_chat
 from rumil.clean import run_feedback_update, run_grounding_feedback
 from rumil.constants import MIN_TWOPHASE_BUDGET
 from rumil.database import DB
 from rumil.evaluate.runner import run_evaluation
-from rumil.mapper import generate_map
 from rumil.models import (
     Call,
     CallStatus,
@@ -35,13 +35,11 @@ from rumil.models import (
     PageType,
     Workspace,
 )
-from rumil.orchestrators import Orchestrator, create_root_question, run_concept_session
+from rumil.orchestrators import Orchestrator, create_root_question
 from rumil.report import generate_report, save_report
 from rumil.settings import Settings, _settings_var, get_settings
 from rumil.sources import create_source_page, run_ingest_calls
 from rumil.summary import generate_summary, save_summary
-
-PAGES_DIR = Path(__file__).parent / "pages"
 
 
 @dataclasses.dataclass
@@ -188,7 +186,7 @@ async def cmd_ingest(
     total, used = await db.get_budget()
     print(f"\nIngest complete. {made} extraction call{'s' if made != 1 else ''} made.")
     print(f"Budget used: {used}/{total}")
-    print("\nRun --map or --chat to explore the results.")
+    print("\nRun --chat to explore the results.")
 
 
 async def cmd_evaluate(question_id: str, db: DB, *, eval_type: str = "default") -> None:
@@ -472,19 +470,6 @@ async def cmd_show_evaluation(call_id: str, db: DB) -> None:
     _print_evaluation(call)
 
 
-async def cmd_map(question_id: str, db: DB) -> None:
-    question = await db.get_page(question_id)
-    if not question:
-        print(
-            f"Error: question '{question_id}' not found. Run --list to see existing questions."
-        )
-        sys.exit(1)
-    print(f"\nGenerating map for: {question.headline[:80]}")
-    path = await generate_map(question_id, db)
-    print(f"Map saved to: {path}")
-    print("Open that file in your browser to view it.")
-
-
 async def cmd_summary(
     question_id: str,
     db: DB,
@@ -738,6 +723,16 @@ async def cmd_ab(
     print(f"\nAB test complete: {frontend}/ab-traces/{ab_run_id}")
 
 
+async def cmd_ab_eval(
+    run_id_a: str,
+    run_id_b: str,
+    db: DB,
+) -> None:
+    """Run A/B evaluation agents comparing two staged runs."""
+
+    await run_ab_eval(run_id_a, run_id_b, db)
+
+
 async def cmd_scope(
     question_text: str,
     budget: int | None,
@@ -861,31 +856,9 @@ async def cmd_continue(
     await _print_summary(db)
 
 
-async def cmd_concepts(question_id: str, db: DB) -> None:
-    question = await db.get_page(question_id)
-    if not question:
-        print(
-            f"Error: question '{question_id}' not found. Run --list to see existing questions."
-        )
-        sys.exit(1)
-    print(f"\nRunning concept session for: {question.headline[:80]}")
-    print(f"Question ID: {question_id}")
-    print("(Concept generation does not consume research budget)\n")
-    await run_concept_session(question_id, db)
-    registry = await db.get_concept_registry()
-    promoted = [p for p in registry if p.extra.get("promoted")]
-    print("\nConcept session complete.")
-    print(f"Registry: {len(registry)} total proposals, {len(promoted)} promoted.")
-    if promoted:
-        print("\nPromoted concepts:")
-        for p in promoted:
-            print(f"  {p.id[:8]}  {p.headline}")
-
-
 async def _print_summary(db: DB) -> None:
     total, used = await db.get_budget()
-    print(f"\nPages written to: {PAGES_DIR}")
-    print(f"Budget used:      {used}/{total} calls")
+    print(f"\nBudget used: {used}/{total} calls")
     print("\nRun --list to see all questions.")
 
 
@@ -949,12 +922,6 @@ async def async_main():
             "Depth at which --summary switches from full content to page "
             "summaries only (default: max-depth // 2)"
         ),
-    )
-    parser.add_argument(
-        "--map",
-        dest="map_id",
-        metavar="QUESTION_ID",
-        help="Generate a visual HTML map of the research tree",
     )
     parser.add_argument(
         "--evaluate",
@@ -1021,12 +988,6 @@ async def async_main():
         dest="chat_first",
         action="store_true",
         help="Enter continuation chat before resuming investigation (use with --continue)",
-    )
-    parser.add_argument(
-        "--concepts",
-        dest="concepts_id",
-        metavar="QUESTION_ID",
-        help="Run a concept-generation session for a question",
     )
     parser.add_argument(
         "--add-question",
@@ -1104,6 +1065,17 @@ async def async_main():
         help="Available-calls preset name (default: 'default'). Controls which scout/dispatch types the two-phase orchestrator uses.",
     )
     parser.add_argument(
+        "--ingest-num-claims",
+        dest="ingest_num_claims",
+        type=int,
+        default=None,
+        help=(
+            "Target number of considerations to extract per ingest call "
+            "(default: 4). The prompt uses 'approximately', so the model "
+            "will still apply quality-over-quantity judgement."
+        ),
+    )
+    parser.add_argument(
         "--smoke-test",
         dest="smoke_test",
         action="store_true",
@@ -1126,6 +1098,25 @@ async def async_main():
         action="store_true",
         help="Run in staged mode: page mutations are recorded as events instead "
         "of modifying the database directly",
+    )
+    parser.add_argument(
+        "--run-id-file",
+        dest="run_id_file",
+        metavar="PATH",
+        help="Write the run_id to this file after DB creation (for scripted capture)",
+    )
+    parser.add_argument(
+        "--env-file",
+        dest="env_file",
+        metavar="PATH",
+        help="Load settings from this env file in addition to .env",
+    )
+    parser.add_argument(
+        "--ab-eval",
+        dest="ab_eval_ids",
+        nargs=2,
+        metavar=("RUN_ID_A", "RUN_ID_B"),
+        help="Run A/B evaluation agents comparing two staged runs",
     )
     parser.add_argument(
         "--stage-run",
@@ -1167,10 +1158,15 @@ async def async_main():
     )
     logging.getLogger("rumil").setLevel(log_level)
 
+    if args.env_file:
+        _settings_var.set(Settings.from_env_files(".env", args.env_file))
+
     if args.available_moves is not None:
         get_settings().available_moves = args.available_moves
     if args.available_calls is not None:
         get_settings().available_calls = args.available_calls
+    if args.ingest_num_claims is not None:
+        get_settings().ingest_num_claims = args.ingest_num_claims
     if args.smoke_test:
         get_settings().rumil_smoke_test = "1"
     if args.prod_db:
@@ -1180,11 +1176,12 @@ async def async_main():
     if args.force_twophase_recurse:
         get_settings().force_twophase_recurse = True
 
-    PAGES_DIR.mkdir(parents=True, exist_ok=True)
-
     db = await DB.create(
         run_id=str(uuid.uuid4()), prod=args.prod_db, staged=args.staged
     )
+
+    if args.run_id_file:
+        Path(args.run_id_file).write_text(db.run_id, encoding="utf-8")
 
     if args.list_workspaces:
         await cmd_list_workspaces(db)
@@ -1201,6 +1198,10 @@ async def async_main():
     if args.commit_run_id:
         await db.commit_staged_run(args.commit_run_id)
         print(f"Run {args.commit_run_id} has been committed.")
+        return
+
+    if args.ab_eval_ids:
+        await cmd_ab_eval(args.ab_eval_ids[0], args.ab_eval_ids[1], db)
         return
 
     if args.list:
@@ -1228,8 +1229,6 @@ async def async_main():
     elif args.show_evaluation_id:
         await cmd_show_evaluation(args.show_evaluation_id, db)
         return
-    elif args.concepts_id:
-        await cmd_concepts(args.concepts_id, db)
     elif args.scope_question:
         await cmd_scope(
             args.scope_question,
@@ -1243,8 +1242,6 @@ async def async_main():
     elif args.add_question:
         q = parse_question_input(args.add_question)
         await cmd_add_question(q, args.parent_id, args.budget, db)
-    elif args.map_id:
-        await cmd_map(args.map_id, db)
     elif args.summary_id:
         await cmd_summary(
             args.summary_id,

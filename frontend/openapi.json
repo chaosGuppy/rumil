@@ -32,17 +32,39 @@
       "get": {
         "summary": "List Projects",
         "operationId": "list_projects_api_projects_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
+                  "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/Project"
                   },
-                  "type": "array",
                   "title": "Response List Projects Api Projects Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -189,22 +211,6 @@
             }
           },
           {
-            "name": "staged_run_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Staged Run Id"
-            }
-          },
-          {
             "name": "search",
             "in": "query",
             "required": false,
@@ -238,6 +244,22 @@
               "type": "integer",
               "default": 50,
               "title": "Limit"
+            }
+          },
+          {
+            "name": "staged_run_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Staged Run Id"
             }
           }
         ],
@@ -294,6 +316,16 @@
               ],
               "title": "Staged Run Id"
             }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
           }
         ],
         "responses": {
@@ -349,6 +381,16 @@
               ],
               "title": "Staged Run Id"
             }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
           }
         ],
         "responses": {
@@ -387,6 +429,16 @@
             "schema": {
               "type": "string",
               "title": "Page Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
             }
           }
         ],
@@ -430,6 +482,16 @@
             "schema": {
               "type": "string",
               "title": "Page Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
             }
           }
         ],
@@ -475,6 +537,16 @@
               "type": "string",
               "title": "Page Id"
             }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
           }
         ],
         "responses": {
@@ -518,6 +590,16 @@
             "schema": {
               "type": "string",
               "title": "Page Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
             }
           }
         ],
@@ -578,6 +660,16 @@
               ],
               "title": "Staged Run Id"
             }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
           }
         ],
         "responses": {
@@ -616,6 +708,16 @@
             "schema": {
               "type": "string",
               "title": "Page Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
             }
           }
         ],
@@ -696,6 +798,16 @@
             "schema": {
               "type": "string",
               "title": "Page Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
             }
           }
         ],
@@ -847,6 +959,16 @@
               "type": "string",
               "title": "Call Id"
             }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
           }
         ],
         "responses": {
@@ -885,6 +1007,16 @@
             "schema": {
               "type": "string",
               "title": "Call Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
             }
           }
         ],
@@ -929,6 +1061,16 @@
               "type": "string",
               "title": "Run Id"
             }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
           }
         ],
         "responses": {
@@ -967,6 +1109,16 @@
             "schema": {
               "type": "string",
               "title": "Call Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
             }
           }
         ],
@@ -1056,6 +1208,9 @@
                       },
                       {
                         "$ref": "#/components/schemas/PhaseSkippedEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/UpdateViewPhaseCompletedEventOut"
                       }
                     ],
                     "discriminator": {
@@ -1086,7 +1241,8 @@
                         "render_question_subgraph": "#/components/schemas/RenderQuestionSubgraphEventOut",
                         "link_subquestions_complete": "#/components/schemas/LinkSubquestionsCompleteEventOut",
                         "view_created": "#/components/schemas/ViewCreatedEventOut",
-                        "phase_skipped": "#/components/schemas/PhaseSkippedEventOut"
+                        "phase_skipped": "#/components/schemas/PhaseSkippedEventOut",
+                        "update_view_phase_completed": "#/components/schemas/UpdateViewPhaseCompletedEventOut"
                       }
                     }
                   },
@@ -1121,6 +1277,16 @@
               "type": "string",
               "title": "Ab Run Id"
             }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
           }
         ],
         "responses": {
@@ -1130,6 +1296,99 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ABRunTraceOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ab-evals": {
+      "get": {
+        "summary": "List Ab Evals",
+        "operationId": "list_ab_evals_api_ab_evals_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ABEvalReportListItemOut"
+                  },
+                  "title": "Response List Ab Evals Api Ab Evals Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ab-evals/{eval_id}": {
+      "get": {
+        "summary": "Get Ab Eval",
+        "operationId": "get_ab_eval_api_ab_evals__eval_id__get",
+        "parameters": [
+          {
+            "name": "eval_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Eval Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ABEvalReportOut"
                 }
               }
             }
@@ -1159,6 +1418,16 @@
             "schema": {
               "type": "string",
               "title": "Call Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
             }
           }
         ],
@@ -1202,6 +1471,16 @@
             "schema": {
               "type": "string",
               "title": "Exchange Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
             }
           }
         ],
@@ -1259,6 +1538,16 @@
             "schema": {
               "type": "string",
               "title": "Page Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
             }
           }
         ],
@@ -1380,6 +1669,16 @@
               "default": "accepted",
               "title": "Status"
             }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
           }
         ],
         "responses": {
@@ -1426,6 +1725,16 @@
               "type": "integer",
               "default": 3,
               "title": "Importance Threshold"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
             }
           }
         ],
@@ -1528,6 +1837,201 @@
   },
   "components": {
     "schemas": {
+      "ABEvalDimensionOut": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "preference": {
+            "type": "string",
+            "title": "Preference"
+          },
+          "report_a": {
+            "type": "string",
+            "title": "Report A"
+          },
+          "report_b": {
+            "type": "string",
+            "title": "Report B"
+          },
+          "comparison": {
+            "type": "string",
+            "title": "Comparison"
+          },
+          "call_id_a": {
+            "type": "string",
+            "title": "Call Id A",
+            "default": ""
+          },
+          "call_id_b": {
+            "type": "string",
+            "title": "Call Id B",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "display_name",
+          "preference",
+          "report_a",
+          "report_b",
+          "comparison"
+        ],
+        "title": "ABEvalDimensionOut"
+      },
+      "ABEvalDimensionSummaryOut": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "preference": {
+            "type": "string",
+            "title": "Preference"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "display_name",
+          "preference"
+        ],
+        "title": "ABEvalDimensionSummaryOut"
+      },
+      "ABEvalReportListItemOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "run_id_a": {
+            "type": "string",
+            "title": "Run Id A"
+          },
+          "run_id_b": {
+            "type": "string",
+            "title": "Run Id B"
+          },
+          "question_id_a": {
+            "type": "string",
+            "title": "Question Id A",
+            "default": ""
+          },
+          "question_id_b": {
+            "type": "string",
+            "title": "Question Id B",
+            "default": ""
+          },
+          "question_headline": {
+            "type": "string",
+            "title": "Question Headline",
+            "default": ""
+          },
+          "overall_assessment_preview": {
+            "type": "string",
+            "title": "Overall Assessment Preview",
+            "default": ""
+          },
+          "preferences": {
+            "items": {
+              "$ref": "#/components/schemas/ABEvalDimensionSummaryOut"
+            },
+            "type": "array",
+            "title": "Preferences"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "run_id_a",
+          "run_id_b",
+          "preferences",
+          "created_at"
+        ],
+        "title": "ABEvalReportListItemOut"
+      },
+      "ABEvalReportOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "run_id_a": {
+            "type": "string",
+            "title": "Run Id A"
+          },
+          "run_id_b": {
+            "type": "string",
+            "title": "Run Id B"
+          },
+          "question_id_a": {
+            "type": "string",
+            "title": "Question Id A",
+            "default": ""
+          },
+          "question_id_b": {
+            "type": "string",
+            "title": "Question Id B",
+            "default": ""
+          },
+          "question_headline": {
+            "type": "string",
+            "title": "Question Headline",
+            "default": ""
+          },
+          "overall_assessment": {
+            "type": "string",
+            "title": "Overall Assessment"
+          },
+          "dimension_reports": {
+            "items": {
+              "$ref": "#/components/schemas/ABEvalDimensionOut"
+            },
+            "type": "array",
+            "title": "Dimension Reports"
+          },
+          "config_a": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Config A",
+            "default": {}
+          },
+          "config_b": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Config B",
+            "default": {}
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "run_id_a",
+          "run_id_b",
+          "overall_assessment",
+          "dimension_reports",
+          "created_at"
+        ],
+        "title": "ABEvalReportOut"
+      },
       "ABRunArmOut": {
         "properties": {
           "run_id": {
@@ -2107,6 +2611,9 @@
                 },
                 {
                   "$ref": "#/components/schemas/PhaseSkippedEventOut"
+                },
+                {
+                  "$ref": "#/components/schemas/UpdateViewPhaseCompletedEventOut"
                 }
               ],
               "discriminator": {
@@ -2135,6 +2642,7 @@
                   "tool_call": "#/components/schemas/ToolCallEventOut",
                   "update_plan_created": "#/components/schemas/UpdatePlanCreatedEventOut",
                   "update_subgraph_computed": "#/components/schemas/UpdateSubgraphComputedEventOut",
+                  "update_view_phase_completed": "#/components/schemas/UpdateViewPhaseCompletedEventOut",
                   "view_created": "#/components/schemas/ViewCreatedEventOut",
                   "warning": "#/components/schemas/WarningEventOut",
                   "web_research_complete": "#/components/schemas/WebResearchCompleteEventOut"
@@ -2195,8 +2703,6 @@
           "reframe",
           "maintain",
           "summarize",
-          "scout_concepts",
-          "assess_concept",
           "scout_subquestions",
           "scout_estimates",
           "scout_hypotheses",
@@ -2217,8 +2723,11 @@
           "grounding_feedback",
           "feedback_update",
           "link_subquestions",
+          "ab_eval",
           "create_view",
-          "chat_direct"
+          "update_view",
+          "chat_direct",
+          "claude_code_direct"
         ],
         "title": "CallType"
       },
@@ -3470,6 +3979,11 @@
               }
             ],
             "title": "Meta Type"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "default": ""
           }
         },
         "type": "object",
@@ -3496,7 +4010,8 @@
           "abstract",
           "fruit_remaining",
           "sections",
-          "meta_type"
+          "meta_type",
+          "run_id"
         ],
         "title": "Page"
       },
@@ -3632,6 +4147,11 @@
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "default": ""
           }
         },
         "type": "object",
@@ -3647,7 +4167,8 @@
           "importance",
           "section",
           "position",
-          "created_at"
+          "created_at",
+          "run_id"
         ],
         "title": "PageLink"
       },
@@ -3676,7 +4197,6 @@
           "claim",
           "question",
           "judgement",
-          "concept",
           "wiki",
           "summary",
           "view",
@@ -4299,6 +4819,12 @@
             "type": "boolean",
             "title": "Staged",
             "default": false
+          },
+          "config": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Config",
+            "default": {}
           }
         },
         "type": "object",
@@ -4821,6 +5347,61 @@
         ],
         "title": "UpdateSubgraphComputedEventOut"
       },
+      "UpdateViewPhaseCompletedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "update_view_phase_completed",
+            "title": "Event",
+            "default": "update_view_phase_completed"
+          },
+          "phase": {
+            "type": "string",
+            "title": "Phase",
+            "default": ""
+          },
+          "items_processed": {
+            "type": "integer",
+            "title": "Items Processed",
+            "default": 0
+          },
+          "items_modified": {
+            "type": "integer",
+            "title": "Items Modified",
+            "default": 0
+          },
+          "items_created": {
+            "type": "integer",
+            "title": "Items Created",
+            "default": 0
+          },
+          "items_removed": {
+            "type": "integer",
+            "title": "Items Removed",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "phase",
+          "items_processed",
+          "items_modified",
+          "items_created",
+          "items_removed"
+        ],
+        "title": "UpdateViewPhaseCompletedEventOut"
+      },
       "ValidationError": {
         "properties": {
           "loc": {
@@ -4990,8 +5571,7 @@
         "type": "string",
         "enum": [
           "research",
-          "prioritization",
-          "concept_staging"
+          "prioritization"
         ],
         "title": "Workspace"
       }

@@ -4,23 +4,16 @@ import uuid
 
 import pytest_asyncio
 
-from rumil.context import (
-    assemble_call_context,
-    build_prioritization_context,
-    format_page,
-)
+from rumil.context import build_prioritization_context
 from rumil.database import DB
 from rumil.models import (
     LinkType,
     Page,
-    PageDetail,
     PageLayer,
     PageLink,
     PageType,
     Workspace,
 )
-from rumil.page_graph import PageGraph
-from rumil.workspace_map import build_workspace_map
 
 
 async def _make_db(project_name: str) -> DB:
@@ -151,40 +144,6 @@ async def test_sources_isolated(two_workspaces):
     assert not any(s.id == w["source_alpha"].id for s in beta_sources)
 
 
-async def test_workspace_map_isolated(two_workspaces):
-    w = two_workspaces
-    map_alpha, ids_alpha = await build_workspace_map(w["db_alpha"])
-    map_beta, ids_beta = await build_workspace_map(w["db_beta"])
-
-    assert w["q_alpha"].id[:8] in ids_alpha
-    assert w["q_alpha"].id[:8] not in ids_beta
-    assert w["q_beta"].id[:8] in ids_beta
-    assert w["q_beta"].id[:8] not in ids_alpha
-
-    assert "Rayleigh" in map_alpha
-    assert "Rayleigh" not in map_beta
-    assert "salty" in map_beta
-    assert "salty" not in map_alpha
-
-
-async def test_call_context_isolated(two_workspaces):
-    w = two_workspaces
-    q_alpha = await w["db_alpha"].get_page(w["q_alpha"].id)
-    wc_alpha = await format_page(q_alpha, PageDetail.ABSTRACT, db=w["db_alpha"])
-    map_alpha, _ = await build_workspace_map(w["db_alpha"])
-    ctx_alpha = assemble_call_context(wc_alpha, workspace_map=map_alpha)
-
-    q_beta = await w["db_beta"].get_page(w["q_beta"].id)
-    wc_beta = await format_page(q_beta, PageDetail.ABSTRACT, db=w["db_beta"])
-    map_beta, _ = await build_workspace_map(w["db_beta"])
-    ctx_beta = assemble_call_context(wc_beta, workspace_map=map_beta)
-
-    assert "Rayleigh" in ctx_alpha
-    assert "salty" not in ctx_alpha
-    assert "salty" in ctx_beta
-    assert "Rayleigh" not in ctx_beta
-
-
 async def test_prioritization_context_isolated(two_workspaces):
     w = two_workspaces
     ctx_alpha, _ = await build_prioritization_context(w["db_alpha"], w["q_alpha"].id)
@@ -231,21 +190,3 @@ async def test_get_pages_slim_isolated(two_workspaces):
     assert w["q_alpha"].id not in beta_ids
     assert w["q_beta"].id in beta_ids
     assert w["q_beta"].id not in alpha_ids
-
-
-async def test_page_graph_isolated(two_workspaces):
-
-    w = two_workspaces
-    graph_alpha = await PageGraph.load(w["db_alpha"])
-    graph_beta = await PageGraph.load(w["db_beta"])
-
-    alpha_page = await graph_alpha.get_page(w["q_alpha"].id)
-    beta_leak = await graph_alpha.get_page(w["q_beta"].id)
-    assert alpha_page is not None
-    assert beta_leak is None
-
-    beta_page = await graph_beta.get_page(w["q_beta"].id)
-    alpha_leak = await graph_beta.get_page(w["q_alpha"].id)
-    assert beta_page is not None
-    assert alpha_leak is None
-

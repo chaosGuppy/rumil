@@ -23,7 +23,7 @@ Calibrate your `credence` and `robustness` accordingly. A well-evidenced finding
 
 ### Primary extraction
 
-Extract **3–5 considerations** that bear on the primary question. Quality over quantity — if only 2 genuinely matter, produce 2.
+Quality over quantity — if only 2 genuinely matter, produce 2. The task description specifies an approximate target count; treat it as guidance, not a quota.
 
 For each consideration, create the claim and link it to the primary question. Cite the source inline using its `[shortid]` so the link is auto-created.
 

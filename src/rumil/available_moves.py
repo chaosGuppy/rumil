@@ -37,10 +37,7 @@ PRESETS: dict[str, AvailableMoves] = {
             MoveType.LINK_DEPENDS_ON,
             MoveType.LOAD_PAGE,
         ],
-        CallType.PRIORITIZATION: [
-            MoveType.CREATE_SUBQUESTION,
-            MoveType.LINK_CHILD_QUESTION,
-        ],
+        CallType.PRIORITIZATION: [],
         CallType.SCOUT_SUBQUESTIONS: [
             MoveType.CREATE_CLAIM,
             MoveType.CREATE_SCOUT_QUESTION,
@@ -153,10 +150,6 @@ PRESETS: dict[str, AvailableMoves] = {
             MoveType.LOAD_PAGE,
             MoveType.PROPOSE_VIEW_ITEM,
         ],
-        CallType.SCOUT_CONCEPTS: [
-            MoveType.PROPOSE_CONCEPT,
-            MoveType.LOAD_PAGE,
-        ],
         CallType.WEB_RESEARCH: [
             MoveType.CREATE_CLAIM,
             MoveType.LINK_CONSIDERATION,
@@ -166,6 +159,10 @@ PRESETS: dict[str, AvailableMoves] = {
         ],
         CallType.CREATE_VIEW: [
             MoveType.CREATE_VIEW_ITEM,
+            MoveType.LOAD_PAGE,
+            MoveType.UPDATE_EPISTEMIC,
+        ],
+        CallType.UPDATE_VIEW: [
             MoveType.LOAD_PAGE,
             MoveType.UPDATE_EPISTEMIC,
         ],
@@ -199,10 +196,7 @@ PRESETS: dict[str, AvailableMoves] = {
             MoveType.LINK_DEPENDS_ON,
             MoveType.LOAD_PAGE,
         ],
-        CallType.PRIORITIZATION: [
-            MoveType.CREATE_SUBQUESTION,
-            MoveType.LINK_CHILD_QUESTION,
-        ],
+        CallType.PRIORITIZATION: [],
         CallType.SCOUT_SUBQUESTIONS: [
             MoveType.CREATE_CLAIM,
             MoveType.CREATE_SCOUT_QUESTION,
@@ -315,10 +309,6 @@ PRESETS: dict[str, AvailableMoves] = {
             MoveType.LOAD_PAGE,
             MoveType.PROPOSE_VIEW_ITEM,
         ],
-        CallType.SCOUT_CONCEPTS: [
-            MoveType.PROPOSE_CONCEPT,
-            MoveType.LOAD_PAGE,
-        ],
         CallType.WEB_RESEARCH: [
             MoveType.CREATE_CLAIM,
             MoveType.LINK_CONSIDERATION,
@@ -328,6 +318,10 @@ PRESETS: dict[str, AvailableMoves] = {
         ],
         CallType.CREATE_VIEW: [
             MoveType.CREATE_VIEW_ITEM,
+            MoveType.LOAD_PAGE,
+            MoveType.UPDATE_EPISTEMIC,
+        ],
+        CallType.UPDATE_VIEW: [
             MoveType.LOAD_PAGE,
             MoveType.UPDATE_EPISTEMIC,
         ],

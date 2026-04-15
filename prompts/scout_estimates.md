@@ -16,7 +16,7 @@ For each informative quantity (aim for 2–4):
 
 1. Read the parent question and consider what quantities, if known, would most constrain or resolve the answer. Think about: magnitudes, rates, proportions, costs, timelines, thresholds, population sizes, frequencies.
 2. For each quantity, create a claim with your initial estimate using `create_claim`, then `link_consideration` to the parent question.
-3. Create a corresponding subquestion using `create_question` and `link_child_question` to the parent.
+3. Create a corresponding subquestion using `create_question`. It is automatically linked as a child of the parent question.
 
 ## Quality Bar
 

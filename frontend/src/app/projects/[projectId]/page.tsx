@@ -15,7 +15,6 @@ const PAGE_TYPES: PageType[] = [
   "judgement",
   "view",
   "source",
-  "concept",
   "wiki",
 ];
 
@@ -46,12 +45,6 @@ const TYPE_CONFIG: Record<
     bg: "var(--type-source-bg)",
     bgHover: "var(--type-source-bg-hover)",
     border: "var(--type-source-border)",
-  },
-  concept: {
-    accent: "var(--type-concept)",
-    bg: "var(--type-concept-bg)",
-    bgHover: "var(--type-concept-bg-hover)",
-    border: "var(--type-concept-border)",
   },
   wiki: {
     accent: "var(--type-wiki)",
@@ -724,11 +717,6 @@ export default function PagesIndexPage() {
           --type-source-bg-hover: #ededef;
           --type-source-border: #c0c3c8;
 
-          --type-concept: #4a7f78;
-          --type-concept-bg: #f2f6f5;
-          --type-concept-bg-hover: #e8efed;
-          --type-concept-border: #a3bdb8;
-
           --type-wiki: #4e7f56;
           --type-wiki-bg: #f3f6f3;
           --type-wiki-bg-hover: #e9f0ea;
@@ -772,11 +760,6 @@ export default function PagesIndexPage() {
             --type-source-bg: #101112;
             --type-source-bg-hover: #171819;
             --type-source-border: #242628;
-
-            --type-concept: #6aaa9f;
-            --type-concept-bg: #0b1413;
-            --type-concept-bg-hover: #111d1b;
-            --type-concept-border: #1a2e2a;
 
             --type-wiki: #6fa877;
             --type-wiki-bg: #0b140d;

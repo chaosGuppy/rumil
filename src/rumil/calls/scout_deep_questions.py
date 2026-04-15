@@ -40,8 +40,9 @@ class ScoutDeepQuestionsCall(CallRunner):
             "Identify important questions bearing on the scope question that "
             "require judgement, interpretation, or involved reasoning to answer "
             "— questions that cannot be resolved by simply looking something up. "
-            "For each, create a question and link it as a child of the scope "
-            "question. Also produce confident, non-obvious high-level claims "
-            "that bear on the scope question.\n\n"
+            "For each, create a question using `create_question` (it is "
+            "automatically linked as a child of the scope question). Also "
+            "produce confident, non-obvious high-level claims that bear on "
+            "the scope question.\n\n"
             f"Question ID: `{self.infra.question_id}`"
         )

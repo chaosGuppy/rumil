@@ -4,7 +4,6 @@ import logging
 
 from rumil.calls.common import (
     RunCallResult,
-    mark_call_completed,
     run_single_call,
 )
 from rumil.calls.dispatches import estimate_dispatch_cost
@@ -16,20 +15,13 @@ from rumil.calls.dispatches import (
     filter_mode_schema,
     make_mode_validator,
 )
-from rumil.context import build_prioritization_context
 from rumil.database import DB
 from rumil.available_moves import get_moves_for_call
-from rumil.llm import build_system_prompt, build_user_message
+from rumil.llm import build_user_message
 from rumil.models import Call, CallStatus, CallType, MoveType
 from rumil.moves.base import MoveState
 from rumil.moves.registry import MOVES
 from rumil.settings import get_settings
-from rumil.tracing.trace_events import (
-    ContextBuiltEvent,
-    DispatchTraceItem,
-    DispatchesPlannedEvent,
-)
-from rumil.tracing.tracer import CallTrace, set_trace
 
 log = logging.getLogger(__name__)
 
@@ -40,11 +32,11 @@ async def run_prioritization_call(
     call: Call,
     db: DB,
     *,
+    system_prompt: str,
     available_moves: list[MoveType] | None = None,
     short_id_map: dict[str, str] | None = None,
     dispatch_types: Sequence[CallType] | None = None,
     extra_dispatch_defs: Sequence[DispatchDef] | None = None,
-    system_prompt_override: str | None = None,
     dispatch_budget: int | None = None,
 ) -> RunCallResult:
     """Run a prioritization call with tool use (single LLM round).
@@ -63,9 +55,6 @@ async def run_prioritization_call(
         available_moves = list(get_moves_for_call(CallType.PRIORITIZATION))
 
     state = MoveState(call, db)
-    system_prompt = system_prompt_override or build_system_prompt(
-        CallType.PRIORITIZATION.value
-    )
 
     allowed_fc_modes = get_settings().allowed_find_considerations_modes
     state._dispatch_validators.append(make_mode_validator(allowed_fc_modes))
@@ -148,86 +137,3 @@ async def run_prioritization_call(
         moves=state.moves,
         agent_result=agent_result,
     )
-
-
-async def run_prioritization(
-    scope_question_id: str,
-    call: Call,
-    budget: int,
-    db: DB,
-    broadcaster=None,
-    total_remaining: int | None = None,
-) -> dict:
-    """Run a Prioritization call.
-
-    Returns a summary dict including the list of dispatches and trace.
-    """
-    trace = CallTrace(call.id, db, broadcaster=broadcaster)
-    set_trace(trace)
-    log.info(
-        "Prioritization starting: call=%s, question=%s, budget=%d",
-        call.id[:8],
-        scope_question_id[:8],
-        budget,
-    )
-    context_text, short_id_map = await build_prioritization_context(
-        db,
-        scope_question_id=scope_question_id,
-    )
-    await trace.record(ContextBuiltEvent(budget=budget))
-
-    budget_line = f"You have a budget of **{budget} research calls** to allocate on this question."
-    if total_remaining is not None and total_remaining > budget:
-        budget_line += (
-            f" The overall question has **{total_remaining} budget remaining** "
-            "across future rounds."
-        )
-    task = (
-        f"{budget_line}\n\n"
-        f"Scope question ID: `{scope_question_id}`\n\n"
-        "Review the current state of the workspace above and decide how to spend the budget. "
-        "You may also create subquestions (using create_question + link_child_question) to "
-        "decompose the scope question before dispatching research on them. "
-        "Dispatch is restricted to questions within this scope subtree. "
-        "Use the dispatch tool to allocate calls."
-    )
-
-    result = await run_prioritization_call(
-        task,
-        context_text,
-        call,
-        db,
-        short_id_map=short_id_map,
-        dispatch_budget=budget,
-    )
-
-    await trace.record(
-        DispatchesPlannedEvent(
-            dispatches=[
-                DispatchTraceItem(
-                    call_type=d.call_type.value,
-                    **d.payload.model_dump(exclude_defaults=True),
-                )
-                for d in result.dispatches
-            ],
-        )
-    )
-
-    summary = {
-        "dispatches": result.dispatches,
-        "moves_created": len(result.moves),
-        "trace": trace,
-    }
-
-    log.info(
-        "Prioritization complete: call=%s, dispatches=%d, moves=%d",
-        call.id[:8],
-        len(result.dispatches),
-        len(result.moves),
-    )
-    await mark_call_completed(
-        call,
-        db,
-        f"Prioritization complete. Planned {len(result.dispatches)} dispatches.",
-    )
-    return summary

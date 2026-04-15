@@ -10,9 +10,6 @@ Usage:
     # Assess an existing question
     uv run python scripts/run_call.py assess --question-id <UUID>
 
-    # Prioritization on an existing question
-    uv run python scripts/run_call.py prioritize --question-id <UUID> --budget 5
-
     # Override find-considerations params
     uv run python scripts/run_call.py find-considerations "Why is water wet?" --mode concrete --max-rounds 3
 
@@ -50,7 +47,6 @@ from rumil.calls.scout_subquestions import ScoutSubquestionsCall
 from rumil.calls.scout_web_questions import ScoutWebQuestionsCall
 from rumil.calls.stages import CallRunner
 from rumil.calls.web_research import WebResearchCall
-from rumil.calls.prioritization import run_prioritization
 from rumil.database import DB
 from rumil.models import CallStage, CallType, FindConsiderationsMode
 from rumil.orchestrators import create_root_question
@@ -72,7 +68,7 @@ _SCOUT_CALL_TYPES: dict[str, tuple[CallType, type[CallRunner]]] = {
 
 
 async def run_call(args: argparse.Namespace, db: DB, question_id: str) -> None:
-    """Execute a single call (find-considerations/assess/prioritize) against the given DB."""
+    """Execute a single call (find-considerations/assess/etc.) against the given DB."""
     settings = get_settings()
 
     call_type = args.call_type
@@ -133,17 +129,6 @@ async def run_call(args: argparse.Namespace, db: DB, question_id: str) -> None:
             up_to_stage=up_to_stage,
         )
         await instance.run()
-
-    elif call_type == "prioritize":
-        if up_to_stage:
-            print("--up-to-stage is not supported for prioritize calls.")
-            return
-        call = await db.create_call(
-            CallType.PRIORITIZATION,
-            scope_page_id=question_id,
-            budget_allocated=args.budget,
-        )
-        await run_prioritization(question_id, call, args.budget, db)
 
     elif call_type == "link-subquestions":
         call = await db.create_call(
@@ -299,7 +284,6 @@ def main() -> None:
         choices=[
             "find-considerations",
             "assess",
-            "prioritize",
             "robustify",
             "web-research",
             "link-subquestions",

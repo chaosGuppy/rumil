@@ -92,7 +92,7 @@ _db_retry = retry(
 
 _LINK_COLUMNS = (
     'id,from_page_id,to_page_id,link_type,direction,'
-    'strength,reasoning,role,importance,section,position,created_at'
+    'strength,reasoning,role,importance,section,position,created_at,run_id'
 )
 
 _SLIM_PAGE_COLUMNS = (
@@ -127,6 +127,7 @@ def _row_to_page(row: dict[str, Any]) -> Page:
         fruit_remaining=row.get("fruit_remaining"),
         sections=row.get("sections"),
         meta_type=row.get("meta_type"),
+        run_id=row.get("run_id") or "",
     )
 
 
@@ -146,6 +147,7 @@ def _row_to_link(row: dict[str, Any]) -> PageLink:
         section=row.get("section"),
         position=row.get("position"),
         created_at=datetime.fromisoformat(row["created_at"]),
+        run_id=row.get("run_id") or "",
     )
 
 
@@ -479,7 +481,7 @@ class DB:
         """Update a page's content field with mutation event recording."""
         page = await self.get_page(page_id)
         if not page:
-            return
+            raise ValueError(f"update_page_content: page {page_id} not found")
         await self.record_mutation_event(
             "update_page_content", page_id,
             {"old_content": page.content, "new_content": new_content},
@@ -490,22 +492,6 @@ class DB:
                     {"content": new_content}
                 ).eq("id", page_id)
             )
-
-    async def update_page_extra(self, page_id: str, extra: dict) -> None:
-        """Update the extra JSONB field on a page in place."""
-        await self._execute(
-            self.client.table("pages").update(
-                {"extra": extra}
-            ).eq("id", page_id)
-        )
-
-    async def get_concept_registry(self) -> list[Page]:
-        """Return all concept proposals in the concept_staging workspace."""
-        return await self.get_pages(
-            workspace=Workspace.CONCEPT_STAGING,
-            page_type=PageType.CONCEPT,
-            active_only=False,
-        )
 
     async def update_page_abstract(
         self, page_id: str, abstract: str
@@ -1354,7 +1340,7 @@ class DB:
         parent_call_id: str | None = None,
         budget_allocated: int | None = None,
         workspace: Workspace = Workspace.RESEARCH,
-        context_page_ids: list | None = None,
+        context_page_ids: Sequence[str] | None = None,
         call_id: str | None = None,
         sequence_id: str | None = None,
         sequence_position: int | None = None,
@@ -1373,7 +1359,7 @@ class DB:
             parent_call_id=parent_call_id,
             budget_allocated=budget_allocated,
             status=CallStatus.PENDING,
-            context_page_ids=context_page_ids or [],
+            context_page_ids=list(context_page_ids) if context_page_ids else [],
             sequence_id=sequence_id,
             sequence_position=sequence_position,
         )
@@ -2218,6 +2204,15 @@ class DB:
             return {"run_id": rows[0]["run_id"], "created_at": rows[0]["created_at"]}
         return None
 
+    async def get_run(self, run_id: str) -> dict[str, Any] | None:
+        """Fetch a row from the runs table by run_id."""
+        rows = _rows(
+            await self._execute(
+                self.client.table("runs").select("*").eq("id", run_id)
+            )
+        )
+        return rows[0] if rows else None
+
     async def create_run(
         self,
         name: str,
@@ -2328,6 +2323,26 @@ class DB:
                     .eq("id", tid)
                 )
 
+            elif et == "update_page_content":
+                if "old_content" not in payload:
+                    log.warning(
+                        "Cannot revert content update for page %s: no old_content in event payload",
+                        tid,
+                    )
+                    continue
+                page_rows = _rows(await self._execute(
+                    self.client.table("pages")
+                    .select("run_id")
+                    .eq("id", tid)
+                ))
+                if page_rows and page_rows[0].get("run_id") == run_id:
+                    continue
+                await self._execute(
+                    self.client.table("pages")
+                    .update({"content": payload["old_content"]})
+                    .eq("id", tid)
+                )
+
     async def commit_staged_run(self, run_id: str) -> None:
         """Commit a staged run, making its effects visible to all readers.
 
@@ -2404,6 +2419,20 @@ class DB:
                     .eq("id", tid)
                 )
 
+            elif et == "update_page_content":
+                if "new_content" not in payload:
+                    log.warning(
+                        "Cannot apply content update for page %s: "
+                        "no new_content in event payload",
+                        tid,
+                    )
+                    continue
+                await self._execute(
+                    self.client.table("pages")
+                    .update({"content": payload["new_content"]})
+                    .eq("id", tid)
+                )
+
     async def create_ab_run(
         self,
         ab_run_id: str,
@@ -2421,6 +2450,57 @@ class DB:
                 }
             )
         )
+
+    async def save_ab_eval_report(
+        self,
+        run_id_a: str,
+        run_id_b: str,
+        question_id_a: str,
+        question_id_b: str,
+        overall_assessment: str,
+        dimension_reports: Sequence[dict[str, Any]],
+    ) -> str:
+        """Save an AB evaluation report. Returns the report ID."""
+        report_id = str(uuid.uuid4())
+        await self._execute(
+            self.client.table("ab_eval_reports").insert(
+                {
+                    "id": report_id,
+                    "run_id_a": run_id_a,
+                    "run_id_b": run_id_b,
+                    "question_id_a": question_id_a,
+                    "question_id_b": question_id_b,
+                    "overall_assessment": overall_assessment,
+                    "dimension_reports": list(dimension_reports),
+                    "project_id": str(self.project_id) if self.project_id else None,
+                }
+            )
+        )
+        return report_id
+
+    async def list_ab_eval_reports(self) -> list[dict[str, Any]]:
+        """List all AB evaluation reports for this project, newest first."""
+        q = (
+            self.client.table("ab_eval_reports")
+            .select("id, run_id_a, run_id_b, question_id_a, question_id_b, "
+                    "overall_assessment, dimension_reports, created_at")
+            .order("created_at", desc=True)
+        )
+        if self.project_id:
+            q = q.eq("project_id", str(self.project_id))
+        return _rows(await self._execute(q))
+
+    async def get_ab_eval_report(self, report_id: str) -> dict[str, Any] | None:
+        """Get a single AB evaluation report by ID."""
+        q = (
+            self.client.table("ab_eval_reports")
+            .select("*")
+            .eq("id", report_id)
+        )
+        if self.project_id:
+            q = q.eq("project_id", str(self.project_id))
+        rows = _rows(await self._execute(q))
+        return rows[0] if rows else None
 
     async def list_runs_for_project(self, project_id: str, limit: int = 50) -> list[dict[str, Any]]:
         """Return recent runs for a project, newest first.

@@ -57,6 +57,8 @@ PAGE_ID_FIELDS: dict[MoveType, list[str]] = {
     MoveType.LINK_CONSIDERATION: ["claim_id", "question_id"],
     MoveType.LINK_CHILD_QUESTION: ["child_id", "parent_id"],
     MoveType.LINK_RELATED: ["from_page_id", "to_page_id"],
+    MoveType.LINK_DEPENDS_ON: ["dependent_page_id", "dependency_page_id"],
+    MoveType.LINK_VARIANT: ["variant_page_id", "original_page_id"],
     MoveType.FLAG_FUNNINESS: ["page_id"],
     MoveType.REPORT_DUPLICATE: ["page_id_a", "page_id_b"],
 }
@@ -140,11 +142,16 @@ async def record_round_moves(
     state: MoveState,
     db: DB,
 ) -> None:
-    """Record a trace event for any moves added since the last call."""
+    """Record a trace event for any moves added since the last call.
+
+    Uses ``record_strict`` because moves have already been applied to the DB
+    at this point — a silently-dropped trace event leaves the frontend view
+    of the call out of sync with actual workspace state.
+    """
     trace = get_trace()
     round_moves, round_created, round_extras = state.take_new_moves()
     if round_moves and trace:
-        await trace.record(
+        await trace.record_strict(
             await moves_to_trace_event(round_moves, round_created, db, round_extras)
         )
 

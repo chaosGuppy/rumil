@@ -10,8 +10,9 @@ import logging
 import os
 import secrets
 import uuid
+from collections.abc import AsyncIterator
 
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import TypeAdapter, ValidationError
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -33,6 +34,10 @@ from rumil.views import View, build_view
 from rumil.settings import get_settings
 from rumil.api.chat import ChatRequest, ChatResponse, handle_chat, handle_chat_stream
 from rumil.api.schemas import (
+    ABEvalDimensionOut,
+    ABEvalDimensionSummaryOut,
+    ABEvalReportListItemOut,
+    ABEvalReportOut,
     ABRunArmOut,
     ABRunTraceOut,
     CallSequenceOut,
@@ -105,40 +110,64 @@ async def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
 
-async def _get_db(project_id: str = "") -> DB:
+async def _get_db(project_id: str = "") -> AsyncIterator[DB]:
+    """Yield a per-request DB, closing its HTTP connections on teardown.
+
+    FastAPI injects this as a Depends() and runs the post-yield cleanup
+    after the response is sent, regardless of whether the endpoint
+    returned normally or raised. This is the fundamental lifecycle
+    fix for chaosGuppy/rumil#274. project_id, if declared as a path
+    parameter on the endpoint, flows in here via name-based matching.
+    """
     prod = get_settings().is_prod_db
-    return await DB.create(
+    db = await DB.create(
         run_id=str(uuid.uuid4()),
         prod=prod,
         project_id=project_id,
     )
+    try:
+        yield db
+    finally:
+        await db.close()
 
 
 async def _get_db_maybe_staged(
     staged_run_id: str | None = None,
     project_id: str = "",
-) -> DB:
+) -> AsyncIterator[DB]:
+    """Same as _get_db but optionally scoped to a staged run.
+
+    When staged_run_id is present (as a query parameter on the endpoint),
+    the DB is constructed with staged=True and run_id=staged_run_id so
+    staged-run visibility rules apply.
+    """
+    prod = get_settings().is_prod_db
     if staged_run_id:
-        prod = get_settings().is_prod_db
-        return await DB.create(
+        db = await DB.create(
             run_id=staged_run_id,
             prod=prod,
             project_id=project_id,
             staged=True,
         )
-    return await _get_db(project_id)
+    else:
+        db = await DB.create(
+            run_id=str(uuid.uuid4()),
+            prod=prod,
+            project_id=project_id,
+        )
+    try:
+        yield db
+    finally:
+        await db.close()
 
 
 @app.get("/api/projects", response_model=list[Project])
-async def list_projects():
-    db = await _get_db()
+async def list_projects(db: DB = Depends(_get_db)):
     return await db.list_projects()
 
 
 @app.get("/api/projects/{project_id}", response_model=Project)
-async def get_project(project_id: str):
-
-    db = await _get_db(project_id)
+async def get_project(project_id: str, db: DB = Depends(_get_db)):
     rows = _rows(
         await db.client.table("projects").select("*").eq("id", project_id).execute()
     )
@@ -154,8 +183,7 @@ async def get_project(project_id: str):
 
 
 @app.get("/api/projects/{project_id}/runs", response_model=list[RunListItemOut])
-async def list_project_runs(project_id: str):
-    db = await _get_db(project_id)
+async def list_project_runs(project_id: str, db: DB = Depends(_get_db)):
     return await db.list_runs_for_project(project_id)
 
 
@@ -165,12 +193,11 @@ async def list_pages(
     page_type: PageType | None = None,
     workspace: Workspace | None = None,
     active_only: bool = True,
-    staged_run_id: str | None = None,
     search: str | None = None,
     offset: int = 0,
     limit: int = 50,
+    db: DB = Depends(_get_db_maybe_staged),
 ):
-    db = await _get_db_maybe_staged(staged_run_id, project_id)
     pages, total_count = await db.get_pages_paginated(
         workspace=workspace,
         page_type=page_type,
@@ -188,8 +215,10 @@ async def list_pages(
 
 
 @app.get("/api/pages/short/{short_id}", response_model=Page)
-async def get_page_by_short_id(short_id: str, staged_run_id: str | None = None):
-    db = await _get_db_maybe_staged(staged_run_id)
+async def get_page_by_short_id(
+    short_id: str,
+    db: DB = Depends(_get_db_maybe_staged),
+):
     full_id = await db.resolve_page_id(short_id)
     if not full_id:
         raise HTTPException(status_code=404, detail="Page not found")
@@ -200,8 +229,7 @@ async def get_page_by_short_id(short_id: str, staged_run_id: str | None = None):
 
 
 @app.get("/api/pages/{page_id}", response_model=Page)
-async def get_page(page_id: str, staged_run_id: str | None = None):
-    db = await _get_db_maybe_staged(staged_run_id)
+async def get_page(page_id: str, db: DB = Depends(_get_db_maybe_staged)):
     page = await db.get_page(page_id)
     if not page:
         raise HTTPException(status_code=404, detail="Page not found")
@@ -209,36 +237,34 @@ async def get_page(page_id: str, staged_run_id: str | None = None):
 
 
 @app.get("/api/pages/{page_id}/links/from", response_model=list[PageLink])
-async def get_links_from(page_id: str):
-    db = await _get_db()
+async def get_links_from(page_id: str, db: DB = Depends(_get_db)):
     return await db.get_links_from(page_id)
 
 
 @app.get("/api/pages/{page_id}/links/to", response_model=list[PageLink])
-async def get_links_to(page_id: str):
-    db = await _get_db()
+async def get_links_to(page_id: str, db: DB = Depends(_get_db)):
     return await db.get_links_to(page_id)
 
 
 @app.get("/api/pages/{page_id}/dependents", response_model=list[LinkedPageOut])
-async def get_dependents(page_id: str):
+async def get_dependents(page_id: str, db: DB = Depends(_get_db)):
     """Pages that depend on this page (inbound DEPENDS_ON links)."""
-    db = await _get_db()
     results = await db.get_dependents(page_id)
     return [LinkedPageOut(page=page, link=link) for page, link in results]
 
 
 @app.get("/api/pages/{page_id}/dependencies", response_model=list[LinkedPageOut])
-async def get_dependencies(page_id: str):
+async def get_dependencies(page_id: str, db: DB = Depends(_get_db)):
     """Pages that this page depends on (outbound DEPENDS_ON links)."""
-    db = await _get_db()
     results = await db.get_dependencies(page_id)
     return [LinkedPageOut(page=page, link=link) for page, link in results]
 
 
 @app.get("/api/pages/{page_id}/detail", response_model=PageDetailOut)
-async def get_page_detail(page_id: str, staged_run_id: str | None = None):
-    db = await _get_db_maybe_staged(staged_run_id)
+async def get_page_detail(
+    page_id: str,
+    db: DB = Depends(_get_db_maybe_staged),
+):
     page = await db.get_page(page_id)
     if not page:
         raise HTTPException(status_code=404, detail="Page not found")
@@ -262,31 +288,28 @@ async def get_page_detail(page_id: str, staged_run_id: str | None = None):
 
 
 @app.get("/api/pages/{page_id}/counts", response_model=PageCountsOut)
-async def get_page_counts(page_id: str):
-    db = await _get_db()
+async def get_page_counts(page_id: str, db: DB = Depends(_get_db)):
     counts = await db.count_pages_for_question(page_id)
     return PageCountsOut(**counts)
 
 
 @app.get("/api/projects/{project_id}/stats", response_model=ProjectStatsOut)
-async def get_project_stats(project_id: str):
+async def get_project_stats(project_id: str, db: DB = Depends(_get_db)):
     """Aggregate stats over all pages/links/calls in a project.
 
     v1 is baseline-only: rows with staged=true or is_superseded=true are excluded,
     and staged_run_id is not accepted.
     """
-    db = await _get_db(project_id)
     blob = await db.get_project_stats(project_id)
     return ProjectStatsOut(project_id=project_id, **blob)
 
 
 @app.get("/api/pages/{page_id}/stats", response_model=QuestionStatsOut)
-async def get_question_stats(page_id: str):
+async def get_question_stats(page_id: str, db: DB = Depends(_get_db)):
     """Aggregate stats over the 2-hop undirected neighborhood around a question.
 
     Returns 404 if the target page is not a question. v1 is baseline-only.
     """
-    db = await _get_db()
     page = await db.get_page(page_id)
     if not page:
         raise HTTPException(status_code=404, detail="Page not found")
@@ -306,8 +329,8 @@ async def get_question_stats(page_id: str):
 async def list_root_questions(
     project_id: str,
     workspace: Workspace = Workspace.RESEARCH,
+    db: DB = Depends(_get_db),
 ):
-    db = await _get_db(project_id)
     return await db.get_root_questions(workspace)
 
 
@@ -318,8 +341,8 @@ async def list_root_questions(
 async def list_calls(
     project_id: str,
     question_id: str | None = None,
+    db: DB = Depends(_get_db),
 ):
-    db = await _get_db(project_id)
     if question_id:
         return await db.get_root_calls_for_question(question_id)
 
@@ -335,8 +358,7 @@ async def list_calls(
 
 
 @app.get("/api/calls/{call_id}", response_model=Call)
-async def get_call(call_id: str):
-    db = await _get_db()
+async def get_call(call_id: str, db: DB = Depends(_get_db)):
     call = await db.get_call(call_id)
     if not call:
         raise HTTPException(status_code=404, detail="Call not found")
@@ -344,8 +366,7 @@ async def get_call(call_id: str):
 
 
 @app.get("/api/calls/{call_id}/children", response_model=list[Call])
-async def get_child_calls(call_id: str):
-    db = await _get_db()
+async def get_child_calls(call_id: str, db: DB = Depends(_get_db)):
     return await db.get_child_calls(call_id)
 
 
@@ -426,8 +447,7 @@ def _count_trace_events(trace_json: list[dict] | None) -> tuple[int, int]:
 
 
 @app.get("/api/runs/{run_id}/trace-tree", response_model=RunTraceTreeOut)
-async def get_run_trace_tree(run_id: str):
-    db = await _get_db()
+async def get_run_trace_tree(run_id: str, db: DB = Depends(_get_db)):
     question_id = await db.get_run_question_id(run_id)
     question_page = None
     if question_id:
@@ -453,21 +473,29 @@ async def get_run_trace_tree(run_id: str):
             )
         )
     total_cost = sum(c.cost_usd or 0 for c in calls)
-    run_resp = await db.client.table("runs").select("staged").eq("id", run_id).execute()
+    run_resp = (
+        await db.client.table("runs")
+        .select("staged, config")
+        .eq("id", run_id)
+        .execute()
+    )
     run_data: list[dict[str, object]] = run_resp.data or []  # type: ignore[assignment]
     is_staged = bool(run_data and run_data[0].get("staged"))
+    run_config: dict = {}
+    if run_data:
+        run_config = run_data[0].get("config") or {}  # type: ignore[assignment]
     return RunTraceTreeOut(
         run_id=run_id,
         question=question_page,
         calls=nodes,
         cost_usd=total_cost if total_cost > 0 else None,
         staged=is_staged,
+        config=run_config,
     )
 
 
 @app.get("/api/calls/{call_id}/events", response_model=list[TraceEventOut])
-async def get_call_events(call_id: str):
-    db = await _get_db()
+async def get_call_events(call_id: str, db: DB = Depends(_get_db)):
     call = await db.get_call(call_id)
     if not call:
         raise HTTPException(status_code=404, detail="Call not found")
@@ -475,9 +503,7 @@ async def get_call_events(call_id: str):
 
 
 @app.get("/api/ab-runs/{ab_run_id}/trace", response_model=ABRunTraceOut)
-async def get_ab_run_trace(ab_run_id: str):
-    db = await _get_db()
-
+async def get_ab_run_trace(ab_run_id: str, db: DB = Depends(_get_db)):
     ab_rows = _rows(
         await db.client.table("ab_runs").select("*").eq("id", ab_run_id).execute()
     )
@@ -532,11 +558,105 @@ async def get_ab_run_trace(ab_run_id: str):
 
 
 @app.get(
+    "/api/ab-evals",
+    response_model=list[ABEvalReportListItemOut],
+)
+async def list_ab_evals(project_id: str = "", db: DB = Depends(_get_db)):
+    rows = await db.list_ab_eval_reports()
+
+    question_ids = {
+        qid
+        for row in rows
+        for qid in (row.get("question_id_a"), row.get("question_id_b"))
+        if qid
+    }
+    pages_by_id: dict[str, Page] = {}
+    if question_ids:
+        pages_by_id = await db.get_pages_by_ids(list(question_ids))
+
+    results: list[ABEvalReportListItemOut] = []
+    for row in rows:
+        qid = row.get("question_id_a") or row.get("question_id_b") or ""
+        q_page = pages_by_id.get(qid)
+        dims = row.get("dimension_reports") or []
+        results.append(
+            ABEvalReportListItemOut(
+                id=row["id"],
+                run_id_a=row["run_id_a"],
+                run_id_b=row["run_id_b"],
+                question_id_a=row.get("question_id_a") or "",
+                question_id_b=row.get("question_id_b") or "",
+                question_headline=q_page.headline if q_page else "",
+                overall_assessment_preview=(row.get("overall_assessment") or "")[:300],
+                preferences=[
+                    ABEvalDimensionSummaryOut(
+                        name=d.get("name", ""),
+                        display_name=d.get("display_name", ""),
+                        preference=d.get("preference", ""),
+                    )
+                    for d in dims
+                ],
+                created_at=row.get("created_at", ""),
+            )
+        )
+    return results
+
+
+@app.get(
+    "/api/ab-evals/{eval_id}",
+    response_model=ABEvalReportOut,
+)
+async def get_ab_eval(
+    eval_id: str,
+    project_id: str = "",
+    db: DB = Depends(_get_db),
+):
+    row = await db.get_ab_eval_report(eval_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="AB eval report not found")
+
+    qid = row.get("question_id_a") or row.get("question_id_b") or ""
+    q_page = await db.get_page(qid) if qid else None
+    dims = row.get("dimension_reports") or []
+
+    run_ids = [row["run_id_a"], row["run_id_b"]]
+    run_rows = _rows(
+        await db.client.table("runs").select("id, config").in_("id", run_ids).execute()
+    )
+    configs_by_id = {r["id"]: r.get("config") or {} for r in run_rows}
+
+    return ABEvalReportOut(
+        id=row["id"],
+        run_id_a=row["run_id_a"],
+        run_id_b=row["run_id_b"],
+        question_id_a=row.get("question_id_a") or "",
+        question_id_b=row.get("question_id_b") or "",
+        question_headline=q_page.headline if q_page else "",
+        overall_assessment=row.get("overall_assessment") or "",
+        dimension_reports=[
+            ABEvalDimensionOut(
+                name=d.get("name", ""),
+                display_name=d.get("display_name", ""),
+                preference=d.get("preference", ""),
+                report_a=d.get("report_a", ""),
+                report_b=d.get("report_b", ""),
+                comparison=d.get("comparison", ""),
+                call_id_a=d.get("call_id_a", ""),
+                call_id_b=d.get("call_id_b", ""),
+            )
+            for d in dims
+        ],
+        config_a=configs_by_id.get(row["run_id_a"], {}),
+        config_b=configs_by_id.get(row["run_id_b"], {}),
+        created_at=row.get("created_at", ""),
+    )
+
+
+@app.get(
     "/api/calls/{call_id}/llm-exchanges",
     response_model=list[LLMExchangeSummaryOut],
 )
-async def list_llm_exchanges(call_id: str):
-    db = await _get_db()
+async def list_llm_exchanges(call_id: str, db: DB = Depends(_get_db)):
     rows = await db.get_llm_exchanges(call_id)
     return [
         LLMExchangeSummaryOut(
@@ -554,8 +674,7 @@ async def list_llm_exchanges(call_id: str):
 
 
 @app.get("/api/llm-exchanges/{exchange_id}", response_model=LLMExchangeOut)
-async def get_llm_exchange(exchange_id: str):
-    db = await _get_db()
+async def get_llm_exchange(exchange_id: str, db: DB = Depends(_get_db)):
     row = await db.get_llm_exchange(exchange_id)
     if not row:
         raise HTTPException(status_code=404, detail="LLM exchange not found")
@@ -589,8 +708,7 @@ def get_realtime_config():
     "/api/pages/{page_id}/run",
     response_model=RunSummaryOut | None,
 )
-async def get_page_run(page_id: str):
-    db = await _get_db()
+async def get_page_run(page_id: str, db: DB = Depends(_get_db)):
     run = await db.get_run_for_page(page_id)
     if not run:
         return None
@@ -606,8 +724,8 @@ async def list_suggestions(
     project_id: str,
     status: str = "pending",
     target_page_id: str | None = None,
+    db: DB = Depends(_get_db),
 ):
-    db = await _get_db(project_id)
     suggestions = await db.get_suggestions(
         status=status,
         target_page_id=target_page_id,
@@ -624,10 +742,13 @@ async def list_suggestions(
 
 
 @app.post("/api/suggestions/{suggestion_id}/review")
-async def review_suggestion(suggestion_id: str, status: str = "accepted"):
+async def review_suggestion(
+    suggestion_id: str,
+    status: str = "accepted",
+    db: DB = Depends(_get_db),
+):
     if status not in ("accepted", "rejected", "dismissed"):
         raise HTTPException(400, f"Invalid status: {status}")
-    db = await _get_db()
     if status != "accepted":
         await db.update_suggestion_status(suggestion_id, SuggestionStatus(status))
         return {"ok": True, "status": status}
@@ -684,8 +805,11 @@ async def _apply_suggestion(db: DB, suggestion: Suggestion) -> dict:
 
 
 @app.get("/api/questions/{question_id}/view")
-async def get_question_view(question_id: str, importance_threshold: int = 3):
-    db = await _get_db()
+async def get_question_view(
+    question_id: str,
+    importance_threshold: int = 3,
+    db: DB = Depends(_get_db),
+):
     resolved = await db.resolve_page_id(question_id)
     if not resolved:
         raise HTTPException(404, f"Question {question_id} not found")

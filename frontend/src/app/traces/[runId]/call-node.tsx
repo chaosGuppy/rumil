@@ -67,8 +67,6 @@ const CALL_TYPE_ACCENT: Record<string, string> = {
   reframe: "#c46b6b",
   maintain: "#7a8a9e",
   summarize: "#8a9e7a",
-  scout_concepts: "#4a9ec4",
-  assess_concept: "#b48ad4",
   scout_subquestions: "#3d8cb5",
   scout_estimates: "#6b9fd4",
   scout_hypotheses: "#4d8fba",
@@ -1143,6 +1141,33 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
           {event.reason && (
             <div className="trace-kv">
               <span className="trace-kv-value">{event.reason}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {event.event === "update_view_phase_completed" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">processed</span>
+            <span className="trace-kv-value">{event.items_processed}</span>
+          </div>
+          {(event.items_modified ?? 0) > 0 && (
+            <div className="trace-kv">
+              <span className="trace-kv-key">modified</span>
+              <span className="trace-kv-value">{event.items_modified}</span>
+            </div>
+          )}
+          {(event.items_created ?? 0) > 0 && (
+            <div className="trace-kv">
+              <span className="trace-kv-key">created</span>
+              <span className="trace-kv-value">{event.items_created}</span>
+            </div>
+          )}
+          {(event.items_removed ?? 0) > 0 && (
+            <div className="trace-kv">
+              <span className="trace-kv-key">removed</span>
+              <span className="trace-kv-value">{event.items_removed}</span>
             </div>
           )}
         </div>

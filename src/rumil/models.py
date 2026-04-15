@@ -28,7 +28,6 @@ class PageType(str, Enum):
     CLAIM = "claim"
     QUESTION = "question"
     JUDGEMENT = "judgement"
-    CONCEPT = "concept"
     WIKI = "wiki"
     SUMMARY = "summary"
     VIEW = "view"
@@ -50,7 +49,6 @@ class PageLayer(str, Enum):
 class Workspace(str, Enum):
     RESEARCH = "research"
     PRIORITIZATION = "prioritization"
-    CONCEPT_STAGING = "concept_staging"
 
 
 class CallType(str, Enum):
@@ -61,8 +59,6 @@ class CallType(str, Enum):
     REFRAME = "reframe"
     MAINTAIN = "maintain"
     SUMMARIZE = "summarize"
-    SCOUT_CONCEPTS = "scout_concepts"
-    ASSESS_CONCEPT = "assess_concept"
     SCOUT_SUBQUESTIONS = "scout_subquestions"
     SCOUT_ESTIMATES = "scout_estimates"
     SCOUT_HYPOTHESES = "scout_hypotheses"
@@ -83,15 +79,20 @@ class CallType(str, Enum):
     GROUNDING_FEEDBACK = "grounding_feedback"
     FEEDBACK_UPDATE = "feedback_update"
     LINK_SUBQUESTIONS = "link_subquestions"
+    AB_EVAL = "ab_eval"
     CREATE_VIEW = "create_view"
+    UPDATE_VIEW = "update_view"
     CHAT_DIRECT = "chat_direct"
+    # Envelope call for mutations made from Claude Code's broader context
+    # (not a rumil-internal call with carefully scoped prompt). Never
+    # dispatchable from prioritization — only created by .claude/ skills.
+    CLAUDE_CODE_DIRECT = "claude_code_direct"
 
 
 # The subset of CallTypes that prioritization can dispatch.
 DISPATCHABLE_CALL_TYPES: set[CallType] = {
     CallType.FIND_CONSIDERATIONS,
     CallType.ASSESS,
-    CallType.PRIORITIZATION,
     CallType.SCOUT_SUBQUESTIONS,
     CallType.SCOUT_ESTIMATES,
     CallType.SCOUT_HYPOTHESES,
@@ -108,7 +109,6 @@ DISPATCHABLE_CALL_TYPES: set[CallType] = {
     CallType.SCOUT_C_ROBUSTIFY,
     CallType.SCOUT_C_STRENGTHEN,
     CallType.WEB_RESEARCH,
-    CallType.CREATE_VIEW,
 }
 
 
@@ -140,7 +140,6 @@ class MoveType(str, Enum):
     CREATE_SCOUT_QUESTION = "CREATE_SCOUT_QUESTION"
     CREATE_SUBQUESTION = "CREATE_SUBQUESTION"
     CREATE_JUDGEMENT = "CREATE_JUDGEMENT"
-    CREATE_CONCEPT = "CREATE_CONCEPT"
     CREATE_WIKI_PAGE = "CREATE_WIKI_PAGE"
     LINK_CONSIDERATION = "LINK_CONSIDERATION"
     LINK_CHILD_QUESTION = "LINK_CHILD_QUESTION"
@@ -151,8 +150,6 @@ class MoveType(str, Enum):
     LOAD_PAGE = "LOAD_PAGE"
     REMOVE_LINK = "REMOVE_LINK"
     CHANGE_LINK_ROLE = "CHANGE_LINK_ROLE"
-    PROPOSE_CONCEPT = "PROPOSE_CONCEPT"
-    PROMOTE_CONCEPT = "PROMOTE_CONCEPT"
     UPDATE_EPISTEMIC = "UPDATE_EPISTEMIC"
     LINK_DEPENDS_ON = "LINK_DEPENDS_ON"
     CREATE_VIEW_ITEM = "CREATE_VIEW_ITEM"
@@ -226,10 +223,6 @@ class ScoutDispatchPayload(BaseDispatchPayload, _ScoutFields):
 
 
 class AssessDispatchPayload(BaseDispatchPayload):
-    pass
-
-
-class PrioritizationDispatchPayload(BaseDispatchPayload, PrioritizationFields):
     pass
 
 
@@ -316,6 +309,10 @@ class CreateViewDispatchPayload(BaseDispatchPayload):
     pass
 
 
+class UpdateViewDispatchPayload(BaseDispatchPayload):
+    pass
+
+
 class WebResearchDispatchPayload(BaseDispatchPayload):
     pass
 
@@ -342,12 +339,8 @@ class InlineAssessDispatch(_DispatchBase):
     call_type: Literal["assess"] = "assess"
 
 
-class InlinePrioritizationDispatch(_DispatchBase, PrioritizationFields):
-    call_type: Literal["prioritization"] = "prioritization"
-
-
 InlineDispatch = Annotated[
-    InlineScoutDispatch | InlineAssessDispatch | InlinePrioritizationDispatch,
+    InlineScoutDispatch | InlineAssessDispatch,
     Discriminator("call_type"),
 ]
 
@@ -397,6 +390,7 @@ class Page(BaseModel):
     fruit_remaining: int | None = None
     sections: list[str] | None = None  # VIEW pages: ordered section names
     meta_type: str | None = None  # VIEW_META pages: priority/annotation/proposal
+    run_id: str = ""
 
     def is_active(self) -> bool:
         return not self.is_superseded
@@ -416,6 +410,7 @@ class PageLink(BaseModel):
     section: str | None = None  # VIEW_ITEM links: section name
     position: int | None = None  # VIEW_ITEM links: order within section
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    run_id: str = ""
 
 
 class CallSequence(BaseModel):

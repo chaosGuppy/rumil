@@ -23,7 +23,6 @@ from rumil.clean import run_feedback_update, run_grounding_feedback
 from rumil.constants import MIN_TWOPHASE_BUDGET
 from rumil.database import DB
 from rumil.evaluate.runner import run_evaluation
-from rumil.mapper import generate_map
 from rumil.models import (
     Call,
     CallStatus,
@@ -40,8 +39,6 @@ from rumil.report import generate_report, save_report
 from rumil.settings import Settings, _settings_var, get_settings
 from rumil.sources import create_source_page, run_ingest_calls
 from rumil.summary import generate_summary, save_summary
-
-PAGES_DIR = Path(__file__).parent / "pages"
 
 
 @dataclasses.dataclass
@@ -188,7 +185,7 @@ async def cmd_ingest(
     total, used = await db.get_budget()
     print(f"\nIngest complete. {made} extraction call{'s' if made != 1 else ''} made.")
     print(f"Budget used: {used}/{total}")
-    print("\nRun --map or --chat to explore the results.")
+    print("\nRun --chat to explore the results.")
 
 
 async def cmd_evaluate(question_id: str, db: DB, *, eval_type: str = "default") -> None:
@@ -470,19 +467,6 @@ async def cmd_show_evaluation(call_id: str, db: DB) -> None:
         print(f"Evaluation for: {scope.headline[:80]}")
     print(f"Call: {call.id[:8]}  Status: {call.status.value}\n")
     _print_evaluation(call)
-
-
-async def cmd_map(question_id: str, db: DB) -> None:
-    question = await db.get_page(question_id)
-    if not question:
-        print(
-            f"Error: question '{question_id}' not found. Run --list to see existing questions."
-        )
-        sys.exit(1)
-    print(f"\nGenerating map for: {question.headline[:80]}")
-    path = await generate_map(question_id, db)
-    print(f"Map saved to: {path}")
-    print("Open that file in your browser to view it.")
 
 
 async def cmd_summary(
@@ -863,8 +847,7 @@ async def cmd_continue(
 
 async def _print_summary(db: DB) -> None:
     total, used = await db.get_budget()
-    print(f"\nPages written to: {PAGES_DIR}")
-    print(f"Budget used:      {used}/{total} calls")
+    print(f"\nBudget used: {used}/{total} calls")
     print("\nRun --list to see all questions.")
 
 
@@ -928,12 +911,6 @@ async def async_main():
             "Depth at which --summary switches from full content to page "
             "summaries only (default: max-depth // 2)"
         ),
-    )
-    parser.add_argument(
-        "--map",
-        dest="map_id",
-        metavar="QUESTION_ID",
-        help="Generate a visual HTML map of the research tree",
     )
     parser.add_argument(
         "--evaluate",
@@ -1166,8 +1143,6 @@ async def async_main():
     if args.force_twophase_recurse:
         get_settings().force_twophase_recurse = True
 
-    PAGES_DIR.mkdir(parents=True, exist_ok=True)
-
     db = await DB.create(
         run_id=str(uuid.uuid4()), prod=args.prod_db, staged=args.staged
     )
@@ -1227,8 +1202,6 @@ async def async_main():
     elif args.add_question:
         q = parse_question_input(args.add_question)
         await cmd_add_question(q, args.parent_id, args.budget, db)
-    elif args.map_id:
-        await cmd_map(args.map_id, db)
     elif args.summary_id:
         await cmd_summary(
             args.summary_id,

@@ -23,7 +23,6 @@ from rumil.moves.base import (
     MoveDef,
     MoveResult,
     create_page,
-    write_page_file,
 )
 from rumil.moves.link_consideration import ConsiderationLinkFields
 from rumil.scraper import scrape_url
@@ -169,7 +168,6 @@ async def ensure_source_page(
         },
     )
     await db.save_page(page)
-    write_page_file(page)
 
     source_cache[url] = page.id
     log.info(

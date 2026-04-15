@@ -32,7 +32,7 @@ from rumil.models import (
     PageType,
     Workspace,
 )
-from rumil.moves.base import link_pages, write_page_file
+from rumil.moves.base import link_pages
 from rumil.orchestrators.experimental import ExperimentalOrchestrator
 from rumil.sdk_agent import SdkAgentConfig, run_sdk_agent
 from rumil.settings import get_settings
@@ -231,7 +231,6 @@ def _make_investigation_tools(
                 project_id=proj_id,
             )
             await db.save_page(new_page)
-            write_page_file(new_page)
             resolved = new_page.id
             display_headline = headline
             log.info(

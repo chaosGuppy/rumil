@@ -32,7 +32,6 @@ from rumil.moves.base import (
     _copy_consideration_links,
     extract_and_link_citations,
     link_pages,
-    write_page_file,
 )
 from rumil.moves.link_consideration import (
     LinkConsiderationPayload,
@@ -310,7 +309,6 @@ async def reassess_claim(
         project_id=old_page.project_id,
     )
     await db.save_page(new_page)
-    write_page_file(new_page)
     await extract_and_link_citations(new_page.id, new_page.content, db)
 
     await db.supersede_page(old_page.id, new_page.id)
@@ -574,7 +572,6 @@ async def reassess_claims(
             project_id=first_claim.project_id,
         )
         await db.save_page(new_page)
-        write_page_file(new_page)
         await extract_and_link_citations(new_page.id, new_page.content, db)
 
         old_ids: list[str] = []

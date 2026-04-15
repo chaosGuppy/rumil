@@ -57,6 +57,7 @@ from rumil.orchestrators.common import (
     assess_question,
     create_view_for_question,
     find_considerations_until_done,
+    update_view_for_question,
     web_research_question,
 )
 
@@ -126,19 +127,19 @@ async def _handle_assess(
 ) -> str | None:
     """Assess dispatch with view-redirect.
 
-    If the target question already has a view, redirect to create_view_for_question
-    (iterative view update). Otherwise run a normal assess call.
+    If the target question already has a view, redirect to update_view_for_question
+    (incremental view update). Otherwise run a normal assess call.
     """
     assert isinstance(payload, AssessDispatchPayload)
     db = ctx.orchestrator.db
     existing_view = await db.get_view_for_question(ctx.resolved_question_id)
     if existing_view:
         log.info(
-            "Dispatch: assess redirected to create_view for %s (has view) — %s",
+            "Dispatch: assess redirected to update_view for %s (has view) — %s",
             ctx.d_label,
             payload.reason,
         )
-        return await create_view_for_question(
+        return await update_view_for_question(
             ctx.resolved_question_id,
             db,
             parent_call_id=ctx.parent_call_id,

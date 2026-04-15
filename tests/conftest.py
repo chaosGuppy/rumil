@@ -1,9 +1,15 @@
 """Shared fixtures for tests."""
 
+import sys
 import uuid
+from pathlib import Path
 
 import pytest
 import pytest_asyncio
+
+_SKILLS_LIB = Path(__file__).resolve().parent.parent / ".claude" / "lib"
+if str(_SKILLS_LIB) not in sys.path:
+    sys.path.insert(0, str(_SKILLS_LIB))
 
 from rumil.settings import override_settings
 from rumil.database import DB

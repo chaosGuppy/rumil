@@ -258,6 +258,15 @@ class PhaseSkippedEvent(BaseModel):
     reason: str = ""
 
 
+class UpdateViewPhaseCompletedEvent(BaseModel):
+    event: Literal["update_view_phase_completed"] = "update_view_phase_completed"
+    phase: str = ""
+    items_processed: int = 0
+    items_modified: int = 0
+    items_created: int = 0
+    items_removed: int = 0
+
+
 TraceEvent = Annotated[
     ContextBuiltEvent
     | MovesExecutedEvent
@@ -284,6 +293,7 @@ TraceEvent = Annotated[
     | RenderQuestionSubgraphEvent
     | LinkSubquestionsCompleteEvent
     | ViewCreatedEvent
-    | PhaseSkippedEvent,
+    | PhaseSkippedEvent
+    | UpdateViewPhaseCompletedEvent,
     Field(discriminator="event"),
 ]

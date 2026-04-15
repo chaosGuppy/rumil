@@ -1,0 +1,72 @@
+# Update View
+
+You are incrementally updating an existing **View page** for a question. Unlike creating a View from scratch, you are reviewing and refining items that already exist, scoring newly proposed items, and optionally proposing new items where the View has gaps.
+
+The View consists of **atomic items** organized into **sections**, each with epistemic scores. Your job across multiple phases is to bring the View up to date with the current evidence.
+
+<!-- PHASE:context — DO NOT RENAME THIS MARKER -->
+## Shared Context
+
+A View is a curated, structured summary of the workspace's current best understanding on a research question. Each View item is a short, self-contained claim or observation with:
+
+* **Credence (1-9)**: How likely this is to be true (see preamble for full scale)
+* **Robustness (1-5)**: How well-investigated (1=wild guess, 3=considered view, 5=thoroughly tested)
+* **Importance (1-5)**: How core to the View (5=essential, 1=marginal)
+
+**Sections:** broader\_context, confident\_views, live\_hypotheses, key\_evidence, assessments, key\_uncertainties, other.
+
+You will be asked to review View items in batches across several phases. Apply your judgement carefully — small, well-justified changes are better than sweeping revisions.
+
+<!-- PHASE:score_unscored — DO NOT RENAME THIS MARKER -->
+## Phase: Score Unscored Proposals
+
+These items were proposed by other calls but have not yet been scored. For each item, assign:
+
+* **importance** (1-5): How core is this item to the View?
+* **section**: Which section best fits this item's role?
+* **credence** (optional): Override if the current score looks wrong given what you know
+* **robustness** (optional): Override if the current score looks wrong
+
+Do not enforce importance caps at this stage — just score each item on its merits.
+
+<!-- PHASE:triage — DO NOT RENAME THIS MARKER -->
+## Phase: Triage
+
+You are doing a shallow review of existing View items. For each item, decide:
+
+* **ok**: The item looks fine — scores are reasonable, content is accurate, section is appropriate. No changes needed.
+* **review**: Something about this item warrants a closer look — the scores may be off, the content may be outdated or inaccurate, it may be in the wrong section, or it may need to be replaced with a better formulation.
+
+Err on the side of flagging items for review. It is better to review an item that turns out to be fine than to miss one that needs updating. But do not flag everything — focus on items where you see a specific reason for concern.
+
+<!-- PHASE:deep_review — DO NOT RENAME THIS MARKER -->
+## Phase: Deep Review
+
+For each item in this batch, choose one action:
+
+* **keep**: The item is fine as-is after closer inspection. No changes.
+* **adjust**: The item's scores or section assignment need updating. Provide the new values and brief reasoning.
+* **supersede**: The item should be replaced with a new version. Provide a new headline, content, credence, robustness, importance, and section. The old item will be superseded and the new one linked to the View.
+
+When superseding, write the replacement item as you would a fresh View item: a clear headline, content with an epistemic gloss explaining the scores, and careful scoring.
+
+You may also **propose entirely new items** if you notice gaps — evidence or conclusions that the View should capture but currently doesn't. New items should include full scores (credence, robustness, importance, section) and follow the same format as existing items.
+
+<!-- PHASE:enforce_caps — DO NOT RENAME THIS MARKER -->
+## Phase: Importance Cap Enforcement
+
+The View has importance caps that limit how many items can exist at each importance level. The items shown below are at a level that currently exceeds its cap.
+
+Choose which items to **demote** (lower their importance score). For each item you demote, provide the new importance level and brief reasoning for why this item is less essential than the others at this level.
+
+Keep the items that are most central to understanding the question. Demote items that are useful context but not as critical.
+
+<!-- PHASE:prune — DO NOT RENAME THIS MARKER -->
+## Phase: Prune Low-Value Items
+
+These are importance-1 and importance-2 items. Decide for each:
+
+* **keep**: The item still belongs in the View, even at low importance.
+* **remove**: The item adds little value and should be dropped from the View. This could be because it is redundant with higher-importance items, no longer relevant, or too marginal to justify inclusion.
+
+Be willing to remove items that are not pulling their weight. A tighter View is more useful than a comprehensive one. But do not remove items that provide genuinely useful context or that track uncertainties worth monitoring.

@@ -11,7 +11,7 @@ class _ExplorePageInput(BaseModel):
     page_id: str = Field(description="Page ID (short 8-char prefix or full UUID)")
 
 
-def make_explore_tool(db: DB):
+def make_explore_tool(db: DB, highlight_run_id: str | None = None):
     """Create the explore_page MCP tool definition, closing over *db*."""
 
     @tool(
@@ -22,7 +22,7 @@ def make_explore_tool(db: DB):
     )
     async def explore_page(args: dict) -> dict:
         page_id = args["page_id"]
-        result = await explore_page_impl(page_id, db)
+        result = await explore_page_impl(page_id, db, highlight_run_id=highlight_run_id)
         return {"content": [{"type": "text", "text": result}]}
 
     return explore_page

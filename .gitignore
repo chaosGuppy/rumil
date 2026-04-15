@@ -3,6 +3,7 @@ db/
 /pages/
 /reports/
 .claude/settings.local.json
+.claude/state/
 CLAUDE.md.local
 
 # macOS

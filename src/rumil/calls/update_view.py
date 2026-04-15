@@ -34,7 +34,7 @@ from rumil.models import (
     PageType,
     Workspace,
 )
-from rumil.moves.base import extract_and_link_citations, write_page_file
+from rumil.moves.base import extract_and_link_citations
 from rumil.orchestrators.common import _split_into_batches
 from rumil.settings import get_settings
 from rumil.tracing.trace_events import (
@@ -904,7 +904,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
             provenance_call_id=infra.call.id,
         )
         await infra.db.save_page(new_page)
-        write_page_file(new_page)
+
         try:
             await embed_and_store_page(infra.db, new_page, field_name="abstract")
         except Exception:
@@ -966,7 +966,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
             provenance_call_id=infra.call.id,
         )
         await infra.db.save_page(new_page)
-        write_page_file(new_page)
+
         try:
             await embed_and_store_page(infra.db, new_page, field_name="abstract")
         except Exception:

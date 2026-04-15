@@ -1151,6 +1151,99 @@
         }
       }
     },
+    "/api/ab-evals": {
+      "get": {
+        "summary": "List Ab Evals",
+        "operationId": "list_ab_evals_api_ab_evals_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ABEvalReportListItemOut"
+                  },
+                  "title": "Response List Ab Evals Api Ab Evals Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ab-evals/{eval_id}": {
+      "get": {
+        "summary": "Get Ab Eval",
+        "operationId": "get_ab_eval_api_ab_evals__eval_id__get",
+        "parameters": [
+          {
+            "name": "eval_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Eval Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ABEvalReportOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/calls/{call_id}/llm-exchanges": {
       "get": {
         "summary": "List Llm Exchanges",
@@ -1301,6 +1394,201 @@
   },
   "components": {
     "schemas": {
+      "ABEvalDimensionOut": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "preference": {
+            "type": "string",
+            "title": "Preference"
+          },
+          "report_a": {
+            "type": "string",
+            "title": "Report A"
+          },
+          "report_b": {
+            "type": "string",
+            "title": "Report B"
+          },
+          "comparison": {
+            "type": "string",
+            "title": "Comparison"
+          },
+          "call_id_a": {
+            "type": "string",
+            "title": "Call Id A",
+            "default": ""
+          },
+          "call_id_b": {
+            "type": "string",
+            "title": "Call Id B",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "display_name",
+          "preference",
+          "report_a",
+          "report_b",
+          "comparison"
+        ],
+        "title": "ABEvalDimensionOut"
+      },
+      "ABEvalDimensionSummaryOut": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "preference": {
+            "type": "string",
+            "title": "Preference"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "display_name",
+          "preference"
+        ],
+        "title": "ABEvalDimensionSummaryOut"
+      },
+      "ABEvalReportListItemOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "run_id_a": {
+            "type": "string",
+            "title": "Run Id A"
+          },
+          "run_id_b": {
+            "type": "string",
+            "title": "Run Id B"
+          },
+          "question_id_a": {
+            "type": "string",
+            "title": "Question Id A",
+            "default": ""
+          },
+          "question_id_b": {
+            "type": "string",
+            "title": "Question Id B",
+            "default": ""
+          },
+          "question_headline": {
+            "type": "string",
+            "title": "Question Headline",
+            "default": ""
+          },
+          "overall_assessment_preview": {
+            "type": "string",
+            "title": "Overall Assessment Preview",
+            "default": ""
+          },
+          "preferences": {
+            "items": {
+              "$ref": "#/components/schemas/ABEvalDimensionSummaryOut"
+            },
+            "type": "array",
+            "title": "Preferences"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "run_id_a",
+          "run_id_b",
+          "preferences",
+          "created_at"
+        ],
+        "title": "ABEvalReportListItemOut"
+      },
+      "ABEvalReportOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "run_id_a": {
+            "type": "string",
+            "title": "Run Id A"
+          },
+          "run_id_b": {
+            "type": "string",
+            "title": "Run Id B"
+          },
+          "question_id_a": {
+            "type": "string",
+            "title": "Question Id A",
+            "default": ""
+          },
+          "question_id_b": {
+            "type": "string",
+            "title": "Question Id B",
+            "default": ""
+          },
+          "question_headline": {
+            "type": "string",
+            "title": "Question Headline",
+            "default": ""
+          },
+          "overall_assessment": {
+            "type": "string",
+            "title": "Overall Assessment"
+          },
+          "dimension_reports": {
+            "items": {
+              "$ref": "#/components/schemas/ABEvalDimensionOut"
+            },
+            "type": "array",
+            "title": "Dimension Reports"
+          },
+          "config_a": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Config A",
+            "default": {}
+          },
+          "config_b": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Config B",
+            "default": {}
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "run_id_a",
+          "run_id_b",
+          "overall_assessment",
+          "dimension_reports",
+          "created_at"
+        ],
+        "title": "ABEvalReportOut"
+      },
       "ABRunArmOut": {
         "properties": {
           "run_id": {
@@ -1992,6 +2280,7 @@
           "grounding_feedback",
           "feedback_update",
           "link_subquestions",
+          "ab_eval",
           "create_view",
           "update_view"
         ],
@@ -3181,6 +3470,11 @@
               }
             ],
             "title": "Meta Type"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "default": ""
           }
         },
         "type": "object",
@@ -3206,7 +3500,8 @@
           "abstract",
           "fruit_remaining",
           "sections",
-          "meta_type"
+          "meta_type",
+          "run_id"
         ],
         "title": "Page"
       },
@@ -3342,6 +3637,11 @@
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "default": ""
           }
         },
         "type": "object",
@@ -3357,7 +3657,8 @@
           "importance",
           "section",
           "position",
-          "created_at"
+          "created_at",
+          "run_id"
         ],
         "title": "PageLink"
       },
@@ -4008,6 +4309,12 @@
             "type": "boolean",
             "title": "Staged",
             "default": false
+          },
+          "config": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Config",
+            "default": {}
           }
         },
         "type": "object",

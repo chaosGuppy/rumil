@@ -15,7 +15,11 @@ from rumil.models import Page, PageDetail, PageLink
 from rumil.settings import get_settings
 
 
-async def explore_page_impl(page_id: str, db: DB) -> str:
+async def explore_page_impl(
+    page_id: str,
+    db: DB,
+    highlight_run_id: str | None = None,
+) -> str:
     """Explore the local graph around *page_id* and return formatted text.
 
     Hop-distance thresholds are read from settings:
@@ -56,10 +60,24 @@ async def explore_page_impl(page_id: str, db: DB) -> str:
             if not page:
                 continue
             parts.append(
-                await format_page(page, PageDetail.CONTENT, linked_detail=None, db=db)
+                await format_page(
+                    page,
+                    PageDetail.CONTENT,
+                    linked_detail=None,
+                    db=db,
+                    highlight_run_id=highlight_run_id,
+                )
             )
             parts.append("")
-            parts.extend(_render_links(pid, link_index, page_map, visited))
+            parts.extend(
+                _render_links(
+                    pid,
+                    link_index,
+                    page_map,
+                    visited,
+                    highlight_run_id=highlight_run_id,
+                )
+            )
             parts.append("")
 
     if abstract_ids:
@@ -70,10 +88,24 @@ async def explore_page_impl(page_id: str, db: DB) -> str:
             if not page:
                 continue
             parts.append(
-                await format_page(page, PageDetail.ABSTRACT, linked_detail=None, db=db)
+                await format_page(
+                    page,
+                    PageDetail.ABSTRACT,
+                    linked_detail=None,
+                    db=db,
+                    highlight_run_id=highlight_run_id,
+                )
             )
             parts.append("")
-            parts.extend(_render_links(pid, link_index, page_map, visited))
+            parts.extend(
+                _render_links(
+                    pid,
+                    link_index,
+                    page_map,
+                    visited,
+                    highlight_run_id=highlight_run_id,
+                )
+            )
             parts.append("")
 
     if headline_ids:
@@ -84,7 +116,13 @@ async def explore_page_impl(page_id: str, db: DB) -> str:
             if not page:
                 continue
             parts.append(
-                await format_page(page, PageDetail.HEADLINE, linked_detail=None, db=db)
+                await format_page(
+                    page,
+                    PageDetail.HEADLINE,
+                    linked_detail=None,
+                    db=db,
+                    highlight_run_id=highlight_run_id,
+                )
             )
             frontier_for = frontier.get(pid, set())
             if frontier_for:
@@ -182,6 +220,7 @@ def _render_links(
     link_index: dict[str, list[tuple[PageLink, str]]],
     page_map: dict[str, Page],
     visited: dict[str, int],
+    highlight_run_id: str | None = None,
 ) -> list[str]:
     """Render the links for a single page as indented text lines."""
     entries = link_index.get(page_id, [])
@@ -218,6 +257,11 @@ def _render_links(
         if extras:
             link_desc += f" ({', '.join(extras)})"
 
-        lines.append(f"  {arrow} {link_desc} [link:{link.id[:8]}]: {other_label}")
+        added_tag = ""
+        if highlight_run_id and link.run_id and link.run_id == highlight_run_id:
+            added_tag = " [ADDED BY THIS RUN]"
+        lines.append(
+            f"  {arrow} {link_desc} [link:{link.id[:8]}]: {other_label}{added_tag}"
+        )
 
     return lines

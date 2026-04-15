@@ -247,6 +247,7 @@ async def format_page(
     db: DB | None = None,
     include_superseding: bool = True,
     exclude_page_ids: set[str] | None = None,
+    highlight_run_id: str | None = None,
 ) -> str:
     """Format a single page at the requested detail level.
 
@@ -270,6 +271,7 @@ async def format_page(
             linked_detail=linked_detail,
             db=db,
             include_superseding=False,
+            highlight_run_id=highlight_run_id,
         )
         if replacement:
             replacement_text = await format_page(
@@ -278,6 +280,7 @@ async def format_page(
                 linked_detail=linked_detail,
                 db=db,
                 include_superseding=False,
+                highlight_run_id=highlight_run_id,
             )
             if detail == PageDetail.HEADLINE:
                 return f"[SUPERSEDED] {original}\n  -> replaced by: {replacement_text}"
@@ -301,17 +304,24 @@ async def format_page(
         if full:
             page = full
 
+    _is_highlighted = (
+        highlight_run_id and page.run_id and page.run_id == highlight_run_id
+    )
+
     if detail == PageDetail.HEADLINE:
         tag = f"{page.page_type.value.upper()}"
         if page.credence is not None:
             tag += f" C{page.credence}/R{page.robustness}"
-        return f"[{tag}] `{page.id[:8]}` -- {page.headline}"
+        prefix = "[ADDED BY THIS RUN] " if _is_highlighted else ""
+        return f"{prefix}[{tag}] `{page.id[:8]}` -- {page.headline}"
 
     extra = page.extra or {}
     lines = [
         f"### [{page.page_type.value.upper()}] {page.headline}",
         f"ID: {page.id}",
     ]
+    if _is_highlighted:
+        lines.append("**[ADDED BY THIS RUN]**")
     if page.credence is not None:
         lines.append(f"Credence: {page.credence}/9 | Robustness: {page.robustness}/5")
     for k, v in extra.items():
@@ -333,8 +343,23 @@ async def format_page(
         for claim, link in considerations:
             if claim.id in _exclude:
                 continue
-            line = "- " + await format_page(
-                claim, linked_detail, db=db, linked_detail=None
+            _link_highlighted = (
+                highlight_run_id
+                and link.run_id
+                and link.run_id == highlight_run_id
+                and claim.run_id != highlight_run_id
+            )
+            link_tag = " [LINKED BY THIS RUN]" if _link_highlighted else ""
+            line = (
+                "- "
+                + await format_page(
+                    claim,
+                    linked_detail,
+                    db=db,
+                    linked_detail=None,
+                    highlight_run_id=highlight_run_id,
+                )
+                + link_tag
             )
             if link.reasoning:
                 line += f"\n  Reasoning: {link.reasoning}"
@@ -344,7 +369,13 @@ async def format_page(
         for j in judgements:
             if j.id in _exclude:
                 continue
-            line = "- " + await format_page(j, linked_detail, db=db, linked_detail=None)
+            line = "- " + await format_page(
+                j,
+                linked_detail,
+                db=db,
+                linked_detail=None,
+                highlight_run_id=highlight_run_id,
+            )
             linked_items.append((line, j))
 
         children = await db.get_child_questions(page.id)
@@ -359,7 +390,13 @@ async def format_page(
                     continue
                 line = (
                     f"- *On: {child.headline} (`{child.id[:8]}`)*  "
-                    + await format_page(j, linked_detail, db=db, linked_detail=None)
+                    + await format_page(
+                        j,
+                        linked_detail,
+                        db=db,
+                        linked_detail=None,
+                        highlight_run_id=highlight_run_id,
+                    )
                 )
                 linked_items.append((line, j))
 

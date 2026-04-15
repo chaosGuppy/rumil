@@ -3,7 +3,6 @@
 import logging
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Generic, TypeVar
 import re
 
@@ -33,9 +32,6 @@ log = logging.getLogger(__name__)
 
 S = TypeVar("S", bound=BaseModel)
 P = TypeVar("P", bound=BaseModel)
-
-PAGES_DIR = Path(__file__).parent.parent.parent.parent / "pages"
-
 
 @dataclass
 class MoveResult:
@@ -232,53 +228,6 @@ def _resolve_workspace(ws: str) -> Workspace:
     return Workspace.RESEARCH if ws.lower() == "research" else Workspace.PRIORITIZATION
 
 
-def _pages_dir(workspace: Workspace) -> Path:
-    d = PAGES_DIR / workspace.value
-    d.mkdir(parents=True, exist_ok=True)
-    return d
-
-
-def _page_filename(page: Page) -> str:
-    slug = page.headline[:60].lower()
-    slug = "".join(c if c.isalnum() or c in " -" else "" for c in slug)
-    slug = slug.strip().replace(" ", "-")
-    short_id = page.id[:8]
-    return f"{page.page_type.value}-{short_id}-{slug}.md"
-
-
-def write_page_file(page: Page) -> None:
-    """Write a human-readable markdown file for a page."""
-    d = _pages_dir(page.workspace)
-    filepath = d / _page_filename(page)
-
-    extra = page.extra or {}
-
-    lines = [
-        f"# {page.headline}",
-        "",
-        f"**Type:** {page.page_type.value}  ",
-        f"**Layer:** {page.layer.value}  ",
-        f"**ID:** `{page.id}`  ",
-        f"**Created:** {page.created_at.strftime('%Y-%m-%d %H:%M:%S')} UTC  ",
-        f"**Provenance:** {page.provenance_call_type} call `{page.provenance_call_id[:8]}`  ",
-    ]
-    if page.credence is not None:
-        lines.insert(-1, f"**Credence:** {page.credence}/9 | **Robustness:** {page.robustness}/5  ")
-
-    if page.is_superseded:
-        lines.append(f"**SUPERSEDED by:** `{page.superseded_by}`  ")
-
-    if extra:
-        lines.append("")
-        lines.append("## Metadata")
-        for k, v in extra.items():
-            lines.append(f"- **{k}:** {v}")
-
-    lines += ["", "---", "", page.content]
-
-    filepath.write_text("\n".join(lines), encoding="utf-8")
-
-
 async def _copy_consideration_links(
     old_page_id: str, new_page_id: str, db: DB
 ) -> None:
@@ -347,7 +296,6 @@ async def create_page(
     )
 
     await db.save_page(page)
-    write_page_file(page)
     try:
         await embed_and_store_page(db, page, field_name="abstract")
     except Exception:

@@ -77,9 +77,6 @@ uv run python main.py --ingest FILE --for-question QUESTION_ID --budget 5
 # Interactive chat about research
 uv run python main.py --chat QUESTION_ID
 
-# Generate HTML research map
-uv run python main.py --map QUESTION_ID
-
 # Generate executive summary
 uv run python main.py --summary QUESTION_ID
 

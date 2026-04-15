@@ -50,11 +50,24 @@ When in doubt, drop a point.
 
 ### 4. Apply all the 10s automatically
 
-Fix every conflict you scored 10, without asking. After editing, run `git add <path>` for each fully-resolved file so the index reflects the resolution. Do **not** run `git commit`, `git merge --continue`, `git rebase --continue`, etc. — leave that to the user, who may want to inspect or add more changes first.
+Fix every conflict you scored 10, without asking. After editing, run `git add <path>` for each fully-resolved file so the index reflects the resolution.
 
 Leave files with scores below 10 in their conflicted state (markers intact, not `git add`ed). Don't half-resolve them.
 
-### 5. Report
+### 5. If everything resolved, complete the operation
+
+If there are **no sub-10 conflicts remaining** — i.e. every conflicted file was a 10 and is now staged — finish the in-progress operation so the user doesn't have to:
+
+- Plain merge with no other in-progress state: `git commit --no-edit` (uses the merge commit message git already prepared).
+- Rebase: `git rebase --continue`.
+- Cherry-pick: `git cherry-pick --continue`.
+- Stash pop: nothing to continue — just mention it's done.
+
+Check `git status` first to confirm which operation is in progress. Never run `--abort` or `--skip`. Do not `git push`.
+
+If **any** conflict scored below 10, do **not** commit or continue — the working tree is intentionally partial and the user needs to finish the sub-10s first.
+
+### 6. Report
 
 Structure the report like this:
 
@@ -67,7 +80,7 @@ Structure the report like this:
   - **Proposed resolution:** what you'd do if forced to pick, and why.
   - **Source of uncertainty:** the specific thing you couldn't verify — e.g. "I don't know whether callers in `foo.py` expect the old signature", "both sides reworded the same error message and I can't tell which wording is canonical", "the rebased commit predates a refactor on main and I'm not sure which version represents current intent".
 
-If there are no sub-10 conflicts, say so explicitly and remind the user to review the staged fixes before continuing the merge/rebase.
+If there are no sub-10 conflicts, say so explicitly, mention that you completed the merge/rebase/cherry-pick on their behalf, and point them at the resulting commit (`git log -1`) in case they want to amend or revert.
 
 ## Notes
 

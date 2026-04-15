@@ -20,5 +20,5 @@ Free-text semantic search across the active workspace.
   just a pointer list.
 
 ```!
-PYTHONPATH=.claude/lib uv run python -m rumil_skills.search_workspace $ARGUMENTS
+setopt no_glob 2>/dev/null; set -f; PYTHONPATH=.claude/lib uv run python -m rumil_skills.search_workspace $ARGUMENTS
 ```

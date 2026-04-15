@@ -25,5 +25,5 @@ so it works for both cases. If a `runs` row exists, its name + config are
 printed as a header.
 
 ```!
-PYTHONPATH=.claude/lib uv run python -m rumil_skills.load_run $ARGUMENTS
+setopt no_glob 2>/dev/null; set -f; PYTHONPATH=.claude/lib uv run python -m rumil_skills.load_run $ARGUMENTS
 ```

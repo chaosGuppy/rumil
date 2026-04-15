@@ -40,7 +40,7 @@ When in doubt, ask the user before firing. Dispatching is not free.
 ## Invocation
 
 ```!
-PYTHONPATH=.claude/lib uv run python -m rumil_skills.dispatch_call $ARGUMENTS
+setopt no_glob 2>/dev/null; set -f; PYTHONPATH=.claude/lib uv run python -m rumil_skills.dispatch_call $ARGUMENTS
 ```
 
 ## After it runs

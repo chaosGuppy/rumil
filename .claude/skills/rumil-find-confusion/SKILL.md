@@ -40,7 +40,7 @@ Override model with `--model <id>` (e.g. haiku for cheap bulk scans).
 ## Invocation
 
 ```!
-PYTHONPATH=.claude/lib uv run python -m rumil_skills.find_confusion $ARGUMENTS
+setopt no_glob 2>/dev/null; set -f; PYTHONPATH=.claude/lib uv run python -m rumil_skills.find_confusion $ARGUMENTS
 ```
 
 ## After it runs

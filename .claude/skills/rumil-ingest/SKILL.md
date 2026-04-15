@@ -25,6 +25,11 @@ Claude Code is just the trigger. Run rows are tagged
 | Fresh source | `rumil-ingest <file_or_url> --for <q>` | Fetch → create Source page → run ingest rounds |
 | Reuse existing | `rumil-ingest --from-page <src_id> --for <q>` | Skip fetch → run ingest rounds against the existing Source page |
 
+The positional arg auto-routes to `--from-page` when it looks like a
+short ID (8-char hex) or full UUID and is not a URL or existing file on
+disk, so `rumil-ingest <src_id> --for <q>` works the same as the
+explicit `--from-page` form.
+
 The **reuse** form is the clean composition path with `rumil-read --save`:
 
 ```
@@ -65,7 +70,7 @@ question, they probably want `rumil-read`, not this.
 ## Invocation
 
 ```!
-PYTHONPATH=.claude/lib uv run python -m rumil_skills.ingest_source $ARGUMENTS
+setopt no_glob 2>/dev/null; set -f; PYTHONPATH=.claude/lib uv run python -m rumil_skills.ingest_source $ARGUMENTS
 ```
 
 ## After it runs

@@ -30,5 +30,5 @@ pages, sources, summaries. Either one works on a question ID too;
 `rumil-show` just has more question-specific surface.
 
 ```!
-PYTHONPATH=.claude/lib uv run python -m rumil_skills.show_page $ARGUMENTS
+setopt no_glob 2>/dev/null; set -f; PYTHONPATH=.claude/lib uv run python -m rumil_skills.show_page $ARGUMENTS
 ```

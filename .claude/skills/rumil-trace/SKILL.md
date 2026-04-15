@@ -19,5 +19,5 @@ Use filters for large traces:
 - `--no-exchanges` shows just the event timeline
 
 ```!
-PYTHONPATH=.claude/lib uv run python -m rumil_skills.trace $ARGUMENTS
+setopt no_glob 2>/dev/null; set -f; PYTHONPATH=.claude/lib uv run python -m rumil_skills.trace $ARGUMENTS
 ```

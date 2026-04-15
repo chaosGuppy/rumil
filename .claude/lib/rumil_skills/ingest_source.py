@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import os.path
 import sys
 
 from rumil.database import DB
@@ -39,6 +40,18 @@ DEFAULT_BUDGET = 1
 
 def _is_url(value: str) -> bool:
     return value.startswith("http://") or value.startswith("https://")
+
+
+def _looks_like_page_id(value: str) -> bool:
+    """True for 8-char hex short IDs or full UUIDs."""
+    hex_chars = set("0123456789abcdef")
+    v = value.strip().lower()
+    if len(v) == 8 and all(c in hex_chars for c in v):
+        return True
+    if len(v) == 36 and v.count("-") == 4:
+        stripped = v.replace("-", "")
+        return len(stripped) == 32 and all(c in hex_chars for c in stripped)
+    return False
 
 
 async def _get_or_create_source(
@@ -99,6 +112,16 @@ async def main() -> None:
     if args.source and args.from_page:
         print("error: pass either <source> or --from-page, not both")
         sys.exit(2)
+
+    if (
+        args.source
+        and not args.from_page
+        and not _is_url(args.source)
+        and not os.path.exists(args.source)
+        and _looks_like_page_id(args.source)
+    ):
+        args.from_page = args.source
+        args.source = None
 
     if args.smoke_test:
         get_settings().rumil_smoke_test = "1"

@@ -59,7 +59,7 @@ and print it in the header, overridable with `--workspace name`. Default and
 ## Invocation
 
 ```!
-PYTHONPATH=.claude/lib uv run python -m rumil_skills.read_source $ARGUMENTS
+setopt no_glob 2>/dev/null; set -f; PYTHONPATH=.claude/lib uv run python -m rumil_skills.read_source $ARGUMENTS
 ```
 
 ## After it runs

@@ -16,5 +16,5 @@ everything needed to discuss the question, spot problems, or decide what to
 dispatch next.
 
 ```!
-PYTHONPATH=.claude/lib uv run python -m rumil_skills.show_question $ARGUMENTS
+setopt no_glob 2>/dev/null; set -f; PYTHONPATH=.claude/lib uv run python -m rumil_skills.show_question $ARGUMENTS
 ```

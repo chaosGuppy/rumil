@@ -15,7 +15,7 @@ Then you produce a punch list.
 ## Context loading
 
 ```!
-PYTHONPATH=.claude/lib uv run python -m rumil_skills.gather_review_context $ARGUMENTS
+setopt no_glob 2>/dev/null; set -f; PYTHONPATH=.claude/lib uv run python -m rumil_skills.gather_review_context $ARGUMENTS
 ```
 
 ## Your job

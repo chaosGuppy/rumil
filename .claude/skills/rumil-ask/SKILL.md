@@ -53,7 +53,7 @@ haven't decided they want a persistent question — ask before committing.
 ## Invocation
 
 ```!
-PYTHONPATH=.claude/lib uv run python -m rumil_skills.ask_question $ARGUMENTS
+setopt no_glob 2>/dev/null; set -f; PYTHONPATH=.claude/lib uv run python -m rumil_skills.ask_question $ARGUMENTS
 ```
 
 ## After it runs

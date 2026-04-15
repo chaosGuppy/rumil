@@ -96,7 +96,7 @@ money. One-line check: "Run the orchestrator on `abc12345` with budget
 ## Invocation
 
 ```!
-PYTHONPATH=.claude/lib uv run python -m rumil_skills.run_orchestrator $ARGUMENTS
+setopt no_glob 2>/dev/null; set -f; PYTHONPATH=.claude/lib uv run python -m rumil_skills.run_orchestrator $ARGUMENTS
 ```
 
 ## After it runs

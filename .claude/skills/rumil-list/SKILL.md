@@ -11,5 +11,5 @@ Lists root (top-level) questions in the active rumil workspace. Use
 `/rumil-workspace` first if you need to switch workspaces.
 
 ```!
-PYTHONPATH=.claude/lib uv run python -m rumil_skills.list_questions $ARGUMENTS
+setopt no_glob 2>/dev/null; set -f; PYTHONPATH=.claude/lib uv run python -m rumil_skills.list_questions $ARGUMENTS
 ```

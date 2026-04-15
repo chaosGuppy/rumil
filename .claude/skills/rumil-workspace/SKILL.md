@@ -12,5 +12,5 @@ Manages the active rumil workspace for this Claude Code session, persisted to
 this state, so switching here affects the whole session.
 
 ```!
-PYTHONPATH=.claude/lib uv run python -m rumil_skills.workspace $ARGUMENTS
+setopt no_glob 2>/dev/null; set -f; PYTHONPATH=.claude/lib uv run python -m rumil_skills.workspace $ARGUMENTS
 ```

@@ -162,6 +162,10 @@ PRESETS: dict[str, AvailableMoves] = {
             MoveType.LOAD_PAGE,
             MoveType.UPDATE_EPISTEMIC,
         ],
+        CallType.UPDATE_VIEW: [
+            MoveType.LOAD_PAGE,
+            MoveType.UPDATE_EPISTEMIC,
+        ],
     },
     "judge-on-assess": {
         CallType.ASSESS: [
@@ -314,6 +318,10 @@ PRESETS: dict[str, AvailableMoves] = {
         ],
         CallType.CREATE_VIEW: [
             MoveType.CREATE_VIEW_ITEM,
+            MoveType.LOAD_PAGE,
+            MoveType.UPDATE_EPISTEMIC,
+        ],
+        CallType.UPDATE_VIEW: [
             MoveType.LOAD_PAGE,
             MoveType.UPDATE_EPISTEMIC,
         ],

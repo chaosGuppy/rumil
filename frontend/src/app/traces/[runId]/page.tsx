@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import Link from "next/link";
 import type { RunTraceTreeOut, RealtimeConfigOut } from "@/api/types.gen";
 import { TraceViewer } from "./trace-viewer";
@@ -53,6 +54,10 @@ export default async function TracePage({
     );
   }
 
+  const configEntries = Object.entries(trace.config ?? {}).sort(([a], [b]) =>
+    a.localeCompare(b),
+  );
+
   return (
     <main className="trace-page">
       {trace.question?.project_id && (
@@ -72,6 +77,19 @@ export default async function TracePage({
           <span className="trace-run-id">{runId.slice(0, 8)}</span>
         </div>
       </header>
+      {configEntries.length > 0 && (
+        <div className="trace-config">
+          <div className="trace-config-label">configuration</div>
+          <div className="trace-config-table">
+            {configEntries.map(([key, val]) => (
+              <Fragment key={key}>
+                <span className="trace-config-key">{key}</span>
+                <span className="trace-config-val">{String(val)}</span>
+              </Fragment>
+            ))}
+          </div>
+        </div>
+      )}
       <TraceViewer
         initialTrace={trace}
         runId={runId}

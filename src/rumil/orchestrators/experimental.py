@@ -283,8 +283,6 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         if not self._executed_since_last_plan:
             return PrioritizationResult(dispatch_sequences=[])
 
-        await self._maybe_rerun_linker(question_id, self._parent_call_id)
-
         self._executed_since_last_plan = False
         self._invocation += 1
         return await self._main_phase_prioritization(
@@ -361,12 +359,6 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             initial_prioritization_budget,
         )
 
-        await self._run_subquestion_linker(question_id, parent_call_id)
-
-        context_text, short_id_map = await build_prioritization_context(
-            self.db,
-            scope_question_id=question_id,
-        )
         if self._initial_call is not None:
             p_call = self._initial_call
             self._initial_call = None
@@ -387,6 +379,14 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             )
             if self._sequence_id is not None:
                 self._seq_position += 1
+
+        if get_settings().subquestion_linker_enabled:
+            await self._run_subquestion_linker(question_id, p_call.id)
+
+        context_text, short_id_map = await build_prioritization_context(
+            self.db,
+            scope_question_id=question_id,
+        )
         trace = CallTrace(p_call.id, self.db, broadcaster=self.broadcaster)
         set_trace(trace)
         await trace.record(ContextBuiltEvent(budget=initial_prioritization_budget))
@@ -506,6 +506,10 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         )
         if self._sequence_id is not None:
             self._seq_position += 1
+
+        if get_settings().subquestion_linker_enabled:
+            await self._maybe_rerun_linker(question_id, p_call.id)
+
         trace = CallTrace(p_call.id, self.db, broadcaster=self.broadcaster)
         set_trace(trace)
         await trace.record(ContextBuiltEvent(budget=budget))

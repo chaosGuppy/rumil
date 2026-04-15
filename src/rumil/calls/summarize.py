@@ -20,7 +20,6 @@ from rumil.models import (
     PageType,
     Workspace,
 )
-from rumil.moves.base import write_page_file
 from rumil.tracing.trace_events import ContextBuiltEvent, ErrorEvent, PageRef
 from rumil.tracing.tracer import CallTrace, get_trace, set_trace
 
@@ -298,7 +297,6 @@ async def summarize_question(
             provenance_call_id=call.id,
         )
         await db.save_page(page)
-        write_page_file(page)
 
         link = PageLink(
             from_page_id=page.id,

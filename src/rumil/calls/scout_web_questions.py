@@ -41,8 +41,9 @@ class ScoutWebQuestionsCall(CallRunner):
             "on the scope question and that can be answered by reading the "
             "web, without judgement or tricky reasoning. Focus on questions "
             "where you do not already confidently know the answer. For each, "
-            "create a question and link it as a child of the scope question. "
-            "Also produce confident, non-obvious factual claims that bear on "
-            "the scope question.\n\n"
+            "create a question using `create_question` (it is automatically "
+            "linked as a child of the scope question). Also produce "
+            "confident, non-obvious factual claims that bear on the scope "
+            "question.\n\n"
             f"Question ID: `{self.infra.question_id}`"
         )

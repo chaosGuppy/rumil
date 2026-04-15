@@ -2,6 +2,7 @@
 db/
 /pages/
 .claude/settings.local.json
+.claude/state/
 CLAUDE.md.local
 
 # Byte-compiled / optimized / DLL files

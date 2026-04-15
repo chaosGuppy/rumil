@@ -11,7 +11,7 @@ Usage:
         <call_type> <question_id> [--budget N] [--smoke-test]
 
 Call types:
-    find-considerations  assess  prioritize  web-research  create-view
+    find-considerations  assess  web-research  create-view
     scout-subquestions  scout-estimates  scout-hypotheses  scout-analogies
     scout-paradigm-cases  scout-factchecks  scout-web-questions
     scout-deep-questions
@@ -31,7 +31,6 @@ from rumil.calls.assess import AssessCall
 from rumil.calls.call_registry import ASSESS_CALL_CLASSES
 from rumil.calls.create_view import CreateViewCall
 from rumil.calls.find_considerations import FindConsiderationsCall
-from rumil.calls.prioritization import run_prioritization
 from rumil.calls.scout_analogies import ScoutAnalogiesCall
 from rumil.calls.scout_c_cruxes import ScoutCCruxesCall
 from rumil.calls.scout_c_how_false import ScoutCHowFalseCall
@@ -84,7 +83,6 @@ _SCOUT_MAP: dict[str, tuple[CallType, type[CallRunner]]] = {
 CALL_TYPES = [
     "find-considerations",
     "assess",
-    "prioritize",
     "web-research",
     "create-view",
     *_SCOUT_MAP.keys(),
@@ -154,17 +152,6 @@ async def _dispatch(
         await db.save_call(call)
         runner = CreateViewCall(question_id, call, db)
         await runner.run()
-        return call
-
-    if call_type_str == "prioritize":
-        call = await db.create_call(
-            CallType.PRIORITIZATION,
-            scope_page_id=question_id,
-            budget_allocated=budget,
-        )
-        call.call_params = _tag_call_params(call, "rumil-dispatch")
-        await db.save_call(call)
-        await run_prioritization(question_id, call, budget, db)
         return call
 
     if call_type_str in _SCOUT_MAP:

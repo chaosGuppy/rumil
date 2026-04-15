@@ -1,6 +1,6 @@
 ---
 name: rumil-dispatch
-description: Fire one rumil call (find_considerations, assess, scout-*, web_research, prioritize, create_view) as Claude Code. This is the "rumil-mediated" lane — a normal rumil call with its usual context-building, prompts, and tools. Use when the user wants to investigate a question deeper, assess a judgement, run a specific scout, or produce a distilled view summary. The run is tagged with origin=claude-code in the trace.
+description: Fire one rumil call (find_considerations, assess, scout-*, web_research, create_view) as Claude Code. This is the "rumil-mediated" lane — a normal rumil call with its usual context-building, prompts, and tools. Use when the user wants to investigate a question deeper, assess a judgement, run a specific scout, or produce a distilled view summary. The run is tagged with origin=claude-code in the trace.
 allowed-tools: Bash
 argument-hint: "<call_type> <question_id> [--budget N] [--smoke-test]"
 ---
@@ -32,7 +32,6 @@ If the user asked for a specific type, use it. Otherwise:
 - "assess X" / "judge X" / "how credible" → `assess`
 - "brainstorm subquestions" → `scout-subquestions`
 - "look for evidence on the web" → `web-research`
-- "what should we work on next" → `prioritize`
 - "summarize what we know" / "distill a view on X" → `create-view` (produces or updates a curated View summary page for a question; appropriate once a question has enough research to warrant a distilled summary)
 
 When in doubt, ask the user before firing. Dispatching is not free.

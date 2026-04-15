@@ -2383,6 +2383,56 @@ class DB:
             )
         )
 
+    async def save_ab_eval_report(
+        self,
+        run_id_a: str,
+        run_id_b: str,
+        question_id_a: str,
+        question_id_b: str,
+        overall_assessment: str,
+        dimension_reports: Sequence[dict[str, Any]],
+    ) -> str:
+        """Save an AB evaluation report. Returns the report ID."""
+        report_id = str(uuid.uuid4())
+        await self._execute(
+            self.client.table("ab_eval_reports").insert(
+                {
+                    "id": report_id,
+                    "run_id_a": run_id_a,
+                    "run_id_b": run_id_b,
+                    "question_id_a": question_id_a,
+                    "question_id_b": question_id_b,
+                    "overall_assessment": overall_assessment,
+                    "dimension_reports": list(dimension_reports),
+                    "project_id": str(self.project_id) if self.project_id else None,
+                }
+            )
+        )
+        return report_id
+
+    async def list_ab_eval_reports(self) -> list[dict[str, Any]]:
+        """List all AB evaluation reports for this project, newest first."""
+        q = (
+            self.client.table("ab_eval_reports")
+            .select("id, run_id_a, run_id_b, question_id_a, question_id_b, "
+                    "overall_assessment, dimension_reports, created_at")
+            .order("created_at", desc=True)
+        )
+        if self.project_id:
+            q = q.eq("project_id", str(self.project_id))
+        return _rows(await self._execute(q))
+
+    async def get_ab_eval_report(self, report_id: str) -> dict[str, Any] | None:
+        """Get a single AB evaluation report by ID."""
+        rows = _rows(
+            await self._execute(
+                self.client.table("ab_eval_reports")
+                .select("*")
+                .eq("id", report_id)
+            )
+        )
+        return rows[0] if rows else None
+
     async def list_runs_for_project(self, project_id: str, limit: int = 50) -> list[dict[str, Any]]:
         """Return recent runs for a project, newest first.
 

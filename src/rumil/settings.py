@@ -1,6 +1,7 @@
 """Centralised configuration loaded from environment variables and .env files."""
 
 import contextvars
+import subprocess
 from contextlib import contextmanager
 from collections.abc import Iterator
 from pathlib import Path
@@ -17,6 +18,18 @@ from rumil.models import FindConsiderationsMode
 
 
 _CAPTURE: JsonDict = {"capture": True}
+
+
+def _get_git_commit() -> str:
+    """Return the short git commit hash, or '' if unavailable."""
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+    except Exception:
+        return ""
 
 
 def _capture_field(**kwargs: Any) -> Any:
@@ -164,13 +177,14 @@ class Settings(BaseSettings):
         return cls(_env_file=env_files)  # type: ignore[call-arg]
 
     def capture_config(self) -> dict:
-        """Collect fields marked with capture=True plus derived model."""
+        """Collect fields marked with capture=True plus derived model and git commit."""
         result: dict = {}
         for name, field_info in self.model_fields.items():
             extra = field_info.json_schema_extra
             if isinstance(extra, dict) and extra.get("capture"):
                 result[name] = getattr(self, name)
         result["model"] = self.model
+        result["git_commit"] = _get_git_commit()
         return result
 
 

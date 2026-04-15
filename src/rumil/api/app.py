@@ -20,6 +20,10 @@ from rumil.database import DB, _row_to_call, _rows
 from rumil.models import Call, Page, PageLink, PageType, Project, Workspace
 from rumil.settings import get_settings
 from rumil.api.schemas import (
+    ABEvalDimensionOut,
+    ABEvalDimensionSummaryOut,
+    ABEvalReportListItemOut,
+    ABEvalReportOut,
     ABRunArmOut,
     ABRunTraceOut,
     CallSequenceOut,
@@ -440,15 +444,24 @@ async def get_run_trace_tree(run_id: str):
             )
         )
     total_cost = sum(c.cost_usd or 0 for c in calls)
-    run_resp = await db.client.table("runs").select("staged").eq("id", run_id).execute()
+    run_resp = (
+        await db.client.table("runs")
+        .select("staged, config")
+        .eq("id", run_id)
+        .execute()
+    )
     run_data: list[dict[str, object]] = run_resp.data or []  # type: ignore[assignment]
     is_staged = bool(run_data and run_data[0].get("staged"))
+    run_config: dict = {}
+    if run_data:
+        run_config = run_data[0].get("config") or {}  # type: ignore[assignment]
     return RunTraceTreeOut(
         run_id=run_id,
         question=question_page,
         calls=nodes,
         cost_usd=total_cost if total_cost > 0 else None,
         staged=is_staged,
+        config=run_config,
     )
 
 
@@ -515,6 +528,99 @@ async def get_ab_run_trace(ab_run_id: str):
         name=ab_row.get("name", ""),
         question=question_page,
         arms=arms,
+    )
+
+
+@app.get(
+    "/api/ab-evals",
+    response_model=list[ABEvalReportListItemOut],
+)
+async def list_ab_evals():
+    db = await _get_db()
+    rows = await db.list_ab_eval_reports()
+
+    question_ids = {
+        qid
+        for row in rows
+        for qid in (row.get("question_id_a"), row.get("question_id_b"))
+        if qid
+    }
+    pages_by_id: dict[str, Page] = {}
+    if question_ids:
+        pages_by_id = await db.get_pages_by_ids(list(question_ids))
+
+    results: list[ABEvalReportListItemOut] = []
+    for row in rows:
+        qid = row.get("question_id_a") or row.get("question_id_b") or ""
+        q_page = pages_by_id.get(qid)
+        dims = row.get("dimension_reports") or []
+        results.append(
+            ABEvalReportListItemOut(
+                id=row["id"],
+                run_id_a=row["run_id_a"],
+                run_id_b=row["run_id_b"],
+                question_id_a=row.get("question_id_a") or "",
+                question_id_b=row.get("question_id_b") or "",
+                question_headline=q_page.headline if q_page else "",
+                overall_assessment_preview=(row.get("overall_assessment") or "")[:300],
+                preferences=[
+                    ABEvalDimensionSummaryOut(
+                        name=d.get("name", ""),
+                        display_name=d.get("display_name", ""),
+                        preference=d.get("preference", ""),
+                    )
+                    for d in dims
+                ],
+                created_at=row.get("created_at", ""),
+            )
+        )
+    return results
+
+
+@app.get(
+    "/api/ab-evals/{eval_id}",
+    response_model=ABEvalReportOut,
+)
+async def get_ab_eval(eval_id: str):
+    db = await _get_db()
+    row = await db.get_ab_eval_report(eval_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="AB eval report not found")
+
+    qid = row.get("question_id_a") or row.get("question_id_b") or ""
+    q_page = await db.get_page(qid) if qid else None
+    dims = row.get("dimension_reports") or []
+
+    run_ids = [row["run_id_a"], row["run_id_b"]]
+    run_rows = _rows(
+        await db.client.table("runs").select("id, config").in_("id", run_ids).execute()
+    )
+    configs_by_id = {r["id"]: r.get("config") or {} for r in run_rows}
+
+    return ABEvalReportOut(
+        id=row["id"],
+        run_id_a=row["run_id_a"],
+        run_id_b=row["run_id_b"],
+        question_id_a=row.get("question_id_a") or "",
+        question_id_b=row.get("question_id_b") or "",
+        question_headline=q_page.headline if q_page else "",
+        overall_assessment=row.get("overall_assessment") or "",
+        dimension_reports=[
+            ABEvalDimensionOut(
+                name=d.get("name", ""),
+                display_name=d.get("display_name", ""),
+                preference=d.get("preference", ""),
+                report_a=d.get("report_a", ""),
+                report_b=d.get("report_b", ""),
+                comparison=d.get("comparison", ""),
+                call_id_a=d.get("call_id_a", ""),
+                call_id_b=d.get("call_id_b", ""),
+            )
+            for d in dims
+        ],
+        config_a=configs_by_id.get(row["run_id_a"], {}),
+        config_b=configs_by_id.get(row["run_id_b"], {}),
+        created_at=row.get("created_at", ""),
     )
 
 

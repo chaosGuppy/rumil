@@ -288,6 +288,7 @@ class RunTraceTreeOut(BaseModel):
     calls: list[CallNodeOut]
     cost_usd: float | None = None
     staged: bool = False
+    config: dict = {}
 
 
 class RunSummaryOut(BaseModel):
@@ -327,6 +328,49 @@ class ABRunTraceOut(BaseModel):
     name: str = ""
     question: Page | None = None
     arms: list[ABRunArmOut]
+
+
+class ABEvalDimensionOut(BaseModel):
+    name: str
+    display_name: str
+    preference: str
+    report_a: str
+    report_b: str
+    comparison: str
+    call_id_a: str = ""
+    call_id_b: str = ""
+
+
+class ABEvalReportOut(BaseModel):
+    id: str
+    run_id_a: str
+    run_id_b: str
+    question_id_a: str = ""
+    question_id_b: str = ""
+    question_headline: str = ""
+    overall_assessment: str
+    dimension_reports: list[ABEvalDimensionOut]
+    config_a: dict = {}
+    config_b: dict = {}
+    created_at: str
+
+
+class ABEvalDimensionSummaryOut(BaseModel):
+    name: str
+    display_name: str
+    preference: str
+
+
+class ABEvalReportListItemOut(BaseModel):
+    id: str
+    run_id_a: str
+    run_id_b: str
+    question_id_a: str = ""
+    question_id_b: str = ""
+    question_headline: str = ""
+    overall_assessment_preview: str = ""
+    preferences: list[ABEvalDimensionSummaryOut]
+    created_at: str
 
 
 class RealtimeConfigOut(BaseModel):

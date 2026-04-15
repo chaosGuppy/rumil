@@ -5,6 +5,158 @@ export type ClientOptions = {
 };
 
 /**
+ * ABEvalDimensionOut
+ */
+export type AbEvalDimensionOut = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Display Name
+     */
+    display_name: string;
+    /**
+     * Preference
+     */
+    preference: string;
+    /**
+     * Report A
+     */
+    report_a: string;
+    /**
+     * Report B
+     */
+    report_b: string;
+    /**
+     * Comparison
+     */
+    comparison: string;
+    /**
+     * Call Id A
+     */
+    call_id_a?: string;
+    /**
+     * Call Id B
+     */
+    call_id_b?: string;
+};
+
+/**
+ * ABEvalDimensionSummaryOut
+ */
+export type AbEvalDimensionSummaryOut = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Display Name
+     */
+    display_name: string;
+    /**
+     * Preference
+     */
+    preference: string;
+};
+
+/**
+ * ABEvalReportListItemOut
+ */
+export type AbEvalReportListItemOut = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Run Id A
+     */
+    run_id_a: string;
+    /**
+     * Run Id B
+     */
+    run_id_b: string;
+    /**
+     * Question Id A
+     */
+    question_id_a?: string;
+    /**
+     * Question Id B
+     */
+    question_id_b?: string;
+    /**
+     * Question Headline
+     */
+    question_headline?: string;
+    /**
+     * Overall Assessment Preview
+     */
+    overall_assessment_preview?: string;
+    /**
+     * Preferences
+     */
+    preferences: Array<AbEvalDimensionSummaryOut>;
+    /**
+     * Created At
+     */
+    created_at: string;
+};
+
+/**
+ * ABEvalReportOut
+ */
+export type AbEvalReportOut = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Run Id A
+     */
+    run_id_a: string;
+    /**
+     * Run Id B
+     */
+    run_id_b: string;
+    /**
+     * Question Id A
+     */
+    question_id_a?: string;
+    /**
+     * Question Id B
+     */
+    question_id_b?: string;
+    /**
+     * Question Headline
+     */
+    question_headline?: string;
+    /**
+     * Overall Assessment
+     */
+    overall_assessment: string;
+    /**
+     * Dimension Reports
+     */
+    dimension_reports: Array<AbEvalDimensionOut>;
+    /**
+     * Config A
+     */
+    config_a?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Config B
+     */
+    config_b?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Created At
+     */
+    created_at: string;
+};
+
+/**
  * ABRunArmOut
  */
 export type AbRunArmOut = {
@@ -1537,6 +1689,12 @@ export type RunTraceTreeOut = {
      * Staged
      */
     staged?: boolean;
+    /**
+     * Config
+     */
+    config?: {
+        [key: string]: unknown;
+    };
 };
 
 /**
@@ -2720,6 +2878,54 @@ export type GetAbRunTraceApiAbRunsAbRunIdTraceGetResponses = {
 };
 
 export type GetAbRunTraceApiAbRunsAbRunIdTraceGetResponse = GetAbRunTraceApiAbRunsAbRunIdTraceGetResponses[keyof GetAbRunTraceApiAbRunsAbRunIdTraceGetResponses];
+
+export type ListAbEvalsApiAbEvalsGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/ab-evals';
+};
+
+export type ListAbEvalsApiAbEvalsGetResponses = {
+    /**
+     * Response List Ab Evals Api Ab Evals Get
+     *
+     * Successful Response
+     */
+    200: Array<AbEvalReportListItemOut>;
+};
+
+export type ListAbEvalsApiAbEvalsGetResponse = ListAbEvalsApiAbEvalsGetResponses[keyof ListAbEvalsApiAbEvalsGetResponses];
+
+export type GetAbEvalApiAbEvalsEvalIdGetData = {
+    body?: never;
+    path: {
+        /**
+         * Eval Id
+         */
+        eval_id: string;
+    };
+    query?: never;
+    url: '/api/ab-evals/{eval_id}';
+};
+
+export type GetAbEvalApiAbEvalsEvalIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetAbEvalApiAbEvalsEvalIdGetError = GetAbEvalApiAbEvalsEvalIdGetErrors[keyof GetAbEvalApiAbEvalsEvalIdGetErrors];
+
+export type GetAbEvalApiAbEvalsEvalIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: AbEvalReportOut;
+};
+
+export type GetAbEvalApiAbEvalsEvalIdGetResponse = GetAbEvalApiAbEvalsEvalIdGetResponses[keyof GetAbEvalApiAbEvalsEvalIdGetResponses];
 
 export type ListLlmExchangesApiCallsCallIdLlmExchangesGetData = {
     body?: never;

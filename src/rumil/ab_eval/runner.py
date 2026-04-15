@@ -45,6 +45,8 @@ class ABEvalResult:
     report_b: str
     comparison: str
     preference: str
+    call_id_a: str = ""
+    call_id_b: str = ""
 
 
 def _build_system_prompt(spec: ABEvalAgentSpec) -> str:
@@ -224,8 +226,8 @@ async def run_single_eval_agent(
                 broadcaster,
             )
         )
-    report_a, _ = task_a.result()
-    report_b, _ = task_b.result()
+    report_a, call_a = task_a.result()
+    report_b, call_b = task_b.result()
     log.info("Agent %s: both arm evaluations complete", spec.name)
 
     comparison, preference = await _run_comparison(spec, report_a, report_b)
@@ -241,7 +243,23 @@ async def run_single_eval_agent(
         report_b=report_b,
         comparison=comparison,
         preference=preference,
+        call_id_a=call_a.id,
+        call_id_b=call_b.id,
     )
+
+
+async def _generate_overall_assessment(
+    agent_reports: list[tuple[ABEvalAgentSpec, str, str, str, str]],
+) -> str:
+    """Generate an LLM-written overall assessment from per-dimension comparisons."""
+    final_prompt = (_PROMPTS_DIR / "ab-eval-final-report.md").read_text()
+    sections: list[str] = []
+    for spec, _ra, _rb, comparison, preference in agent_reports:
+        sections.append(
+            f"### {spec.display_name}\n\n**Preference: {preference}**\n\n{comparison}"
+        )
+    user_message = "\n\n---\n\n".join(sections)
+    return await text_call(system_prompt=final_prompt, user_message=user_message)
 
 
 async def run_ab_eval(
@@ -303,8 +321,35 @@ async def run_ab_eval(
         (spec, r.report_a, r.report_b, r.comparison, r.preference)
         for spec, r in zip(EVAL_AGENTS, results)
     ]
-    aggregate = format_aggregate_report(agent_reports, run_id_a, run_id_b)
+
+    overall_assessment = await _generate_overall_assessment(agent_reports)
+    aggregate = format_aggregate_report(
+        agent_reports, run_id_a, run_id_b, overall_assessment
+    )
     report_path = save_ab_report(aggregate, run_id_a, run_id_b)
+
+    dimension_rows = [
+        {
+            "name": spec.name,
+            "display_name": spec.display_name,
+            "preference": r.preference,
+            "report_a": r.report_a,
+            "report_b": r.report_b,
+            "comparison": r.comparison,
+            "call_id_a": r.call_id_a,
+            "call_id_b": r.call_id_b,
+        }
+        for spec, r in zip(EVAL_AGENTS, results)
+    ]
+    report_id = await db.save_ab_eval_report(
+        run_id_a=run_id_a,
+        run_id_b=run_id_b,
+        question_id_a=question_id_a,
+        question_id_b=question_id_b,
+        overall_assessment=overall_assessment,
+        dimension_reports=dimension_rows,
+    )
+    log.info("AB eval report saved to DB: %s", report_id)
 
     print(f"\nReport saved to: {report_path}")
     print("\n" + "=" * 60)

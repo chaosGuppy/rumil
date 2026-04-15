@@ -31,6 +31,7 @@ def format_aggregate_report(
     agent_reports: Sequence[tuple[ABEvalAgentSpec, str, str, str, str]],
     run_id_a: str,
     run_id_b: str,
+    overall_assessment: str,
 ) -> str:
     """Format the aggregate report across all agents.
 
@@ -51,6 +52,10 @@ def format_aggregate_report(
     for spec, _ra, _rb, _comp, preference in agent_reports:
         lines.append(f"| {spec.display_name} | {preference} |")
 
+    lines.append("")
+    lines.append("## Overall Assessment")
+    lines.append("")
+    lines.append(overall_assessment)
     lines.append("")
     lines.append("---")
     lines.append("")

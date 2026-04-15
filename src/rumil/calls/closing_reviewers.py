@@ -20,7 +20,6 @@ from rumil.calls.stages import CallInfra, ClosingReviewer, ContextResult, Update
 from rumil.llm import (
     LLMExchangeMetadata,
     build_system_prompt,
-    build_user_message,
     structured_call,
     text_call,
 )
@@ -28,8 +27,7 @@ from rumil.models import CallType, MoveType, PageType
 from rumil.available_moves import get_moves_for_call
 from rumil.moves.load_page import LoadPagePayload
 from rumil.moves.registry import MOVES
-from rumil.tracing.trace_events import ErrorEvent, ReviewCompleteEvent
-from rumil.tracing.tracer import get_trace
+from rumil.tracing.trace_events import ReviewCompleteEvent
 
 log = logging.getLogger(__name__)
 
@@ -62,7 +60,7 @@ class StandardClosingReview(ClosingReviewer):
                 review.get("confidence_in_output", "?"),
             )
             await log_page_ratings(review, infra.db)
-            await infra.trace.record(
+            await infra.trace.record_strict(
                 ReviewCompleteEvent(
                     remaining_fruit=review.get("remaining_fruit"),
                     confidence=review.get("confidence_in_output"),
@@ -336,7 +334,7 @@ class SinglePhaseScoutReview(ClosingReviewer):
         )
 
         infra.call.review_json = review_data
-        await infra.trace.record(
+        await infra.trace.record_strict(
             ReviewCompleteEvent(
                 remaining_fruit=creation.last_fruit_score,
                 confidence=review_data.get("confidence_in_output"),
@@ -348,5 +346,3 @@ class SinglePhaseScoutReview(ClosingReviewer):
             f"{len(creation.created_page_ids)} pages created."
         )
         await mark_call_completed(infra.call, infra.db, summary)
-
-

@@ -14,7 +14,7 @@ from rumil.models import Call, CallStage, CallStatus, CallType, Dispatch, Move, 
 from rumil.available_moves import get_moves_for_call
 from rumil.moves.base import MoveState
 from rumil.tracing.trace_events import ErrorEvent
-from rumil.tracing.tracer import CallTrace, set_trace
+from rumil.tracing.tracer import CallTrace, reset_trace, set_trace
 
 log = logging.getLogger(__name__)
 
@@ -154,13 +154,18 @@ class CallRunner(ABC):
     async def run(self) -> None:
         call_db = await self.infra.db.fork()
         self.infra.db = call_db
+        self.infra.state.db = call_db
+        self.infra.trace.db = call_db
+        trace_token = set_trace(self.infra.trace)
         try:
             await self._run_stages()
         finally:
-            await call_db.close()
+            try:
+                await call_db.close()
+            finally:
+                reset_trace(trace_token)
 
     async def _run_stages(self) -> None:
-        set_trace(self.infra.trace)
         try:
             await self.infra.db.update_call_status(
                 self.infra.call.id,

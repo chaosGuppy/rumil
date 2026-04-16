@@ -1164,6 +1164,33 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
         </div>
       )}
 
+      {event.event === "update_view_phase_completed" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">processed</span>
+            <span className="trace-kv-value">{event.items_processed}</span>
+          </div>
+          {(event.items_modified ?? 0) > 0 && (
+            <div className="trace-kv">
+              <span className="trace-kv-key">modified</span>
+              <span className="trace-kv-value">{event.items_modified}</span>
+            </div>
+          )}
+          {(event.items_created ?? 0) > 0 && (
+            <div className="trace-kv">
+              <span className="trace-kv-key">created</span>
+              <span className="trace-kv-value">{event.items_created}</span>
+            </div>
+          )}
+          {(event.items_removed ?? 0) > 0 && (
+            <div className="trace-kv">
+              <span className="trace-kv-key">removed</span>
+              <span className="trace-kv-value">{event.items_removed}</span>
+            </div>
+          )}
+        </div>
+      )}
+
       {event.event === "view_created" && (
         <div className="trace-event-body">
           <div className="trace-kv">

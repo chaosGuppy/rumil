@@ -330,21 +330,27 @@ async def test_assess_produces_inline_citations(tmp_db, question_page):
     claims = []
     for headline, content, direction in [
         (
-            "Rayleigh scattering is the dominant blue-sky mechanism",
-            "Rayleigh scattering of shorter wavelengths of light by molecules "
-            "in Earth's atmosphere is the dominant mechanism for blue sky.",
+            "Frontier training compute has scaled ~4-5x per year through 2025",
+            "Training compute for frontier models has grown roughly 4-5x per year "
+            "through 2025, and announced buildouts suggest comparable scaling can "
+            "continue through 2027-2028, driving steady gains on routine cognitive "
+            "benchmarks.",
             "supports",
         ),
         (
-            "Mie scattering from aerosols shifts sky toward white or grey",
-            "In polluted or humid conditions, larger particles cause Mie scattering "
-            "which is wavelength-independent, shifting the sky toward white or grey.",
+            "Reliability bottlenecks have lagged headline capability gains",
+            "Hallucination rates and brittleness on long-horizon agentic tasks "
+            "have improved more slowly than headline capability benchmarks, "
+            "slowing deployment of frontier models for routine cognitive work in "
+            "production settings.",
             "opposes",
         ),
         (
-            "Human color perception adapts to ambient lighting conditions",
-            "Chromatic adaptation in the human visual system means the perceived "
-            "color of the sky depends on adaptation state, not just the spectrum.",
+            "Organisational and regulatory friction decouple capability from deployment",
+            "Adoption of cognitive automation depends heavily on organisational "
+            "integration capacity, procurement cycles, and sectoral regulation, "
+            "which can decouple raw capability timelines from real-world automation "
+            "timelines by several years.",
             "neutral",
         ),
     ]:

@@ -37,6 +37,7 @@ class FindConsiderationsCall(CallRunner):
         up_to_stage: CallStage | None = None,
     ):
         call.call_params = {
+            **(call.call_params or {}),
             "mode": mode.value,
             "max_rounds": max_rounds,
             "fruit_threshold": fruit_threshold,

@@ -486,6 +486,13 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
 
             turn_result = await self._global_turn(root_question_id)
 
+            local_done = (
+                self._local_task is None or self._local_task.done()
+            )
+            if local_done and not turn_result.get('created_questions'):
+                log.info('Global loop exiting: local done and no opportunity found')
+                break
+
             if turn_result.get('dispatches'):
                 dispatches = turn_result['dispatches']
                 sequences: list[list[Dispatch]] = []

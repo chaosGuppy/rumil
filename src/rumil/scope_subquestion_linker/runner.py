@@ -159,7 +159,7 @@ async def run_scope_subquestion_linker(
         proposed = [
             ProposedSubquestion(id=p.id, headline=p.headline) for p in proposed_pages
         ]
-        await trace.record(LinkSubquestionsCompleteEvent(proposed=proposed))
+        await trace.record_strict(LinkSubquestionsCompleteEvent(proposed=proposed))
 
         call.review_json = {
             "proposed_subquestion_ids": proposed_ids,

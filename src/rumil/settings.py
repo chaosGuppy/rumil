@@ -1,6 +1,7 @@
 """Centralised configuration loaded from environment variables and .env files."""
 
 import contextvars
+import subprocess
 from contextlib import contextmanager
 from collections.abc import Iterator
 from pathlib import Path
@@ -17,6 +18,18 @@ from rumil.models import FindConsiderationsMode
 
 
 _CAPTURE: JsonDict = {"capture": True}
+
+
+def _get_git_commit() -> str:
+    """Return the short git commit hash, or '' if unavailable."""
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+    except Exception:
+        return ""
 
 
 def _capture_field(**kwargs: Any) -> Any:
@@ -82,6 +95,7 @@ class Settings(BaseSettings):
     scope_subquestion_linker_seed_limit: int = _capture_field(default=10)
     scope_subquestion_linker_subgraph_max_pages: int = _capture_field(default=40)
     linker_cache_invalidation_threshold: int = _capture_field(default=100)
+    subquestion_linker_enabled: bool = _capture_field(default=True)
 
     max_db_retries: int = _capture_field(default=60)
     max_api_retries: int = _capture_field(default=60)
@@ -169,13 +183,14 @@ class Settings(BaseSettings):
         return cls(_env_file=env_files)  # type: ignore[call-arg]
 
     def capture_config(self) -> dict:
-        """Collect fields marked with capture=True plus derived model."""
+        """Collect fields marked with capture=True plus derived model and git commit."""
         result: dict = {}
         for name, field_info in self.model_fields.items():
             extra = field_info.json_schema_extra
             if isinstance(extra, dict) and extra.get("capture"):
                 result[name] = getattr(self, name)
         result["model"] = self.model
+        result["git_commit"] = _get_git_commit()
         return result
 
 

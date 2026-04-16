@@ -21,6 +21,7 @@ from rumil.orchestrators.common import (
     score_items_sequentially,
     find_considerations_until_done,
     ingest_until_done,
+    update_view_for_question,
     web_research_question,
 )
 from rumil.orchestrators.experimental import ExperimentalOrchestrator
@@ -61,6 +62,7 @@ __all__ = [
     "create_view_for_question",
     "create_root_question",
     "find_considerations_until_done",
+    "update_view_for_question",
     "score_items_sequentially",
     "ingest_until_done",
     "web_research_question",

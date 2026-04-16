@@ -142,11 +142,16 @@ async def record_round_moves(
     state: MoveState,
     db: DB,
 ) -> None:
-    """Record a trace event for any moves added since the last call."""
+    """Record a trace event for any moves added since the last call.
+
+    Uses ``record_strict`` because moves have already been applied to the DB
+    at this point — a silently-dropped trace event leaves the frontend view
+    of the call out of sync with actual workspace state.
+    """
     trace = get_trace()
     round_moves, round_created, round_extras = state.take_new_moves()
     if round_moves and trace:
-        await trace.record(
+        await trace.record_strict(
             await moves_to_trace_event(round_moves, round_created, db, round_extras)
         )
 

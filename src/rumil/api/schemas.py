@@ -22,12 +22,14 @@ from rumil.tracing.trace_events import (
     ErrorEvent,
     EvaluationCompleteEvent,
     ExplorePageEvent,
+    GlobalPhaseCompletedEvent,
     GroundingTasksGeneratedEvent,
     LinkSubquestionsCompleteEvent,
     LLMExchangeEvent,
     MovesExecutedEvent,
     PhaseSkippedEvent,
     ReassessTriggeredEvent,
+    LoadPageEvent,
     RenderQuestionSubgraphEvent,
     ReviewCompleteEvent,
     ScoringCompletedEvent,
@@ -162,6 +164,10 @@ class RenderQuestionSubgraphEventOut(RenderQuestionSubgraphEvent, _TraceEnvelope
     pass
 
 
+class LoadPageEventOut(LoadPageEvent, _TraceEnvelopeMixin):
+    pass
+
+
 class LinkSubquestionsCompleteEventOut(
     LinkSubquestionsCompleteEvent, _TraceEnvelopeMixin
 ):
@@ -173,6 +179,10 @@ class ViewCreatedEventOut(ViewCreatedEvent, _TraceEnvelopeMixin):
 
 
 class PhaseSkippedEventOut(PhaseSkippedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class GlobalPhaseCompletedEventOut(GlobalPhaseCompletedEvent, _TraceEnvelopeMixin):
     pass
 
 
@@ -206,9 +216,11 @@ TraceEventOut = Annotated[
     | GroundingTasksGeneratedEventOut
     | WebResearchCompleteEventOut
     | RenderQuestionSubgraphEventOut
+    | LoadPageEventOut
     | LinkSubquestionsCompleteEventOut
     | ViewCreatedEventOut
     | PhaseSkippedEventOut
+    | GlobalPhaseCompletedEventOut
     | UpdateViewPhaseCompletedEventOut,
     Field(discriminator="event"),
 ]

@@ -25,6 +25,7 @@ from rumil.orchestrators.common import (
     web_research_question,
 )
 from rumil.orchestrators.experimental import ExperimentalOrchestrator
+from rumil.orchestrators.global_prio import GlobalPrioOrchestrator
 from rumil.orchestrators.two_phase import TwoPhaseOrchestrator
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
@@ -32,12 +33,18 @@ from rumil.tracing.broadcast import Broadcaster
 
 def Orchestrator(db: DB, broadcaster: Broadcaster | None = None) -> BaseOrchestrator:
     """Factory function: returns the appropriate orchestrator subclass."""
-    variant = get_settings().prioritizer_variant
+    settings = get_settings()
+    variant = settings.prioritizer_variant
     if variant == "two_phase":
-        return TwoPhaseOrchestrator(db, broadcaster)
-    if variant == "experimental":
-        return ExperimentalOrchestrator(db, broadcaster)
-    raise ValueError(f"Unknown prioritizer_variant: {variant}")
+        orch: BaseOrchestrator = TwoPhaseOrchestrator(db, broadcaster)
+    elif variant == "experimental":
+        orch = ExperimentalOrchestrator(db, broadcaster)
+    else:
+        raise ValueError(f"Unknown prioritizer_variant: {variant}")
+
+    if settings.enable_global_prio:
+        return GlobalPrioOrchestrator(db, broadcaster)
+    return orch
 
 
 __all__ = [
@@ -46,6 +53,7 @@ __all__ = [
     "ClaimScore",
     "ClaimScoringResult",
     "ExperimentalOrchestrator",
+    "GlobalPrioOrchestrator",
     "FruitResult",
     "Orchestrator",
     "PRIORITIZATION_MOVES",

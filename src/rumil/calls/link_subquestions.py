@@ -19,7 +19,7 @@ from rumil.models import CallType, LinkType
 from rumil.moves.base import link_pages
 from rumil.scope_subquestion_linker.prompt import build_linker_prompt
 from rumil.scope_subquestion_linker.seed_selection import select_seed_questions
-from rumil.scope_subquestion_linker.subgraph import render_question_subgraph
+from rumil.workspace_exploration import render_question_subgraph
 from rumil.scope_subquestion_linker.validation import validate_proposals
 from rumil.scope_subquestion_linker.tool import (
     LinkerResult,

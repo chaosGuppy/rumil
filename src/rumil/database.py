@@ -89,7 +89,8 @@ _db_retry = retry(
 
 _LINK_COLUMNS = (
     'id,from_page_id,to_page_id,link_type,direction,'
-    'strength,reasoning,role,importance,section,position,created_at,run_id'
+    'strength,reasoning,role,importance,section,position,'
+    'impact_on_parent_question,created_at,run_id'
 )
 
 _SLIM_PAGE_COLUMNS = (
@@ -142,6 +143,7 @@ def _row_to_link(row: dict[str, Any]) -> PageLink:
         importance=row.get("importance"),
         section=row.get("section"),
         position=row.get("position"),
+        impact_on_parent_question=row.get("impact_on_parent_question"),
         created_at=datetime.fromisoformat(row["created_at"]),
         run_id=row.get("run_id") or "",
     )
@@ -442,7 +444,6 @@ class DB:
                 }
             )
         )
-
     async def update_page_content(self, page_id: str, new_content: str) -> None:
         """Update a page's content field with mutation event recording."""
         page = await self.get_page(page_id)
@@ -883,6 +884,7 @@ class DB:
                     "importance": link.importance,
                     "section": link.section,
                     "position": link.position,
+                    "impact_on_parent_question": link.impact_on_parent_question,
                     "created_at": link.created_at.isoformat(),
                     "run_id": self.run_id,
                     "staged": self.staged,
@@ -2170,6 +2172,63 @@ class DB:
         )
         return cast(dict[str, Any], result.data or {})
 
+    async def get_assess_staleness(
+        self, question_ids: Sequence[str],
+    ) -> dict[str, bool]:
+        """Check whether questions need re-assessment.
+
+        A question is stale if it has no completed ASSESS call, or if any
+        link targeting it was created after the most recent completed ASSESS
+        call's created_at.
+
+        Returns a dict mapping each question_id to True (stale) or False.
+        """
+        if not question_ids:
+            return {}
+
+        calls_query = (
+            self.client.table("calls")
+            .select("scope_page_id,created_at")
+            .eq("call_type", CallType.ASSESS.value)
+            .eq("status", CallStatus.COMPLETE.value)
+            .in_("scope_page_id", list(question_ids))
+            .order("created_at", desc=True)
+        )
+        calls_result = await self._execute(calls_query)
+
+        latest_assess: dict[str, datetime] = {}
+        for row in _rows(calls_result):
+            qid = row["scope_page_id"]
+            if qid not in latest_assess:
+                latest_assess[qid] = datetime.fromisoformat(row["created_at"])
+
+        links_query = (
+            self.client.table("page_links")
+            .select(_LINK_COLUMNS)
+            .in_("to_page_id", list(question_ids))
+        )
+        links_query = self._staged_filter(links_query)
+        links_result = await self._execute(links_query)
+        links = [_row_to_link(r) for r in _rows(links_result)]
+        links = await self._apply_link_events(links)
+
+        latest_link: dict[str, datetime] = {}
+        for link in links:
+            qid = link.to_page_id
+            ts = link.created_at
+            if qid not in latest_link or ts > latest_link[qid]:
+                latest_link[qid] = ts
+
+        staleness: dict[str, bool] = {}
+        for qid in question_ids:
+            if qid not in latest_assess:
+                staleness[qid] = True
+            elif qid in latest_link and latest_link[qid] > latest_assess[qid]:
+                staleness[qid] = True
+            else:
+                staleness[qid] = False
+        return staleness
+
     async def count_pages_since(self, since: datetime) -> int:
         """Count workspace pages created after *since* (for cache invalidation)."""
         query = self.client.table("pages").select(
@@ -2339,6 +2398,39 @@ class DB:
                 }
             )
         )
+
+    async def count_run_questions(self) -> int:
+        """Count question pages created by this run."""
+        query = (
+            self.client.table("pages")
+            .select("id", count=CountMethod.exact)
+            .eq("run_id", self.run_id)
+            .eq("page_type", PageType.QUESTION.value)
+        )
+        if self.project_id:
+            query = query.eq("project_id", self.project_id)
+        query = self._staged_filter(query)
+        result = await self._execute(query)
+        return result.count or 0
+
+    async def get_run_questions_since(
+        self, since: datetime,
+    ) -> list[Page]:
+        """Return question pages created by this run after *since*."""
+        query = (
+            self.client.table("pages")
+            .select(_SLIM_PAGE_COLUMNS)
+            .eq("run_id", self.run_id)
+            .eq("page_type", PageType.QUESTION.value)
+            .gt("created_at", since.isoformat())
+            .order("created_at")
+        )
+        if self.project_id:
+            query = query.eq("project_id", self.project_id)
+        query = self._staged_filter(query)
+        result = await self._execute(query)
+        pages = [_row_to_page(r) for r in _rows(result)]
+        return await self._apply_page_events(pages)
 
     async def stage_run(self, run_id: str) -> None:
         """Retroactively stage a completed non-staged run.

@@ -41,8 +41,7 @@ async def run_prioritization_call(
 ) -> RunCallResult:
     """Run a prioritization call with tool use (single LLM round).
 
-    Uses the prioritization-specific create_subquestion tool variant and
-    dispatch tools. No phase-1 page loading.
+    Binds dispatch tools and available moves. No phase-1 page loading.
     """
     log.info(
         "run_prioritization_call: call=%s, scope=%s",
@@ -62,8 +61,6 @@ async def run_prioritization_call(
     tools = []
     for mt in available_moves:
         tool = MOVES[mt].bind(state)
-        if mt == MoveType.CREATE_SUBQUESTION:
-            tool.input_schema = filter_mode_schema(tool.input_schema, allowed_fc_modes)
         tools.append(tool)
     if dispatch_types is not None:
         selected_defs = [

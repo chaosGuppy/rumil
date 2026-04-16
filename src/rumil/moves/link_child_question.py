@@ -17,6 +17,7 @@ class ChildQuestionLinkFields(BaseModel):
             data = dict(data)
             data["parent_id"] = data.pop("question_id")
         return data
+
     reasoning: str = Field("", description="Why this is a sub-question")
     role: LinkRole = Field(
         LinkRole.STRUCTURAL,
@@ -24,6 +25,13 @@ class ChildQuestionLinkFields(BaseModel):
             "Link role: 'direct' = answering this sub-question directly "
             "answers the parent; 'structural' = this sub-question frames "
             "what evidence/angles to explore."
+        ),
+    )
+    impact_on_parent_question: int | None = Field(
+        None,
+        description=(
+            "0-10 estimate of how much answering this question would help "
+            "answer the parent question. Higher = more decision-relevant."
         ),
     )
 
@@ -40,6 +48,7 @@ async def execute(payload: LinkChildQuestionPayload, call: Call, db: DB) -> Move
         db,
         LinkType.CHILD_QUESTION,
         role=payload.role,
+        impact_on_parent_question=payload.impact_on_parent_question,
     )
 
 

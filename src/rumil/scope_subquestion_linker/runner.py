@@ -8,7 +8,7 @@ from rumil.models import Call, CallStatus, CallType, PageType
 from rumil.moves.base import MoveState
 from rumil.scope_subquestion_linker.prompt import build_linker_prompt
 from rumil.scope_subquestion_linker.seed_selection import select_seed_questions
-from rumil.scope_subquestion_linker.subgraph import render_question_subgraph
+from rumil.workspace_exploration import render_question_subgraph
 from rumil.scope_subquestion_linker.tool import (
     LinkerResult,
     SubmitHolder,

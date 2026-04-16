@@ -7,9 +7,6 @@ from pydantic import Field
 from rumil.database import DB
 from rumil.models import (
     Call,
-    CallType,
-    Dispatch,
-    InlineDispatch,
     LinkType,
     MoveType,
     PageLayer,
@@ -53,6 +50,7 @@ async def execute(payload: CreateQuestionPayload, call: Call, db: DB) -> MoveRes
                 link_type=LinkType.CHILD_QUESTION,
                 reasoning=link_spec.reasoning,
                 role=link_spec.role,
+                impact_on_parent_question=link_spec.impact_on_parent_question,
             )
         )
         log.info(
@@ -62,62 +60,6 @@ async def execute(payload: CreateQuestionPayload, call: Call, db: DB) -> MoveRes
         )
 
     return result
-
-
-class CreateSubquestionPayload(CreateQuestionPayload):
-    dispatches: list[InlineDispatch] = Field(
-        default_factory=list,
-        description=(
-            "Research calls to dispatch on this question immediately upon creation. "
-            "Each dispatch is queued and executed after prioritization completes."
-        ),
-    )
-
-
-def _inline_to_dispatch(
-    inline: InlineDispatch,
-    question_id: str,
-) -> Dispatch:
-    from rumil.calls.dispatches import DISPATCH_DEFS
-
-    call_type = CallType(inline.call_type)
-    ddef = DISPATCH_DEFS[call_type]
-    fields = inline.model_dump(exclude={"call_type"})
-    fields["question_id"] = question_id
-    return Dispatch(call_type=call_type, payload=ddef.schema(**fields))
-
-
-async def execute_subquestion(
-    payload: CreateSubquestionPayload,
-    call: Call,
-    db: DB,
-) -> MoveResult:
-    result = await execute(payload, call, db)
-    if not result.created_page_id or not payload.dispatches:
-        return result
-    dispatches = [
-        _inline_to_dispatch(d, result.created_page_id) for d in payload.dispatches
-    ]
-    return MoveResult(
-        message=result.message,
-        created_page_id=result.created_page_id,
-        dispatches=dispatches,
-    )
-
-
-PRIORITIZATION_MOVE = MoveDef(
-    move_type=MoveType.CREATE_SUBQUESTION,
-    name="create_subquestion",
-    description=(
-        "Create a new research sub-question and optionally dispatch research "
-        "calls on it immediately. Use the dispatches field to queue find-considerations, "
-        "assess, or sub-prioritization calls that will execute after "
-        "prioritization completes. Use the links field to attach this "
-        "question as a child of a parent question."
-    ),
-    schema=CreateSubquestionPayload,
-    execute=execute_subquestion,
-)
 
 
 async def execute_scout_question(

@@ -5,7 +5,6 @@ from rumil.moves.base import MoveDef
 from rumil.moves.create_claim import MOVE as _create_claim
 from rumil.moves.create_question import (
     MOVE as _create_question,
-    PRIORITIZATION_MOVE as _create_subquestion,
     SCOUT_MOVE as _create_scout_question,
 )
 from rumil.moves.create_judgement import MOVE as _create_judgement
@@ -30,7 +29,6 @@ MOVES: dict[MoveType, MoveDef] = {
         _create_claim,
         _create_question,
         _create_scout_question,
-        _create_subquestion,
         _create_judgement,
         _create_wiki_page,
         _link_consideration,

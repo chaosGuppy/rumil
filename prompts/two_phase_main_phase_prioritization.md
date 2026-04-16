@@ -67,6 +67,15 @@ The guidelines for scouts ranking fruit goes as:
 7-8 = substantial work remains
 9-10 = barely started
 
+## Stale Dependencies
+
+The context may include a **Stale Dependencies** section listing pages that depend on claims which have since been superseded. These pages rest on outdated premises and may need reassessment.
+
+When deciding how to allocate budget, factor in staleness:
+- **High link strength + high change magnitude** = the dependency was critical and changed significantly. Prioritize reassessing the question that the stale page bears on — the existing conclusions are likely wrong.
+- **Low link strength or no change magnitude** = the dependency was weaker or the change may be minor. Treat as lower priority — only spend budget here if nothing more productive is available.
+- The right response to a stale dependency is usually to dispatch an assess on the question the dependent page is a consideration for. This re-evaluates the question in light of the updated evidence.
+
 ## Budget Accounting
 
 Your total dispatched budget (worst case) must not exceed your allocated budget:

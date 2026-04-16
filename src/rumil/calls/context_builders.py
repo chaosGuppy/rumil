@@ -501,10 +501,18 @@ async def _resolve_superseded_connections(
             deduped.append((page, link))
     connected = deduped
 
+    # Batch-resolve all superseded pages in one call rather than N
+    # singular chain walks. Without batching this loop is the hottest
+    # N+1 in the call-type context builders — see chaosGuppy/rumil#275.
+    superseded_ids = [page.id for page, _link in connected if page.is_superseded]
+    replacements: dict[str, Page] = {}
+    if superseded_ids:
+        replacements = await db.resolve_supersession_chains(superseded_ids)
+
     refreshed: list[tuple[Page, PageLink]] = []
     for page, link in connected:
         if page.is_superseded:
-            new_page = await db.resolve_supersession_chain(page.id)
+            new_page = replacements.get(page.id)
             if new_page:
                 new_link = await _swap_superseded_link(page, link, new_page, db)
                 refreshed.append((new_page, new_link))

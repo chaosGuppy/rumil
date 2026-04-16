@@ -8,11 +8,18 @@ The local prioritiser works within individual subtrees and cannot see cross-bran
 
 ## What Cross-Cutting Questions Are
 
-A cross-cutting question is one whose answer would be useful for understanding or assessing **multiple** questions across different branches of the research tree. Examples:
+A question is cross-cutting for a set of questions if and only if **its answer would significantly and directly influence the answer to each question in the set**, independent of the root question or broader context. The influence must be concrete and specific to each question -- not merely thematically related or loosely relevant.
 
-- A methodological question that applies to several subquestions ("How reliable are self-reported survey results in this domain?")
-- A foundational assumption that multiple branches depend on ("Is the underlying cost model realistic?")
-- A shared empirical question that several lines of argument need ("What is the current state of X technology?")
+**Good cross-cutting questions** (answer directly changes how you'd answer each parent):
+
+- "How reliable are self-reported survey results in this domain?" — when multiple questions across branches rely on survey data as key evidence
+- "What is the actual thermal efficiency of process X?" — when several subquestions' answers hinge on this specific parameter
+
+**NOT cross-cutting** (common mistakes):
+
+- Questions that are just broadly relevant to the topic but don't specifically influence each parent's answer
+- Questions that relate to the root question in general rather than directly influencing specific subquestions
+- Questions where the connection to one or more parents is indirect or mediated by other questions
 
 ## Impact Scores
 
@@ -69,7 +76,7 @@ In this phase you decide whether there is a cross-cutting question worth creatin
 
 Say **YES** only if you have identified a concrete question that:
 
-1. Would substantially advance at least **2 high-impact questions from different branches** of the research tree
+1. Its answer would **significantly and directly influence** the answer to at least **2 questions from different branches** -- not just be thematically related, but actually change how you'd answer each one
 2. Is not already being investigated by the local prioritiser
 3. Is specific enough to be actionable -- not a vague meta-question
 

@@ -85,9 +85,9 @@ class Settings(BaseSettings):
     sonnet_model: str = _capture_field(default="claude-sonnet-4-6")
     enable_global_prio: bool = _capture_field(default=False)
     global_prio_budget_fraction: float = _capture_field(default=0.2)
-    global_prio_trigger_threshold: int = _capture_field(default=5)
+    global_prio_trigger_threshold: int = _capture_field(default=10)
     global_prio_explore_rounds: int = _capture_field(default=3)
-    global_prio_subgraph_max_pages: int = _capture_field(default=30)
+    global_prio_subgraph_max_pages: int = _capture_field(default=80)
 
     explore_subgraph_default_max_pages: int = _capture_field(default=30)
 

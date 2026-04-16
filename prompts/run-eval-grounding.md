@@ -1,4 +1,4 @@
-# A/B Evaluation: Grounding & Factual Correctness
+# Run Evaluation: Grounding & Factual Correctness
 
 You are evaluating a research run for the quality of its **grounding and factual correctness**.
 

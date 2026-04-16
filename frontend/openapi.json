@@ -2538,6 +2538,7 @@
           "feedback_update",
           "link_subquestions",
           "ab_eval",
+          "run_eval",
           "create_view",
           "global_prioritization",
           "update_view",

@@ -113,7 +113,7 @@ uv run python main.py --batch questions.json
 uv run python main.py --obsidian ./vault --workspace my-project
 
 # Export a single question's subtree as an Obsidian vault
-uv run python main.py --obsidian ./vault --obsidian-question QUESTION_ID
+uv run python main.py --obsidian ./vault QUESTION_ID
 
 # Investigate and export to Obsidian in one command
 uv run python main.py "Your question here" --budget 20 --obsidian ./vault

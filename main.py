@@ -941,16 +941,10 @@ async def async_main():
         metavar="OUTPUT_DIR",
         help=(
             "Export pages as an Obsidian vault to OUTPUT_DIR. "
-            "Standalone: exports the workspace (use --obsidian-question to "
-            "scope). Combined with a question: auto-exports the question's "
-            "subtree after investigation."
+            "Pass a question ID as the positional arg to scope to that "
+            "question's subtree. Combined with a new question text: "
+            "auto-exports the question's subtree after investigation."
         ),
-    )
-    parser.add_argument(
-        "--obsidian-question",
-        dest="obsidian_question_id",
-        metavar="QUESTION_ID",
-        help="Scope --obsidian export to a question and its subtree",
     )
     parser.add_argument(
         "--evaluate",
@@ -1236,16 +1230,18 @@ async def async_main():
     if args.obsidian_dir and not args.question:
         from rumil.obsidian_export import export_obsidian
 
-        qid = getattr(args, "obsidian_question_id", None)
-        if qid:
-            resolved = await db.resolve_page_id(qid)
-            if not resolved:
-                print(f"Error: question '{qid}' not found.")
-                sys.exit(1)
-            qid = resolved
-        out = await export_obsidian(db, args.obsidian_dir, question_id=qid)
+        out = await export_obsidian(db, args.obsidian_dir)
         print(f"Exported to: {out}")
         return
+
+    if args.obsidian_dir and args.question:
+        resolved = await db.resolve_page_id(args.question)
+        if resolved:
+            from rumil.obsidian_export import export_obsidian
+
+            out = await export_obsidian(db, args.obsidian_dir, question_id=resolved)
+            print(f"Exported to: {out}")
+            return
 
     if args.list:
         await cmd_list(db, args.workspace_name)

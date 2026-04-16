@@ -50,7 +50,6 @@ if TYPE_CHECKING:
     from rumil.database import DB
 
 DEFAULT_MAX_TOKENS = 20_000
-DEFAULT_TEMPERATURE = 0.15
 
 PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts"
 
@@ -348,7 +347,6 @@ async def call_api(
     metadata: LLMExchangeMetadata | None = None,
     db: DB | None = None,
     cache: bool = False,
-    temperature: float = DEFAULT_TEMPERATURE,
 ) -> APIResponse:
     """Make a single Anthropic API call with retry logic.
 
@@ -361,7 +359,6 @@ async def call_api(
     kwargs: dict = {
         "model": model,
         "max_tokens": DEFAULT_MAX_TOKENS,
-        "temperature": temperature,
         "system": system_prompt,
         "messages": _add_cache_breakpoint(messages) if cache else messages,
     }
@@ -663,7 +660,6 @@ async def _structured_call_parse(
     parse_kwargs: dict = {
         "model": model,
         "max_tokens": DEFAULT_MAX_TOKENS,
-        "temperature": DEFAULT_TEMPERATURE,
         "system": system_prompt,
         "messages": msg_list,
     }

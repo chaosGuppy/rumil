@@ -765,7 +765,10 @@ async def run_continuation_chat(
     orch.ingest_hint = (
         "The researcher just had a conversation about the investigation findings. "
         "The transcript has been ingested as a source. The researcher may have "
-        "provided corrections, additional context, or steering for the next phase."
+        "provided corrections, additional context, or steering for the next phase. "
+        "The View for this question has NOT yet been updated to reflect this new "
+        "material — any corrections or new context from the conversation are not "
+        "yet factored into View scores or item selection."
     )
     await orch.run(question_id)
 

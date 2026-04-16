@@ -644,9 +644,9 @@ async def build_prioritization_context(
 ) -> tuple[str, dict[str, str]]:
     """Build context for a prioritization call.
 
-    Uses embedding-similarity search to surface the most relevant pages
-    from the workspace, then appends the scope question and its direct
-    children (at ABSTRACT detail) and a dispatchable question index.
+    Includes the current View (importance 2+) for the scope question,
+    then appends the scope question and its direct children (at ABSTRACT
+    detail) and a dependency signal.
 
     Returns (context_text, short_id_map) where short_id_map maps 8-char
     short IDs to full UUIDs.
@@ -657,19 +657,22 @@ async def build_prioritization_context(
     if scope_question_id:
         question = await db.get_page(scope_question_id)
         if question:
+            view = await db.get_view_for_question(scope_question_id)
+            if view:
+                view_items = await db.get_view_items(
+                    view.id, min_importance=2,
+                )
+                view_text = await render_view(
+                    view, view_items, min_importance=2,
+                )
+                if view_text.strip():
+                    parts.append(view_text)
+                    parts.append("")
+                    parts.append("---")
+                    parts.append("")
+
             direct_children = await db.get_child_questions(scope_question_id)
             full_page_ids = {scope_question_id} | {c.id for c in direct_children}
-            embedding_result = await build_embedding_based_context(
-                question.headline,
-                db,
-                scope_question_id=scope_question_id,
-                headline_only_ids=full_page_ids,
-            )
-            if embedding_result.context_text:
-                parts.append(embedding_result.context_text)
-                parts.append("")
-                parts.append("---")
-                parts.append("")
 
             subtree_text = await render_page_and_immediate_children(
                 scope_question_id,

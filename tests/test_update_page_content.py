@@ -12,6 +12,7 @@ and any call to update_page_content would fail with a Postgres APIError
 import uuid
 from typing import Any, cast
 
+import pytest
 import pytest_asyncio
 
 from rumil.database import DB
@@ -121,23 +122,13 @@ async def test_update_page_content_staged_leaves_base_row_alone(project_id):
         await reader.delete_run_data()
 
 
-async def test_update_page_content_on_missing_page_is_noop(project_id):
-    """update_page_content on a nonexistent page returns silently and
-    does not write a mutation event."""
+async def test_update_page_content_on_missing_page_raises(project_id):
+    """update_page_content on a nonexistent page raises ValueError."""
     db = await _make_db(project_id, staged=False)
     try:
         fake_id = str(uuid.uuid4())
 
-        await db.update_page_content(fake_id, "irrelevant")
-
-        rows = (
-            await db.client.table("mutation_events")
-            .select("event_type")
-            .eq("run_id", db.run_id)
-            .eq("target_id", fake_id)
-            .execute()
-        )
-        data = cast(list[dict[str, Any]], rows.data)
-        assert data == []
+        with pytest.raises(ValueError, match="not found"):
+            await db.update_page_content(fake_id, "irrelevant")
     finally:
         await db.delete_run_data()

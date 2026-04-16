@@ -67,6 +67,45 @@ def pytest_collection_modifyitems(config, items):
 
 
 @pytest_asyncio.fixture
+async def envelope_cleanup():
+    """Track envelope run_ids and clean up their data + projects on teardown.
+
+    Tests append run_ids produced by ensure_chat_envelope(). The fixture
+    looks up the project_id from each run row, deletes all run data first,
+    then deletes the unique projects last (avoiding FK violations).
+    """
+    run_ids: list[str] = []
+
+    yield run_ids
+
+    project_ids: set[str] = set()
+    for run_id in reversed(run_ids):
+        cleanup_db = await DB.create(run_id=run_id)
+        try:
+            rows = (
+                await cleanup_db._execute(
+                    cleanup_db.client.table("runs")
+                    .select("project_id")
+                    .eq("id", run_id)
+                )
+            ).data
+            if rows and rows[0].get("project_id"):
+                project_ids.add(rows[0]["project_id"])
+            await cleanup_db.delete_run_data()
+        finally:
+            await cleanup_db.close()
+    if project_ids:
+        cleanup_db = await DB.create(run_id="cleanup")
+        try:
+            for pid in project_ids:
+                await cleanup_db._execute(
+                    cleanup_db.client.table("projects").delete().eq("id", pid)
+                )
+        finally:
+            await cleanup_db.close()
+
+
+@pytest_asyncio.fixture
 async def tmp_db():
     """Create a DB with a unique run_id and throwaway project for test isolation."""
     run_id = str(uuid.uuid4())

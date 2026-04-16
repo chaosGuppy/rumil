@@ -34,40 +34,6 @@ def _isolated_state(tmp_path, monkeypatch):
     )
 
 
-@pytest_asyncio.fixture
-async def envelope_cleanup():
-    """Track envelope run_ids so we can clean up rows written under them."""
-    run_ids: list[str] = []
-
-    yield run_ids
-
-    project_ids: set[str] = set()
-    for run_id in reversed(run_ids):
-        cleanup_db = await DB.create(run_id=run_id)
-        try:
-            rows = (
-                await cleanup_db._execute(
-                    cleanup_db.client.table("runs")
-                    .select("project_id")
-                    .eq("id", run_id)
-                )
-            ).data
-            if rows and rows[0].get("project_id"):
-                project_ids.add(rows[0]["project_id"])
-            await cleanup_db.delete_run_data()
-        finally:
-            await cleanup_db.close()
-    if project_ids:
-        cleanup_db = await DB.create(run_id="cleanup")
-        try:
-            for pid in project_ids:
-                await cleanup_db._execute(
-                    cleanup_db.client.table("projects").delete().eq("id", pid)
-                )
-        finally:
-            await cleanup_db.close()
-
-
 def _set_workspace(workspace: str) -> None:
     state = _runctx.load_session_state()
     state.workspace = workspace

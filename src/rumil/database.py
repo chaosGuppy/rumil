@@ -447,7 +447,7 @@ class DB:
         """Update a page's content field with mutation event recording."""
         page = await self.get_page(page_id)
         if not page:
-            return
+            raise ValueError(f"update_page_content: page {page_id} not found")
         await self.record_mutation_event(
             "update_page_content", page_id,
             {"old_content": page.content, "new_content": new_content},

@@ -4,13 +4,13 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
-from rumil.ab_eval.agents import ABEvalAgentSpec
+from rumil.run_eval.agents import EvalAgentSpec
 
 REPORTS_DIR = Path(__file__).resolve().parents[3] / "data" / "ab-reports"
 
 
 def format_agent_report(
-    spec: ABEvalAgentSpec,
+    spec: EvalAgentSpec,
     report_a: str,
     report_b: str,
     comparison: str,
@@ -28,7 +28,7 @@ def format_agent_report(
 
 
 def format_aggregate_report(
-    agent_reports: Sequence[tuple[ABEvalAgentSpec, str, str, str, str]],
+    agent_reports: Sequence[tuple[EvalAgentSpec, str, str, str, str]],
     run_id_a: str,
     run_id_b: str,
     overall_assessment: str,

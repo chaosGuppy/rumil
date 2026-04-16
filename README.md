@@ -221,6 +221,19 @@ The script runs 5 concurrent evaluation agents that compare the runs on: groundi
 
 Reports are saved to `data/ab-reports/` and to the `ab_eval_reports` database table. View them in the frontend at `/ab-evals`.
 
+### Single-run evaluation
+
+Evaluate a single staged run across all quality dimensions (grounding, subquestion relevance, consistency, research progress, general quality):
+
+```bash
+uv run python main.py --run-eval RUN_ID
+
+# Run only specific evaluation agents (works with --run-eval and --ab-eval)
+uv run python main.py --run-eval RUN_ID --eval-agents grounding,consistency
+```
+
+Reports are saved to `data/run-eval-reports/` and to the `run_eval_reports` database table.
+
 ### A/B evaluation (standalone)
 
 You can also run the evaluation agents independently against any two staged runs:

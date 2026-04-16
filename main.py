@@ -19,6 +19,8 @@ import uuid
 from pathlib import Path
 
 from rumil.ab_eval import run_ab_eval
+from rumil.run_eval import run_run_eval
+from rumil.run_eval.agents import EvalAgentSpec, EVAL_AGENTS
 from rumil.chat import run_chat, run_continuation_chat, run_scoping_chat
 from rumil.clean import run_feedback_update, run_grounding_feedback
 from rumil.constants import MIN_TWOPHASE_BUDGET
@@ -729,10 +731,39 @@ async def cmd_ab_eval(
     run_id_a: str,
     run_id_b: str,
     db: DB,
+    agents_override: list[EvalAgentSpec] | None = None,
 ) -> None:
     """Run A/B evaluation agents comparing two staged runs."""
+    await run_ab_eval(run_id_a, run_id_b, db, agents_override=agents_override)
 
-    await run_ab_eval(run_id_a, run_id_b, db)
+
+def resolve_eval_agents(
+    names_csv: str | None,
+) -> list[EvalAgentSpec] | None:
+    """Parse a comma-separated agent name string into a filtered agent list.
+
+    Returns *None* (meaning "use all") when *names_csv* is falsy.
+    """
+    if not names_csv:
+        return None
+    by_name = {s.name: s for s in EVAL_AGENTS}
+    requested = [n.strip() for n in names_csv.split(",")]
+    unknown = [n for n in requested if n not in by_name]
+    if unknown:
+        valid = ", ".join(by_name)
+        raise SystemExit(
+            f"Unknown eval agent(s): {', '.join(unknown)}. Valid names: {valid}"
+        )
+    return [by_name[n] for n in requested]
+
+
+async def cmd_run_eval(
+    run_id: str,
+    db: DB,
+    agents_override: list[EvalAgentSpec] | None = None,
+) -> None:
+    """Evaluate a single staged run across all quality dimensions."""
+    await run_run_eval(run_id, db, agents_override=agents_override)
 
 
 async def cmd_scope(
@@ -1124,11 +1155,25 @@ async def async_main():
         help="Load settings from this env file in addition to .env",
     )
     parser.add_argument(
+        "--run-eval",
+        dest="run_eval_id",
+        metavar="RUN_ID",
+        help="Evaluate a single staged run across all quality dimensions",
+    )
+    parser.add_argument(
         "--ab-eval",
         dest="ab_eval_ids",
         nargs=2,
         metavar=("RUN_ID_A", "RUN_ID_B"),
         help="Run A/B evaluation agents comparing two staged runs",
+    )
+    parser.add_argument(
+        "--eval-agents",
+        dest="eval_agent_names",
+        metavar="NAMES",
+        help="Comma-separated list of evaluation agent names to run "
+        "(default: all). Available: grounding, subquestion_relevance, "
+        "consistency, research_progress, general_quality",
     )
     parser.add_argument(
         "--stage-run",
@@ -1212,8 +1257,19 @@ async def async_main():
         print(f"Run {args.commit_run_id} has been committed.")
         return
 
+    eval_agents = resolve_eval_agents(args.eval_agent_names)
+
+    if args.run_eval_id:
+        await cmd_run_eval(args.run_eval_id, db, agents_override=eval_agents)
+        return
+
     if args.ab_eval_ids:
-        await cmd_ab_eval(args.ab_eval_ids[0], args.ab_eval_ids[1], db)
+        await cmd_ab_eval(
+            args.ab_eval_ids[0],
+            args.ab_eval_ids[1],
+            db,
+            agents_override=eval_agents,
+        )
         return
 
     if args.list:

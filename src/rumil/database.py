@@ -809,22 +809,21 @@ class DB:
 
         Returns the end-of-chain (non-superseded) page, or ``None`` if the
         chain is broken (missing page) or exceeds *max_depth*.
+
+        Delegates to the batched ``resolve_supersession_chains`` so the
+        cost is dominated by level-wise batched fetches rather than one
+        DB round trip per hop. Cycles terminate via the plural's
+        depth bound.
+
+        Note on max_depth: the singular historically counted *fetches*
+        (``max_depth`` page fetches -> chains of length <= max_depth).
+        The plural counts iterations *after* an initial fetch, so we
+        pass ``max_depth - 1`` to preserve the singular's bound.
         """
-        current_id = page_id
-        seen: set[str] = set()
-        for _ in range(max_depth):
-            page = await self.get_page(current_id)
-            if page is None:
-                return None
-            if not page.is_superseded:
-                return page if current_id != page_id else None
-            if page.superseded_by is None:
-                return None
-            if page.superseded_by in seen:
-                return None
-            seen.add(current_id)
-            current_id = page.superseded_by
-        return None
+        results = await self.resolve_supersession_chains(
+            [page_id], max_depth=max(0, max_depth - 1),
+        )
+        return results.get(page_id)
 
     async def resolve_supersession_chains(
         self, page_ids: Sequence[str], max_depth: int = 10,
@@ -1326,6 +1325,11 @@ class DB:
 
         Returns (link, change_magnitude) pairs. change_magnitude comes from
         the supersession mutation event if available, otherwise None.
+
+        Issues O(1) round trips regardless of how many DEPENDS_ON links
+        or stale dependencies exist: one query for the links, one batched
+        lookup for target pages, one batched lookup for supersession
+        magnitudes.
         """
         query = (
             self.client.table("page_links")
@@ -1335,13 +1339,21 @@ class DB:
         query = self._staged_filter(query)
         rows = _rows(await self._execute(query))
         links = await self._apply_link_events([_row_to_link(r) for r in rows])
+        if not links:
+            return []
+
+        target_ids = list({l.to_page_id for l in links})
+        pages_by_id = await self.get_pages_by_ids(target_ids)
+        superseded_ids = [
+            pid for pid, page in pages_by_id.items() if page.is_superseded
+        ]
+        magnitudes = await self._get_supersession_magnitudes_many(superseded_ids)
 
         stale: list[tuple[PageLink, int | None]] = []
         for link in links:
-            dep_page = await self.get_page(link.to_page_id)
+            dep_page = pages_by_id.get(link.to_page_id)
             if dep_page and dep_page.is_superseded:
-                magnitude = await self._get_supersession_magnitude(dep_page.id)
-                stale.append((link, magnitude))
+                stale.append((link, magnitudes.get(dep_page.id)))
         return stale
 
     async def get_dependency_counts(self) -> dict[str, int]:
@@ -1392,19 +1404,38 @@ class DB:
 
     async def _get_supersession_magnitude(self, page_id: str) -> int | None:
         """Look up the change_magnitude from the supersession mutation event."""
+        result = await self._get_supersession_magnitudes_many([page_id])
+        return result.get(page_id)
+
+    async def _get_supersession_magnitudes_many(
+        self, page_ids: Sequence[str],
+    ) -> dict[str, int | None]:
+        """Look up change_magnitude for many superseded pages in one query.
+
+        Returns a dict mapping page_id to the most-recent supersede_page
+        event's change_magnitude (or None if the event exists but carries
+        no magnitude). Pages without any supersede_page event are absent
+        from the result.
+        """
+        if not page_ids:
+            return {}
         query = (
             self.client.table("mutation_events")
-            .select("payload")
-            .eq("target_id", page_id)
+            .select("target_id, payload, created_at")
+            .in_("target_id", list(set(page_ids)))
             .eq("event_type", "supersede_page")
             .order("created_at", desc=True)
-            .limit(1)
         )
         rows = _rows(await self._execute(query))
-        if rows:
-            payload = rows[0].get("payload", {})
-            return payload.get("change_magnitude")
-        return None
+        # Rows are ordered newest-first; keep only the first per target_id.
+        result: dict[str, int | None] = {}
+        for row in rows:
+            target = row["target_id"]
+            if target in result:
+                continue
+            payload = row.get("payload") or {}
+            result[target] = payload.get("change_magnitude")
+        return result
 
     async def create_call(
         self,

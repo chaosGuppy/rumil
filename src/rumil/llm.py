@@ -55,7 +55,13 @@ DEFAULT_TEMPERATURE = 0.15
 
 def _supports_sampling_params(model: str) -> bool:
     # Opus 4.7 removed temperature/top_p/top_k — sending any returns 400.
-    return not model.startswith("claude-opus-4-7")
+    # With adaptive thinking on (Opus 4.6, Sonnet 4.6), temperature must be
+    # 1.0 — we'd rather skip it than set 1.0, so gate on thinking being off.
+    if model.startswith("claude-opus-4-7"):
+        return False
+    if _thinking_config(model) is not None:
+        return False
+    return True
 
 
 def _thinking_config(model: str) -> dict | None:

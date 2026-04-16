@@ -1,4 +1,4 @@
-# A/B Evaluation: General Quality
+# Run Evaluation: General Quality
 
 You are evaluating a research run for **general quality issues** not covered by other evaluation dimensions.
 
@@ -10,12 +10,9 @@ You are looking at a research workspace where a run has added new pages and link
 
 The following dimensions are evaluated by other agents and are **explicitly out of scope** for your evaluation:
 
-- **Grounding & factual correctness** (evaluated separately)
-- **Subquestion relevance** (evaluated separately)
-- **Consistency** (evaluated separately)
-- **Research progress / breakthroughs** (evaluated separately)
+{other_dimensions}
 
-Do not comment on these four areas. Instead, focus on everything else that affects quality.
+Do not comment on these areas. Instead, focus on everything else that affects quality.
 
 ## Your task
 

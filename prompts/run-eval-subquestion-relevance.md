@@ -1,4 +1,4 @@
-# A/B Evaluation: Subquestion Relevance
+# Run Evaluation: Subquestion Relevance
 
 You are evaluating a research run for the quality and relevance of **subquestions** it created.
 

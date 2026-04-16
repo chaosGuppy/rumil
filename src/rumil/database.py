@@ -2698,6 +2698,53 @@ class DB:
         rows = _rows(await self._execute(q))
         return rows[0] if rows else None
 
+    async def save_run_eval_report(
+        self,
+        run_id: str,
+        question_id: str,
+        overall_assessment: str,
+        dimension_reports: Sequence[dict[str, Any]],
+    ) -> str:
+        """Save a single-run evaluation report. Returns the report ID."""
+        report_id = str(uuid.uuid4())
+        await self._execute(
+            self.client.table("run_eval_reports").insert(
+                {
+                    "id": report_id,
+                    "run_id": run_id,
+                    "question_id": question_id,
+                    "overall_assessment": overall_assessment,
+                    "dimension_reports": list(dimension_reports),
+                    "project_id": str(self.project_id) if self.project_id else None,
+                }
+            )
+        )
+        return report_id
+
+    async def list_run_eval_reports(self) -> list[dict[str, Any]]:
+        """List all single-run evaluation reports for this project, newest first."""
+        q = (
+            self.client.table("run_eval_reports")
+            .select("id, run_id, question_id, overall_assessment, "
+                    "dimension_reports, created_at")
+            .order("created_at", desc=True)
+        )
+        if self.project_id:
+            q = q.eq("project_id", str(self.project_id))
+        return _rows(await self._execute(q))
+
+    async def get_run_eval_report(self, report_id: str) -> dict[str, Any] | None:
+        """Get a single run evaluation report by ID."""
+        q = (
+            self.client.table("run_eval_reports")
+            .select("*")
+            .eq("id", report_id)
+        )
+        if self.project_id:
+            q = q.eq("project_id", str(self.project_id))
+        rows = _rows(await self._execute(q))
+        return rows[0] if rows else None
+
     async def list_runs_for_project(self, project_id: str, limit: int = 50) -> list[dict[str, Any]]:
         """Return recent runs for a project, newest first.
 

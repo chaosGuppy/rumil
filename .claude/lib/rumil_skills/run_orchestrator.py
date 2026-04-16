@@ -118,9 +118,7 @@ async def main() -> None:
         global_prio = settings.enable_global_prio
         print(f"workspace:    {ws}")
         print(f"question:     {full_id[:8]}  {truncate(page.headline, 80)}")
-        print(
-            f"orchestrator: {variant}{' (+global_prio, concurrent)' if global_prio else ''}"
-        )
+        print(f"orchestrator: {variant}{' (+global_prio)' if global_prio else ''}")
 
         await open_run(
             db,

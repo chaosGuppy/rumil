@@ -52,6 +52,7 @@ async def render_question_subgraph(
     max_pages: int | None = None,
     exclude_ids: set[str] | None = None,
     include_impact: bool = False,
+    global_impact: dict[str, float] | None = None,
 ) -> str:
     """Render a questions-only subgraph rooted at *page_id*.
 
@@ -71,6 +72,7 @@ async def render_question_subgraph(
         max_pages=max_pages,
         exclude_ids=exclude_ids,
         include_impact=include_impact,
+        global_impact=global_impact,
         questions_only=True,
     )
     return result.text
@@ -84,6 +86,7 @@ async def render_subgraph(
     max_pages: int | None = None,
     exclude_ids: set[str] | None = None,
     include_impact: bool = False,
+    global_impact: dict[str, float] | None = None,
 ) -> str:
     """Render a full subgraph rooted at *page_id*.
 
@@ -100,6 +103,7 @@ async def render_subgraph(
         max_pages=max_pages,
         exclude_ids=exclude_ids,
         include_impact=include_impact,
+        global_impact=global_impact,
         questions_only=False,
     )
     return result.text
@@ -116,6 +120,7 @@ async def _render_subgraph_impl(
     max_pages: int | None,
     exclude_ids: set[str] | None,
     include_impact: bool,
+    global_impact: dict[str, float] | None,
     questions_only: bool,
 ) -> SubgraphResult:
     """Core BFS subgraph renderer shared by both public functions.
@@ -236,6 +241,7 @@ async def _render_subgraph_impl(
         overflow_by_parent=overflow_by_parent,
         robustness_by_question=robustness_by_question,
         impact_by_child=impact_by_child if include_impact else None,
+        global_impact=global_impact,
         seen_on_path=set(),
         lines=lines,
         db=db,
@@ -339,6 +345,7 @@ async def _emit(
     overflow_by_parent: dict[str, int],
     robustness_by_question: dict[str, int | None],
     impact_by_child: dict[str, int | None] | None,
+    global_impact: dict[str, float] | None,
     seen_on_path: set[str],
     lines: list[str],
     db: DB,
@@ -366,7 +373,9 @@ async def _emit(
     if impact_by_child is not None and node_id in impact_by_child:
         impact_val = impact_by_child[node_id]
         if impact_val is not None:
-            annotations.append(f"impact: {impact_val}/10")
+            annotations.append(f"impact on parent: {impact_val}/10")
+    if global_impact is not None and node_id in global_impact:
+        annotations.append(f"impact on root: {global_impact[node_id]}/10")
 
     suffix = f" ({', '.join(annotations)})" if annotations else ""
     lines.append(f"{prefix}{connector}{headline}{suffix}")
@@ -405,6 +414,7 @@ async def _emit(
             overflow_by_parent=overflow_by_parent,
             robustness_by_question=robustness_by_question,
             impact_by_child=impact_by_child,
+            global_impact=global_impact,
             seen_on_path=seen_next,
             lines=lines,
             db=db,
@@ -430,6 +440,7 @@ def make_explore_subgraph_tool(
     *,
     max_pages: int | None = None,
     include_impact: bool = False,
+    global_impact: dict[str, float] | None = None,
     questions_only: bool = True,
     exclude_ids: set[str] | None = None,
 ) -> Tool:
@@ -442,6 +453,7 @@ def make_explore_subgraph_tool(
     - *max_pages*: cap on question pages loaded (defaults to setting).
     - *exclude_ids*: page IDs to prune from the rendered tree.
     """
+    captured_global_impact = global_impact
     effective_max = (
         max_pages
         if max_pages is not None
@@ -466,6 +478,7 @@ def make_explore_subgraph_tool(
             max_depth=6,
             max_pages=effective_max,
             include_impact=include_impact,
+            global_impact=captured_global_impact,
             questions_only=questions_only,
             exclude_ids=exclude_ids,
         )
@@ -486,7 +499,18 @@ def make_explore_subgraph_tool(
             "Render a subtree of the research graph rooted at the given "
             "question, showing headlines and answer status. "
             f"{desc_suffix} "
-            "Use this to drill into any question by its short ID."
+            "Use this to drill into any question by its short ID.\n\n"
+            "Reading the output:\n"
+            "- A question with NO indented children below it is a **leaf** "
+            "— it genuinely has no sub-questions. Do not call this tool "
+            "on it expecting to find more.\n"
+            "- `(N more sub-Q(s) not shown -- horizon)` means children "
+            "exist but were truncated. Call this tool on the parent to "
+            "expand them.\n\n"
+            "Example:\n"
+            "  ├── `a1b2c3d4` How does X work? (Unanswered)      ← has children below\n"
+            "  │   ├── `e5f6a7b8` What is the mechanism? (Unanswered) ← leaf, no children\n"
+            "  │   └── (3 more sub-Q(s) not shown -- horizon)     ← truncated, drill deeper"
         ),
         input_schema=_ExploreSubgraphInput.model_json_schema(),
         fn=fn,

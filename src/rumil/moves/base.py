@@ -451,6 +451,7 @@ async def link_pages(
     db: DB,
     link_type: LinkType,
     role: LinkRole = LinkRole.DIRECT,
+    impact_on_parent_question: int | None = None,
 ) -> MoveResult:
     """Create a link between two pages. Used by LINK_CHILD_QUESTION and LINK_RELATED."""
     resolved_from = await db.resolve_page_id(from_id)
@@ -470,6 +471,7 @@ async def link_pages(
         link_type=link_type,
         reasoning=reasoning,
         role=role,
+        impact_on_parent_question=impact_on_parent_question,
     )
     await db.save_link(link)
     log.info(

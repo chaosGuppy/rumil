@@ -323,12 +323,16 @@ export type CallTraceOut = {
     } & WebResearchCompleteEventOut) | ({
         event: 'render_question_subgraph';
     } & RenderQuestionSubgraphEventOut) | ({
+        event: 'load_page';
+    } & LoadPageEventOut) | ({
         event: 'link_subquestions_complete';
     } & LinkSubquestionsCompleteEventOut) | ({
         event: 'view_created';
     } & ViewCreatedEventOut) | ({
         event: 'phase_skipped';
-    } & PhaseSkippedEventOut)>;
+    } & PhaseSkippedEventOut) | ({
+        event: 'global_phase_completed';
+    } & GlobalPhaseCompletedEventOut)>;
     /**
      * Children
      */
@@ -346,7 +350,7 @@ export type CallTraceOut = {
 /**
  * CallType
  */
-export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'create_view';
+export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'create_view' | 'global_prioritization';
 
 /**
  * CallTypeFruitScoreItem
@@ -661,6 +665,32 @@ export type ExplorePageEventOut = {
 };
 
 /**
+ * GlobalPhaseCompletedEventOut
+ */
+export type GlobalPhaseCompletedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'global_phase_completed';
+    /**
+     * Phase
+     */
+    phase: string;
+    /**
+     * Outcome
+     */
+    outcome: string;
+};
+
+/**
  * GroundingTasksGeneratedEventOut
  */
 export type GroundingTasksGeneratedEventOut = {
@@ -907,6 +937,40 @@ export type LinkedPageOut = {
 };
 
 /**
+ * LoadPageEventOut
+ */
+export type LoadPageEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'load_page';
+    /**
+     * Page Id
+     */
+    page_id: string;
+    /**
+     * Page Headline
+     */
+    page_headline: string;
+    /**
+     * Detail
+     */
+    detail: string;
+    /**
+     * Response
+     */
+    response: string;
+};
+
+/**
  * MoveTraceItem
  */
 export type MoveTraceItem = {
@@ -1107,6 +1171,10 @@ export type PageLink = {
      * Position
      */
     position: number | null;
+    /**
+     * Impact On Parent Question
+     */
+    impact_on_parent_question: number | null;
     /**
      * Created At
      */
@@ -2673,12 +2741,16 @@ export type GetCallEventsApiCallsCallIdEventsGetResponses = {
     } & WebResearchCompleteEventOut) | ({
         event: 'render_question_subgraph';
     } & RenderQuestionSubgraphEventOut) | ({
+        event: 'load_page';
+    } & LoadPageEventOut) | ({
         event: 'link_subquestions_complete';
     } & LinkSubquestionsCompleteEventOut) | ({
         event: 'view_created';
     } & ViewCreatedEventOut) | ({
         event: 'phase_skipped';
-    } & PhaseSkippedEventOut)>;
+    } & PhaseSkippedEventOut) | ({
+        event: 'global_phase_completed';
+    } & GlobalPhaseCompletedEventOut)>;
 };
 
 export type GetCallEventsApiCallsCallIdEventsGetResponse = GetCallEventsApiCallsCallIdEventsGetResponses[keyof GetCallEventsApiCallsCallIdEventsGetResponses];

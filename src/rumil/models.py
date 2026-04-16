@@ -6,9 +6,7 @@ from datetime import UTC, datetime
 from enum import Enum
 import uuid
 
-from typing import Annotated, Literal
-
-from pydantic import BaseModel, ConfigDict, Discriminator, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from rumil.constants import MIN_TWOPHASE_BUDGET
 
@@ -80,6 +78,7 @@ class CallType(str, Enum):
     FEEDBACK_UPDATE = "feedback_update"
     LINK_SUBQUESTIONS = "link_subquestions"
     CREATE_VIEW = "create_view"
+    GLOBAL_PRIORITIZATION = "global_prioritization"
 
 
 # The subset of CallTypes that prioritization can dispatch.
@@ -131,7 +130,6 @@ class MoveType(str, Enum):
     CREATE_CLAIM = "CREATE_CLAIM"
     CREATE_QUESTION = "CREATE_QUESTION"
     CREATE_SCOUT_QUESTION = "CREATE_SCOUT_QUESTION"
-    CREATE_SUBQUESTION = "CREATE_SUBQUESTION"
     CREATE_JUDGEMENT = "CREATE_JUDGEMENT"
     CREATE_WIKI_PAGE = "CREATE_WIKI_PAGE"
     LINK_CONSIDERATION = "LINK_CONSIDERATION"
@@ -320,20 +318,6 @@ class RecurseClaimDispatchPayload(BaseDispatchPayload, PrioritizationFields):
     )
 
 
-class InlineScoutDispatch(_DispatchBase, _ScoutFields):
-    call_type: Literal["find_considerations"] = "find_considerations"
-
-
-class InlineAssessDispatch(_DispatchBase):
-    call_type: Literal["assess"] = "assess"
-
-
-InlineDispatch = Annotated[
-    InlineScoutDispatch | InlineAssessDispatch,
-    Discriminator("call_type"),
-]
-
-
 class Move(BaseModel):
     move_type: MoveType
     payload: BaseModel
@@ -394,6 +378,7 @@ class PageLink(BaseModel):
     importance: int | None = None  # VIEW_ITEM links: 1-5
     section: str | None = None  # VIEW_ITEM links: section name
     position: int | None = None  # VIEW_ITEM links: order within section
+    impact_on_parent_question: int | None = None  # CHILD_QUESTION links: 0-10
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 

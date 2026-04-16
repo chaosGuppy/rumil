@@ -62,8 +62,6 @@ async def run_prioritization_call(
     tools = []
     for mt in available_moves:
         tool = MOVES[mt].bind(state)
-        if mt == MoveType.CREATE_SUBQUESTION:
-            tool.input_schema = filter_mode_schema(tool.input_schema, allowed_fc_modes)
         tools.append(tool)
     if dispatch_types is not None:
         selected_defs = [

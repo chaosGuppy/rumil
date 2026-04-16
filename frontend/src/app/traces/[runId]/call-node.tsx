@@ -945,6 +945,24 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
         </div>
       )}
 
+      {event.event === "load_page" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">page</span>
+            <span className="trace-kv-value">
+              <PageChip page={{ id: event.page_id, headline: event.page_headline }} />
+            </span>
+          </div>
+          <div className="trace-kv">
+            <span className="trace-kv-key">detail</span>
+            <span className="trace-kv-value">{event.detail}</span>
+          </div>
+          {event.response && (
+            <CollapsiblePre label="Content" content={event.response} />
+          )}
+        </div>
+      )}
+
       {event.event === "link_subquestions_complete" && (
         <div className="trace-event-body">
           <div className="trace-kv">
@@ -1157,6 +1175,16 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
               {event.view_headline || event.view_id.slice(0, 8)}
             </Link>
           </div>
+        </div>
+      )}
+
+      {event.event === "global_phase_completed" && (
+        <div className="trace-event-body">
+          {event.outcome && (
+            <div className="trace-kv">
+              <span className="trace-kv-value">{event.outcome}</span>
+            </div>
+          )}
         </div>
       )}
     </div>

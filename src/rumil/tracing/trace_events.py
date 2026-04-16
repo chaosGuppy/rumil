@@ -234,6 +234,14 @@ class RenderQuestionSubgraphEvent(BaseModel):
     response: str = ""
 
 
+class LoadPageEvent(BaseModel):
+    event: Literal["load_page"] = "load_page"
+    page_id: str
+    page_headline: str = ""
+    detail: str = ""
+    response: str = ""
+
+
 class ProposedSubquestion(BaseModel):
     id: str
     headline: str = ""
@@ -256,6 +264,12 @@ class PhaseSkippedEvent(BaseModel):
     event: Literal["phase_skipped"] = "phase_skipped"
     phase: str = ""
     reason: str = ""
+
+
+class GlobalPhaseCompletedEvent(BaseModel):
+    event: Literal["global_phase_completed"] = "global_phase_completed"
+    phase: str = ""
+    outcome: str = ""
 
 
 TraceEvent = Annotated[
@@ -282,8 +296,10 @@ TraceEvent = Annotated[
     | GroundingTasksGeneratedEvent
     | WebResearchCompleteEvent
     | RenderQuestionSubgraphEvent
+    | LoadPageEvent
     | LinkSubquestionsCompleteEvent
     | ViewCreatedEvent
-    | PhaseSkippedEvent,
+    | PhaseSkippedEvent
+    | GlobalPhaseCompletedEvent,
     Field(discriminator="event"),
 ]

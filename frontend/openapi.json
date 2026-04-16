@@ -1049,6 +1049,9 @@
                         "$ref": "#/components/schemas/RenderQuestionSubgraphEventOut"
                       },
                       {
+                        "$ref": "#/components/schemas/LoadPageEventOut"
+                      },
+                      {
                         "$ref": "#/components/schemas/LinkSubquestionsCompleteEventOut"
                       },
                       {
@@ -1056,6 +1059,9 @@
                       },
                       {
                         "$ref": "#/components/schemas/PhaseSkippedEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/GlobalPhaseCompletedEventOut"
                       }
                     ],
                     "discriminator": {
@@ -1084,9 +1090,11 @@
                         "grounding_tasks_generated": "#/components/schemas/GroundingTasksGeneratedEventOut",
                         "web_research_complete": "#/components/schemas/WebResearchCompleteEventOut",
                         "render_question_subgraph": "#/components/schemas/RenderQuestionSubgraphEventOut",
+                        "load_page": "#/components/schemas/LoadPageEventOut",
                         "link_subquestions_complete": "#/components/schemas/LinkSubquestionsCompleteEventOut",
                         "view_created": "#/components/schemas/ViewCreatedEventOut",
-                        "phase_skipped": "#/components/schemas/PhaseSkippedEventOut"
+                        "phase_skipped": "#/components/schemas/PhaseSkippedEventOut",
+                        "global_phase_completed": "#/components/schemas/GlobalPhaseCompletedEventOut"
                       }
                     }
                   },
@@ -1869,6 +1877,9 @@
                   "$ref": "#/components/schemas/RenderQuestionSubgraphEventOut"
                 },
                 {
+                  "$ref": "#/components/schemas/LoadPageEventOut"
+                },
+                {
                   "$ref": "#/components/schemas/LinkSubquestionsCompleteEventOut"
                 },
                 {
@@ -1876,6 +1887,9 @@
                 },
                 {
                   "$ref": "#/components/schemas/PhaseSkippedEventOut"
+                },
+                {
+                  "$ref": "#/components/schemas/GlobalPhaseCompletedEventOut"
                 }
               ],
               "discriminator": {
@@ -1890,9 +1904,11 @@
                   "error": "#/components/schemas/ErrorEventOut",
                   "evaluation_complete": "#/components/schemas/EvaluationCompleteEventOut",
                   "explore_page": "#/components/schemas/ExplorePageEventOut",
+                  "global_phase_completed": "#/components/schemas/GlobalPhaseCompletedEventOut",
                   "grounding_tasks_generated": "#/components/schemas/GroundingTasksGeneratedEventOut",
                   "link_subquestions_complete": "#/components/schemas/LinkSubquestionsCompleteEventOut",
                   "llm_exchange": "#/components/schemas/LLMExchangeEventOut",
+                  "load_page": "#/components/schemas/LoadPageEventOut",
                   "moves_executed": "#/components/schemas/MovesExecutedEventOut",
                   "phase_skipped": "#/components/schemas/PhaseSkippedEventOut",
                   "reassess_triggered": "#/components/schemas/ReassessTriggeredEventOut",
@@ -1984,7 +2000,8 @@
           "grounding_feedback",
           "feedback_update",
           "link_subquestions",
-          "create_view"
+          "create_view",
+          "global_prioritization"
         ],
         "title": "CallType"
       },
@@ -2459,6 +2476,43 @@
           "response"
         ],
         "title": "ExplorePageEventOut"
+      },
+      "GlobalPhaseCompletedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "global_phase_completed",
+            "title": "Event",
+            "default": "global_phase_completed"
+          },
+          "phase": {
+            "type": "string",
+            "title": "Phase",
+            "default": ""
+          },
+          "outcome": {
+            "type": "string",
+            "title": "Outcome",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "phase",
+          "outcome"
+        ],
+        "title": "GlobalPhaseCompletedEventOut"
       },
       "GroundingTasksGeneratedEventOut": {
         "properties": {
@@ -2970,6 +3024,54 @@
         ],
         "title": "LinkedPageOut"
       },
+      "LoadPageEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "load_page",
+            "title": "Event",
+            "default": "load_page"
+          },
+          "page_id": {
+            "type": "string",
+            "title": "Page Id"
+          },
+          "page_headline": {
+            "type": "string",
+            "title": "Page Headline",
+            "default": ""
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail",
+            "default": ""
+          },
+          "response": {
+            "type": "string",
+            "title": "Response",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "page_id",
+          "page_headline",
+          "detail",
+          "response"
+        ],
+        "title": "LoadPageEventOut"
+      },
       "MoveTraceItem": {
         "properties": {
           "type": {
@@ -3329,6 +3431,17 @@
             ],
             "title": "Position"
           },
+          "impact_on_parent_question": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Impact On Parent Question"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -3348,6 +3461,7 @@
           "importance",
           "section",
           "position",
+          "impact_on_parent_question",
           "created_at"
         ],
         "title": "PageLink"

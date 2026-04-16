@@ -475,7 +475,7 @@ async def cmd_summary(
     db: DB,
     max_depth: int = 4,
     summary_cutoff: int | None = None,
-) -> None:
+) -> str:
     question = await db.get_page(question_id)
     if not question:
         print(
@@ -493,6 +493,7 @@ async def cmd_summary(
 
     print(summary_text)
     print(f"\n---\nSummary saved to: {path}")
+    return summary_text
 
 
 async def cmd_report(
@@ -1321,8 +1322,9 @@ async def async_main():
             name=args.run_name,
             auto_summary=do_summary,
         )
+        summary_text = ""
         if do_summary:
-            await cmd_summary(
+            summary_text = await cmd_summary(
                 question_id,
                 db,
                 max_depth=args.max_depth,
@@ -1331,7 +1333,12 @@ async def async_main():
         if args.obsidian_dir:
             from rumil.obsidian_export import export_obsidian
 
-            out = await export_obsidian(db, args.obsidian_dir, question_id=question_id)
+            out = await export_obsidian(
+                db,
+                args.obsidian_dir,
+                question_id=question_id,
+                summary_text=summary_text or None,
+            )
             print(f"\nObsidian vault exported to: {out}")
     else:
         parser.print_help()

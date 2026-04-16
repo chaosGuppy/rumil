@@ -215,6 +215,7 @@ async def export_obsidian(
     db: DB,
     output_dir: str,
     question_id: str | None = None,
+    summary_text: str | None = None,
 ) -> Path:
     """Export pages as an Obsidian vault.
 
@@ -223,6 +224,9 @@ async def export_obsidian(
     to any of those questions (claims, judgements, sources, etc.).
 
     When *question_id* is None, exports all active pages in the project.
+
+    When *summary_text* is provided (e.g. from ``--summary``), it is
+    written as a standalone ``executive-summary.md`` file in the vault.
 
     Returns the output directory path.
     """
@@ -263,6 +267,15 @@ async def export_obsidian(
             links_by_page.get(page.id, []),
         )
         filepath.write_text(content, encoding="utf-8")
+        written += 1
+
+    if summary_text:
+        summary_path = out / "executive-summary.md"
+        summary_path.write_text(
+            "---\ntype: executive-summary\n---\n\n"
+            f"# Executive Summary\n\n{summary_text}\n",
+            encoding="utf-8",
+        )
         written += 1
 
     log.info("Exported %d pages to %s", written, out)

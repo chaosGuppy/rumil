@@ -250,6 +250,8 @@ async def format_page(
     include_superseding: bool = True,
     exclude_page_ids: set[str] | None = None,
     highlight_run_id: str | None = None,
+    track: bool = False,
+    track_tags: dict[str, str] | None = None,
 ) -> str:
     """Format a single page at the requested detail level.
 
@@ -264,7 +266,22 @@ async def format_page(
     When *include_superseding* is True (the default) and the page is
     superseded, the output includes the superseded page annotated as such,
     followed by the final replacement page rendered at the same detail level.
+
+    When *track* is True, the page load is recorded via the ambient
+    ``CallTrace`` (if one exists).  Ambient tags from ``page_track_scope``
+    are merged with any explicit *track_tags* (explicit wins on conflict).
+    Recursive calls (supersession, linked items) do NOT track — only the
+    caller's top-level invocation is recorded.
     """
+    if track:
+        from rumil.tracing.page_load_tracking import get_page_track_tags
+        from rumil.tracing.tracer import get_trace
+
+        trace = get_trace()
+        if trace:
+            tags = {**get_page_track_tags(), **(track_tags or {})}
+            trace.record_page_load(page.id, detail.value, tags)
+
     if include_superseding and page.is_superseded:
         replacement = await _resolve_superseding_page(page, db)
         original = await format_page(
@@ -553,16 +570,13 @@ async def render_child_investigation_results(
                         c = page.credence if page.credence is not None else "?"
                         r = page.robustness if page.robustness is not None else "?"
                         lines.append(
-                            f"- [C{c}/R{r} I{imp}] `{page.id[:8]}` "
-                            f"— {page.headline}"
+                            f"- [C{c}/R{r} I{imp}] `{page.id[:8]}` — {page.headline}"
                         )
                         page_ids.append(page.id)
         elif summary:
             new = _is_new(summary)
             page_ids.append(summary.id)
-            lines.append(
-                f"**Status:** Summary available{' [NEW]' if new else ''}"
-            )
+            lines.append(f"**Status:** Summary available{' [NEW]' if new else ''}")
             lines.append("")
             if new:
                 lines.append(summary.content or summary.abstract or "")
@@ -571,17 +585,23 @@ async def render_child_investigation_results(
         elif latest_judgement:
             new = _is_new(latest_judgement)
             page_ids.append(latest_judgement.id)
-            c = latest_judgement.credence if latest_judgement.credence is not None else "?"
-            r = latest_judgement.robustness if latest_judgement.robustness is not None else "?"
-            lines.append(
-                f"**Status:** Judgement available{' [NEW]' if new else ''}"
+            c = (
+                latest_judgement.credence
+                if latest_judgement.credence is not None
+                else "?"
             )
-            lines.append(
-                f"[JUDGEMENT C{c}/R{r}] {latest_judgement.headline}"
+            r = (
+                latest_judgement.robustness
+                if latest_judgement.robustness is not None
+                else "?"
             )
+            lines.append(f"**Status:** Judgement available{' [NEW]' if new else ''}")
+            lines.append(f"[JUDGEMENT C{c}/R{r}] {latest_judgement.headline}")
             lines.append("")
             if new:
-                lines.append(latest_judgement.content or latest_judgement.abstract or "")
+                lines.append(
+                    latest_judgement.content or latest_judgement.abstract or ""
+                )
             else:
                 lines.append(latest_judgement.abstract or "")
         else:
@@ -672,10 +692,13 @@ async def build_prioritization_context(
             view = await db.get_view_for_question(scope_question_id)
             if view:
                 view_items = await db.get_view_items(
-                    view.id, min_importance=2,
+                    view.id,
+                    min_importance=2,
                 )
                 view_text = await render_view(
-                    view, view_items, min_importance=2,
+                    view,
+                    view_items,
+                    min_importance=2,
                 )
                 if view_text.strip():
                     parts.append(view_text)

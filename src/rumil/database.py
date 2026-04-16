@@ -1996,6 +1996,53 @@ class DB:
             self.client.table("epistemic_scores").insert(row)
         )
 
+    async def save_page_format_events(
+        self, call_id: str, events: Sequence[dict[str, Any]]
+    ) -> None:
+        """Batch-insert page-format tracking events."""
+        if not events:
+            return
+        rows = [
+            {
+                "id": str(uuid.uuid4()),
+                "page_id": e["page_id"],
+                "detail": e["detail"],
+                "call_id": call_id,
+                "run_id": self.run_id,
+                "tags": e.get("tags", {}),
+            }
+            for e in events
+        ]
+        await self._execute(
+            self.client.table("page_format_events").insert(rows)
+        )
+
+    async def get_page_format_events_for_run(
+        self, run_id: str
+    ) -> list[dict[str, Any]]:
+        """Fetch all page-format events for a run, with call_type from calls."""
+        rows = _rows(
+            await self._execute(
+                self.client.table("page_format_events")
+                .select("page_id,detail,call_id,tags")
+                .eq("run_id", run_id)
+            )
+        )
+        if not rows:
+            return []
+        call_ids = list({r["call_id"] for r in rows})
+        call_rows = _rows(
+            await self._execute(
+                self.client.table("calls")
+                .select("id,call_type")
+                .in_("id", call_ids)
+            )
+        )
+        call_type_map = {r["id"]: r["call_type"] for r in call_rows}
+        for r in rows:
+            r["call_type"] = call_type_map.get(r["call_id"], "unknown")
+        return rows
+
     async def apply_epistemic_overrides(self, pages: Sequence[Page]) -> None:
         """Override credence/robustness on pages with latest epistemic_scores."""
         if not pages:

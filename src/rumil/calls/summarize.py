@@ -6,6 +6,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from rumil.context import format_page
 from rumil.database import DB
 from rumil.settings import get_settings
 from rumil.llm import LLMExchangeMetadata, build_user_message, structured_call
@@ -15,6 +16,7 @@ from rumil.models import (
     CallType,
     LinkType,
     Page,
+    PageDetail,
     PageLayer,
     PageLink,
     PageType,
@@ -88,7 +90,22 @@ async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[Pa
 
     page_refs: list[PageRef] = [ref(question)]
 
-    parts.append(_section("Question (full)", question.content or question.headline))
+    _t = {"source": "summary_context"}
+    _fp = format_page
+
+    parts.append(
+        _section(
+            "Question (full)",
+            await _fp(
+                question,
+                PageDetail.CONTENT,
+                linked_detail=None,
+                db=db,
+                track=True,
+                track_tags=_t,
+            ),
+        )
+    )
 
     considerations = await db.get_considerations_for_question(question_id)
     judgements = await db.get_judgements_for_question(question_id)
@@ -114,34 +131,41 @@ async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[Pa
         cons_parts = []
         for page, link in considerations:
             direction = f" [{link.direction.value}]" if link.direction else ""
-            cr = (
-                f" C{page.credence}/R{page.robustness}"
-                if page.credence is not None
-                else ""
+            formatted = await _fp(
+                page,
+                PageDetail.CONTENT,
+                linked_detail=None,
+                db=db,
+                track=True,
+                track_tags=_t,
             )
-            cons_parts.append(
-                f"**Consideration{direction}**{cr}: {page.headline}\n\n{page.content}"
-            )
+            cons_parts.append(f"**Consideration{direction}:**\n\n{formatted}")
         parts.append(
             _section("Direct Considerations (full)", "\n\n---\n\n".join(cons_parts))
         )
 
     if judgements:
         most_recent = max(judgements, key=lambda j: j.created_at)
-        parts.append(
-            _section(
-                "Most Recent Judgement (full)",
-                f"Credence: {most_recent.credence}/9 | Robustness: {most_recent.robustness}/5\n\n"
-                f"{most_recent.content}",
-            )
+        formatted_j = await _fp(
+            most_recent,
+            PageDetail.CONTENT,
+            linked_detail=None,
+            db=db,
+            track=True,
+            track_tags=_t,
         )
+        parts.append(_section("Most Recent Judgement (full)", formatted_j))
         older = [j for j in judgements if j.id != most_recent.id]
         if older:
             older_lines = [
-                f"- [C{j.credence}/R{j.robustness}] {j.headline}" for j in older
+                await _fp(j, PageDetail.HEADLINE, track=True, track_tags=_t)
+                for j in older
             ]
             parts.append(
-                _section("Earlier Judgements (summaries)", "\n".join(older_lines))
+                _section(
+                    "Earlier Judgements (summaries)",
+                    "\n".join(f"- {line}" for line in older_lines),
+                )
             )
 
     if children:
@@ -152,9 +176,15 @@ async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[Pa
             child_summary = await db.get_latest_summary_for_question(child.id)
             if child_summary:
                 page_refs.append(ref(child_summary))
-                child_section_parts.append(
-                    f"**Summary (full):**\n{child_summary.content}"
+                formatted_cs = await _fp(
+                    child_summary,
+                    PageDetail.CONTENT,
+                    linked_detail=None,
+                    db=db,
+                    track=True,
+                    track_tags=_t,
                 )
+                child_section_parts.append(f"**Summary (full):**\n{formatted_cs}")
             else:
                 child_section_parts.append("_(No summary available yet)_")
 
@@ -162,13 +192,24 @@ async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[Pa
             if child_judgements:
                 page_refs.extend(ref(j) for j in child_judgements)
                 most_recent_j = max(child_judgements, key=lambda j: j.created_at)
-                medium = most_recent_j.abstract or most_recent_j.headline
-                child_section_parts.append(f"**Judgement (medium):** {medium}")
+                formatted_cj = await _fp(
+                    most_recent_j,
+                    PageDetail.ABSTRACT,
+                    linked_detail=None,
+                    db=db,
+                    track=True,
+                    track_tags=_t,
+                )
+                child_section_parts.append(f"**Judgement (medium):**\n{formatted_cj}")
 
             child_considerations = await db.get_considerations_for_question(child.id)
             if child_considerations:
                 page_refs.extend(ref(p) for p, _ in child_considerations)
-                con_lines = [f"  - {p.headline}" for p, _ in child_considerations]
+                con_lines = [
+                    "  - "
+                    + await _fp(p, PageDetail.HEADLINE, track=True, track_tags=_t)
+                    for p, _ in child_considerations
+                ]
                 child_section_parts.append(
                     "**Considerations (short):**\n" + "\n".join(con_lines)
                 )
@@ -181,17 +222,36 @@ async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[Pa
                     gc_summary = await db.get_latest_summary_for_question(gc.id)
                     if gc_summary:
                         page_refs.append(ref(gc_summary))
-                    gc_medium = gc_summary.abstract if gc_summary else None
                     gc_judgements = await db.get_judgements_for_question(gc.id)
                     if gc_judgements:
                         page_refs.extend(ref(j) for j in gc_judgements)
+                    gc_hl = await _fp(
+                        gc, PageDetail.HEADLINE, track=True, track_tags=_t
+                    )
+                    gc_medium = (
+                        await _fp(
+                            gc_summary,
+                            PageDetail.ABSTRACT,
+                            linked_detail=None,
+                            db=db,
+                            track=True,
+                            track_tags=_t,
+                        )
+                        if gc_summary
+                        else None
+                    )
                     gc_short_j = (
-                        max(gc_judgements, key=lambda j: j.created_at).headline
+                        await _fp(
+                            max(gc_judgements, key=lambda j: j.created_at),
+                            PageDetail.HEADLINE,
+                            track=True,
+                            track_tags=_t,
+                        )
                         if gc_judgements
                         else None
                     )
                     gc_lines.append(
-                        f"  - **{gc.headline}**"
+                        f"  - {gc_hl}"
                         + (f"\n    Summary: {gc_medium}" if gc_medium else "")
                         + (f"\n    Judgement: {gc_short_j}" if gc_short_j else "")
                     )

@@ -459,3 +459,15 @@ class QuestionStatsOut(StatsOut):
     question_id: str
     subgraph_page_count: int
     subgraph: Subgraph
+
+
+class PageLoadEventOut(BaseModel):
+    page_id: str
+    detail: str
+    tags: dict[str, str]
+
+
+class PageLoadStatsOut(BaseModel):
+    events: list[PageLoadEventOut]
+    total: int
+    total_unique: int

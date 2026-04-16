@@ -475,12 +475,16 @@ export type CallTraceOut = {
     } & WebResearchCompleteEventOut) | ({
         event: 'render_question_subgraph';
     } & RenderQuestionSubgraphEventOut) | ({
+        event: 'load_page';
+    } & LoadPageEventOut) | ({
         event: 'link_subquestions_complete';
     } & LinkSubquestionsCompleteEventOut) | ({
         event: 'view_created';
     } & ViewCreatedEventOut) | ({
         event: 'phase_skipped';
     } & PhaseSkippedEventOut) | ({
+        event: 'global_phase_completed';
+    } & GlobalPhaseCompletedEventOut) | ({
         event: 'update_view_phase_completed';
     } & UpdateViewPhaseCompletedEventOut)>;
     /**
@@ -500,7 +504,7 @@ export type CallTraceOut = {
 /**
  * CallType
  */
-export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'ab_eval' | 'create_view' | 'update_view' | 'claude_code_direct';
+export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'ab_eval' | 'create_view' | 'global_prioritization' | 'update_view' | 'claude_code_direct';
 
 /**
  * CallTypeFruitScoreItem
@@ -815,6 +819,32 @@ export type ExplorePageEventOut = {
 };
 
 /**
+ * GlobalPhaseCompletedEventOut
+ */
+export type GlobalPhaseCompletedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'global_phase_completed';
+    /**
+     * Phase
+     */
+    phase: string;
+    /**
+     * Outcome
+     */
+    outcome: string;
+};
+
+/**
  * GroundingTasksGeneratedEventOut
  */
 export type GroundingTasksGeneratedEventOut = {
@@ -1061,6 +1091,40 @@ export type LinkedPageOut = {
 };
 
 /**
+ * LoadPageEventOut
+ */
+export type LoadPageEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'load_page';
+    /**
+     * Page Id
+     */
+    page_id: string;
+    /**
+     * Page Headline
+     */
+    page_headline: string;
+    /**
+     * Detail
+     */
+    detail: string;
+    /**
+     * Response
+     */
+    response: string;
+};
+
+/**
  * MoveTraceItem
  */
 export type MoveTraceItem = {
@@ -1266,6 +1330,10 @@ export type PageLink = {
      */
     position: number | null;
     /**
+     * Impact On Parent Question
+     */
+    impact_on_parent_question: number | null;
+    /**
      * Created At
      */
     created_at: string;
@@ -1273,6 +1341,44 @@ export type PageLink = {
      * Run Id
      */
     run_id: string;
+};
+
+/**
+ * PageLoadEventOut
+ */
+export type PageLoadEventOut = {
+    /**
+     * Page Id
+     */
+    page_id: string;
+    /**
+     * Detail
+     */
+    detail: string;
+    /**
+     * Tags
+     */
+    tags: {
+        [key: string]: string;
+    };
+};
+
+/**
+ * PageLoadStatsOut
+ */
+export type PageLoadStatsOut = {
+    /**
+     * Events
+     */
+    events: Array<PageLoadEventOut>;
+    /**
+     * Total
+     */
+    total: number;
+    /**
+     * Total Unique
+     */
+    total_unique: number;
 };
 
 /**
@@ -2183,9 +2289,23 @@ export type HealthzHealthzGetResponse = HealthzHealthzGetResponses[keyof Healthz
 export type ListProjectsApiProjectsGetData = {
     body?: never;
     path?: never;
-    query?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
     url: '/api/projects';
 };
+
+export type ListProjectsApiProjectsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListProjectsApiProjectsGetError = ListProjectsApiProjectsGetErrors[keyof ListProjectsApiProjectsGetErrors];
 
 export type ListProjectsApiProjectsGetResponses = {
     /**
@@ -2282,10 +2402,6 @@ export type ListPagesApiProjectsProjectIdPagesGetData = {
          */
         active_only?: boolean;
         /**
-         * Staged Run Id
-         */
-        staged_run_id?: string | null;
-        /**
          * Search
          */
         search?: string | null;
@@ -2297,6 +2413,10 @@ export type ListPagesApiProjectsProjectIdPagesGetData = {
          * Limit
          */
         limit?: number;
+        /**
+         * Staged Run Id
+         */
+        staged_run_id?: string | null;
     };
     url: '/api/projects/{project_id}/pages';
 };
@@ -2332,6 +2452,10 @@ export type GetPageByShortIdApiPagesShortShortIdGetData = {
          * Staged Run Id
          */
         staged_run_id?: string | null;
+        /**
+         * Project Id
+         */
+        project_id?: string;
     };
     url: '/api/pages/short/{short_id}';
 };
@@ -2367,6 +2491,10 @@ export type GetPageApiPagesPageIdGetData = {
          * Staged Run Id
          */
         staged_run_id?: string | null;
+        /**
+         * Project Id
+         */
+        project_id?: string;
     };
     url: '/api/pages/{page_id}';
 };
@@ -2397,7 +2525,12 @@ export type GetLinksFromApiPagesPageIdLinksFromGetData = {
          */
         page_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
     url: '/api/pages/{page_id}/links/from';
 };
 
@@ -2429,7 +2562,12 @@ export type GetLinksToApiPagesPageIdLinksToGetData = {
          */
         page_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
     url: '/api/pages/{page_id}/links/to';
 };
 
@@ -2461,7 +2599,12 @@ export type GetDependentsApiPagesPageIdDependentsGetData = {
          */
         page_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
     url: '/api/pages/{page_id}/dependents';
 };
 
@@ -2493,7 +2636,12 @@ export type GetDependenciesApiPagesPageIdDependenciesGetData = {
          */
         page_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
     url: '/api/pages/{page_id}/dependencies';
 };
 
@@ -2530,6 +2678,10 @@ export type GetPageDetailApiPagesPageIdDetailGetData = {
          * Staged Run Id
          */
         staged_run_id?: string | null;
+        /**
+         * Project Id
+         */
+        project_id?: string;
     };
     url: '/api/pages/{page_id}/detail';
 };
@@ -2560,7 +2712,12 @@ export type GetPageCountsApiPagesPageIdCountsGetData = {
          */
         page_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
     url: '/api/pages/{page_id}/counts';
 };
 
@@ -2620,7 +2777,12 @@ export type GetQuestionStatsApiPagesPageIdStatsGetData = {
          */
         page_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
     url: '/api/pages/{page_id}/stats';
 };
 
@@ -2721,7 +2883,12 @@ export type GetCallApiCallsCallIdGetData = {
          */
         call_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
     url: '/api/calls/{call_id}';
 };
 
@@ -2751,7 +2918,12 @@ export type GetChildCallsApiCallsCallIdChildrenGetData = {
          */
         call_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
     url: '/api/calls/{call_id}/children';
 };
 
@@ -2783,7 +2955,12 @@ export type GetRunTraceTreeApiRunsRunIdTraceTreeGetData = {
          */
         run_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
     url: '/api/runs/{run_id}/trace-tree';
 };
 
@@ -2813,7 +2990,12 @@ export type GetCallEventsApiCallsCallIdEventsGetData = {
          */
         call_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
     url: '/api/calls/{call_id}/events';
 };
 
@@ -2879,12 +3061,16 @@ export type GetCallEventsApiCallsCallIdEventsGetResponses = {
     } & WebResearchCompleteEventOut) | ({
         event: 'render_question_subgraph';
     } & RenderQuestionSubgraphEventOut) | ({
+        event: 'load_page';
+    } & LoadPageEventOut) | ({
         event: 'link_subquestions_complete';
     } & LinkSubquestionsCompleteEventOut) | ({
         event: 'view_created';
     } & ViewCreatedEventOut) | ({
         event: 'phase_skipped';
     } & PhaseSkippedEventOut) | ({
+        event: 'global_phase_completed';
+    } & GlobalPhaseCompletedEventOut) | ({
         event: 'update_view_phase_completed';
     } & UpdateViewPhaseCompletedEventOut)>;
 };
@@ -2899,7 +3085,12 @@ export type GetAbRunTraceApiAbRunsAbRunIdTraceGetData = {
          */
         ab_run_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
     url: '/api/ab-runs/{ab_run_id}/trace';
 };
 
@@ -2996,7 +3187,12 @@ export type ListLlmExchangesApiCallsCallIdLlmExchangesGetData = {
          */
         call_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
     url: '/api/calls/{call_id}/llm-exchanges';
 };
 
@@ -3028,7 +3224,12 @@ export type GetLlmExchangeApiLlmExchangesExchangeIdGetData = {
          */
         exchange_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
     url: '/api/llm-exchanges/{exchange_id}';
 };
 
@@ -3074,7 +3275,12 @@ export type GetPageRunApiPagesPageIdRunGetData = {
          */
         page_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
     url: '/api/pages/{page_id}/run';
 };
 
@@ -3097,3 +3303,38 @@ export type GetPageRunApiPagesPageIdRunGetResponses = {
 };
 
 export type GetPageRunApiPagesPageIdRunGetResponse = GetPageRunApiPagesPageIdRunGetResponses[keyof GetPageRunApiPagesPageIdRunGetResponses];
+
+export type GetPageLoadStatsApiRunsRunIdPageLoadStatsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Run Id
+         */
+        run_id: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/runs/{run_id}/page-load-stats';
+};
+
+export type GetPageLoadStatsApiRunsRunIdPageLoadStatsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetPageLoadStatsApiRunsRunIdPageLoadStatsGetError = GetPageLoadStatsApiRunsRunIdPageLoadStatsGetErrors[keyof GetPageLoadStatsApiRunsRunIdPageLoadStatsGetErrors];
+
+export type GetPageLoadStatsApiRunsRunIdPageLoadStatsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: PageLoadStatsOut;
+};
+
+export type GetPageLoadStatsApiRunsRunIdPageLoadStatsGetResponse = GetPageLoadStatsApiRunsRunIdPageLoadStatsGetResponses[keyof GetPageLoadStatsApiRunsRunIdPageLoadStatsGetResponses];

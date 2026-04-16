@@ -536,7 +536,8 @@ async def _format_loaded_pages(page_ids: Sequence[str], db: DB) -> str:
         page = pages.get(pid)
         if page:
             parts.append(
-                f"### Page `{pid[:8]}`\n\n{await format_page(page, PageDetail.HEADLINE, db=db)}"
+                f"### Page `{pid[:8]}`\n\n"
+                f"{await format_page(page, PageDetail.HEADLINE, db=db, track=True, track_tags={'source': 'phase1'})}"
             )
     return "\n\n---\n\n".join(parts)
 

@@ -1452,3 +1452,228 @@
   .trace-config-label { color: #6a6a6a; }
   .trace-config-key { color: #6a6a6a; }
 }
+
+/* Page load stats */
+
+.pls-root {
+  margin-top: 32px;
+  padding-top: 20px;
+  border-top: 1px solid #e0e0e0;
+}
+
+.pls-header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.pls-title {
+  font-size: 11px;
+  font-family: var(--font-geist-mono), monospace;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.pls-total {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 12px;
+  color: #999;
+}
+
+.pls-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.pls-controls-label {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 11px;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.pls-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.pls-chip {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 11px;
+  color: #555;
+  background: #f6f6f6;
+  padding: 3px 9px;
+  border-radius: 3px;
+  border: 1px solid #e0e0e0;
+  cursor: pointer;
+  letter-spacing: 0.01em;
+  transition: all 0.12s ease;
+  line-height: 1.4;
+}
+.pls-chip:hover {
+  color: #111;
+  background: #eee;
+  border-color: #bbb;
+}
+.pls-chip-active {
+  color: #fff;
+  background: #222;
+  border-color: #222;
+}
+.pls-chip-active:hover {
+  color: #fff;
+  background: #000;
+  border-color: #000;
+}
+.pls-chip-clear {
+  color: #888;
+  background: transparent;
+  border-color: transparent;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.pls-chip-clear:hover {
+  color: #222;
+  background: transparent;
+  border-color: transparent;
+}
+
+.pls-tag-empty {
+  color: #bbb;
+}
+
+.pls-table-wrap {
+  overflow-x: auto;
+}
+
+.pls-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  font-family: var(--font-geist-mono), monospace;
+}
+
+.pls-th {
+  text-align: right;
+  padding: 4px 10px;
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: #888;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.pls-th-call {
+  text-align: left;
+  color: #888;
+}
+
+.pls-row td {
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.pls-row-total td {
+  border-top: 1px solid #d0d0d0;
+  border-bottom: none;
+}
+
+.pls-call-type {
+  padding: 5px 10px 5px 0;
+  font-weight: 500;
+  color: #555;
+  white-space: nowrap;
+  letter-spacing: 0.03em;
+}
+
+.pls-call-type-total {
+  font-weight: 600;
+  color: #333;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.pls-cell {
+  text-align: right;
+  padding: 5px 10px;
+  white-space: nowrap;
+}
+
+.pls-cell-empty {
+  color: #ccc;
+}
+
+.pls-cell-total {
+  color: #333;
+  font-weight: 600;
+}
+
+.pls-cell-unique {
+  color: #999;
+  margin-left: 4px;
+  font-size: 11px;
+}
+
+.pls-detail-label {
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+
+.pls-detail-content { color: #2d8a4e; }
+.pls-detail-abstract { color: #4272c4; }
+.pls-detail-headline { color: #8b6cc1; }
+
+@media (prefers-color-scheme: dark) {
+  .pls-root { border-top-color: #2a2a2a; }
+  .pls-title { color: #6a6a6a; }
+  .pls-total { color: #666; }
+  .pls-th { color: #666; border-bottom-color: #2a2a2a; }
+  .pls-row td { border-bottom-color: #1e1e1e; }
+  .pls-row-total td { border-top-color: #333; }
+  .pls-call-type { color: #aaa; }
+  .pls-call-type-total { color: #ccc; }
+  .pls-cell-empty { color: #444; }
+  .pls-cell-total { color: #ccc; }
+  .pls-cell-unique { color: #666; }
+  .pls-detail-content { color: #3dba6e; }
+  .pls-detail-abstract { color: #6b9fd8; }
+  .pls-detail-headline { color: #b49ae0; }
+  .pls-controls-label { color: #6a6a6a; }
+  .pls-chip {
+    color: #aaa;
+    background: #161616;
+    border-color: #2a2a2a;
+  }
+  .pls-chip:hover {
+    color: #eee;
+    background: #1e1e1e;
+    border-color: #444;
+  }
+  .pls-chip-active {
+    color: #111;
+    background: #e5e5e5;
+    border-color: #e5e5e5;
+  }
+  .pls-chip-active:hover {
+    color: #000;
+    background: #fff;
+    border-color: #fff;
+  }
+  .pls-chip-clear {
+    color: #777;
+    background: transparent;
+    border-color: transparent;
+  }
+  .pls-chip-clear:hover {
+    color: #ddd;
+    background: transparent;
+    border-color: transparent;
+  }
+  .pls-tag-empty { color: #555; }
+}

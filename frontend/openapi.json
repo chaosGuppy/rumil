@@ -32,17 +32,39 @@
       "get": {
         "summary": "List Projects",
         "operationId": "list_projects_api_projects_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
+                  "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/Project"
                   },
-                  "type": "array",
                   "title": "Response List Projects Api Projects Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -189,22 +211,6 @@
             }
           },
           {
-            "name": "staged_run_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Staged Run Id"
-            }
-          },
-          {
             "name": "search",
             "in": "query",
             "required": false,
@@ -238,6 +244,22 @@
               "type": "integer",
               "default": 50,
               "title": "Limit"
+            }
+          },
+          {
+            "name": "staged_run_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Staged Run Id"
             }
           }
         ],
@@ -294,6 +316,16 @@
               ],
               "title": "Staged Run Id"
             }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
           }
         ],
         "responses": {
@@ -349,6 +381,16 @@
               ],
               "title": "Staged Run Id"
             }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
           }
         ],
         "responses": {
@@ -387,6 +429,16 @@
             "schema": {
               "type": "string",
               "title": "Page Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
             }
           }
         ],
@@ -430,6 +482,16 @@
             "schema": {
               "type": "string",
               "title": "Page Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
             }
           }
         ],
@@ -475,6 +537,16 @@
               "type": "string",
               "title": "Page Id"
             }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
           }
         ],
         "responses": {
@@ -518,6 +590,16 @@
             "schema": {
               "type": "string",
               "title": "Page Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
             }
           }
         ],
@@ -578,6 +660,16 @@
               ],
               "title": "Staged Run Id"
             }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
           }
         ],
         "responses": {
@@ -616,6 +708,16 @@
             "schema": {
               "type": "string",
               "title": "Page Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
             }
           }
         ],
@@ -696,6 +798,16 @@
             "schema": {
               "type": "string",
               "title": "Page Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
             }
           }
         ],
@@ -847,6 +959,16 @@
               "type": "string",
               "title": "Call Id"
             }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
           }
         ],
         "responses": {
@@ -885,6 +1007,16 @@
             "schema": {
               "type": "string",
               "title": "Call Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
             }
           }
         ],
@@ -929,6 +1061,16 @@
               "type": "string",
               "title": "Run Id"
             }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
           }
         ],
         "responses": {
@@ -967,6 +1109,16 @@
             "schema": {
               "type": "string",
               "title": "Call Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
             }
           }
         ],
@@ -1049,6 +1201,9 @@
                         "$ref": "#/components/schemas/RenderQuestionSubgraphEventOut"
                       },
                       {
+                        "$ref": "#/components/schemas/LoadPageEventOut"
+                      },
+                      {
                         "$ref": "#/components/schemas/LinkSubquestionsCompleteEventOut"
                       },
                       {
@@ -1056,6 +1211,9 @@
                       },
                       {
                         "$ref": "#/components/schemas/PhaseSkippedEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/GlobalPhaseCompletedEventOut"
                       },
                       {
                         "$ref": "#/components/schemas/UpdateViewPhaseCompletedEventOut"
@@ -1087,9 +1245,11 @@
                         "grounding_tasks_generated": "#/components/schemas/GroundingTasksGeneratedEventOut",
                         "web_research_complete": "#/components/schemas/WebResearchCompleteEventOut",
                         "render_question_subgraph": "#/components/schemas/RenderQuestionSubgraphEventOut",
+                        "load_page": "#/components/schemas/LoadPageEventOut",
                         "link_subquestions_complete": "#/components/schemas/LinkSubquestionsCompleteEventOut",
                         "view_created": "#/components/schemas/ViewCreatedEventOut",
                         "phase_skipped": "#/components/schemas/PhaseSkippedEventOut",
+                        "global_phase_completed": "#/components/schemas/GlobalPhaseCompletedEventOut",
                         "update_view_phase_completed": "#/components/schemas/UpdateViewPhaseCompletedEventOut"
                       }
                     }
@@ -1124,6 +1284,16 @@
             "schema": {
               "type": "string",
               "title": "Ab Run Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
             }
           }
         ],
@@ -1257,6 +1427,16 @@
               "type": "string",
               "title": "Call Id"
             }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
           }
         ],
         "responses": {
@@ -1299,6 +1479,16 @@
             "schema": {
               "type": "string",
               "title": "Exchange Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
             }
           }
         ],
@@ -1357,6 +1547,16 @@
               "type": "string",
               "title": "Page Id"
             }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
           }
         ],
         "responses": {
@@ -1374,6 +1574,55 @@
                     }
                   ],
                   "title": "Response Get Page Run Api Pages  Page Id  Run Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runs/{run_id}/page-load-stats": {
+      "get": {
+        "summary": "Get Page Load Stats",
+        "operationId": "get_page_load_stats_api_runs__run_id__page_load_stats_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageLoadStatsOut"
                 }
               }
             }
@@ -2161,6 +2410,9 @@
                   "$ref": "#/components/schemas/RenderQuestionSubgraphEventOut"
                 },
                 {
+                  "$ref": "#/components/schemas/LoadPageEventOut"
+                },
+                {
                   "$ref": "#/components/schemas/LinkSubquestionsCompleteEventOut"
                 },
                 {
@@ -2168,6 +2420,9 @@
                 },
                 {
                   "$ref": "#/components/schemas/PhaseSkippedEventOut"
+                },
+                {
+                  "$ref": "#/components/schemas/GlobalPhaseCompletedEventOut"
                 },
                 {
                   "$ref": "#/components/schemas/UpdateViewPhaseCompletedEventOut"
@@ -2185,9 +2440,11 @@
                   "error": "#/components/schemas/ErrorEventOut",
                   "evaluation_complete": "#/components/schemas/EvaluationCompleteEventOut",
                   "explore_page": "#/components/schemas/ExplorePageEventOut",
+                  "global_phase_completed": "#/components/schemas/GlobalPhaseCompletedEventOut",
                   "grounding_tasks_generated": "#/components/schemas/GroundingTasksGeneratedEventOut",
                   "link_subquestions_complete": "#/components/schemas/LinkSubquestionsCompleteEventOut",
                   "llm_exchange": "#/components/schemas/LLMExchangeEventOut",
+                  "load_page": "#/components/schemas/LoadPageEventOut",
                   "moves_executed": "#/components/schemas/MovesExecutedEventOut",
                   "phase_skipped": "#/components/schemas/PhaseSkippedEventOut",
                   "reassess_triggered": "#/components/schemas/ReassessTriggeredEventOut",
@@ -2282,6 +2539,7 @@
           "link_subquestions",
           "ab_eval",
           "create_view",
+          "global_prioritization",
           "update_view",
           "claude_code_direct"
         ],
@@ -2758,6 +3016,43 @@
           "response"
         ],
         "title": "ExplorePageEventOut"
+      },
+      "GlobalPhaseCompletedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "global_phase_completed",
+            "title": "Event",
+            "default": "global_phase_completed"
+          },
+          "phase": {
+            "type": "string",
+            "title": "Phase",
+            "default": ""
+          },
+          "outcome": {
+            "type": "string",
+            "title": "Outcome",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "phase",
+          "outcome"
+        ],
+        "title": "GlobalPhaseCompletedEventOut"
       },
       "GroundingTasksGeneratedEventOut": {
         "properties": {
@@ -3269,6 +3564,54 @@
         ],
         "title": "LinkedPageOut"
       },
+      "LoadPageEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "load_page",
+            "title": "Event",
+            "default": "load_page"
+          },
+          "page_id": {
+            "type": "string",
+            "title": "Page Id"
+          },
+          "page_headline": {
+            "type": "string",
+            "title": "Page Headline",
+            "default": ""
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail",
+            "default": ""
+          },
+          "response": {
+            "type": "string",
+            "title": "Response",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "page_id",
+          "page_headline",
+          "detail",
+          "response"
+        ],
+        "title": "LoadPageEventOut"
+      },
       "MoveTraceItem": {
         "properties": {
           "type": {
@@ -3634,6 +3977,17 @@
             ],
             "title": "Position"
           },
+          "impact_on_parent_question": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Impact On Parent Question"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -3658,10 +4012,63 @@
           "importance",
           "section",
           "position",
+          "impact_on_parent_question",
           "created_at",
           "run_id"
         ],
         "title": "PageLink"
+      },
+      "PageLoadEventOut": {
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "title": "Page Id"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          },
+          "tags": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Tags"
+          }
+        },
+        "type": "object",
+        "required": [
+          "page_id",
+          "detail",
+          "tags"
+        ],
+        "title": "PageLoadEventOut"
+      },
+      "PageLoadStatsOut": {
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/PageLoadEventOut"
+            },
+            "type": "array",
+            "title": "Events"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "total_unique": {
+            "type": "integer",
+            "title": "Total Unique"
+          }
+        },
+        "type": "object",
+        "required": [
+          "events",
+          "total",
+          "total_unique"
+        ],
+        "title": "PageLoadStatsOut"
       },
       "PageRef": {
         "properties": {

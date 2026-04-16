@@ -95,7 +95,14 @@ async def render_page_and_immediate_children(
         return f"[Page {root_id} not found]"
 
     if root.page_type != PageType.QUESTION:
-        return await format_page(root, detail, linked_detail=linked_detail, db=db)
+        return await format_page(
+            root,
+            detail,
+            linked_detail=linked_detail,
+            db=db,
+            track=True,
+            track_tags={"source": "prioritization"},
+        )
 
     _content_ids = content_page_ids or set()
 
@@ -118,7 +125,15 @@ async def render_page_and_immediate_children(
         q_detail = PageDetail.CONTENT if question.id in _content_ids else detail
         indent = "  " * depth
         parts.append(
-            indent + await format_page(question, q_detail, linked_detail=None, db=db)
+            indent
+            + await format_page(
+                question,
+                q_detail,
+                linked_detail=None,
+                db=db,
+                track=True,
+                track_tags={"source": "prioritization"},
+            )
         )
 
         con_items: list[tuple[str, Page]] = []
@@ -126,7 +141,12 @@ async def render_page_and_immediate_children(
             visited.add(claim.id)
             direction = f"({link.direction.value}) " if link.direction else ""
             line = f"{indent}- {direction}" + await format_page(
-                claim, linked_detail or PageDetail.HEADLINE, linked_detail=None, db=db
+                claim,
+                linked_detail or PageDetail.HEADLINE,
+                linked_detail=None,
+                db=db,
+                track=True,
+                track_tags={"source": "prioritization"},
             )
             if link.reasoning:
                 line += f"\n{indent}  Reasoning: {link.reasoning}"
@@ -155,6 +175,8 @@ async def render_page_and_immediate_children(
                         linked_detail or PageDetail.HEADLINE,
                         linked_detail=None,
                         db=db,
+                        track=True,
+                        track_tags={"source": "prioritization"},
                     )
                 )
 
@@ -558,8 +580,17 @@ async def render_child_investigation_results(
             page_ids.append(view.id)
             lines.append(f"**Status:** View available{' [NEW]' if new else ''}")
             if view.content:
+                detail = PageDetail.CONTENT if new else PageDetail.ABSTRACT
+                formatted_view = await format_page(
+                    view,
+                    detail,
+                    linked_detail=None,
+                    db=db,
+                    track=True,
+                    track_tags={"source": "child_investigation"},
+                )
                 lines.append("")
-                lines.append(view.content)
+                lines.append(formatted_view)
             if new and view.id in view_items_map:
                 items = view_items_map[view.id]
                 if items:
@@ -576,34 +607,35 @@ async def render_child_investigation_results(
         elif summary:
             new = _is_new(summary)
             page_ids.append(summary.id)
+            detail = PageDetail.CONTENT if new else PageDetail.ABSTRACT
             lines.append(f"**Status:** Summary available{' [NEW]' if new else ''}")
             lines.append("")
-            if new:
-                lines.append(summary.content or summary.abstract or "")
-            else:
-                lines.append(summary.abstract or "")
+            lines.append(
+                await format_page(
+                    summary,
+                    detail,
+                    linked_detail=None,
+                    db=db,
+                    track=True,
+                    track_tags={"source": "child_investigation"},
+                )
+            )
         elif latest_judgement:
             new = _is_new(latest_judgement)
             page_ids.append(latest_judgement.id)
-            c = (
-                latest_judgement.credence
-                if latest_judgement.credence is not None
-                else "?"
-            )
-            r = (
-                latest_judgement.robustness
-                if latest_judgement.robustness is not None
-                else "?"
-            )
+            detail = PageDetail.CONTENT if new else PageDetail.ABSTRACT
             lines.append(f"**Status:** Judgement available{' [NEW]' if new else ''}")
-            lines.append(f"[JUDGEMENT C{c}/R{r}] {latest_judgement.headline}")
             lines.append("")
-            if new:
-                lines.append(
-                    latest_judgement.content or latest_judgement.abstract or ""
+            lines.append(
+                await format_page(
+                    latest_judgement,
+                    detail,
+                    linked_detail=None,
+                    db=db,
+                    track=True,
+                    track_tags={"source": "child_investigation"},
                 )
-            else:
-                lines.append(latest_judgement.abstract or "")
+            )
         else:
             continue
 
@@ -648,10 +680,13 @@ async def _build_dependency_signal(db: DB) -> str | None:
     for pid, count in top:
         page = pages.get(pid)
         if page:
-            stale_tag = " [SUPERSEDED]" if page.is_superseded else ""
-            item_lines.append(
-                f"- `{pid[:8]}` — {page.headline} ({count} dependents){stale_tag}"
+            headline = await format_page(
+                page,
+                PageDetail.HEADLINE,
+                track=True,
+                track_tags={"source": "dependency_signal"},
             )
+            item_lines.append(f"- {headline} ({count} dependents)")
 
     if not item_lines:
         return None
@@ -809,6 +844,8 @@ async def build_embedding_based_context(
                     linked_detail=scope_linked_detail or PageDetail.HEADLINE,
                     db=db,
                     exclude_page_ids=_exclude,
+                    track=True,
+                    track_tags={"source": "scope_question"},
                 )
                 + "\n\n"
             )
@@ -846,7 +883,12 @@ async def build_embedding_based_context(
 
     for page, _sim in distillation_pages:
         formatted = await format_page(
-            page, PageDetail.CONTENT, db=db, linked_detail=None
+            page,
+            PageDetail.CONTENT,
+            db=db,
+            linked_detail=None,
+            track=True,
+            track_tags={"source": "embedding_distillation"},
         )
         if distillation_chars + len(formatted) <= distillation_budget:
             all_items.append((formatted, page))
@@ -857,7 +899,13 @@ async def build_embedding_based_context(
         if page.id in distillation_page_id_set:
             continue
         if page.id in _headline_only:
-            formatted = await format_page(page, PageDetail.HEADLINE, linked_detail=None)
+            formatted = await format_page(
+                page,
+                PageDetail.HEADLINE,
+                linked_detail=None,
+                track=True,
+                track_tags={"source": "embedding_headline_override"},
+            )
             all_items.append((formatted, page))
             summary_ids.append(page.id)
             summary_chars += len(formatted)
@@ -871,7 +919,12 @@ async def build_embedding_based_context(
 
         if sim >= full_page_similarity_floor and full_chars < full_budget:
             formatted = await format_page(
-                page, PageDetail.CONTENT, db=db, linked_detail=None
+                page,
+                PageDetail.CONTENT,
+                db=db,
+                linked_detail=None,
+                track=True,
+                track_tags={"source": "embedding_full"},
             )
             if full_chars + len(formatted) <= full_budget:
                 all_items.append((formatted, page))
@@ -880,7 +933,13 @@ async def build_embedding_based_context(
                 continue
 
         if sim >= abstract_page_similarity_floor and abstract_chars < abstract_budget:
-            formatted = await format_page(page, PageDetail.ABSTRACT, linked_detail=None)
+            formatted = await format_page(
+                page,
+                PageDetail.ABSTRACT,
+                linked_detail=None,
+                track=True,
+                track_tags={"source": "embedding_abstract"},
+            )
             if abstract_chars + len(formatted) <= abstract_budget:
                 all_items.append((formatted, page))
                 abstract_ids.append(page.id)
@@ -888,7 +947,13 @@ async def build_embedding_based_context(
                 continue
 
         if sim >= summary_page_similarity_floor and summary_chars < summary_budget:
-            formatted = await format_page(page, PageDetail.HEADLINE, linked_detail=None)
+            formatted = await format_page(
+                page,
+                PageDetail.HEADLINE,
+                linked_detail=None,
+                track=True,
+                track_tags={"source": "embedding_summary"},
+            )
             if summary_chars + len(formatted) <= summary_budget:
                 all_items.append((formatted, page))
                 summary_ids.append(page.id)

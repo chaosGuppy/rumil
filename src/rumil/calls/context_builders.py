@@ -112,10 +112,18 @@ class CreateViewContext(ContextBuilder):
                 parts = ["\n\n---\n\n## Existing View Items (to update/supersede)\n"]
                 for page, link in items:
                     imp = f"I{link.importance}" if link.importance else "unscored"
+                    formatted = await format_page(
+                        page,
+                        PageDetail.CONTENT,
+                        linked_detail=None,
+                        db=infra.db,
+                        track=True,
+                        track_tags={"source": "existing_view_items"},
+                    )
                     parts.append(
                         f"\n### [{page.page_type.value.upper()} C{page.credence}/R{page.robustness} {imp}] "
                         f"`{page.id[:8]}` — {page.headline}\n\n"
-                        f"{page.content}\n"
+                        f"{formatted}\n"
                     )
                 context_text += "\n".join(parts)
 
@@ -131,7 +139,13 @@ class CreateViewContext(ContextBuilder):
                         "",
                         f"## Pre-loaded Page: `{pid[:8]}`",
                         "",
-                        await format_page(page, PageDetail.CONTENT, db=infra.db),
+                        await format_page(
+                            page,
+                            PageDetail.CONTENT,
+                            db=infra.db,
+                            track=True,
+                            track_tags={"source": "preloaded"},
+                        ),
                     ]
             context_text += "\n".join(parts_pre)
 
@@ -179,7 +193,13 @@ class EmbeddingContext(ContextBuilder):
                         "",
                         f"## Pre-loaded Page: `{pid[:8]}`",
                         "",
-                        await format_page(page, PageDetail.CONTENT, db=infra.db),
+                        await format_page(
+                            page,
+                            PageDetail.CONTENT,
+                            db=infra.db,
+                            track=True,
+                            track_tags={"source": "preloaded"},
+                        ),
                     ]
             context_text += "\n".join(parts)
 
@@ -215,11 +235,18 @@ class IngestEmbeddingContext(ContextBuilder):
             source_page_id=self._source_page.id,
         )
 
+        formatted_source = await format_page(
+            self._source_page,
+            PageDetail.CONTENT,
+            linked_detail=None,
+            db=infra.db,
+            track=True,
+            track_tags={"source": "source_document"},
+        )
         source_section = (
             "\n\n---\n\n## Source Document\n\n"
-            f"**File:** {self._filename}  \n"
-            f"**Source page ID:** `{self._source_page.id}`\n\n"
-            f"{self._source_page.content}"
+            f"**File:** {self._filename}\n\n"
+            f"{formatted_source}"
         )
         return ContextResult(
             context_text=result.context_text + source_section,
@@ -934,7 +961,13 @@ class BigAssessContext(ContextBuilder):
                         "",
                         f"## Pre-loaded Page: `{pid[:8]}`",
                         "",
-                        await format_page(page, PageDetail.CONTENT, db=db),
+                        await format_page(
+                            page,
+                            PageDetail.CONTENT,
+                            db=db,
+                            track=True,
+                            track_tags={"source": "big_assess_extra"},
+                        ),
                     ]
             if parts:
                 context_text += "\n".join(parts)

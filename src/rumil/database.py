@@ -1269,18 +1269,49 @@ class DB:
         return stale
 
     async def get_dependency_counts(self) -> dict[str, int]:
-        """Return a map from page_id to how many pages depend on it."""
+        """Return a map from page_id to how many pages depend on it, within the current project.
+
+        Scopes by intersecting link endpoints with the project's page IDs.
+        `page_links` has no `project_id` column, so we resolve project membership
+        via `pages`.
+        """
+        project_page_ids: set[str] | None = None
+        if self.project_id:
+            project_page_ids = set()
+            offset = 0
+            page_size = 2000
+            while True:
+                pages_query = (
+                    self.client.table("pages")
+                    .select("id")
+                    .eq("project_id", self.project_id)
+                )
+                pages_query = self._staged_filter(pages_query)
+                rows = _rows(await self._execute(
+                    pages_query.range(offset, offset + page_size - 1)
+                ))
+                project_page_ids.update(r["id"] for r in rows)
+                if len(rows) < page_size:
+                    break
+                offset += page_size
+
         query = (
             self.client.table("page_links")
-            .select("to_page_id")
+            .select(_LINK_COLUMNS)
             .eq("link_type", LinkType.DEPENDS_ON.value)
         )
         query = self._staged_filter(query)
         rows = _rows(await self._execute(query))
+        links = await self._apply_link_events([_row_to_link(r) for r in rows])
+
         counts: dict[str, int] = {}
-        for row in rows:
-            pid = row["to_page_id"]
-            counts[pid] = counts.get(pid, 0) + 1
+        for link in links:
+            if project_page_ids is not None and (
+                link.from_page_id not in project_page_ids
+                or link.to_page_id not in project_page_ids
+            ):
+                continue
+            counts[link.to_page_id] = counts.get(link.to_page_id, 0) + 1
         return counts
 
     async def _get_supersession_magnitude(self, page_id: str) -> int | None:

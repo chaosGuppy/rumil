@@ -553,16 +553,13 @@ async def render_child_investigation_results(
                         c = page.credence if page.credence is not None else "?"
                         r = page.robustness if page.robustness is not None else "?"
                         lines.append(
-                            f"- [C{c}/R{r} I{imp}] `{page.id[:8]}` "
-                            f"— {page.headline}"
+                            f"- [C{c}/R{r} I{imp}] `{page.id[:8]}` — {page.headline}"
                         )
                         page_ids.append(page.id)
         elif summary:
             new = _is_new(summary)
             page_ids.append(summary.id)
-            lines.append(
-                f"**Status:** Summary available{' [NEW]' if new else ''}"
-            )
+            lines.append(f"**Status:** Summary available{' [NEW]' if new else ''}")
             lines.append("")
             if new:
                 lines.append(summary.content or summary.abstract or "")
@@ -571,17 +568,23 @@ async def render_child_investigation_results(
         elif latest_judgement:
             new = _is_new(latest_judgement)
             page_ids.append(latest_judgement.id)
-            c = latest_judgement.credence if latest_judgement.credence is not None else "?"
-            r = latest_judgement.robustness if latest_judgement.robustness is not None else "?"
-            lines.append(
-                f"**Status:** Judgement available{' [NEW]' if new else ''}"
+            c = (
+                latest_judgement.credence
+                if latest_judgement.credence is not None
+                else "?"
             )
-            lines.append(
-                f"[JUDGEMENT C{c}/R{r}] {latest_judgement.headline}"
+            r = (
+                latest_judgement.robustness
+                if latest_judgement.robustness is not None
+                else "?"
             )
+            lines.append(f"**Status:** Judgement available{' [NEW]' if new else ''}")
+            lines.append(f"[JUDGEMENT C{c}/R{r}] {latest_judgement.headline}")
             lines.append("")
             if new:
-                lines.append(latest_judgement.content or latest_judgement.abstract or "")
+                lines.append(
+                    latest_judgement.content or latest_judgement.abstract or ""
+                )
             else:
                 lines.append(latest_judgement.abstract or "")
         else:
@@ -650,6 +653,75 @@ async def _build_dependency_signal(db: DB) -> str | None:
     return "\n".join(lines)
 
 
+async def _build_staleness_signal(db: DB) -> str | None:
+    """Build a section listing pages whose DEPENDS_ON targets are superseded.
+
+    Calls the batched ``get_stale_dependencies()`` and enriches each
+    result with page headlines and link metadata so the prioritizer LLM
+    has enough to decide whether reassessment is worth budget.
+
+    Returns None if there are no stale dependencies in the workspace.
+    """
+    stale = await db.get_stale_dependencies()
+    if not stale:
+        return None
+
+    all_ids = list(
+        {link.from_page_id for link, _ in stale}
+        | {link.to_page_id for link, _ in stale}
+    )
+    pages = await db.get_pages_by_ids(all_ids)
+
+    item_lines: list[str] = []
+    for link, magnitude in stale:
+        dependent = pages.get(link.from_page_id)
+        target = pages.get(link.to_page_id)
+        if not dependent or not target:
+            continue
+        # Filter to current project when project_id is set, so the
+        # staleness signal matches the scope of everything else in the
+        # prioritization context.
+        if db.project_id and dependent.project_id != db.project_id:
+            continue
+
+        cred = (
+            f" (credence {dependent.credence}/9, robustness {dependent.robustness}/5)"
+            if dependent.credence is not None
+            else ""
+        )
+        mag_str = f", change magnitude: {magnitude}/5" if magnitude is not None else ""
+        item_lines.append(
+            f"- `{dependent.id[:8]}` — {dependent.headline}{cred}\n"
+            f"  depends on `{target.id[:8]}` — {target.headline}"
+            f" [SUPERSEDED{mag_str}]\n"
+            f"  Link strength: {link.strength:.0f}/5"
+        )
+
+    if not item_lines:
+        return None
+
+    # Cap at 10 entries to keep the context manageable.
+    shown = item_lines[:10]
+    overflow = len(item_lines) - len(shown)
+
+    lines = [
+        "## Stale Dependencies",
+        "",
+        (
+            "The following pages rest on claims that have since been "
+            "superseded. Their conclusions may no longer hold. Consider "
+            "dispatching an assess on the questions they bear on — "
+            "especially when link strength and change magnitude are both "
+            "high."
+        ),
+        "",
+    ]
+    lines.extend(shown)
+    if overflow > 0:
+        lines.append(f"\n({overflow} more stale dependencies not shown)")
+    return "\n".join(lines)
+
+
 async def build_prioritization_context(
     db: DB,
     scope_question_id: str | None = None,
@@ -672,10 +744,13 @@ async def build_prioritization_context(
             view = await db.get_view_for_question(scope_question_id)
             if view:
                 view_items = await db.get_view_items(
-                    view.id, min_importance=2,
+                    view.id,
+                    min_importance=2,
                 )
                 view_text = await render_view(
-                    view, view_items, min_importance=2,
+                    view,
+                    view_items,
+                    min_importance=2,
                 )
                 if view_text.strip():
                     parts.append(view_text)
@@ -704,6 +779,11 @@ async def build_prioritization_context(
     dep_section = await _build_dependency_signal(db)
     if dep_section:
         parts.append(dep_section)
+        parts.append("")
+
+    staleness_section = await _build_staleness_signal(db)
+    if staleness_section:
+        parts.append(staleness_section)
         parts.append("")
 
     return "\n".join(parts), short_id_map

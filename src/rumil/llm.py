@@ -50,6 +50,13 @@ if TYPE_CHECKING:
     from rumil.database import DB
 
 DEFAULT_MAX_TOKENS = 20_000
+DEFAULT_TEMPERATURE = 0.15
+
+
+def _supports_sampling_params(model: str) -> bool:
+    # Opus 4.7 removed temperature/top_p/top_k — sending any returns 400.
+    return not model.startswith("claude-opus-4-7")
+
 
 PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts"
 
@@ -362,6 +369,8 @@ async def call_api(
         "system": system_prompt,
         "messages": _add_cache_breakpoint(messages) if cache else messages,
     }
+    if _supports_sampling_params(model):
+        kwargs["temperature"] = DEFAULT_TEMPERATURE
     if tools:
         kwargs["tools"] = tools
 
@@ -663,6 +672,8 @@ async def _structured_call_parse(
         "system": system_prompt,
         "messages": msg_list,
     }
+    if _supports_sampling_params(model):
+        parse_kwargs["temperature"] = DEFAULT_TEMPERATURE
     if response_model is not None:
         parse_kwargs["output_format"] = response_model
     if tools is not None:

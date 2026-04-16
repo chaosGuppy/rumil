@@ -850,7 +850,10 @@ async def cmd_continue(
             + "\n\nNot every extracted claim is necessarily important — use your "
             "judgement about which ones are worth investigating further. But the "
             "user specifically provided this source, so the material as a whole "
-            "may deserve more attention than scores alone suggest."
+            "may deserve more attention than scores alone suggest. "
+            "The View for this question has NOT yet been updated to reflect this "
+            "new material — ingested considerations are not yet factored into "
+            "View scores or item selection."
         )
     await orch.run(question_id)
     await _print_summary(db)

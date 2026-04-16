@@ -5,9 +5,7 @@ from __future__ import annotations
 import uuid
 
 import pytest
-import pytest_asyncio
 
-from rumil.database import DB
 from rumil.models import CallType
 from rumil_skills import _runctx
 
@@ -20,21 +18,6 @@ def _isolated_state(tmp_path, monkeypatch):
         _runctx, "STATE_FILE", tmp_path / "state" / "rumil-session.json"
     )
     return tmp_path
-
-
-@pytest_asyncio.fixture
-async def envelope_cleanup():
-    """Track envelope run_ids so we can tear down every row they wrote."""
-    run_ids: list[str] = []
-
-    yield run_ids
-
-    for run_id in run_ids:
-        cleanup_db = await DB.create(run_id=run_id)
-        try:
-            await cleanup_db.delete_run_data(delete_project=True)
-        finally:
-            await cleanup_db.close()
 
 
 def _set_workspace(workspace: str) -> None:

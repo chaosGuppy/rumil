@@ -269,6 +269,16 @@ async def score_items_sequentially(
             parent_parts.append(parent_judgement.headline)
         parent_parts.append("")
 
+    view = await db.get_view_for_question(parent_page.id)
+    if view:
+        from rumil.context import render_view
+
+        view_items = await db.get_view_items(view.id, min_importance=2)
+        view_text = await render_view(view, view_items, min_importance=2)
+        if view_text.strip():
+            parent_parts.append(view_text)
+            parent_parts.append("")
+
     parent_context = "\n".join(parent_parts)
     system_prompt = build_system_prompt(system_prompt_name)
     messages: list[dict] = []

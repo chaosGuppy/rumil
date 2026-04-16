@@ -2019,7 +2019,7 @@ class DB:
 
     async def get_page_format_events_for_run(
         self, run_id: str
-    ) -> list[dict[str, Any]]:
+    ) -> Sequence[dict[str, Any]]:
         """Fetch all page-format events for a run, with call_type from calls."""
         rows = _rows(
             await self._execute(

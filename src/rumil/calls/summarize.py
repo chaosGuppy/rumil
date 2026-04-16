@@ -22,8 +22,9 @@ from rumil.models import (
     PageType,
     Workspace,
 )
+from rumil.tracing.page_load_tracking import page_track_scope
 from rumil.tracing.trace_events import ContextBuiltEvent, ErrorEvent, PageRef
-from rumil.tracing.tracer import CallTrace, get_trace, set_trace
+from rumil.tracing.tracer import CallTrace, set_trace
 
 log = logging.getLogger(__name__)
 
@@ -90,19 +91,18 @@ async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[Pa
 
     page_refs: list[PageRef] = [ref(question)]
 
-    _t = {"source": "summary_context"}
-    _fp = format_page
+    summary_tag = {"source": "summary_context"}
 
     parts.append(
         _section(
             "Question (full)",
-            await _fp(
+            await format_page(
                 question,
                 PageDetail.CONTENT,
                 linked_detail=None,
                 db=db,
                 track=True,
-                track_tags=_t,
+                track_tags=summary_tag,
             ),
         )
     )
@@ -131,13 +131,13 @@ async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[Pa
         cons_parts = []
         for page, link in considerations:
             direction = f" [{link.direction.value}]" if link.direction else ""
-            formatted = await _fp(
+            formatted = await format_page(
                 page,
                 PageDetail.CONTENT,
                 linked_detail=None,
                 db=db,
                 track=True,
-                track_tags=_t,
+                track_tags=summary_tag,
             )
             cons_parts.append(f"**Consideration{direction}:**\n\n{formatted}")
         parts.append(
@@ -146,19 +146,21 @@ async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[Pa
 
     if judgements:
         most_recent = max(judgements, key=lambda j: j.created_at)
-        formatted_j = await _fp(
+        formatted_j = await format_page(
             most_recent,
             PageDetail.CONTENT,
             linked_detail=None,
             db=db,
             track=True,
-            track_tags=_t,
+            track_tags=summary_tag,
         )
         parts.append(_section("Most Recent Judgement (full)", formatted_j))
         older = [j for j in judgements if j.id != most_recent.id]
         if older:
             older_lines = [
-                await _fp(j, PageDetail.HEADLINE, track=True, track_tags=_t)
+                await format_page(
+                    j, PageDetail.HEADLINE, track=True, track_tags=summary_tag
+                )
                 for j in older
             ]
             parts.append(
@@ -176,13 +178,13 @@ async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[Pa
             child_summary = await db.get_latest_summary_for_question(child.id)
             if child_summary:
                 page_refs.append(ref(child_summary))
-                formatted_cs = await _fp(
+                formatted_cs = await format_page(
                     child_summary,
                     PageDetail.CONTENT,
                     linked_detail=None,
                     db=db,
                     track=True,
-                    track_tags=_t,
+                    track_tags=summary_tag,
                 )
                 child_section_parts.append(f"**Summary (full):**\n{formatted_cs}")
             else:
@@ -192,13 +194,13 @@ async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[Pa
             if child_judgements:
                 page_refs.extend(ref(j) for j in child_judgements)
                 most_recent_j = max(child_judgements, key=lambda j: j.created_at)
-                formatted_cj = await _fp(
+                formatted_cj = await format_page(
                     most_recent_j,
                     PageDetail.ABSTRACT,
                     linked_detail=None,
                     db=db,
                     track=True,
-                    track_tags=_t,
+                    track_tags=summary_tag,
                 )
                 child_section_parts.append(f"**Judgement (medium):**\n{formatted_cj}")
 
@@ -207,7 +209,9 @@ async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[Pa
                 page_refs.extend(ref(p) for p, _ in child_considerations)
                 con_lines = [
                     "  - "
-                    + await _fp(p, PageDetail.HEADLINE, track=True, track_tags=_t)
+                    + await format_page(
+                        p, PageDetail.HEADLINE, track=True, track_tags=summary_tag
+                    )
                     for p, _ in child_considerations
                 ]
                 child_section_parts.append(
@@ -225,27 +229,27 @@ async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[Pa
                     gc_judgements = await db.get_judgements_for_question(gc.id)
                     if gc_judgements:
                         page_refs.extend(ref(j) for j in gc_judgements)
-                    gc_hl = await _fp(
-                        gc, PageDetail.HEADLINE, track=True, track_tags=_t
+                    gc_hl = await format_page(
+                        gc, PageDetail.HEADLINE, track=True, track_tags=summary_tag
                     )
                     gc_medium = (
-                        await _fp(
+                        await format_page(
                             gc_summary,
                             PageDetail.ABSTRACT,
                             linked_detail=None,
                             db=db,
                             track=True,
-                            track_tags=_t,
+                            track_tags=summary_tag,
                         )
                         if gc_summary
                         else None
                     )
                     gc_short_j = (
-                        await _fp(
+                        await format_page(
                             max(gc_judgements, key=lambda j: j.created_at),
                             PageDetail.HEADLINE,
                             track=True,
-                            track_tags=_t,
+                            track_tags=summary_tag,
                         )
                         if gc_judgements
                         else None
@@ -310,86 +314,94 @@ async def summarize_question(
     trace = CallTrace(call.id, db)
     set_trace(trace)
 
-    try:
-        context, context_page_ids = await _build_summary_context(question_id, db)
-        await trace.record(
-            ContextBuiltEvent(
-                working_context_page_ids=context_page_ids,
+    with page_track_scope(
+        call_type=CallType.SUMMARIZE.value,
+        question=question_id[:8],
+    ):
+        try:
+            context, context_page_ids = await _build_summary_context(question_id, db)
+            await trace.record(
+                ContextBuiltEvent(
+                    working_context_page_ids=context_page_ids,
+                )
             )
-        )
-        user_message = build_user_message(context, TASK)
+            user_message = build_user_message(context, TASK)
 
-        meta = LLMExchangeMetadata(call_id=call.id, phase="summarize")
-        result = await structured_call(
-            system_prompt=SYSTEM_PROMPT,
-            user_message=user_message,
-            response_model=SummaryOutput,
-            metadata=meta,
-            db=db,
-        )
+            meta = LLMExchangeMetadata(call_id=call.id, phase="summarize")
+            result = await structured_call(
+                system_prompt=SYSTEM_PROMPT,
+                user_message=user_message,
+                response_model=SummaryOutput,
+                metadata=meta,
+                db=db,
+            )
 
-        if not result.parsed:
-            log.warning(
-                "summarize_question: structured call returned no data for %s",
+            if not result.parsed:
+                log.warning(
+                    "summarize_question: structured call returned no data for %s",
+                    question_id[:8],
+                )
+                await _fail_call(call, db)
+                return None
+
+            data = result.parsed
+            question = await db.get_page(question_id)
+            page_headline = (
+                data.page_headline
+                or f"Summary of {question.headline[:60] if question else question_id[:8]}"
+            )
+
+            page = Page(
+                page_type=PageType.SUMMARY,
+                layer=PageLayer.SQUIDGY,
+                workspace=Workspace.RESEARCH,
+                content=data.content,
+                headline=data.headline or page_headline,
+                abstract=data.abstract,
+                credence=5,
+                robustness=2,
+                provenance_model=get_settings().model,
+                provenance_call_type=CallType.SUMMARIZE.value,
+                provenance_call_id=call.id,
+            )
+            await db.save_page(page)
+
+            link = PageLink(
+                from_page_id=page.id,
+                to_page_id=question_id,
+                link_type=LinkType.SUMMARIZES,
+                reasoning="Auto-generated subtree summary",
+            )
+            await db.save_link(link)
+
+            await _supersede_old_summaries(question_id, page.id, db)
+
+            call.status = CallStatus.COMPLETE
+            call.completed_at = datetime.now(UTC)
+            call.result_summary = f"Summary created: {page_headline[:80]}"
+            await db.save_call(call)
+
+            log.info("summarize_question complete: page=%s", page.id[:8])
+            return page.id
+
+        except Exception as e:
+            log.error(
+                "summarize_question failed for %s: %s",
                 question_id[:8],
+                e,
+                exc_info=True,
             )
-            await _fail_call(call, db)
-            return None
-
-        data = result.parsed
-        question = await db.get_page(question_id)
-        page_headline = (
-            data.page_headline
-            or f"Summary of {question.headline[:60] if question else question_id[:8]}"
-        )
-
-        page = Page(
-            page_type=PageType.SUMMARY,
-            layer=PageLayer.SQUIDGY,
-            workspace=Workspace.RESEARCH,
-            content=data.content,
-            headline=data.headline or page_headline,
-            abstract=data.abstract,
-            credence=5,
-            robustness=2,
-            provenance_model=get_settings().model,
-            provenance_call_type=CallType.SUMMARIZE.value,
-            provenance_call_id=call.id,
-        )
-        await db.save_page(page)
-
-        link = PageLink(
-            from_page_id=page.id,
-            to_page_id=question_id,
-            link_type=LinkType.SUMMARIZES,
-            reasoning="Auto-generated subtree summary",
-        )
-        await db.save_link(link)
-
-        await _supersede_old_summaries(question_id, page.id, db)
-
-        call.status = CallStatus.COMPLETE
-        call.completed_at = datetime.now(UTC)
-        call.result_summary = f"Summary created: {page_headline[:80]}"
-        await db.save_call(call)
-
-        log.info("summarize_question complete: page=%s", page.id[:8])
-        return page.id
-
-    except Exception as e:
-        log.error(
-            "summarize_question failed for %s: %s", question_id[:8], e, exc_info=True
-        )
-        trace = get_trace()
-        if trace:
             await trace.record(
                 ErrorEvent(
                     message=f"Summarize failed: {e}",
                     phase="summarize",
                 )
             )
-        await _fail_call(call, db)
-        return None
+            await _fail_call(call, db)
+            return None
+
+        finally:
+            await trace.flush_page_loads()
 
 
 async def _fail_call(call: Call, db: DB) -> None:

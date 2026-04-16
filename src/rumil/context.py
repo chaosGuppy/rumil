@@ -15,6 +15,8 @@ from rumil.database import DB
 from rumil.embeddings import embed_query, search_pages_by_vector
 from rumil.models import Page, PageDetail, PageLink, PageType
 from rumil.settings import get_settings
+from rumil.tracing.page_load_tracking import get_page_track_tags
+from rumil.tracing.tracer import get_trace
 
 log = logging.getLogger(__name__)
 
@@ -296,9 +298,6 @@ async def format_page(
     caller's top-level invocation is recorded.
     """
     if track:
-        from rumil.tracing.page_load_tracking import get_page_track_tags
-        from rumil.tracing.tracer import get_trace
-
         trace = get_trace()
         if trace:
             tags = {**get_page_track_tags(), **(track_tags or {})}
@@ -683,6 +682,7 @@ async def _build_dependency_signal(db: DB) -> str | None:
             headline = await format_page(
                 page,
                 PageDetail.HEADLINE,
+                db=db,
                 track=True,
                 track_tags={"source": "dependency_signal"},
             )

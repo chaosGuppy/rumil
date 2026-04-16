@@ -137,7 +137,7 @@ class Settings(BaseSettings):
         return (
             "claude-haiku-4-5-20251001"
             if self.is_test_mode or self.is_smoke_test
-            else "claude-opus-4-6"
+            else "claude-opus-4-7"
         )
 
     @property

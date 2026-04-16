@@ -26,7 +26,7 @@ from rumil.settings import get_settings
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 
-DEFAULT_META_MODEL = "claude-opus-4-6"
+DEFAULT_META_MODEL = "claude-opus-4-7"
 
 
 def load_prompt(name: str) -> str:

@@ -52,6 +52,39 @@ if TYPE_CHECKING:
 DEFAULT_MAX_TOKENS = 20_000
 DEFAULT_TEMPERATURE = 0.15
 
+
+def _supports_sampling_params(model: str) -> bool:
+    # Opus 4.7 removed temperature/top_p/top_k — sending any returns 400.
+    # With adaptive thinking on (Opus 4.6, Sonnet 4.6), temperature must be
+    # 1.0 — we'd rather skip it than set 1.0, so gate on thinking being off.
+    if model.startswith("claude-opus-4-7"):
+        return False
+    if _thinking_config(model) is not None:
+        return False
+    return True
+
+
+def _thinking_config(model: str) -> dict | None:
+    # Adaptive thinking: Opus 4.7/4.6 and Sonnet 4.6. Haiku and older Sonnet
+    # don't support adaptive. On 4.7, thinking text is omitted by default —
+    # ask for summarized so sdk_agent can still capture it.
+    if model.startswith("claude-opus-4-7"):
+        return {"type": "adaptive", "display": "summarized"}
+    if model.startswith(("claude-opus-4-6", "claude-sonnet-4-6")):
+        return {"type": "adaptive"}
+    return None
+
+
+def _effort_level(model: str) -> str | None:
+    # xhigh is Opus 4.7-only; high is the best shared setting elsewhere.
+    # Haiku and Sonnet 4.5 don't support the effort parameter at all.
+    if model.startswith("claude-opus-4-7"):
+        return "xhigh"
+    if model.startswith(("claude-opus-4-6", "claude-sonnet-4-6")):
+        return "high"
+    return None
+
+
 PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts"
 
 log = logging.getLogger(__name__)
@@ -348,7 +381,6 @@ async def call_api(
     metadata: LLMExchangeMetadata | None = None,
     db: DB | None = None,
     cache: bool = False,
-    temperature: float = DEFAULT_TEMPERATURE,
 ) -> APIResponse:
     """Make a single Anthropic API call with retry logic.
 
@@ -361,10 +393,15 @@ async def call_api(
     kwargs: dict = {
         "model": model,
         "max_tokens": DEFAULT_MAX_TOKENS,
-        "temperature": temperature,
         "system": system_prompt,
         "messages": _add_cache_breakpoint(messages) if cache else messages,
     }
+    if _supports_sampling_params(model):
+        kwargs["temperature"] = DEFAULT_TEMPERATURE
+    if (thinking := _thinking_config(model)) is not None:
+        kwargs["thinking"] = thinking
+    if (effort := _effort_level(model)) is not None:
+        kwargs["output_config"] = {"effort": effort}
     if tools:
         kwargs["tools"] = tools
 
@@ -663,10 +700,15 @@ async def _structured_call_parse(
     parse_kwargs: dict = {
         "model": model,
         "max_tokens": DEFAULT_MAX_TOKENS,
-        "temperature": DEFAULT_TEMPERATURE,
         "system": system_prompt,
         "messages": msg_list,
     }
+    if _supports_sampling_params(model):
+        parse_kwargs["temperature"] = DEFAULT_TEMPERATURE
+    if (thinking := _thinking_config(model)) is not None:
+        parse_kwargs["thinking"] = thinking
+    if (effort := _effort_level(model)) is not None:
+        parse_kwargs["output_config"] = {"effort": effort}
     if response_model is not None:
         parse_kwargs["output_format"] = response_model
     if tools is not None:

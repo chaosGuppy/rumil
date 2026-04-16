@@ -174,15 +174,63 @@ def _render_page(
     return f"{frontmatter}\n# {page.headline}\n\n{content}{links_section}\n"
 
 
-async def export_obsidian(db: DB, output_dir: str) -> Path:
-    """Export all active pages in the current project as an Obsidian vault.
+async def _collect_subtree_page_ids(
+    db: DB,
+    root_question_id: str,
+) -> set[str]:
+    """BFS from a root question, collecting all descendant question IDs
+    and all pages linked to any question in the subtree.
+
+    Returns the full set of page IDs to export (questions + their
+    connected claims, judgements, sources, etc.).
+    """
+    question_ids: set[str] = {root_question_id}
+    frontier = [root_question_id]
+
+    while frontier:
+        children = []
+        for qid in frontier:
+            child_pages = await db.get_child_questions(qid)
+            for child in child_pages:
+                if child.id not in question_ids:
+                    question_ids.add(child.id)
+                    children.append(child.id)
+        frontier = children
+
+    all_ids = set(question_ids)
+    all_links = await db.get_all_links(page_ids=question_ids)
+    for link in all_links:
+        all_ids.add(link.from_page_id)
+        all_ids.add(link.to_page_id)
+
+    return all_ids
+
+
+async def export_obsidian(
+    db: DB,
+    output_dir: str,
+    question_id: str | None = None,
+) -> Path:
+    """Export pages as an Obsidian vault.
+
+    When *question_id* is given, exports only the question's subtree:
+    the question, all its descendant questions, and every page linked
+    to any of those questions (claims, judgements, sources, etc.).
+
+    When *question_id* is None, exports all active pages in the project.
 
     Returns the output directory path.
     """
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
 
-    pages = await db.get_pages(active_only=True)
+    if question_id:
+        target_ids = await _collect_subtree_page_ids(db, question_id)
+        pages_by_id = await db.get_pages_by_ids(list(target_ids))
+        pages = [p for p in pages_by_id.values() if p.is_active()]
+    else:
+        pages = await db.get_pages(active_only=True)
+
     if not pages:
         log.warning("No active pages to export")
         return out

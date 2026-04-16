@@ -939,7 +939,16 @@ async def async_main():
         "--obsidian",
         dest="obsidian_dir",
         metavar="OUTPUT_DIR",
-        help="Export all active pages as an Obsidian vault to OUTPUT_DIR",
+        help=(
+            "Export pages as an Obsidian vault to OUTPUT_DIR. "
+            "Use --obsidian-question to scope to a single question's subtree."
+        ),
+    )
+    parser.add_argument(
+        "--obsidian-question",
+        dest="obsidian_question_id",
+        metavar="QUESTION_ID",
+        help="Scope --obsidian export to a question and its subtree",
     )
     parser.add_argument(
         "--evaluate",
@@ -1225,7 +1234,14 @@ async def async_main():
     if args.obsidian_dir:
         from rumil.obsidian_export import export_obsidian
 
-        out = await export_obsidian(db, args.obsidian_dir)
+        qid = getattr(args, "obsidian_question_id", None)
+        if qid:
+            resolved = await db.resolve_page_id(qid)
+            if not resolved:
+                print(f"Error: question '{qid}' not found.")
+                sys.exit(1)
+            qid = resolved
+        out = await export_obsidian(db, args.obsidian_dir, question_id=qid)
         print(f"Exported to: {out}")
         return
 

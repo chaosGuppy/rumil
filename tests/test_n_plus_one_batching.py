@@ -220,13 +220,14 @@ async def test_stale_deps_query_count_is_constant(
     assert all(m == 3 for m in ours.values())
 
     queries = spy.call_count - start
-    # Post-fix target: ~1 (list stale links) + 1 (batched pages) + 1
-    # (batched magnitudes) = ~3. Allow modest slack for staged-events
-    # bookkeeping but insist it is well under O(N_links).
-    #
-    # Pre-fix with our 4 test links + any cross-project links the DB
-    # might have, this blows well past 6.
-    assert queries <= 6, (
+    # Post-fix target: 1 (list stale links)
+    #   + ceil(N_targets/200) (batched pages)
+    #   + ceil(N_pages/200) (batched epistemic overrides)
+    #   + 1 (batched magnitudes)
+    # With cross-project leftover data the batch counts can exceed 1
+    # each, but the total stays O(ceil(N_targets/batch_size)) — well
+    # under O(N_links).
+    assert queries <= 10, (
         f"expected O(1) queries from get_stale_dependencies, got {queries}"
     )
 

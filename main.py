@@ -936,6 +936,12 @@ async def async_main():
         ),
     )
     parser.add_argument(
+        "--obsidian",
+        dest="obsidian_dir",
+        metavar="OUTPUT_DIR",
+        help="Export all active pages as an Obsidian vault to OUTPUT_DIR",
+    )
+    parser.add_argument(
         "--evaluate",
         dest="evaluate_id",
         metavar="QUESTION_ID",
@@ -1214,6 +1220,13 @@ async def async_main():
 
     if args.ab_eval_ids:
         await cmd_ab_eval(args.ab_eval_ids[0], args.ab_eval_ids[1], db)
+        return
+
+    if args.obsidian_dir:
+        from rumil.obsidian_export import export_obsidian
+
+        out = await export_obsidian(db, args.obsidian_dir)
+        print(f"Exported to: {out}")
         return
 
     if args.list:

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import type { Metadata } from "next";
 import type { PageDetailOut, LinkedPageOut, Page, RunSummaryOut } from "@/api";
 import LinksContainer from "./links-container";
 import StagedBanner from "./staged-banner";
@@ -8,6 +9,7 @@ import StagedBanner from "./staged-banner";
 import { API_BASE } from "@/lib/api-base";
 import { WorkspaceIndicator } from "@/components/workspace-indicator";
 import { fetchProjectName } from "@/lib/fetch-project-name";
+import { truncateHeadline } from "@/lib/page-titles";
 
 const TYPE_CONFIG: Record<
   string,
@@ -360,6 +362,24 @@ function SegmentGauge({ value, max, label }: { value: number; max: number; label
       <span className="ep-value">{label}{value}/{max}</span>
     </div>
   );
+}
+
+export async function generateMetadata({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ pageId: string }>;
+  searchParams: Promise<{ staged_run_id?: string; cite?: string }>;
+}): Promise<Metadata> {
+  const { pageId } = await params;
+  const { staged_run_id: stagedRunId } = await searchParams;
+  const detail = await getPageDetail(pageId, stagedRunId);
+  if (!detail) return { title: "Not found" };
+  const { page } = detail;
+  const projectName = await fetchProjectName(page.project_id);
+  const headline = truncateHeadline(page.headline, 50);
+  const suffix = projectName ? ` — ${projectName}` : "";
+  return { title: `${page.page_type} "${headline}"${suffix}` };
 }
 
 export default async function PageDetailPage({

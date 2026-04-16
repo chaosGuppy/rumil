@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import type { AbRunTraceOut } from "@/api/types.gen";
 import { ABTraceViewer } from "./ab-trace-viewer";
 import "../../traces/[runId]/trace.css";
@@ -6,6 +7,7 @@ import "../../traces/[runId]/trace.css";
 import { API_BASE, serverFetch } from "@/lib/api-base";
 import { WorkspaceIndicator } from "@/components/workspace-indicator";
 import { fetchProjectName } from "@/lib/fetch-project-name";
+import { truncateHeadline } from "@/lib/page-titles";
 
 async function getABRunTrace(abRunId: string): Promise<AbRunTraceOut | null> {
   const res = await serverFetch(`${API_BASE}/api/ab-runs/${abRunId}/trace`, {
@@ -13,6 +15,23 @@ async function getABRunTrace(abRunId: string): Promise<AbRunTraceOut | null> {
   });
   if (!res.ok) return null;
   return res.json();
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ abRunId: string }>;
+}): Promise<Metadata> {
+  const { abRunId } = await params;
+  const trace = await getABRunTrace(abRunId);
+  if (!trace) return { title: `AB ${abRunId.slice(0, 8)}` };
+  const projectName = trace.question?.project_id
+    ? await fetchProjectName(trace.question.project_id)
+    : undefined;
+  const headline = truncateHeadline(trace.question?.headline, 40);
+  const mid = headline ? ` "${headline}"` : ` ${abRunId.slice(0, 8)}`;
+  const suffix = projectName ? ` — ${projectName}` : "";
+  return { title: `AB${mid}${suffix}` };
 }
 
 export default async function ABTracePage({

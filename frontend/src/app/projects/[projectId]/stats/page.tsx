@@ -8,6 +8,7 @@ import type { ProjectStatsOut, Project } from "@/api";
 import { CLIENT_API_BASE as API_BASE } from "@/api-config";
 import { WorkspaceIndicator } from "@/components/workspace-indicator";
 import { StatsView } from "@/components/stats-view";
+import { useDocumentTitle } from "@/lib/use-document-title";
 
 export default function ProjectStatsPage() {
   const params = useParams<{ projectId: string }>();
@@ -15,6 +16,8 @@ export default function ProjectStatsPage() {
 
   const [projectName, setProjectName] = useState<string>();
   const [data, setData] = useState<ProjectStatsOut | null>(null);
+
+  useDocumentTitle(projectName ? `${projectName} · stats` : null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 

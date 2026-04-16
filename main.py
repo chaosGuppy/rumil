@@ -555,7 +555,7 @@ async def cmd_new(
     db: DB,
     ingest_files: list[str] | None = None,
     name: str = "",
-) -> None:
+) -> str:
     budget = _default_budget(budget)
     await db.init_budget(budget)
     question_id = await create_root_question(
@@ -588,6 +588,7 @@ async def cmd_new(
 
     await Orchestrator(db).run(question_id)
     await _print_summary(db)
+    return question_id
 
 
 def _batch_label(entry: dict) -> str:
@@ -903,7 +904,13 @@ async def async_main():
         "--summary",
         dest="summary_id",
         metavar="QUESTION_ID",
-        help="Generate an executive summary for a question",
+        nargs="?",
+        const="__auto__",
+        help=(
+            "Generate an executive summary. Pass a QUESTION_ID to "
+            "summarize an existing question, or combine with a new "
+            "question to auto-summarize after investigation."
+        ),
     )
     parser.add_argument(
         "--report",
@@ -1245,7 +1252,7 @@ async def async_main():
     elif args.add_question:
         q = parse_question_input(args.add_question)
         await cmd_add_question(q, args.parent_id, args.budget, db)
-    elif args.summary_id:
+    elif args.summary_id and args.summary_id != "__auto__":
         await cmd_summary(
             args.summary_id,
             db,
@@ -1276,13 +1283,20 @@ async def async_main():
         await cmd_ab(q, args.budget, db, name=args.run_name)
     elif args.question:
         q = parse_question_input(args.question)
-        await cmd_new(
+        question_id = await cmd_new(
             q,
             args.budget,
             db,
             ingest_files=args.ingest_files,
             name=args.run_name,
         )
+        if args.summary_id == "__auto__":
+            await cmd_summary(
+                question_id,
+                db,
+                max_depth=args.max_depth,
+                summary_cutoff=args.summarize_after_depth,
+            )
     else:
         parser.print_help()
 

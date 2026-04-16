@@ -80,6 +80,9 @@ uv run python main.py --chat QUESTION_ID
 # Generate executive summary
 uv run python main.py --summary QUESTION_ID
 
+# Investigate and summarize in one command
+uv run python main.py "Your question here" --budget 20 --summary
+
 # Generate a multi-section research report
 uv run python main.py --report QUESTION_ID
 

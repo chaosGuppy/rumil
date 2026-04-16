@@ -613,7 +613,9 @@ async def render_child_investigation_results(
 async def _build_dependency_signal(db: DB) -> str | None:
     """Build a section listing the most-depended-on pages in the workspace.
 
-    Returns None if no DEPENDS_ON links exist yet.
+    Returns None if there are no renderable load-bearing pages — either
+    because no DEPENDS_ON links exist, or because none of the top pages
+    could be resolved.
     """
     counts = await db.get_dependency_counts()
     if not counts:
@@ -621,20 +623,30 @@ async def _build_dependency_signal(db: DB) -> str | None:
 
     top = sorted(counts.items(), key=lambda x: x[1], reverse=True)[:10]
     pages = await db.get_pages_by_ids([pid for pid, _ in top])
-    lines = ["## Load-Bearing Pages (by dependency count)", ""]
-    lines.append(
-        "These pages are depended on by the most other pages. "
-        "Prioritize them for robustness assessment — if they turn out to "
-        "be wrong, the most downstream conclusions would be affected."
-    )
-    lines.append("")
+
+    item_lines: list[str] = []
     for pid, count in top:
         page = pages.get(pid)
         if page:
             stale_tag = " [SUPERSEDED]" if page.is_superseded else ""
-            lines.append(
+            item_lines.append(
                 f"- `{pid[:8]}` — {page.headline} ({count} dependents){stale_tag}"
             )
+
+    if not item_lines:
+        return None
+
+    lines = [
+        "## Load-Bearing Pages (by dependency count)",
+        "",
+        (
+            "These pages are depended on by the most other pages. "
+            "Prioritize them for robustness assessment — if they turn out to "
+            "be wrong, the most downstream conclusions would be affected."
+        ),
+        "",
+    ]
+    lines.extend(item_lines)
     return "\n".join(lines)
 
 

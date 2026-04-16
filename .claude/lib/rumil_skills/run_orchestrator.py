@@ -59,6 +59,17 @@ async def main() -> None:
         ),
     )
     parser.add_argument(
+        "--global-prio",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Force settings.enable_global_prio on or off for this invocation "
+            "(overrides the ENABLE_GLOBAL_PRIO env var / .env default). "
+            "When enabled, GlobalPrioOrchestrator wraps the chosen prioritizer "
+            "variant. Omit to inherit the env/settings default."
+        ),
+    )
+    parser.add_argument(
         "--smoke-test",
         action="store_true",
         help="Faster/cheaper model, fewer rounds (for testing)",
@@ -74,6 +85,8 @@ async def main() -> None:
         get_settings().rumil_smoke_test = "1"
     if args.orchestrator:
         get_settings().prioritizer_variant = args.orchestrator
+    if args.global_prio is not None:
+        get_settings().enable_global_prio = args.global_prio
 
     logging.basicConfig(
         level=logging.WARNING,
@@ -100,10 +113,12 @@ async def main() -> None:
         if page.project_id and page.project_id != db.project_id:
             db.project_id = page.project_id
 
-        variant = get_settings().prioritizer_variant
+        settings = get_settings()
+        variant = settings.prioritizer_variant
+        global_prio = settings.enable_global_prio
         print(f"workspace:    {ws}")
         print(f"question:     {full_id[:8]}  {truncate(page.headline, 80)}")
-        print(f"orchestrator: {variant}")
+        print(f"orchestrator: {variant}{' (+global_prio)' if global_prio else ''}")
 
         await open_run(
             db,

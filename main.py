@@ -941,7 +941,9 @@ async def async_main():
         metavar="OUTPUT_DIR",
         help=(
             "Export pages as an Obsidian vault to OUTPUT_DIR. "
-            "Use --obsidian-question to scope to a single question's subtree."
+            "Standalone: exports the workspace (use --obsidian-question to "
+            "scope). Combined with a question: auto-exports the question's "
+            "subtree after investigation."
         ),
     )
     parser.add_argument(
@@ -1231,7 +1233,7 @@ async def async_main():
         await cmd_ab_eval(args.ab_eval_ids[0], args.ab_eval_ids[1], db)
         return
 
-    if args.obsidian_dir:
+    if args.obsidian_dir and not args.question:
         from rumil.obsidian_export import export_obsidian
 
         qid = getattr(args, "obsidian_question_id", None)
@@ -1330,6 +1332,11 @@ async def async_main():
                 max_depth=args.max_depth,
                 summary_cutoff=args.summarize_after_depth,
             )
+        if args.obsidian_dir:
+            from rumil.obsidian_export import export_obsidian
+
+            out = await export_obsidian(db, args.obsidian_dir, question_id=question_id)
+            print(f"\nObsidian vault exported to: {out}")
     else:
         parser.print_help()
 

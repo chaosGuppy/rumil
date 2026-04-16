@@ -203,6 +203,11 @@ async def _collect_subtree_page_ids(
         all_ids.add(link.from_page_id)
         all_ids.add(link.to_page_id)
 
+    summaries = await db.get_latest_summaries_for_questions(list(question_ids))
+    for summary in summaries.values():
+        if summary:
+            all_ids.add(summary.id)
+
     return all_ids
 
 

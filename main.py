@@ -16,6 +16,7 @@ import json
 import logging
 import sys
 import uuid
+from collections.abc import Sequence
 from pathlib import Path
 
 from rumil.ab_eval import run_ab_eval
@@ -731,7 +732,7 @@ async def cmd_ab_eval(
     run_id_a: str,
     run_id_b: str,
     db: DB,
-    agents_override: list[EvalAgentSpec] | None = None,
+    agents_override: Sequence[EvalAgentSpec] | None = None,
 ) -> None:
     """Run A/B evaluation agents comparing two staged runs."""
     await run_ab_eval(run_id_a, run_id_b, db, agents_override=agents_override)
@@ -739,7 +740,7 @@ async def cmd_ab_eval(
 
 def resolve_eval_agents(
     names_csv: str | None,
-) -> list[EvalAgentSpec] | None:
+) -> Sequence[EvalAgentSpec] | None:
     """Parse a comma-separated agent name string into a filtered agent list.
 
     Returns *None* (meaning "use all") when *names_csv* is falsy.
@@ -760,7 +761,7 @@ def resolve_eval_agents(
 async def cmd_run_eval(
     run_id: str,
     db: DB,
-    agents_override: list[EvalAgentSpec] | None = None,
+    agents_override: Sequence[EvalAgentSpec] | None = None,
 ) -> None:
     """Evaluate a single staged run across all quality dimensions."""
     await run_run_eval(run_id, db, agents_override=agents_override)

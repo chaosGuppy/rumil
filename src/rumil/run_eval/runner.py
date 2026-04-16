@@ -50,13 +50,17 @@ def build_system_prompt(
     """
     preamble = (_PROMPTS_DIR / "preamble.md").read_text()
     agent_prompt = (_PROMPTS_DIR / spec.prompt_file).read_text()
-    if "{other_dimensions}" in agent_prompt and all_agents:
+    if "{other_dimensions}" in agent_prompt:
         others = [
             f"- **{s.display_name}** (evaluated separately)"
             for s in all_agents
             if s.name != spec.name
         ]
-        agent_prompt = agent_prompt.replace("{other_dimensions}", "\n".join(others))
+        if others:
+            replacement = "\n".join(others)
+        else:
+            replacement = "(No other dimensions are being evaluated in this run.)"
+        agent_prompt = agent_prompt.replace("{other_dimensions}", replacement)
     return preamble + "\n\n" + agent_prompt
 
 

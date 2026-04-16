@@ -444,9 +444,6 @@ class DB:
                 }
             )
         )
-        if page.page_type == PageType.QUESTION:
-            await self._increment_questions_created()
-
     async def update_page_content(self, page_id: str, new_content: str) -> None:
         """Update a page's content field with mutation event recording."""
         page = await self.get_page(page_id)
@@ -2369,26 +2366,37 @@ class DB:
             )
         )
 
-    async def _increment_questions_created(self) -> None:
-        """Atomically increment the questions_created counter on this run's row."""
-        await self._execute(
-            self.client.rpc(
-                "increment_questions_created",
-                {"p_run_id": self.run_id},
-            )
+    async def count_run_questions(self) -> int:
+        """Count question pages created by this run."""
+        query = (
+            self.client.table("pages")
+            .select("id", count=CountMethod.exact)
+            .eq("run_id", self.run_id)
+            .eq("page_type", PageType.QUESTION.value)
         )
+        if self.project_id:
+            query = query.eq("project_id", self.project_id)
+        query = self._staged_filter(query)
+        result = await self._execute(query)
+        return result.count or 0
 
-    async def get_questions_created(self) -> int:
-        """Read the questions_created counter for this run."""
-        result = await self._execute(
-            self.client.table("runs")
-            .select("questions_created")
-            .eq("id", self.run_id)
+    async def get_run_questions_since(
+        self, since: datetime,
+    ) -> list[Page]:
+        """Return question pages created by this run after *since*."""
+        query = (
+            self.client.table("pages")
+            .select(_SLIM_PAGE_COLUMNS)
+            .eq("run_id", self.run_id)
+            .eq("page_type", PageType.QUESTION.value)
+            .gt("created_at", since.isoformat())
+            .order("created_at")
         )
-        rows = _rows(result)
-        if not rows:
-            return 0
-        return rows[0].get("questions_created", 0) or 0
+        if self.project_id:
+            query = query.eq("project_id", self.project_id)
+        query = self._staged_filter(query)
+        result = await self._execute(query)
+        return [_row_to_page(r) for r in _rows(result)]
 
     async def stage_run(self, run_id: str) -> None:
         """Retroactively stage a completed non-staged run.

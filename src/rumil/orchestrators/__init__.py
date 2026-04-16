@@ -33,14 +33,18 @@ from rumil.tracing.broadcast import Broadcaster
 
 def Orchestrator(db: DB, broadcaster: Broadcaster | None = None) -> BaseOrchestrator:
     """Factory function: returns the appropriate orchestrator subclass."""
-    variant = get_settings().prioritizer_variant
+    settings = get_settings()
+    variant = settings.prioritizer_variant
     if variant == "two_phase":
-        return TwoPhaseOrchestrator(db, broadcaster)
-    if variant == "experimental":
-        return ExperimentalOrchestrator(db, broadcaster)
-    if variant == "global_prio":
+        orch: BaseOrchestrator = TwoPhaseOrchestrator(db, broadcaster)
+    elif variant == "experimental":
+        orch = ExperimentalOrchestrator(db, broadcaster)
+    else:
+        raise ValueError(f"Unknown prioritizer_variant: {variant}")
+
+    if settings.enable_global_prio:
         return GlobalPrioOrchestrator(db, broadcaster)
-    raise ValueError(f"Unknown prioritizer_variant: {variant}")
+    return orch
 
 
 __all__ = [

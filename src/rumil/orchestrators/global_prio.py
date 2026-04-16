@@ -15,6 +15,7 @@ import logging
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from pydantic import BaseModel, Field
 
@@ -44,7 +45,6 @@ from rumil.llm import (
     structured_call,
 )
 from rumil.models import (
-    AssessDispatchPayload,
     Call,
     CallStatus,
     CallType,
@@ -274,7 +274,8 @@ def _select_nodes_from_paths(
     paths are taken only if their *new* intermediate nodes (not already
     selected by a prior path) fit within the remaining budget. If a path
     doesn't fully fit, as many of its new nodes as the budget allows are
-    taken (bottom-up order). Source and target endpoints are excluded.
+    taken (bottom-up order). The source endpoint is excluded (it was
+    just researched); the target (root) is included.
     """
     if not paths:
         return []
@@ -284,7 +285,7 @@ def _select_nodes_from_paths(
 
     for i, path in enumerate(paths):
         new_nodes = [
-            n for n in path.nodes[1:-1] if n not in selected_set
+            n for n in path.nodes[1:] if n not in selected_set
         ]
         if not new_nodes:
             continue
@@ -382,7 +383,7 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
         self._global_cap: int = 0
         self._local_cap: int = 0
         self._action_history: list[dict] = []
-        self._last_question_count: int = 0
+        self._last_trigger_at: datetime = datetime.now(UTC)
         self._researched_question_ids: list[str] = []
         self._local_task: asyncio.Task | None = None  # type: ignore[type-arg]
         self._messages: list[dict] = []
@@ -418,7 +419,7 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
             local_cap = 0
 
         local = self._create_local_orchestrator(local_cap)
-        self._last_question_count = await self.db.get_questions_created()
+        self._last_trigger_at = datetime.now(UTC)
 
         try:
             if local and local_cap >= MIN_TWOPHASE_BUDGET:
@@ -452,7 +453,7 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
     ) -> BaseOrchestrator | None:
         """Create the local orchestrator based on settings."""
         settings = get_settings()
-        variant = settings.global_prio_local_variant
+        variant = settings.prioritizer_variant
 
         if variant == 'experimental':
             from rumil.orchestrators.experimental import ExperimentalOrchestrator
@@ -469,7 +470,7 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
             orch._parent_call_id = parent_call_id
             return orch
 
-        log.error('Unknown global_prio_local_variant: %s', variant)
+        log.error('Unknown prioritizer_variant: %s', variant)
         return None
 
     async def _global_loop(self, root_question_id: str) -> None:
@@ -498,6 +499,8 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
                 sequences: list[list[Dispatch]] = []
                 children: list[tuple[BaseOrchestrator, str]] = []
 
+                dispatched_question_ids: set[str] = set()
+
                 for d in dispatches:
                     if isinstance(d.payload, RecurseDispatchPayload):
                         resolved = await self.db.resolve_page_id(
@@ -516,23 +519,18 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
                         if child is None:
                             continue
                         children.append((child, resolved))
+                        dispatched_question_ids.add(resolved)
                         self._global_consumed += d.payload.budget
                         log.info(
                             'Global: queued recursive investigation: '
                             'question=%s, budget=%d',
                             resolved[:8], d.payload.budget,
                         )
-                    elif d.payload.question_id == root_question_id:
-                        sequences.append([d])
                     else:
-                        assess = Dispatch(
-                            call_type=CallType.ASSESS,
-                            payload=AssessDispatchPayload(
-                                question_id=d.payload.question_id,
-                                reason='Auto-assess after global dispatch',
-                            ),
+                        sequences.append([d])
+                        dispatched_question_ids.add(
+                            d.payload.question_id,
                         )
-                        sequences.append([d, assess])
 
                 tasks: list[asyncio.Task] = []  # type: ignore[type-arg]
                 call_id = turn_result.get('call_id')
@@ -577,6 +575,13 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
                                 r, exc_info=r,
                             )
 
+                dispatched_question_ids.discard(root_question_id)
+                if dispatched_question_ids:
+                    await self._assess_stale_questions(
+                        dispatched_question_ids,
+                        parent_call_id=turn_result.get('call_id'),
+                    )
+
             researched_ids = turn_result.get('researched_question_ids', [])
             if researched_ids:
                 reassessed = await self._propagate_updates(
@@ -611,19 +616,18 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
         threshold = settings.global_prio_trigger_threshold
 
         while True:
-            current_count = await self.db.get_questions_created()
-            new_questions = current_count - self._last_question_count
+            new_questions = await self.db.get_run_questions_since(
+                self._last_trigger_at,
+            )
 
-            if new_questions >= threshold:
-                self._last_question_count = current_count
+            if len(new_questions) >= threshold:
                 log.info(
                     'Global trigger: %d new questions (threshold=%d)',
-                    new_questions, threshold,
+                    len(new_questions), threshold,
                 )
                 return
 
             if self._local_task.done():
-                self._last_question_count = current_count
                 log.info('Global trigger: local task completed')
                 return
 
@@ -773,7 +777,7 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
                 global_impact=global_impacts or None,
                 questions_only=True,
             ),
-            make_load_page_tool(self.db, trace),
+            make_load_page_tool(self.db, trace, default_detail="content"),
         ]
 
         allowed_fc_modes = get_settings().allowed_find_considerations_modes
@@ -843,7 +847,7 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
                 f"{root_detail}\n\n"
                 "## Question Subgraph\n\n"
                 f"{subgraph}\n\n"
-                "## Local Prioritiser Activity\n\n"
+                "## New Questions (from local prioritiser)\n\n"
                 f"{local_hint}\n\n"
                 "Explore the graph to identify cross-cutting research "
                 "opportunities. End with a summary of what you found."
@@ -869,9 +873,7 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
                     "`explore_question_subgraph` and `load_page` tools. "
                     "Do NOT use creation or dispatch tools in this "
                     "phase.\n\n"
-                    "## New Turn\n\n"
-                    "The local prioritiser has continued working. "
-                    "Here is updated activity:\n\n"
+                    "## New Questions (from local prioritiser)\n\n"
                     f"{local_hint}\n\n"
                     "Continue exploring the graph for cross-cutting "
                     "opportunities. End with a summary of what you found."
@@ -1028,17 +1030,14 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
 
             user_msg = (
                 "**You are now in Phase 4: Dispatch.** "
-                f"Dispatch research on this newly created cross-cutting "
-                f"question:\n\n"
+                "Dispatch research on this newly created cross-cutting "
+                "question:\n\n"
                 f"**{qid[:8]}**: {headline}\n\n"
-                "Choose a dispatch strategy:\n"
-                "- **Quick investigation**: `find_considerations` and/or "
-                "`web_research` for initial evidence gathering\n"
-                "- **Deep dive**: `recurse_into_subquestion` for a full "
-                "recursive investigation\n\n"
-                "An assess call runs automatically after your dispatches "
-                "complete — do not dispatch assess.\n\n"
-                f"You have **{remaining_global} budget units** remaining."
+                f"You have **{remaining_global} budget units** remaining "
+                "for the entire global prioritiser (this dispatch + future "
+                "turns + propagation). Do not allocate more than half to "
+                "this dispatch. See the Phase 4 guidance in your system "
+                "prompt for budget allocation rules."
             )
 
             result = await run_single_call(
@@ -1060,26 +1059,103 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
         return list(state.dispatches)
 
     async def _build_local_activity_hint(self) -> str:
-        """Build a summary of recent local prioritiser activity."""
-        lines: list[str] = []
+        """Summarise questions created since the last global turn.
+
+        Shows each new question with its parent question(s) so the
+        explore phase can see where new branches have appeared.
+        Updates ``_last_trigger_at`` so the next call only sees
+        questions created after this point.
+        """
         try:
-            all_calls = await self.db.get_calls_for_run(self.db.run_id)
-            recent = sorted(all_calls, key=lambda c: c.created_at, reverse=True)
-            for c in recent[:20]:
-                if c.call_type == CallType.GLOBAL_PRIORITIZATION:
-                    continue
-                label = (
-                    await self.db.page_label(c.scope_page_id)
-                    if c.scope_page_id else '?'
-                )
-                lines.append(f'- {c.call_type.value} on {label}')
+            new_questions = await self.db.get_run_questions_since(
+                self._last_trigger_at,
+            )
+            self._last_trigger_at = datetime.now(UTC)
+
+            if not new_questions:
+                return '(no new questions since last turn)'
+
+            new_ids = [q.id for q in new_questions]
+            links_by_child = await self.db.get_links_to_many(new_ids)
+
+            parent_ids: set[str] = set()
+            for links in links_by_child.values():
+                for link in links:
+                    if link.link_type == LinkType.CHILD_QUESTION:
+                        parent_ids.add(link.from_page_id)
+            parent_pages = await self.db.get_pages_by_ids(list(parent_ids))
+
+            lines: list[str] = [
+                f'{len(new_questions)} new questions since last turn:',
+            ]
+            for q in new_questions:
+                parent_links = [
+                    l for l in links_by_child.get(q.id, [])
+                    if l.link_type == LinkType.CHILD_QUESTION
+                ]
+                if parent_links:
+                    parent_labels = []
+                    for pl in parent_links:
+                        pp = parent_pages.get(pl.from_page_id)
+                        label = (
+                            f'"{pp.headline[:50]}" [{pl.from_page_id[:8]}]'
+                            if pp else f'[{pl.from_page_id[:8]}]'
+                        )
+                        parent_labels.append(label)
+                    parents_str = ', '.join(parent_labels)
+                    lines.append(
+                        f'- [{q.id[:8]}] "{q.headline}" '
+                        f'(child of {parents_str})'
+                    )
+                else:
+                    lines.append(
+                        f'- [{q.id[:8]}] "{q.headline}" (root-level)'
+                    )
+            return '\n'.join(lines)
         except Exception:
-            log.debug('Could not build local activity hint', exc_info=True)
+            log.debug('Could not build activity hint', exc_info=True)
             return '(no activity data available)'
 
-        if not lines:
-            return '(no recent local activity)'
-        return '\n'.join(lines)
+    async def _assess_stale_questions(
+        self,
+        question_ids: set[str],
+        parent_call_id: str | None = None,
+    ) -> int:
+        """Assess dispatched questions that have become stale.
+
+        Checks each question via ``get_assess_staleness`` and only runs
+        an assess call when new evidence has arrived since the last
+        completed assess. Returns the number of assess calls made.
+        """
+        staleness = await self.db.get_assess_staleness(list(question_ids))
+        stale_ids = [qid for qid, is_stale in staleness.items() if is_stale]
+        if not stale_ids:
+            return 0
+
+        assessed = 0
+        for qid in stale_ids:
+            if self._global_consumed >= self._global_cap:
+                break
+            try:
+                call_id = await assess_question(
+                    qid, self.db,
+                    parent_call_id=parent_call_id,
+                    broadcaster=self.broadcaster,
+                    force=True,
+                )
+                if call_id:
+                    self._global_consumed += 1
+                    assessed += 1
+                    log.info(
+                        'Global post-dispatch assess: question=%s',
+                        qid[:8],
+                    )
+            except Exception:
+                log.warning(
+                    'Global post-dispatch assess failed: %s',
+                    qid[:8], exc_info=True,
+                )
+        return assessed
 
     async def _propagate_updates(
         self,

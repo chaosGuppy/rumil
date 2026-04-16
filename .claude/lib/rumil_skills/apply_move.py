@@ -78,7 +78,6 @@ ACCRETING_MOVES: frozenset[MoveType] = frozenset(
         MoveType.CREATE_CLAIM,
         MoveType.CREATE_QUESTION,
         MoveType.CREATE_SCOUT_QUESTION,
-        MoveType.CREATE_SUBQUESTION,
         MoveType.CREATE_JUDGEMENT,
         MoveType.CREATE_WIKI_PAGE,
         MoveType.CREATE_VIEW_ITEM,

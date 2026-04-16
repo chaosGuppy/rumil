@@ -102,11 +102,34 @@ The question must link to **at least 2 parent questions** from different branche
 
 ## Phase 4: Dispatch
 
-In this phase you dispatch research on a newly created cross-cutting question. You will be told which question to investigate.
+In this phase you dispatch research on a newly created cross-cutting question. You will be told which question to investigate and how much budget remains.
 
-Choose a dispatch strategy:
+### Dispatch strategies
 
-- **Quick investigation**: `find_considerations` and/or `web_research`. Use one or both to gather initial evidence. Good when the question is relatively narrow or factual.
-- **Deep dive**: `recurse_into_subquestion` with a budget. Launches a full recursive investigation sub-cycle. Use this when the question is complex enough to warrant its own prioritisation and multiple rounds of research.
+- **Quick investigation**: `find_considerations` and/or `web_research`. Each costs 1 budget unit per round (`max_rounds`). Good when the question is relatively narrow, factual, or when budget is tight. A single `find_considerations` with `max_rounds: 3` is a good default for light exploration.
+- **Deep dive**: `recurse_into_subquestion` with a budget. Launches a full recursive investigation sub-cycle. Costs exactly the budget you assign (minimum 4). Use this when the question is complex enough to warrant its own prioritisation and multiple rounds of research.
 
-An assess call runs automatically after your dispatches complete -- do not dispatch assess yourself. Dispatch at least one research call.
+### Budget allocation guidance
+
+The budget you are given is the **total remaining global prioritisation budget** -- it must cover this dispatch, any future global turns, and propagation reassessments. Be conservative:
+
+- **If budget <= 6**: use only quick investigation (find_considerations and/or web_research). Do not recurse.
+- **If budget 7-15**: prefer quick investigation. Only recurse if the question clearly demands it, and allocate at most half the remaining budget (minimum 4).
+- **If budget 16-40**: you can recurse with a budget of 5-15. Reserve at least half the remaining budget for future turns.
+- **If budget > 40**: you can recurse with larger budgets proportional to the question's importance.
+
+As a rule of thumb: **never allocate more than half the stated remaining budget to a single dispatch**.
+
+### How much to invest
+
+The right budget depends on two factors: the question's **complexity** and its **impact on the root question**. A narrow factual question with moderate impact deserves a quick investigation. A complex question that bears on multiple high-impact branches deserves a deep dive with a substantial budget.
+
+Consider also the **opportunity cost**: budget spent here is budget unavailable for future cross-cutting questions that may arise as the research develops. If this question is exceptionally high-impact and unlikely to be surpassed, invest heavily. If its impact is moderate or the research is still early (meaning better opportunities may emerge), invest conservatively and preserve budget for later turns.
+
+### Cost accounting
+
+- `find_considerations`: costs up to `max_rounds` (may stop early if fruit is low)
+- `web_research`: costs 1
+- `recurse_into_subquestion`: costs exactly the `budget` you assign
+
+Questions are automatically assessed after your dispatches complete if new evidence has been added -- do not dispatch assess yourself. Dispatch at least one research call.

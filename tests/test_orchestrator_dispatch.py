@@ -401,6 +401,10 @@ def mocked_helpers(mocker):
             "rumil.orchestrators.dispatch_handlers.create_view_for_question",
             return_value="child-view-id",
         ),
+        "update_view": mocker.patch(
+            "rumil.orchestrators.dispatch_handlers.update_view_for_question",
+            return_value="child-update-view-id",
+        ),
         "simple": mocker.patch.object(
             BaseOrchestrator,
             "_run_simple_call_dispatch",
@@ -548,7 +552,7 @@ async def test_execute_dispatch_assess_with_existing_view_redirects_to_create_vi
     mocker,
 ):
     """When the target question already has a view, assess should redirect
-    to create_view_for_question (iterative view update) instead of assess_question."""
+    to update_view_for_question (iterative view update) instead of assess_question."""
     mocker.patch.object(
         DB,
         "get_view_for_question",
@@ -574,10 +578,10 @@ async def test_execute_dispatch_assess_with_existing_view_redirects_to_create_vi
     )
 
     assert resolved == question_page.id
-    assert child_id == "child-view-id"
-    mocked_helpers["create_view"].assert_called_once()
-    kwargs = mocked_helpers["create_view"].call_args.kwargs
-    assert mocked_helpers["create_view"].call_args.args[0] == question_page.id
+    assert child_id == "child-update-view-id"
+    mocked_helpers["update_view"].assert_called_once()
+    kwargs = mocked_helpers["update_view"].call_args.kwargs
+    assert mocked_helpers["update_view"].call_args.args[0] == question_page.id
     assert kwargs["parent_call_id"] == "parent-3"
     assert kwargs["context_page_ids"] == ["ctx-a", "ctx-b"]
     assert kwargs["force"] is True

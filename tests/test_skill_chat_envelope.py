@@ -29,10 +29,29 @@ async def envelope_cleanup():
 
     yield run_ids
 
+    project_ids: set[str] = set()
     for run_id in run_ids:
         cleanup_db = await DB.create(run_id=run_id)
         try:
-            await cleanup_db.delete_run_data(delete_project=True)
+            rows = (
+                await cleanup_db._execute(
+                    cleanup_db.client.table("runs")
+                    .select("project_id")
+                    .eq("id", run_id)
+                )
+            ).data
+            if rows and rows[0].get("project_id"):
+                project_ids.add(rows[0]["project_id"])
+            await cleanup_db.delete_run_data()
+        finally:
+            await cleanup_db.close()
+    if project_ids:
+        cleanup_db = await DB.create(run_id="cleanup")
+        try:
+            for pid in project_ids:
+                await cleanup_db._execute(
+                    cleanup_db.client.table("projects").delete().eq("id", pid)
+                )
         finally:
             await cleanup_db.close()
 

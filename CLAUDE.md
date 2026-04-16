@@ -60,6 +60,14 @@ Tests: `uv run pytest`.
 **Database:** Runs against local Supabase by default (`supabase start`). Pass `--prod` to any command to target production. Migrations live in `supabase/migrations/` and are pushed to prod with `supabase db push`.
 Always use the supabase cli to create new migrations: `supabase migration new`.
 
+**Row-Level Security:** RLS is enabled on all tables with **no policies**. This means:
+- `service_role` (used by all backend code) bypasses RLS entirely — no performance impact, full access.
+- `anon` and `authenticated` roles are denied all table access by PostgreSQL's implicit-deny default.
+- The frontend anon key is only used for Realtime broadcast subscriptions, which do not touch the database.
+
+If you add a new table, always enable RLS: `ALTER TABLE new_table ENABLE ROW LEVEL SECURITY;`
+Do NOT add "allow all" policies. If you need non-service-role access, add targeted policies.
+
 ## Architecture
 
 **Entry point:** `main.py` — CLI arg parsing, dispatches to command functions.

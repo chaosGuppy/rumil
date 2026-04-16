@@ -2189,8 +2189,8 @@ class DB:
         calls_query = (
             self.client.table("calls")
             .select("scope_page_id,created_at")
-            .eq("call_type", "assess")
-            .eq("status", "completed")
+            .eq("call_type", CallType.ASSESS.value)
+            .eq("status", CallStatus.COMPLETE.value)
             .in_("scope_page_id", list(question_ids))
             .order("created_at", desc=True)
         )
@@ -2204,16 +2204,18 @@ class DB:
 
         links_query = (
             self.client.table("page_links")
-            .select("to_page_id,created_at")
+            .select(_LINK_COLUMNS)
             .in_("to_page_id", list(question_ids))
         )
         links_query = self._staged_filter(links_query)
         links_result = await self._execute(links_query)
+        links = [_row_to_link(r) for r in _rows(links_result)]
+        links = await self._apply_link_events(links)
 
         latest_link: dict[str, datetime] = {}
-        for row in _rows(links_result):
-            qid = row["to_page_id"]
-            ts = datetime.fromisoformat(row["created_at"])
+        for link in links:
+            qid = link.to_page_id
+            ts = link.created_at
             if qid not in latest_link or ts > latest_link[qid]:
                 latest_link[qid] = ts
 
@@ -2427,7 +2429,8 @@ class DB:
             query = query.eq("project_id", self.project_id)
         query = self._staged_filter(query)
         result = await self._execute(query)
-        return [_row_to_page(r) for r in _rows(result)]
+        pages = [_row_to_page(r) for r in _rows(result)]
+        return await self._apply_page_events(pages)
 
     async def stage_run(self, run_id: str) -> None:
         """Retroactively stage a completed non-staged run.

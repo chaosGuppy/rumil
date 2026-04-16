@@ -36,7 +36,7 @@ Usage:
     # Show full payload schema for one move (fields, types, required/optional,
     # descriptions, nested models). Use when --list isn't enough.
     PYTHONPATH=.claude/lib uv run python -m rumil_skills.apply_move \\
-        --schema CREATE_SUBQUESTION
+        --schema CREATE_QUESTION
 """
 
 from __future__ import annotations

@@ -199,12 +199,12 @@ def test_allowed_find_considerations_modes_single():
 def test_filter_mode_schema_nested():
     """filter_mode_schema restricts FindConsiderationsMode in nested $defs."""
 
-    schema = CreateQuestionPayload.model_json_schema()
+    schema = ScoutDispatchPayload.model_json_schema()
     filtered = filter_mode_schema(schema, [FindConsiderationsMode.ABSTRACT])
 
-    if "FindConsiderationsMode" in filtered.get("$defs", {}):
-        mode_enum = filtered["$defs"]["FindConsiderationsMode"]["enum"]
-        assert mode_enum == ["abstract"]
+    assert "FindConsiderationsMode" in filtered.get("$defs", {})
+    mode_enum = filtered["$defs"]["FindConsiderationsMode"]["enum"]
+    assert mode_enum == ["abstract"]
 
 
 def test_mode_validator_passes_through_non_fc_dispatches():

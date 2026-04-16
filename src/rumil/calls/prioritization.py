@@ -41,8 +41,7 @@ async def run_prioritization_call(
 ) -> RunCallResult:
     """Run a prioritization call with tool use (single LLM round).
 
-    Uses the prioritization-specific create_subquestion tool variant and
-    dispatch tools. No phase-1 page loading.
+    Binds dispatch tools and available moves. No phase-1 page loading.
     """
     log.info(
         "run_prioritization_call: call=%s, scope=%s",

@@ -59,6 +59,8 @@ from rumil.moves.base import MoveState
 from rumil.moves.registry import MOVES
 from rumil.orchestrators.base import BaseOrchestrator
 from rumil.orchestrators.common import assess_question
+from rumil.orchestrators.experimental import ExperimentalOrchestrator
+from rumil.orchestrators.two_phase import TwoPhaseOrchestrator
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
 from rumil.tracing.trace_events import (
@@ -232,7 +234,7 @@ def _yen_k_shortest(
 
 
 def _path_weight(
-    graph: dict[str, dict[str, float]], nodes: list[str],
+    graph: dict[str, dict[str, float]], nodes: Sequence[str],
 ) -> float:
     total = 0.0
     for i in range(len(nodes) - 1):
@@ -456,14 +458,12 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
         variant = settings.prioritizer_variant
 
         if variant == 'experimental':
-            from rumil.orchestrators.experimental import ExperimentalOrchestrator
             orch = ExperimentalOrchestrator(
                 self.db, self.broadcaster, budget_cap=budget_cap,
             )
             orch._parent_call_id = parent_call_id
             return orch
         if variant == 'two_phase':
-            from rumil.orchestrators.two_phase import TwoPhaseOrchestrator
             orch = TwoPhaseOrchestrator(
                 self.db, self.broadcaster, budget_cap=budget_cap,
             )
@@ -656,6 +656,8 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
         await trace.record(ContextBuiltEvent(budget=remaining_global))
         await self.db.update_call_status(p_call.id, CallStatus.RUNNING)
 
+        # Single MoveState shared across phases: tools are bound to it once so
+        # the tool list stays identical for prompt-cache stability.
         state = MoveState(p_call, self.db)
         system_prompt = build_system_prompt('global_prio')
         all_tools = await self._build_all_tools(
@@ -725,7 +727,7 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
                 ))
 
             summary = (
-                f"Global turn complete. "
+                "Global turn complete. "
                 f"{len(created_questions)} questions, "
                 f"{len(dispatches)} dispatches."
             )
@@ -985,13 +987,17 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
         )
         self._messages = result.messages
 
+        page_ids = list(state.created_page_ids)
+        pages_by_id = await self.db.get_pages_by_ids(page_ids)
+        links_by_target = await self.db.get_links_to_many(page_ids)
+
         created_questions: list[dict] = []
-        for pid in state.created_page_ids:
-            page = await self.db.get_page(pid)
+        for pid in page_ids:
+            page = pages_by_id.get(pid)
             if page:
-                links = await self.db.get_links_to(pid)
                 parent_links = [
-                    l for l in links if l.link_type == LinkType.CHILD_QUESTION
+                    l for l in links_by_target.get(pid, [])
+                    if l.link_type == LinkType.CHILD_QUESTION
                 ]
                 created_questions.append({
                     'headline': page.headline,

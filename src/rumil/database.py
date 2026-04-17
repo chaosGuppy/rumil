@@ -10,12 +10,13 @@ from datetime import UTC, datetime
 from typing import Any, cast
 
 import httpx
+from postgrest.exceptions import APIError
 from postgrest.types import CountMethod
 from supabase.lib.client_options import AsyncClientOptions
 from tenacity import (
     RetryCallState,
     retry,
-    retry_if_exception_type,
+    retry_if_exception,
     wait_exponential,
 )
 
@@ -60,6 +61,26 @@ _DB_RETRYABLE_EXCEPTIONS = (
 )
 
 
+def _is_retryable_api_error(exc: BaseException) -> bool:
+    # Gateway/upstream failures (e.g. Cloudflare 502, Supabase 503/504) come back
+    # as APIError because postgrest can't parse the HTML error page as JSON.
+    # Retry these, but not 4xx errors (auth, constraint violations, etc).
+    if not isinstance(exc, APIError):
+        return False
+    code = exc.code
+    if code is None:
+        return False
+    try:
+        status = int(code)
+    except (TypeError, ValueError):
+        return False
+    return 500 <= status < 600
+
+
+def _should_retry_db_exception(exc: BaseException) -> bool:
+    return isinstance(exc, _DB_RETRYABLE_EXCEPTIONS) or _is_retryable_api_error(exc)
+
+
 def _stop_after_db_retries(retry_state: RetryCallState) -> bool:
     return retry_state.attempt_number >= get_settings().max_db_retries
 
@@ -78,7 +99,7 @@ def _log_db_retry(retry_state: RetryCallState) -> None:
 
 
 _db_retry = retry(
-    retry=retry_if_exception_type(_DB_RETRYABLE_EXCEPTIONS),
+    retry=retry_if_exception(_should_retry_db_exception),
     stop=_stop_after_db_retries,
     wait=wait_exponential(multiplier=0.5, min=0.5, max=60),
     before_sleep=_log_db_retry,

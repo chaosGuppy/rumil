@@ -2657,27 +2657,6 @@ class DB:
                 .limit(limit * 2)
             )
         )
-        results: list[dict[str, Any]] = []
-        seen_run_ids: set[str] = set()
-        for row in run_rows:
-            question_summary = None
-            qid = row.get("question_id")
-            if qid:
-                page = await self.get_page(qid)
-                if page:
-                    question_summary = page.headline
-            results.append(
-                {
-                    "run_id": row["id"],
-                    "created_at": row["created_at"],
-                    "name": row.get("name", ""),
-                    "config": row.get("config", {}),
-                    "question_summary": question_summary,
-                    "staged": row.get("staged", False),
-                }
-            )
-            seen_run_ids.add(row["id"])
-        # Fallback: include legacy runs from calls table that don't have a runs row
         legacy_rows = _rows(
             await self._execute(
                 self.client.table("calls")
@@ -2687,23 +2666,48 @@ class DB:
                 .order("created_at", desc=True)
             )
         )
+
+        page_ids: set[str] = set()
+        for row in run_rows:
+            qid = row.get("question_id")
+            if qid:
+                page_ids.add(qid)
+        for row in legacy_rows:
+            scope_id = row.get("scope_page_id")
+            if scope_id:
+                page_ids.add(scope_id)
+        pages_by_id = await self.get_pages_by_ids(list(page_ids)) if page_ids else {}
+
+        results: list[dict[str, Any]] = []
+        seen_run_ids: set[str] = set()
+        for row in run_rows:
+            qid = row.get("question_id")
+            page = pages_by_id.get(qid) if qid else None
+            results.append(
+                {
+                    "run_id": row["id"],
+                    "created_at": row["created_at"],
+                    "name": row.get("name", ""),
+                    "config": row.get("config", {}),
+                    "question_summary": page.headline if page else None,
+                    "staged": row.get("staged", False),
+                }
+            )
+            seen_run_ids.add(row["id"])
+
         seen_legacy: set[str] = set()
         for row in legacy_rows:
             rid = row.get("run_id")
             if not rid or rid in seen_run_ids or rid in seen_legacy:
                 continue
             seen_legacy.add(rid)
-            question_summary = None
             scope_id = row.get("scope_page_id")
-            if scope_id:
-                page = await self.get_page(scope_id)
-                if page:
-                    question_summary = page.headline
+            page = pages_by_id.get(scope_id) if scope_id else None
             results.append(
                 {
                     "run_id": rid,
                     "created_at": row["created_at"],
-                    "question_summary": question_summary,
+                    "question_summary": page.headline if page else None,
                 }
             )
         results.sort(key=lambda r: r.get("created_at", ""), reverse=True)

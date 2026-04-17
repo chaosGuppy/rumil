@@ -25,7 +25,6 @@ from typing import Any
 
 from rumil.database import DB
 from rumil.models import (
-    ConsiderationDirection,
     LinkType,
     Page,
     PageLink,
@@ -115,30 +114,24 @@ async def collect_subtree(db: DB, root_id: str) -> SubtreeData:
 
 
 def _consideration_links_to(
-    data: SubtreeData, question_id: str,
+    data: SubtreeData,
+    question_id: str,
 ) -> list[PageLink]:
-    return [
-        l for l in data.links_to.get(question_id, [])
-        if l.link_type == LinkType.CONSIDERATION
-    ]
+    return [l for l in data.links_to.get(question_id, []) if l.link_type == LinkType.CONSIDERATION]
 
 
 def _judgement_links_to(
-    data: SubtreeData, question_id: str,
+    data: SubtreeData,
+    question_id: str,
 ) -> list[PageLink]:
-    return [
-        l for l in data.links_to.get(question_id, [])
-        if l.link_type == LinkType.ANSWERS
-    ]
+    return [l for l in data.links_to.get(question_id, []) if l.link_type == LinkType.ANSWERS]
 
 
 def _depends_on_inbound(
-    data: SubtreeData, page_id: str,
+    data: SubtreeData,
+    page_id: str,
 ) -> list[PageLink]:
-    return [
-        l for l in data.links_to.get(page_id, [])
-        if l.link_type == LinkType.DEPENDS_ON
-    ]
+    return [l for l in data.links_to.get(page_id, []) if l.link_type == LinkType.DEPENDS_ON]
 
 
 def _headline(data: SubtreeData, page_id: str) -> str:
@@ -156,96 +149,94 @@ def graph_health(data: SubtreeData) -> list[Finding]:
         headline = truncate(q.headline, 60)
 
         if not cons and q.id != data.root_id:
-            findings.append(Finding(
-                category="graph_health",
-                severity=3,
-                code="barren_question",
-                description=(
-                    f"{short(q)} ({headline}) has 0 considerations"
-                ),
-                page_ids=[q.id],
-                suggested_action="dispatch find_considerations",
-            ))
+            findings.append(
+                Finding(
+                    category="graph_health",
+                    severity=3,
+                    code="barren_question",
+                    description=(f"{short(q)} ({headline}) has 0 considerations"),
+                    page_ids=[q.id],
+                    suggested_action="dispatch find_considerations",
+                )
+            )
 
         if len(cons) >= 3 and not judgs:
-            findings.append(Finding(
-                category="graph_health",
-                severity=3,
-                code="unjudged_question",
-                description=(
-                    f"{short(q)} ({headline}) has {len(cons)} considerations "
-                    "but no judgement"
-                ),
-                page_ids=[q.id],
-                suggested_action="dispatch assess",
-            ))
+            findings.append(
+                Finding(
+                    category="graph_health",
+                    severity=3,
+                    code="unjudged_question",
+                    description=(
+                        f"{short(q)} ({headline}) has {len(cons)} considerations but no judgement"
+                    ),
+                    page_ids=[q.id],
+                    suggested_action="dispatch assess",
+                )
+            )
 
     for claim in data.claims:
         deps = _depends_on_inbound(data, claim.id)
-        if (
-            len(deps) >= 2
-            and claim.robustness is not None
-            and claim.robustness <= 2
-        ):
+        if len(deps) >= 2 and claim.robustness is not None and claim.robustness <= 2:
             dependents = [short(l.from_page_id) for l in deps[:4]]
-            findings.append(Finding(
-                category="graph_health",
-                severity=4,
-                code="load_bearing_fragile",
-                description=(
-                    f"{short(claim)} ({truncate(claim.headline, 50)}) "
-                    f"has {len(deps)} dependents but robustness={claim.robustness}. "
-                    f"Dependents: {', '.join(dependents)}"
-                ),
-                page_ids=[claim.id] + [l.from_page_id for l in deps],
-                suggested_action="dispatch scout_c_robustify or assess",
-            ))
+            findings.append(
+                Finding(
+                    category="graph_health",
+                    severity=4,
+                    code="load_bearing_fragile",
+                    description=(
+                        f"{short(claim)} ({truncate(claim.headline, 50)}) "
+                        f"has {len(deps)} dependents but robustness={claim.robustness}. "
+                        f"Dependents: {', '.join(dependents)}"
+                    ),
+                    page_ids=[claim.id] + [l.from_page_id for l in deps],
+                    suggested_action="dispatch scout_c_robustify or assess",
+                )
+            )
 
     for q in data.questions:
         children = [
-            l for l in data.links_from.get(q.id, [])
-            if l.link_type == LinkType.CHILD_QUESTION
+            l for l in data.links_from.get(q.id, []) if l.link_type == LinkType.CHILD_QUESTION
         ]
         if not children:
             continue
-        all_barren = all(
-            not _consideration_links_to(data, l.to_page_id)
-            for l in children
-        )
+        all_barren = all(not _consideration_links_to(data, l.to_page_id) for l in children)
         if all_barren and len(children) >= 2:
-            findings.append(Finding(
-                category="graph_health",
-                severity=3,
-                code="dead_end_decomposition",
-                description=(
-                    f"{short(q)} ({truncate(q.headline, 50)}) has "
-                    f"{len(children)} sub-questions, all barren"
-                ),
-                page_ids=[q.id] + [l.to_page_id for l in children],
-                suggested_action="dispatch find_considerations on sub-questions",
-            ))
+            findings.append(
+                Finding(
+                    category="graph_health",
+                    severity=3,
+                    code="dead_end_decomposition",
+                    description=(
+                        f"{short(q)} ({truncate(q.headline, 50)}) has "
+                        f"{len(children)} sub-questions, all barren"
+                    ),
+                    page_ids=[q.id] + [l.to_page_id for l in children],
+                    suggested_action="dispatch find_considerations on sub-questions",
+                )
+            )
 
     for page in data.pages.values():
         if not page.is_superseded:
             continue
         supersedes_links = [
-            l for l in data.links_to.get(page.id, [])
-            if l.link_type == LinkType.SUPERSEDES
+            l for l in data.links_to.get(page.id, []) if l.link_type == LinkType.SUPERSEDES
         ]
         for link in supersedes_links:
             replacement = data.pages.get(link.from_page_id)
             if replacement and replacement.is_superseded:
-                findings.append(Finding(
-                    category="graph_health",
-                    severity=2,
-                    code="chained_supersession",
-                    description=(
-                        f"{short(page)} superseded by {short(link.from_page_id)} "
-                        "which is itself superseded — possible churn"
-                    ),
-                    page_ids=[page.id, link.from_page_id],
-                    suggested_action="inspect",
-                ))
+                findings.append(
+                    Finding(
+                        category="graph_health",
+                        severity=2,
+                        code="chained_supersession",
+                        description=(
+                            f"{short(page)} superseded by {short(link.from_page_id)} "
+                            "which is itself superseded — possible churn"
+                        ),
+                        page_ids=[page.id, link.from_page_id],
+                        suggested_action="inspect",
+                    )
+                )
 
     findings.sort(key=lambda f: f.severity, reverse=True)
     return findings
@@ -284,13 +275,15 @@ def rating_shape(data: SubtreeData) -> list[Finding]:
 
     if len(rated) < 3:
         if data.claims and not rated:
-            findings.append(Finding(
-                category="rating_shape",
-                severity=2,
-                code="no_ratings",
-                description=f"{len(data.claims)} claims, none have ratings",
-                suggested_action="inspect",
-            ))
+            findings.append(
+                Finding(
+                    category="rating_shape",
+                    severity=2,
+                    code="no_ratings",
+                    description=f"{len(data.claims)} claims, none have ratings",
+                    suggested_action="inspect",
+                )
+            )
         return findings
 
     creds = [p.credence for p in rated]  # type: ignore[misc]
@@ -301,33 +294,37 @@ def rating_shape(data: SubtreeData) -> list[Finding]:
 
     rho = _spearman_rho(creds, robs)
     if abs(rho) > 0.85:
-        findings.append(Finding(
-            category="rating_shape",
-            severity=4,
-            code="dimensions_collapsing",
-            description=(
-                "Credence and robustness are near-perfectly correlated "
-                f"(Spearman rho={rho:.2f}, n={n}). The two dimensions "
-                "may not be providing independent signal."
-            ),
-            suggested_action="inspect prompt guidance for credence/robustness",
-        ))
+        findings.append(
+            Finding(
+                category="rating_shape",
+                severity=4,
+                code="dimensions_collapsing",
+                description=(
+                    "Credence and robustness are near-perfectly correlated "
+                    f"(Spearman rho={rho:.2f}, n={n}). The two dimensions "
+                    "may not be providing independent signal."
+                ),
+                suggested_action="inspect prompt guidance for credence/robustness",
+            )
+        )
 
     high_cred_low_rob = [p for p in rated if p.credence >= 7 and p.robustness <= 2]  # type: ignore[operator]
     low_cred_high_rob = [p for p in rated if p.credence <= 4 and p.robustness >= 4]  # type: ignore[operator]
 
     if n >= 5 and not high_cred_low_rob and not low_cred_high_rob:
-        findings.append(Finding(
-            category="rating_shape",
-            severity=2,
-            code="empty_quadrants",
-            description=(
-                "No claims in 'high credence / low robustness' or "
-                f"'low credence / high robustness' quadrants (n={n}). "
-                "Ratings may track a single axis."
-            ),
-            suggested_action="inspect",
-        ))
+        findings.append(
+            Finding(
+                category="rating_shape",
+                severity=2,
+                code="empty_quadrants",
+                description=(
+                    "No claims in 'high credence / low robustness' or "
+                    f"'low credence / high robustness' quadrants (n={n}). "
+                    "Ratings may track a single axis."
+                ),
+                suggested_action="inspect",
+            )
+        )
 
     for q in data.questions:
         cons = _consideration_links_to(data, q.id)
@@ -341,34 +338,48 @@ def rating_shape(data: SubtreeData) -> list[Finding]:
         opp = directions.get("opposes", 0)
         if sup + opp >= 4 and (sup == 0 or opp == 0):
             missing = "opposing" if opp == 0 else "supporting"
-            findings.append(Finding(
-                category="rating_shape",
-                severity=3,
-                code="direction_imbalance",
-                description=(
-                    f"{short(q)} ({truncate(q.headline, 50)}) has "
-                    f"{sup} supporting, {opp} opposing considerations — "
-                    f"no {missing} views"
-                ),
-                page_ids=[q.id],
-                suggested_action="dispatch find_considerations (look for counterarguments)",
-            ))
+            findings.append(
+                Finding(
+                    category="rating_shape",
+                    severity=3,
+                    code="direction_imbalance",
+                    description=(
+                        f"{short(q)} ({truncate(q.headline, 50)}) has "
+                        f"{sup} supporting, {opp} opposing considerations — "
+                        f"no {missing} views"
+                    ),
+                    page_ids=[q.id],
+                    suggested_action="dispatch find_considerations (look for counterarguments)",
+                )
+            )
 
     type_counts = Counter(p.page_type.value for p in data.pages.values())
-    call_type_counts: dict[str, int] = {}
     summary_parts = [f"{n} rated claims, mean C{mean_c:.1f}/R{mean_r:.1f}"]
     PLURALS = {"summary": "summaries"}
-    for ptype in ["claim", "question", "judgement", "source", "concept", "wiki", "summary", "view", "view_item", "view_meta"]:
+    for ptype in [
+        "claim",
+        "question",
+        "judgement",
+        "source",
+        "concept",
+        "wiki",
+        "summary",
+        "view",
+        "view_item",
+        "view_meta",
+    ]:
         c = type_counts.get(ptype, 0)
         if c:
             summary_parts.append(f"{c} {PLURALS.get(ptype, ptype + 's')}")
 
-    findings.append(Finding(
-        category="rating_shape",
-        severity=0,
-        code="summary",
-        description=", ".join(summary_parts),
-    ))
+    findings.append(
+        Finding(
+            category="rating_shape",
+            severity=0,
+            code="summary",
+            description=", ".join(summary_parts),
+        )
+    )
 
     findings.sort(key=lambda f: f.severity, reverse=True)
     return findings
@@ -407,71 +418,80 @@ async def review_signals(db: DB, data: SubtreeData) -> list[Finding]:
             inadequate_context.append(c)
             missing = review.get("what_was_missing", "")
             if missing:
-                all_missing.append(f"{short(c['id'])} ({c.get('call_type', '?')}): {truncate(missing, 100)}")
+                all_missing.append(
+                    f"{short(c['id'])} ({c.get('call_type', '?')}): {truncate(missing, 100)}"
+                )
 
         tensions = review.get("tensions_noticed", "")
         if tensions and tensions.strip():
-            all_tensions.append(f"{short(c['id'])} ({c.get('call_type', '?')}): {truncate(tensions, 100)}")
+            all_tensions.append(
+                f"{short(c['id'])} ({c.get('call_type', '?')}): {truncate(tensions, 100)}"
+            )
 
         conf = review.get("confidence_in_output")
         if conf is not None and conf < 2:
             low_confidence.append(c)
 
     type_summary = ", ".join(f"{v} {k}" for k, v in type_counts.most_common())
-    findings.append(Finding(
-        category="review_signals",
-        severity=0,
-        code="call_type_mix",
-        description=f"Call mix on this question: {type_summary}",
-    ))
+    findings.append(
+        Finding(
+            category="review_signals",
+            severity=0,
+            code="call_type_mix",
+            description=f"Call mix on this question: {type_summary}",
+        )
+    )
 
     if inadequate_context:
         frac = len(inadequate_context) / len(calls)
-        findings.append(Finding(
-            category="review_signals",
-            severity=4 if frac > 0.5 else 3,
-            code="inadequate_context",
-            description=(
-                f"{len(inadequate_context)}/{len(calls)} calls reported "
-                "inadequate context"
-            ),
-            page_ids=[c["id"] for c in inadequate_context],
-            suggested_action="inspect context_builder or prompt",
-        ))
+        findings.append(
+            Finding(
+                category="review_signals",
+                severity=4 if frac > 0.5 else 3,
+                code="inadequate_context",
+                description=(
+                    f"{len(inadequate_context)}/{len(calls)} calls reported inadequate context"
+                ),
+                page_ids=[c["id"] for c in inadequate_context],
+                suggested_action="inspect context_builder or prompt",
+            )
+        )
 
     if all_missing:
-        findings.append(Finding(
-            category="review_signals",
-            severity=3,
-            code="what_was_missing",
-            description="Calls reported missing context:\n" + "\n".join(
-                f"  · {m}" for m in all_missing[:5]
-            ),
-            suggested_action="inspect context builder",
-        ))
+        findings.append(
+            Finding(
+                category="review_signals",
+                severity=3,
+                code="what_was_missing",
+                description="Calls reported missing context:\n"
+                + "\n".join(f"  · {m}" for m in all_missing[:5]),
+                suggested_action="inspect context builder",
+            )
+        )
 
     if all_tensions:
-        findings.append(Finding(
-            category="review_signals",
-            severity=2,
-            code="unresolved_tensions",
-            description="Calls flagged unresolved tensions:\n" + "\n".join(
-                f"  · {t}" for t in all_tensions[:5]
-            ),
-            suggested_action="inspect — may warrant new considerations",
-        ))
+        findings.append(
+            Finding(
+                category="review_signals",
+                severity=2,
+                code="unresolved_tensions",
+                description="Calls flagged unresolved tensions:\n"
+                + "\n".join(f"  · {t}" for t in all_tensions[:5]),
+                suggested_action="inspect — may warrant new considerations",
+            )
+        )
 
     if low_confidence:
-        findings.append(Finding(
-            category="review_signals",
-            severity=3,
-            code="low_confidence",
-            description=(
-                f"{len(low_confidence)} call(s) reported confidence < 2"
-            ),
-            page_ids=[c["id"] for c in low_confidence],
-            suggested_action="inspect traces",
-        ))
+        findings.append(
+            Finding(
+                category="review_signals",
+                severity=3,
+                code="low_confidence",
+                description=(f"{len(low_confidence)} call(s) reported confidence < 2"),
+                page_ids=[c["id"] for c in low_confidence],
+                suggested_action="inspect traces",
+            )
+        )
 
     findings.sort(key=lambda f: f.severity, reverse=True)
     return findings

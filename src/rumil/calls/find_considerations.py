@@ -46,9 +46,7 @@ class FindConsiderationsCall(CallRunner):
         self._max_rounds = max_rounds
         self._fruit_threshold = fruit_threshold
         self._context_page_ids = context_page_ids
-        super().__init__(
-            question_id, call, db, broadcaster=broadcaster, up_to_stage=up_to_stage
-        )
+        super().__init__(question_id, call, db, broadcaster=broadcaster, up_to_stage=up_to_stage)
 
     @property
     def rounds_completed(self) -> int:

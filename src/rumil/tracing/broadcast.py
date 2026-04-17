@@ -23,20 +23,21 @@ class Broadcaster:
     async def send(self, event: str, payload: dict) -> None:
         """POST a broadcast event. Fire-and-forget; errors are logged, not raised."""
         body = {
-            "messages": [{
-                "topic": self.channel,
-                "event": event,
-                "payload": payload,
-            }]
+            "messages": [
+                {
+                    "topic": self.channel,
+                    "event": event,
+                    "payload": payload,
+                }
+            ]
         }
         try:
-            resp = await self._client.post(
-                self._url, json=body, headers=self._headers
-            )
+            resp = await self._client.post(self._url, json=body, headers=self._headers)
             if resp.status_code >= 400:
                 log.warning(
                     "Broadcast failed: status=%d, body=%s",
-                    resp.status_code, resp.text[:200],
+                    resp.status_code,
+                    resp.text[:200],
                 )
         except Exception as e:
             log.debug("Broadcast error (non-fatal): %s", e)

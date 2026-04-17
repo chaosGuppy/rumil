@@ -7,6 +7,11 @@ import uuid
 
 import pytest
 import pytest_asyncio
+from rumil_skills import _runctx, apply_move
+from rumil_skills.apply_move import (
+    TraceRecordError,
+    apply_validated_move,
+)
 
 from rumil.database import DB
 from rumil.models import (
@@ -19,19 +24,12 @@ from rumil.models import (
     PageType,
     Workspace,
 )
-from rumil_skills import _runctx, apply_move
-from rumil_skills.apply_move import (
-    TraceRecordError,
-    apply_validated_move,
-)
 
 
 @pytest.fixture
 def _isolated_state(tmp_path, monkeypatch):
     monkeypatch.setattr(_runctx, "STATE_DIR", tmp_path / "state")
-    monkeypatch.setattr(
-        _runctx, "STATE_FILE", tmp_path / "state" / "rumil-session.json"
-    )
+    monkeypatch.setattr(_runctx, "STATE_FILE", tmp_path / "state" / "rumil-session.json")
 
 
 def _set_workspace(workspace: str) -> None:
@@ -99,9 +97,7 @@ async def test_accreting_only_refuses_destructive(_isolated_state, monkeypatch):
     assert excinfo.value.code == 2
 
 
-async def test_create_claim_end_to_end_via_cli(
-    _isolated_state, monkeypatch, envelope_cleanup
-):
+async def test_create_claim_end_to_end_via_cli(_isolated_state, monkeypatch, envelope_cleanup):
     """Full CLI path: argparse → envelope creation → move → trace event."""
     workspace = f"test-apply-{uuid.uuid4().hex[:8]}"
     _set_workspace(workspace)
@@ -212,9 +208,7 @@ async def test_apply_validated_move_links_consideration(tmp_db, envelope_call):
     assert consideration_links[0].strength == 4.0
 
 
-async def test_apply_validated_move_supersede_records_mutation_event(
-    tmp_db, envelope_call
-):
+async def test_apply_validated_move_supersede_records_mutation_event(tmp_db, envelope_call):
     old_result = await apply_validated_move(
         db=tmp_db,
         envelope_call=envelope_call,
@@ -266,9 +260,7 @@ async def test_apply_validated_move_unknown_move_raises(tmp_db, envelope_call):
         )
 
 
-async def test_apply_validated_move_raises_trace_record_error(
-    tmp_db, envelope_call, mocker
-):
+async def test_apply_validated_move_raises_trace_record_error(tmp_db, envelope_call, mocker):
     """If the trace write fails, the move has already landed but we fail loud."""
     mocker.patch.object(
         tmp_db,

@@ -6,6 +6,7 @@ All tests exercise pure heuristic code paths. No LLM calls.
 from __future__ import annotations
 
 import pytest
+from rumil_skills import _runctx, scan
 
 from rumil.models import (
     ConsiderationDirection,
@@ -16,15 +17,12 @@ from rumil.models import (
     PageType,
     Workspace,
 )
-from rumil_skills import _runctx, scan
 
 
 @pytest.fixture(autouse=True)
 def _isolate_state(monkeypatch, tmp_path):
     monkeypatch.setattr(_runctx, "STATE_DIR", tmp_path / "state")
-    monkeypatch.setattr(
-        _runctx, "STATE_FILE", tmp_path / "state" / "rumil-session.json"
-    )
+    monkeypatch.setattr(_runctx, "STATE_FILE", tmp_path / "state" / "rumil-session.json")
 
 
 async def _make_claim(
@@ -200,9 +198,7 @@ async def test_review_signals_empty_when_no_calls(tmp_db, question_page):
     assert findings == []
 
 
-async def test_review_signals_flags_inadequate_context(
-    tmp_db, question_page, scout_call
-):
+async def test_review_signals_flags_inadequate_context(tmp_db, question_page, scout_call):
     scout_call.status = scout_call.status.__class__.COMPLETE
     scout_call.review_json = {
         "context_was_adequate": False,

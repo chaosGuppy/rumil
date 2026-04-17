@@ -40,9 +40,7 @@ def make_load_page_tool(
         )
         detail: str = Field(
             default=default_detail,
-            description=(
-                "Level of detail: 'content' (full text) or 'abstract' (short summary)"
-            ),
+            description=("Level of detail: 'content' (full text) or 'abstract' (short summary)"),
         )
 
     async def fn(args: dict) -> str:

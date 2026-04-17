@@ -13,8 +13,7 @@ MOVE = MoveDef(
     move_type=MoveType.CREATE_WIKI_PAGE,
     name="create_wiki_page",
     description=(
-        "Create a wiki page — a maintained, living summary of current "
-        "understanding on a topic."
+        "Create a wiki page — a maintained, living summary of current understanding on a topic."
     ),
     schema=CreatePagePayload,
     execute=execute,

@@ -42,8 +42,8 @@ from rumil.models import (
     Workspace,
 )
 from rumil.tracing.trace_events import (
-    MoveTraceItem,
     MovesExecutedEvent,
+    MoveTraceItem,
     PageRef,
 )
 from rumil.tracing.tracer import CallTrace
@@ -75,9 +75,7 @@ def parse_question_input(value: str) -> QuestionInput:
             sys.exit('error: JSON file must contain at least a "headline" field')
         unknown = set(data) - {"headline", "abstract", "content"}
         if unknown:
-            sys.exit(
-                f"error: unknown fields in question JSON: {', '.join(sorted(unknown))}"
-            )
+            sys.exit(f"error: unknown fields in question JSON: {', '.join(sorted(unknown))}")
         return QuestionInput(
             headline=data["headline"],
             abstract=data.get("abstract", ""),
@@ -100,8 +98,7 @@ async def main() -> None:
         default=None,
         metavar="QID",
         help=(
-            "Parent question ID (full or short 8-char). Makes this a "
-            "sub-question of that parent."
+            "Parent question ID (full or short 8-char). Makes this a sub-question of that parent."
         ),
     )
     parser.add_argument(
@@ -138,9 +135,7 @@ async def main() -> None:
         if args.parent:
             parent_resolved = await db.resolve_page_id(args.parent)
             if not parent_resolved:
-                print(
-                    f"error: no question matching {args.parent!r} in workspace {ws!r}"
-                )
+                print(f"error: no question matching {args.parent!r} in workspace {ws!r}")
                 sys.exit(1)
             parent_page = await db.get_page(parent_resolved)
             if parent_page is None:

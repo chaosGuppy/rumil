@@ -15,6 +15,8 @@ from rumil.models import (
 )
 from rumil.moves.link_consideration import (
     LinkConsiderationPayload,
+)
+from rumil.moves.link_consideration import (
     execute as execute_link_consideration,
 )
 
@@ -71,7 +73,10 @@ async def call(tmp_db, question):
 
 
 async def test_claim_to_question_creates_consideration_link(
-    tmp_db, call, claim, question,
+    tmp_db,
+    call,
+    claim,
+    question,
 ):
     payload = LinkConsiderationPayload(
         claim_id=claim.id,
@@ -89,7 +94,10 @@ async def test_claim_to_question_creates_consideration_link(
 
 
 async def test_judgement_source_is_rejected(
-    tmp_db, call, judgement, question,
+    tmp_db,
+    call,
+    judgement,
+    question,
 ):
     payload = LinkConsiderationPayload(
         claim_id=judgement.id,
@@ -105,7 +113,9 @@ async def test_judgement_source_is_rejected(
 
 
 async def test_non_question_target_is_rejected(
-    tmp_db, call, claim,
+    tmp_db,
+    call,
+    claim,
 ):
     other_claim = Page(
         page_type=PageType.CLAIM,

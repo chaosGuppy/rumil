@@ -3,7 +3,6 @@
 import logging
 from typing import Any
 
-
 from pydantic import Field
 
 from rumil.database import DB
@@ -27,9 +26,7 @@ log = logging.getLogger(__name__)
 
 
 class CreateJudgementPayload(CreatePagePayload):
-    key_dependencies: str | None = Field(
-        None, description="What this judgement most depends on"
-    )
+    key_dependencies: str | None = Field(None, description="What this judgement most depends on")
     sensitivity_analysis: str | None = Field(
         None, description="What would shift this judgement, and in which direction"
     )

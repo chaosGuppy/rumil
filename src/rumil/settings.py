@@ -2,20 +2,16 @@
 
 import contextvars
 import subprocess
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
-from collections.abc import Iterator
 from pathlib import Path
-
 from typing import Any
-
-from collections.abc import Sequence
 
 from pydantic import Field
 from pydantic.config import JsonDict
 from pydantic_settings import BaseSettings
 
 from rumil.models import FindConsiderationsMode
-
 
 _CAPTURE: JsonDict = {"capture": True}
 
@@ -66,9 +62,7 @@ class Settings(BaseSettings):
     available_moves: str = _capture_field(default="default")
     available_calls: str = _capture_field(default="default")
 
-    find_considerations_modes: str = _capture_field(
-        default="alternate,abstract,concrete"
-    )
+    find_considerations_modes: str = _capture_field(default="alternate,abstract,concrete")
 
     budget_pacing_enabled: bool = _capture_field(default=True)
 
@@ -120,9 +114,7 @@ class Settings(BaseSettings):
     abstract_page_similarity_floor: float = _capture_field(default=0.2)
     summary_page_similarity_floor: float = _capture_field(default=0.1)
     big_assess_full_page_similarity_floor: float | None = _capture_field(default=None)
-    big_assess_abstract_page_similarity_floor: float | None = _capture_field(
-        default=None
-    )
+    big_assess_abstract_page_similarity_floor: float | None = _capture_field(default=None)
 
     @property
     def is_test_mode(self) -> bool:
@@ -171,7 +163,7 @@ class Settings(BaseSettings):
 
     def require_anthropic_key(self) -> str:
         if not self.anthropic_api_key:
-            raise EnvironmentError(
+            raise OSError(
                 "ANTHROPIC_API_KEY environment variable not set. "
                 "Set it before running the workspace."
             )

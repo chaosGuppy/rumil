@@ -1,12 +1,11 @@
 """Tests for BigAssessContext and its helper functions."""
 
-import pytest
 import pytest_asyncio
 
 from rumil.calls.context_builders import (
+    _cites_superseded_pages,
     _gather_connected_pages,
     _get_latest_judgement,
-    _cites_superseded_pages,
     _resolve_superseded_connections,
     _swap_superseded_link,
 )
@@ -85,7 +84,8 @@ async def question_with_considerations(tmp_db):
 
 
 async def test_gather_connected_pages_finds_considerations(
-    tmp_db, question_with_considerations,
+    tmp_db,
+    question_with_considerations,
 ):
     q, c1, c2, child, *_ = question_with_considerations
     connected = await _gather_connected_pages(q.id, tmp_db)
@@ -100,11 +100,13 @@ async def test_gather_connected_pages_finds_judgements(tmp_db):
     j = _judgement()
     await tmp_db.save_page(q)
     await tmp_db.save_page(j)
-    await tmp_db.save_link(PageLink(
-        from_page_id=j.id,
-        to_page_id=q.id,
-        link_type=LinkType.ANSWERS,
-    ))
+    await tmp_db.save_link(
+        PageLink(
+            from_page_id=j.id,
+            to_page_id=q.id,
+            link_type=LinkType.ANSWERS,
+        )
+    )
 
     connected = await _gather_connected_pages(q.id, tmp_db)
     page_ids = {p.id for p, _ in connected}
@@ -119,11 +121,13 @@ async def test_gather_connected_pages_includes_superseded(tmp_db):
     await tmp_db.save_page(q)
     await tmp_db.save_page(old_claim)
     await tmp_db.save_page(new_claim)
-    await tmp_db.save_link(PageLink(
-        from_page_id=old_claim.id,
-        to_page_id=q.id,
-        link_type=LinkType.CONSIDERATION,
-    ))
+    await tmp_db.save_link(
+        PageLink(
+            from_page_id=old_claim.id,
+            to_page_id=q.id,
+            link_type=LinkType.CONSIDERATION,
+        )
+    )
     await tmp_db.supersede_page(old_claim.id, new_claim.id)
 
     connected = await _gather_connected_pages(q.id, tmp_db)
@@ -139,11 +143,13 @@ async def test_get_latest_judgement_returns_most_recent(tmp_db):
     await tmp_db.save_page(j1)
     await tmp_db.save_page(j2)
     for j in (j1, j2):
-        await tmp_db.save_link(PageLink(
-            from_page_id=j.id,
-            to_page_id=q.id,
-            link_type=LinkType.ANSWERS,
-        ))
+        await tmp_db.save_link(
+            PageLink(
+                from_page_id=j.id,
+                to_page_id=q.id,
+                link_type=LinkType.ANSWERS,
+            )
+        )
 
     latest = await _get_latest_judgement(q.id, tmp_db)
     assert latest is not None
@@ -216,11 +222,13 @@ async def test_phase_a_swaps_superseded_pages(tmp_db):
     await tmp_db.save_page(q)
     await tmp_db.save_page(old)
     await tmp_db.save_page(new)
-    await tmp_db.save_link(PageLink(
-        from_page_id=old.id,
-        to_page_id=q.id,
-        link_type=LinkType.CONSIDERATION,
-    ))
+    await tmp_db.save_link(
+        PageLink(
+            from_page_id=old.id,
+            to_page_id=q.id,
+            link_type=LinkType.CONSIDERATION,
+        )
+    )
     await tmp_db.supersede_page(old.id, new.id)
 
     connected = await _resolve_superseded_connections(q.id, None, tmp_db)
@@ -274,13 +282,11 @@ async def test_phase_a_batches_supersession_resolution(tmp_db, mocker):
 
     # The loop must not fall back to the singular API.
     assert singular_calls == 0, (
-        f"expected zero singular resolve_supersession_chain calls, "
-        f"got {singular_calls}"
+        f"expected zero singular resolve_supersession_chain calls, got {singular_calls}"
     )
     # The plural should be called at most once.
     assert plural_calls <= 1, (
-        f"expected <= 1 plural resolve_supersession_chains call, "
-        f"got {plural_calls}"
+        f"expected <= 1 plural resolve_supersession_chains call, got {plural_calls}"
     )
 
     # Sanity: the refresh did its job — all 5 new claims appear, none of
@@ -308,16 +314,20 @@ async def test_phase_a_includes_judgement_connections(tmp_db):
     await tmp_db.save_page(q)
     await tmp_db.save_page(j)
     await tmp_db.save_page(claim_on_j)
-    await tmp_db.save_link(PageLink(
-        from_page_id=j.id,
-        to_page_id=q.id,
-        link_type=LinkType.ANSWERS,
-    ))
-    await tmp_db.save_link(PageLink(
-        from_page_id=claim_on_j.id,
-        to_page_id=j.id,
-        link_type=LinkType.CONSIDERATION,
-    ))
+    await tmp_db.save_link(
+        PageLink(
+            from_page_id=j.id,
+            to_page_id=q.id,
+            link_type=LinkType.ANSWERS,
+        )
+    )
+    await tmp_db.save_link(
+        PageLink(
+            from_page_id=claim_on_j.id,
+            to_page_id=j.id,
+            link_type=LinkType.CONSIDERATION,
+        )
+    )
 
     connected = await _resolve_superseded_connections(q.id, j, tmp_db)
     page_ids = {p.id for p, _ in connected}
@@ -367,11 +377,13 @@ async def test_phase_a_deduplicates_shared_links(tmp_db):
     await tmp_db.save_page(q)
     await tmp_db.save_page(j)
     await tmp_db.save_page(shared)
-    await tmp_db.save_link(PageLink(
-        from_page_id=j.id,
-        to_page_id=q.id,
-        link_type=LinkType.ANSWERS,
-    ))
+    await tmp_db.save_link(
+        PageLink(
+            from_page_id=j.id,
+            to_page_id=q.id,
+            link_type=LinkType.ANSWERS,
+        )
+    )
     link_to_q = PageLink(
         from_page_id=shared.id,
         to_page_id=q.id,

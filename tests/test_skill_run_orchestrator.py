@@ -48,12 +48,8 @@ async def seeded_workspace():
     }
 
     try:
-        resp = await db._execute(
-            db.client.table("runs").select("id").eq("project_id", project.id)
-        )
-        run_ids = [
-            r["id"] for r in (getattr(resp, "data", None) or []) if r["id"] != db.run_id
-        ]
+        resp = await db._execute(db.client.table("runs").select("id").eq("project_id", project.id))
+        run_ids = [r["id"] for r in (getattr(resp, "data", None) or []) if r["id"] != db.run_id]
         for rid in run_ids:
             cleanup_db = await DB.create(run_id=rid, staged=False)
             cleanup_db.project_id = project.id
@@ -103,13 +99,9 @@ async def test_run_orchestrator_subprocess_completes(seeded_workspace):
     runs = list(getattr(runs_resp, "data", None) or [])
     assert len(runs) >= 1
 
-    cc_runs = [
-        r for r in runs if (r.get("config") or {}).get("origin") == "claude-code"
-    ]
+    cc_runs = [r for r in runs if (r.get("config") or {}).get("origin") == "claude-code"]
     assert len(cc_runs) >= 1
-    assert any(
-        (r.get("config") or {}).get("skill") == "rumil-orchestrate" for r in cc_runs
-    )
+    assert any((r.get("config") or {}).get("skill") == "rumil-orchestrate" for r in cc_runs)
 
     calls_resp = await db._execute(
         db.client.table("calls")

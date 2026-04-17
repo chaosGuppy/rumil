@@ -8,8 +8,6 @@ from rumil.models import (
 )
 from rumil.moves.create_claim import execute_with_source_creation
 
-import pytest
-
 
 async def test_create_claim_errors_when_source_url_unscrapable(
     tmp_db,

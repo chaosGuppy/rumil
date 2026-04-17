@@ -23,17 +23,13 @@ class TestRewriteUrlCitations:
     def test_trailing_slash_tolerance(self):
         pid = _fake_id()
         cache = {"https://example.com/article/": pid}
-        result = rewrite_url_citations(
-            "See [https://example.com/article] for details.", cache
-        )
+        result = rewrite_url_citations("See [https://example.com/article] for details.", cache)
         assert result == f"See [{pid[:8]}] for details."
 
     def test_trailing_slash_tolerance_reverse(self):
         pid = _fake_id()
         cache = {"https://example.com/article": pid}
-        result = rewrite_url_citations(
-            "See [https://example.com/article/] for details.", cache
-        )
+        result = rewrite_url_citations("See [https://example.com/article/] for details.", cache)
         assert result == f"See [{pid[:8]}] for details."
 
     def test_multiple_citations(self):
@@ -43,9 +39,7 @@ class TestRewriteUrlCitations:
             "https://a.com/1": pid1,
             "https://b.com/2": pid2,
         }
-        result = rewrite_url_citations(
-            "[https://a.com/1] agrees with [https://b.com/2].", cache
-        )
+        result = rewrite_url_citations("[https://a.com/1] agrees with [https://b.com/2].", cache)
         assert result == f"[{pid1[:8]}] agrees with [{pid2[:8]}]."
 
     def test_no_citations_passthrough(self):
@@ -59,7 +53,7 @@ class TestRewriteUrlCitations:
             rewrite_url_citations("See [https://unknown.com/page] for details.", cache)
 
     def test_unmatched_error_lists_urls(self):
-        with pytest.raises(ValueError, match="https://bad.com/x"):
+        with pytest.raises(ValueError, match=r"https://bad\.com/x"):
             rewrite_url_citations("See [https://bad.com/x].", {})
 
     def test_non_url_brackets_ignored(self):

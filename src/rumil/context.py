@@ -156,15 +156,11 @@ async def render_page_and_immediate_children(
         if con_items:
             parts.append("")
             hn = min(depth + 3, 6)
-            grouped = group_by_credence(
-                con_items, heading_level="#" * hn, separator="\n"
-            )
+            grouped = group_by_credence(con_items, heading_level="#" * hn, separator="\n")
             parts.append(grouped)
 
         all_judgements = judgements_by_q.get(question.id, [])
-        judgements = (
-            [max(all_judgements, key=lambda j: j.created_at)] if all_judgements else []
-        )
+        judgements = [max(all_judgements, key=lambda j: j.created_at)] if all_judgements else []
         if judgements:
             parts.append("")
             parts.append(f"{indent}**Judgements:**")
@@ -249,9 +245,7 @@ async def _supersession_notes(body: str, db: DB) -> str:
             continue
         replacement = resolved.get(full_id)
         if not replacement:
-            notes.append(
-                f"> **Note:** `[{sid}]` has been superseded (replacement not found)."
-            )
+            notes.append(f"> **Note:** `[{sid}]` has been superseded (replacement not found).")
             continue
         abstract_text = replacement.abstract or replacement.headline
         notes.append(
@@ -334,9 +328,7 @@ async def format_page(
         if detail == PageDetail.HEADLINE:
             return f"[SUPERSEDED] {original}"
         return (
-            f"{original}\n\n"
-            "> **SUPERSEDED** — this page has been replaced"
-            " (replacement not found)."
+            f"{original}\n\n> **SUPERSEDED** — this page has been replaced (replacement not found)."
         )
 
     if detail != PageDetail.HEADLINE and not page.content and db:
@@ -344,9 +336,7 @@ async def format_page(
         if full:
             page = full
 
-    _is_highlighted = (
-        highlight_run_id and page.run_id and page.run_id == highlight_run_id
-    )
+    _is_highlighted = highlight_run_id and page.run_id and page.run_id == highlight_run_id
 
     if detail == PageDetail.HEADLINE:
         tag = f"{page.page_type.value.upper()}"
@@ -428,23 +418,18 @@ async def format_page(
             for j in child_judgements.get(child.id, []):
                 if j.id in _exclude:
                     continue
-                line = (
-                    f"- *On: {child.headline} (`{child.id[:8]}`)*  "
-                    + await format_page(
-                        j,
-                        linked_detail,
-                        db=db,
-                        linked_detail=None,
-                        highlight_run_id=highlight_run_id,
-                    )
+                line = f"- *On: {child.headline} (`{child.id[:8]}`)*  " + await format_page(
+                    j,
+                    linked_detail,
+                    db=db,
+                    linked_detail=None,
+                    highlight_run_id=highlight_run_id,
                 )
                 linked_items.append((line, j))
 
         if linked_items:
             lines.append("")
-            lines.append(
-                group_by_credence(linked_items, heading_level="####", separator="\n")
-            )
+            lines.append(group_by_credence(linked_items, heading_level="####", separator="\n"))
 
     return "\n".join(lines)
 
@@ -566,9 +551,7 @@ async def render_child_investigation_results(
         view = views_map.get(cid)
         summary = summaries_map.get(cid)
         judgements = judgements_map.get(cid, [])
-        latest_judgement = (
-            max(judgements, key=lambda p: p.created_at) if judgements else None
-        )
+        latest_judgement = max(judgements, key=lambda p: p.created_at) if judgements else None
 
         new = False
         page_ids: list[str] = []
@@ -599,9 +582,7 @@ async def render_child_investigation_results(
                         imp = link.importance or 0
                         c = page.credence if page.credence is not None else "?"
                         r = page.robustness if page.robustness is not None else "?"
-                        lines.append(
-                            f"- [C{c}/R{r} I{imp}] `{page.id[:8]}` — {page.headline}"
-                        )
+                        lines.append(f"- [C{c}/R{r} I{imp}] `{page.id[:8]}` — {page.headline}")
                         page_ids.append(page.id)
         elif summary:
             new = _is_new(summary)
@@ -857,9 +838,7 @@ async def build_embedding_based_context(
         judgements_by_qid = await db.get_judgements_for_questions(question_ids)
         has_judgement = {qid for qid, js in judgements_by_qid.items() if js}
         ranked = [
-            (p, s)
-            for p, s in ranked
-            if p.page_type != PageType.QUESTION or p.id in has_judgement
+            (p, s) for p, s in ranked if p.page_type != PageType.QUESTION or p.id in has_judgement
         ]
 
     distillation_budget = distillation_page_char_budget

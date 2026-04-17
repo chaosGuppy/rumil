@@ -9,7 +9,6 @@ from pydantic import Field
 from rumil.database import DB
 from rumil.models import (
     Call,
-    CallType,
     LinkType,
     MoveType,
     Page,

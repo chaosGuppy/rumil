@@ -2,12 +2,12 @@
 
 import contextvars
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from rumil.tracing.broadcast import Broadcaster
 from rumil.database import DB
-from rumil.tracing.trace_events import LLMExchangeEvent, TraceEvent
 from rumil.settings import get_settings
+from rumil.tracing.broadcast import Broadcaster
+from rumil.tracing.trace_events import LLMExchangeEvent, TraceEvent
 
 log = logging.getLogger(__name__)
 
@@ -83,7 +83,7 @@ class CallTrace:
         if isinstance(event_data, LLMExchangeEvent) and event_data.cost_usd:
             self.total_cost_usd += event_data.cost_usd
         dumped = event_data.model_dump()
-        dumped["ts"] = datetime.now(timezone.utc).isoformat()
+        dumped["ts"] = datetime.now(UTC).isoformat()
         dumped["call_id"] = self.call_id
         return dumped
 
@@ -144,7 +144,6 @@ class CallTrace:
                 e,
             )
             raise TraceRecordError(
-                f"failed to persist {dumped.get('event')!r} event for call "
-                f"{self.call_id}: {e}"
+                f"failed to persist {dumped.get('event')!r} event for call {self.call_id}: {e}"
             ) from e
         await self._broadcast(dumped)

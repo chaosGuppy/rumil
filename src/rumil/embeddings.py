@@ -1,11 +1,12 @@
 """Embedding creation (Voyage AI) and vector search (Supabase pgvector)."""
 
 import logging
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 from voyageai.client_async import AsyncClient
 
-from rumil.database import DB, _Rows, _row_to_page, _rows
+from rumil.database import DB, _row_to_page, _Rows, _rows
 from rumil.models import Page, Workspace
 from rumil.settings import get_settings
 
@@ -18,9 +19,7 @@ EMBEDDING_DIMENSIONS = 1024
 def _get_client() -> AsyncClient:
     key = get_settings().voyage_ai_api_key
     if not key:
-        raise EnvironmentError(
-            "VOYAGE_AI_API_KEY not set. Add it to .env to use embeddings."
-        )
+        raise OSError("VOYAGE_AI_API_KEY not set. Add it to .env to use embeddings.")
     return AsyncClient(api_key=key)
 
 
@@ -189,9 +188,7 @@ async def backfill_embeddings(
         params["p_workspace"] = workspace.value
     if db.project_id:
         params["p_project_id"] = db.project_id
-    rows: _Rows = _rows(
-        await db.client.rpc("pages_missing_embedding", params).execute()
-    )
+    rows: _Rows = _rows(await db.client.rpc("pages_missing_embedding", params).execute())
     if not rows:
         return 0
     pages = [_row_to_page(r) for r in rows]

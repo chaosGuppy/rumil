@@ -15,8 +15,8 @@ from rumil.models import (
 )
 from rumil.scope_subquestion_linker.runner import run_scope_subquestion_linker
 from rumil.scope_subquestion_linker.seed_selection import select_seed_questions
-from rumil.workspace_exploration import render_question_subgraph
 from rumil.scope_subquestion_linker.tool import SUBMIT_TOOL_NAME
+from rumil.workspace_exploration import render_question_subgraph
 
 
 def _fake_loop_submitting(payload: dict | None):
@@ -125,9 +125,7 @@ async def test_render_question_subgraph_max_pages_truncates_full_level(tmp_db):
         await tmp_db.save_page(c)
         await _link_child(tmp_db, root, c)
 
-    rendered = await render_question_subgraph(
-        root.id, tmp_db, max_depth=10, max_pages=3
-    )
+    rendered = await render_question_subgraph(root.id, tmp_db, max_depth=10, max_pages=3)
 
     assert root.id[:8] in rendered
     for c in children:
@@ -154,9 +152,7 @@ async def test_render_question_subgraph_excludes_ids(tmp_db):
     await _link_child(tmp_db, child_a, grandchild_a)
     await _link_child(tmp_db, grandchild_a, deep_a)
 
-    rendered = await render_question_subgraph(
-        root.id, tmp_db, exclude_ids={grandchild_a.id}
-    )
+    rendered = await render_question_subgraph(root.id, tmp_db, exclude_ids={grandchild_a.id})
 
     assert root.id[:8] in rendered
     assert child_a.id[:8] in rendered

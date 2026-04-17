@@ -168,8 +168,7 @@ async def main() -> None:
 
         print_event(
             "→",
-            f"extracting considerations from {source_page.id[:8]} "
-            f"(budget {args.budget})",
+            f"extracting considerations from {source_page.id[:8]} (budget {args.budget})",
         )
         rounds = await ingest_until_done(source_page, question_id, db)
         total, used = await db.get_budget()
@@ -177,9 +176,7 @@ async def main() -> None:
         # Pull the most recent INGEST call against this source/run for its summary.
         latest = await _latest_ingest_call(db, source_page.id)
         cost_s = (
-            f"${latest.cost_usd:.3f}"
-            if latest is not None and latest.cost_usd is not None
-            else "—"
+            f"${latest.cost_usd:.3f}" if latest is not None and latest.cost_usd is not None else "—"
         )
         status = latest.status.value if latest is not None else "no-calls"
         print_event(

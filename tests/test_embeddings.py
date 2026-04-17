@@ -4,15 +4,14 @@ import uuid
 
 import pytest
 
+from rumil.database import DB
 from rumil.embeddings import (
     EMBEDDING_DIMENSIONS,
     embed_and_store_page,
     embed_texts,
     search_pages,
 )
-from rumil.database import DB
 from rumil.models import Page, PageLayer, PageType, Workspace
-
 
 pytestmark = pytest.mark.llm
 

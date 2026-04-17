@@ -8,7 +8,6 @@ from pydantic import BaseModel, Field
 
 from rumil.context import format_page
 from rumil.database import DB
-from rumil.settings import get_settings
 from rumil.llm import LLMExchangeMetadata, build_user_message, structured_call
 from rumil.models import (
     Call,
@@ -22,6 +21,7 @@ from rumil.models import (
     PageType,
     Workspace,
 )
+from rumil.settings import get_settings
 from rumil.tracing.page_load_tracking import page_track_scope
 from rumil.tracing.trace_events import ContextBuiltEvent, ErrorEvent, PageRef
 from rumil.tracing.tracer import CallTrace, set_trace
@@ -120,9 +120,7 @@ async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[Pa
             direction = f" [{link.direction.value}]" if link.direction else ""
             index_lines.append(f"- [consideration{direction}] {page.headline}")
         for j in judgements:
-            index_lines.append(
-                f"- [judgement C{j.credence}/R{j.robustness}] {j.headline}"
-            )
+            index_lines.append(f"- [judgement C{j.credence}/R{j.robustness}] {j.headline}")
         for child in children:
             index_lines.append(f"- [child question] {child.headline}")
         parts.append(_section("Index", "\n".join(index_lines)))
@@ -140,9 +138,7 @@ async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[Pa
                 track_tags=summary_tag,
             )
             cons_parts.append(f"**Consideration{direction}:**\n\n{formatted}")
-        parts.append(
-            _section("Direct Considerations (full)", "\n\n---\n\n".join(cons_parts))
-        )
+        parts.append(_section("Direct Considerations (full)", "\n\n---\n\n".join(cons_parts)))
 
     if judgements:
         most_recent = max(judgements, key=lambda j: j.created_at)
@@ -158,9 +154,7 @@ async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[Pa
         older = [j for j in judgements if j.id != most_recent.id]
         if older:
             older_lines = [
-                await format_page(
-                    j, PageDetail.HEADLINE, track=True, track_tags=summary_tag
-                )
+                await format_page(j, PageDetail.HEADLINE, track=True, track_tags=summary_tag)
                 for j in older
             ]
             parts.append(
@@ -209,14 +203,10 @@ async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[Pa
                 page_refs.extend(ref(p) for p, _ in child_considerations)
                 con_lines = [
                     "  - "
-                    + await format_page(
-                        p, PageDetail.HEADLINE, track=True, track_tags=summary_tag
-                    )
+                    + await format_page(p, PageDetail.HEADLINE, track=True, track_tags=summary_tag)
                     for p, _ in child_considerations
                 ]
-                child_section_parts.append(
-                    "**Considerations (short):**\n" + "\n".join(con_lines)
-                )
+                child_section_parts.append("**Considerations (short):**\n" + "\n".join(con_lines))
 
             grandchildren = await db.get_child_questions(child.id)
             if grandchildren:
@@ -259,9 +249,7 @@ async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[Pa
                         + (f"\n    Summary: {gc_medium}" if gc_medium else "")
                         + (f"\n    Judgement: {gc_short_j}" if gc_short_j else "")
                     )
-                child_section_parts.append(
-                    "**Grandchild questions:**\n" + "\n".join(gc_lines)
-                )
+                child_section_parts.append("**Grandchild questions:**\n" + "\n".join(gc_lines))
 
             child_parts.append("\n\n".join(child_section_parts))
 
@@ -270,9 +258,7 @@ async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[Pa
     return "\n\n".join(parts), page_refs
 
 
-async def _supersede_old_summaries(
-    question_id: str, new_summary_id: str, db: DB
-) -> None:
+async def _supersede_old_summaries(question_id: str, new_summary_id: str, db: DB) -> None:
     """Mark any existing summary pages for this question as superseded."""
     links = await db.get_links_to(question_id)
     for link in links:
@@ -286,9 +272,7 @@ async def _supersede_old_summaries(
             and old.id != new_summary_id
         ):
             await db.supersede_page(old.id, new_summary_id)
-            log.info(
-                "Superseded old summary %s with %s", old.id[:8], new_summary_id[:8]
-            )
+            log.info("Superseded old summary %s with %s", old.id[:8], new_summary_id[:8])
 
 
 async def summarize_question(

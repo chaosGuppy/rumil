@@ -26,10 +26,10 @@ from rumil.tracing.trace_events import (
     GroundingTasksGeneratedEvent,
     LinkSubquestionsCompleteEvent,
     LLMExchangeEvent,
+    LoadPageEvent,
     MovesExecutedEvent,
     PhaseSkippedEvent,
     ReassessTriggeredEvent,
-    LoadPageEvent,
     RenderQuestionSubgraphEvent,
     ReviewCompleteEvent,
     ScoringCompletedEvent,
@@ -132,9 +132,7 @@ class ReassessTriggeredEventOut(ReassessTriggeredEvent, _TraceEnvelopeMixin):
     pass
 
 
-class AffectedPagesIdentifiedEventOut(
-    AffectedPagesIdentifiedEvent, _TraceEnvelopeMixin
-):
+class AffectedPagesIdentifiedEventOut(AffectedPagesIdentifiedEvent, _TraceEnvelopeMixin):
     pass
 
 
@@ -150,9 +148,7 @@ class ClaimReassessedEventOut(ClaimReassessedEvent, _TraceEnvelopeMixin):
     pass
 
 
-class GroundingTasksGeneratedEventOut(
-    GroundingTasksGeneratedEvent, _TraceEnvelopeMixin
-):
+class GroundingTasksGeneratedEventOut(GroundingTasksGeneratedEvent, _TraceEnvelopeMixin):
     pass
 
 
@@ -168,9 +164,7 @@ class LoadPageEventOut(LoadPageEvent, _TraceEnvelopeMixin):
     pass
 
 
-class LinkSubquestionsCompleteEventOut(
-    LinkSubquestionsCompleteEvent, _TraceEnvelopeMixin
-):
+class LinkSubquestionsCompleteEventOut(LinkSubquestionsCompleteEvent, _TraceEnvelopeMixin):
     pass
 
 
@@ -186,9 +180,7 @@ class GlobalPhaseCompletedEventOut(GlobalPhaseCompletedEvent, _TraceEnvelopeMixi
     pass
 
 
-class UpdateViewPhaseCompletedEventOut(
-    UpdateViewPhaseCompletedEvent, _TraceEnvelopeMixin
-):
+class UpdateViewPhaseCompletedEventOut(UpdateViewPhaseCompletedEvent, _TraceEnvelopeMixin):
     pass
 
 

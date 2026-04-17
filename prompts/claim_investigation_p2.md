@@ -135,4 +135,3 @@ Specialized scouts and find\_considerations cost up to max\_rounds (may stop ear
 recurse\_into\_claim\_investigation and recurse\_into\_subquestion cost exactly the budget you assign
 
 dispatch\_web\_factcheck costs exactly 1
-

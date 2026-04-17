@@ -1,15 +1,14 @@
 """Base types and shared helpers for moves."""
 
 import logging
+import re
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Generic, TypeVar
-import re
 
 from pydantic import BaseModel, Field
 
 from rumil.database import DB
-from rumil.settings import get_settings
 from rumil.embeddings import embed_and_store_page
 from rumil.llm import Tool
 from rumil.models import (
@@ -25,6 +24,7 @@ from rumil.models import (
     PageType,
     Workspace,
 )
+from rumil.settings import get_settings
 
 DispatchValidator = Callable[[Dispatch], Dispatch | str]
 
@@ -32,6 +32,7 @@ log = logging.getLogger(__name__)
 
 S = TypeVar("S", bound=BaseModel)
 P = TypeVar("P", bound=BaseModel)
+
 
 @dataclass
 class MoveResult:
@@ -201,8 +202,7 @@ class CreatePagePayload(BaseModel):
     supersedes: str | None = Field(
         None,
         description=(
-            "Page ID of an existing page this one replaces. The old page "
-            "is marked as superseded."
+            "Page ID of an existing page this one replaces. The old page is marked as superseded."
         ),
     )
     change_magnitude: int | None = Field(
@@ -228,9 +228,7 @@ def _resolve_workspace(ws: str) -> Workspace:
     return Workspace.RESEARCH if ws.lower() == "research" else Workspace.PRIORITIZATION
 
 
-async def _copy_consideration_links(
-    old_page_id: str, new_page_id: str, db: DB
-) -> None:
+async def _copy_consideration_links(old_page_id: str, new_page_id: str, db: DB) -> None:
     """Copy outbound CONSIDERATION links from *old_page_id* to *new_page_id*.
 
     Skips links where *new_page_id* already has a CONSIDERATION link to the
@@ -239,9 +237,7 @@ async def _copy_consideration_links(
     old_links = await db.get_links_from(old_page_id)
     new_links = await db.get_links_from(new_page_id)
     existing = {
-        (l.to_page_id, l.direction)
-        for l in new_links
-        if l.link_type == LinkType.CONSIDERATION
+        (l.to_page_id, l.direction) for l in new_links if l.link_type == LinkType.CONSIDERATION
     }
     copied = 0
     for link in old_links:
@@ -264,7 +260,9 @@ async def _copy_consideration_links(
     if copied:
         log.info(
             "Copied %d consideration links from %s to %s",
-            copied, old_page_id[:8], new_page_id[:8],
+            copied,
+            old_page_id[:8],
+            new_page_id[:8],
         )
 
 
@@ -279,7 +277,7 @@ async def create_page(
     workspace = _resolve_workspace(payload.workspace)
     extra = payload.page_extra_fields()
 
-    fruit_remaining = getattr(payload, 'fruit_remaining', None)
+    fruit_remaining = getattr(payload, "fruit_remaining", None)
     page = Page(
         page_type=page_type,
         layer=layer,
@@ -299,9 +297,7 @@ async def create_page(
     try:
         await embed_and_store_page(db, page, field_name="abstract")
     except Exception:
-        log.warning(
-            "Failed to create embedding for page %s", page.id[:8], exc_info=True
-        )
+        log.warning("Failed to create embedding for page %s", page.id[:8], exc_info=True)
     log.info(
         "Page created: type=%s, id=%s, headline=%s",
         page_type.value,
@@ -332,7 +328,9 @@ async def create_page(
         old_id = await db.resolve_page_id(payload.supersedes)
         if old_id:
             await db.supersede_page(
-                old_id, page.id, change_magnitude=payload.change_magnitude,
+                old_id,
+                page.id,
+                change_magnitude=payload.change_magnitude,
             )
             await _copy_consideration_links(old_id, page.id, db)
             log.info("Superseded %s -> %s", old_id[:8], page.id[:8])
@@ -495,7 +493,9 @@ async def supersede_old_judgements(
         if old.id == new_judgement_id:
             continue
         await db.supersede_page(
-            old.id, new_judgement_id, change_magnitude=change_magnitude,
+            old.id,
+            new_judgement_id,
+            change_magnitude=change_magnitude,
         )
         log.info(
             "Superseded old judgement %s with %s on question %s",

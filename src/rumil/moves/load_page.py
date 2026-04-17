@@ -23,8 +23,7 @@ class LoadPagePayload(BaseModel):
     detail: str = Field(
         default="content",
         description=(
-            "Level of detail: 'content' (full text, default) "
-            "or 'abstract' (short summary)"
+            "Level of detail: 'content' (full text, default) or 'abstract' (short summary)"
         ),
     )
 

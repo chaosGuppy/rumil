@@ -88,9 +88,7 @@ class DispatchContext:
     d_label: str
 
 
-DispatchHandler = Callable[
-    [DispatchContext, BaseDispatchPayload], Awaitable[str | None]
-]
+DispatchHandler = Callable[[DispatchContext, BaseDispatchPayload], Awaitable[str | None]]
 
 
 async def _handle_find_considerations(
@@ -122,9 +120,7 @@ async def _handle_find_considerations(
     return child_ids[0] if child_ids else None
 
 
-async def _handle_assess(
-    ctx: DispatchContext, payload: BaseDispatchPayload
-) -> str | None:
+async def _handle_assess(ctx: DispatchContext, payload: BaseDispatchPayload) -> str | None:
     """Assess dispatch with view-redirect.
 
     If the target question already has a view, redirect to update_view_for_question
@@ -164,9 +160,7 @@ async def _handle_assess(
     )
 
 
-async def _handle_create_view(
-    ctx: DispatchContext, payload: BaseDispatchPayload
-) -> str | None:
+async def _handle_create_view(ctx: DispatchContext, payload: BaseDispatchPayload) -> str | None:
     assert isinstance(payload, CreateViewDispatchPayload)
     log.info("Dispatch: create_view on %s — %s", ctx.d_label, payload.reason)
     return await create_view_for_question(
@@ -182,9 +176,7 @@ async def _handle_create_view(
     )
 
 
-async def _handle_web_research(
-    ctx: DispatchContext, payload: BaseDispatchPayload
-) -> str | None:
+async def _handle_web_research(ctx: DispatchContext, payload: BaseDispatchPayload) -> str | None:
     assert isinstance(payload, WebResearchDispatchPayload)
     log.info("Dispatch: web_research on %s — %s", ctx.d_label, payload.reason)
     return await web_research_question(

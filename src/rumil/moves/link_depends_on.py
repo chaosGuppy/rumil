@@ -71,18 +71,13 @@ async def execute(payload: LinkDependsOnPayload, call: Call, db: DB) -> MoveResu
             dependency_id[:8],
             kind,
         )
-        if (
-            dependency_page is not None
-            and dependency_page.page_type == PageType.QUESTION
-        ):
+        if dependency_page is not None and dependency_page.page_type == PageType.QUESTION:
             return MoveResult(
                 "Link skipped — depends_on must point at a claim or judgement, not a "
                 "question. If you mean 'depends on the answer to this question', link "
                 "to the question's current judgement instead."
             )
-        return MoveResult(
-            "Link skipped — depends_on must point at a claim or judgement."
-        )
+        return MoveResult("Link skipped — depends_on must point at a claim or judgement.")
 
     link = PageLink(
         from_page_id=dependent_id,

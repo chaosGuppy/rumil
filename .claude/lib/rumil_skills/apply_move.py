@@ -56,7 +56,7 @@ from rumil.database import DB
 from rumil.models import Call, MoveType
 from rumil.moves.base import MoveResult
 from rumil.moves.registry import MOVES
-from rumil.tracing.trace_events import MoveTraceItem, MovesExecutedEvent, PageRef
+from rumil.tracing.trace_events import MovesExecutedEvent, MoveTraceItem, PageRef
 
 from ._format import print_event, print_trace, truncate
 from ._runctx import ensure_chat_envelope
@@ -127,9 +127,7 @@ def _format_type(annotation: object) -> str:
     # Parameterised generic (list[...], dict[...], Literal[...], ...)
     if origin is not None:
         origin_name = (
-            getattr(origin, "__name__", None)
-            or getattr(origin, "_name", None)
-            or str(origin)
+            getattr(origin, "__name__", None) or getattr(origin, "_name", None) or str(origin)
         )
         if args:
             return f"{origin_name}[{', '.join(_format_type(a) for a in args)}]"
@@ -455,8 +453,7 @@ async def main() -> None:
                 file=sys.stderr,
             )
             print(
-                "       the envelope may be incomplete in the frontend; "
-                f"inspect run {db.run_id}",
+                f"       the envelope may be incomplete in the frontend; inspect run {db.run_id}",
                 file=sys.stderr,
             )
             sys.exit(1)

@@ -28,7 +28,9 @@ async def run(args: argparse.Namespace) -> None:
     total = 0
     while True:
         count = await backfill_embeddings(
-            db, field_name="abstract", batch_size=args.batch_size,
+            db,
+            field_name="abstract",
+            batch_size=args.batch_size,
         )
         total += count
         if count < args.batch_size:
@@ -43,11 +45,14 @@ def main() -> None:
         description="Backfill summary embeddings for all pages.",
     )
     parser.add_argument(
-        "--prod", action="store_true",
+        "--prod",
+        action="store_true",
         help="Run against production database",
     )
     parser.add_argument(
-        "--batch-size", type=int, default=50,
+        "--batch-size",
+        type=int,
+        default=50,
         help="Pages per batch (default: 50)",
     )
     args = parser.parse_args()

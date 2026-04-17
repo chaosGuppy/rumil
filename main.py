@@ -20,8 +20,6 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from rumil.ab_eval import run_ab_eval
-from rumil.run_eval import run_run_eval
-from rumil.run_eval.agents import EvalAgentSpec, EVAL_AGENTS
 from rumil.chat import run_chat, run_continuation_chat, run_scoping_chat
 from rumil.clean import run_feedback_update, run_grounding_feedback
 from rumil.constants import MIN_TWOPHASE_BUDGET
@@ -40,6 +38,8 @@ from rumil.models import (
 )
 from rumil.orchestrators import Orchestrator, create_root_question
 from rumil.report import generate_report, save_report
+from rumil.run_eval import run_run_eval
+from rumil.run_eval.agents import EVAL_AGENTS, EvalAgentSpec
 from rumil.settings import Settings, _settings_var, get_settings
 from rumil.sources import create_source_page, run_ingest_calls
 from rumil.summary import generate_summary, save_summary
@@ -70,9 +70,7 @@ def parse_question_input(value: str) -> QuestionInput:
             sys.exit('Error: JSON file must contain at least a "headline" field.')
         unknown = set(data) - {"headline", "abstract", "content"}
         if unknown:
-            sys.exit(
-                f"Error: unknown fields in question JSON: {', '.join(sorted(unknown))}"
-            )
+            sys.exit(f"Error: unknown fields in question JSON: {', '.join(sorted(unknown))}")
         return QuestionInput(
             headline=data["headline"],
             abstract=data.get("abstract", ""),
@@ -160,12 +158,8 @@ async def cmd_ingest(
         return
 
     if not for_question_id:
-        print(
-            "\nSources stored. Use --for-question QUESTION_ID to extract considerations."
-        )
-        print(
-            "To investigate later:  python main.py --ingest FILE --for-question ID --budget N"
-        )
+        print("\nSources stored. Use --for-question QUESTION_ID to extract considerations.")
+        print("To investigate later:  python main.py --ingest FILE --for-question ID --budget N")
         return
 
     question = await db.get_page(for_question_id)
@@ -200,9 +194,7 @@ async def cmd_evaluate(question_id: str, db: DB, *, eval_type: str = "default") 
         if resolved:
             question = await db.get_page(resolved)
     if not question:
-        print(
-            f"Error: question '{question_id}' not found. Run --list to see existing questions."
-        )
+        print(f"Error: question '{question_id}' not found. Run --list to see existing questions.")
         sys.exit(1)
 
     if question.project_id and question.project_id != db.project_id:
@@ -268,9 +260,7 @@ async def cmd_ground(eval_call_id: str, db: DB, *, from_stage: int = 1) -> None:
 
     prior_checkpoints: dict | None = None
     if from_stage > 1:
-        prior_checkpoints = await _load_prior_checkpoints(
-            call.scope_page_id, from_stage, db
-        )
+        prior_checkpoints = await _load_prior_checkpoints(call.scope_page_id, from_stage, db)
 
     await db.create_run(
         name=f"grounding: {question.headline[:80]}",
@@ -461,9 +451,7 @@ async def cmd_show_evaluation(call_id: str, db: DB) -> None:
         sys.exit(1)
 
     if call.call_type != CallType.EVALUATE:
-        print(
-            f"Error: call '{call_id}' is a {call.call_type.value} call, not an evaluation."
-        )
+        print(f"Error: call '{call_id}' is a {call.call_type.value} call, not an evaluation.")
         sys.exit(1)
 
     scope = await db.get_page(call.scope_page_id) if call.scope_page_id else None
@@ -481,9 +469,7 @@ async def cmd_summary(
 ) -> None:
     question = await db.get_page(question_id)
     if not question:
-        print(
-            f"Error: question '{question_id}' not found. Run --list to see existing questions."
-        )
+        print(f"Error: question '{question_id}' not found. Run --list to see existing questions.")
         sys.exit(1)
 
     print(f"\nGenerating summary for: {question.headline[:80]}")
@@ -505,15 +491,11 @@ async def cmd_report(
 ) -> None:
     question = await db.get_page(question_id)
     if not question:
-        print(
-            f"Error: question '{question_id}' not found. Run --list to see existing questions."
-        )
+        print(f"Error: question '{question_id}' not found. Run --list to see existing questions.")
         sys.exit(1)
 
     print(f"\nGenerating report for: {question.headline[:80]}")
-    print(
-        "(This will use multiple LLM calls but does not count against research budget)\n"
-    )
+    print("(This will use multiple LLM calls but does not count against research budget)\n")
 
     report_text = await generate_report(question_id, db, max_depth=max_depth)
     path = save_report(report_text, question.headline)
@@ -534,9 +516,7 @@ async def cmd_list(db: DB, workspace_name: str) -> None:
     for q in questions:
         counts = await db.count_pages_for_question(q.id)
         truncated = q.headline[:55] + "…" if len(q.headline) > 55 else q.headline
-        print(
-            f"{q.id}  {counts['considerations']:>4}  {counts['judgements']:>4}  {truncated}"
-        )
+        print(f"{q.id}  {counts['considerations']:>4}  {counts['judgements']:>4}  {truncated}")
     print("\nTo continue investigating a question:")
     print("  python main.py --continue QUESTION_ID --budget N")
 
@@ -601,9 +581,7 @@ def _batch_label(entry: dict) -> str:
     return entry["question"][:70]
 
 
-async def _run_one_batch_entry(
-    entry: dict, index: int, total: int, template_db: DB
-) -> None:
+async def _run_one_batch_entry(entry: dict, index: int, total: int, template_db: DB) -> None:
     """Run a single batch entry with its own run_id for budget isolation."""
     budget = entry.get("budget", 10)
     label = _batch_label(entry)
@@ -660,10 +638,7 @@ async def cmd_batch(batch_file: str, db: DB) -> None:
     print(f"\nBatch: {' + '.join(parts)}, total budget {total_budget}")
     print("Running concurrently...\n")
 
-    tasks = [
-        _run_one_batch_entry(entry, i, len(entries), db)
-        for i, entry in enumerate(entries)
-    ]
+    tasks = [_run_one_batch_entry(entry, i, len(entries), db) for i, entry in enumerate(entries)]
     await asyncio.gather(*tasks)
 
 
@@ -752,9 +727,7 @@ def resolve_eval_agents(
     unknown = [n for n in requested if n not in by_name]
     if unknown:
         valid = ", ".join(by_name)
-        raise SystemExit(
-            f"Unknown eval agent(s): {', '.join(unknown)}. Valid names: {valid}"
-        )
+        raise SystemExit(f"Unknown eval agent(s): {', '.join(unknown)}. Valid names: {valid}")
     return [by_name[n] for n in requested]
 
 
@@ -809,14 +782,10 @@ async def cmd_continue(
     additional_budget = _default_budget(additional_budget)
     question = await db.get_page(question_id)
     if not question:
-        print(
-            f"Error: question '{question_id}' not found. Run --list to see existing questions."
-        )
+        print(f"Error: question '{question_id}' not found. Run --list to see existing questions.")
         sys.exit(1)
     if question.page_type != PageType.QUESTION:
-        print(
-            f"Error: page '{question_id}' is a {question.page_type.value}, not a question."
-        )
+        print(f"Error: page '{question_id}' is a {question.page_type.value}, not a question.")
         sys.exit(1)
 
     if question.project_id and question.project_id != db.project_id:
@@ -858,9 +827,7 @@ async def cmd_continue(
     ingested_source_names: list[str] = []
     existing_claim_ids: set[str] = set()
     if ingest_files:
-        existing_claim_ids = {
-            p.id for p in await db.get_pages(page_type=PageType.CLAIM)
-        }
+        existing_claim_ids = {p.id for p in await db.get_pages(page_type=PageType.CLAIM)}
         source_pages = []
         for filepath in ingest_files:
             page = await create_source_page(filepath, db)
@@ -1234,9 +1201,7 @@ async def async_main():
     if args.force_twophase_recurse:
         get_settings().force_twophase_recurse = True
 
-    db = await DB.create(
-        run_id=str(uuid.uuid4()), prod=args.prod_db, staged=args.staged
-    )
+    db = await DB.create(run_id=str(uuid.uuid4()), prod=args.prod_db, staged=args.staged)
 
     if args.run_id_file:
         Path(args.run_id_file).write_text(db.run_id, encoding="utf-8")
@@ -1283,9 +1248,7 @@ async def async_main():
         await cmd_ground(args.ground_call_id, db, from_stage=args.from_stage)
         return
     elif args.feedback_call_id:
-        await cmd_feedback_update(
-            args.feedback_call_id, db, investigation_budget=args.budget
-        )
+        await cmd_feedback_update(args.feedback_call_id, db, investigation_budget=args.budget)
         return
     elif args.feedback_file:
         await cmd_feedback_update_from_file(

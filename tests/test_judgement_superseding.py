@@ -39,7 +39,9 @@ async def _create_judgement(tmp_db, scout_call, **overrides):
 
 
 async def test_create_judgement_auto_links_to_scope_question(
-    tmp_db, scout_call, question_page,
+    tmp_db,
+    scout_call,
+    question_page,
 ):
     """Creating a judgement should auto-link it to the call's scope question."""
     jid = await _create_judgement(tmp_db, scout_call)
@@ -51,7 +53,9 @@ async def test_create_judgement_auto_links_to_scope_question(
 
 
 async def test_create_judgement_found_by_get_judgements(
-    tmp_db, scout_call, question_page,
+    tmp_db,
+    scout_call,
+    question_page,
 ):
     """A created judgement should be found by get_judgements_for_question."""
     jid = await _create_judgement(tmp_db, scout_call)
@@ -61,14 +65,20 @@ async def test_create_judgement_found_by_get_judgements(
 
 
 async def test_create_judgement_supersedes_old_judgement(
-    tmp_db, scout_call, question_page,
+    tmp_db,
+    scout_call,
+    question_page,
 ):
     """Creating a second judgement on the same question should supersede the first."""
     j1_id = await _create_judgement(
-        tmp_db, scout_call, headline="First judgement",
+        tmp_db,
+        scout_call,
+        headline="First judgement",
     )
     j2_id = await _create_judgement(
-        tmp_db, scout_call, headline="Second judgement",
+        tmp_db,
+        scout_call,
+        headline="Second judgement",
     )
 
     j1 = await tmp_db.get_page(j1_id)
@@ -83,7 +93,9 @@ async def test_create_judgement_supersedes_old_judgement(
 
 
 async def test_create_judgement_supersedes_multiple_old_judgements(
-    tmp_db, scout_call, question_page,
+    tmp_db,
+    scout_call,
+    question_page,
 ):
     """Creating three judgements sequentially should leave only the last active."""
     j1_id = await _create_judgement(tmp_db, scout_call, headline="First")
@@ -121,19 +133,23 @@ async def test_link_related_supersedes_old_judgement(tmp_db, scout_call, questio
 
     state1 = MoveState(scout_call, tmp_db)
     tool1 = MOVES[MoveType.LINK_RELATED].bind(state1)
-    await tool1.fn({
-        "from_page_id": j1.id[:8],
-        "to_page_id": question_page.id[:8],
-        "reasoning": "Judgement on question",
-    })
+    await tool1.fn(
+        {
+            "from_page_id": j1.id[:8],
+            "to_page_id": question_page.id[:8],
+            "reasoning": "Judgement on question",
+        }
+    )
 
     state2 = MoveState(scout_call, tmp_db)
     tool2 = MOVES[MoveType.LINK_RELATED].bind(state2)
-    await tool2.fn({
-        "from_page_id": j2.id[:8],
-        "to_page_id": question_page.id[:8],
-        "reasoning": "Updated judgement",
-    })
+    await tool2.fn(
+        {
+            "from_page_id": j2.id[:8],
+            "to_page_id": question_page.id[:8],
+            "reasoning": "Updated judgement",
+        }
+    )
 
     j1_after = await tmp_db.get_page(j1.id)
     assert j1_after is not None
@@ -189,16 +205,20 @@ async def test_get_judgements_excludes_superseded(tmp_db, question_page):
     await tmp_db.save_page(j1)
     await tmp_db.save_page(j2)
 
-    await tmp_db.save_link(PageLink(
-        from_page_id=j1.id,
-        to_page_id=question_page.id,
-        link_type=LinkType.ANSWERS,
-    ))
-    await tmp_db.save_link(PageLink(
-        from_page_id=j2.id,
-        to_page_id=question_page.id,
-        link_type=LinkType.ANSWERS,
-    ))
+    await tmp_db.save_link(
+        PageLink(
+            from_page_id=j1.id,
+            to_page_id=question_page.id,
+            link_type=LinkType.ANSWERS,
+        )
+    )
+    await tmp_db.save_link(
+        PageLink(
+            from_page_id=j2.id,
+            to_page_id=question_page.id,
+            link_type=LinkType.ANSWERS,
+        )
+    )
 
     before = await tmp_db.get_judgements_for_question(question_page.id)
     assert len(before) == 2

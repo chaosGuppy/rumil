@@ -68,16 +68,12 @@ class UnscoredItemScore(BaseModel):
 
 class TriageFlag(BaseModel):
     item_id: str = Field(description="Short ID (first 8 chars) of the VIEW_ITEM page")
-    flag: Literal["ok", "review"] = Field(
-        description="Whether this item needs deep review"
-    )
+    flag: Literal["ok", "review"] = Field(description="Whether this item needs deep review")
 
 
 class ItemReview(BaseModel):
     item_id: str = Field(description="Short ID (first 8 chars) of the VIEW_ITEM page")
-    action: Literal["keep", "adjust", "supersede"] = Field(
-        description="What to do with this item"
-    )
+    action: Literal["keep", "adjust", "supersede"] = Field(description="What to do with this item")
     new_importance: int | None = Field(default=None, ge=1, le=5)
     new_section: str | None = None
     new_credence: int | None = Field(default=None, ge=1, le=9)
@@ -98,9 +94,7 @@ class ProposedItem(BaseModel):
 
 
 class DeepReviewBatchResponse(BaseModel):
-    item_reviews: list[ItemReview] = Field(
-        description="One review per item in the batch"
-    )
+    item_reviews: list[ItemReview] = Field(description="One review per item in the batch")
     proposed_items: list[ProposedItem] = Field(
         default_factory=list,
         description="New items to add to the View (zero or more)",
@@ -115,9 +109,7 @@ class DemotionChoice(BaseModel):
 
 class PruneDecision(BaseModel):
     item_id: str = Field(description="Short ID (first 8 chars) of the VIEW_ITEM page")
-    action: Literal["keep", "remove"] = Field(
-        description="Whether to keep or remove this item"
-    )
+    action: Literal["keep", "remove"] = Field(description="Whether to keep or remove this item")
     reasoning: str = ""
 
 
@@ -142,7 +134,9 @@ def _build_update_view_system_prompt(context_section: str) -> str:
         p = PROMPTS_DIR / name
         if p.exists():
             parts.append(p.read_text(encoding="utf-8"))
-    return parts[0] + "\n\n---\n\n" + context_section + "\n\n---\n\n" + "\n\n---\n\n".join(parts[1:])
+    return (
+        parts[0] + "\n\n---\n\n" + context_section + "\n\n---\n\n" + "\n\n---\n\n".join(parts[1:])
+    )
 
 
 def _render_item_compact(page: Page, link: PageLink) -> str:
@@ -173,9 +167,7 @@ def _render_item_full(
 
     if cited_pages and item_links:
         cite_ids = {
-            l.to_page_id
-            for l in item_links
-            if l.link_type in (LinkType.CITES, LinkType.DEPENDS_ON)
+            l.to_page_id for l in item_links if l.link_type in (LinkType.CITES, LinkType.DEPENDS_ON)
         }
         cited = [cited_pages[cid] for cid in cite_ids if cid in cited_pages]
         if cited:
@@ -203,11 +195,7 @@ class UpdateViewContext(ContextBuilder):
         question = await infra.db.get_page(infra.question_id)
         query = question.headline if question else infra.question_id
 
-        old_view = (
-            await infra.db.get_page(self._old_view_id)
-            if self._old_view_id
-            else None
-        )
+        old_view = await infra.db.get_page(self._old_view_id) if self._old_view_id else None
         last_view_created_at = old_view.created_at if old_view else None
 
         child_section, child_page_ids = await render_child_investigation_results(
@@ -218,9 +206,7 @@ class UpdateViewContext(ContextBuilder):
 
         items = await infra.db.get_view_items(self._view_id)
         item_ids = [page.id for page, _ in items]
-        links_by_item = (
-            await infra.db.get_links_from_many(item_ids) if item_ids else {}
-        )
+        links_by_item = await infra.db.get_links_from_many(item_ids) if item_ids else {}
         cited_ids: set[str] = set()
         for item_links in links_by_item.values():
             for link in item_links:
@@ -274,13 +260,9 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
 
         created_page_ids: list[str] = []
 
-        messages = await self._phase_score_unscored(
-            infra, system_prompt, sections, messages
-        )
+        messages = await self._phase_score_unscored(infra, system_prompt, sections, messages)
 
-        messages, flagged_ids = await self._phase_triage(
-            infra, system_prompt, sections, messages
-        )
+        messages, flagged_ids = await self._phase_triage(infra, system_prompt, sections, messages)
 
         if flagged_ids:
             messages, phase2b_created = await self._phase_deep_review(
@@ -288,13 +270,9 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
             )
             created_page_ids.extend(phase2b_created)
 
-        messages = await self._phase_enforce_caps(
-            infra, system_prompt, sections, messages
-        )
+        messages = await self._phase_enforce_caps(infra, system_prompt, sections, messages)
 
-        messages = await self._phase_prune(
-            infra, system_prompt, sections, messages
-        )
+        messages = await self._phase_prune(infra, system_prompt, sections, messages)
 
         return UpdateResult(
             created_page_ids=created_page_ids,
@@ -315,9 +293,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
 
         if not unscored:
             await infra.trace.record(
-                PhaseSkippedEvent(
-                    phase="score_unscored", reason="No unscored items"
-                )
+                PhaseSkippedEvent(phase="score_unscored", reason="No unscored items")
             )
             return messages
 
@@ -357,9 +333,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
             )
 
             if batch_idx == 0:
-                user_content = (
-                    (sections.get("score_unscored", "") + "\n\n" + batch_text)
-                )
+                user_content = sections.get("score_unscored", "") + "\n\n" + batch_text
             else:
                 user_content = batch_text
 
@@ -378,25 +352,16 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
                 db=infra.db,
             )
 
-            messages.append(
-                {"role": "assistant", "content": result.response_text or ""}
-            )
+            messages.append({"role": "assistant", "content": result.response_text or ""})
 
             if result.parsed:
                 parsed_dict = result.parsed.model_dump()
-                scores = [
-                    UnscoredItemScore(**raw)
-                    for raw in parsed_dict.get("scores", [])
-                ]
-                resolved_map = await infra.db.resolve_page_ids(
-                    [s.item_id for s in scores]
-                )
+                scores = [UnscoredItemScore(**raw) for raw in parsed_dict.get("scores", [])]
+                resolved_map = await infra.db.resolve_page_ids([s.item_id for s in scores])
                 for score in scores:
                     resolved = resolved_map.get(score.item_id)
                     if not resolved:
-                        log.warning(
-                            "Score target %s not found", score.item_id
-                        )
+                        log.warning("Score target %s not found", score.item_id)
                         continue
                     link = link_by_target.get(resolved)
                     page = page_by_id.get(resolved)
@@ -407,9 +372,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
                             resolved[:8],
                         )
                         continue
-                    changed = await self._apply_item_score(
-                        infra.db, score, page, link
-                    )
+                    changed = await self._apply_item_score(infra.db, score, page, link)
                     if changed:
                         modified_count += 1
 
@@ -433,9 +396,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
         scored = [(page, link) for page, link in items if link.importance is not None]
 
         if not scored:
-            await infra.trace.record(
-                PhaseSkippedEvent(phase="triage", reason="No scored items")
-            )
+            await infra.trace.record(PhaseSkippedEvent(phase="triage", reason="No scored items"))
             return messages, []
 
         batch_sizes = _split_into_batches(len(scored), TRIAGE_BATCH_SIZE)
@@ -453,9 +414,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
             batch = scored[offset : offset + batch_size]
             offset += batch_size
 
-            compact_lines = [
-                _render_item_compact(page, link) for page, link in batch
-            ]
+            compact_lines = [_render_item_compact(page, link) for page, link in batch]
             batch_text = (
                 f"## Batch {batch_idx + 1}/{len(batch_sizes)} "
                 f"({batch_size} items)\n\n"
@@ -483,9 +442,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
                 db=infra.db,
             )
 
-            messages.append(
-                {"role": "assistant", "content": result.response_text or ""}
-            )
+            messages.append({"role": "assistant", "content": result.response_text or ""})
 
             if result.parsed:
                 parsed_dict = result.parsed.model_dump()
@@ -495,9 +452,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
                     if flag.flag == "review":
                         review_ids.append(flag.item_id)
                 if review_ids:
-                    resolved_map = await infra.db.resolve_page_ids(
-                        review_ids
-                    )
+                    resolved_map = await infra.db.resolve_page_ids(review_ids)
                     flagged_ids.extend(resolved_map.values())
 
         await infra.trace.record(
@@ -523,9 +478,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
 
         if not flagged:
             await infra.trace.record(
-                PhaseSkippedEvent(
-                    phase="deep_review", reason="No flagged items found"
-                )
+                PhaseSkippedEvent(phase="deep_review", reason="No flagged items found")
             )
             return messages, []
 
@@ -539,9 +492,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
                 if link.link_type in (LinkType.CITES, LinkType.DEPENDS_ON):
                     cited_page_ids.add(link.to_page_id)
         cited_pages = (
-            await infra.db.get_pages_by_ids(list(cited_page_ids))
-            if cited_page_ids
-            else {}
+            await infra.db.get_pages_by_ids(list(cited_page_ids)) if cited_page_ids else {}
         )
 
         batch_sizes = _split_into_batches(len(flagged), DEEP_REVIEW_BATCH_SIZE)
@@ -556,9 +507,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
             item_blocks = []
             for page, link in batch:
                 item_links = links_by_item.get(page.id, [])
-                item_blocks.append(
-                    _render_item_full(page, link, cited_pages, item_links)
-                )
+                item_blocks.append(_render_item_full(page, link, cited_pages, item_links))
 
             batch_text = (
                 f"## Batch {batch_idx + 1}/{len(batch_sizes)} "
@@ -569,9 +518,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
             )
 
             if batch_idx == 0:
-                user_content = (
-                    sections.get("deep_review", "") + "\n\n" + batch_text
-                )
+                user_content = sections.get("deep_review", "") + "\n\n" + batch_text
             else:
                 user_content = batch_text
 
@@ -590,9 +537,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
                 db=infra.db,
             )
 
-            messages.append(
-                {"role": "assistant", "content": result.response_text or ""}
-            )
+            messages.append({"role": "assistant", "content": result.response_text or ""})
 
             if result.parsed:
                 resolved_map = await infra.db.resolve_page_ids(
@@ -601,9 +546,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
                 for review in result.parsed.item_reviews:
                     resolved = resolved_map.get(review.item_id)
                     if not resolved:
-                        log.warning(
-                            "Review target %s not found", review.item_id
-                        )
+                        log.warning("Review target %s not found", review.item_id)
                         continue
                     page = page_by_id.get(resolved)
                     link = link_by_target.get(resolved)
@@ -613,9 +556,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
                             resolved[:8],
                         )
                         continue
-                    changed = await self._apply_item_review(
-                        infra, review, resolved, page, link
-                    )
+                    changed = await self._apply_item_review(infra, review, resolved, page, link)
                     if changed:
                         modified_count += 1
                     if review.action == "supersede" and resolved in link_by_target:
@@ -656,9 +597,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
         for level in [5, 4, 3, 2]:
             items = await infra.db.get_view_items(self._view_id)
             at_level = [
-                (p, l)
-                for p, l in items
-                if l.importance is not None and l.importance == level
+                (p, l) for p, l in items if l.importance is not None and l.importance == level
             ]
             cap = caps[level]
 
@@ -668,9 +607,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
             any_enforced = True
             excess = len(at_level) - cap
 
-            compact_lines = [
-                _render_item_compact(page, link) for page, link in at_level
-            ]
+            compact_lines = [_render_item_compact(page, link) for page, link in at_level]
             batch_text = (
                 f"## Importance {level}: {len(at_level)} items, cap is {cap} "
                 f"(need to demote {excess})\n\n"
@@ -679,9 +616,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
             )
 
             if first_call:
-                user_content = (
-                    sections.get("enforce_caps", "") + "\n\n" + batch_text
-                )
+                user_content = sections.get("enforce_caps", "") + "\n\n" + batch_text
                 first_call = False
             else:
                 user_content = batch_text
@@ -709,20 +644,13 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
                 db=infra.db,
             )
 
-            messages.append(
-                {"role": "assistant", "content": result.response_text or ""}
-            )
+            messages.append({"role": "assistant", "content": result.response_text or ""})
 
             if result.parsed:
                 parsed_dict = result.parsed.model_dump()
-                demotions = [
-                    DemotionChoice(**raw)
-                    for raw in parsed_dict.get("demotions", [])
-                ]
+                demotions = [DemotionChoice(**raw) for raw in parsed_dict.get("demotions", [])]
                 link_by_page = {p.id: l for p, l in at_level}
-                resolved_map = await infra.db.resolve_page_ids(
-                    [d.item_id for d in demotions]
-                )
+                resolved_map = await infra.db.resolve_page_ids([d.item_id for d in demotions])
                 for demotion in demotions:
                     resolved = resolved_map.get(demotion.item_id)
                     if not resolved:
@@ -739,9 +667,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
                             resolved[:8],
                         )
                         continue
-                    await self._apply_demotion(
-                        infra.db, demotion, resolved, link
-                    )
+                    await self._apply_demotion(infra.db, demotion, resolved, link)
 
         if not any_enforced:
             await infra.trace.record(
@@ -761,17 +687,11 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
         messages: list[dict],
     ) -> list[dict]:
         items = await infra.db.get_view_items(self._view_id)
-        low = [
-            (p, l)
-            for p, l in items
-            if l.importance is not None and l.importance <= 2
-        ]
+        low = [(p, l) for p, l in items if l.importance is not None and l.importance <= 2]
 
         if not low:
             await infra.trace.record(
-                PhaseSkippedEvent(
-                    phase="prune", reason="No I1/I2 items to prune"
-                )
+                PhaseSkippedEvent(phase="prune", reason="No I1/I2 items to prune")
             )
             return messages
 
@@ -809,17 +729,12 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
             db=infra.db,
         )
 
-        messages.append(
-            {"role": "assistant", "content": result.response_text or ""}
-        )
+        messages.append({"role": "assistant", "content": result.response_text or ""})
 
         removed = 0
         if result.parsed:
             parsed_dict = result.parsed.model_dump()
-            decisions = [
-                PruneDecision(**raw)
-                for raw in parsed_dict.get("decisions", [])
-            ]
+            decisions = [PruneDecision(**raw) for raw in parsed_dict.get("decisions", [])]
             remove_decisions = [d for d in decisions if d.action == "remove"]
             if remove_decisions:
                 resolved_map = await infra.db.resolve_page_ids(
@@ -828,16 +743,12 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
                 for decision in remove_decisions:
                     resolved = resolved_map.get(decision.item_id)
                     if not resolved:
-                        log.warning(
-                            "Prune target %s not found", decision.item_id
-                        )
+                        log.warning("Prune target %s not found", decision.item_id)
                         continue
                     link = link_by_target.get(resolved)
                     if not link:
                         continue
-                    did_remove = await self._unlink_item(
-                        infra.db, resolved, link
-                    )
+                    did_remove = await self._unlink_item(infra.db, resolved, link)
                     if did_remove:
                         removed += 1
 
@@ -928,9 +839,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
         try:
             await embed_and_store_page(infra.db, new_page, field_name="abstract")
         except Exception:
-            log.warning(
-                "Failed to embed new view item %s", new_page.id[:8], exc_info=True
-            )
+            log.warning("Failed to embed new view item %s", new_page.id[:8], exc_info=True)
         try:
             await extract_and_link_citations(new_page.id, new_page.content, infra.db)
         except Exception:
@@ -969,9 +878,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
         )
         return True
 
-    async def _create_proposed_item(
-        self, infra: CallInfra, proposal: ProposedItem
-    ) -> str | None:
+    async def _create_proposed_item(self, infra: CallInfra, proposal: ProposedItem) -> str | None:
         """Create a new VIEW_ITEM from a proposal and link it to the View."""
         new_page = Page(
             page_type=PageType.VIEW_ITEM,
@@ -1008,8 +915,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
         section_positions = [
             link.position or 0
             for link in existing_links
-            if link.link_type == LinkType.VIEW_ITEM
-            and link.section == proposal.section
+            if link.link_type == LinkType.VIEW_ITEM and link.section == proposal.section
         ]
         next_position = max(section_positions, default=-1) + 1
 
@@ -1045,14 +951,11 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
             demotion.reasoning[:80],
         )
 
-    async def _unlink_item(
-        self, db: DB, resolved_id: str, link: PageLink
-    ) -> bool:
+    async def _unlink_item(self, db: DB, resolved_id: str, link: PageLink) -> bool:
         """Remove a VIEW_ITEM link from the View. Returns True if unlinked."""
         await db.delete_link(link.id)
         log.info("Unlinked view item %s from view", resolved_id[:8])
         return True
-
 
 
 class UpdateViewCall(CallRunner):
@@ -1070,9 +973,7 @@ class UpdateViewCall(CallRunner):
 
     async def _run_stages(self) -> None:
         """Create new View page, copy items, then run phases."""
-        self._old_view_id, self._view_id = (
-            await self._create_new_view_and_copy_items()
-        )
+        self._old_view_id, self._view_id = await self._create_new_view_and_copy_items()
         self.context_builder = self._make_context_builder()
         self.workspace_updater = self._make_workspace_updater()
         self.closing_reviewer = self._make_closing_reviewer()
@@ -1080,9 +981,7 @@ class UpdateViewCall(CallRunner):
 
     async def _create_new_view_and_copy_items(self) -> tuple[str, str]:
         """Create a new View page, supersede the old one, copy all VIEW_ITEM links."""
-        existing_view = await self.infra.db.get_view_for_question(
-            self.infra.question_id
-        )
+        existing_view = await self.infra.db.get_view_for_question(self.infra.question_id)
         if not existing_view:
             raise RuntimeError(
                 f"UpdateViewCall requires an existing View for question "

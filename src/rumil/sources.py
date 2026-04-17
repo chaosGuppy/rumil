@@ -26,10 +26,10 @@ def read_file_content(path: Path) -> str:
     if path.suffix.lower() == ".pdf":
         try:
             import pypdf  # type: ignore[reportMissingImports]
-        except ImportError:
+        except ImportError as err:
             raise RuntimeError(
                 "pypdf is required for PDF ingestion: python -m pip install pypdf"
-            )
+            ) from err
         reader = pypdf.PdfReader(str(path))
         pages = [page.extract_text() or "" for page in reader.pages]
         return "\n\n".join(pages)
@@ -44,8 +44,7 @@ async def generate_source_summary(content: str, source_label: str) -> str:
     try:
         result = await text_call(
             system_prompt=(
-                "You summarize documents for a research workspace. "
-                "Be concise and factual."
+                "You summarize documents for a research workspace. Be concise and factual."
             ),
             user_message=(
                 "Summarize this document in 2-3 sentences: what type of document is it, "
@@ -140,9 +139,7 @@ async def _create_source_page_from_url(url: str, db: DB) -> Page | None:
     return page
 
 
-async def run_ingest_calls(
-    source_pages: Sequence[Page], question_id: str, db: DB
-) -> int:
+async def run_ingest_calls(source_pages: Sequence[Page], question_id: str, db: DB) -> int:
     """Run ingest extraction calls for each source against a question. Returns calls made."""
     made = 0
     for source_page in source_pages:

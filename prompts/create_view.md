@@ -55,4 +55,3 @@ Each item's content should follow this pattern:
 * Lead with the claim itself (clear, specific, self-contained)
 * Follow with a brief epistemic gloss in parentheses: why you assigned these C/R scores
 * Optionally reference specific page IDs that provide supporting evidence
-

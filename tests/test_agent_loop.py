@@ -8,7 +8,7 @@ import pytest
 from pydantic import BaseModel, Field
 
 from rumil.calls.common import run_agent_loop
-from rumil.llm import Tool, text_call, structured_call
+from rumil.llm import Tool, structured_call, text_call
 from rumil.moves.base import MoveState
 
 

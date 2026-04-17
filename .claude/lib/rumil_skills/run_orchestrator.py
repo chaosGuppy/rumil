@@ -106,9 +106,7 @@ async def main() -> None:
             print(f"page {full_id[:8]} vanished mid-lookup")
             sys.exit(1)
         if page.page_type != PageType.QUESTION:
-            print(
-                f"error: page {full_id[:8]} is a {page.page_type.value}, not a question"
-            )
+            print(f"error: page {full_id[:8]} is a {page.page_type.value}, not a question")
             sys.exit(1)
         if page.project_id and page.project_id != db.project_id:
             db.project_id = page.project_id

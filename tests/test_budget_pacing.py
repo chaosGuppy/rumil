@@ -42,7 +42,7 @@ def test_base_allocation_scaling() -> None:
     """Base allocation should grow sub-linearly with total budget."""
     prev = 0
     for total in (20, 50, 100, 250, 500, 1000):
-        alloc = compute_round_budget(total, total)  # 0 remaining
+        compute_round_budget(total, total)  # 0 remaining
         steady = compute_round_budget(total, total // 2)
         assert steady > 0
         assert steady >= prev or total <= 20

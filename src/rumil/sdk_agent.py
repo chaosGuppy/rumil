@@ -6,8 +6,8 @@ import re
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any
 from pathlib import Path
+from typing import Any
 
 from claude_agent_sdk import (
     AgentDefinition,
@@ -22,7 +22,6 @@ from claude_agent_sdk import (
     ThinkingBlock,
     ToolUseBlock,
     create_sdk_mcp_server,
-    tool,
 )
 from claude_agent_sdk.types import HookEvent, SyncHookJSONOutput
 
@@ -31,7 +30,6 @@ from rumil.models import Call, CallStatus, CallType
 from rumil.pricing import compute_cost
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
-from rumil.tracing.tracer import CallTrace
 from rumil.tracing.trace_events import (
     AgentStartedEvent,
     LLMExchangeEvent,
@@ -40,11 +38,11 @@ from rumil.tracing.trace_events import (
     ToolCallEvent,
     WarningEvent,
 )
+from rumil.tracing.tracer import CallTrace
 
 log = logging.getLogger(__name__)
 
 _MIN_REAL_INPUT_TOKENS = 10
-
 
 
 @dataclass
@@ -95,9 +93,7 @@ class _TranscriptSummary:
     turns: list[_TurnUsage] = field(default_factory=list)
 
 
-def _read_subagent_transcript(
-    transcript_path: str, max_text_len: int = 500
-) -> _TranscriptSummary:
+def _read_subagent_transcript(transcript_path: str, max_text_len: int = 500) -> _TranscriptSummary:
     """Parse a subagent transcript JSONL for the last text and per-turn usage."""
     result = _TranscriptSummary()
     if not transcript_path:
@@ -118,22 +114,14 @@ def _read_subagent_transcript(
                     turn = _TurnUsage(
                         input_tokens=usage.get("input_tokens", 0),
                         output_tokens=usage.get("output_tokens", 0),
-                        cache_creation_input_tokens=usage.get(
-                            "cache_creation_input_tokens", 0
-                        ),
-                        cache_read_input_tokens=usage.get(
-                            "cache_read_input_tokens", 0
-                        ),
+                        cache_creation_input_tokens=usage.get("cache_creation_input_tokens", 0),
+                        cache_read_input_tokens=usage.get("cache_read_input_tokens", 0),
                     )
                     result.turns.append(turn)
                     result.input_tokens += turn.input_tokens
                     result.output_tokens += turn.output_tokens
-                    result.cache_creation_input_tokens += (
-                        turn.cache_creation_input_tokens
-                    )
-                    result.cache_read_input_tokens += (
-                        turn.cache_read_input_tokens
-                    )
+                    result.cache_creation_input_tokens += turn.cache_creation_input_tokens
+                    result.cache_read_input_tokens += turn.cache_read_input_tokens
         if len(result.last_text) > max_text_len:
             result.last_text = result.last_text[:max_text_len]
     except Exception:
@@ -289,10 +277,8 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
                         round=turn_num,
                         input_tokens=turn.input_tokens,
                         output_tokens=turn.output_tokens,
-                        cache_creation_input_tokens=turn.cache_creation_input_tokens
-                        or None,
-                        cache_read_input_tokens=turn.cache_read_input_tokens
-                        or None,
+                        cache_creation_input_tokens=turn.cache_creation_input_tokens or None,
+                        cache_read_input_tokens=turn.cache_read_input_tokens or None,
                         cost_usd=turn_cost or None,
                     )
                 )
@@ -300,13 +286,16 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
         has_usage = transcript.input_tokens > 0 or transcript.output_tokens > 0
         cost_usd: float | None = None
         if has_usage:
-            cost_usd = compute_cost(
-                model=settings.model,
-                input_tokens=transcript.input_tokens,
-                output_tokens=transcript.output_tokens,
-                cache_creation_input_tokens=transcript.cache_creation_input_tokens,
-                cache_read_input_tokens=transcript.cache_read_input_tokens,
-            ) or None
+            cost_usd = (
+                compute_cost(
+                    model=settings.model,
+                    input_tokens=transcript.input_tokens,
+                    output_tokens=transcript.output_tokens,
+                    cache_creation_input_tokens=transcript.cache_creation_input_tokens,
+                    cache_read_input_tokens=transcript.cache_read_input_tokens,
+                )
+                or None
+            )
         await config.trace.record(
             SubagentCompletedEvent(
                 agent_id=agent_id,
@@ -334,7 +323,7 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
 
     allowed = list(config.allowed_tools) if config.allowed_tools else tool_fqnames
     if config.agents and "Agent" not in allowed:
-        allowed = allowed + ["Agent"]
+        allowed = [*allowed, "Agent"]
 
     hooks: dict[HookEvent, list[HookMatcher]] = {
         "PreToolUse": [
@@ -382,14 +371,10 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
         async for message in client.receive_response():
             if isinstance(message, AssistantMessage):
                 text_parts = [
-                    block.text
-                    for block in message.content
-                    if isinstance(block, TextBlock)
+                    block.text for block in message.content if isinstance(block, TextBlock)
                 ]
                 thinking_parts = [
-                    block.thinking
-                    for block in message.content
-                    if isinstance(block, ThinkingBlock)
+                    block.thinking for block in message.content if isinstance(block, ThinkingBlock)
                 ]
                 tool_uses = [
                     {"tool": block.name, "input": block.input}
@@ -406,12 +391,8 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
                 if message.usage:
                     input_tokens = message.usage.get("input_tokens", 0)
                     output_tokens = message.usage.get("output_tokens", 0)
-                    cache_creation = message.usage.get(
-                        "cache_creation_input_tokens", 0
-                    )
-                    cache_read = message.usage.get(
-                        "cache_read_input_tokens", 0
-                    )
+                    cache_creation = message.usage.get("cache_creation_input_tokens", 0)
+                    cache_read = message.usage.get("cache_read_input_tokens", 0)
                 is_real_turn = input_tokens >= _MIN_REAL_INPUT_TOKENS
                 if is_real_turn:
                     turn_counter += 1
@@ -437,12 +418,12 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
                         )
                     )
                 if config.output_format:
-                    all_messages.append({
-                        "type": "AssistantMessage",
-                        "content": [
-                            _serialize_block(b) for b in message.content
-                        ],
-                    })
+                    all_messages.append(
+                        {
+                            "type": "AssistantMessage",
+                            "content": [_serialize_block(b) for b in message.content],
+                        }
+                    )
             elif isinstance(message, ResultMessage):
                 if not last_assistant_text and message.result:
                     last_assistant_text = [message.result]
@@ -451,18 +432,17 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
                 if message.stop_reason == "max_turns":
                     log.warning("Agent hit max_turns limit")
                     await config.trace.record(
-                        WarningEvent(
-                            message="Agent hit max_turns limit — "
-                            "output may be incomplete"
-                        )
+                        WarningEvent(message="Agent hit max_turns limit — output may be incomplete")
                     )
                 if config.output_format:
-                    all_messages.append({
-                        "type": "ResultMessage",
-                        "result": message.result,
-                        "stop_reason": message.stop_reason,
-                        "structured_output": message.structured_output,
-                    })
+                    all_messages.append(
+                        {
+                            "type": "ResultMessage",
+                            "result": message.result,
+                            "stop_reason": message.stop_reason,
+                            "structured_output": message.structured_output,
+                        }
+                    )
 
     if config.output_format:
         log.info(

@@ -2,9 +2,9 @@
 Data models for the research workspace.
 """
 
+import uuid
 from datetime import UTC, datetime
 from enum import Enum
-import uuid
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -123,7 +123,9 @@ class LinkType(str, Enum):
     CHILD_QUESTION = "child_question"  # question decomposes into sub-question
     SUPERSEDES = "supersedes"  # page replaces another
     RELATED = "related"  # general relation
-    ANSWERS = "answers"  # judgement -> question: this judgement is the current answer to the question
+    ANSWERS = (
+        "answers"  # judgement -> question: this judgement is the current answer to the question
+    )
     VARIANT = "variant"  # more robust variation of a claim
     SUMMARIZES = "summarizes"  # summary page covers a question subtree
     CITES = "cites"  # claim cites a source
@@ -178,9 +180,7 @@ class ConsiderationDirection(str, Enum):
 
 
 class _DispatchBase(BaseModel):
-    reason: str = Field(
-        default="", description="Why this dispatch is a good use of budget"
-    )
+    reason: str = Field(default="", description="Why this dispatch is a good use of budget")
     context_page_ids: list[str] = Field(
         default_factory=list,
         description=(
@@ -195,9 +195,7 @@ class BaseDispatchPayload(_DispatchBase):
 
 
 class MultiRoundFields(BaseModel):
-    fruit_threshold: int = Field(
-        default=4, description="Remaining fruit threshold for stopping"
-    )
+    fruit_threshold: int = Field(default=4, description="Remaining fruit threshold for stopping")
     max_rounds: int = Field(
         default=5, description="Maximum scouting rounds (each round costs 1 budget)"
     )

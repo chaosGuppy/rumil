@@ -9,16 +9,16 @@ from pathlib import Path
 
 from claude_agent_sdk import tool as sdk_tool
 
-from rumil.run_eval.agents import EvalAgentSpec, EVAL_AGENTS
-from rumil.run_eval.report import format_run_eval_report, save_run_eval_report
 from rumil.database import DB
 from rumil.evaluate.explore import explore_page_impl
 from rumil.llm import Tool, text_call
-from rumil.workspace_exploration import make_explore_subgraph_tool, make_load_page_tool
 from rumil.models import Call, CallStatus, CallType
+from rumil.run_eval.agents import EVAL_AGENTS, EvalAgentSpec
+from rumil.run_eval.report import format_run_eval_report, save_run_eval_report
 from rumil.sdk_agent import SdkAgentConfig, run_sdk_agent
 from rumil.tracing.broadcast import Broadcaster
 from rumil.tracing.tracer import CallTrace
+from rumil.workspace_exploration import make_explore_subgraph_tool, make_load_page_tool
 
 log = logging.getLogger(__name__)
 
@@ -138,8 +138,7 @@ async def evaluate_run_with_agent(
     )
 
     allowed = [
-        f"mcp__{_TOOL_SERVER_NAME}__{t.name}"
-        for t in [explore_llm_tool, load_page_llm_tool]
+        f"mcp__{_TOOL_SERVER_NAME}__{t.name}" for t in [explore_llm_tool, load_page_llm_tool]
     ] + list(spec.extra_tools)
 
     config = SdkAgentConfig(

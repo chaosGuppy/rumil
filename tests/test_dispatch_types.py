@@ -7,19 +7,18 @@ from rumil.calls.dispatches import (
     filter_mode_schema,
     make_mode_validator,
 )
+from rumil.calls.page_creators import _resolve_round_mode
 from rumil.models import (
+    DISPATCHABLE_CALL_TYPES,
     AssessDispatchPayload,
     CallType,
     Dispatch,
-    DISPATCHABLE_CALL_TYPES,
+    FindConsiderationsMode,
     ScopeOnlyDispatchPayload,
     ScoutDispatchPayload,
-    FindConsiderationsMode,
     ScoutSubquestionsDispatchPayload,
 )
-from rumil.calls.page_creators import _resolve_round_mode
 from rumil.moves.base import MoveState
-from rumil.moves.create_question import CreateQuestionPayload
 from rumil.settings import get_settings, override_settings
 
 
@@ -60,39 +59,31 @@ def test_scout_payload_accepts_mode():
 
 def test_resolve_round_mode_alternate():
     assert (
-        _resolve_round_mode(FindConsiderationsMode.ALTERNATE, 0)
-        == FindConsiderationsMode.ABSTRACT
+        _resolve_round_mode(FindConsiderationsMode.ALTERNATE, 0) == FindConsiderationsMode.ABSTRACT
     )
     assert (
-        _resolve_round_mode(FindConsiderationsMode.ALTERNATE, 1)
-        == FindConsiderationsMode.CONCRETE
+        _resolve_round_mode(FindConsiderationsMode.ALTERNATE, 1) == FindConsiderationsMode.CONCRETE
     )
     assert (
-        _resolve_round_mode(FindConsiderationsMode.ALTERNATE, 2)
-        == FindConsiderationsMode.ABSTRACT
+        _resolve_round_mode(FindConsiderationsMode.ALTERNATE, 2) == FindConsiderationsMode.ABSTRACT
     )
     assert (
-        _resolve_round_mode(FindConsiderationsMode.ALTERNATE, 3)
-        == FindConsiderationsMode.CONCRETE
+        _resolve_round_mode(FindConsiderationsMode.ALTERNATE, 3) == FindConsiderationsMode.CONCRETE
     )
 
 
 def test_resolve_round_mode_fixed():
     assert (
-        _resolve_round_mode(FindConsiderationsMode.ABSTRACT, 0)
-        == FindConsiderationsMode.ABSTRACT
+        _resolve_round_mode(FindConsiderationsMode.ABSTRACT, 0) == FindConsiderationsMode.ABSTRACT
     )
     assert (
-        _resolve_round_mode(FindConsiderationsMode.ABSTRACT, 1)
-        == FindConsiderationsMode.ABSTRACT
+        _resolve_round_mode(FindConsiderationsMode.ABSTRACT, 1) == FindConsiderationsMode.ABSTRACT
     )
     assert (
-        _resolve_round_mode(FindConsiderationsMode.CONCRETE, 0)
-        == FindConsiderationsMode.CONCRETE
+        _resolve_round_mode(FindConsiderationsMode.CONCRETE, 0) == FindConsiderationsMode.CONCRETE
     )
     assert (
-        _resolve_round_mode(FindConsiderationsMode.CONCRETE, 1)
-        == FindConsiderationsMode.CONCRETE
+        _resolve_round_mode(FindConsiderationsMode.CONCRETE, 1) == FindConsiderationsMode.CONCRETE
     )
 
 

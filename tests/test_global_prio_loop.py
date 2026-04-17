@@ -32,11 +32,15 @@ async def test_global_loop_exits_when_local_done_and_no_creation(
 ):
     """When the local task is done and a global turn creates nothing,
     the loop should exit instead of spinning forever."""
-    trigger_mock = mocker.patch.object(
-        orch, "_wait_for_trigger", side_effect=_noop_trigger,
+    mocker.patch.object(
+        orch,
+        "_wait_for_trigger",
+        side_effect=_noop_trigger,
     )
     turn_mock = mocker.patch.object(
-        orch, "_global_turn", side_effect=_no_creation_turn,
+        orch,
+        "_global_turn",
+        side_effect=_no_creation_turn,
     )
 
     done_future: asyncio.Future[None] = asyncio.get_event_loop().create_future()
@@ -56,10 +60,14 @@ async def test_global_loop_exits_when_no_local_task_and_no_creation(
     """When there is no local task at all (global-only mode) and a global
     turn creates nothing, the loop should exit."""
     mocker.patch.object(
-        orch, "_wait_for_trigger", side_effect=_noop_trigger,
+        orch,
+        "_wait_for_trigger",
+        side_effect=_noop_trigger,
     )
     turn_mock = mocker.patch.object(
-        orch, "_global_turn", side_effect=_no_creation_turn,
+        orch,
+        "_global_turn",
+        side_effect=_no_creation_turn,
     )
 
     orch._local_task = None

@@ -25,9 +25,7 @@ class UpdateEpistemicPayload(BaseModel):
     reasoning: str = Field(description="Why this update is warranted")
 
 
-async def _context_check(
-    payload: UpdateEpistemicPayload, state: MoveState
-) -> MoveResult | None:
+async def _context_check(payload: UpdateEpistemicPayload, state: MoveState) -> MoveResult | None:
     """Check whether the source judgement for current scores is in context.
 
     If the LLM hasn't seen the judgement that established the current scores,
@@ -97,8 +95,7 @@ async def execute(payload: UpdateEpistemicPayload, call: Call, db: DB) -> MoveRe
         payload.robustness,
     )
     return MoveResult(
-        f"Epistemic scores updated for {page_id[:8]}: "
-        f"C{payload.credence}/R{payload.robustness}"
+        f"Epistemic scores updated for {page_id[:8]}: C{payload.credence}/R{payload.robustness}"
     )
 
 

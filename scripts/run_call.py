@@ -37,6 +37,7 @@ import uuid
 
 from rumil.calls.call_registry import ASSESS_CALL_CLASSES
 from rumil.calls.find_considerations import FindConsiderationsCall
+from rumil.calls.link_subquestions import LinkSubquestionsCall
 from rumil.calls.scout_analogies import ScoutAnalogiesCall
 from rumil.calls.scout_deep_questions import ScoutDeepQuestionsCall
 from rumil.calls.scout_estimates import ScoutEstimatesCall
@@ -51,9 +52,7 @@ from rumil.database import DB
 from rumil.models import CallStage, CallType, FindConsiderationsMode
 from rumil.orchestrators import create_root_question
 from rumil.orchestrators.robustify import RobustifyOrchestrator
-from rumil.calls.link_subquestions import LinkSubquestionsCall
-from rumil.settings import Settings, get_settings, _settings_var
-
+from rumil.settings import Settings, _settings_var, get_settings
 
 _SCOUT_CALL_TYPES: dict[str, tuple[CallType, type[CallRunner]]] = {
     "scout-subquestions": (CallType.SCOUT_SUBQUESTIONS, ScoutSubquestionsCall),

@@ -19,9 +19,6 @@ Usage:
     # Use a custom workspace
     uv run python scripts/run_call.py find-considerations "Test question" --workspace my-scratch
 
-    # A/B test a call (requires .a.env and .b.env)
-    uv run python scripts/run_call.py find-considerations "Test question" --ab --smoke-test
-
     # Run only up to a specific stage (build_context or update_workspace)
     uv run python scripts/run_call.py find-considerations "Test question" --up-to-stage build_context
     uv run python scripts/run_call.py find-considerations "Test question" --up-to-stage update_workspace
@@ -52,7 +49,7 @@ from rumil.database import DB
 from rumil.models import CallStage, CallType, FindConsiderationsMode
 from rumil.orchestrators import create_root_question
 from rumil.orchestrators.robustify import RobustifyOrchestrator
-from rumil.settings import Settings, _settings_var, get_settings
+from rumil.settings import get_settings
 
 _SCOUT_CALL_TYPES: dict[str, tuple[CallType, type[CallRunner]]] = {
     "scout-subquestions": (CallType.SCOUT_SUBQUESTIONS, ScoutSubquestionsCall),
@@ -202,10 +199,6 @@ async def run(args: argparse.Namespace) -> None:
         print("Provide a question text or --question-id.")
         return
 
-    if args.ab:
-        await _run_ab(args, db, question_id, question_text, frontend)
-        return
-
     print(f"Trace: {frontend}/traces/{db.run_id}\n")
     await db.init_budget(args.budget)
 
@@ -220,60 +213,6 @@ async def run(args: argparse.Namespace) -> None:
     print(f"Running {args.call_type} on {question_id[:8]}...")
     await run_call(args, db, question_id)
     print("\nDone.")
-
-
-async def _run_ab(
-    args: argparse.Namespace,
-    db: DB,
-    question_id: str,
-    question_text: str,
-    frontend: str,
-) -> None:
-    """Run an A/B test: two concurrent calls with different configs."""
-    ab_run_id = str(uuid.uuid4())
-    name = args.name or question_text
-
-    await db.create_ab_run(ab_run_id, name, question_id)
-
-    print(f"\nAB test: {ab_run_id}")
-    print(f"Question: {question_text}")
-    print(f"Budget per arm: {args.budget}")
-    print(f"Trace: {frontend}/ab-traces/{ab_run_id}")
-
-    parent_settings = get_settings()
-
-    async def run_arm(arm_label: str, env_file: str) -> None:
-        arm_settings = Settings.from_env_files(".env", env_file)
-        if parent_settings.is_smoke_test:
-            arm_settings.rumil_smoke_test = "1"
-        _settings_var.set(arm_settings)
-
-        arm_db = await DB.create(
-            run_id=str(uuid.uuid4()),
-            client=db.client,
-            project_id=db.project_id,
-            staged=True,
-            ab_run_id=ab_run_id,
-        )
-        config = arm_settings.capture_config()
-        await arm_db.create_run(
-            name=f"{name} (arm {arm_label})",
-            question_id=question_id,
-            config=config,
-            ab_arm=arm_label,
-        )
-        await arm_db.init_budget(args.budget)
-
-        print(f"\nRunning {args.call_type} arm {arm_label}...")
-        await run_call(args, db=arm_db, question_id=question_id)
-        total, used = await arm_db.get_budget()
-        print(f"\nArm {arm_label} complete: {used}/{total} budget used")
-
-    async with asyncio.TaskGroup() as tg:
-        tg.create_task(run_arm("a", ".a.env"))
-        tg.create_task(run_arm("b", ".b.env"))
-
-    print(f"\nAB test complete: {frontend}/ab-traces/{ab_run_id}")
 
 
 def main() -> None:
@@ -326,11 +265,6 @@ def main() -> None:
         action="store_true",
         dest="force_twophase_recurse",
         help="Force the two-phase orchestrator to dispatch two recurse calls",
-    )
-    parser.add_argument(
-        "--ab",
-        action="store_true",
-        help="Run the call as an A/B test (requires .a.env and .b.env)",
     )
     parser.add_argument(
         "--name",

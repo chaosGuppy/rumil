@@ -11,7 +11,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from rumil.models import Call, Page, PageLink, _all_fields_required
+from rumil.models import Page, PageLink, _all_fields_required
 from rumil.tracing.trace_events import (
     AffectedPagesIdentifiedEvent,
     AgentStartedEvent,
@@ -246,28 +246,6 @@ class LLMExchangeOut(BaseModel):
     created_at: datetime
 
 
-class CallSequenceOut(BaseModel):
-    id: str
-    position_in_batch: int
-    calls: Sequence["CallTraceOut"]
-
-
-class CallTraceOut(BaseModel):
-    call: Call
-    scope_page_summary: str | None = None
-    events: list[TraceEventOut]
-    children: list["CallTraceOut"]
-    sequences: Sequence[CallSequenceOut] | None = None
-    cost_usd: float | None = None
-
-
-class RunTraceOut(BaseModel):
-    run_id: str
-    question: Page | None
-    root_calls: list[CallTraceOut]
-    cost_usd: float | None = None
-
-
 class CallSummary(BaseModel):
     """Lightweight Call representation for tree views — excludes bulky fields
     like review_json, result_summary, and context_page_ids."""
@@ -315,8 +293,6 @@ class RunListItemOut(BaseModel):
     name: str = ""
     config: dict | None = None
     question_summary: str | None = None
-    ab_run_id: str | None = None
-    arms: dict | None = None
     staged: bool = False
 
 
@@ -328,20 +304,6 @@ class PaginatedPagesOut(BaseModel):
     limit: int
 
 
-class ABRunArmOut(BaseModel):
-    run_id: str
-    name: str = ""
-    config: dict = {}
-    trace: RunTraceOut
-
-
-class ABRunTraceOut(BaseModel):
-    ab_run_id: str
-    name: str = ""
-    question: Page | None = None
-    arms: list[ABRunArmOut]
-
-
 class ABEvalDimensionOut(BaseModel):
     name: str
     display_name: str
@@ -351,6 +313,7 @@ class ABEvalDimensionOut(BaseModel):
     comparison: str
     call_id_a: str = ""
     call_id_b: str = ""
+    comparison_call_id: str = ""
 
 
 class ABEvalReportOut(BaseModel):
@@ -361,6 +324,7 @@ class ABEvalReportOut(BaseModel):
     question_id_b: str = ""
     question_headline: str = ""
     overall_assessment: str
+    overall_assessment_call_id: str = ""
     dimension_reports: list[ABEvalDimensionOut]
     config_a: dict = {}
     config_b: dict = {}

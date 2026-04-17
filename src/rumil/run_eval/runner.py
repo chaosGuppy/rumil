@@ -83,12 +83,15 @@ async def evaluate_run_with_agent(
     call_type: CallType = CallType.RUN_EVAL,
     label: str | None = None,
     all_agents: Sequence[EvalAgentSpec] = (),
+    call: Call | None = None,
 ) -> tuple[str, Call]:
     """Run one evaluation agent against a staged run.
 
     Returns (report_text, call). The optional ``label`` is prepended to the
     user prompt (e.g. "A" or "B" in the AB eval context) — when *None* the
-    prompt simply says "Evaluate the run".
+    prompt simply says "Evaluate the run". Pass an existing ``call`` to reuse
+    a Call record created by the caller (so its trace URL can be surfaced
+    before the LLM work begins).
     """
     eval_db = await DB.create(
         run_id=run_id,
@@ -97,10 +100,11 @@ async def evaluate_run_with_agent(
         staged=True,
     )
 
-    call = await parent_db.create_call(
-        call_type=call_type,
-        scope_page_id=question_id,
-    )
+    if call is None:
+        call = await parent_db.create_call(
+            call_type=call_type,
+            scope_page_id=question_id,
+        )
     trace = CallTrace(call.id, parent_db, broadcaster=broadcaster)
     await parent_db.update_call_status(call.id, CallStatus.RUNNING)
 

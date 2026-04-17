@@ -78,6 +78,8 @@ class CallType(str, Enum):
     FEEDBACK_UPDATE = "feedback_update"
     LINK_SUBQUESTIONS = "link_subquestions"
     AB_EVAL = "ab_eval"
+    AB_EVAL_COMPARISON = "ab_eval_comparison"
+    AB_EVAL_SUMMARY = "ab_eval_summary"
     RUN_EVAL = "run_eval"
     CREATE_VIEW = "create_view"
     GLOBAL_PRIORITIZATION = "global_prioritization"

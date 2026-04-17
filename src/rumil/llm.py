@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import sys
 import time
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
@@ -119,6 +120,12 @@ def _log_before_retry(retry_state: RetryCallState) -> None:
         wait,
         retry_state.attempt_number,
         max_retries,
+    )
+    print(
+        f"  [retry] API {label}, waiting {wait:g}s "
+        f"(attempt {retry_state.attempt_number}/{max_retries})",
+        file=sys.stderr,
+        flush=True,
     )
 
 
@@ -498,18 +505,31 @@ async def text_call(
     user_message: str = "",
     *,
     messages: list[dict] | None = None,
+    metadata: LLMExchangeMetadata | None = None,
+    db: DB | None = None,
 ) -> str:
     """Make a plain text LLM call. Returns the raw text response.
 
     Pass `messages` for multi-turn conversations, or `user_message` for single-turn.
+    Pass `metadata` and `db` together to persist the exchange and record a
+    trace event against the call identified by `metadata.call_id`.
     """
     settings = get_settings()
     api_key = settings.require_anthropic_key()
     model = settings.model
     client = anthropic.AsyncAnthropic(api_key=api_key)
     msg_list = messages if messages is not None else [{"role": "user", "content": user_message}]
+    if metadata is not None and metadata.user_message is None:
+        metadata.user_message = user_message
     log.debug("text_call: messages=%d", len(msg_list))
-    api_resp = await call_api(client, model, system_prompt, msg_list)
+    api_resp = await call_api(
+        client,
+        model,
+        system_prompt,
+        msg_list,
+        metadata=metadata,
+        db=db,
+    )
     for block in api_resp.message.content:
         if isinstance(block, TextBlock):
             log.debug("text_call returned %d chars", len(block.text))

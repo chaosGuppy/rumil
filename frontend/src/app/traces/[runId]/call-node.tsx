@@ -6,9 +6,9 @@ import Link from "next/link";
 import type {
   CallNodeOut,
   CallSummary,
-  CallTraceOut,
   DispatchExecutedEventOut,
   DispatchesPlannedEventOut,
+  GetCallEventsApiCallsCallIdEventsGetResponse,
   LlmExchangeOut,
   PageRef,
 } from "@/api/types.gen";
@@ -17,30 +17,13 @@ import { useStagedRun } from "@/lib/staged-run-context";
 import { traceKeys } from "@/lib/queries";
 import type { SequenceNode } from "./trace-viewer";
 
-type TraceEvent = CallTraceOut["events"][number];
+type TraceEvent = GetCallEventsApiCallsCallIdEventsGetResponse[number];
 
 export type TreeNode = {
   node: CallNodeOut;
   children: TreeNode[];
   sequences: SequenceNode[];
 };
-
-export function callTraceToTreeNode(ct: CallTraceOut): TreeNode {
-  const sequences: SequenceNode[] = (ct.sequences ?? []).map((seq) => ({
-    id: seq.id,
-    calls: seq.calls.map(callTraceToTreeNode),
-  }));
-  return {
-    node: {
-      call: { ...ct.call, cost_usd: ct.cost_usd ?? null },
-      scope_page_summary: ct.scope_page_summary ?? null,
-      warning_count: ct.events.filter((e) => e.event === "warning").length,
-      error_count: ct.events.filter((e) => e.event === "error").length,
-    },
-    children: ct.children.map(callTraceToTreeNode),
-    sequences,
-  };
-}
 
 async function fetchCallEvents(callId: string): Promise<TraceEvent[]> {
   const res = await fetch(`${QUERY_API_BASE}/api/calls/${callId}/events`);
@@ -1004,6 +987,23 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
             <span className="trace-kv-key">child call</span>
             <span className="trace-kv-value"><code>{event.child_call_id.slice(0, 8)}</code></span>
           </div>
+          {(event.input_tokens !== null || event.output_tokens !== null) && (
+            <div className="trace-kv">
+              <span className="trace-kv-key">tokens</span>
+              <span className="trace-kv-value">
+                {event.input_tokens ?? 0} in / {event.output_tokens ?? 0} out
+                {event.cache_read_input_tokens
+                  ? ` (${event.cache_read_input_tokens} cached read)`
+                  : ""}
+              </span>
+            </div>
+          )}
+          {event.cost_usd !== null && event.cost_usd !== undefined && (
+            <div className="trace-kv">
+              <span className="trace-kv-key">cost</span>
+              <span className="trace-kv-value">${event.cost_usd.toFixed(4)}</span>
+            </div>
+          )}
           {event.summary && (
             <div className="trace-kv trace-kv-block">
               <span className="trace-kv-key">summary</span>

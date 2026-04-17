@@ -13,6 +13,7 @@ from rumil.database import DB
 from rumil.models import Call, CallStage, CallStatus, CallType, Dispatch, Move, MoveType
 from rumil.available_moves import get_moves_for_call
 from rumil.moves.base import MoveState
+from rumil.tracing.page_load_tracking import page_track_scope
 from rumil.tracing.trace_events import ErrorEvent
 from rumil.tracing.tracer import CallTrace, reset_trace, set_trace
 
@@ -166,44 +167,55 @@ class CallRunner(ABC):
                 reset_trace(trace_token)
 
     async def _run_stages(self) -> None:
-        try:
-            await self.infra.db.update_call_status(
-                self.infra.call.id,
-                CallStatus.RUNNING,
-                call_params=self.infra.call.call_params,
-            )
-
-            self.context_result = await self.context_builder.build_context(self.infra)
-            if self.up_to_stage == CallStage.BUILD_CONTEXT:
-                await mark_call_completed(
-                    self.infra.call,
-                    self.infra.db,
-                    "Stopped after build_context",
+        question_short = self.infra.question_id[:8] if self.infra.question_id else ""
+        with page_track_scope(
+            call_type=self.infra.call.call_type.value,
+            question=question_short,
+        ):
+            try:
+                await self.infra.db.update_call_status(
+                    self.infra.call.id,
+                    CallStatus.RUNNING,
+                    call_params=self.infra.call.call_params,
                 )
-                return
 
-            self.update_result = await self.workspace_updater.update_workspace(
-                self.infra,
-                self.context_result,
-            )
-            if self.up_to_stage == CallStage.UPDATE_WORKSPACE:
-                await mark_call_completed(
-                    self.infra.call,
-                    self.infra.db,
-                    "Stopped after update_workspace",
+                self.context_result = await self.context_builder.build_context(
+                    self.infra
                 )
-                return
+                if self.up_to_stage == CallStage.BUILD_CONTEXT:
+                    await mark_call_completed(
+                        self.infra.call,
+                        self.infra.db,
+                        "Stopped after build_context",
+                    )
+                    await self.infra.trace.flush_page_loads()
+                    return
 
-            await self.closing_reviewer.closing_review(
-                self.infra,
-                self.context_result,
-                self.update_result,
-            )
-        except Exception as e:
-            await self.infra.trace.record(
-                ErrorEvent(
-                    message=f"Call failed: {type(e).__name__}: {e}",
-                    phase="run",
+                self.update_result = await self.workspace_updater.update_workspace(
+                    self.infra,
+                    self.context_result,
                 )
-            )
-            raise
+                if self.up_to_stage == CallStage.UPDATE_WORKSPACE:
+                    await mark_call_completed(
+                        self.infra.call,
+                        self.infra.db,
+                        "Stopped after update_workspace",
+                    )
+                    await self.infra.trace.flush_page_loads()
+                    return
+
+                await self.closing_reviewer.closing_review(
+                    self.infra,
+                    self.context_result,
+                    self.update_result,
+                )
+                await self.infra.trace.flush_page_loads()
+            except Exception as e:
+                await self.infra.trace.flush_page_loads()
+                await self.infra.trace.record(
+                    ErrorEvent(
+                        message=f"Call failed: {type(e).__name__}: {e}",
+                        phase="run",
+                    )
+                )
+                raise

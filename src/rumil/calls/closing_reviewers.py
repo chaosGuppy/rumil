@@ -17,13 +17,14 @@ from rumil.calls.common import (
     save_page_abstracts,
 )
 from rumil.calls.stages import CallInfra, ClosingReviewer, ContextResult, UpdateResult
+from rumil.context import format_page
 from rumil.llm import (
     LLMExchangeMetadata,
     build_system_prompt,
     structured_call,
     text_call,
 )
-from rumil.models import CallType, MoveType, PageType
+from rumil.models import CallType, MoveType, PageDetail, PageType
 from rumil.available_moves import get_moves_for_call
 from rumil.moves.load_page import LoadPagePayload
 from rumil.moves.registry import MOVES
@@ -97,9 +98,17 @@ class ViewClosingReview(StandardClosingReview):
             for page, link in items:
                 imp = link.importance or 0
                 marker = " [IMPORTANCE 5 — FOCUS]" if imp == 5 else ""
+                formatted = await format_page(
+                    page,
+                    PageDetail.CONTENT,
+                    linked_detail=None,
+                    db=infra.db,
+                    track=True,
+                    track_tags={"source": "closing_review_view"},
+                )
                 item_lines.append(
                     f"### [C{page.credence}/R{page.robustness} I{imp}]{marker} "
-                    f"{page.headline}\n\n{page.content}\n"
+                    f"{page.headline}\n\n{formatted}\n"
                 )
             items_text = "\n".join(item_lines)
 

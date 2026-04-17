@@ -15,7 +15,8 @@ from rumil.calls.stages import (
     WorkspaceUpdater,
 )
 from rumil.llm import LLMExchangeMetadata, structured_call
-from rumil.models import CallType, LinkType
+from rumil.context import format_page
+from rumil.models import CallType, LinkType, PageDetail
 from rumil.moves.base import link_pages
 from rumil.scope_subquestion_linker.prompt import build_linker_prompt
 from rumil.scope_subquestion_linker.seed_selection import select_seed_questions
@@ -72,10 +73,17 @@ class LinkerContextBuilder(ContextBuilder):
         else:
             children_block = "(none)"
 
+        scope_formatted = await format_page(
+            scope,
+            PageDetail.CONTENT,
+            linked_detail=None,
+            db=infra.db,
+            track=True,
+            track_tags={"source": "linker_scope"},
+        )
         context_text = (
             "## Scope Question\n\n"
-            f"`{scope.id[:8]}` -- {scope.headline}\n\n"
-            f"{scope.content or scope.abstract}\n\n"
+            f"{scope_formatted}\n\n"
             "## Currently-Linked Subquestions\n\n"
             f"{children_block}\n\n"
             "## Seed Subgraphs (most relevant top-level questions)\n\n"

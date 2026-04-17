@@ -52,7 +52,13 @@ async def _context_check(
         return None
 
     state.context_page_ids.add(source_judgement.id)
-    formatted = await format_page(source_judgement, PageDetail.CONTENT, db=state.db)
+    formatted = await format_page(
+        source_judgement,
+        PageDetail.CONTENT,
+        db=state.db,
+        track=True,
+        track_tags={"source": "epistemic_source_check"},
+    )
     return MoveResult(
         f"Before updating scores on [{page_id[:8]}], please review the "
         "judgement that established the current scores "

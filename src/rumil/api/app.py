@@ -34,6 +34,8 @@ from rumil.api.schemas import (
     LLMExchangeSummaryOut,
     PageCountsOut,
     PageDetailOut,
+    PageLoadEventOut,
+    PageLoadStatsOut,
     PaginatedPagesOut,
     ProjectStatsOut,
     QuestionStatsOut,
@@ -699,4 +701,28 @@ async def get_page_run(page_id: str, db: DB = Depends(_get_db)):
         run_id=run["run_id"],
         created_at=run["created_at"],
         provenance_call_id=run.get("provenance_call_id", ""),
+    )
+
+
+@app.get(
+    "/api/runs/{run_id}/page-load-stats",
+    response_model=PageLoadStatsOut,
+)
+async def get_page_load_stats(run_id: str, db: DB = Depends(_get_db)):
+    rows = await db.get_page_format_events_for_run(run_id)
+
+    events = [
+        PageLoadEventOut(
+            page_id=r["page_id"],
+            detail=r["detail"],
+            tags=r.get("tags") or {},
+        )
+        for r in rows
+    ]
+    unique_pages = {r["page_id"] for r in rows}
+
+    return PageLoadStatsOut(
+        events=events,
+        total=len(rows),
+        total_unique=len(unique_pages),
     )

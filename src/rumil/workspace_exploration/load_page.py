@@ -59,6 +59,8 @@ def make_load_page_tool(
             detail,
             db=db,
             highlight_run_id=highlight_run_id,
+            track=True,
+            track_tags={"source": "workspace_load_tool"},
         )
         await trace.record(
             LoadPageEvent(

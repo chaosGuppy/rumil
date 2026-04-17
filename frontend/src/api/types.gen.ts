@@ -1344,6 +1344,44 @@ export type PageLink = {
 };
 
 /**
+ * PageLoadEventOut
+ */
+export type PageLoadEventOut = {
+    /**
+     * Page Id
+     */
+    page_id: string;
+    /**
+     * Detail
+     */
+    detail: string;
+    /**
+     * Tags
+     */
+    tags: {
+        [key: string]: string;
+    };
+};
+
+/**
+ * PageLoadStatsOut
+ */
+export type PageLoadStatsOut = {
+    /**
+     * Events
+     */
+    events: Array<PageLoadEventOut>;
+    /**
+     * Total
+     */
+    total: number;
+    /**
+     * Total Unique
+     */
+    total_unique: number;
+};
+
+/**
  * PageRef
  */
 export type PageRef = {
@@ -3265,3 +3303,38 @@ export type GetPageRunApiPagesPageIdRunGetResponses = {
 };
 
 export type GetPageRunApiPagesPageIdRunGetResponse = GetPageRunApiPagesPageIdRunGetResponses[keyof GetPageRunApiPagesPageIdRunGetResponses];
+
+export type GetPageLoadStatsApiRunsRunIdPageLoadStatsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Run Id
+         */
+        run_id: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/runs/{run_id}/page-load-stats';
+};
+
+export type GetPageLoadStatsApiRunsRunIdPageLoadStatsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetPageLoadStatsApiRunsRunIdPageLoadStatsGetError = GetPageLoadStatsApiRunsRunIdPageLoadStatsGetErrors[keyof GetPageLoadStatsApiRunsRunIdPageLoadStatsGetErrors];
+
+export type GetPageLoadStatsApiRunsRunIdPageLoadStatsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: PageLoadStatsOut;
+};
+
+export type GetPageLoadStatsApiRunsRunIdPageLoadStatsGetResponse = GetPageLoadStatsApiRunsRunIdPageLoadStatsGetResponses[keyof GetPageLoadStatsApiRunsRunIdPageLoadStatsGetResponses];

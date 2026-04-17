@@ -32,9 +32,10 @@ export default function QuestionStatsPage() {
   const [projectId, setProjectId] = useState<string>();
   const [state, setState] = useState<LoadState>({ kind: "loading" });
 
-  const headline =
-    state.kind === "ready" ? state.headline : state.kind === "not-question" ? state.headline : null;
-  const titleLabel = headline ? `question "${truncateHeadline(headline, 45)}" · stats` : null;
+  const titleHeadline = state.kind === "ready" ? state.headline : null;
+  const titleLabel = titleHeadline
+    ? `question "${truncateHeadline(titleHeadline, 45)}" · stats`
+    : null;
   const wsSuffix = projectName ? ` — ${projectName}` : "";
   useDocumentTitle(titleLabel ? `${titleLabel}${wsSuffix}` : null);
 

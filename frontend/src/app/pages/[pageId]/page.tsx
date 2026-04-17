@@ -378,8 +378,9 @@ export async function generateMetadata({
   const { page } = detail;
   const projectName = await fetchProjectName(page.project_id);
   const headline = truncateHeadline(page.headline, 50);
+  const mid = headline ? ` "${headline}"` : ` ${pageId.slice(0, 8)}`;
   const suffix = projectName ? ` — ${projectName}` : "";
-  return { title: `${page.page_type} "${headline}"${suffix}` };
+  return { title: `${page.page_type}${mid}${suffix}` };
 }
 
 export default async function PageDetailPage({

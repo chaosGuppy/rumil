@@ -841,7 +841,9 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
         except Exception:
             log.warning("Failed to embed new view item %s", new_page.id[:8], exc_info=True)
         try:
-            await extract_and_link_citations(new_page.id, new_page.content, infra.db)
+            await extract_and_link_citations(
+                new_page.id, new_page.content, infra.db, call=infra.call
+            )
         except Exception:
             log.warning(
                 "Citation extraction failed for %s",
@@ -903,7 +905,9 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
                 exc_info=True,
             )
         try:
-            await extract_and_link_citations(new_page.id, new_page.content, infra.db)
+            await extract_and_link_citations(
+                new_page.id, new_page.content, infra.db, call=infra.call
+            )
         except Exception:
             log.warning(
                 "Citation extraction failed for %s",

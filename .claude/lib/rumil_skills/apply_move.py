@@ -86,7 +86,6 @@ ACCRETING_MOVES: frozenset[MoveType] = frozenset(
         MoveType.LINK_CHILD_QUESTION,
         MoveType.LINK_RELATED,
         MoveType.LINK_VARIANT,
-        MoveType.LINK_DEPENDS_ON,
         MoveType.FLAG_FUNNINESS,
         MoveType.REPORT_DUPLICATE,
         MoveType.LOAD_PAGE,  # read-only, harmless

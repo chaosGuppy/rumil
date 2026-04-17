@@ -43,8 +43,9 @@ class CreateClaimPayload(CreatePagePayload):
         description=(
             "Consideration links to create for this claim. Each entry links "
             "the new claim to a QUESTION it bears on, with a strength rating. "
-            "Only use this for claim → question links. For claim → claim "
-            "dependencies, make a separate link_depends_on call."
+            "For claim → claim/judgement dependencies, do NOT use this field "
+            "or any tool: cite the depended-on page inline in `content` with "
+            "`[shortid]` and the dependency link is created automatically."
         ),
     )
 

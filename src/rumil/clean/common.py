@@ -297,7 +297,7 @@ async def reassess_claim(
         project_id=old_page.project_id,
     )
     await db.save_page(new_page)
-    await extract_and_link_citations(new_page.id, new_page.content, db)
+    await extract_and_link_citations(new_page.id, new_page.content, db, call=call)
 
     await db.supersede_page(old_page.id, new_page.id)
     await _copy_consideration_links(old_page.id, new_page.id, db)
@@ -545,7 +545,7 @@ async def reassess_claims(
             project_id=first_claim.project_id,
         )
         await db.save_page(new_page)
-        await extract_and_link_citations(new_page.id, new_page.content, db)
+        await extract_and_link_citations(new_page.id, new_page.content, db, call=call)
 
         old_ids: list[str] = []
         for superseded_short_id in item.supersedes:

@@ -380,7 +380,7 @@ class _DependencyStrengths(BaseModel):
     strengths: list[_CitedClaimStrength]
 
 
-def _citation_excerpts(content: str, short_id: str, max_lines: int = 3) -> list[str]:
+def _citation_excerpts(content: str, short_id: str, max_lines: int = 3) -> Sequence[str]:
     """Return up to *max_lines* lines from *content* that cite *short_id*."""
     pattern = re.compile(rf"[^\n]*\[{re.escape(short_id)}\][^\n]*")
     return pattern.findall(content)[:max_lines]

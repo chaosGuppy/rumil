@@ -57,7 +57,6 @@ PAGE_ID_FIELDS: dict[MoveType, list[str]] = {
     MoveType.LINK_CONSIDERATION: ["claim_id", "question_id"],
     MoveType.LINK_CHILD_QUESTION: ["child_id", "parent_id"],
     MoveType.LINK_RELATED: ["from_page_id", "to_page_id"],
-    MoveType.LINK_DEPENDS_ON: ["dependent_page_id", "dependency_page_id"],
     MoveType.LINK_VARIANT: ["variant_page_id", "original_page_id"],
     MoveType.FLAG_FUNNINESS: ["page_id"],
     MoveType.REPORT_DUPLICATE: ["page_id_a", "page_id_b"],
@@ -428,11 +427,15 @@ async def run_agent_loop(
 
 
 ABSTRACT_INSTRUCTION = (
-    "Self-contained summary of ~200 words. Include: the core conclusion, "
-    "the main supporting reasoning or evidence, key counter-arguments and why "
-    "they were discounted, and the critical uncertainties or dependencies. "
-    "Preserve epistemic qualifications, confidence levels, and priority orderings. "
-    "Must make sense with zero prior context."
+    "Self-contained summary of ~200 words that makes sense with zero prior context. "
+    "Preserve epistemic qualifications, confidence levels, and priority orderings.\n"
+    "For CLAIM pages: the abstract is the pure assertion — fully detailed statement "
+    "of what the claim asserts (specifics, numbers, scope), but WITHOUT derivation, "
+    "provenance, or dependency information. No 'this rests on X', no 'because of Y', "
+    "no citations. The abstract says WHAT the claim asserts; the content says WHY.\n"
+    "For all other page types (judgement, question, source, etc.): include the core "
+    "conclusion, main supporting reasoning or evidence, key counter-arguments and why "
+    "they were discounted, and the critical uncertainties or dependencies."
 )
 
 

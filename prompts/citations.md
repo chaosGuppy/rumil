@@ -10,6 +10,7 @@ Write the 8-character short ID inside square brackets wherever you reference ano
 
 ## Rules
 
+- **For claim content, inline citations _are_ the derivation.** The `content` field of a claim explains *why* the claim is being asserted; every direct dependency must appear as a `[shortid]` citation. Cite only direct dependencies — if you rest on A only via B, cite B and not A. There is no separate "link dependency" tool: the workspace creates a depends_on link from each citation automatically and (for claims) assigns the strength.
 - **Every claim derived from a page must cite that page inline.** If information from a page influenced what you wrote, it *must* have a citation. *Never* leverage a page's content without citing it — uncited use of page information is treated as a fabrication.
 - **Only cite pages whose IDs appear in your context.** Never fabricate or guess a page ID.
 - **Never cite a question — cite its judgement instead.** Questions are open queries, not knowledge. If you want to draw on what the workspace currently believes about a question, find the question's judgement page and cite that. If a question has no judgement yet, you have nothing to cite from it: leave it out, or open a sub-question or assess call to produce a judgement first.

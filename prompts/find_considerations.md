@@ -40,7 +40,7 @@ Check the workspace map for questions elsewhere in the workspace that are direct
 
 Only link questions that are genuinely useful decompositions, not merely topically related. Also, ensure that a good answer to the child question would add substantial information to the parent question, even in the presence of good answers to all other questions in the workspace. If, given answers to another set of questions in the workspace, a question's answer would not add much further value, do not link it. Think of it like a Bayesian netowrk: aim to capture conditional independence relations with your links.
 
-`link_child_question` is the *only* way to relate a parent question to an existing question. Do **not** use `link_depends_on` to point a claim or judgement at a question — depends_on must target a claim or judgement. If a new claim's truth would rest on the answer to an existing question, find that question's current judgement and depend on the judgement instead; if there is no judgement yet, just link the question as a child of the parent and let the workspace produce the judgement.
+`link_child_question` is the *only* way to relate a parent question to an existing question. Claim/judgement → claim/judgement dependencies are never linked with a tool — they are created from inline `[shortid]` citations in content. If a new claim's truth would rest on the answer to an existing question, cite that question's current judgement (not the question itself) in the claim's content; if no judgement exists yet, link the question as a child of the parent and let the workspace produce a judgement first.
 
 ## Hypothesis Questions
 

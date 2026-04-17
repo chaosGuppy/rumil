@@ -21,6 +21,26 @@ from rumil.models import (
 from rumil.moves.base import _CITATION_RE, extract_and_link_citations
 
 
+@pytest.fixture(autouse=True)
+def _stub_strength_helper(mocker):
+    """Stub the Sonnet-backed dependency-strength helper with a deterministic result.
+
+    The helper is invoked by extract_and_link_citations when a CLAIM cites
+    another claim/judgement. Unit tests should not hit the network; return
+    a fixed strength + reasoning for every cited page so tests can assert on
+    it. If the helper is unexpectedly invoked for a non-claim citing page,
+    the test still runs (the stub returns defaults regardless).
+    """
+
+    async def _stub(citing_claim, cited_pages, call, db):
+        return {p.id: (3.5, "stub-reason") for p in cited_pages}
+
+    return mocker.patch(
+        "rumil.moves.base._assign_claim_dependency_strengths",
+        side_effect=_stub,
+    )
+
+
 @pytest_asyncio.fixture
 async def source_page(tmp_db):
     page = Page(
@@ -111,6 +131,8 @@ async def test_inline_citation_of_claim_creates_depends_on_link(
     assert len(deps) == 1
     assert deps[0].from_page_id == citing_page.id
     assert deps[0].to_page_id == claim_page.id
+    assert deps[0].strength == 3.5
+    assert deps[0].reasoning == "stub-reason"
 
 
 async def test_multiple_inline_citations(
@@ -142,14 +164,22 @@ async def test_multiple_inline_citations(
     deps = [l for l in links_from_citing if l.link_type == LinkType.DEPENDS_ON]
     assert len(deps) == 2
     assert {l.to_page_id for l in deps} == {claim_page.id, second_claim_page.id}
+    assert all(l.strength == 3.5 for l in deps)
+    assert all(l.reasoning == "stub-reason" for l in deps)
 
 
 async def test_judgement_citing_claim_creates_depends_on_link(
     tmp_db,
     claim_page,
+    _stub_strength_helper,
 ):
     """A JUDGEMENT citing a CLAIM should produce a DEPENDS_ON link
-    pointing from the judgement to the cited claim."""
+    pointing from the judgement to the cited claim.
+
+    The strength-assignment helper is gated to CLAIM citing pages only, so a
+    JUDGEMENT citation must NOT invoke it — the resulting link should keep
+    the default strength (2.5) and empty reasoning.
+    """
     judgement = Page(
         page_type=PageType.JUDGEMENT,
         layer=PageLayer.SQUIDGY,
@@ -171,6 +201,9 @@ async def test_judgement_citing_claim_creates_depends_on_link(
     assert len(deps) == 1
     assert deps[0].from_page_id == judgement.id
     assert deps[0].to_page_id == claim_page.id
+    assert deps[0].strength == 2.5
+    assert deps[0].reasoning == ""
+    _stub_strength_helper.assert_not_called()
 
 
 async def test_question_citing_claim_creates_related_link(

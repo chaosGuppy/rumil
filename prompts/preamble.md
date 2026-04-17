@@ -127,14 +127,11 @@ Write headlines like newspaper headlines: a reader with no prior context should 
 * **Be specific.** Vague gestures at considerations are not useful. Each claim should stand alone as a substantive assertion.
 * **Epistemic honesty.** Do not overstate confidence. Flag genuine uncertainty.
 * **Fix forward.** If something in the workspace is wrong, supersede the bad page rather than ignoring it.
-* **Two link types, two distinct meanings.** Keep them straight:
+* **Claim content is the derivation; claim abstract is the pure assertion.** For CLAIM pages specifically, the `content` field explains *why* the claim is being made: the argument for it and the pages it rests on. State every direct dependency by citing it inline with `[shortid]` — the workspace auto-creates a depends_on link from each citation, so there is no separate tool for claim dependencies. Cite only *direct* dependencies; if you rest on A only by way of B, cite B, not A. The `abstract` of a claim is the pure assertion — it says what the claim asserts with full detail, with no derivation or provenance. A reader of a claim abstract knows exactly what is asserted but not what it depends on; that is the content's job. (Judgements already read as derivations and follow their own content conventions.)
+* **Two link types you create explicitly.** Keep them straight:
   * `link_consideration` connects a **claim → question** that the claim should be accounted for in. It says "anyone analysing this question should weigh this claim". Use it when you create a claim that bears on a question.
-  * `link_depends_on` connects a **claim or judgement → another claim or judgement** whose truth the source's conclusions rest on. It says "if the target turns out to be wrong, the source's conclusions are in trouble". Use it when:
-    * A claim assumes or builds on another claim ("if X is true, then Y follows")
-    * A judgement's conclusion rests heavily on specific load-bearing claims
-    * A variant claim still carries forward assumptions from the original
-  * **Never depend on a question.** Questions are open queries, not knowledge — there is nothing to "rest on" until they have a judgement. If your claim depends on the answer to a question, point `link_depends_on` at the question's current judgement instead. If no judgement exists yet, you can't express the dependency yet — open or run an assess on the question first.
-  * Together these build a dependency graph that lets the workspace detect when upstream changes might invalidate downstream conclusions.
+  * `link_child_question` relates a parent question to a sub-question.
+  * Dependencies between claims/judgements are *never* created with a tool — they are derived from inline `[shortid]` citations in the citing page's content. Cite a question's current judgement rather than the question itself (citing a judgement-less question is silently dropped). Together the consideration links and the inline-citation dependency graph let the workspace detect when upstream changes might invalidate downstream conclusions.
 * **Never cite questions.** The same rule applies to inline `[shortid]` citations: cite the question's judgement, not the question itself. A citation pointing at a question with no judgement will be silently dropped.
 * **Rate supersession impact.** When superseding a page, set `change_magnitude` to indicate how much the picture changed: 1 = minor wording only, 3 = substantive changes but same bottom line, 5 = completely changed the picture. This helps the workspace assess how urgently things that depended on the old page need revisiting.
 

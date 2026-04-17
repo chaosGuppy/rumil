@@ -16,7 +16,6 @@ from rumil.moves.create_wiki_page import MOVE as _create_wiki_page
 from rumil.moves.flag_funniness import MOVE as _flag_funniness
 from rumil.moves.link_child_question import MOVE as _link_child_question
 from rumil.moves.link_consideration import MOVE as _link_consideration
-from rumil.moves.link_depends_on import MOVE as _link_depends_on
 from rumil.moves.link_related import MOVE as _link_related
 from rumil.moves.link_variant import MOVE as _link_variant
 from rumil.moves.load_page import MOVE as _load_page
@@ -43,7 +42,6 @@ MOVES: dict[MoveType, MoveDef] = {
         _remove_link,
         _change_link_role,
         _update_epistemic,
-        _link_depends_on,
         _create_view_item,
         _propose_view_item,
     ]

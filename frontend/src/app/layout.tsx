@@ -15,7 +15,10 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Rumil",
+  title: {
+    template: "%s · Rumil",
+    default: "Rumil",
+  },
   description: "Research workspace explorer",
 };
 

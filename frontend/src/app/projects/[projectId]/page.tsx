@@ -8,6 +8,7 @@ import type { Page, PageType, PaginatedPagesOut, Project, RunListItemOut } from 
 import { CLIENT_API_BASE as API_BASE } from "@/api-config";
 import { useStagedRun } from "@/lib/staged-run-context";
 import { WorkspaceIndicator } from "@/components/workspace-indicator";
+import { useDocumentTitle } from "@/lib/use-document-title";
 
 const PAGE_TYPES: PageType[] = [
   "question",
@@ -96,6 +97,8 @@ export default function PagesIndexPage() {
   const [showSuperseded, setShowSuperseded] = useState(false);
   const { activeStagedRunId, setActiveStagedRunId } = useStagedRun();
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  useDocumentTitle(projectName);
 
   const onSearchChange = useCallback((value: string) => {
     setSearch(value);

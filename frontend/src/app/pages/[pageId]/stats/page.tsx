@@ -9,6 +9,8 @@ import { CLIENT_API_BASE as API_BASE } from "@/api-config";
 import { WorkspaceIndicator } from "@/components/workspace-indicator";
 import { StatsView } from "@/components/stats-view";
 import { SubgraphView } from "@/components/subgraph-view";
+import { useDocumentTitle } from "@/lib/use-document-title";
+import { truncateHeadline } from "@/lib/page-titles";
 
 type LoadState =
   | { kind: "loading" }
@@ -29,6 +31,13 @@ export default function QuestionStatsPage() {
   const [projectName, setProjectName] = useState<string>();
   const [projectId, setProjectId] = useState<string>();
   const [state, setState] = useState<LoadState>({ kind: "loading" });
+
+  const titleHeadline = state.kind === "ready" ? state.headline : null;
+  const titleLabel = titleHeadline
+    ? `question "${truncateHeadline(titleHeadline, 45)}" · stats`
+    : null;
+  const wsSuffix = projectName ? ` — ${projectName}` : "";
+  useDocumentTitle(titleLabel ? `${titleLabel}${wsSuffix}` : null);
 
   useEffect(() => {
     let cancelled = false;

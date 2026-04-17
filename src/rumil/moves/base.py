@@ -349,24 +349,25 @@ async def create_page(
 _CITATION_RE = re.compile(r"\[([a-f0-9]{8})\]")
 
 _STRENGTH_SYSTEM_PROMPT = (
-    "You are assigning dependency strengths for a newly-created claim. "
-    "The claim's content is its derivation — the argument for the claim, "
-    "citing each direct dependency inline with a short ID in square brackets.\n\n"
+    "You are assigning dependency strengths for a newly-created claim or "
+    "judgement. The page's content is its derivation — the argument for "
+    "the page, citing each direct dependency inline with a short ID in "
+    "square brackets.\n\n"
     "For each cited page listed in the user message, return an entry with "
     "its 8-character page_id, a strength 1-5, and a one-sentence reasoning "
     "naming the role the cited page plays in the derivation.\n"
-    "- 1 = weak; if the cited page were false, the citing claim would mostly stand.\n"
+    "- 1 = weak; if the cited page were false, the citing page would mostly stand.\n"
     "- 3 = material; the argument would need reworking.\n"
-    "- 5 = fully load-bearing; the claim would collapse.\n\n"
+    "- 5 = fully load-bearing; the citing page would collapse.\n\n"
     "Return one entry per cited page; do not invent IDs."
 )
 
 
-class _CitedClaimStrength(BaseModel):
+class _CitedPageStrength(BaseModel):
     page_id: str = Field(description="8-character short ID of the cited page")
     strength: float = Field(
         description=(
-            "1-5: how load-bearing this dependency is for the citing claim "
+            "1-5: how load-bearing this dependency is for the citing page "
             "(1 = mildly depends on, 5 = would collapse without it)"
         ),
     )
@@ -377,7 +378,12 @@ class _CitedClaimStrength(BaseModel):
 
 
 class _DependencyStrengths(BaseModel):
-    strengths: list[_CitedClaimStrength]
+    strengths: list[_CitedPageStrength]
+
+
+_STRENGTH_ELIGIBLE_CITING_TYPES: frozenset[PageType] = frozenset(
+    {PageType.CLAIM, PageType.JUDGEMENT}
+)
 
 
 def _citation_excerpts(content: str, short_id: str, max_lines: int = 3) -> Sequence[str]:
@@ -386,8 +392,8 @@ def _citation_excerpts(content: str, short_id: str, max_lines: int = 3) -> Seque
     return pattern.findall(content)[:max_lines]
 
 
-async def _assign_claim_dependency_strengths(
-    citing_claim: Page,
+async def _assign_dependency_strengths(
+    citing_page: Page,
     cited_pages: Sequence[Page],
     call: Call | None,
     db: DB,
@@ -405,7 +411,7 @@ async def _assign_claim_dependency_strengths(
 
     entries: list[str] = []
     for p in cited_pages:
-        excerpts = _citation_excerpts(citing_claim.content, p.id[:8])
+        excerpts = _citation_excerpts(citing_page.content, p.id[:8])
         cite_block = (
             "\n".join(f"> {line.strip()}" for line in excerpts)
             if excerpts
@@ -413,11 +419,13 @@ async def _assign_claim_dependency_strengths(
         )
         entries.append(
             f"### [{p.id[:8]}] {p.headline} ({p.page_type.value})\n"
-            f"Cited in the new claim as:\n{cite_block}\n"
+            f"Cited in the new page as:\n{cite_block}\n"
         )
 
+    citing_type_label = citing_page.page_type.value
     user_message = (
-        f"## New claim\n**{citing_claim.headline}**\n\n{citing_claim.content}\n\n"
+        f"## New {citing_type_label}\n**{citing_page.headline}**\n\n"
+        f"{citing_page.content}\n\n"
         "---\n\n"
         f"## Cited pages ({len(cited_pages)})\n\n" + "\n".join(entries)
     )
@@ -428,7 +436,7 @@ async def _assign_claim_dependency_strengths(
     if call is not None:
         metadata = LLMExchangeMetadata(
             call_id=call.id,
-            phase="assign_claim_dependency_strengths",
+            phase="assign_dependency_strengths",
         )
         db_arg = db
 
@@ -444,7 +452,7 @@ async def _assign_claim_dependency_strengths(
     except Exception:
         log.warning(
             "Dependency strength call failed for page %s; using defaults",
-            citing_claim.id[:8],
+            citing_page.id[:8],
             exc_info=True,
         )
         return defaults
@@ -452,7 +460,7 @@ async def _assign_claim_dependency_strengths(
     if result.parsed is None:
         log.warning(
             "Dependency strength call returned no parsed output for page %s",
-            citing_claim.id[:8],
+            citing_page.id[:8],
         )
         return defaults
 
@@ -550,10 +558,10 @@ async def extract_and_link_citations(
         pending.append((from_id, to_id, link_type, cited_page))
 
     strengths: dict[str, tuple[float, str]] = {}
-    if citing_type == PageType.CLAIM and citing_page is not None:
+    if citing_type in _STRENGTH_ELIGIBLE_CITING_TYPES and citing_page is not None:
         depends_on_targets = [cited for (_, _, lt, cited) in pending if lt == LinkType.DEPENDS_ON]
         if depends_on_targets:
-            strengths = await _assign_claim_dependency_strengths(
+            strengths = await _assign_dependency_strengths(
                 citing_page,
                 depends_on_targets,
                 call,

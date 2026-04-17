@@ -40,6 +40,10 @@ export type AbEvalDimensionOut = {
      * Call Id B
      */
     call_id_b?: string;
+    /**
+     * Comparison Call Id
+     */
+    comparison_call_id?: string;
 };
 
 /**
@@ -135,6 +139,10 @@ export type AbEvalReportOut = {
      */
     overall_assessment: string;
     /**
+     * Overall Assessment Call Id
+     */
+    overall_assessment_call_id?: string;
+    /**
      * Dimension Reports
      */
     dimension_reports: Array<AbEvalDimensionOut>;
@@ -154,46 +162,6 @@ export type AbEvalReportOut = {
      * Created At
      */
     created_at: string;
-};
-
-/**
- * ABRunArmOut
- */
-export type AbRunArmOut = {
-    /**
-     * Run Id
-     */
-    run_id: string;
-    /**
-     * Name
-     */
-    name?: string;
-    /**
-     * Config
-     */
-    config?: {
-        [key: string]: unknown;
-    };
-    trace: RunTraceOut;
-};
-
-/**
- * ABRunTraceOut
- */
-export type AbRunTraceOut = {
-    /**
-     * Ab Run Id
-     */
-    ab_run_id: string;
-    /**
-     * Name
-     */
-    name?: string;
-    question?: Page | null;
-    /**
-     * Arms
-     */
-    arms: Array<AbRunArmOut>;
 };
 
 /**
@@ -339,24 +307,6 @@ export type CallNodeOut = {
 };
 
 /**
- * CallSequenceOut
- */
-export type CallSequenceOut = {
-    /**
-     * Id
-     */
-    id: string;
-    /**
-     * Position In Batch
-     */
-    position_in_batch: number;
-    /**
-     * Calls
-     */
-    calls: Array<CallTraceOut>;
-};
-
-/**
  * CallStatus
  */
 export type CallStatus = 'pending' | 'running' | 'complete' | 'failed';
@@ -417,94 +367,9 @@ export type CallSummary = {
 };
 
 /**
- * CallTraceOut
- */
-export type CallTraceOut = {
-    call: Call;
-    /**
-     * Scope Page Summary
-     */
-    scope_page_summary?: string | null;
-    /**
-     * Events
-     */
-    events: Array<({
-        event: 'context_built';
-    } & ContextBuiltEventOut) | ({
-        event: 'moves_executed';
-    } & MovesExecutedEventOut) | ({
-        event: 'review_complete';
-    } & ReviewCompleteEventOut) | ({
-        event: 'llm_exchange';
-    } & LlmExchangeEventOut) | ({
-        event: 'warning';
-    } & WarningEventOut) | ({
-        event: 'error';
-    } & ErrorEventOut) | ({
-        event: 'scoring_completed';
-    } & ScoringCompletedEventOut) | ({
-        event: 'dispatches_planned';
-    } & DispatchesPlannedEventOut) | ({
-        event: 'dispatch_executed';
-    } & DispatchExecutedEventOut) | ({
-        event: 'explore_page';
-    } & ExplorePageEventOut) | ({
-        event: 'subagent_started';
-    } & SubagentStartedEventOut) | ({
-        event: 'subagent_completed';
-    } & SubagentCompletedEventOut) | ({
-        event: 'agent_started';
-    } & AgentStartedEventOut) | ({
-        event: 'evaluation_complete';
-    } & EvaluationCompleteEventOut) | ({
-        event: 'tool_call';
-    } & ToolCallEventOut) | ({
-        event: 'reassess_triggered';
-    } & ReassessTriggeredEventOut) | ({
-        event: 'affected_pages_identified';
-    } & AffectedPagesIdentifiedEventOut) | ({
-        event: 'update_subgraph_computed';
-    } & UpdateSubgraphComputedEventOut) | ({
-        event: 'update_plan_created';
-    } & UpdatePlanCreatedEventOut) | ({
-        event: 'claim_reassessed';
-    } & ClaimReassessedEventOut) | ({
-        event: 'grounding_tasks_generated';
-    } & GroundingTasksGeneratedEventOut) | ({
-        event: 'web_research_complete';
-    } & WebResearchCompleteEventOut) | ({
-        event: 'render_question_subgraph';
-    } & RenderQuestionSubgraphEventOut) | ({
-        event: 'load_page';
-    } & LoadPageEventOut) | ({
-        event: 'link_subquestions_complete';
-    } & LinkSubquestionsCompleteEventOut) | ({
-        event: 'view_created';
-    } & ViewCreatedEventOut) | ({
-        event: 'phase_skipped';
-    } & PhaseSkippedEventOut) | ({
-        event: 'global_phase_completed';
-    } & GlobalPhaseCompletedEventOut) | ({
-        event: 'update_view_phase_completed';
-    } & UpdateViewPhaseCompletedEventOut)>;
-    /**
-     * Children
-     */
-    children: Array<CallTraceOut>;
-    /**
-     * Sequences
-     */
-    sequences?: Array<CallSequenceOut> | null;
-    /**
-     * Cost Usd
-     */
-    cost_usd?: number | null;
-};
-
-/**
  * CallType
  */
-export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'ab_eval' | 'run_eval' | 'create_view' | 'global_prioritization' | 'update_view' | 'claude_code_direct';
+export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'ab_eval' | 'ab_eval_comparison' | 'ab_eval_summary' | 'run_eval' | 'create_view' | 'global_prioritization' | 'update_view' | 'claude_code_direct';
 
 /**
  * CallTypeFruitScoreItem
@@ -1724,16 +1589,6 @@ export type RunListItemOut = {
      */
     question_summary?: string | null;
     /**
-     * Ab Run Id
-     */
-    ab_run_id?: string | null;
-    /**
-     * Arms
-     */
-    arms?: {
-        [key: string]: unknown;
-    } | null;
-    /**
      * Staged
      */
     staged?: boolean;
@@ -1755,25 +1610,6 @@ export type RunSummaryOut = {
      * Provenance Call Id
      */
     provenance_call_id?: string;
-};
-
-/**
- * RunTraceOut
- */
-export type RunTraceOut = {
-    /**
-     * Run Id
-     */
-    run_id: string;
-    question: Page | null;
-    /**
-     * Root Calls
-     */
-    root_calls: Array<CallTraceOut>;
-    /**
-     * Cost Usd
-     */
-    cost_usd?: number | null;
 };
 
 /**
@@ -3076,41 +2912,6 @@ export type GetCallEventsApiCallsCallIdEventsGetResponses = {
 };
 
 export type GetCallEventsApiCallsCallIdEventsGetResponse = GetCallEventsApiCallsCallIdEventsGetResponses[keyof GetCallEventsApiCallsCallIdEventsGetResponses];
-
-export type GetAbRunTraceApiAbRunsAbRunIdTraceGetData = {
-    body?: never;
-    path: {
-        /**
-         * Ab Run Id
-         */
-        ab_run_id: string;
-    };
-    query?: {
-        /**
-         * Project Id
-         */
-        project_id?: string;
-    };
-    url: '/api/ab-runs/{ab_run_id}/trace';
-};
-
-export type GetAbRunTraceApiAbRunsAbRunIdTraceGetErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type GetAbRunTraceApiAbRunsAbRunIdTraceGetError = GetAbRunTraceApiAbRunsAbRunIdTraceGetErrors[keyof GetAbRunTraceApiAbRunsAbRunIdTraceGetErrors];
-
-export type GetAbRunTraceApiAbRunsAbRunIdTraceGetResponses = {
-    /**
-     * Successful Response
-     */
-    200: AbRunTraceOut;
-};
-
-export type GetAbRunTraceApiAbRunsAbRunIdTraceGetResponse = GetAbRunTraceApiAbRunsAbRunIdTraceGetResponses[keyof GetAbRunTraceApiAbRunsAbRunIdTraceGetResponses];
 
 export type ListAbEvalsApiAbEvalsGetData = {
     body?: never;

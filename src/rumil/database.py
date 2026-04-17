@@ -225,13 +225,11 @@ class DB:
         client: AsyncClient,
         project_id: str = "",
         staged: bool = False,
-        ab_run_id: str | None = None,
     ):
         self.run_id = run_id
         self.client = client
         self.project_id = project_id
         self.staged = staged
-        self.ab_run_id = ab_run_id
         self._semaphore = asyncio.Semaphore(get_settings().db_max_concurrent_queries)
         self._prod: bool = False
         self._mutation_cache: MutationState | None = None
@@ -244,7 +242,6 @@ class DB:
         project_id: str = "",
         client: AsyncClient | None = None,
         staged: bool = False,
-        ab_run_id: str | None = None,
     ) -> "DB":
         if client is None:
             url, key = get_settings().get_supabase_credentials(prod)
@@ -254,7 +251,6 @@ class DB:
             client=client,
             project_id=project_id,
             staged=staged,
-            ab_run_id=ab_run_id,
         )
         db._prod = prod
         return db
@@ -273,7 +269,6 @@ class DB:
             client=client,
             project_id=self.project_id,
             staged=self.staged,
-            ab_run_id=self.ab_run_id,
         )
         db._prod = self._prod
         return db
@@ -1460,6 +1455,7 @@ class DB:
         status: CallStatus,
         result_summary: str = "",
         call_params: dict | None = None,
+        cost_usd: float | None = None,
     ) -> None:
         completed_at = datetime.now(UTC).isoformat() if status == CallStatus.COMPLETE else None
         payload: dict = {
@@ -1469,6 +1465,8 @@ class DB:
         }
         if call_params is not None:
             payload["call_params"] = call_params
+        if cost_usd is not None:
+            payload["cost_usd"] = cost_usd
         await self._execute(self.client.table("calls").update(payload).eq("id", call_id))
 
     async def increment_call_budget_used(
@@ -2329,7 +2327,6 @@ class DB:
         name: str,
         question_id: str | None,
         config: dict | None = None,
-        ab_arm: str | None = None,
     ) -> None:
         """Insert a row in the runs table for this DB's run_id."""
         await self._execute(
@@ -2341,8 +2338,6 @@ class DB:
                     "question_id": question_id,
                     "config": config or {},
                     "staged": self.staged,
-                    "ab_run_id": self.ab_run_id,
-                    "ab_arm": ab_arm,
                 }
             )
         )
@@ -2554,24 +2549,6 @@ class DB:
                     .eq("id", tid)
                 )
 
-    async def create_ab_run(
-        self,
-        ab_run_id: str,
-        name: str,
-        question_id: str | None,
-    ) -> None:
-        """Insert a row in the ab_runs table."""
-        await self._execute(
-            self.client.table("ab_runs").insert(
-                {
-                    "id": ab_run_id,
-                    "name": name,
-                    "project_id": self.project_id,
-                    "question_id": question_id,
-                }
-            )
-        )
-
     async def save_ab_eval_report(
         self,
         run_id_a: str,
@@ -2580,6 +2557,7 @@ class DB:
         question_id_b: str,
         overall_assessment: str,
         dimension_reports: Sequence[dict[str, Any]],
+        overall_assessment_call_id: str | None = None,
     ) -> str:
         """Save an AB evaluation report. Returns the report ID."""
         report_id = str(uuid.uuid4())
@@ -2592,6 +2570,7 @@ class DB:
                     "question_id_a": question_id_a,
                     "question_id_b": question_id_b,
                     "overall_assessment": overall_assessment,
+                    "overall_assessment_call_id": overall_assessment_call_id,
                     "dimension_reports": list(dimension_reports),
                     "project_id": str(self.project_id) if self.project_id else None,
                 }
@@ -2666,70 +2645,38 @@ class DB:
     async def list_runs_for_project(self, project_id: str, limit: int = 50) -> list[dict[str, Any]]:
         """Return recent runs for a project, newest first.
 
-        Queries the runs table. Groups AB runs into a single entry with
-        both arm run_ids. Falls back to the calls table for legacy runs
-        that predate the runs table.
+        Queries the runs table and falls back to the calls table for legacy
+        runs that predate the runs table.
         """
         run_rows = _rows(
             await self._execute(
                 self.client.table("runs")
-                .select("id, name, question_id, config, ab_run_id, ab_arm, created_at, staged")
+                .select("id, name, question_id, config, created_at, staged")
                 .eq("project_id", project_id)
                 .order("created_at", desc=True)
                 .limit(limit * 2)
             )
         )
-        ab_groups: dict[str, dict[str, Any]] = {}
         results: list[dict[str, Any]] = []
         seen_run_ids: set[str] = set()
         for row in run_rows:
-            ab_id = row.get("ab_run_id")
-            if ab_id:
-                if ab_id not in ab_groups:
-                    ab_groups[ab_id] = {
-                        "ab_run_id": ab_id,
-                        "created_at": row["created_at"],
-                        "name": row.get("name", ""),
-                        "question_summary": None,
-                        "arms": {},
-                    }
-                arm = row.get("ab_arm", "?")
-                ab_groups[ab_id]["arms"][arm] = {
-                    "run_id": row["id"],
-                    "config": row.get("config", {}),
-                }
-                seen_run_ids.add(row["id"])
-            else:
-                question_summary = None
-                qid = row.get("question_id")
-                if qid:
-                    page = await self.get_page(qid)
-                    if page:
-                        question_summary = page.headline
-                results.append(
-                    {
-                        "run_id": row["id"],
-                        "created_at": row["created_at"],
-                        "name": row.get("name", ""),
-                        "config": row.get("config", {}),
-                        "question_summary": question_summary,
-                        "staged": row.get("staged", False),
-                    }
-                )
-                seen_run_ids.add(row["id"])
-        for ab_group in ab_groups.values():
-            qid = None
-            for arm_info in ab_group["arms"].values():
-                rid = arm_info["run_id"]
-                q = await self.get_run_question_id(rid)
-                if q:
-                    qid = q
-                    break
+            question_summary = None
+            qid = row.get("question_id")
             if qid:
                 page = await self.get_page(qid)
                 if page:
-                    ab_group["question_summary"] = page.headline
-            results.append(ab_group)
+                    question_summary = page.headline
+            results.append(
+                {
+                    "run_id": row["id"],
+                    "created_at": row["created_at"],
+                    "name": row.get("name", ""),
+                    "config": row.get("config", {}),
+                    "question_summary": question_summary,
+                    "staged": row.get("staged", False),
+                }
+            )
+            seen_run_ids.add(row["id"])
         # Fallback: include legacy runs from calls table that don't have a runs row
         legacy_rows = _rows(
             await self._execute(
@@ -2779,14 +2726,5 @@ class DB:
             await self._execute(self.client.table(table).delete().eq("run_id", self.run_id))
         await self._execute(self.client.table("budget").delete().eq("run_id", self.run_id))
         await self._execute(self.client.table("runs").delete().eq("id", self.run_id))
-        if self.ab_run_id:
-            # Only delete ab_run if no other runs reference it
-            remaining = _rows(
-                await self._execute(
-                    self.client.table("runs").select("id").eq("ab_run_id", self.ab_run_id).limit(1)
-                )
-            )
-            if not remaining:
-                await self._execute(self.client.table("ab_runs").delete().eq("id", self.ab_run_id))
         if delete_project and self.project_id:
             await self._execute(self.client.table("projects").delete().eq("id", self.project_id))

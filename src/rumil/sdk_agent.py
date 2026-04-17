@@ -97,35 +97,52 @@ def _read_subagent_transcript(transcript_path: str, max_text_len: int = 500) -> 
     """Parse a subagent transcript JSONL for the last text and per-turn usage."""
     result = _TranscriptSummary()
     if not transcript_path:
+        log.warning("Subagent transcript path is empty — no usage data will be captured")
+        return result
+    path = Path(transcript_path)
+    if not path.exists():
+        log.warning("Subagent transcript file does not exist: %s", transcript_path)
         return result
     try:
-        lines = Path(transcript_path).read_text().splitlines()
-        for line in lines:
-            try:
-                msg = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if msg.get("type") == "assistant":
-                for block in msg.get("message", {}).get("content", []):
-                    if block.get("type") == "text":
-                        result.last_text = block["text"]
-                usage = msg.get("message", {}).get("usage")
-                if isinstance(usage, dict):
-                    turn = _TurnUsage(
-                        input_tokens=usage.get("input_tokens", 0),
-                        output_tokens=usage.get("output_tokens", 0),
-                        cache_creation_input_tokens=usage.get("cache_creation_input_tokens", 0),
-                        cache_read_input_tokens=usage.get("cache_read_input_tokens", 0),
-                    )
-                    result.turns.append(turn)
-                    result.input_tokens += turn.input_tokens
-                    result.output_tokens += turn.output_tokens
-                    result.cache_creation_input_tokens += turn.cache_creation_input_tokens
-                    result.cache_read_input_tokens += turn.cache_read_input_tokens
-        if len(result.last_text) > max_text_len:
-            result.last_text = result.last_text[:max_text_len]
-    except Exception:
-        log.debug("Could not read subagent transcript: %s", transcript_path)
+        lines = path.read_text().splitlines()
+    except Exception as exc:
+        log.warning(
+            "Failed to read subagent transcript %s: %s: %s",
+            transcript_path,
+            type(exc).__name__,
+            exc,
+        )
+        return result
+    for line in lines:
+        try:
+            msg = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if msg.get("type") == "assistant":
+            for block in msg.get("message", {}).get("content", []):
+                if block.get("type") == "text":
+                    result.last_text = block["text"]
+            usage = msg.get("message", {}).get("usage")
+            if isinstance(usage, dict):
+                turn = _TurnUsage(
+                    input_tokens=usage.get("input_tokens", 0),
+                    output_tokens=usage.get("output_tokens", 0),
+                    cache_creation_input_tokens=usage.get("cache_creation_input_tokens", 0),
+                    cache_read_input_tokens=usage.get("cache_read_input_tokens", 0),
+                )
+                result.turns.append(turn)
+                result.input_tokens += turn.input_tokens
+                result.output_tokens += turn.output_tokens
+                result.cache_creation_input_tokens += turn.cache_creation_input_tokens
+                result.cache_read_input_tokens += turn.cache_read_input_tokens
+    if len(result.last_text) > max_text_len:
+        result.last_text = result.last_text[:max_text_len]
+    if not result.turns:
+        log.warning(
+            "Subagent transcript %s contained no assistant messages with usage data (%d lines)",
+            transcript_path,
+            len(lines),
+        )
     return result
 
 
@@ -253,12 +270,6 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
             summary = transcript.last_text
         if not isinstance(summary, str):
             summary = ""
-        if child_call_id:
-            await config.db.update_call_status(
-                child_call_id,
-                CallStatus.COMPLETE,
-                result_summary=summary if isinstance(summary, str) else "",
-            )
 
         child_trace = subagent_traces.get(agent_id)
         if child_trace and transcript.turns:
@@ -282,6 +293,16 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
                         cost_usd=turn_cost or None,
                     )
                 )
+        elif child_trace:
+            await child_trace.record(
+                WarningEvent(
+                    message=(
+                        f"Subagent transcript missing or unparseable "
+                        f"(path={transcript_path or '<empty>'}); "
+                        "per-turn usage and cost not recorded"
+                    )
+                )
+            )
 
         has_usage = transcript.input_tokens > 0 or transcript.output_tokens > 0
         cost_usd: float | None = None
@@ -295,6 +316,17 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
                     cache_read_input_tokens=transcript.cache_read_input_tokens,
                 )
                 or None
+            )
+        if child_call_id:
+            if child_trace and child_trace.total_cost_usd > 0:
+                child_call_cost: float | None = child_trace.total_cost_usd
+            else:
+                child_call_cost = cost_usd
+            await config.db.update_call_status(
+                child_call_id,
+                CallStatus.COMPLETE,
+                result_summary=summary if isinstance(summary, str) else "",
+                cost_usd=child_call_cost,
             )
         await config.trace.record(
             SubagentCompletedEvent(
@@ -312,13 +344,21 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
                 cost_usd=cost_usd,
             )
         )
-        log.info(
-            "Subagent %s completed (tokens: %d in / %d out, cost: $%.4f)",
-            agent_id,
-            transcript.input_tokens,
-            transcript.output_tokens,
-            cost_usd or 0.0,
-        )
+        if has_usage:
+            log.info(
+                "Subagent %s completed (tokens: %d in / %d out, cost: $%.4f)",
+                agent_id,
+                transcript.input_tokens,
+                transcript.output_tokens,
+                cost_usd or 0.0,
+            )
+        else:
+            log.warning(
+                "Subagent %s completed but no usage data was captured "
+                "(transcript=%s) — cost/tokens will show as zero",
+                agent_id,
+                transcript_path or "<empty>",
+            )
         return SyncHookJSONOutput()
 
     allowed = list(config.allowed_tools) if config.allowed_tools else tool_fqnames

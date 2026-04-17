@@ -642,67 +642,6 @@ async def cmd_batch(batch_file: str, db: DB) -> None:
     await asyncio.gather(*tasks)
 
 
-async def cmd_ab(
-    q: QuestionInput,
-    budget: int | None,
-    db: DB,
-    name: str = "",
-) -> None:
-    """Run an A/B test: two concurrent investigations with different configs."""
-    ab_run_id = str(uuid.uuid4())
-    budget = _default_budget(budget)
-
-    question_id = await create_root_question(
-        q.headline,
-        db,
-        abstract=q.abstract,
-        content=q.content,
-    )
-    await db.create_ab_run(ab_run_id, name or q.headline, question_id)
-
-    frontend = get_settings().frontend_url.rstrip("/")
-    print(f"\nAB test: {ab_run_id}")
-    print(f"Headline: {q.headline}")
-    print(f"Budget per arm: {budget}")
-    print(f"Trace: {frontend}/ab-traces/{ab_run_id}")
-
-    async def run_arm(arm_label: str, env_file: str) -> None:
-        arm_settings = Settings.from_env_files(".env", env_file)
-        if get_settings().is_smoke_test:
-            arm_settings.rumil_smoke_test = "1"
-        if get_settings().is_prod_db:
-            arm_settings.use_prod_db = "1"
-        if not get_settings().tracing_enabled:
-            arm_settings.tracing_enabled = False
-        _settings_var.set(arm_settings)
-
-        arm_db = await DB.create(
-            run_id=str(uuid.uuid4()),
-            prod=arm_settings.is_prod_db,
-            client=db.client,
-            project_id=db.project_id,
-            staged=True,
-            ab_run_id=ab_run_id,
-        )
-        config = arm_settings.capture_config()
-        await arm_db.create_run(
-            name=f"{name or q.headline[:100]} (arm {arm_label})",
-            question_id=question_id,
-            config=config,
-            ab_arm=arm_label,
-        )
-        await arm_db.init_budget(budget)
-        await Orchestrator(arm_db).run(question_id)
-        total, used = await arm_db.get_budget()
-        print(f"\nArm {arm_label} complete: {used}/{total} budget used")
-
-    async with asyncio.TaskGroup() as tg:
-        tg.create_task(run_arm("a", ".a.env"))
-        tg.create_task(run_arm("b", ".b.env"))
-
-    print(f"\nAB test complete: {frontend}/ab-traces/{ab_run_id}")
-
-
 async def cmd_ab_eval(
     run_id_a: str,
     run_id_b: str,
@@ -1052,12 +991,6 @@ async def async_main():
         '[{"question": "...", "budget": 10}, ...]',
     )
     parser.add_argument(
-        "--ab",
-        dest="ab_test",
-        action="store_true",
-        help="Run an A/B test with two arms (requires .a.env and .b.env)",
-    )
-    parser.add_argument(
         "--name",
         dest="run_name",
         default="",
@@ -1300,9 +1233,6 @@ async def async_main():
         await cmd_batch(args.batch_file, db)
     elif args.ingest_files and not args.question:
         await cmd_ingest(args.ingest_files, args.for_question_id, args.budget, db)
-    elif args.question and args.ab_test:
-        q = parse_question_input(args.question)
-        await cmd_ab(q, args.budget, db, name=args.run_name)
     elif args.question:
         q = parse_question_input(args.question)
         do_summary = args.summary_id == "__auto__"

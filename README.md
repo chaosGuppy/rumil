@@ -118,10 +118,6 @@ uv run python main.py --list-workspaces
 # List questions in a specific workspace
 uv run python main.py --list --workspace my-project
 
-# A/B test: run two arms concurrently with different configs
-# Requires .a.env and .b.env files with differing settings
-uv run python main.py --ab "Your question here" --budget 10
-
 # Name a run for easier identification in the trace viewer
 uv run python main.py "Your question here" --name "baseline v2" --budget 10
 
@@ -179,24 +175,7 @@ For PDF ingestion, install the optional dependency: `uv sync --extra pdf`
 
 ### A/B testing
 
-The `--ab` flag runs two concurrent investigations of the same question with different configurations. Each arm reads its settings from a separate env file (`.a.env` and `.b.env`), allowing you to compare call variants, context budgets, or other settings side by side.
-
-```bash
-# Create arm-specific config files
-echo 'SCOUT_CALL_VARIANT=default' > .a.env
-echo 'SCOUT_CALL_VARIANT=embedding' > .b.env
-
-# Run the AB test
-uv run python main.py --ab "Your question" --budget 10 --workspace ab-scratch
-
-# View results in the frontend at /ab-traces/{ab_run_id}
-```
-
-Pages created by each arm are isolated — arm A cannot see pages created by arm B, and vice versa. Shared pages (like the root question) are visible to both arms. The frontend shows a side-by-side trace comparison with config diff highlighting.
-
-### Branch-based A/B testing
-
-For comparing code changes across branches (rather than config changes), use `scripts/ab_branch.sh`. This creates git worktrees for each branch, runs staged investigations concurrently, then launches evaluation agents that compare the results.
+To compare two variants of the research pipeline (different configs, prompts, or code changes), use `scripts/ab_branch.sh`. This creates git worktrees for each arm, runs staged investigations concurrently, then launches evaluation agents that compare the results.
 
 ```bash
 scripts/ab_branch.sh \
@@ -291,16 +270,11 @@ uv run python scripts/run_call.py find-considerations "Test question" --smoke-te
 uv run python scripts/run_call.py find-considerations "Test question" --up-to-stage build_context
 uv run python scripts/run_call.py find-considerations "Test question" --up-to-stage update_workspace
 
-# A/B test a single call (requires .a.env and .b.env)
-uv run python scripts/run_call.py find-considerations "Test question" --ab --smoke-test
-
 # Name a run for easier identification
 uv run python scripts/run_call.py find-considerations "Test question" --name "context experiment"
 ```
 
 The `--up-to-stage` flag truncates the call lifecycle. Each call runs three stages in order: `build_context` → `update_workspace` → `closing_review`. Passing `--up-to-stage build_context` runs only context assembly; `--up-to-stage update_workspace` skips the closing review. Useful for inspecting context or page output in isolation.
-
-The `--ab` flag works the same as in `main.py` — it runs both arms concurrently with settings from `.a.env` and `.b.env`, and prints an AB trace URL.
 
 ## Frontend
 

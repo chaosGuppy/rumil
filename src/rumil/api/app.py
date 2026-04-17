@@ -22,12 +22,8 @@ from rumil.api.schemas import (
     ABEvalDimensionSummaryOut,
     ABEvalReportListItemOut,
     ABEvalReportOut,
-    ABRunArmOut,
-    ABRunTraceOut,
     CallNodeOut,
-    CallSequenceOut,
     CallSummary,
-    CallTraceOut,
     LinkedPageOut,
     LLMExchangeOut,
     LLMExchangeSummaryOut,
@@ -41,7 +37,6 @@ from rumil.api.schemas import (
     RealtimeConfigOut,
     RunListItemOut,
     RunSummaryOut,
-    RunTraceOut,
     RunTraceTreeOut,
     TraceEventOut,
 )
@@ -355,54 +350,6 @@ async def get_child_calls(call_id: str, db: DB = Depends(_get_db)):
     return await db.get_child_calls(call_id)
 
 
-async def _build_call_trace(db: DB, call_id: str) -> CallTraceOut:
-    call = await db.get_call(call_id)
-    if not call:
-        raise HTTPException(status_code=404, detail="Call not found")
-    events, children, db_sequences = await asyncio.gather(
-        _parse_trace_events(db, call_id),
-        db.get_child_calls(call_id),
-        db.get_sequences_for_call(call_id),
-    )
-    scope_page_summary = None
-    if call.scope_page_id:
-        scope_page = await db.get_page(call.scope_page_id)
-        if scope_page:
-            scope_page_summary = scope_page.headline
-    child_traces = list(await asyncio.gather(*[_build_call_trace(db, c.id) for c in children]))
-
-    sequences_out: list[CallSequenceOut] | None = None
-    if db_sequences:
-        seq_call_lists = await asyncio.gather(
-            *[db.get_calls_for_sequence(seq.id) for seq in db_sequences]
-        )
-        seq_trace_lists = await asyncio.gather(
-            *[
-                asyncio.gather(*[_build_call_trace(db, sc.id) for sc in seq_calls])
-                for seq_calls in seq_call_lists
-            ]
-        )
-        sequences_out = [
-            CallSequenceOut(
-                id=seq.id,
-                position_in_batch=seq.position_in_batch,
-                calls=list(seq_traces),
-            )
-            for seq, seq_traces in zip(db_sequences, seq_trace_lists)
-        ]
-
-    child_costs = [ct.cost_usd for ct in child_traces if ct.cost_usd is not None]
-    total = (call.cost_usd or 0) + sum(child_costs)
-    return CallTraceOut(
-        call=call,
-        scope_page_summary=scope_page_summary,
-        events=events,
-        children=child_traces,
-        sequences=sequences_out,
-        cost_usd=total if total > 0 else None,
-    )
-
-
 async def _parse_trace_events(db: DB, call_id: str) -> list[TraceEventOut]:
     raw_events = await db.get_call_trace(call_id)
     events: list[TraceEventOut] = []
@@ -480,57 +427,6 @@ async def get_call_events(call_id: str, db: DB = Depends(_get_db)):
     return await _parse_trace_events(db, call_id)
 
 
-@app.get("/api/ab-runs/{ab_run_id}/trace", response_model=ABRunTraceOut)
-async def get_ab_run_trace(ab_run_id: str, db: DB = Depends(_get_db)):
-    ab_rows = _rows(await db.client.table("ab_runs").select("*").eq("id", ab_run_id).execute())
-    if not ab_rows:
-        raise HTTPException(status_code=404, detail="AB run not found")
-    ab_row = ab_rows[0]
-    arm_rows = _rows(
-        await db.client.table("runs")
-        .select("id, name, config, ab_arm")
-        .eq("ab_run_id", ab_run_id)
-        .order("ab_arm")
-        .execute()
-    )
-    question_page = None
-    qid = ab_row.get("question_id")
-    if qid:
-        question_page = await db.get_page(qid)
-
-    async def _build_arm(arm_row: dict) -> ABRunArmOut:
-        run_id = arm_row["id"]
-        question_id = await db.get_run_question_id(run_id)
-        q_page = None
-        if question_id:
-            q_page = await db.get_page(question_id)
-        calls = await db.get_calls_for_run(run_id)
-        root_calls = [c for c in calls if c.parent_call_id is None]
-        root_traces = list(await asyncio.gather(*[_build_call_trace(db, c.id) for c in root_calls]))
-        run_costs = [ct.cost_usd for ct in root_traces if ct.cost_usd is not None]
-        run_total = sum(run_costs)
-        trace = RunTraceOut(
-            run_id=run_id,
-            question=q_page,
-            root_calls=root_traces,
-            cost_usd=run_total if run_total > 0 else None,
-        )
-        return ABRunArmOut(
-            run_id=run_id,
-            name=arm_row.get("name", ""),
-            config=arm_row.get("config", {}),
-            trace=trace,
-        )
-
-    arms = list(await asyncio.gather(*[_build_arm(arm_row) for arm_row in arm_rows]))
-    return ABRunTraceOut(
-        ab_run_id=ab_run_id,
-        name=ab_row.get("name", ""),
-        question=question_page,
-        arms=arms,
-    )
-
-
 @app.get(
     "/api/ab-evals",
     response_model=list[ABEvalReportListItemOut],
@@ -600,6 +496,7 @@ async def get_ab_eval(eval_id: str, db: DB = Depends(_get_db)):
         question_id_b=row.get("question_id_b") or "",
         question_headline=q_page.headline if q_page else "",
         overall_assessment=row.get("overall_assessment") or "",
+        overall_assessment_call_id=row.get("overall_assessment_call_id") or "",
         dimension_reports=[
             ABEvalDimensionOut(
                 name=d.get("name", ""),
@@ -610,6 +507,7 @@ async def get_ab_eval(eval_id: str, db: DB = Depends(_get_db)):
                 comparison=d.get("comparison", ""),
                 call_id_a=d.get("call_id_a", ""),
                 call_id_b=d.get("call_id_b", ""),
+                comparison_call_id=d.get("comparison_call_id", ""),
             )
             for d in dims
         ],

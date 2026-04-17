@@ -13,19 +13,19 @@ from claude_agent_sdk.types import SyncHookJSONOutput
 from rumil.database import DB
 from rumil.evaluate.explore import explore_page_impl
 from rumil.evaluate.prompt import build_evaluation_prompt, build_investigator_prompt
-from rumil.models import Call, CallStatus, CallType
 from rumil.explore_tool import make_explore_tool
+from rumil.models import Call, CallStatus, CallType
 from rumil.sdk_agent import (
     SdkAgentConfig,
     extract_response_text,
     run_sdk_agent,
 )
 from rumil.tracing.broadcast import Broadcaster
-from rumil.tracing.tracer import CallTrace
 from rumil.tracing.trace_events import (
     EvaluationCompleteEvent,
     ExplorePageEvent,
 )
+from rumil.tracing.tracer import CallTrace
 
 log = logging.getLogger(__name__)
 

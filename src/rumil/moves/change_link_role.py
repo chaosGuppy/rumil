@@ -23,7 +23,9 @@ class ChangeLinkRolePayload(BaseModel):
 
 
 async def execute(
-    payload: ChangeLinkRolePayload, call: Call, db: DB,
+    payload: ChangeLinkRolePayload,
+    call: Call,
+    db: DB,
 ) -> MoveResult:
     trace_extra: dict = {}
     link = await db.get_link(payload.link_id)
@@ -42,7 +44,8 @@ async def execute(
     await db.update_link_role(payload.link_id, payload.new_role)
     log.info(
         "Link %s role changed to %s",
-        payload.link_id[:8], payload.new_role.value,
+        payload.link_id[:8],
+        payload.new_role.value,
     )
     return MoveResult(
         f"Link {payload.link_id[:8]} role changed to {payload.new_role.value}.",

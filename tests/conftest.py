@@ -11,7 +11,6 @@ _SKILLS_LIB = Path(__file__).resolve().parent.parent / ".claude" / "lib"
 if str(_SKILLS_LIB) not in sys.path:
     sys.path.insert(0, str(_SKILLS_LIB))
 
-from rumil.settings import override_settings
 from rumil.database import DB
 from rumil.models import (
     Call,
@@ -22,6 +21,7 @@ from rumil.models import (
     PageType,
     Workspace,
 )
+from rumil.settings import override_settings
 
 
 @pytest.fixture(autouse=True, scope="session")
@@ -84,9 +84,7 @@ async def envelope_cleanup():
         try:
             rows = (
                 await cleanup_db._execute(
-                    cleanup_db.client.table("runs")
-                    .select("project_id")
-                    .eq("id", run_id)
+                    cleanup_db.client.table("runs").select("project_id").eq("id", run_id)
                 )
             ).data
             if rows and rows[0].get("project_id"):

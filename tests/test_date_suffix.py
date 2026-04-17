@@ -6,10 +6,9 @@ from unittest.mock import AsyncMock
 import anthropic.types
 import pytest
 
-from rumil.llm import _with_date_suffix, call_api, Tool
 from rumil.calls.common import run_agent_loop
+from rumil.llm import Tool, _with_date_suffix, call_api
 from rumil.moves.base import MoveState
-
 
 TODAY = date.today().strftime("%Y-%m-%d")
 DATE_MARKER = f"IMPORTANT: Today's date is {TODAY}"
@@ -76,7 +75,7 @@ async def test_agent_loop_two_rounds_no_duplication(tmp_db, scout_call):
     )
 
     state = MoveState(scout_call, tmp_db)
-    result = await run_agent_loop(
+    await run_agent_loop(
         "You must call the ping tool every turn. Never stop calling it.",
         "Start pinging.",
         tools=[ping_tool],

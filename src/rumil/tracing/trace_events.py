@@ -12,11 +12,7 @@ class PageRef(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _migrate_summary(cls, values: dict) -> dict:
-        if (
-            isinstance(values, dict)
-            and "summary" in values
-            and "headline" not in values
-        ):
+        if isinstance(values, dict) and "summary" in values and "headline" not in values:
             values["headline"] = values.pop("summary")
         return values
 

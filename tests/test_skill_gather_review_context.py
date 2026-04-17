@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from rumil_skills import _runctx, gather_review_context, scan_log
 
 from rumil.models import (
     Call,
@@ -15,18 +16,13 @@ from rumil.models import (
     PageType,
     Workspace,
 )
-from rumil_skills import _runctx, gather_review_context, scan_log
 
 
 @pytest.fixture(autouse=True)
 def _isolate_state(monkeypatch, tmp_path):
     monkeypatch.setattr(_runctx, "STATE_DIR", tmp_path / "state")
-    monkeypatch.setattr(
-        _runctx, "STATE_FILE", tmp_path / "state" / "rumil-session.json"
-    )
-    monkeypatch.setattr(
-        scan_log, "SCAN_LOG_PATH", tmp_path / "state" / "rumil-scan-log.json"
-    )
+    monkeypatch.setattr(_runctx, "STATE_FILE", tmp_path / "state" / "rumil-session.json")
+    monkeypatch.setattr(scan_log, "SCAN_LOG_PATH", tmp_path / "state" / "rumil-scan-log.json")
 
 
 @pytest.fixture

@@ -17,9 +17,7 @@ log = logging.getLogger(__name__)
 
 
 class CreateViewItemPayload(CreatePagePayload):
-    view_id: str = Field(
-        description="Page ID of the View this item belongs to."
-    )
+    view_id: str = Field(description="Page ID of the View this item belongs to.")
     section: str = Field(
         description=(
             "Which section of the View this item belongs to. Must be one of "

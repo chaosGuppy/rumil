@@ -27,7 +27,6 @@ import asyncio
 import logging
 import sys
 
-from rumil.calls.assess import AssessCall
 from rumil.calls.call_registry import ASSESS_CALL_CLASSES
 from rumil.calls.create_view import CreateViewCall
 from rumil.calls.find_considerations import FindConsiderationsCall
@@ -113,9 +112,7 @@ async def _dispatch(
     settings = get_settings()
 
     if call_type_str == "find-considerations":
-        call = await db.create_call(
-            CallType.FIND_CONSIDERATIONS, scope_page_id=question_id
-        )
+        call = await db.create_call(CallType.FIND_CONSIDERATIONS, scope_page_id=question_id)
         call.call_params = _tag_call_params(call, "rumil-dispatch")
         await db.save_call(call)
         runner = FindConsiderationsCall(
@@ -228,9 +225,7 @@ async def main() -> None:
         total, used = await db.get_budget()
         # Refresh the call to pick up any review/cost updates.
         refreshed = await db.get_call(call.id) or call
-        cost_s = (
-            f"${refreshed.cost_usd:.3f}" if refreshed.cost_usd is not None else "—"
-        )
+        cost_s = f"${refreshed.cost_usd:.3f}" if refreshed.cost_usd is not None else "—"
         print_event(
             "✓",
             f"done: status={refreshed.status.value} cost={cost_s} budget={used}/{total}",

@@ -14,6 +14,8 @@ from rumil.models import (
 )
 from rumil.moves.link_depends_on import (
     LinkDependsOnPayload,
+)
+from rumil.moves.link_depends_on import (
     execute as execute_link_depends_on,
 )
 
@@ -83,7 +85,10 @@ async def call(tmp_db, question):
 
 
 async def test_claim_to_claim_dependency_is_created(
-    tmp_db, call, claim, other_claim,
+    tmp_db,
+    call,
+    claim,
+    other_claim,
 ):
     payload = LinkDependsOnPayload(
         dependent_page_id=claim.id,
@@ -100,7 +105,10 @@ async def test_claim_to_claim_dependency_is_created(
 
 
 async def test_judgement_to_claim_dependency_is_created(
-    tmp_db, call, judgement, claim,
+    tmp_db,
+    call,
+    judgement,
+    claim,
 ):
     payload = LinkDependsOnPayload(
         dependent_page_id=judgement.id,
@@ -117,7 +125,10 @@ async def test_judgement_to_claim_dependency_is_created(
 
 
 async def test_question_dependent_is_rejected(
-    tmp_db, call, question, claim,
+    tmp_db,
+    call,
+    question,
+    claim,
 ):
     """A question can't depend on anything via depends_on; use child_question instead."""
     payload = LinkDependsOnPayload(
@@ -133,7 +144,10 @@ async def test_question_dependent_is_rejected(
 
 
 async def test_question_dependency_is_rejected(
-    tmp_db, call, claim, question,
+    tmp_db,
+    call,
+    claim,
+    question,
 ):
     """Depending on a question (rather than its judgement) is forbidden."""
     payload = LinkDependsOnPayload(

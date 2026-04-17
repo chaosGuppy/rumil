@@ -5,9 +5,8 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
-from pydantic import BaseModel, Field
-
 from claude_agent_sdk import AgentDefinition, tool
+from pydantic import BaseModel, Field
 
 from rumil.clean.common import (
     UpdateOperation,
@@ -114,9 +113,7 @@ def _make_investigation_tools(
         """Run orchestrator and return a summary string."""
         orchestrator = ExperimentalOrchestrator(db, broadcaster, budget_cap=budget)
         orchestrator._parent_call_id = call.id
-        child_call_id = await orchestrator.create_initial_call(
-            question_id, parent_call_id=call.id
-        )
+        child_call_id = await orchestrator.create_initial_call(question_id, parent_call_id=call.id)
         try:
             await orchestrator.run(question_id)
             judgement_text = ""
@@ -252,9 +249,7 @@ def _make_investigation_tools(
             link_type=LinkType.CHILD_QUESTION,
         )
 
-        task = asyncio.create_task(
-            _run_investigation(resolved, display_headline, budget)
-        )
+        task = asyncio.create_task(_run_investigation(resolved, display_headline, budget))
         short_id = resolved[:8]
         pending[short_id] = _PendingInvestigation(
             question_id=resolved,
@@ -313,8 +308,7 @@ def _make_investigation_tools(
             if isinstance(summary, BaseException):
                 log.exception("Investigation %s raised", short_id, exc_info=summary)
                 results.append(
-                    f"Investigation FAILED for [{short_id}] "
-                    f'"{inv.display_headline}": {summary}'
+                    f'Investigation FAILED for [{short_id}] "{inv.display_headline}": {summary}'
                 )
             else:
                 results.append(summary)
@@ -389,7 +383,7 @@ async def _plan_and_edit(
                 tools=[explore_fqname, "Read", "Grep", "Bash"],
             ),
         },
-        allowed_tools=all_tool_fqnames + ["Agent", "Bash", "Read"],
+        allowed_tools=[*all_tool_fqnames, "Agent", "Bash", "Read"],
         disallowed_tools=(),
         output_format={
             "type": "json_schema",
@@ -462,9 +456,7 @@ async def run_feedback_update(
             )
         else:
             plan = UpdatePlan(
-                waves=[
-                    [UpdateOperation(**op) for op in wave] for wave in cp["update_plan"]
-                ]
+                waves=[[UpdateOperation(**op) for op in wave] for wave in cp["update_plan"]]
             )
             log.info(
                 "Stage 1: loaded plan from prior run (%d waves, %d ops)",

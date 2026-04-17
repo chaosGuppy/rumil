@@ -58,9 +58,7 @@ async def _resolve_run_id(db, run_id: str) -> str | None:
 
 
 async def _fetch_runs_row(db, run_id: str) -> dict[str, Any] | None:
-    rows = await db._execute(
-        db.client.table("runs").select("*").eq("id", run_id).limit(1)
-    )
+    rows = await db._execute(db.client.table("runs").select("*").eq("id", run_id).limit(1))
     data = getattr(rows, "data", None) or []
     return data[0] if data else None
 
@@ -236,9 +234,7 @@ async def main() -> None:
     print("=== full per-call traces ===")
     for _, call in _order_as_tree(calls):
         print()
-        print(
-            f"### call {short(call['id'])}  {call.get('call_type')}  {call.get('status')}"
-        )
+        print(f"### call {short(call['id'])}  {call.get('call_type')}  {call.get('status')}")
         _print_header(call, full_id)
         events = events_by_call.get(call["id"], [])
         if args.only:

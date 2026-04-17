@@ -10,7 +10,7 @@ from rumil.ab_eval.report import format_aggregate_report, save_ab_report
 from rumil.database import DB
 from rumil.llm import text_call
 from rumil.models import CallType
-from rumil.run_eval.agents import EvalAgentSpec, EVAL_AGENTS
+from rumil.run_eval.agents import EVAL_AGENTS, EvalAgentSpec
 from rumil.run_eval.runner import evaluate_run_with_agent
 from rumil.tracing.broadcast import Broadcaster
 
@@ -143,9 +143,7 @@ async def _generate_overall_assessment(
     final_prompt = (_PROMPTS_DIR / "ab-eval-final-report.md").read_text()
     sections: list[str] = []
     for spec, _ra, _rb, comparison, preference in agent_reports:
-        sections.append(
-            f"### {spec.display_name}\n\n**Preference: {preference}**\n\n{comparison}"
-        )
+        sections.append(f"### {spec.display_name}\n\n**Preference: {preference}**\n\n{comparison}")
     user_message = "\n\n---\n\n".join(sections)
     return await text_call(system_prompt=final_prompt, user_message=user_message)
 
@@ -215,9 +213,7 @@ async def run_ab_eval(
     ]
 
     overall_assessment = await _generate_overall_assessment(agent_reports)
-    aggregate = format_aggregate_report(
-        agent_reports, run_id_a, run_id_b, overall_assessment
-    )
+    aggregate = format_aggregate_report(agent_reports, run_id_a, run_id_b, overall_assessment)
     report_path = save_ab_report(aggregate, run_id_a, run_id_b)
 
     dimension_rows = [

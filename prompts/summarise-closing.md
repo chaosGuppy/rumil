@@ -2,13 +2,13 @@
 
 
 
-Now it's your turn to write the executive summary. 
+Now it's your turn to write the executive summary.
 
 
 
 A suggested format:
 
-1. Question 
+1. Question
 
 Restate the question clearly in your own words.
 
@@ -26,7 +26,7 @@ Briefly list further considerations that you think are worth being aware with --
 
 5\. Sensitivity analysis
 
-Identify the 1–3 things the overall assessment most depends on. What are the key uncertainties? What would change the conclusion if it turned out differently? 
+Identify the 1–3 things the overall assessment most depends on. What are the key uncertainties? What would change the conclusion if it turned out differently?
 
 6\. A brief honest note on how much weight to put on this assessment. What are the limitations of the research?
 
@@ -52,8 +52,3 @@ Some tips:
 Be calm. Do not feel a need to be small, and do not shy away from offering opinions if those are what you feel.
 
 📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿📿
-
-
-
-
-

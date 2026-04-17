@@ -122,9 +122,7 @@ async def _collect_section_pages(section: OutlineSection, db: DB) -> str:
         page = pages.get(pid)
         if page:
             parts.append(
-                f"### {page.page_type.value}: {page.headline}\n"
-                f"ID: {pid[:8]}\n\n"
-                f"{page.content}\n"
+                f"### {page.page_type.value}: {page.headline}\nID: {pid[:8]}\n\n{page.content}\n"
             )
     return "\n".join(parts) if parts else "(No source pages found.)"
 
@@ -161,9 +159,7 @@ async def _run_section_writer(
         response_model=SectionDraft,
     )
     if not result.parsed:
-        raise RuntimeError(
-            f"Section writer returned no data for section {section.sequence}"
-        )
+        raise RuntimeError(f"Section writer returned no data for section {section.sequence}")
     return result.parsed
 
 
@@ -188,11 +184,7 @@ async def _run_integrator(
     drafts_text = "\n---\n\n".join(drafts_text_parts)
 
     user_message = (
-        "## Report Outline\n\n"
-        f"{outline_summary}\n\n"
-        "---\n\n"
-        "## Section Drafts\n\n"
-        f"{drafts_text}"
+        f"## Report Outline\n\n{outline_summary}\n\n---\n\n## Section Drafts\n\n{drafts_text}"
     )
     return await text_call(
         system_prompt=system_prompt,
@@ -235,9 +227,7 @@ async def generate_report(
 def save_report(report_text: str, question_headline: str) -> Path:
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-    slug = "".join(
-        c if c.isalnum() or c in " -" else "" for c in question_headline[:50]
-    )
+    slug = "".join(c if c.isalnum() or c in " -" else "" for c in question_headline[:50])
     slug = slug.strip().replace(" ", "-").lower()
     filename = f"{timestamp}-{slug}.md"
     path = REPORTS_DIR / filename

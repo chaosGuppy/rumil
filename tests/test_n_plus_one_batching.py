@@ -227,9 +227,7 @@ async def test_stale_deps_query_count_is_constant(
     # With cross-project leftover data the batch counts can exceed 1
     # each, but the total stays O(ceil(N_targets/batch_size)) — well
     # under O(N_links).
-    assert queries <= 10, (
-        f"expected O(1) queries from get_stale_dependencies, got {queries}"
-    )
+    assert queries <= 10, f"expected O(1) queries from get_stale_dependencies, got {queries}"
 
 
 # ---------------------------------------------------------------------------

@@ -4,17 +4,15 @@ from __future__ import annotations
 
 import pytest
 import pytest_asyncio
+from rumil_skills import _runctx, load_run
 
 from rumil.models import Call, CallStatus, CallType, Workspace
-from rumil_skills import _runctx, load_run
 
 
 @pytest.fixture(autouse=True)
 def _isolate_state(monkeypatch, tmp_path):
     monkeypatch.setattr(_runctx, "STATE_DIR", tmp_path / "state")
-    monkeypatch.setattr(
-        _runctx, "STATE_FILE", tmp_path / "state" / "rumil-session.json"
-    )
+    monkeypatch.setattr(_runctx, "STATE_FILE", tmp_path / "state" / "rumil-session.json")
 
 
 async def _noop_close():
@@ -75,9 +73,7 @@ async def test_load_run_prints_tree_with_all_calls(
     assert "call tree" in out
 
 
-async def test_load_run_short_id(
-    capsys, monkeypatch, patch_make_db, tmp_db, run_with_calls
-):
+async def test_load_run_short_id(capsys, monkeypatch, patch_make_db, tmp_db, run_with_calls):
     parent, _ = run_with_calls
     monkeypatch.setattr("sys.argv", ["load_run", tmp_db.run_id[:8]])
     await load_run.main()

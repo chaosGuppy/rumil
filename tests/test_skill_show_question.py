@@ -3,17 +3,15 @@
 from __future__ import annotations
 
 import pytest
+from rumil_skills import _runctx, show_question
 
 from rumil.models import LinkType, Page, PageLayer, PageLink, PageType, Workspace
-from rumil_skills import _runctx, show_question
 
 
 @pytest.fixture(autouse=True)
 def _isolate_state(monkeypatch, tmp_path):
     monkeypatch.setattr(_runctx, "STATE_DIR", tmp_path / "state")
-    monkeypatch.setattr(
-        _runctx, "STATE_FILE", tmp_path / "state" / "rumil-session.json"
-    )
+    monkeypatch.setattr(_runctx, "STATE_FILE", tmp_path / "state" / "rumil-session.json")
 
 
 async def _noop_close():
@@ -46,13 +44,9 @@ async def test_show_question_prints_id_and_headline(
     assert "research subtree" in out
 
 
-async def test_show_question_with_short_id(
-    capsys, monkeypatch, patch_make_db, question_page
-):
+async def test_show_question_with_short_id(capsys, monkeypatch, patch_make_db, question_page):
     short_id = question_page.id[:8]
-    monkeypatch.setattr(
-        "sys.argv", ["show_question", short_id, "--no-neighbors", "--no-calls"]
-    )
+    monkeypatch.setattr("sys.argv", ["show_question", short_id, "--no-neighbors", "--no-calls"])
     await show_question.main()
     out = capsys.readouterr().out
 
@@ -75,9 +69,7 @@ async def test_show_question_unknown_id_exits(capsys, monkeypatch, patch_make_db
 async def test_show_question_recent_calls_section(
     capsys, monkeypatch, patch_make_db, question_page, scout_call
 ):
-    monkeypatch.setattr(
-        "sys.argv", ["show_question", question_page.id, "--no-neighbors"]
-    )
+    monkeypatch.setattr("sys.argv", ["show_question", question_page.id, "--no-neighbors"])
     await show_question.main()
     out = capsys.readouterr().out
 

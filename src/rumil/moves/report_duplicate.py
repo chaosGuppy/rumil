@@ -21,7 +21,9 @@ async def execute(payload: ReportDuplicatePayload, call: Call, db: DB) -> MoveRe
     pid_b = await db.resolve_page_id(payload.page_id_b)
     await db.save_page_flag("duplicate", call_id=call.id, page_id_a=pid_a, page_id_b=pid_b)
     log.info(
-        "Duplicate reported: %s <-> %s", payload.page_id_a, payload.page_id_b,
+        "Duplicate reported: %s <-> %s",
+        payload.page_id_a,
+        payload.page_id_b,
     )
     return MoveResult("Done.")
 

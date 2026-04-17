@@ -10,9 +10,7 @@ from rumil.context import (
 from rumil.models import Page, PageDetail, PageLayer, PageType, Workspace
 
 
-def _make_page(
-    headline: str, content: str, page_type: PageType = PageType.CLAIM
-) -> Page:
+def _make_page(headline: str, content: str, page_type: PageType = PageType.CLAIM) -> Page:
     return Page(
         page_type=page_type,
         layer=PageLayer.SQUIDGY,
@@ -155,9 +153,7 @@ MIXED_RANKED = [
     (CLAIM_PAGE, 0.7),
 ]
 
-JUDGEMENT_PAGE = _make_page(
-    "A judgement", "Judgement content", page_type=PageType.JUDGEMENT
-)
+JUDGEMENT_PAGE = _make_page("A judgement", "Judgement content", page_type=PageType.JUDGEMENT)
 
 
 @pytest.fixture
@@ -182,14 +178,9 @@ async def test_require_judgement_filters_unjudged_questions(
     db = mocker.AsyncMock()
 
     async def fake_get_judgements_many(qids):
-        return {
-            qid: [JUDGEMENT_PAGE] if qid == QUESTION_WITH_JUDGEMENT.id else []
-            for qid in qids
-        }
+        return {qid: [JUDGEMENT_PAGE] if qid == QUESTION_WITH_JUDGEMENT.id else [] for qid in qids}
 
-    db.get_judgements_for_questions = mocker.AsyncMock(
-        side_effect=fake_get_judgements_many
-    )
+    db.get_judgements_for_questions = mocker.AsyncMock(side_effect=fake_get_judgements_many)
 
     result = await build_embedding_based_context(
         "test query",

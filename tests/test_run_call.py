@@ -21,8 +21,12 @@ async def test_scout_run_call(tmp_db, question_page, scout_call):
     )
 
     result = await run_call(
-        CallType.FIND_CONSIDERATIONS, task, working_context,
-        scout_call, tmp_db, max_rounds=3,
+        CallType.FIND_CONSIDERATIONS,
+        task,
+        working_context,
+        scout_call,
+        tmp_db,
+        max_rounds=3,
     )
 
     assert isinstance(result, RunCallResult)
@@ -42,8 +46,7 @@ async def test_scout_run_call(tmp_db, question_page, scout_call):
 async def test_prioritization_produces_dispatches(tmp_db, question_page, prioritization_call):
     """A prioritization call should produce at least one dispatch."""
     context = (
-        "## Questions\n\n"
-        f"- `{question_page.id[:8]}`: {question_page.headline} (0 considerations)\n"
+        f"## Questions\n\n- `{question_page.id[:8]}`: {question_page.headline} (0 considerations)\n"
     )
     task = (
         "You have a budget of **2 research calls** to allocate.\n\n"
@@ -56,7 +59,7 @@ async def test_prioritization_produces_dispatches(tmp_db, question_page, priorit
         context,
         prioritization_call,
         tmp_db,
-        system_prompt=build_system_prompt('two_phase_main_phase_prioritization'),
+        system_prompt=build_system_prompt("two_phase_main_phase_prioritization"),
     )
 
     assert isinstance(result, RunCallResult)
@@ -79,15 +82,11 @@ async def test_available_moves_restricts_tools(tmp_db, scout_call):
 @pytest.mark.llm
 async def test_create_claim_with_inline_links(tmp_db, question_page, scout_call):
     """The LLM should create a claim linked as a consideration in a single tool call."""
-    working_context = (
-        "## Question\n\n"
-        f"ID: `{question_page.id[:8]}`\n\n"
-        f"{question_page.content}\n"
-    )
+    working_context = f"## Question\n\nID: `{question_page.id[:8]}`\n\n{question_page.content}\n"
     task = (
-        'Create one claim that supports this question and link it '
-        'as a consideration.\n\n'
-        f'Question ID: `{question_page.id[:8]}`'
+        "Create one claim that supports this question and link it "
+        "as a consideration.\n\n"
+        f"Question ID: `{question_page.id[:8]}`"
     )
 
     result = await run_call(
@@ -110,7 +109,7 @@ async def test_create_claim_with_inline_links(tmp_db, question_page, scout_call)
     links = await tmp_db.get_links_from(claim_id)
     consideration_links = [l for l in links if l.link_type == LinkType.CONSIDERATION]
     assert len(consideration_links) >= 1, (
-        'Expected at least one consideration link from the claim to the question'
+        "Expected at least one consideration link from the claim to the question"
     )
     assert consideration_links[0].to_page_id == question_page.id
 
@@ -118,15 +117,11 @@ async def test_create_claim_with_inline_links(tmp_db, question_page, scout_call)
 @pytest.mark.llm
 async def test_create_question_with_inline_links(tmp_db, question_page, scout_call):
     """The LLM should create a sub-question linked to its parent in a single tool call."""
-    working_context = (
-        "## Question\n\n"
-        f"ID: `{question_page.id[:8]}`\n\n"
-        f"{question_page.content}\n"
-    )
+    working_context = f"## Question\n\nID: `{question_page.id[:8]}`\n\n{question_page.content}\n"
     task = (
-        'Create one sub-question that breaks down the question above '
-        'and link it as a child.\n\n'
-        f'Parent question ID: `{question_page.id[:8]}`'
+        "Create one sub-question that breaks down the question above "
+        "and link it as a child.\n\n"
+        f"Parent question ID: `{question_page.id[:8]}`"
     )
 
     result = await run_call(
@@ -149,7 +144,7 @@ async def test_create_question_with_inline_links(tmp_db, question_page, scout_ca
     links = await tmp_db.get_links_to(child_id)
     child_links = [l for l in links if l.link_type == LinkType.CHILD_QUESTION]
     assert len(child_links) >= 1, (
-        'Expected at least one child_question link from the parent to the new question'
+        "Expected at least one child_question link from the parent to the new question"
     )
     assert child_links[0].from_page_id == question_page.id
 
@@ -157,15 +152,8 @@ async def test_create_question_with_inline_links(tmp_db, question_page, scout_ca
 @pytest.mark.llm
 async def test_create_judgement_with_inline_links(tmp_db, question_page, scout_call):
     """The LLM should create a judgement auto-linked to the scope question."""
-    working_context = (
-        "## Question\n\n"
-        f"ID: `{question_page.id[:8]}`\n\n"
-        f"{question_page.content}\n"
-    )
-    task = (
-        'Create a judgement on this question.\n\n'
-        f'Question ID: `{question_page.id[:8]}`'
-    )
+    working_context = f"## Question\n\nID: `{question_page.id[:8]}`\n\n{question_page.content}\n"
+    task = f"Create a judgement on this question.\n\nQuestion ID: `{question_page.id[:8]}`"
 
     result = await run_call(
         CallType.FIND_CONSIDERATIONS,
@@ -187,8 +175,6 @@ async def test_create_judgement_with_inline_links(tmp_db, question_page, scout_c
     links = await tmp_db.get_links_from(judgement_id)
     answers_links = [l for l in links if l.link_type == LinkType.ANSWERS]
     assert len(answers_links) >= 1, (
-        'Expected at least one answers link from the judgement to the scope question'
+        "Expected at least one answers link from the judgement to the scope question"
     )
     assert answers_links[0].to_page_id == question_page.id
-
-

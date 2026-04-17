@@ -61,9 +61,7 @@ def format_aggregate_report(
     lines.append("")
 
     for spec, report_a, report_b, comparison, preference in agent_reports:
-        lines.append(
-            format_agent_report(spec, report_a, report_b, comparison, preference)
-        )
+        lines.append(format_agent_report(spec, report_a, report_b, comparison, preference))
         lines.append("---")
         lines.append("")
 

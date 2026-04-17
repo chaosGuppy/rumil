@@ -13,16 +13,19 @@ Usage::
                 # recorded tags include all three levels
 """
 
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
-from collections.abc import Iterator
+from types import MappingProxyType
 
-_page_track_tags_var: ContextVar[dict[str, str]] = ContextVar(
-    "page_track_tags", default={}
+_EMPTY_TAGS: Mapping[str, str] = MappingProxyType({})
+
+_page_track_tags_var: ContextVar[Mapping[str, str]] = ContextVar(
+    "page_track_tags", default=_EMPTY_TAGS
 )
 
 
-def get_page_track_tags() -> dict[str, str]:
+def get_page_track_tags() -> Mapping[str, str]:
     """Return the current ambient page-tracking tags."""
     return _page_track_tags_var.get()
 

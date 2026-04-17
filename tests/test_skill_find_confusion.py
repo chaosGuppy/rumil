@@ -7,6 +7,7 @@ DB inspection plus scoring; no LLM involvement.
 from __future__ import annotations
 
 import pytest
+from rumil_skills import _runctx, find_confusion
 
 from rumil.models import (
     Call,
@@ -14,15 +15,12 @@ from rumil.models import (
     CallType,
     Workspace,
 )
-from rumil_skills import _runctx, find_confusion
 
 
 @pytest.fixture(autouse=True)
 def _isolate_state(monkeypatch, tmp_path):
     monkeypatch.setattr(_runctx, "STATE_DIR", tmp_path / "state")
-    monkeypatch.setattr(
-        _runctx, "STATE_FILE", tmp_path / "state" / "rumil-session.json"
-    )
+    monkeypatch.setattr(_runctx, "STATE_FILE", tmp_path / "state" / "rumil-session.json")
 
 
 async def _save_raw_trace(db, call_id: str, events: list[dict]) -> None:

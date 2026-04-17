@@ -169,10 +169,7 @@ async def test_empty_dispatches_exits_loop(tmp_db, question_page):
     await orch.run(question_page.id)
 
     rows = (
-        await tmp_db.client.table("calls")
-        .select("call_type")
-        .eq("run_id", tmp_db.run_id)
-        .execute()
+        await tmp_db.client.table("calls").select("call_type").eq("run_id", tmp_db.run_id).execute()
     )
     call_types = {r["call_type"] for r in rows.data}
     assert "find_considerations" not in call_types
@@ -249,12 +246,7 @@ async def test_dispatch_executed_events_recorded(tmp_db, question_page):
     )
     await orch.run(question_page.id)
 
-    rows = (
-        await tmp_db.client.table("calls")
-        .select("trace_json")
-        .eq("id", p_call.id)
-        .execute()
-    )
+    rows = await tmp_db.client.table("calls").select("trace_json").eq("id", p_call.id).execute()
     trace_json = rows.data[0]["trace_json"]
     dispatch_events = [e for e in trace_json if e.get("event") == "dispatch_executed"]
     assert len(dispatch_events) >= 1
@@ -303,12 +295,7 @@ async def test_concurrent_dispatch_failure_recorded_in_trace(
 
     await orch.run(question_page.id)
 
-    rows = (
-        await tmp_db.client.table("calls")
-        .select("trace_json")
-        .eq("id", p_call.id)
-        .execute()
-    )
+    rows = await tmp_db.client.table("calls").select("trace_json").eq("id", p_call.id).execute()
     trace_json = rows.data[0]["trace_json"]
     error_events = [e for e in trace_json if e.get("event") == "error"]
     assert len(error_events) >= 1

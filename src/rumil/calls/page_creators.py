@@ -13,9 +13,9 @@ from pydantic import BaseModel, Field
 from rumil.calls.common import (
     RunCallResult,
     execute_tool_uses,
+    extract_loaded_page_ids,
     prepare_tools,
     record_round_moves,
-    extract_loaded_page_ids,
     run_agent_loop,
 )
 from rumil.calls.stages import CallInfra, ContextResult, UpdateResult, WorkspaceUpdater
@@ -29,13 +29,11 @@ from rumil.llm import (
 )
 from rumil.models import (
     CallType,
-    MoveType,
     FindConsiderationsMode,
+    MoveType,
 )
 from rumil.moves.create_claim import (
-    ensure_source_page,
     execute_with_source_creation,
-    rewrite_url_citations,
 )
 from rumil.moves.registry import MOVES
 from rumil.settings import get_settings
@@ -71,14 +69,10 @@ class SimpleAgentLoop(WorkspaceUpdater):
             max_rounds = 1 if settings.is_smoke_test else 3
 
         infra.state.context_page_ids = (
-            set(context.working_page_ids)
-            | set(context.preloaded_ids)
-            | set(context.phase1_ids)
+            set(context.working_page_ids) | set(context.preloaded_ids) | set(context.phase1_ids)
         )
         moves_list = (
-            list(self._available_moves)
-            if self._available_moves is not None
-            else list(MoveType)
+            list(self._available_moves) if self._available_moves is not None else list(MoveType)
         )
         tools = [MOVES[mt].bind(infra.state) for mt in moves_list]
         system_prompt = build_system_prompt(self._prompt_name or self._call_type.value)
@@ -153,9 +147,7 @@ _FRUIT_CHECK_MESSAGE = (
 )
 
 
-def _resolve_round_mode(
-    mode: FindConsiderationsMode, round_index: int
-) -> FindConsiderationsMode:
+def _resolve_round_mode(mode: FindConsiderationsMode, round_index: int) -> FindConsiderationsMode:
     if mode == FindConsiderationsMode.ALTERNATE:
         return (
             FindConsiderationsMode.ABSTRACT
@@ -174,9 +166,7 @@ class _FruitCheck(BaseModel):
             "7-8 = substantial work remains; 9-10 = barely started"
         )
     )
-    brief_reasoning: str = Field(
-        description="One sentence explaining why you chose this score"
-    )
+    brief_reasoning: str = Field(description="One sentence explaining why you chose this score")
 
 
 class MultiRoundLoop(WorkspaceUpdater):
@@ -204,14 +194,10 @@ class MultiRoundLoop(WorkspaceUpdater):
         context: ContextResult,
     ) -> UpdateResult:
         infra.state.context_page_ids = (
-            set(context.working_page_ids)
-            | set(context.preloaded_ids)
-            | set(context.phase1_ids)
+            set(context.working_page_ids) | set(context.preloaded_ids) | set(context.phase1_ids)
         )
         moves_list = (
-            list(self._available_moves)
-            if self._available_moves is not None
-            else list(MoveType)
+            list(self._available_moves) if self._available_moves is not None else list(MoveType)
         )
         tools = [MOVES[mt].bind(infra.state) for mt in moves_list]
         tool_defs, _ = prepare_tools(tools)
@@ -220,13 +206,9 @@ class MultiRoundLoop(WorkspaceUpdater):
         if self._task_description is not None:
             task = self._task_description
         else:
-            round_mode = _resolve_round_mode(
-                self._mode or FindConsiderationsMode.ALTERNATE, 0
-            )
+            round_mode = _resolve_round_mode(self._mode or FindConsiderationsMode.ALTERNATE, 0)
             mode_instruction = (
-                _CONCRETE_INSTRUCTION
-                if round_mode == FindConsiderationsMode.CONCRETE
-                else ""
+                _CONCRETE_INSTRUCTION if round_mode == FindConsiderationsMode.CONCRETE else ""
             )
             task = (
                 f"Scout for missing considerations on this question.{mode_instruction}\n\n"
@@ -321,9 +303,7 @@ class MultiRoundLoop(WorkspaceUpdater):
         tool_defs: list[dict],
         fruit_check_model: type[_FruitCheck],
     ) -> int:
-        check_messages = list(resume_messages) + [
-            {"role": "user", "content": _FRUIT_CHECK_MESSAGE},
-        ]
+        check_messages = [*list(resume_messages), {"role": "user", "content": _FRUIT_CHECK_MESSAGE}]
         meta = LLMExchangeMetadata(
             call_id=infra.call.id,
             phase="fruit_check",
@@ -371,9 +351,7 @@ class WebResearchLoop(WorkspaceUpdater):
         client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
 
         infra.state.context_page_ids = (
-            set(context.working_page_ids)
-            | set(context.preloaded_ids)
-            | set(context.phase1_ids)
+            set(context.working_page_ids) | set(context.preloaded_ids) | set(context.phase1_ids)
         )
         server_tools = self._build_server_tools()
         moves_list = (
@@ -458,8 +436,7 @@ class WebResearchLoop(WorkspaceUpdater):
                 messages.append({"role": "user", "content": tool_results})
 
             if response.stop_reason == "end_turn" or not (
-                custom_tool_uses
-                or any(isinstance(b, ServerToolUseBlock) for b in response.content)
+                custom_tool_uses or any(isinstance(b, ServerToolUseBlock) for b in response.content)
             ):
                 break
 

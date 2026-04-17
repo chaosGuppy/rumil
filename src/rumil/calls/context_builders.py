@@ -56,9 +56,7 @@ async def _record_context_built(
 ) -> None:
     await infra.trace.record(
         ContextBuiltEvent(
-            working_context_page_ids=await resolve_page_refs(
-                working_page_ids, infra.db
-            ),
+            working_context_page_ids=await resolve_page_refs(working_page_ids, infra.db),
             preloaded_page_ids=await resolve_page_refs(preloaded_ids, infra.db),
             source_page_id=source_page_id,
             scout_mode=scout_mode,
@@ -244,16 +242,12 @@ class IngestEmbeddingContext(ContextBuilder):
             track_tags={"source": "source_document"},
         )
         source_section = (
-            "\n\n---\n\n## Source Document\n\n"
-            f"**File:** {self._filename}\n\n"
-            f"{formatted_source}"
+            f"\n\n---\n\n## Source Document\n\n**File:** {self._filename}\n\n{formatted_source}"
         )
         return ContextResult(
             context_text=result.context_text + source_section,
             working_page_ids=working_page_ids,
         )
-
-
 
 
 class WebResearchEmbeddingContext(ContextBuilder):
@@ -307,9 +301,7 @@ class WebResearchEmbeddingContext(ContextBuilder):
 
 
 class _PageSelection(BaseModel):
-    page_ids: list[str] = Field(
-        description="8-char short IDs of the selected pages"
-    )
+    page_ids: list[str] = Field(description="8-char short IDs of the selected pages")
 
 
 async def _select_sensitive_pages(
@@ -331,9 +323,7 @@ async def _select_sensitive_pages(
     for p in pages:
         entry = f"### `{p.id[:8]}` — {p.headline} ({p.page_type.value})"
         if judgement_content:
-            cite_pattern = re.compile(
-                rf'[^\n]*\[{re.escape(p.id[:8])}\][^\n]*'
-            )
+            cite_pattern = re.compile(rf"[^\n]*\[{re.escape(p.id[:8])}\][^\n]*")
             cite_lines = cite_pattern.findall(judgement_content)
             if cite_lines:
                 entry += "\n\nCited in the judgement as follows:"
@@ -348,9 +338,7 @@ async def _select_sensitive_pages(
     user_message_parts = [f"## Question\n\n**{question.headline}**"]
     if latest_judgement:
         user_message_parts.append(
-            "## Judgement\n\n"
-            f"**{latest_judgement.headline}**\n\n"
-            f"{latest_judgement.content}"
+            f"## Judgement\n\n**{latest_judgement.headline}**\n\n{latest_judgement.content}"
         )
     user_message_parts.append(
         "## Candidate pages\n\n"
@@ -405,7 +393,8 @@ _CONNECTED_LINK_TYPES = {
 
 
 async def _gather_connected_pages(
-    page_id: str, db: DB,
+    page_id: str,
+    db: DB,
 ) -> list[tuple[Page, PageLink]]:
     """Return all (page, link) pairs directly connected to a page.
 
@@ -468,7 +457,9 @@ async def _swap_superseded_link(
         ):
             log.info(
                 "Superseded link %s: equivalent link already exists on %s -> %s, skipping creation",
-                link.id[:8], new_from[:8], new_to[:8],
+                link.id[:8],
+                new_from[:8],
+                new_to[:8],
             )
             return existing
 
@@ -494,7 +485,8 @@ async def _swap_superseded_link(
 
 
 async def _get_latest_judgement(
-    question_id: str, db: DB,
+    question_id: str,
+    db: DB,
 ) -> Page | None:
     """Return the most recent active judgement for a question, or None."""
     judgements = await db.get_judgements_for_question(question_id)
@@ -592,7 +584,11 @@ async def _reassess_pages_citing_superseded(
 
     if len(stale) > 5:
         stale = await _select_sensitive_pages(
-            stale, question, latest_judgement, limit=5, infra=infra,
+            stale,
+            question,
+            latest_judgement,
+            limit=5,
+            infra=infra,
         )
 
     async def _do_reassess(page: Page) -> None:
@@ -600,22 +596,29 @@ async def _reassess_pages_citing_superseded(
 
         if page.page_type == PageType.QUESTION:
             await reassess_question(
-                page.id, [], infra.call, infra.db, infra.trace,
+                page.id,
+                [],
+                infra.call,
+                infra.db,
+                infra.trace,
                 assess_variant="default",
             )
         elif page.page_type == PageType.JUDGEMENT:
             links = await infra.db.get_links_from(page.id)
-            question_links = [
-                l for l in links if l.link_type == LinkType.ANSWERS
-            ]
+            question_links = [l for l in links if l.link_type == LinkType.ANSWERS]
             if question_links:
                 question_id = question_links[0].to_page_id
                 log.info(
                     "Stale judgement %s: reassessing its question %s",
-                    page.id[:8], question_id[:8],
+                    page.id[:8],
+                    question_id[:8],
                 )
                 await reassess_question(
-                    question_id, [], infra.call, infra.db, infra.trace,
+                    question_id,
+                    [],
+                    infra.call,
+                    infra.db,
+                    infra.trace,
                     assess_variant="default",
                 )
             else:
@@ -625,7 +628,11 @@ async def _reassess_pages_citing_superseded(
                 )
         else:
             await reassess_claim(
-                page.id, "", infra.call, infra.db, infra.trace,
+                page.id,
+                "",
+                infra.call,
+                infra.db,
+                infra.trace,
             )
 
     log.info("Reassess stale: reassessing %d pages", len(stale))
@@ -658,36 +665,34 @@ async def _find_higher_quality_replacements(
         async with _B2_SEMAPHORE:
             query_text = page.abstract if page.abstract else page.headline
             results = await search_pages(
-                infra.db, query_text, match_threshold=0.6, match_count=5,
+                infra.db,
+                query_text,
+                match_threshold=0.6,
+                match_count=5,
             )
-        filtered = [
-            (p, score) for p, score in results
-            if p.id not in exclude_ids and p.is_active()
-        ]
+        filtered = [(p, score) for p, score in results if p.id not in exclude_ids and p.is_active()]
         return page, filtered
 
-    search_results = await asyncio.gather(
-        *[_search_for_page(page) for page, _ in connected]
-    )
+    search_results = await asyncio.gather(*[_search_for_page(page) for page, _ in connected])
 
     for page, candidates in search_results:
         if candidates:
-            match_titles = ", ".join(
-                f"{c.headline[:40]} ({score:.2f})" for c, score in candidates
-            )
+            match_titles = ", ".join(f"{c.headline[:40]} ({score:.2f})" for c, score in candidates)
             log.info(
                 "Find replacements: %s (%s) — %d matches: %s",
-                page.id[:8], page.headline[:50], len(candidates), match_titles,
+                page.id[:8],
+                page.headline[:50],
+                len(candidates),
+                match_titles,
             )
         else:
             log.info(
                 "Find replacements: %s (%s) — no matches",
-                page.id[:8], page.headline[:50],
+                page.id[:8],
+                page.headline[:50],
             )
 
-    pages_with_matches = [
-        (page, candidates) for page, candidates in search_results if candidates
-    ]
+    pages_with_matches = [(page, candidates) for page, candidates in search_results if candidates]
 
     if not pages_with_matches:
         log.info("Find replacements: no connected pages have similar matches")
@@ -701,27 +706,33 @@ async def _find_higher_quality_replacements(
     if len(pages_with_matches) > 10:
         match_pages = [p for p, _ in pages_with_matches]
         selected = await _select_sensitive_pages(
-            match_pages, question, latest_judgement, limit=10, infra=infra,
+            match_pages,
+            question,
+            latest_judgement,
+            limit=10,
+            infra=infra,
         )
         selected_ids = {p.id for p in selected}
-        pages_with_matches = [
-            (p, cs) for p, cs in pages_with_matches
-            if p.id in selected_ids
-        ][:10]
+        pages_with_matches = [(p, cs) for p, cs in pages_with_matches if p.id in selected_ids][:10]
 
     async def _check_replacements(
-        page: Page, candidates: Sequence[tuple[Page, float]],
+        page: Page,
+        candidates: Sequence[tuple[Page, float]],
     ) -> set[str]:
         async with _B2_SEMAPHORE:
             target_text = await format_page(
-                page, PageDetail.CONTENT, linked_detail=PageDetail.ABSTRACT,
+                page,
+                PageDetail.CONTENT,
+                linked_detail=PageDetail.ABSTRACT,
                 db=infra.db,
             )
             candidate_parts: list[str] = []
             for c, _ in candidates:
                 candidate_parts.append(
                     await format_page(
-                        c, PageDetail.CONTENT, linked_detail=PageDetail.ABSTRACT,
+                        c,
+                        PageDetail.CONTENT,
+                        linked_detail=PageDetail.ABSTRACT,
                         db=infra.db,
                     )
                 )
@@ -740,8 +751,7 @@ async def _find_higher_quality_replacements(
                 "or none. Return the 8-char short IDs of qualifying candidates, "
                 "or an empty list if none qualify.",
                 user_message=(
-                    f"## Target page\n\n{target_text}\n\n"
-                    f"## Candidates\n\n{candidate_descriptions}"
+                    f"## Target page\n\n{target_text}\n\n## Candidates\n\n{candidate_descriptions}"
                 ),
                 response_model=_ReplacementPick,
                 metadata=meta,
@@ -788,8 +798,7 @@ async def _generate_missing_abstracts(
     )
 
     page_contents = "\n\n---\n\n".join(
-        f'Page `{p.id[:8]}` — {p.headline}\n\n{p.content}'
-        for p in missing
+        f"Page `{p.id[:8]}` — {p.headline}\n\n{p.content}" for p in missing
     )
     system_prompt = (
         "You are generating abstracts for workspace pages. "
@@ -797,10 +806,7 @@ async def _generate_missing_abstracts(
         "abstract for each.\n\n"
         f"Page contents:\n\n{page_contents}"
     )
-    page_lines = "\n".join(
-        f'- `{p.id[:8]}`: "{p.headline[:120]}"'
-        for p in missing
-    )
+    page_lines = "\n".join(f'- `{p.id[:8]}`: "{p.headline[:120]}"' for p in missing)
     user_message = (
         "Generate an abstract for each of the following pages.\n\n"
         f"{page_lines}\n\n"
@@ -853,7 +859,9 @@ class BigAssessContext(ContextBuilder):
         latest_judgement = await _get_latest_judgement(infra.question_id, db)
 
         connected = await _resolve_superseded_connections(
-            infra.question_id, latest_judgement, db,
+            infra.question_id,
+            latest_judgement,
+            db,
         )
         log.info(
             "Big assess: %d connected pages after supersession resolution",
@@ -861,11 +869,16 @@ class BigAssessContext(ContextBuilder):
         )
 
         await _reassess_pages_citing_superseded(
-            connected, question, latest_judgement, infra,
+            connected,
+            question,
+            latest_judgement,
+            infra,
         )
         latest_judgement = await _get_latest_judgement(infra.question_id, db)
         connected = await _resolve_superseded_connections(
-            infra.question_id, latest_judgement, db,
+            infra.question_id,
+            latest_judgement,
+            db,
         )
         log.info(
             "Big assess: %d connected pages after reassessment refresh",
@@ -873,7 +886,10 @@ class BigAssessContext(ContextBuilder):
         )
 
         replacement_ids = await _find_higher_quality_replacements(
-            connected, question, latest_judgement, infra,
+            connected,
+            question,
+            latest_judgement,
+            infra,
         )
 
         await _generate_missing_abstracts(connected, infra)
@@ -902,9 +918,7 @@ class BigAssessContext(ContextBuilder):
 
         judgement_cited_ids: list[str] = []
         if latest_judgement and latest_judgement.content:
-            cited_sids = sorted(set(
-                _CITATION_RE.findall(latest_judgement.content)
-            ))
+            cited_sids = sorted(set(_CITATION_RE.findall(latest_judgement.content)))
             if cited_sids:
                 resp = await db._execute(
                     db.client.table("pages")
@@ -921,8 +935,7 @@ class BigAssessContext(ContextBuilder):
                         prefix_to_row[prefix] = row
 
                 superseded_ids = [
-                    row["id"] for row in prefix_to_row.values()
-                    if row["is_superseded"]
+                    row["id"] for row in prefix_to_row.values() if row["is_superseded"]
                 ]
                 resolved = await db.resolve_supersession_chains(superseded_ids)
 

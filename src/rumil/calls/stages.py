@@ -8,10 +8,10 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import ClassVar
 
+from rumil.available_moves import get_moves_for_call
 from rumil.calls.common import mark_call_completed
 from rumil.database import DB
 from rumil.models import Call, CallStage, CallStatus, CallType, Dispatch, Move, MoveType
-from rumil.available_moves import get_moves_for_call
 from rumil.moves.base import MoveState
 from rumil.tracing.page_load_tracking import page_track_scope
 from rumil.tracing.trace_events import ErrorEvent
@@ -179,9 +179,7 @@ class CallRunner(ABC):
                     call_params=self.infra.call.call_params,
                 )
 
-                self.context_result = await self.context_builder.build_context(
-                    self.infra
-                )
+                self.context_result = await self.context_builder.build_context(self.infra)
                 if self.up_to_stage == CallStage.BUILD_CONTEXT:
                     await mark_call_completed(
                         self.infra.call,

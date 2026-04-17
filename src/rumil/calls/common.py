@@ -12,11 +12,10 @@ import anthropic
 from anthropic.types import TextBlock, ToolUseBlock
 from pydantic import BaseModel, Field
 
+from rumil.available_moves import get_moves_for_call
 from rumil.context import format_page
 from rumil.database import DB
-from rumil.available_moves import get_moves_for_call
 from rumil.embeddings import embed_and_store_page
-from rumil.settings import get_settings
 from rumil.llm import (
     AgentResult,
     LLMExchangeMetadata,
@@ -41,10 +40,11 @@ from rumil.models import (
 from rumil.moves.base import MoveState
 from rumil.moves.load_page import LoadPagePayload
 from rumil.moves.registry import MOVES
+from rumil.settings import get_settings
 from rumil.tracing.trace_events import (
     ErrorEvent,
-    MoveTraceItem,
     MovesExecutedEvent,
+    MoveTraceItem,
     PageRef,
     WarningEvent,
 )
@@ -204,9 +204,7 @@ async def run_single_call(
     )
 
     msg_list: list[dict] = (
-        messages
-        if messages is not None
-        else [{"role": "user", "content": user_message}]
+        messages if messages is not None else [{"role": "user", "content": user_message}]
     )
     all_warnings: list[str] = []
     meta = LLMExchangeMetadata(
@@ -311,9 +309,7 @@ async def run_agent_loop(
     )
 
     msg_list: list[dict] = (
-        messages
-        if messages is not None
-        else [{"role": "user", "content": user_message}]
+        messages if messages is not None else [{"role": "user", "content": user_message}]
     )
     text_parts: list[str] = []
     all_tool_calls: list[ToolCall] = []
@@ -407,7 +403,7 @@ async def run_agent_loop(
             }
 
         msg_list.append({"role": "assistant", "content": response.content})
-        msg_list.append({"role": "user", "content": tool_results + [budget_note]})
+        msg_list.append({"role": "user", "content": [*tool_results, budget_note]})
 
     trace = get_trace()
     for w in all_warnings:
@@ -475,9 +471,7 @@ async def save_page_abstracts(
 
 class PageRating(BaseModel):
     page_id: str = Field(description="Short ID of the rated page")
-    score: int = Field(
-        description="-1 = confusing, 0 = no help, 1 = helpful, 2 = very helpful"
-    )
+    score: int = Field(description="-1 = confusing, 0 = no help, 1 = helpful, 2 = very helpful")
     note: str = Field("", description="One sentence on why")
 
 
@@ -490,18 +484,10 @@ class ReviewResponse(BaseModel):
             "7-8 = substantial work remains; 9-10 = barely started"
         )
     )
-    confidence_in_output: float = Field(
-        description="0-5 confidence in the work just done"
-    )
-    context_was_adequate: bool = Field(
-        description="Whether the context provided was sufficient"
-    )
-    what_was_missing: str = Field(
-        "", description="What additional context would have helped"
-    )
-    tensions_noticed: str = Field(
-        "", description="Any conflicts or inconsistencies noticed"
-    )
+    confidence_in_output: float = Field(description="0-5 confidence in the work just done")
+    context_was_adequate: bool = Field(description="Whether the context provided was sufficient")
+    what_was_missing: str = Field("", description="What additional context would have helped")
+    tensions_noticed: str = Field("", description="Any conflicts or inconsistencies noticed")
     self_assessment: str = Field("", description="1-2 sentences on how this call went")
     suggested_next_steps: str = Field("", description="What should happen next")
     page_ratings: list[PageRating] = Field(
@@ -685,8 +671,7 @@ async def resolve_page_refs(page_ids: Sequence[str], db: DB) -> list[PageRef]:
     """Resolve a list of page IDs to PageRef objects with headlines."""
     pages = await db.get_pages_by_ids(page_ids)
     return [
-        PageRef(id=pid, headline=pages[pid].headline if pid in pages else "")
-        for pid in page_ids
+        PageRef(id=pid, headline=pages[pid].headline if pid in pages else "") for pid in page_ids
     ]
 
 
@@ -879,9 +864,7 @@ async def run_closing_review(
                     pid = resolved_rating_ids.get(r.get("page_id", ""))
                     score = r.get("score")
                     if pid and isinstance(score, int):
-                        await db.save_page_rating(
-                            pid, call.id, score, r.get("note", "")
-                        )
+                        await db.save_page_rating(pid, call.id, score, r.get("note", ""))
                 raw_summaries = review.get("page_summaries", [])
                 items = [
                     PageSummaryItem(**s)

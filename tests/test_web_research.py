@@ -44,21 +44,25 @@ async def web_research_call(tmp_db, web_question):
 
 @pytest.mark.integration
 async def test_web_research_creates_sourced_claims(
-    tmp_db, web_question, web_research_call,
+    tmp_db,
+    web_question,
+    web_research_call,
 ):
     """Web research call finds web sources, creates claims with CITES links."""
     wrc = WebResearchCall(
-        web_question.id, web_research_call, tmp_db,
+        web_question.id,
+        web_research_call,
+        tmp_db,
     )
     await wrc.run()
 
     refreshed = await tmp_db.get_call(web_research_call.id)
     assert refreshed.status == CallStatus.COMPLETE
     assert refreshed.completed_at is not None
-    assert 'Web research complete' in refreshed.result_summary
+    assert "Web research complete" in refreshed.result_summary
 
     created_ids = wrc.infra.state.created_page_ids
-    assert len(created_ids) >= 1, 'Expected at least one page created'
+    assert len(created_ids) >= 1, "Expected at least one page created"
 
     claim_ids = []
     source_ids = []
@@ -70,12 +74,12 @@ async def test_web_research_creates_sourced_claims(
         elif page.page_type == PageType.SOURCE:
             source_ids.append(pid)
 
-    assert len(claim_ids) >= 1, 'Expected at least one claim'
-    assert len(source_ids) >= 1, 'Expected at least one source page'
+    assert len(claim_ids) >= 1, "Expected at least one claim"
+    assert len(source_ids) >= 1, "Expected at least one source page"
 
     source_page = await tmp_db.get_page(source_ids[0])
-    assert source_page.extra.get('url', '').startswith('http')
-    assert source_page.extra.get('fetched_at') is not None
+    assert source_page.extra.get("url", "").startswith("http")
+    assert source_page.extra.get("fetched_at") is not None
     assert len(source_page.content) > 0
 
     cites_links = []
@@ -84,13 +88,13 @@ async def test_web_research_creates_sourced_claims(
         for link in links:
             if link.link_type == LinkType.CITES:
                 cites_links.append(link)
-    assert len(cites_links) >= 1, 'Expected at least one CITES link'
+    assert len(cites_links) >= 1, "Expected at least one CITES link"
 
     cites_targets = {link.to_page_id for link in cites_links}
     assert cites_targets & set(source_ids), (
-        'At least one CITES link should point to a created source page'
+        "At least one CITES link should point to a created source page"
     )
 
     trace = await tmp_db.get_call_trace(web_research_call.id)
-    event_types = [e.get('event') for e in trace]
-    assert 'context_built' in event_types
+    event_types = [e.get("event") for e in trace]
+    assert "context_built" in event_types

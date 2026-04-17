@@ -48,9 +48,7 @@ async def _link(tmp_db, src: Page, dst: Page, link_type: LinkType) -> PageLink:
     return link
 
 
-async def _call(
-    tmp_db, scope: Page, call_type: CallType = CallType.FIND_CONSIDERATIONS
-) -> Call:
+async def _call(tmp_db, scope: Page, call_type: CallType = CallType.FIND_CONSIDERATIONS) -> Call:
     call = Call(
         call_type=call_type,
         workspace=Workspace.RESEARCH,

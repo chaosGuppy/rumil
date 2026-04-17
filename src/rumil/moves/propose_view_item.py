@@ -17,14 +17,11 @@ log = logging.getLogger(__name__)
 
 
 class ProposeViewItemPayload(CreatePagePayload):
-    view_id: str = Field(
-        description="Page ID of the View to propose this item for."
-    )
+    view_id: str = Field(description="Page ID of the View to propose this item for.")
     section: str = Field(
         default="other",
         description=(
-            "Suggested section for this item. The next assess call will "
-            "confirm or reassign it."
+            "Suggested section for this item. The next assess call will confirm or reassign it."
         ),
     )
 

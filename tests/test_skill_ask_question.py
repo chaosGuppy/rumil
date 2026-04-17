@@ -6,6 +6,7 @@ import json
 import uuid
 
 import pytest
+from rumil_skills import _runctx, ask_question
 
 from rumil.database import DB
 from rumil.models import (
@@ -15,15 +16,12 @@ from rumil.models import (
     PageType,
     Workspace,
 )
-from rumil_skills import _runctx, ask_question
 
 
 @pytest.fixture
 def _isolated_state(tmp_path, monkeypatch):
     monkeypatch.setattr(_runctx, "STATE_DIR", tmp_path / "state")
-    monkeypatch.setattr(
-        _runctx, "STATE_FILE", tmp_path / "state" / "rumil-session.json"
-    )
+    monkeypatch.setattr(_runctx, "STATE_FILE", tmp_path / "state" / "rumil-session.json")
 
 
 def _set_workspace(workspace: str) -> None:
@@ -119,9 +117,7 @@ async def test_parse_question_input_json_unknown_fields(tmp_path):
         ask_question.parse_question_input(str(path))
 
 
-async def test_root_question_creates_page(
-    _isolated_state, monkeypatch, envelope_cleanup
-):
+async def test_root_question_creates_page(_isolated_state, monkeypatch, envelope_cleanup):
     workspace = f"test-ask-{uuid.uuid4().hex[:8]}"
     _set_workspace(workspace)
 
@@ -155,9 +151,7 @@ async def test_root_question_creates_page(
 
         links = (
             await db._execute(
-                db.client.table("page_links")
-                .select("*")
-                .eq("to_page_id", rows[0]["id"])
+                db.client.table("page_links").select("*").eq("to_page_id", rows[0]["id"])
             )
         ).data
         assert links == []
@@ -165,9 +159,7 @@ async def test_root_question_creates_page(
         await db.close()
 
 
-async def test_subquestion_links_to_parent(
-    _isolated_state, monkeypatch, envelope_cleanup
-):
+async def test_subquestion_links_to_parent(_isolated_state, monkeypatch, envelope_cleanup):
     workspace = f"test-ask-{uuid.uuid4().hex[:8]}"
     _set_workspace(workspace)
 
@@ -245,9 +237,7 @@ async def test_subquestion_with_unknown_parent_exits_without_creating(
         envelope_call_id = state.chat_envelope["call_id"]
         rows = (
             await db._execute(
-                db.client.table("pages")
-                .select("id")
-                .eq("provenance_call_id", envelope_call_id)
+                db.client.table("pages").select("id").eq("provenance_call_id", envelope_call_id)
             )
         ).data
         assert rows == []
@@ -282,9 +272,7 @@ async def test_subquestion_rejects_non_question_parent(
         envelope_call_id = state.chat_envelope["call_id"]
         rows = (
             await db._execute(
-                db.client.table("pages")
-                .select("id")
-                .eq("provenance_call_id", envelope_call_id)
+                db.client.table("pages").select("id").eq("provenance_call_id", envelope_call_id)
             )
         ).data
         assert rows == []
@@ -311,9 +299,7 @@ async def test_content_defaults_to_headline_when_no_content_or_abstract(
         envelope_call_id = state.chat_envelope["call_id"]
         rows = (
             await db._execute(
-                db.client.table("pages")
-                .select("*")
-                .eq("provenance_call_id", envelope_call_id)
+                db.client.table("pages").select("*").eq("provenance_call_id", envelope_call_id)
             )
         ).data
         assert len(rows) == 1

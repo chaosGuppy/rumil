@@ -4,17 +4,15 @@ from __future__ import annotations
 
 import pytest
 import pytest_asyncio
+from rumil_skills import _runctx, list_questions
 
 from rumil.models import Page, PageLayer, PageType, Workspace
-from rumil_skills import _runctx, list_questions
 
 
 @pytest.fixture(autouse=True)
 def _isolate_state(monkeypatch, tmp_path):
     monkeypatch.setattr(_runctx, "STATE_DIR", tmp_path / "state")
-    monkeypatch.setattr(
-        _runctx, "STATE_FILE", tmp_path / "state" / "rumil-session.json"
-    )
+    monkeypatch.setattr(_runctx, "STATE_FILE", tmp_path / "state" / "rumil-session.json")
 
 
 @pytest.fixture

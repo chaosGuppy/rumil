@@ -13,6 +13,8 @@ from rumil.models import (
     CallType,
     Dispatch,
     FindConsiderationsMode,
+    MultiRoundFields,
+    PrioritizationFields,
     RecurseClaimDispatchPayload,
     RecurseDispatchPayload,
     ScopeOnlyDispatchPayload,
@@ -24,17 +26,15 @@ from rumil.models import (
     ScoutCRobustifyDispatchPayload,
     ScoutCStrengthenDispatchPayload,
     ScoutCStressTestCasesDispatchPayload,
+    ScoutDeepQuestionsDispatchPayload,
     ScoutDispatchPayload,
-    ScoutParadigmCasesDispatchPayload,
     ScoutEstimatesDispatchPayload,
     ScoutFactchecksDispatchPayload,
     ScoutHypothesesDispatchPayload,
-    ScoutDeepQuestionsDispatchPayload,
-    ScoutWebQuestionsDispatchPayload,
+    ScoutParadigmCasesDispatchPayload,
     ScoutSubquestionsDispatchPayload,
+    ScoutWebQuestionsDispatchPayload,
     WebResearchDispatchPayload,
-    MultiRoundFields,
-    PrioritizationFields,
 )
 from rumil.moves.base import DispatchValidator, MoveState
 
@@ -126,9 +126,7 @@ def filter_mode_schema(
             if mode_prop.get("$ref", "").endswith(f"/{mode_def_key}"):
                 mode_prop.pop("default", None)
                 mode_prop["description"] = (
-                    "Scout mode. Available: "
-                    + ", ".join(f"'{v}'" for v in allowed_values)
-                    + "."
+                    "Scout mode. Available: " + ", ".join(f"'{v}'" for v in allowed_values) + "."
                 )
 
     _patch_mode_props(schema)

@@ -44,9 +44,9 @@ from ._format import short, truncate
 from ._runctx import make_db
 from .llm_helpers import (
     DEFAULT_META_MODEL,
-    resolved_meta_model,
     load_prompt,
     meta_structured_call,
+    resolved_meta_model,
 )
 from .scan_log import (
     filter_unscanned,
@@ -114,10 +114,7 @@ async def _fetch_recent_calls(db, limit: int) -> list[dict[str, Any]]:
     """Fetch recent calls in the current project, ordered most-recent first."""
     query = (
         db.client.table("calls")
-        .select(
-            "id,call_type,status,cost_usd,created_at,completed_at,"
-            "trace_json,scope_page_id"
-        )
+        .select("id,call_type,status,cost_usd,created_at,completed_at,trace_json,scope_page_id")
         .order("created_at", desc=True)
         .limit(limit)
     )
@@ -127,9 +124,7 @@ async def _fetch_recent_calls(db, limit: int) -> list[dict[str, Any]]:
     return list(getattr(rows, "data", None) or [])
 
 
-async def _fetch_exchanges_many(
-    db, call_ids: list[str]
-) -> dict[str, list[dict[str, Any]]]:
+async def _fetch_exchanges_many(db, call_ids: list[str]) -> dict[str, list[dict[str, Any]]]:
     """Fetch all exchanges for the given call_ids in a single round trip.
 
     Returns a dict keyed by call_id. Each value is exchanges ordered by
@@ -139,9 +134,7 @@ async def _fetch_exchanges_many(
     if not call_ids:
         return {}
     rows = await db._execute(
-        db.client.table("call_llm_exchanges")
-        .select("*")
-        .in_("call_id", list(set(call_ids)))
+        db.client.table("call_llm_exchanges").select("*").in_("call_id", list(set(call_ids)))
     )
     data = list(getattr(rows, "data", None) or [])
     by_call: dict[str, list[dict[str, Any]]] = {}
@@ -178,9 +171,7 @@ async def _score_heuristics(
     results: list[HeuristicResult] = []
 
     if exchanges_by_call is None:
-        scored_ids = [
-            c["id"] for c in calls if c.get("call_type") != "claude_code_direct"
-        ]
+        scored_ids = [c["id"] for c in calls if c.get("call_type") != "claude_code_direct"]
         exchanges_by_call = await _fetch_exchanges_many(db, scored_ids)
 
     for c in calls:
@@ -234,11 +225,7 @@ async def _score_heuristics(
 
         # Soft: cost outlier
         cost = c.get("cost_usd")
-        if (
-            cost is not None
-            and cost_median > 0
-            and cost > cost_median * COST_OUTLIER_MULTIPLIER
-        ):
+        if cost is not None and cost_median > 0 and cost > cost_median * COST_OUTLIER_MULTIPLIER:
             signals.append(
                 HeuristicSignal(
                     name="cost_outlier",
@@ -272,10 +259,7 @@ async def _score_heuristics(
                     HeuristicSignal(
                         name="thin_output",
                         severity=2,
-                        detail=(
-                            f"exchange round={ex.get('round')} "
-                            f"in={in_len} out={out_len}"
-                        ),
+                        detail=(f"exchange round={ex.get('round')} in={in_len} out={out_len}"),
                     )
                 )
                 break  # one is enough to flag
@@ -324,9 +308,7 @@ def _format_trace_for_llm(
             name = ev.get("event", "?")
             if name == "llm_exchange":
                 continue  # exchanges rendered in full below
-            compact = {
-                k: v for k, v in ev.items() if k not in {"event", "ts", "call_id"}
-            }
+            compact = {k: v for k, v in ev.items() if k not in {"event", "ts", "call_id"}}
             parts.append(f"- {name}: {truncate(str(compact), 140)}")
 
     parts.append("")
@@ -335,9 +317,7 @@ def _format_trace_for_llm(
         parts.append("(none)")
     for i, ex in enumerate(exchanges, start=1):
         parts.append("")
-        parts.append(
-            f"### exchange {i}  phase={ex.get('phase')!r}  round={ex.get('round')}"
-        )
+        parts.append(f"### exchange {i}  phase={ex.get('phase')!r}  round={ex.get('round')}")
         if ex.get("error"):
             parts.append(f"ERROR: {ex['error']}")
         if ex.get("user_message"):
@@ -382,10 +362,7 @@ async def _deep_scan_one(
 def _print_heuristic_result(r: HeuristicResult) -> None:
     created = r.created_at[:19].replace("T", " ")
     cost_s = f"${r.cost_usd:.3f}" if r.cost_usd is not None else "     "
-    print(
-        f"  [{r.score:3d}] {r.short_id}  {created}  {cost_s}  "
-        f"{r.status:8}  {r.call_type}"
-    )
+    print(f"  [{r.score:3d}] {r.short_id}  {created}  {cost_s}  {r.status:8}  {r.call_type}")
     for s in r.signals:
         print(f"         · {s.name} [{s.severity}] {s.detail}")
 
@@ -465,9 +442,7 @@ async def main() -> None:
         calls = await _fetch_recent_calls(db, args.limit)
         print(f"workspace: {ws}")
         print(f"scanned:   {len(calls)} recent calls")
-        scorable_ids = [
-            c["id"] for c in calls if c.get("call_type") != "claude_code_direct"
-        ]
+        scorable_ids = [c["id"] for c in calls if c.get("call_type") != "claude_code_direct"]
         exchanges_by_call = await _fetch_exchanges_many(db, scorable_ids)
         heuristic = await _score_heuristics(db, calls, exchanges_by_call)
         print(f"flagged:   {len(heuristic)} by heuristics")
@@ -483,10 +458,7 @@ async def main() -> None:
         print()
 
         if not args.deep:
-            print(
-                "(pass --deep to LLM-scan the top candidates for structured "
-                "confusion verdicts)"
-            )
+            print("(pass --deep to LLM-scan the top candidates for structured confusion verdicts)")
             return
 
         log = load_scan_log()
@@ -497,9 +469,7 @@ async def main() -> None:
             candidate_ids = remaining[: args.deep_limit]
 
         cached_hits = [
-            r
-            for r in heuristic
-            if is_scanned(log, r.call_id) and r.call_id not in candidate_ids
+            r for r in heuristic if is_scanned(log, r.call_id) and r.call_id not in candidate_ids
         ]
 
         if cached_hits:

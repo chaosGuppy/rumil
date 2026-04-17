@@ -10,9 +10,9 @@ from rumil.available_calls import get_available_calls_preset
 from rumil.calls.common import mark_call_completed
 from rumil.calls.dispatches import (
     DISPATCH_DEFS,
-    DispatchDef,
     RECURSE_CLAIM_DISPATCH_DEF,
     RECURSE_DISPATCH_DEF,
+    DispatchDef,
 )
 from rumil.calls.prioritization import run_prioritization_call
 from rumil.constants import LAST_CALL_THRESHOLD, MIN_TWOPHASE_BUDGET
@@ -37,21 +37,19 @@ from rumil.orchestrators.common import (
     compute_priority_score,
     score_items_sequentially,
 )
-from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
 from rumil.tracing.trace_events import (
     CallTypeFruitScoreItem,
     ClaimScoreItem,
     ContextBuiltEvent,
-    DispatchExecutedEvent,
     DispatchesPlannedEvent,
+    DispatchExecutedEvent,
     DispatchTraceItem,
     ErrorEvent,
     PhaseSkippedEvent,
     ScoringCompletedEvent,
 )
 from rumil.tracing.tracer import CallTrace, set_trace
-
 
 log = logging.getLogger(__name__)
 
@@ -67,7 +65,8 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
     """
 
     def __init__(
-        self, db: DB,
+        self,
+        db: DB,
         broadcaster: Broadcaster | None = None,
         budget_cap: int | None = None,
     ):
@@ -123,8 +122,8 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
         effective = self._effective_budget(remaining)
         if effective < MIN_TWOPHASE_BUDGET:
             raise ValueError(
-                'ClaimInvestigationOrchestrator requires a budget of at least '
-                f'{MIN_TWOPHASE_BUDGET}, got {effective}'
+                "ClaimInvestigationOrchestrator requires a budget of at least "
+                f"{MIN_TWOPHASE_BUDGET}, got {effective}"
             )
         if self._parent_call_id:
             seq = await self.db.create_call_sequence(
@@ -146,7 +145,9 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
                 else:
                     round_budget = await self._paced_budget(effective)
                 result = await self._get_next_batch(
-                    claim_id, round_budget, total_remaining=effective,
+                    claim_id,
+                    round_budget,
+                    total_remaining=effective,
                     last_call=last_call,
                 )
                 if not result.dispatch_sequences and not result.children:
@@ -154,10 +155,13 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
 
                 tasks: list = []
                 if result.dispatch_sequences:
-                    tasks.append(self._run_sequences(
-                        result.dispatch_sequences, claim_id,
-                        result.call_id,
-                    ))
+                    tasks.append(
+                        self._run_sequences(
+                            result.dispatch_sequences,
+                            claim_id,
+                            result.call_id,
+                        )
+                    )
                 for child, child_id in result.children:
                     tasks.append(child.run(child_id))
 
@@ -167,19 +171,21 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
                 results = await asyncio.gather(*tasks, return_exceptions=True)
                 for r in results:
                     if isinstance(r, Exception):
-                        log.error('Concurrent dispatch failed: %s', r, exc_info=r)
+                        log.error("Concurrent dispatch failed: %s", r, exc_info=r)
                         if result.call_id:
                             trace = CallTrace(
-                                result.call_id, self.db,
+                                result.call_id,
+                                self.db,
                                 broadcaster=self.broadcaster,
                             )
-                            await trace.record(ErrorEvent(
-                                message=(
-                                    "Concurrent dispatch failed: "
-                                    f"{type(r).__name__}: {r}"
-                                ),
-                                phase="dispatch",
-                            ))
+                            await trace.record(
+                                ErrorEvent(
+                                    message=(
+                                        f"Concurrent dispatch failed: {type(r).__name__}: {r}"
+                                    ),
+                                    phase="dispatch",
+                                )
+                            )
 
                 if not any(not isinstance(r, Exception) for r in results):
                     break
@@ -188,9 +194,11 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
 
                 if self._invocation > 1 or last_call:
                     await assess_question(
-                        claim_id, self.db,
+                        claim_id,
+                        self.db,
                         parent_call_id=self._parent_call_id,
-                        broadcaster=self.broadcaster, force=True,
+                        broadcaster=self.broadcaster,
+                        force=True,
                         sequence_id=self._sequence_id,
                         sequence_position=self._seq_position,
                     )
@@ -212,7 +220,10 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
         position_in_batch: int = 0,
     ) -> bool:
         result = await super()._run_dispatch_sequence(
-            sequence, scope_question_id, parent_call_id, base_index,
+            sequence,
+            scope_question_id,
+            parent_call_id,
+            base_index,
             position_in_batch=position_in_batch,
         )
         if result:
@@ -222,9 +233,7 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
     async def _is_new_claim(self, claim_id: str) -> bool:
         """A claim is 'new' if no other page depends on it yet."""
         links = await self.db.get_links_to(claim_id)
-        return not any(
-            l.link_type == LinkType.DEPENDS_ON for l in links
-        )
+        return not any(l.link_type == LinkType.DEPENDS_ON for l in links)
 
     async def _cancel_initial_call(self) -> None:
         if self._initial_call is None:
@@ -238,12 +247,16 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
             self._seq_position += 1
         trace = CallTrace(call.id, self.db, broadcaster=self.broadcaster)
         set_trace(trace)
-        await trace.record(PhaseSkippedEvent(
-            phase='phase1',
-            reason='Claim already has research.',
-        ))
+        await trace.record(
+            PhaseSkippedEvent(
+                phase="phase1",
+                reason="Claim already has research.",
+            )
+        )
         await mark_call_completed(
-            call, self.db, 'Phase 1 skipped — claim already has research.',
+            call,
+            self.db,
+            "Phase 1 skipped — claim already has research.",
         )
 
     async def _get_next_batch(
@@ -253,13 +266,15 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
         parent_call_id: str | None = None,
         total_remaining: int | None = None,
         last_call: bool = False,
-    ) -> 'PrioritizationResult':
+    ) -> "PrioritizationResult":
 
         if self._invocation == 0:
             self._invocation += 1
             if await self._is_new_claim(claim_id):
                 return await self._phase1(
-                    claim_id, budget, parent_call_id,
+                    claim_id,
+                    budget,
+                    parent_call_id,
                     total_remaining=total_remaining,
                     last_call=last_call,
                 )
@@ -272,7 +287,9 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
         self._executed_since_last_plan = False
         self._invocation += 1
         return await self._phase2(
-            claim_id, budget, self._parent_call_id,
+            claim_id,
+            budget,
+            self._parent_call_id,
             total_remaining=total_remaining,
             last_call=last_call,
         )
@@ -284,16 +301,19 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
         parent_call_id: str | None,
         total_remaining: int | None = None,
         last_call: bool = False,
-    ) -> 'PrioritizationResult':
+    ) -> "PrioritizationResult":
 
         phase1_budget = budget
         log.info(
-            'ClaimInvestigationOrchestrator phase1: claim=%s, budget=%d, phase1_budget=%d',
-            claim_id[:8], budget, phase1_budget,
+            "ClaimInvestigationOrchestrator phase1: claim=%s, budget=%d, phase1_budget=%d",
+            claim_id[:8],
+            budget,
+            phase1_budget,
         )
 
         context_text, short_id_map = await build_prioritization_context(
-            self.db, scope_question_id=claim_id,
+            self.db,
+            scope_question_id=claim_id,
         )
         if self._initial_call is not None:
             p_call = self._initial_call
@@ -320,76 +340,84 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
         await trace.record(ContextBuiltEvent(budget=phase1_budget))
 
         budget_line = (
-            f'You have a budget of **{phase1_budget} research calls** to distribute '
-            'among the dispatch tools below.'
+            f"You have a budget of **{phase1_budget} research calls** to distribute "
+            "among the dispatch tools below."
         )
         if last_call:
             budget_line += (
-                ' **This is your FINAL allocation — there will be no further '
-                'research rounds after this. Spend the full budget on the '
-                'highest-value work.**'
+                " **This is your FINAL allocation — there will be no further "
+                "research rounds after this. Spend the full budget on the "
+                "highest-value work.**"
             )
         elif total_remaining is not None and total_remaining > phase1_budget:
             budget_line += (
-                f' The overall question has **{total_remaining} budget remaining** '
-                'across future rounds.'
+                f" The overall question has **{total_remaining} budget remaining** "
+                "across future rounds."
             )
         task = (
-            f'{budget_line}\n\n'
-            f'Scope claim ID: `{claim_id}`\n\n'
-            'Your job is to call the dispatch tools to fan out exploratory research on '
-            'this claim. All scout dispatches automatically target the scope claim. '
-            'You MUST call at least one dispatch tool right now — this is '
-            'your only turn and you will not get another chance. Distribute your budget '
-            'among the scouting dispatch tools, weighting towards types that seem most '
-            'useful for this claim and skipping types that are clearly irrelevant. '
-            'Do not do anything else — just dispatch.'
+            f"{budget_line}\n\n"
+            f"Scope claim ID: `{claim_id}`\n\n"
+            "Your job is to call the dispatch tools to fan out exploratory research on "
+            "this claim. All scout dispatches automatically target the scope claim. "
+            "You MUST call at least one dispatch tool right now — this is "
+            "your only turn and you will not get another chance. Distribute your budget "
+            "among the scouting dispatch tools, weighting towards types that seem most "
+            "useful for this claim and skipping types that are clearly irrelevant. "
+            "Do not do anything else — just dispatch."
         )
 
         result = await run_prioritization_call(
-            task, context_text, p_call, self.db,
+            task,
+            context_text,
+            p_call,
+            self.db,
             short_id_map=short_id_map,
             dispatch_types=list(get_available_calls_preset().claim_phase1_scouts),
-            system_prompt=build_system_prompt('claim_investigation_p1'),
+            system_prompt=build_system_prompt("claim_investigation_p1"),
         )
 
         dispatches = list(result.dispatches)
         if not dispatches:
             log.warning(
-                'Phase 1 produced no dispatches, synthesizing default scouts '
-                'for claim=%s', claim_id[:8],
+                "Phase 1 produced no dispatches, synthesizing default scouts for claim=%s",
+                claim_id[:8],
             )
             preset = get_available_calls_preset()
             for ct in preset.claim_phase1_scouts[:phase1_budget]:
                 ddef = DISPATCH_DEFS[ct]
-                dispatches.append(Dispatch(
-                    call_type=ct,
-                    payload=ddef.schema(
-                        question_id=claim_id,
-                        reason='fallback — phase 1 produced no dispatches',
-                    ),
-                ))
+                dispatches.append(
+                    Dispatch(
+                        call_type=ct,
+                        payload=ddef.schema(
+                            question_id=claim_id,
+                            reason="fallback — phase 1 produced no dispatches",
+                        ),
+                    )
+                )
         sequences: list[list[Dispatch]] = [[d] for d in dispatches]
 
-        await trace.record(DispatchesPlannedEvent(
-            dispatches=[
-                DispatchTraceItem(
-                    call_type=d.call_type.value,
-                    **d.payload.model_dump(exclude_defaults=True),
-                )
-                for d in dispatches
-            ],
-        ))
+        await trace.record(
+            DispatchesPlannedEvent(
+                dispatches=[
+                    DispatchTraceItem(
+                        call_type=d.call_type.value,
+                        **d.payload.model_dump(exclude_defaults=True),
+                    )
+                    for d in dispatches
+                ],
+            )
+        )
 
         await mark_call_completed(
-            p_call, self.db,
-            f'Phase 1 complete. Planned {len(sequences)} concurrent sequences.',
+            p_call,
+            self.db,
+            f"Phase 1 complete. Planned {len(sequences)} concurrent sequences.",
         )
 
         self._call_id = p_call.id
 
         log.info(
-            'ClaimInvestigationOrchestrator phase1 complete: %d sequences',
+            "ClaimInvestigationOrchestrator phase1 complete: %d sequences",
             len(sequences),
         )
         return PrioritizationResult(
@@ -404,13 +432,15 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
         parent_call_id: str | None,
         total_remaining: int | None = None,
         last_call: bool = False,
-    ) -> 'PrioritizationResult':
+    ) -> "PrioritizationResult":
         from rumil.orchestrators.common import PrioritizationResult
         from rumil.orchestrators.two_phase import TwoPhaseOrchestrator
 
         log.info(
-            'ClaimInvestigationOrchestrator phase2: claim=%s, budget=%d, last_call=%s',
-            claim_id[:8], budget, last_call,
+            "ClaimInvestigationOrchestrator phase2: claim=%s, budget=%d, last_call=%s",
+            claim_id[:8],
+            budget,
+            last_call,
         )
 
         p_call = await self.db.create_call(
@@ -430,34 +460,29 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
 
         scope_page = await self.db.get_page(claim_id)
         if not scope_page:
-            raise RuntimeError(
-                f'Scope claim {claim_id} not found.'
-            )
-        scope_headline = scope_page.headline
+            raise RuntimeError(f"Scope claim {claim_id} not found.")
 
         scope_judgements = await self.db.get_judgements_for_question(claim_id)
         scope_judgement = (
-            max(scope_judgements, key=lambda j: j.created_at)
-            if scope_judgements else None
+            max(scope_judgements, key=lambda j: j.created_at) if scope_judgements else None
         )
 
-        dependent_pages = [
-            page for page, _link
-            in await self.db.get_dependents(claim_id)
-        ]
+        dependent_pages = [page for page, _link in await self.db.get_dependents(claim_id)]
         child_questions = await self.db.get_child_questions(claim_id)
         all_items = dependent_pages + list(child_questions)
 
         scoring_tasks: list = []
-        scoring_tasks.append(score_items_sequentially(
-            parent_page=scope_page,
-            parent_judgement=scope_judgement,
-            items=all_items,
-            system_prompt_name='score_claim_items',
-            response_model=ClaimScore,
-            call_id=p_call.id,
-            db=self.db,
-        ))
+        scoring_tasks.append(
+            score_items_sequentially(
+                parent_page=scope_page,
+                parent_judgement=scope_judgement,
+                items=all_items,
+                system_prompt_name="score_claim_items",
+                response_model=ClaimScore,
+                call_id=p_call.id,
+                db=self.db,
+            )
+        )
 
         scoring_tasks.append(self.db.get_latest_scout_fruit(claim_id))
 
@@ -465,74 +490,74 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
         item_scores: list[dict] = scoring_results[0]
         scout_fruit: dict[str, int | None] = scoring_results[1]
 
-        await trace.record(ScoringCompletedEvent(
-            claim_scores=[
-                ClaimScoreItem(**s) for s in item_scores
-            ],
-            per_type_fruit=[
-                CallTypeFruitScoreItem(call_type=ct, fruit=f or 0, reasoning='')
-                for ct, f in scout_fruit.items()
-            ],
-        ))
+        await trace.record(
+            ScoringCompletedEvent(
+                claim_scores=[ClaimScoreItem(**s) for s in item_scores],
+                per_type_fruit=[
+                    CallTypeFruitScoreItem(call_type=ct, fruit=f or 0, reasoning="")
+                    for ct, f in scout_fruit.items()
+                ],
+            )
+        )
 
-        scores_text = ''
+        scores_text = ""
         if item_scores:
-            lines = ['## Item Scores', '']
+            lines = ["## Item Scores", ""]
             for s in item_scores:
-                pid = s.get('page_id', s.get('question_id', '?'))
+                pid = s.get("page_id", s.get("question_id", "?"))
                 priority = compute_priority_score(
                     s.get("impact_on_question", 0),
                     s.get("broader_impact", 0),
                     s.get("fruit", 0),
                 )
                 lines.append(
-                    f'- `{pid}` — {s.get("headline", "")}: '
-                    f'impact_on_q={s.get("impact_on_question", 0)}, '
-                    f'broader={s.get("broader_impact", 0)}, '
-                    f'fruit={s.get("fruit", 0)}, '
-                    f'**priority={priority}** '
-                    f'({s.get("reasoning", "")})'
+                    f"- `{pid}` — {s.get('headline', '')}: "
+                    f"impact_on_q={s.get('impact_on_question', 0)}, "
+                    f"broader={s.get('broader_impact', 0)}, "
+                    f"fruit={s.get('fruit', 0)}, "
+                    f"**priority={priority}** "
+                    f"({s.get('reasoning', '')})"
                 )
-            lines.append('')
-            scores_text = '\n'.join(lines)
+            lines.append("")
+            scores_text = "\n".join(lines)
 
         if scout_fruit:
-            fruit_lines = ['## Per-Scout-Type Remaining Fruit (from latest calls)', '']
+            fruit_lines = ["## Per-Scout-Type Remaining Fruit (from latest calls)", ""]
             for ct, f in sorted(scout_fruit.items()):
                 fruit_lines.append(
-                    f'- **{ct}**: {f}/10' if f is not None
-                    else f'- **{ct}**: unknown'
+                    f"- **{ct}**: {f}/10" if f is not None else f"- **{ct}**: unknown"
                 )
-            fruit_lines.append('')
-            scores_text += '\n'.join(fruit_lines)
+            fruit_lines.append("")
+            scores_text += "\n".join(fruit_lines)
 
         context_text, short_id_map = await build_prioritization_context(
-            self.db, scope_question_id=claim_id,
+            self.db,
+            scope_question_id=claim_id,
         )
-        budget_line = f'You have a budget of **{budget} budget units** to allocate.'
+        budget_line = f"You have a budget of **{budget} budget units** to allocate."
         if last_call:
             budget_line += (
-                ' **This is your FINAL allocation — there will be no further '
-                'research rounds after this. Spend the full budget on the '
-                'highest-value remaining work.**'
+                " **This is your FINAL allocation — there will be no further "
+                "research rounds after this. Spend the full budget on the "
+                "highest-value remaining work.**"
             )
         elif total_remaining is not None and total_remaining > budget:
             budget_line += (
-                f' The overall question has **{total_remaining} budget remaining** '
-                'across future rounds.'
+                f" The overall question has **{total_remaining} budget remaining** "
+                "across future rounds."
             )
-        ingest_hint = ''
+        ingest_hint = ""
         if self.ingest_hint:
-            ingest_hint = f'\n\n**Note:** {self.ingest_hint}'
-            self.ingest_hint = ''
+            ingest_hint = f"\n\n**Note:** {self.ingest_hint}"
+            self.ingest_hint = ""
 
         task = (
-            f'{budget_line}\n\n'
-            f'Scope claim ID: `{claim_id}`\n\n'
-            f'{scores_text}\n\n'
-            'You must make all your dispatch calls now — this is your only turn. '
-            f'Each recurse call must have a budget of at least {MIN_TWOPHASE_BUDGET}.'
-            f'{ingest_hint}'
+            f"{budget_line}\n\n"
+            f"Scope claim ID: `{claim_id}`\n\n"
+            f"{scores_text}\n\n"
+            "You must make all your dispatch calls now — this is your only turn. "
+            f"Each recurse call must have a budget of at least {MIN_TWOPHASE_BUDGET}."
+            f"{ingest_hint}"
         )
 
         extra_defs: list[DispatchDef] = []
@@ -541,11 +566,14 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
             extra_defs.append(RECURSE_DISPATCH_DEF)
 
         result = await run_prioritization_call(
-            task, context_text, p_call, self.db,
+            task,
+            context_text,
+            p_call,
+            self.db,
             short_id_map=short_id_map,
             dispatch_types=list(get_available_calls_preset().claim_phase2_dispatch),
             extra_dispatch_defs=extra_defs or None,
-            system_prompt=build_system_prompt('claim_investigation_p2'),
+            system_prompt=build_system_prompt("claim_investigation_p2"),
             dispatch_budget=budget,
         )
 
@@ -556,35 +584,43 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
                 resolved = await self.db.resolve_page_id(d.payload.question_id)
                 if not resolved:
                     log.warning(
-                        'Recurse claim ID not found: %s',
+                        "Recurse claim ID not found: %s",
                         d.payload.question_id[:8],
                     )
                     continue
                 child = ClaimInvestigationOrchestrator(
-                    self.db, self.broadcaster, budget_cap=d.payload.budget,
+                    self.db,
+                    self.broadcaster,
+                    budget_cap=d.payload.budget,
                 )
                 child._parent_call_id = p_call.id
                 children.append((child, resolved))
                 log.info(
-                    'Queued recursive claim investigation: claim=%s, budget=%d — %s',
-                    resolved[:8], d.payload.budget, d.payload.reason,
+                    "Queued recursive claim investigation: claim=%s, budget=%d — %s",
+                    resolved[:8],
+                    d.payload.budget,
+                    d.payload.reason,
                 )
             elif isinstance(d.payload, RecurseDispatchPayload):
                 resolved = await self.db.resolve_page_id(d.payload.question_id)
                 if not resolved:
                     log.warning(
-                        'Recurse question ID not found: %s',
+                        "Recurse question ID not found: %s",
                         d.payload.question_id[:8],
                     )
                     continue
                 child = TwoPhaseOrchestrator(
-                    self.db, self.broadcaster, budget_cap=d.payload.budget,
+                    self.db,
+                    self.broadcaster,
+                    budget_cap=d.payload.budget,
                 )
                 child._parent_call_id = p_call.id
                 children.append((child, resolved))
                 log.info(
-                    'Queued recursive question investigation: question=%s, budget=%d — %s',
-                    resolved[:8], d.payload.budget, d.payload.reason,
+                    "Queued recursive question investigation: question=%s, budget=%d — %s",
+                    resolved[:8],
+                    d.payload.budget,
+                    d.payload.reason,
                 )
             elif d.payload.question_id == claim_id:
                 sequences.append([d])
@@ -593,7 +629,7 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
                     call_type=CallType.ASSESS,
                     payload=AssessDispatchPayload(
                         question_id=d.payload.question_id,
-                        reason='Auto-assess after phase-2 dispatch',
+                        reason="Auto-assess after phase-2 dispatch",
                     ),
                 )
                 sequences.append([d, assess])
@@ -608,40 +644,45 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
         ]
         for d in result.dispatches:
             if isinstance(d.payload, (RecurseClaimDispatchPayload, RecurseDispatchPayload)):
-                all_trace_items.append(DispatchTraceItem(
-                    call_type='recurse',
-                    **d.payload.model_dump(exclude_defaults=True),
-                ))
+                all_trace_items.append(
+                    DispatchTraceItem(
+                        call_type="recurse",
+                        **d.payload.model_dump(exclude_defaults=True),
+                    )
+                )
         await trace.record(DispatchesPlannedEvent(dispatches=all_trace_items))
 
         recurse_base = len(all_dispatches)
-        child_pages = await self.db.get_pages_by_ids(
-            [child_id for _, child_id in children]
-        )
+        child_pages = await self.db.get_pages_by_ids([child_id for _, child_id in children])
         for ci, (child, child_id) in enumerate(children):
             child_call_id = await child.create_initial_call(
-                child_id, parent_call_id=p_call.id,
+                child_id,
+                parent_call_id=p_call.id,
             )
             child_page = child_pages.get(child_id)
-            await trace.record(DispatchExecutedEvent(
-                index=recurse_base + ci,
-                child_call_type='recurse',
-                question_id=child_id,
-                question_headline=child_page.headline if child_page else '',
-                child_call_id=child_call_id,
-            ))
+            await trace.record(
+                DispatchExecutedEvent(
+                    index=recurse_base + ci,
+                    child_call_type="recurse",
+                    question_id=child_id,
+                    question_headline=child_page.headline if child_page else "",
+                    child_call_id=child_call_id,
+                )
+            )
 
         await mark_call_completed(
-            p_call, self.db,
-            f'Phase 2 complete. Planned {len(sequences)} concurrent sequences, '
-            f'{len(children)} recursive children.',
+            p_call,
+            self.db,
+            f"Phase 2 complete. Planned {len(sequences)} concurrent sequences, "
+            f"{len(children)} recursive children.",
         )
 
         self._call_id = p_call.id
 
         log.info(
-            'ClaimInvestigationOrchestrator phase2 complete: %d sequences, %d children',
-            len(sequences), len(children),
+            "ClaimInvestigationOrchestrator phase2 complete: %d sequences, %d children",
+            len(sequences),
+            len(children),
         )
         return PrioritizationResult(
             dispatch_sequences=sequences,

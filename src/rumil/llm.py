@@ -16,22 +16,13 @@ import json
 import logging
 import re
 import time
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, Generic, TYPE_CHECKING, TypeVar, overload
-
 from collections.abc import Awaitable, Callable, Sequence
-
+from dataclasses import dataclass, field
 from datetime import date
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Generic, TypeVar, overload
 
 import anthropic
-from tenacity import (
-    RetryCallState,
-    retry,
-    retry_if_exception,
-    wait_exponential,
-)
-
 from anthropic.types import (
     ServerToolUseBlock,
     TextBlock,
@@ -39,9 +30,14 @@ from anthropic.types import (
     WebSearchToolResultBlock,
 )
 from pydantic import BaseModel, ValidationError
+from tenacity import (
+    RetryCallState,
+    retry,
+    retry_if_exception,
+    wait_exponential,
+)
 
 from rumil.pricing import compute_cost
-
 from rumil.settings import get_settings
 from rumil.tracing.trace_events import ErrorEvent, LLMExchangeEvent
 from rumil.tracing.tracer import get_trace
@@ -59,9 +55,7 @@ def _supports_sampling_params(model: str) -> bool:
     # 1.0 — we'd rather skip it than set 1.0, so gate on thinking being off.
     if model.startswith("claude-opus-4-7"):
         return False
-    if _thinking_config(model) is not None:
-        return False
-    return True
+    return _thinking_config(model) is None
 
 
 def _thinking_config(model: str) -> dict | None:
@@ -439,8 +433,7 @@ async def call_api(
 
     elapsed_ms: int = getattr(response, "_elapsed_ms", 0)
     log.debug(
-        "API response: stop_reason=%s, usage=%d/%d tokens, duration=%dms, "
-        "full_usage=%s",
+        "API response: stop_reason=%s, usage=%d/%d tokens, duration=%dms, full_usage=%s",
         response.stop_reason,
         response.usage.input_tokens,
         response.usage.output_tokens,
@@ -480,10 +473,7 @@ async def call_api(
                     response.usage, "cache_creation_input_tokens", 0
                 )
                 or 0,
-                cache_read_input_tokens=getattr(
-                    response.usage, "cache_read_input_tokens", 0
-                )
-                or 0,
+                cache_read_input_tokens=getattr(response.usage, "cache_read_input_tokens", 0) or 0,
             )
         except Exception as exc:
             log.error(
@@ -496,9 +486,7 @@ async def call_api(
             if trace:
                 await trace.record(
                     ErrorEvent(
-                        message=(
-                            f"Failed to save exchange: {type(exc).__name__}: {exc}"
-                        ),
+                        message=(f"Failed to save exchange: {type(exc).__name__}: {exc}"),
                         phase=metadata.phase,
                     )
                 )
@@ -519,11 +507,7 @@ async def text_call(
     api_key = settings.require_anthropic_key()
     model = settings.model
     client = anthropic.AsyncAnthropic(api_key=api_key)
-    msg_list = (
-        messages
-        if messages is not None
-        else [{"role": "user", "content": user_message}]
-    )
+    msg_list = messages if messages is not None else [{"role": "user", "content": user_message}]
     log.debug("text_call: messages=%d", len(msg_list))
     api_resp = await call_api(client, model, system_prompt, msg_list)
     for block in api_resp.message.content:
@@ -635,8 +619,7 @@ async def _structured_call_cached(
                 )
                 continue
             log.warning(
-                "structured_call (cached): all parse attempts failed (%s), "
-                "returning empty result",
+                "structured_call (cached): all parse attempts failed (%s), returning empty result",
                 exc,
             )
             trace = get_trace()
@@ -746,14 +729,9 @@ async def _structured_call_parse(
             input_tokens=response.usage.input_tokens,
             output_tokens=response.usage.output_tokens,
             duration_ms=elapsed_ms,
-            cache_creation_input_tokens=getattr(
-                response.usage, "cache_creation_input_tokens", 0
-            )
+            cache_creation_input_tokens=getattr(response.usage, "cache_creation_input_tokens", 0)
             or 0,
-            cache_read_input_tokens=getattr(
-                response.usage, "cache_read_input_tokens", 0
-            )
-            or 0,
+            cache_read_input_tokens=getattr(response.usage, "cache_read_input_tokens", 0) or 0,
         )
     if response.parsed_output is not None:
         log.debug(
@@ -857,11 +835,7 @@ async def structured_call(
     if not user_message and not messages:
         raise ValueError("Either user_message or messages must be provided")
 
-    raw_msgs = (
-        messages
-        if messages is not None
-        else [{"role": "user", "content": user_message}]
-    )
+    raw_msgs = messages if messages is not None else [{"role": "user", "content": user_message}]
     model_name = response_model.__name__ if response_model else "None"
     log.debug(
         "structured_call: response_model=%s, cache=%s",

@@ -89,9 +89,7 @@ async def main() -> None:
             content = page.content.rstrip()
             if args.content_limit and len(content) > args.content_limit:
                 print(content[: args.content_limit])
-                print(
-                    f"… [truncated at {args.content_limit} chars; --content-limit 0 for full]"
-                )
+                print(f"… [truncated at {args.content_limit} chars; --content-limit 0 for full]")
             else:
                 print(content)
 
@@ -122,9 +120,7 @@ async def main() -> None:
         else:
             for link in outgoing:
                 reasoning = (
-                    f"  reasoning: {truncate(link.reasoning, 120)}"
-                    if link.reasoning
-                    else ""
+                    f"  reasoning: {truncate(link.reasoning, 120)}" if link.reasoning else ""
                 )
                 print(
                     f"  {link.link_type.value:16} → {_label(link.to_page_id)}"
@@ -138,9 +134,7 @@ async def main() -> None:
         else:
             for link in incoming:
                 reasoning = (
-                    f"  reasoning: {truncate(link.reasoning, 120)}"
-                    if link.reasoning
-                    else ""
+                    f"  reasoning: {truncate(link.reasoning, 120)}" if link.reasoning else ""
                 )
                 print(
                     f"  {link.link_type.value:16} ← {_label(link.from_page_id)}"

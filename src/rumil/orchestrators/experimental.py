@@ -11,7 +11,8 @@ from datetime import UTC, datetime
 
 from rumil.available_calls import get_available_calls_preset
 from rumil.calls.common import mark_call_completed
-from rumil.calls.dispatches import DISPATCH_DEFS, DispatchDef, RECURSE_DISPATCH_DEF
+from rumil.calls.dispatches import DISPATCH_DEFS, RECURSE_DISPATCH_DEF, DispatchDef
+from rumil.calls.link_subquestions import LinkSubquestionsCall
 from rumil.calls.prioritization import run_prioritization_call
 from rumil.constants import MIN_TWOPHASE_BUDGET
 from rumil.context import build_prioritization_context
@@ -32,14 +33,13 @@ from rumil.orchestrators.common import (
     assess_question,
     score_items_sequentially,
 )
-from rumil.calls.link_subquestions import LinkSubquestionsCall
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
 from rumil.tracing.trace_events import (
     CallTypeFruitScoreItem,
     ContextBuiltEvent,
-    DispatchExecutedEvent,
     DispatchesPlannedEvent,
+    DispatchExecutedEvent,
     DispatchTraceItem,
     ErrorEvent,
     PhaseSkippedEvent,
@@ -47,7 +47,6 @@ from rumil.tracing.trace_events import (
     SubquestionScoreItem,
 )
 from rumil.tracing.tracer import CallTrace, set_trace
-
 
 log = logging.getLogger(__name__)
 
@@ -181,8 +180,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
                             await trace.record(
                                 ErrorEvent(
                                     message=(
-                                        "Concurrent dispatch failed: "
-                                        f"{type(r).__name__}: {r}"
+                                        f"Concurrent dispatch failed: {type(r).__name__}: {r}"
                                     ),
                                     phase="dispatch",
                                 )
@@ -336,8 +334,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         count = await self.db.count_pages_since(self._last_linker_eval_at)
         if count >= settings.linker_cache_invalidation_threshold:
             log.info(
-                "Linker cache invalidation: %d pages since last eval, re-running "
-                "for question=%s",
+                "Linker cache invalidation: %d pages since last eval, re-running for question=%s",
                 count,
                 question_id[:8],
             )
@@ -395,10 +392,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             f"You have a budget of **{initial_prioritization_budget} research calls** "
             "to distribute among the dispatch tools below."
         )
-        if (
-            total_remaining is not None
-            and total_remaining > initial_prioritization_budget
-        ):
+        if total_remaining is not None and total_remaining > initial_prioritization_budget:
             budget_line += (
                 f" The overall question has **{total_remaining} budget remaining** "
                 "across future rounds."
@@ -437,9 +431,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
                 question_id[:8],
             )
             preset = get_available_calls_preset()
-            for ct in preset.initial_prioritization_scouts[
-                :initial_prioritization_budget
-            ]:
+            for ct in preset.initial_prioritization_scouts[:initial_prioritization_budget]:
                 ddef = DISPATCH_DEFS[ct]
                 dispatches.append(
                     Dispatch(
@@ -467,8 +459,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         await mark_call_completed(
             p_call,
             self.db,
-            f"Initial prioritization complete. Planned {len(sequences)} "
-            "concurrent sequences.",
+            f"Initial prioritization complete. Planned {len(sequences)} concurrent sequences.",
         )
 
         self._call_id = p_call.id
@@ -525,9 +516,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
 
         parent_judgements = await self.db.get_judgements_for_question(question_id)
         parent_judgement = (
-            max(parent_judgements, key=lambda j: j.created_at)
-            if parent_judgements
-            else None
+            max(parent_judgements, key=lambda j: j.created_at) if parent_judgements else None
         )
 
         scoring_tasks: list = []
@@ -586,9 +575,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             scope_question_id=question_id,
         )
         dispatch_budget = budget - 1
-        budget_line = (
-            f"You have a budget of **{dispatch_budget} budget units** to allocate."
-        )
+        budget_line = f"You have a budget of **{dispatch_budget} budget units** to allocate."
         if total_remaining is not None and total_remaining > dispatch_budget:
             budget_line += (
                 f" The overall question has **{total_remaining} budget remaining** "
@@ -693,9 +680,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         await trace.record(DispatchesPlannedEvent(dispatches=all_trace_items))
 
         recurse_base = len(all_dispatches)
-        child_pages = await self.db.get_pages_by_ids(
-            [child_qid for _, child_qid in children]
-        )
+        child_pages = await self.db.get_pages_by_ids([child_qid for _, child_qid in children])
         for ci, (child, child_qid) in enumerate(children):
             child_call_id = await child.create_initial_call(
                 child_qid,

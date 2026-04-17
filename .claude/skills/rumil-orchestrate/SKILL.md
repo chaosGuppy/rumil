@@ -2,7 +2,7 @@
 name: rumil-orchestrate
 description: Fire the rumil orchestrator against an existing question — a full multi-call research loop with a budget. This is the CC-initiated equivalent of `main.py --continue <qid> --budget N`. Use when the user wants real research done on a question, not just a single call. For one targeted call, use /rumil-dispatch instead. Budget defaults to 10; since that's not cheap, confirm with the user before firing if they didn't specify. Trigger when the user says things like "investigate this more", "run some research on this", "give Q# N calls of budget", or right after /rumil-ask when they want to immediately start investigating.
 allowed-tools: Bash
-argument-hint: "<question_id> [--budget N] [--orchestrator two_phase|experimental] [--smoke-test]"
+argument-hint: "<question_id> [--budget N] [--orchestrator two_phase|experimental] [--global-prio|--no-global-prio] [--smoke-test]"
 ---
 
 # rumil-orchestrate
@@ -35,6 +35,23 @@ not a research loop).
 
 The chosen variant is captured in `runs.config.prioritizer_variant` so
 later analyses can filter by orchestrator.
+
+### Global-prio (orthogonal)
+
+`GlobalPrioOrchestrator` runs a cross-cutting global prioritiser
+*concurrently* with the local (variant-selected) orchestrator. It
+splits the remaining budget (default 20% global / 80% local, via
+`global_prio_budget_fraction`) and `asyncio.gather`s both. It doesn't
+replace the variant — it runs beside it. Gated by
+`settings.enable_global_prio`, which comes from the `ENABLE_GLOBAL_PRIO`
+env var / `.env` default (off by default). (Edge case: if the local
+share falls below `MIN_TWOPHASE_BUDGET`, only the global loop runs.)
+
+Use `--global-prio` or `--no-global-prio` to force it on/off for a
+single invocation, overriding the env default. Omit the flag to inherit
+whatever the env/settings say. The flag is tri-state: unset means
+"inherit", `--global-prio` means "force on", `--no-global-prio` means
+"force off" even if the env has it enabled.
 
 ## When to use this vs. /rumil-dispatch
 
@@ -89,6 +106,13 @@ money. One-line check: "Run the orchestrator on `abc12345` with budget
 - **`--orchestrator <variant>`**: `two_phase` or `experimental`. Defaults
   to whatever `settings.prioritizer_variant` is (normally `two_phase`).
   Pass explicitly whenever the user cares which loop is running.
+- **`--global-prio` / `--no-global-prio`**: force the cross-cutting
+  `GlobalPrioOrchestrator` on or off for this invocation. When on, it
+  runs *concurrently* with the variant (budget-split). Overrides the
+  `ENABLE_GLOBAL_PRIO` env var / `.env` default. Tri-state: omit to
+  inherit the env default, pass `--global-prio` to force on, pass
+  `--no-global-prio` to force off. Orthogonal to `--orchestrator` (the
+  variant still runs as the local prioritiser).
 - **`--smoke-test`**: use Haiku and cap rounds — for fast, cheap testing.
 - **`--workspace <name>`**: override the session's active workspace.
 - **`--name <text>`**: optional run name; defaults to the question headline.

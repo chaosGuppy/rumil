@@ -38,6 +38,11 @@ def set_trace(trace: "CallTrace") -> contextvars.Token:
     return _trace_var.set(trace)
 
 
+def reset_trace(token: contextvars.Token) -> None:
+    """Restore the task-local CallTrace to its value before ``set_trace``."""
+    _trace_var.reset(token)
+
+
 class CallTrace:
     """Records trace events: persists each to the DB then broadcasts."""
 

@@ -4,7 +4,6 @@ FastAPI application for the Rumil research workspace.
 Read-only API for browsing projects, pages, links, and calls.
 """
 
-import asyncio
 import base64
 import logging
 import os

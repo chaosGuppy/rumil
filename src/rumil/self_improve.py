@@ -82,7 +82,9 @@ def _safe_repo_path(rel_path: str) -> Path | None:
 
 
 async def _collect_subtree(
-    root_id: str, db: DB, max_depth: int = 12,
+    root_id: str,
+    db: DB,
+    max_depth: int = 12,
 ) -> Sequence[tuple[Page, int]]:
     """BFS through child questions. Cycle-safe (tracks visited)."""
     visited: set[str] = set()
@@ -108,7 +110,8 @@ async def _collect_subtree(
 
 
 async def _fetch_subtree_calls(
-    subtree_ids: Sequence[str], db: DB,
+    subtree_ids: Sequence[str],
+    db: DB,
 ) -> Sequence[Call]:
     """Fetch all calls whose scope_page_id is in the subtree."""
     if not subtree_ids:
@@ -137,7 +140,6 @@ def _build_tools(
     calls: Sequence[Call],
     db: DB,
 ) -> Sequence[Tool]:
-    subtree_ids = {p.id for p, _ in subtree}
     call_ids = {c.id for c in calls}
 
     async def get_investigation_overview(inp: dict) -> str:
@@ -267,26 +269,17 @@ def _build_tools(
         if call.review_json:
             lines.append("")
             lines.append("## Review JSON")
-            lines.append(
-                _truncate(
-                    json.dumps(call.review_json, indent=2, default=str), 10_000
-                )
-            )
+            lines.append(_truncate(json.dumps(call.review_json, indent=2, default=str), 10_000))
         if call.call_params:
             lines.append("")
             lines.append("## Call params")
-            lines.append(
-                _truncate(
-                    json.dumps(call.call_params, indent=2, default=str), 4000
-                )
-            )
+            lines.append(_truncate(json.dumps(call.call_params, indent=2, default=str), 4000))
 
         exchanges = await db.get_llm_exchanges(resolved)
         lines.append("")
         lines.append(f"## LLM exchanges ({len(exchanges)})")
         lines.append(
-            "(pass the full exchange id to get_llm_exchange — short "
-            "prefixes aren't accepted here)"
+            "(pass the full exchange id to get_llm_exchange — short prefixes aren't accepted here)"
         )
         for e in exchanges:
             lines.append(
@@ -338,11 +331,7 @@ def _build_tools(
         lines.append("")
         lines.append("## User message(s)")
         if user_messages:
-            lines.append(
-                _truncate(
-                    json.dumps(user_messages, indent=2, default=str), 40_000
-                )
-            )
+            lines.append(_truncate(json.dumps(user_messages, indent=2, default=str), 40_000))
         else:
             lines.append(_truncate(user_message, 20_000))
         lines.append("")
@@ -351,11 +340,7 @@ def _build_tools(
         if tool_calls:
             lines.append("")
             lines.append("## Tool calls")
-            lines.append(
-                _truncate(
-                    json.dumps(tool_calls, indent=2, default=str), 20_000
-                )
-            )
+            lines.append(_truncate(json.dumps(tool_calls, indent=2, default=str), 20_000))
         return _truncate("\n".join(lines), MAX_EXCHANGE_BLOB_CHARS)
 
     async def read_repo_file(inp: dict) -> str:
@@ -559,15 +544,9 @@ async def _run_agent(
             messages.append({"role": "user", "content": tool_results})
             if text_parts:
                 preview = " | ".join(t[:120] for t in text_parts)
-                print(
-                    f"  [round {round_num + 1}] "
-                    f"{len(tool_uses)} tool call(s): {preview}"
-                )
+                print(f"  [round {round_num + 1}] {len(tool_uses)} tool call(s): {preview}")
             else:
-                print(
-                    f"  [round {round_num + 1}] "
-                    f"{len(tool_uses)} tool call(s)"
-                )
+                print(f"  [round {round_num + 1}] {len(tool_uses)} tool call(s)")
             if response.stop_reason == "end_turn":
                 final_text = "\n".join(text_parts)
                 break
@@ -592,9 +571,7 @@ async def run_self_improvement(question_id: str, db: DB) -> str:
     if not question:
         raise ValueError(f"Question '{question_id}' not found")
     if question.page_type != PageType.QUESTION:
-        raise ValueError(
-            f"Page '{question_id}' is a {question.page_type.value}, not a question"
-        )
+        raise ValueError(f"Page '{question_id}' is a {question.page_type.value}, not a question")
 
     if question.project_id and question.project_id != db.project_id:
         db.project_id = question.project_id
@@ -603,10 +580,7 @@ async def run_self_improvement(question_id: str, db: DB) -> str:
     subtree_ids = [p.id for p, _ in subtree]
     calls = await _fetch_subtree_calls(subtree_ids, db)
 
-    print(
-        f"Collected subtree: {len(subtree)} question(s), "
-        f"{len(calls)} call(s)."
-    )
+    print(f"Collected subtree: {len(subtree)} question(s), {len(calls)} call(s).")
 
     tools = _build_tools(resolved, subtree, calls, db)
     system_prompt = _load_prompt("self_improve.md")
@@ -625,9 +599,7 @@ async def run_self_improvement(question_id: str, db: DB) -> str:
 def save_self_improvement(text: str, question_headline: str) -> Path:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-    slug = "".join(
-        c if c.isalnum() or c in " -" else "" for c in question_headline[:50]
-    )
+    slug = "".join(c if c.isalnum() or c in " -" else "" for c in question_headline[:50])
     slug = slug.strip().replace(" ", "-").lower()
     filename = f"{timestamp}-{slug}.md"
     path = OUTPUT_DIR / filename

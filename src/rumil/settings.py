@@ -76,7 +76,7 @@ class Settings(BaseSettings):
     feedback_investigation_budget: int = _capture_field(default=30)
     ingest_num_claims: int = _capture_field(default=4)
 
-    sonnet_model: str = _capture_field(default="claude-sonnet-4-6")
+    sonnet_model_configured: str = _capture_field(default="claude-sonnet-4-6")
     enable_global_prio: bool = _capture_field(default=False)
     global_prio_budget_fraction: float = _capture_field(default=0.2)
     global_prio_trigger_threshold: int = _capture_field(default=10)
@@ -115,6 +115,7 @@ class Settings(BaseSettings):
     summary_page_similarity_floor: float = _capture_field(default=0.1)
     big_assess_full_page_similarity_floor: float | None = _capture_field(default=None)
     big_assess_abstract_page_similarity_floor: float | None = _capture_field(default=None)
+    document_floor_delta: float = _capture_field(default=0.25)
 
     @property
     def is_test_mode(self) -> bool:
@@ -131,6 +132,12 @@ class Settings(BaseSettings):
             if self.is_test_mode or self.is_smoke_test
             else "claude-opus-4-7"
         )
+
+    @property
+    def sonnet_model(self) -> str:
+        if self.is_test_mode or self.is_smoke_test:
+            return self.model
+        return self.sonnet_model_configured
 
     @property
     def allowed_find_considerations_modes(self) -> Sequence[FindConsiderationsMode]:

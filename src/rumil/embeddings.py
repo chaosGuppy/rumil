@@ -44,10 +44,32 @@ async def embed_texts(
     return result.embeddings
 
 
-async def embed_query(text: str) -> Sequence[float]:
-    """Create an embedding for a search query."""
-    embeddings = await embed_texts([text], input_type="query")
+async def embed_query(text: str, input_type: str = "query") -> Sequence[float]:
+    """Create an embedding for a search query.
+
+    ``input_type`` defaults to ``"query"`` for asymmetric retrieval (e.g.
+    using a question to find content that answers it). Pass ``"document"``
+    for symmetric page-to-page similarity — querying with ``"query"`` caps
+    identical-text cosine similarity at ~0.74 against stored documents.
+    """
+    embeddings = await embed_texts([text], input_type=input_type)
     return embeddings[0]
+
+
+def page_query_text(page: Page) -> str:
+    """Return text to represent a page when querying for similar pages.
+
+    Prefers the page's abstract (the canonical retrieval surface); falls
+    back to headline+content with a warning when the abstract is empty,
+    since the fallback is a less-clean query surface.
+    """
+    if page.abstract and page.abstract.strip():
+        return page.abstract
+    log.warning(
+        "Page %s has no abstract; using headline+content as similarity query",
+        page.id[:8],
+    )
+    return f"{page.headline}\n\n{page.content}"
 
 
 def page_text_for_field(page: Page, field_name: str) -> str:
@@ -112,13 +134,17 @@ async def search_pages(
     match_count: int = 10,
     workspace: Workspace | None = None,
     field_name: str | None = None,
+    input_type: str = "query",
 ) -> list[tuple[Page, float]]:
     """Search for pages similar to a query string.
 
     Returns (page, similarity_score) pairs sorted by descending similarity.
     Optionally filter to embeddings of a specific field_name.
+
+    ``input_type`` defaults to ``"query"`` for asymmetric retrieval. Pass
+    ``"document"`` for symmetric page-to-page similarity (e.g. dedupe).
     """
-    query_embedding = await embed_query(query)
+    query_embedding = await embed_query(query, input_type=input_type)
     return await search_pages_by_vector(
         db,
         query_embedding,

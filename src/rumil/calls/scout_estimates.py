@@ -1,7 +1,7 @@
 """Scout Estimates call: identify informative quantities and make initial guesses."""
 
 from rumil.calls.closing_reviewers import StandardClosingReview
-from rumil.calls.context_builders import EmbeddingContext
+from rumil.calls.context_builders import ScoutSiblingAwareContext
 from rumil.calls.page_creators import MultiRoundLoop
 from rumil.calls.stages import (
     CallRunner,
@@ -15,13 +15,13 @@ from rumil.models import CallType
 class ScoutEstimatesCall(CallRunner):
     """Identify quantities whose estimates would be informative about the parent question."""
 
-    context_builder_cls = EmbeddingContext
+    context_builder_cls = ScoutSiblingAwareContext
     workspace_updater_cls = MultiRoundLoop
     closing_reviewer_cls = StandardClosingReview
     call_type = CallType.SCOUT_ESTIMATES
 
     def _make_context_builder(self) -> ContextBuilder:
-        return EmbeddingContext(self.call_type)
+        return ScoutSiblingAwareContext(self.call_type)
 
     def _make_workspace_updater(self) -> WorkspaceUpdater:
         return MultiRoundLoop(

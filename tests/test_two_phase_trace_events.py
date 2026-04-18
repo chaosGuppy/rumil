@@ -12,7 +12,6 @@ from rumil.calls.common import RunCallResult
 from rumil.models import (
     CallType,
     Dispatch,
-    FindConsiderationsMode,
     RecurseDispatchPayload,
     ScoutDispatchPayload,
 )
@@ -24,7 +23,6 @@ def _scout_dispatch(question_id: str, reason: str = "") -> Dispatch:
         call_type=CallType.FIND_CONSIDERATIONS,
         payload=ScoutDispatchPayload(
             question_id=question_id,
-            mode=FindConsiderationsMode.ALTERNATE,
             max_rounds=1,
             reason=reason,
         ),

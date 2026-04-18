@@ -14,7 +14,6 @@ from rumil.models import (
     CallStatus,
     CallType,
     Dispatch,
-    FindConsiderationsMode,
     LinkType,
     Page,
     PageLayer,
@@ -229,7 +228,6 @@ def _scout_dispatch(question_id: str, reason: str = "") -> Dispatch:
         call_type=CallType.FIND_CONSIDERATIONS,
         payload=ScoutDispatchPayload(
             question_id=question_id,
-            mode=FindConsiderationsMode.ALTERNATE,
             max_rounds=1,
             reason=reason,
         ),

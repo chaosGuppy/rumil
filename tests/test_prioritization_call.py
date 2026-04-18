@@ -20,7 +20,6 @@ from rumil.models import (
     AssessDispatchPayload,
     CallStatus,
     Dispatch,
-    FindConsiderationsMode,
     ScoutDispatchPayload,
 )
 
@@ -152,7 +151,6 @@ async def test_no_retry_when_allocation_sufficient(
             call_type=prioritization_call.call_type.FIND_CONSIDERATIONS,
             payload=ScoutDispatchPayload(
                 question_id=question_page.id,
-                mode=FindConsiderationsMode.ALTERNATE,
                 max_rounds=5,
             ),
         ),

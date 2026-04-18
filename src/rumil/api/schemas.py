@@ -29,6 +29,7 @@ from rumil.tracing.trace_events import (
     LoadPageEvent,
     MovesExecutedEvent,
     PhaseSkippedEvent,
+    QuestionDedupeEvent,
     ReassessTriggeredEvent,
     RenderQuestionSubgraphEvent,
     ReviewCompleteEvent,
@@ -184,6 +185,10 @@ class UpdateViewPhaseCompletedEventOut(UpdateViewPhaseCompletedEvent, _TraceEnve
     pass
 
 
+class QuestionDedupeEventOut(QuestionDedupeEvent, _TraceEnvelopeMixin):
+    pass
+
+
 TraceEventOut = Annotated[
     ContextBuiltEventOut
     | MovesExecutedEventOut
@@ -213,7 +218,8 @@ TraceEventOut = Annotated[
     | ViewCreatedEventOut
     | PhaseSkippedEventOut
     | GlobalPhaseCompletedEventOut
-    | UpdateViewPhaseCompletedEventOut,
+    | UpdateViewPhaseCompletedEventOut
+    | QuestionDedupeEventOut,
     Field(discriminator="event"),
 ]
 

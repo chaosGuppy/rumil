@@ -16,6 +16,7 @@ from rumil.calls.common import (
 )
 from rumil.context import build_embedding_based_context
 from rumil.database import DB
+from rumil.embeddings import page_query_text
 from rumil.llm import LLMExchangeMetadata, structured_call
 from rumil.models import (
     Call,
@@ -238,8 +239,9 @@ async def reassess_claim(
     )
 
     ctx_result = await build_embedding_based_context(
-        old_page.headline,
+        page_query_text(old_page),
         db,
+        input_type="document",
     )
 
     links_from = await db.get_links_from(old_page.id)
@@ -511,7 +513,11 @@ async def reassess_claims(
     context_text = "\n\n---\n\n".join(context_text_parts) if context_text_parts else ""
 
     first_claim = claim_pages[0]
-    ctx_result = await build_embedding_based_context(first_claim.headline, db)
+    ctx_result = await build_embedding_based_context(
+        page_query_text(first_claim),
+        db,
+        input_type="document",
+    )
 
     user_parts: list[str] = [
         f"## Workspace context\n\n{ctx_result.context_text}",

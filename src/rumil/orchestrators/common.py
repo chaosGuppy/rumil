@@ -15,7 +15,11 @@ from pydantic import BaseModel, Field
 if TYPE_CHECKING:
     from rumil.orchestrators.base import BaseOrchestrator
 
-from rumil.calls.adversarial_review import AdversarialReviewCall, AdversarialVerdict
+from rumil.calls.adversarial_review import (
+    AdversarialReviewCall,
+    AdversarialVerdict,
+    is_verdict_expired,
+)
 from rumil.calls.call_registry import ASSESS_CALL_CLASSES
 from rumil.calls.find_considerations import FindConsiderationsCall
 from rumil.calls.ingest import IngestCall
@@ -636,16 +640,52 @@ async def adversarially_review_claim(
 
 
 async def has_adversarial_review(db: DB, target_page_id: str) -> bool:
-    """Return True if target_page_id has a completed adversarial review."""
+    """Return True if target_page_id has a *valid* adversarial review.
+
+    A review counts as valid when (a) a completed ADVERSARIAL_REVIEW call
+    exists for the target and (b) its most recent verdict is not expired
+    per ``is_verdict_expired``. An expired verdict returns False so the
+    gate fires a fresh review.
+    """
     rows = await db._execute(
         db.client.table("calls")
         .select("id")
         .eq("call_type", CallType.ADVERSARIAL_REVIEW.value)
         .eq("scope_page_id", target_page_id)
         .eq("status", CallStatus.COMPLETE.value)
+        .order("created_at", desc=True)
+    )
+    call_ids = [r["id"] for r in (rows.data or [])]
+    if not call_ids:
+        return False
+
+    verdict_rows = await db._execute(
+        db.client.table("pages")
+        .select("extra")
+        .in_("provenance_call_id", call_ids)
+        .eq("page_type", PageType.JUDGEMENT.value)
+        .eq("is_superseded", False)
+        .order("created_at", desc=True)
         .limit(1)
     )
-    return bool(rows.data)
+    data = verdict_rows.data or []
+    if not data:
+        # Call completed but no verdict page materialised — treat as no review
+        # so the gate can retry. This matches the "re-review on expiry" intent.
+        return False
+    extra = data[0].get("extra") or {}
+    verdict_data = extra.get("adversarial_verdict")
+    if not verdict_data:
+        return False
+    try:
+        verdict = AdversarialVerdict(**verdict_data)
+    except Exception:
+        log.warning(
+            "has_adversarial_review: could not parse verdict for target %s",
+            target_page_id[:8],
+        )
+        return False
+    return not is_verdict_expired(verdict)
 
 
 async def create_view_for_question(

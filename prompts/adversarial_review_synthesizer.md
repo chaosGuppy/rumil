@@ -13,6 +13,15 @@ Your job is to read both scouts' outputs side-by-side and produce a single struc
 - **claim_holds**: a boolean. Given both sides, do you think the claim holds? This may, but need not, agree with `stronger_side` — a how-false scout can produce weak arguments against a claim that is nonetheless false on priors. Be honest.
 - **confidence**: an integer 1–9 on the standard rumil credence scale. 5 is genuinely uncertain; 1 or 9 mean you are very sure.
 - **rationale**: a single paragraph (4–8 sentences) explaining the verdict. Name the strongest point on each side, say why one outweighs the other (or why they balance), and flag any unresolved cruxes. Do not re-list every scout finding — synthesize.
+- **concurrences**: a list of 1–3 short strings. These are **concurring points** — arguments from the *winning* side that weren't its primary thrust. Things the winning side *could have argued but didn't*, or supporting considerations whose weight the rationale didn't lean on. Borrowed from Common Law concurring opinions: preserve the additional reasoning the verdict doesn't strictly need, so future reviewers can build on it. If the winning side offered no material beyond its primary thrust, return an empty list.
+- **dissents**: a list of 1–3 short strings. These are **surviving dissenting points** — arguments from the *losing* side that still have merit. A careful future reader should be aware of these even though the verdict went the other way. Borrowed from Common Law dissents: today's losing argument is sometimes tomorrow's majority. Include the losing side's single strongest point even when you are confident in the verdict. If the losing side produced nothing worth preserving, return an empty list, but do so rarely.
+- **sunset_after_days**: an integer number of days after which this verdict should be re-reviewed, or `null` if the verdict never needs re-review. Think about the *volatility* of the claim:
+    - **30** — fast-moving empirical claims whose evidence base turns over quickly (recent AI capabilities, current policy positions, market numbers).
+    - **180** — medium-stability empirical claims where the evidence evolves but not daily (historical interpretations, contested scientific findings, medium-horizon forecasts).
+    - **null** — structural, definitional, or logical claims whose truth doesn't depend on changing evidence (mathematical facts, conceptual distinctions, claims about what a text literally says).
+    Prefer a finite number when in doubt; calcified verdicts are worse than re-reviewed ones.
+
+Concurrences and dissents are both preserved **regardless of which side won**. Even if the claim passes adversarial review, future reviewers should be able to see what the losing side said. Keep each concurrence / dissent to one sentence — these are pointers, not full arguments.
 
 ## How to read the two scouts
 

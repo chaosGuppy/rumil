@@ -110,7 +110,7 @@ def _stub_adversarial_run(mocker, verdict: AdversarialVerdict | None = None):
             provenance_call_id=call.id,
             provenance_call_type=call.call_type.value,
             extra={
-                "adversarial_verdict": v.model_dump(),
+                "adversarial_verdict": v.model_dump(mode="json"),
                 "target_page_id": target_id,
             },
         )

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -91,6 +92,56 @@ class AdversarialVerdict(BaseModel):
             "cruxes."
         )
     )
+    concurrences: list[str] = Field(
+        default_factory=list,
+        description=(
+            "1-3 concurring points: arguments from the winning side that "
+            "weren't its primary thrust — things the winning side could have "
+            "argued but didn't. Preserved for future reviewers."
+        ),
+    )
+    dissents: list[str] = Field(
+        default_factory=list,
+        description=(
+            "1-3 dissenting points: surviving arguments from the losing side "
+            "that still have merit. A careful reader should know these even "
+            "if the verdict went the other way."
+        ),
+    )
+    sunset_after_days: int | None = Field(
+        default=None,
+        description=(
+            "Shelf life of this verdict in days. Fast-moving empirical claims: "
+            "30. Medium-stability: 180. Structural/definitional claims that "
+            "don't depend on changing evidence: null (never expires). After "
+            "this window, the verdict should be re-reviewed."
+        ),
+    )
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC),
+        description="When the verdict was synthesized. Used for sunset expiry.",
+    )
+
+
+def is_verdict_expired(
+    verdict: AdversarialVerdict,
+    now: datetime | None = None,
+) -> bool:
+    """Return True if *verdict* has passed its sunset window.
+
+    A verdict with ``sunset_after_days is None`` never expires (structural
+    claims). Otherwise the verdict is expired when
+    ``now > verdict.created_at + sunset_after_days``.
+    """
+    if verdict.sunset_after_days is None:
+        return False
+    now = now or datetime.now(UTC)
+    created = verdict.created_at
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=UTC)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=UTC)
+    return now > created + timedelta(days=verdict.sunset_after_days)
 
 
 class AdversarialReviewContext(ContextBuilder):
@@ -237,7 +288,7 @@ async def _persist_verdict(
         provenance_call_type=call.call_type.value,
         provenance_call_id=call.id,
         extra={
-            "adversarial_verdict": verdict.model_dump(),
+            "adversarial_verdict": verdict.model_dump(mode="json"),
             "target_page_id": target.id,
         },
     )

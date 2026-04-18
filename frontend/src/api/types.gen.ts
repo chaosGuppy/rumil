@@ -537,6 +537,28 @@ export type ContextBuiltEventOut = {
 };
 
 /**
+ * DedupeCandidateItem
+ */
+export type DedupeCandidateItem = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Headline
+     */
+    headline?: string;
+    /**
+     * Similarity
+     */
+    similarity: number;
+    /**
+     * Kept By Filter
+     */
+    kept_by_filter?: boolean;
+};
+
+/**
  * DegreeCell
  */
 export type DegreeCell = {
@@ -1431,6 +1453,56 @@ export type ProposedSubquestion = {
      * Headline
      */
     headline?: string;
+};
+
+/**
+ * QuestionDedupeEventOut
+ */
+export type QuestionDedupeEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'question_dedupe';
+    /**
+     * Proposed Headline
+     */
+    proposed_headline: string;
+    /**
+     * Parent Id
+     */
+    parent_id: string;
+    /**
+     * Parent Headline
+     */
+    parent_headline: string;
+    /**
+     * Candidates
+     */
+    candidates: Array<DedupeCandidateItem>;
+    /**
+     * Outcome
+     */
+    outcome: string;
+    /**
+     * Matched Page Id
+     */
+    matched_page_id: string | null;
+    /**
+     * Matched Headline
+     */
+    matched_headline: string;
+    /**
+     * Decision Reasoning
+     */
+    decision_reasoning: string;
 };
 
 /**
@@ -2938,7 +3010,9 @@ export type GetCallEventsApiCallsCallIdEventsGetResponses = {
         event: 'global_phase_completed';
     } & GlobalPhaseCompletedEventOut) | ({
         event: 'update_view_phase_completed';
-    } & UpdateViewPhaseCompletedEventOut)>;
+    } & UpdateViewPhaseCompletedEventOut) | ({
+        event: 'question_dedupe';
+    } & QuestionDedupeEventOut)>;
 };
 
 export type GetCallEventsApiCallsCallIdEventsGetResponse = GetCallEventsApiCallsCallIdEventsGetResponses[keyof GetCallEventsApiCallsCallIdEventsGetResponses];

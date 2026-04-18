@@ -73,8 +73,6 @@ def _proposed_payload() -> CreatePagePayload:
             "frontier AI systems? The question asks about the overall pace "
             "of displacement, not about which particular tasks go first."
         ),
-        credence=5,
-        robustness=1,
         workspace="research",
         supersedes=None,
         change_magnitude=None,

@@ -28,6 +28,8 @@ from rumil.llm import LLMExchangeMetadata, structured_call
 from rumil.models import Call, Page, PageType
 from rumil.moves.base import CreatePagePayload
 from rumil.settings import get_settings
+from rumil.tracing.trace_events import DedupeCandidateItem, QuestionDedupeEvent
+from rumil.tracing.tracer import get_trace
 
 log = logging.getLogger(__name__)
 
@@ -76,6 +78,9 @@ async def try_dedupe_question_swap(
     if payload.supersedes:
         return None
 
+    parent = await db.get_page(parent_id)
+    parent_headline = parent.headline if parent else ""
+
     query_text = f"{payload.headline}\n\n{payload.content}"
     try:
         raw_matches = await search_pages(
@@ -91,6 +96,15 @@ async def try_dedupe_question_swap(
             "Question dedupe: vector search failed; proceeding with create",
             exc_info=True,
         )
+        await _record_dedupe_event(
+            payload=payload,
+            parent_id=parent_id,
+            parent_headline=parent_headline,
+            candidates_with_kept=[],
+            outcome="error",
+            matched_page=None,
+            decision_reasoning="",
+        )
         return None
 
     excluded_ids = {parent_id}
@@ -103,34 +117,118 @@ async def try_dedupe_question_swap(
         if p.page_type == PageType.QUESTION and p.is_active() and p.id not in excluded_ids
     ]
     if not candidates:
+        await _record_dedupe_event(
+            payload=payload,
+            parent_id=parent_id,
+            parent_headline=parent_headline,
+            candidates_with_kept=[],
+            outcome="no_candidates",
+            matched_page=None,
+            decision_reasoning="",
+        )
         return None
 
     candidates = candidates[:SONNET_FILTER_LIMIT]
 
     picks = await _sonnet_filter(payload, candidates, call, db)
-    survivors = [(p, score) for p, score in candidates if p.id[:8] in picks]
+    candidates_with_kept: list[tuple[Page, float, bool]] = [
+        (p, score, p.id[:8] in picks) for p, score in candidates
+    ]
+    survivors = [(p, score) for p, score, kept in candidates_with_kept if kept]
     if not survivors:
+        await _record_dedupe_event(
+            payload=payload,
+            parent_id=parent_id,
+            parent_headline=parent_headline,
+            candidates_with_kept=candidates_with_kept,
+            outcome="filter_rejected_all",
+            matched_page=None,
+            decision_reasoning="",
+        )
         return None
 
     top_candidate, top_score = survivors[0]
-    parent = await db.get_page(parent_id)
     if not parent:
         log.warning(
             "Question dedupe: parent %s not found; proceeding with create",
             parent_id[:8],
         )
+        await _record_dedupe_event(
+            payload=payload,
+            parent_id=parent_id,
+            parent_headline=parent_headline,
+            candidates_with_kept=candidates_with_kept,
+            outcome="error",
+            matched_page=None,
+            decision_reasoning="",
+        )
         return None
 
-    accept = await _opus_decide(payload, parent, top_candidate, call, db)
-    if accept:
-        log.info(
-            "Question dedupe: swapping proposed %r for existing %s (similarity %.2f)",
-            payload.headline[:60],
-            top_candidate.id[:8],
-            top_score,
+    decision = await _opus_decide(payload, parent, top_candidate, call, db)
+    decision_reasoning = decision.reasoning if decision else ""
+    if decision is None or not decision.swap:
+        await _record_dedupe_event(
+            payload=payload,
+            parent_id=parent_id,
+            parent_headline=parent_headline,
+            candidates_with_kept=candidates_with_kept,
+            outcome="opus_rejected" if decision is not None else "error",
+            matched_page=None,
+            decision_reasoning=decision_reasoning,
         )
-        return top_candidate.id
-    return None
+        return None
+
+    log.info(
+        "Question dedupe: swapping proposed %r for existing %s (similarity %.2f)",
+        payload.headline[:60],
+        top_candidate.id[:8],
+        top_score,
+    )
+    await _record_dedupe_event(
+        payload=payload,
+        parent_id=parent_id,
+        parent_headline=parent_headline,
+        candidates_with_kept=candidates_with_kept,
+        outcome="swap",
+        matched_page=top_candidate,
+        decision_reasoning=decision_reasoning,
+    )
+    return top_candidate.id
+
+
+async def _record_dedupe_event(
+    payload: CreatePagePayload,
+    parent_id: str,
+    parent_headline: str,
+    candidates_with_kept: Sequence[tuple[Page, float, bool]],
+    outcome: str,
+    matched_page: Page | None,
+    decision_reasoning: str,
+) -> None:
+    trace = get_trace()
+    if trace is None:
+        return
+    candidate_items = [
+        DedupeCandidateItem(
+            id=p.id,
+            headline=p.headline,
+            similarity=score,
+            kept_by_filter=kept,
+        )
+        for p, score, kept in candidates_with_kept
+    ]
+    await trace.record(
+        QuestionDedupeEvent(
+            proposed_headline=payload.headline,
+            parent_id=parent_id,
+            parent_headline=parent_headline,
+            candidates=candidate_items,
+            outcome=outcome,
+            matched_page_id=matched_page.id if matched_page else None,
+            matched_headline=matched_page.headline if matched_page else "",
+            decision_reasoning=decision_reasoning,
+        )
+    )
 
 
 async def _sonnet_filter(
@@ -198,7 +296,7 @@ async def _opus_decide(
     candidate: Page,
     call: Call,
     db: DB,
-) -> bool:
+) -> "_OpusDecision | None":
     """Ask Opus whether the candidate can substitute for the proposed question."""
     user_message = (
         f"## Parent question\n\n**{parent.headline}**\n\n{parent.content}\n\n"
@@ -243,12 +341,12 @@ async def _opus_decide(
         )
     except Exception:
         log.warning("Question dedupe: opus decide failed", exc_info=True)
-        return False
+        return None
     if result.parsed is None:
-        return False
+        return None
     log.info(
         "Question dedupe opus decision: swap=%s reasoning=%s",
         result.parsed.swap,
         result.parsed.reasoning[:200] if result.parsed.reasoning else "",
     )
-    return bool(result.parsed.swap)
+    return result.parsed

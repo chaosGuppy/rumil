@@ -1217,6 +1217,9 @@
                       },
                       {
                         "$ref": "#/components/schemas/UpdateViewPhaseCompletedEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/QuestionDedupeEventOut"
                       }
                     ],
                     "discriminator": {
@@ -1250,7 +1253,8 @@
                         "view_created": "#/components/schemas/ViewCreatedEventOut",
                         "phase_skipped": "#/components/schemas/PhaseSkippedEventOut",
                         "global_phase_completed": "#/components/schemas/GlobalPhaseCompletedEventOut",
-                        "update_view_phase_completed": "#/components/schemas/UpdateViewPhaseCompletedEventOut"
+                        "update_view_phase_completed": "#/components/schemas/UpdateViewPhaseCompletedEventOut",
+                        "question_dedupe": "#/components/schemas/QuestionDedupeEventOut"
                       }
                     }
                   },
@@ -2491,6 +2495,34 @@
           "scout_mode"
         ],
         "title": "ContextBuiltEventOut"
+      },
+      "DedupeCandidateItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "headline": {
+            "type": "string",
+            "title": "Headline",
+            "default": ""
+          },
+          "similarity": {
+            "type": "number",
+            "title": "Similarity"
+          },
+          "kept_by_filter": {
+            "type": "boolean",
+            "title": "Kept By Filter",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "similarity"
+        ],
+        "title": "DedupeCandidateItem"
       },
       "DegreeCell": {
         "properties": {
@@ -4032,6 +4064,87 @@
           "id"
         ],
         "title": "ProposedSubquestion"
+      },
+      "QuestionDedupeEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "question_dedupe",
+            "title": "Event",
+            "default": "question_dedupe"
+          },
+          "proposed_headline": {
+            "type": "string",
+            "title": "Proposed Headline",
+            "default": ""
+          },
+          "parent_id": {
+            "type": "string",
+            "title": "Parent Id"
+          },
+          "parent_headline": {
+            "type": "string",
+            "title": "Parent Headline",
+            "default": ""
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/DedupeCandidateItem"
+            },
+            "type": "array",
+            "title": "Candidates",
+            "default": []
+          },
+          "outcome": {
+            "type": "string",
+            "title": "Outcome",
+            "default": ""
+          },
+          "matched_page_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matched Page Id"
+          },
+          "matched_headline": {
+            "type": "string",
+            "title": "Matched Headline",
+            "default": ""
+          },
+          "decision_reasoning": {
+            "type": "string",
+            "title": "Decision Reasoning",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "proposed_headline",
+          "parent_id",
+          "parent_headline",
+          "candidates",
+          "outcome",
+          "matched_page_id",
+          "matched_headline",
+          "decision_reasoning"
+        ],
+        "title": "QuestionDedupeEventOut"
       },
       "QuestionStatsOut": {
         "properties": {

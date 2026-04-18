@@ -600,8 +600,21 @@ async def get_page_load_stats(run_id: str, db: DB = Depends(_get_db)):
     ]
     unique_pages = {r["page_id"] for r in rows}
 
+    question_shorts = {q for ev in events if (q := ev.tags.get("question"))}
+    question_headlines: dict[str, str] = {}
+    if question_shorts:
+        resolved = await db.resolve_page_ids(list(question_shorts))
+        full_ids = list(set(resolved.values()))
+        if full_ids:
+            page_by_id = await db.get_pages_by_ids(full_ids)
+            for short_id, full_id in resolved.items():
+                page = page_by_id.get(full_id)
+                if page and page.headline:
+                    question_headlines[short_id] = page.headline
+
     return PageLoadStatsOut(
         events=events,
         total=len(rows),
         total_unique=len(unique_pages),
+        question_headlines=question_headlines,
     )

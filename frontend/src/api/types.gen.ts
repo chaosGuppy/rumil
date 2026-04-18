@@ -1244,6 +1244,12 @@ export type PageLoadStatsOut = {
      * Total Unique
      */
     total_unique: number;
+    /**
+     * Question Headlines
+     */
+    question_headlines: {
+        [key: string]: string;
+    };
 };
 
 /**

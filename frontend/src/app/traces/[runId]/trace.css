@@ -1629,6 +1629,43 @@
 .pls-detail-abstract { color: #4272c4; }
 .pls-detail-headline { color: #8b6cc1; }
 
+.pls-call-type-question {
+  white-space: normal;
+  max-width: 420px;
+  min-width: 220px;
+  padding-right: 16px;
+}
+
+.pls-question-value {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pls-question-headline {
+  color: #222;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.35;
+}
+
+.pls-question-short {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 10.5px;
+  color: #aaa;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  flex-shrink: 0;
+}
+
+.pls-question-id-only {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 12px;
+  color: #888;
+  letter-spacing: 0.03em;
+}
+
 @media (prefers-color-scheme: dark) {
   .pls-root { border-top-color: #2a2a2a; }
   .pls-title { color: #6a6a6a; }
@@ -1676,4 +1713,7 @@
     border-color: transparent;
   }
   .pls-tag-empty { color: #555; }
+  .pls-question-headline { color: #e5e5e5; }
+  .pls-question-short { color: #5c5c5c; }
+  .pls-question-id-only { color: #777; }
 }

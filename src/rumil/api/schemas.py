@@ -427,3 +427,4 @@ class PageLoadStatsOut(BaseModel):
     events: list[PageLoadEventOut]
     total: int
     total_unique: int
+    question_headlines: dict[str, str]

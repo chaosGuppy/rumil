@@ -3748,13 +3748,21 @@
           "total_unique": {
             "type": "integer",
             "title": "Total Unique"
+          },
+          "question_headlines": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Question Headlines"
           }
         },
         "type": "object",
         "required": [
           "events",
           "total",
-          "total_unique"
+          "total_unique",
+          "question_headlines"
         ],
         "title": "PageLoadStatsOut"
       },

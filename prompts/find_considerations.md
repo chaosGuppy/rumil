@@ -2,45 +2,35 @@
 
 ## Your Task
 
-You are performing a **Find Considerations** call — generative, expansive mode. Your job is to find **missing considerations** on a research question.
+You are performing a **Find Considerations** call. An **assess** call on this question is imminent — likely the next thing that happens after you finish. Your job is to surface the considerations that, added to what's already in view, will most improve the answer that assess is about to produce.
 
-Pages you need should already be loaded from the preliminary phase. Proceed directly to finding considerations — only use `load_page` if something genuinely critical turns out to be missing.
+**Optimise for answer quality per token.** You are not exploring. You are not mapping out the space. You are adding the missing pieces that the next answer most needs — so that the answer written right after you finish is as good as possible.
 
-Your task prompt specifies whether you are in **abstract** or **concrete** mode.
+The context you see now — the existing considerations, the related workspace pages — is the same context the assessor will see when they answer. Read it carefully. Your job is to add what's **missing** from that picture. Anything you produce that duplicates, paraphrases, or closely overlaps with what's already there is wasted: the assessor already has it. Build on top of the existing evidence, don't repeat it.
 
-**Abstract mode** (default): look for missing angles, framings, implications, structural considerations. Breadth and insight over specificity.
+Pages you need should already be loaded from the preliminary phase. Proceed directly to generating considerations — only use `load_page` if something genuinely critical turns out to be missing.
 
-**Concrete mode**: your goal is considerations, sub-questions, and hypotheses that are as specific and falsifiable as possible. Concreteness means named actors, specific timeframes, quantitative claims, named mechanisms, particular cases. A concrete claim should be possible to be clearly wrong about — that is what makes it valuable to research.
+## What earns a consideration its place
 
-The point of concrete mode is not to be right. It is to make claims specific enough that they can actually be evaluated. A vague claim ("AI will significantly affect labour markets") can never be confirmed or refuted and therefore contributes less than a specific one ("US radiologist employment will fall >20% by 2030 due to diagnostic AI") — even if the specific claim turns out to be mistaken. Concrete rounds are expected to produce claims that subsequent investigation may refute. That is a feature, not a failure. Do not hedge your way back to vagueness.
+A consideration is worth adding if its effect on the next answer is **immediate and obvious**. The assessor should be able to pick it up and use it without further investigation.
 
-Examples of the shift:
-- Abstract: "AI will transform labour markets" → Concrete: "US radiologist employment will fall >20% between 2025–2030"
-- Abstract: "What will the economic effects be?" → Concrete: "Will US manufacturing employment recover to pre-2024 levels by 2030, or has automation permanently lowered the floor?"
-- Abstract: "AI may have important safety implications" → Concrete: "Current RLHF methods will fail to prevent specification gaming in the majority of real-world deployments by 2028"
+Strong candidates:
+- **Directly shifts the answer.** A counterweight, a decisive piece of evidence, or a mechanism that would force the answer to change if taken seriously.
+- **Supplies a missing anchor.** A specific number, timeframe, actor, or empirical fact that the answer needs in order to be concrete rather than hand-wavy.
+- **Resolves a live ambiguity in the question.** The current framing admits multiple readings and the answer hinges on which reading is right.
 
-When making such concrete-but-tentative claims, be sure to set low credence and robustness.
+Do **not** add considerations that:
+- Open a new angle whose payoff only becomes visible after further research. If the consideration's value depends on someone digging into it before its impact is clear, it's the wrong thing for this call.
+- Represent interesting-but-tangential territory. "This is worth thinking about" is not enough — it must move the immediate answer.
+- Broaden the scope rather than sharpen the answer.
 
-In abstract mode, look for:
-- Angles not yet represented in the existing considerations
-- Empirical evidence relevant to the question
-- Useful distinctions or framings
-- Counterarguments or complications to existing considerations
-- Second-order effects or indirect considerations
+If the best you can produce is "here's an angle someone could explore," produce nothing and let the assessor work with what's already in view.
 
 ## What to Produce
 
-Produce **up to 3 new considerations**, prioritising importance and novelty. Do not duplicate existing considerations.
+Produce **up to 3 new considerations**, prioritising those that will most move the imminent answer. Fewer strong considerations beats more weak ones. Do not duplicate existing considerations.
 
 For each consideration, create the claim and link it to the question.
-
-## Linking Existing Questions
-
-Check the workspace map for questions elsewhere in the workspace that are directly relevant to the question you're investigating. If an existing question would serve as a useful sub-question — i.e. answering it would materially inform the current question — link it with `link_child_question`. This makes existing research visible to prioritization and prevents duplicate investigation.
-
-Only link questions that are genuinely useful decompositions, not merely topically related. Also, ensure that a good answer to the child question would add substantial information to the parent question, even in the presence of good answers to all other questions in the workspace. If, given answers to another set of questions in the workspace, a question's answer would not add much further value, do not link it. Think of it like a Bayesian netowrk: aim to capture conditional independence relations with your links.
-
-`link_child_question` is the *only* way to relate a parent question to an existing question. Claim/judgement → claim/judgement dependencies are never linked with a tool — they are created from inline `[shortid]` citations in content. If a new claim's truth would rest on the answer to an existing question, cite that question's current judgement (not the question itself) in the claim's content; if no judgement exists yet, link the question as a child of the parent and let the workspace produce a judgement first.
 
 ## Hypothesis Questions
 
@@ -50,6 +40,7 @@ Don't propose a hypothesis if the view is already well-represented in the existi
 
 ## Quality Bar
 
-- **One excellent consideration beats three weak ones.** If you can only find one genuinely important missing angle, produce one.
-- **Specificity is essential.** A claim must be a concrete, falsifiable (or at least evaluable) assertion — not a gesture toward a class of considerations.
-- **Do not restate existing considerations** in different words.
+- **One excellent consideration beats three weak ones.** If you can only find one thing that would meaningfully move the imminent answer, produce one. Produce none if nothing clears the bar.
+- **Specificity is essential.** A claim must be a concrete, evaluable assertion — not a gesture toward a class of considerations.
+- **Do not restate existing considerations** in different words. Paraphrases don't help.
+- **Immediate payoff only.** If the reader has to squint to see how this would affect the next answer, it doesn't belong here.

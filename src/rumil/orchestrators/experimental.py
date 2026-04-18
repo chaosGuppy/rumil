@@ -17,7 +17,11 @@ from rumil.calls.prioritization import run_prioritization_call
 from rumil.constants import MIN_TWOPHASE_BUDGET
 from rumil.context import build_prioritization_context
 from rumil.database import DB
-from rumil.llm import build_system_prompt
+from rumil.llm import (
+    build_system_prompt,
+    reset_experimental_scout_budget,
+    set_experimental_scout_budget,
+)
 from rumil.models import (
     AssessDispatchPayload,
     Call,
@@ -28,8 +32,8 @@ from rumil.models import (
 )
 from rumil.orchestrators.base import BaseOrchestrator
 from rumil.orchestrators.common import (
+    ExperimentalSubquestionScore,
     PrioritizationResult,
-    SubquestionScore,
     assess_question,
     score_items_sequentially,
 )
@@ -42,9 +46,9 @@ from rumil.tracing.trace_events import (
     DispatchExecutedEvent,
     DispatchTraceItem,
     ErrorEvent,
+    ExperimentalScoringCompletedEvent,
+    ExperimentalSubquestionScoreItem,
     PhaseSkippedEvent,
-    ScoringCompletedEvent,
-    SubquestionScoreItem,
 )
 from rumil.tracing.tracer import CallTrace, set_trace
 
@@ -138,12 +142,14 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             )
             self._sequence_id = seq.id
             self._seq_position = 0
+        budget_token = set_experimental_scout_budget(effective)
         try:
             while True:
                 remaining = await self.db.budget_remaining()
                 effective = self._effective_budget(remaining)
                 if effective <= 0:
                     break
+                set_experimental_scout_budget(effective)
 
                 round_budget = await self._paced_budget(effective)
                 result = await self._get_next_batch(
@@ -207,6 +213,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
                     if self._sequence_id is not None:
                         self._seq_position += 1
         finally:
+            reset_experimental_scout_budget(budget_token)
             await self._teardown()
             await own_db.close()
 
@@ -528,8 +535,8 @@ class ExperimentalOrchestrator(BaseOrchestrator):
                 parent_page=parent_question,
                 parent_judgement=parent_judgement,
                 items=child_questions,
-                system_prompt_name="score_subquestions",
-                response_model=SubquestionScore,
+                system_prompt_name="score_subquestions_experimental",
+                response_model=ExperimentalSubquestionScore,
                 call_id=p_call.id,
                 db=self.db,
             )
@@ -541,8 +548,8 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         scout_fruit: dict[str, int | None] = scoring_results[1]
 
         await trace.record(
-            ScoringCompletedEvent(
-                subquestion_scores=[SubquestionScoreItem(**s) for s in subq_scores],
+            ExperimentalScoringCompletedEvent(
+                subquestion_scores=[ExperimentalSubquestionScoreItem(**s) for s in subq_scores],
                 per_type_fruit=[
                     CallTypeFruitScoreItem(call_type=ct, fruit=f or 0, reasoning="")
                     for ct, f in scout_fruit.items()
@@ -554,13 +561,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         if subq_scores:
             lines = ["## Subquestion Scores", ""]
             for s in subq_scores:
-                lines.append(
-                    f"- `{s['question_id']}` — {s['headline']}: "
-                    f"impact_on_q={s['impact_on_question']}, "
-                    f"broader={s['broader_impact']}, "
-                    f"fruit={s['fruit']} "
-                    f"({s['reasoning']})"
-                )
+                lines.append(f"- `{s['question_id']}` — {s['headline']}\n    {s['impact_curve']}")
             lines.append("")
             scores_text = "\n".join(lines)
 
@@ -623,7 +624,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             ),
             extra_dispatch_defs=extra_defs or None,
             system_prompt=build_system_prompt(
-                "two_phase_main_phase_prioritization",
+                "two_phase_main_phase_prioritization_experimental",
             ),
             dispatch_budget=dispatch_budget,
         )

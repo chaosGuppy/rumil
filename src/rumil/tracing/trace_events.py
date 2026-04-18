@@ -43,7 +43,6 @@ class ContextBuiltEvent(BaseModel):
     preloaded_page_ids: PageRefList = []
     source_page_id: str | None = None
     budget: int | None = None
-    scout_mode: str | None = None
 
 
 class MovesExecutedEvent(BaseModel):
@@ -118,6 +117,18 @@ class ScoringCompletedEvent(BaseModel):
     parent_fruit_reasoning: str = ""
     per_type_fruit: list[CallTypeFruitScoreItem] = []
     dispatch_guidance: str = ""
+
+
+class ExperimentalSubquestionScoreItem(BaseModel):
+    question_id: str
+    headline: str = ""
+    impact_curve: str = ""
+
+
+class ExperimentalScoringCompletedEvent(BaseModel):
+    event: Literal["experimental_scoring_completed"] = "experimental_scoring_completed"
+    subquestion_scores: list[ExperimentalSubquestionScoreItem] = []
+    per_type_fruit: list[CallTypeFruitScoreItem] = []
 
 
 class DispatchesPlannedEvent(BaseModel):
@@ -285,6 +296,7 @@ TraceEvent = Annotated[
     | WarningEvent
     | ErrorEvent
     | ScoringCompletedEvent
+    | ExperimentalScoringCompletedEvent
     | DispatchesPlannedEvent
     | DispatchExecutedEvent
     | ExplorePageEvent

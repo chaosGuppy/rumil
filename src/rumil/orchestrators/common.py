@@ -33,7 +33,6 @@ from rumil.embeddings import embed_and_store_page
 from rumil.models import (
     CallType,
     Dispatch,
-    FindConsiderationsMode,
     LinkType,
     MoveType,
     Page,
@@ -80,6 +79,24 @@ class SubquestionScore(BaseModel):
     )
     fruit: int = Field(description="0-10: how much useful investigation remains")
     reasoning: str = Field(description="Brief explanation of scores")
+
+
+class ExperimentalSubquestionScore(BaseModel):
+    question_id: str = Field(description="Full UUID of the subquestion")
+    headline: str = Field(description="Headline of the subquestion")
+    impact_curve: str = Field(
+        description=(
+            "Natural-language description of the impact-vs-effort curve for "
+            "further investigation of this subquestion, starting from its "
+            "current state (what has already been done, how robust the latest "
+            "judgement is). Describe what additional research effort at "
+            "different levels (say, a few budget units vs. a substantial "
+            "recursion) would yield for the parent question, and how impact "
+            "scales: where are the diminishing returns, plateaus, thresholds, "
+            "or unbounded gains? If the subquestion is already at the point "
+            "of diminishing returns, say so explicitly."
+        )
+    )
 
 
 class SubquestionScoringResult(BaseModel):
@@ -398,7 +415,6 @@ async def find_considerations_until_done(
     fruit_threshold: int = DEFAULT_FRUIT_THRESHOLD,
     parent_call_id: str | None = None,
     context_page_ids: list | None = None,
-    mode: FindConsiderationsMode = FindConsiderationsMode.ALTERNATE,
     broadcaster=None,
     force: bool = False,
     call_id: str | None = None,
@@ -418,11 +434,10 @@ async def find_considerations_until_done(
     elif get_settings().is_smoke_test:
         max_rounds = min(max_rounds, SMOKE_TEST_MAX_ROUNDS)
     log.info(
-        "find_considerations_until_done: question=%s, max_rounds=%d, fruit_threshold=%d, mode=%s",
+        "find_considerations_until_done: question=%s, max_rounds=%d, fruit_threshold=%d",
         question_id[:8],
         max_rounds,
         fruit_threshold,
-        mode.value,
     )
 
     if force and await db.budget_remaining() <= 0:
@@ -444,7 +459,6 @@ async def find_considerations_until_done(
         db,
         max_rounds=max_rounds,
         fruit_threshold=fruit_threshold,
-        mode=mode,
         context_page_ids=context_page_ids,
         broadcaster=broadcaster,
     )

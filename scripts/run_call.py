@@ -11,7 +11,7 @@ Usage:
     uv run python scripts/run_call.py assess --question-id <UUID>
 
     # Override find-considerations params
-    uv run python scripts/run_call.py find-considerations "Why is water wet?" --mode concrete --max-rounds 3
+    uv run python scripts/run_call.py find-considerations "Why is water wet?" --max-rounds 3
 
     # Use smoke-test model (haiku)
     uv run python scripts/run_call.py find-considerations "Test question" --smoke-test
@@ -46,7 +46,7 @@ from rumil.calls.scout_web_questions import ScoutWebQuestionsCall
 from rumil.calls.stages import CallRunner
 from rumil.calls.web_research import WebResearchCall
 from rumil.database import DB
-from rumil.models import CallStage, CallType, FindConsiderationsMode
+from rumil.models import CallStage, CallType
 from rumil.orchestrators import create_root_question
 from rumil.orchestrators.robustify import RobustifyOrchestrator
 from rumil.settings import get_settings
@@ -71,7 +71,6 @@ async def run_call(args: argparse.Namespace, db: DB, question_id: str) -> None:
     up_to_stage = CallStage(args.up_to_stage) if args.up_to_stage else None
 
     if call_type == "find-considerations":
-        mode = FindConsiderationsMode(args.mode)
         call = await db.create_call(
             CallType.FIND_CONSIDERATIONS,
             scope_page_id=question_id,
@@ -82,7 +81,6 @@ async def run_call(args: argparse.Namespace, db: DB, question_id: str) -> None:
             db,
             max_rounds=args.max_rounds,
             fruit_threshold=args.fruit_threshold,
-            mode=mode,
             up_to_stage=up_to_stage,
         )
         await scout.run()
@@ -237,12 +235,6 @@ def main() -> None:
     )
     parser.add_argument("--question-id", help="Existing question UUID")
     parser.add_argument("--budget", type=int, default=5, help="Budget (default: 5)")
-    parser.add_argument(
-        "--mode",
-        default="alternate",
-        choices=["alternate", "abstract", "concrete"],
-        help="Find-considerations mode (default: alternate)",
-    )
     parser.add_argument(
         "--max-rounds",
         type=int,

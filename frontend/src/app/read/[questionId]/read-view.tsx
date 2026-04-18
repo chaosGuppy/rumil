@@ -1,20 +1,43 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ViewShape, ViewItemShape } from "./page";
 import "./read.css";
 
-type FlagCategory = "problem" | "improvement";
+type QuickCategory =
+  | "factually_wrong"
+  | "missing_consideration"
+  | "reasoning_flawed"
+  | "scope_confused"
+  | "other";
 
 type FlagDialogState = {
   itemId: string;
   headline: string;
-  category: FlagCategory;
+  category: QuickCategory;
   message: string;
   suggestedFix: string;
   submitting: boolean;
   error: string | null;
 };
+
+type FlaggedState = {
+  flagId: string;
+  expiresAt: number; // epoch ms — undo allowed until then
+};
+
+const QUICK_CATEGORIES: { value: QuickCategory; label: string }[] = [
+  { value: "factually_wrong", label: "Claim is factually wrong" },
+  { value: "missing_consideration", label: "Missing important consideration" },
+  { value: "reasoning_flawed", label: "Reasoning doesn't follow" },
+  { value: "scope_confused", label: "Scope is confused" },
+  { value: "other", label: "Other" },
+];
+
+const UNDO_WINDOW_MS = 10_000;
+const READ_DWELL_MS = 2_000;
+const WELCOME_DISMISS_KEY = "rumil.read.welcome.dismissed.v1";
+const READ_SESSION_KEY = "rumil.read.session.sent.v1";
 
 function readableSectionName(name: string): string {
   return name
@@ -37,6 +60,30 @@ function epistemicBadges(page: ViewItemShape["page"]): string {
   return parts.join("/");
 }
 
+function loadSessionSentIds(): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const raw = window.sessionStorage.getItem(READ_SESSION_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw);
+    return new Set(Array.isArray(arr) ? arr : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function persistSessionSentIds(ids: Set<string>) {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(
+      READ_SESSION_KEY,
+      JSON.stringify(Array.from(ids)),
+    );
+  } catch {
+    // Best-effort only — private-mode etc.
+  }
+}
+
 export function ReadView({
   view,
   flaggingEnabled,
@@ -46,14 +93,106 @@ export function ReadView({
   flaggingEnabled: boolean;
   apiBase: string;
 }) {
-  const [flagged, setFlagged] = useState<Set<string>>(new Set());
+  const [flagged, setFlagged] = useState<Map<string, FlaggedState>>(new Map());
   const [dialog, setDialog] = useState<FlagDialogState | null>(null);
+  const [, forceTick] = useState(0);
+  const [welcomeDismissed, setWelcomeDismissed] = useState(false);
+
+  useEffect(() => {
+    try {
+      setWelcomeDismissed(
+        window.localStorage.getItem(WELCOME_DISMISS_KEY) === "1",
+      );
+    } catch {
+      setWelcomeDismissed(false);
+    }
+  }, []);
+
+  // Tick every 500ms while any flag is inside its undo window so the countdown
+  // rerenders live. Stops when no undo is pending.
+  useEffect(() => {
+    const anyPending = Array.from(flagged.values()).some(
+      (f) => Date.now() < f.expiresAt,
+    );
+    if (!anyPending) return;
+    const id = window.setInterval(() => forceTick((t) => t + 1), 500);
+    return () => window.clearInterval(id);
+  }, [flagged]);
+
+  // --- read telemetry (IntersectionObserver + 2s dwell, dedup per session) ---
+  const sentReadIdsRef = useRef<Set<string>>(new Set());
+  const dwellTimersRef = useRef<Map<string, { startedAt: number; timeout: number }>>(
+    new Map(),
+  );
+
+  useEffect(() => {
+    sentReadIdsRef.current = loadSessionSentIds();
+  }, []);
+
+  const sendReadEvent = useCallback(
+    async (itemId: string, seconds: number) => {
+      if (sentReadIdsRef.current.has(itemId)) return;
+      sentReadIdsRef.current.add(itemId);
+      persistSessionSentIds(sentReadIdsRef.current);
+      try {
+        await fetch(`${apiBase}/api/view-items/${itemId}/read`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ seconds }),
+        });
+      } catch {
+        // Silently ignore telemetry failures — never block the read UI.
+      }
+    },
+    [apiBase],
+  );
+
+  const observerRef = useRef<IntersectionObserver | null>(null);
+
+  useEffect(() => {
+    if (typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const id = (entry.target as HTMLElement).dataset.itemId;
+          if (!id) continue;
+          const timers = dwellTimersRef.current;
+          if (entry.isIntersecting) {
+            if (timers.has(id)) continue;
+            if (sentReadIdsRef.current.has(id)) continue;
+            const startedAt = Date.now();
+            const timeout = window.setTimeout(() => {
+              void sendReadEvent(id, (Date.now() - startedAt) / 1000);
+              timers.delete(id);
+            }, READ_DWELL_MS);
+            timers.set(id, { startedAt, timeout });
+          } else {
+            const t = timers.get(id);
+            if (t) {
+              window.clearTimeout(t.timeout);
+              timers.delete(id);
+            }
+          }
+        }
+      },
+      { threshold: 0.5 },
+    );
+    observerRef.current = observer;
+    const nodes = document.querySelectorAll("[data-item-id]");
+    nodes.forEach((n) => observer.observe(n));
+    return () => {
+      observer.disconnect();
+      dwellTimersRef.current.forEach((t) => window.clearTimeout(t.timeout));
+      dwellTimersRef.current.clear();
+      observerRef.current = null;
+    };
+  }, [sendReadEvent, view]);
 
   const openFlag = (item: ViewItemShape) => {
     setDialog({
       itemId: item.page.id,
       headline: item.page.headline,
-      category: "problem",
+      category: "factually_wrong",
       message: "",
       suggestedFix: "",
       submitting: false,
@@ -63,7 +202,7 @@ export function ReadView({
 
   const closeDialog = () => setDialog(null);
 
-  const submitFlag = async (e: FormEvent) => {
+  const submitFlag = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!dialog) return;
     setDialog({ ...dialog, submitting: true, error: null });
@@ -84,7 +223,16 @@ export function ReadView({
         const body = await res.text();
         throw new Error(`${res.status}: ${body.slice(0, 200)}`);
       }
-      setFlagged((prev) => new Set(prev).add(dialog.itemId));
+      const body = (await res.json()) as { flag_id?: string };
+      const flagId = body.flag_id ?? "";
+      setFlagged((prev) => {
+        const next = new Map(prev);
+        next.set(dialog.itemId, {
+          flagId,
+          expiresAt: Date.now() + UNDO_WINDOW_MS,
+        });
+        return next;
+      });
       setDialog(null);
     } catch (err) {
       setDialog({
@@ -95,6 +243,34 @@ export function ReadView({
     }
   };
 
+  const undoFlag = async (itemId: string) => {
+    const entry = flagged.get(itemId);
+    if (!entry || !entry.flagId) return;
+    if (Date.now() >= entry.expiresAt) return;
+    try {
+      await fetch(`${apiBase}/api/view-items/flags/${entry.flagId}`, {
+        method: "DELETE",
+      });
+    } catch {
+      // If the network call fails we still remove it locally so the user
+      // isn't stuck; a real failure is rare and they can refresh.
+    }
+    setFlagged((prev) => {
+      const next = new Map(prev);
+      next.delete(itemId);
+      return next;
+    });
+  };
+
+  const dismissWelcome = () => {
+    try {
+      window.localStorage.setItem(WELCOME_DISMISS_KEY, "1");
+    } catch {
+      // ignore
+    }
+    setWelcomeDismissed(true);
+  };
+
   const totalItems = view.sections.reduce(
     (acc, s) => acc + s.items.length,
     0,
@@ -103,16 +279,39 @@ export function ReadView({
   return (
     <main className="read-main">
       <div className="read-container">
+        {!welcomeDismissed && (
+          <aside className="read-welcome" role="note">
+            <p>
+              You&rsquo;re looking at an experimental research workspace&rsquo;s
+              view of this question. Items here are pulled from a research graph
+              that machines build and humans curate. If something seems wrong,
+              incomplete, or confused &mdash; click{" "}
+              <strong>&#9873; flag</strong> on the item. That&rsquo;s exactly
+              what this interface is for, and your flags feed back into how the
+              research improves.
+            </p>
+            <button
+              type="button"
+              className="read-welcome-dismiss"
+              onClick={dismissWelcome}
+              aria-label="Dismiss welcome message"
+              title="Dismiss"
+            >
+              &times;
+            </button>
+          </aside>
+        )}
+
         <header className="read-header">
           <p className="read-eyebrow">QUESTION</p>
           <h1 className="read-title">{view.question.headline}</h1>
           <p className="read-meta">
-            {totalItems} items across {view.sections.length} sections ·
+            {totalItems} items across {view.sections.length} sections &middot;
             research depth {view.health.max_depth}
             {!flaggingEnabled && (
               <span className="read-meta-flag-disabled">
                 {" "}
-                · flagging disabled
+                &middot; flagging disabled
               </span>
             )}
           </p>
@@ -127,12 +326,18 @@ export function ReadView({
             <ul className="read-items">
               {section.items.map((item) => {
                 const badges = epistemicBadges(item.page);
-                const isFlagged = flagged.has(item.page.id);
+                const flag = flagged.get(item.page.id);
+                const now = Date.now();
+                const undoSecsLeft =
+                  flag && flag.expiresAt > now
+                    ? Math.ceil((flag.expiresAt - now) / 1000)
+                    : 0;
                 return (
                   <li
                     key={`${section.name}-${item.page.id}`}
                     className="read-item"
                     data-type={item.page.page_type}
+                    data-item-id={item.page.id}
                   >
                     <div className="read-item-body">
                       <div className="read-item-row">
@@ -157,8 +362,29 @@ export function ReadView({
                         )}
                     </div>
                     <div className="read-item-actions">
-                      {isFlagged ? (
-                        <span className="read-flagged">flagged — thanks</span>
+                      {flag ? (
+                        <div className="read-flagged-block">
+                          <span className="read-flagged-thanks">
+                            thanks &mdash; noted
+                          </span>
+                          {undoSecsLeft > 0 ? (
+                            <button
+                              type="button"
+                              className="read-undo-btn"
+                              onClick={() => undoFlag(item.page.id)}
+                            >
+                              undo ({undoSecsLeft}s)
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="read-undo-btn"
+                              disabled
+                            >
+                              flag saved
+                            </button>
+                          )}
+                        </div>
                       ) : flaggingEnabled ? (
                         <button
                           type="button"
@@ -166,7 +392,7 @@ export function ReadView({
                           onClick={() => openFlag(item)}
                           aria-label={`Flag: ${item.page.headline}`}
                         >
-                          <span aria-hidden>⚑</span> flag
+                          <span aria-hidden>&#9873;</span> flag
                         </button>
                       ) : null}
                     </div>
@@ -191,32 +417,51 @@ export function ReadView({
             <p className="read-dialog-eyebrow">FLAG THIS ITEM</p>
             <h2 className="read-dialog-title">{dialog.headline}</h2>
 
-            <label className="read-field">
-              <span className="read-field-label">Category</span>
-              <select
-                value={dialog.category}
-                onChange={(e) =>
-                  setDialog({
-                    ...dialog,
-                    category: e.target.value as FlagCategory,
-                  })
-                }
-              >
-                <option value="problem">Problem</option>
-                <option value="improvement">Improvement</option>
-              </select>
-            </label>
+            <div className="read-field">
+              <span className="read-field-label">What kind of issue?</span>
+              <div className="read-dialog-choices">
+                {QUICK_CATEGORIES.map((c) => (
+                  <button
+                    key={c.value}
+                    type="button"
+                    className={
+                      "read-choice" +
+                      (dialog.category === c.value ? " selected" : "")
+                    }
+                    onClick={() =>
+                      setDialog({ ...dialog, category: c.value })
+                    }
+                  >
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+            </div>
 
             <label className="read-field">
-              <span className="read-field-label">What&rsquo;s the issue?</span>
+              <span className="read-field-label">
+                {dialog.category === "other" ? (
+                  <>
+                    Describe the issue{" "}
+                    <span className="read-field-optional">(required)</span>
+                  </>
+                ) : (
+                  <>
+                    Details{" "}
+                    <span className="read-field-optional">
+                      (optional but helpful)
+                    </span>
+                  </>
+                )}
+              </span>
               <textarea
-                required
+                required={dialog.category === "other"}
                 rows={4}
                 value={dialog.message}
                 onChange={(e) =>
                   setDialog({ ...dialog, message: e.target.value })
                 }
-                placeholder="Be specific about what would help."
+                placeholder="What specifically seems wrong or missing?"
               />
             </label>
 
@@ -251,7 +496,10 @@ export function ReadView({
               <button
                 type="submit"
                 className="read-btn-primary"
-                disabled={dialog.submitting || !dialog.message.trim()}
+                disabled={
+                  dialog.submitting ||
+                  (dialog.category === "other" && !dialog.message.trim())
+                }
               >
                 {dialog.submitting ? "Submitting..." : "Submit flag"}
               </button>

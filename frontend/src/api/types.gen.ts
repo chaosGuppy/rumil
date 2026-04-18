@@ -2360,6 +2360,20 @@ export type ViewCreatedEventOut = {
 };
 
 /**
+ * ViewItemFlagDeleteOut
+ */
+export type ViewItemFlagDeleteOut = {
+    /**
+     * Ok
+     */
+    ok: boolean;
+    /**
+     * Flag Id
+     */
+    flag_id: string;
+};
+
+/**
  * ViewItemFlagOut
  */
 export type ViewItemFlagOut = {
@@ -2393,6 +2407,30 @@ export type ViewItemFlagRequest = {
      * Suggested Fix
      */
     suggested_fix?: string;
+};
+
+/**
+ * ViewItemReadOut
+ */
+export type ViewItemReadOut = {
+    /**
+     * Ok
+     */
+    ok: boolean;
+    /**
+     * Page Id
+     */
+    page_id: string;
+};
+
+/**
+ * ViewItemReadRequest
+ */
+export type ViewItemReadRequest = {
+    /**
+     * Seconds
+     */
+    seconds?: number;
 };
 
 /**
@@ -3614,6 +3652,76 @@ export type FlagViewItemApiViewItemsItemIdFlagPostResponses = {
 };
 
 export type FlagViewItemApiViewItemsItemIdFlagPostResponse = FlagViewItemApiViewItemsItemIdFlagPostResponses[keyof FlagViewItemApiViewItemsItemIdFlagPostResponses];
+
+export type UndoViewItemFlagApiViewItemsFlagsFlagIdDeleteData = {
+    body?: never;
+    path: {
+        /**
+         * Flag Id
+         */
+        flag_id: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/view-items/flags/{flag_id}';
+};
+
+export type UndoViewItemFlagApiViewItemsFlagsFlagIdDeleteErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UndoViewItemFlagApiViewItemsFlagsFlagIdDeleteError = UndoViewItemFlagApiViewItemsFlagsFlagIdDeleteErrors[keyof UndoViewItemFlagApiViewItemsFlagsFlagIdDeleteErrors];
+
+export type UndoViewItemFlagApiViewItemsFlagsFlagIdDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    200: ViewItemFlagDeleteOut;
+};
+
+export type UndoViewItemFlagApiViewItemsFlagsFlagIdDeleteResponse = UndoViewItemFlagApiViewItemsFlagsFlagIdDeleteResponses[keyof UndoViewItemFlagApiViewItemsFlagsFlagIdDeleteResponses];
+
+export type RecordViewItemReadApiViewItemsItemIdReadPostData = {
+    body: ViewItemReadRequest;
+    path: {
+        /**
+         * Item Id
+         */
+        item_id: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/view-items/{item_id}/read';
+};
+
+export type RecordViewItemReadApiViewItemsItemIdReadPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RecordViewItemReadApiViewItemsItemIdReadPostError = RecordViewItemReadApiViewItemsItemIdReadPostErrors[keyof RecordViewItemReadApiViewItemsItemIdReadPostErrors];
+
+export type RecordViewItemReadApiViewItemsItemIdReadPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: ViewItemReadOut;
+};
+
+export type RecordViewItemReadApiViewItemsItemIdReadPostResponse = RecordViewItemReadApiViewItemsItemIdReadPostResponses[keyof RecordViewItemReadApiViewItemsItemIdReadPostResponses];
 
 export type ChatApiChatPostData = {
     body: ChatRequest;

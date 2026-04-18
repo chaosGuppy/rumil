@@ -1798,6 +1798,116 @@
         }
       }
     },
+    "/api/view-items/flags/{flag_id}": {
+      "delete": {
+        "summary": "Undo View Item Flag",
+        "description": "Undo a just-submitted flag within the friendly-user grace window.\n\nDeletes the page_flags row AND the mirrored reputation_events row\nwritten by the flag endpoint. Idempotent: a missing row is a no-op.\n\nStill gated by enable_flag_issue \u2014 if flagging is server-disabled,\nundo is blocked too (no reason to allow mutation when flagging is off).",
+        "operationId": "undo_view_item_flag_api_view_items_flags__flag_id__delete",
+        "parameters": [
+          {
+            "name": "flag_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Flag Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViewItemFlagDeleteOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/view-items/{item_id}/read": {
+      "post": {
+        "summary": "Record View Item Read",
+        "description": "Record that a friendly user actually read a view item.\n\nEndogenous read-side signal: on a ~2s dwell the frontend POSTs here and\nwe write a reputation_events row with source=human_feedback,\ndimension=read_time, score=1.0, extra={subject_page_id, seconds}.\n\nThe frontend deduplicates per-item per-session, so one event per\n(user_session, page) is the expected cardinality.",
+        "operationId": "record_view_item_read_api_view_items__item_id__read_post",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Item Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ViewItemReadRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViewItemReadOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/chat": {
       "post": {
         "summary": "Chat",
@@ -6258,6 +6368,24 @@
         ],
         "title": "ViewCreatedEventOut"
       },
+      "ViewItemFlagDeleteOut": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "flag_id": {
+            "type": "string",
+            "title": "Flag Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ok",
+          "flag_id"
+        ],
+        "title": "ViewItemFlagDeleteOut"
+      },
       "ViewItemFlagOut": {
         "properties": {
           "ok": {
@@ -6285,7 +6413,7 @@
         "properties": {
           "category": {
             "type": "string",
-            "pattern": "^(problem|improvement)$",
+            "pattern": "^(problem|improvement|factually_wrong|missing_consideration|reasoning_flawed|scope_confused|other)$",
             "title": "Category"
           },
           "message": {
@@ -6304,6 +6432,35 @@
           "message"
         ],
         "title": "ViewItemFlagRequest"
+      },
+      "ViewItemReadOut": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "page_id": {
+            "type": "string",
+            "title": "Page Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ok",
+          "page_id"
+        ],
+        "title": "ViewItemReadOut"
+      },
+      "ViewItemReadRequest": {
+        "properties": {
+          "seconds": {
+            "type": "number",
+            "title": "Seconds",
+            "default": 0.0
+          }
+        },
+        "type": "object",
+        "title": "ViewItemReadRequest"
       },
       "WarningEventOut": {
         "properties": {

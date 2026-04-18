@@ -53,8 +53,11 @@ from rumil.api.schemas import (
     RunSummaryOut,
     RunTraceTreeOut,
     TraceEventOut,
+    ViewItemFlagDeleteOut,
     ViewItemFlagOut,
     ViewItemFlagRequest,
+    ViewItemReadOut,
+    ViewItemReadRequest,
 )
 from rumil.database import DB, _row_to_call, _rows
 from rumil.models import (
@@ -85,22 +88,69 @@ app = FastAPI(
 )
 
 _AUTH_PASSWORD = os.environ.get("RUMIL_AUTH_PASSWORD", "")
+_FRIENDLY_USER_PASSWORD = os.environ.get("FRIENDLY_USER_PASSWORD", "")
+
+
+def _is_friendly_user_path(method: str, path: str) -> bool:
+    """Return True if `method path` is in the friendly-user read/flag/telemetry
+    whitelist.
+
+    Friendly users see only the read surface of a View:
+    - read the View for a question
+    - get the feature-flag config needed by that page
+    - fetch a single page body by id/short-id (rendering helper)
+    - flag a view item, undo a flag, record a read-event
+
+    Everything else (projects/*, calls/*, traces/*, runs/*, chat/*, ab-evals/*,
+    dispatch, etc.) requires the admin password.
+    """
+    method = method.upper()
+    if method == "GET":
+        if path == "/api/config":
+            return True
+        if path.startswith("/api/questions/") and path.endswith("/view"):
+            return True
+        if path.startswith("/api/pages/short/"):
+            return True
+        if path.startswith("/api/pages/") and path.count("/") == 3:
+            return True
+    if method == "POST":
+        if path.startswith("/api/view-items/") and (
+            path.endswith("/flag") or path.endswith("/read")
+        ):
+            return True
+    if method == "DELETE":
+        if path.startswith("/api/view-items/flags/"):
+            return True
+    return False
 
 
 class BasicAuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):  # type: ignore[override]
-        if request.url.path == "/healthz" or not _AUTH_PASSWORD:
+        path = request.url.path
+        if path == "/healthz":
+            return await call_next(request)
+        if not _AUTH_PASSWORD and not _FRIENDLY_USER_PASSWORD:
             return await call_next(request)
 
         auth = request.headers.get("Authorization", "")
+        password = ""
         if auth.startswith("Basic "):
             try:
                 decoded = base64.b64decode(auth[6:]).decode()
                 _, password = decoded.split(":", 1)
             except Exception:
                 password = ""
-            if secrets.compare_digest(password, _AUTH_PASSWORD):
-                return await call_next(request)
+
+        if _AUTH_PASSWORD and secrets.compare_digest(password, _AUTH_PASSWORD):
+            return await call_next(request)
+
+        if (
+            _FRIENDLY_USER_PASSWORD
+            and secrets.compare_digest(password, _FRIENDLY_USER_PASSWORD)
+            and _is_friendly_user_path(request.method, path)
+        ):
+            return await call_next(request)
 
         return Response(
             status_code=401,
@@ -708,6 +758,12 @@ async def get_question_view(
     resolved = await db.resolve_page_id(question_id)
     if not resolved:
         raise HTTPException(404, f"Question {question_id} not found")
+    page = await db.get_page(resolved)
+    if not page or page.page_type != PageType.QUESTION:
+        raise HTTPException(
+            404,
+            f"Page {question_id} is not a question page; cannot build a view",
+        )
     view = await build_view(db, resolved, importance_threshold=importance_threshold)
     return {
         "question": view.question,
@@ -840,6 +896,120 @@ async def flag_view_item(
         request.message[:80],
     )
     return ViewItemFlagOut(ok=True, flag_id=flag_id, page_id=resolved)
+
+
+@app.delete(
+    "/api/view-items/flags/{flag_id}",
+    response_model=ViewItemFlagDeleteOut,
+)
+async def undo_view_item_flag(
+    flag_id: str,
+    db: DB = Depends(_get_db),
+):
+    """Undo a just-submitted flag within the friendly-user grace window.
+
+    Deletes the page_flags row AND the mirrored reputation_events row
+    written by the flag endpoint. Idempotent: a missing row is a no-op.
+
+    Still gated by enable_flag_issue — if flagging is server-disabled,
+    undo is blocked too (no reason to allow mutation when flagging is off).
+    """
+    settings = get_settings()
+    if not settings.enable_flag_issue:
+        raise HTTPException(
+            status_code=403,
+            detail="Flagging is currently disabled (enable_flag_issue=False).",
+        )
+
+    flag_rows = _rows(
+        await db._execute(db.client.table("page_flags").select("*").eq("id", flag_id))
+    )
+    if not flag_rows:
+        return ViewItemFlagDeleteOut(ok=True, flag_id=flag_id)
+
+    flag_row = flag_rows[0]
+    if flag_row.get("flag_type") != "view_item_issue":
+        raise HTTPException(
+            status_code=400,
+            detail="Flag is not a view_item_issue and cannot be undone here.",
+        )
+
+    flag_run_id = flag_row.get("run_id")
+    page_id = flag_row.get("page_id")
+
+    await db._execute(db.client.table("page_flags").delete().eq("id", flag_id))
+
+    if flag_run_id and page_id:
+        await db._execute(
+            db.client.table("reputation_events")
+            .delete()
+            .eq("run_id", flag_run_id)
+            .eq("source", "human_feedback")
+            .eq("dimension", "view_item_issue")
+        )
+        log.info("View item flag undone: flag=%s page=%s", flag_id[:8], page_id[:8])
+
+    return ViewItemFlagDeleteOut(ok=True, flag_id=flag_id)
+
+
+@app.post(
+    "/api/view-items/{item_id}/read",
+    response_model=ViewItemReadOut,
+)
+async def record_view_item_read(
+    item_id: str,
+    request: ViewItemReadRequest,
+    db: DB = Depends(_get_db),
+):
+    """Record that a friendly user actually read a view item.
+
+    Endogenous read-side signal: on a ~2s dwell the frontend POSTs here and
+    we write a reputation_events row with source=human_feedback,
+    dimension=read_time, score=1.0, extra={subject_page_id, seconds}.
+
+    The frontend deduplicates per-item per-session, so one event per
+    (user_session, page) is the expected cardinality.
+    """
+    resolved = await db.resolve_page_id(item_id)
+    if not resolved:
+        raise HTTPException(status_code=404, detail=f"View item {item_id} not found")
+
+    page = await db.get_page(resolved)
+    if page is None:
+        raise HTTPException(status_code=404, detail=f"View item {item_id} not found")
+    if page.project_id and not db.project_id:
+        db.project_id = page.project_id
+
+    await db.create_run(
+        name="friendly-user-read",
+        question_id=None,
+        config={"origin": "friendly-user-read"},
+    )
+
+    subject_run_id = page.run_id or ""
+    orchestrator: str | None = None
+    if subject_run_id:
+        run_row = await db.get_run(subject_run_id)
+        if run_row:
+            config = run_row.get("config") or {}
+            if isinstance(config, dict):
+                val = config.get("orchestrator")
+                orchestrator = val if isinstance(val, str) else None
+
+    seconds = max(0.0, float(request.seconds))
+    await db.record_reputation_event(
+        source="human_feedback",
+        dimension="read_time",
+        score=1.0,
+        orchestrator=orchestrator,
+        extra={
+            "subject_run_id": subject_run_id,
+            "subject_page_id": resolved,
+            "seconds": seconds,
+        },
+    )
+
+    return ViewItemReadOut(ok=True, page_id=resolved)
 
 
 @app.post("/api/chat", response_model=ChatResponse)

@@ -458,9 +458,38 @@ class ReputationSummaryOut(BaseModel):
 
 
 class ViewItemFlagRequest(BaseModel):
-    category: Annotated[str, Field(pattern="^(problem|improvement)$")]
+    category: Annotated[
+        str,
+        Field(
+            pattern=(
+                "^("
+                "problem|improvement"
+                "|factually_wrong|missing_consideration"
+                "|reasoning_flawed|scope_confused|other"
+                ")$"
+            ),
+        ),
+    ]
     message: str
     suggested_fix: str = ""
+
+
+class ViewItemReadRequest(BaseModel):
+    seconds: float = 0.0
+
+
+class ViewItemReadOut(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    ok: bool
+    page_id: str
+
+
+class ViewItemFlagDeleteOut(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    ok: bool
+    flag_id: str
 
 
 class ViewItemFlagOut(BaseModel):

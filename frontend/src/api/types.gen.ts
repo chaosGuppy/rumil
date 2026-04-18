@@ -415,6 +415,18 @@ export type CallsForQuestion = {
      * Total
      */
     total: number;
+    /**
+     * Child Questions
+     */
+    child_questions: number;
+    /**
+     * Considerations
+     */
+    considerations: number;
+    /**
+     * Judgements
+     */
+    judgements: number;
 };
 
 /**

@@ -369,6 +369,9 @@ class CallsForQuestion(BaseModel):
     headline: str | None
     by_type: dict[str, int]
     total: int
+    child_questions: int
+    considerations: int
+    judgements: int
 
 
 class StatsOut(BaseModel):

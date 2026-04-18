@@ -2288,6 +2288,18 @@
           "total": {
             "type": "integer",
             "title": "Total"
+          },
+          "child_questions": {
+            "type": "integer",
+            "title": "Child Questions"
+          },
+          "considerations": {
+            "type": "integer",
+            "title": "Considerations"
+          },
+          "judgements": {
+            "type": "integer",
+            "title": "Judgements"
           }
         },
         "type": "object",
@@ -2295,7 +2307,10 @@
           "question_id",
           "headline",
           "by_type",
-          "total"
+          "total",
+          "child_questions",
+          "considerations",
+          "judgements"
         ],
         "title": "CallsForQuestion"
       },

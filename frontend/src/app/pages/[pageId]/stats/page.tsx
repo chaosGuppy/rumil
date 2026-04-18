@@ -260,7 +260,11 @@ export default function QuestionStatsPage() {
         <div className="stats-error">Failed to load stats: {state.message}</div>
       )}
       {state.kind === "ready" && (
-        <StatsView data={state.data} leadingPanel={leadingPanel} />
+        <StatsView
+          data={state.data}
+          leadingPanel={leadingPanel}
+          anchorId={pageId}
+        />
       )}
     </main>
   );

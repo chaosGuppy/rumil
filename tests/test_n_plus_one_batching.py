@@ -69,12 +69,9 @@ async def claims_abcdef(tmp_db):
 # ---------------------------------------------------------------------------
 # get_stale_dependencies
 #
-# Note: get_stale_dependencies does not filter by project_id. The
-# page_links table has no project_id column, and other link queries in
-# database.py scope via keyed page IDs rather than project. These tests
-# therefore assert only on the subset of results whose links we created
-# ourselves — they are robust to leftover cross-project rows in the
-# shared local DB.
+# get_stale_dependencies scopes to the current project by fetching
+# project page IDs and filtering links by from_page_id. These tests
+# use the subset helper for extra safety against leftover rows.
 # ---------------------------------------------------------------------------
 
 

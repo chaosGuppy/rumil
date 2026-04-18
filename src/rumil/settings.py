@@ -148,6 +148,11 @@ class Settings(BaseSettings):
 
     dedupe_page_links: bool = _capture_field(default=True)
 
+    # Cosine similarity threshold above which a newly-proposed subquestion is
+    # treated as a duplicate of an existing question (and the existing page's
+    # ID is reused instead of creating a new page).
+    subquestion_dedup_similarity_threshold: float = _capture_field(default=0.85)
+
     @property
     def is_test_mode(self) -> bool:
         return bool(self.rumil_test_mode)

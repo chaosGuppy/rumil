@@ -15,17 +15,17 @@ import re
 import sys
 import tempfile
 from collections.abc import Awaitable, Callable, Sequence
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
 import anthropic
+from anthropic.types import TextBlock, ToolUseBlock
 from pydantic import BaseModel, Field
 
-from anthropic.types import TextBlock, ToolUseBlock
-
 from rumil.calls.common import execute_tool_uses, prepare_tools
+from rumil.constants import MIN_TWOPHASE_BUDGET
 from rumil.context import build_embedding_based_context, format_page
 from rumil.database import DB
 from rumil.embeddings import search_pages
@@ -35,15 +35,14 @@ from rumil.llm import (
     structured_call,
 )
 from rumil.models import (
+    LinkType,
     Page,
     PageDetail,
     PageLayer,
     PageLink,
     PageType,
-    LinkType,
     Workspace,
 )
-from rumil.constants import MIN_TWOPHASE_BUDGET
 from rumil.orchestrators import Orchestrator
 from rumil.settings import get_settings
 from rumil.sources import create_source_page, run_ingest_calls
@@ -76,10 +75,8 @@ async def _spinner(label: str = "Thinking"):
             sys.stdout.write(f"\r{_DIM}{frame} {label}...{_RESET}")
             sys.stdout.flush()
             i += 1
-            try:
+            with suppress(TimeoutError):
                 await asyncio.wait_for(stop.wait(), timeout=0.08)
-            except asyncio.TimeoutError:
-                pass
         sys.stdout.write("\r\033[2K")
         sys.stdout.flush()
 
@@ -339,7 +336,7 @@ def _render_transcript_markdown(history: Sequence[dict]) -> str:
                         if block.get("type") == "text":
                             text_parts.append(block["text"])
                         elif block.get("type") == "tool_use":
-                            tool_name = block.get("name", "unknown")
+                            block.get("name", "unknown")
                             tool_input = block.get("input", {})
                             query = tool_input.get("query", json.dumps(tool_input))
                             text_parts.append(f"*[Searched workspace for: {query}]*")
@@ -387,9 +384,7 @@ async def _chat_loop(
     io: ChatIO,
     db: DB,
     tools: Sequence[Tool] = (),
-    slash_handler: Callable[
-        [str, str, int | None, str, DB, ChatIO], Awaitable[bool]
-    ] | None = None,
+    slash_handler: Callable[[str, str, int | None, str, DB, ChatIO], Awaitable[bool]] | None = None,
     scope_question_id: str | None = None,
     proceed_commands: Sequence[str] = (),
     help_text: str = READONLY_HELP_TEXT,
@@ -453,7 +448,12 @@ async def _chat_loop(
 
                 if slash_handler and scope_question_id:
                     await slash_handler(
-                        command, question_text, budget, scope_question_id, db, io,
+                        command,
+                        question_text,
+                        budget,
+                        scope_question_id,
+                        db,
+                        io,
                     )
                 else:
                     await io.send_system(
@@ -494,10 +494,7 @@ async def _chat_loop(
                     _, tool_results = await execute_tool_uses(tool_uses, tool_fns)
 
                     # Build the assistant content blocks for history
-                    assistant_content = [
-                        block.model_dump()
-                        for block in response.content
-                    ]
+                    assistant_content = [block.model_dump() for block in response.content]
                     messages.append({"role": "assistant", "content": assistant_content})
                     messages.append({"role": "user", "content": tool_results})
 
@@ -593,20 +590,15 @@ async def run_scoping_chat(
     context_section = ""
     if context_result.context_text.strip():
         context_section = (
-            "\n\n---\n\n## Existing Workspace Context\n\n"
-            + context_result.context_text
+            "\n\n---\n\n## Existing Workspace Context\n\n" + context_result.context_text
         )
     context_section += _build_source_context(source_pages)
 
     system_prompt = _load_prompt("scoping_chat.md") + context_section
     search_tool = make_workspace_search_tool(db)
 
-    await io.send_system(
-        "Ready. Discuss your question to refine it before investigation."
-    )
-    await io.send_system(
-        "Type /go, /start, or /done when ready to begin investigation."
-    )
+    await io.send_system("Ready. Discuss your question to refine it before investigation.")
+    await io.send_system("Type /go, /start, or /done when ready to begin investigation.")
     await io.send_system("Type /exit to cancel. Type /help for commands.\n")
     await io.send_system("-" * 60)
 
@@ -700,13 +692,9 @@ async def run_continuation_chat(
 
     context_parts = []
     if embed_result.context_text.strip():
-        context_parts.append(
-            "## Workspace Pages\n\n" + embed_result.context_text
-        )
+        context_parts.append("## Workspace Pages\n\n" + embed_result.context_text)
     if research_tree.strip():
-        context_parts.append(
-            "## Research Tree\n\n" + research_tree
-        )
+        context_parts.append("## Research Tree\n\n" + research_tree)
 
     context_section = ""
     if context_parts:
@@ -719,9 +707,7 @@ async def run_continuation_chat(
     await io.send_system(
         "Ready. Discuss the findings, ask questions, or provide additional context."
     )
-    await io.send_system(
-        "Type /done or /continue to end chat and resume investigation."
-    )
+    await io.send_system("Type /done or /continue to end chat and resume investigation.")
     await io.send_system("Type /exit to cancel. Type /help for commands.\n")
     await io.send_system("-" * 60)
 
@@ -765,7 +751,10 @@ async def run_continuation_chat(
     orch.ingest_hint = (
         "The researcher just had a conversation about the investigation findings. "
         "The transcript has been ingested as a source. The researcher may have "
-        "provided corrections, additional context, or steering for the next phase."
+        "provided corrections, additional context, or steering for the next phase. "
+        "The View for this question has NOT yet been updated to reflect this new "
+        "material — any corrections or new context from the conversation are not "
+        "yet factored into View scores or item selection."
     )
     await orch.run(question_id)
 
@@ -784,9 +773,7 @@ async def run_chat(question_id: str, db: DB) -> None:
         print("No research found for this question yet.")
         return
 
-    system_prompt = (
-        f"{_load_prompt('chat.md')}\n\n---\n\n## Research Context\n\n{research_tree}"
-    )
+    system_prompt = f"{_load_prompt('chat.md')}\n\n---\n\n## Research Context\n\n{research_tree}"
 
     io = cli_chat_io()
     await io.send_system("Ready. Ask anything about this research.")

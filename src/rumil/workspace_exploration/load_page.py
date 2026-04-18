@@ -12,6 +12,7 @@ from rumil.context import format_page
 from rumil.database import DB
 from rumil.llm import Tool
 from rumil.models import PageDetail
+from rumil.tracing.trace_events import LoadPageEvent
 from rumil.tracing.tracer import CallTrace
 
 _DETAIL_MAP: dict[str, PageDetail] = {
@@ -39,9 +40,7 @@ def make_load_page_tool(
         )
         detail: str = Field(
             default=default_detail,
-            description=(
-                "Level of detail: 'content' (full text) or 'abstract' (short summary)"
-            ),
+            description=("Level of detail: 'content' (full text) or 'abstract' (short summary)"),
         )
 
     async def fn(args: dict) -> str:
@@ -53,12 +52,23 @@ def make_load_page_tool(
         if not page:
             return f"Page '{payload.page_id}' not found."
         detail = _DETAIL_MAP.get(payload.detail, PageDetail.CONTENT)
-        return await format_page(
+        result = await format_page(
             page,
             detail,
             db=db,
             highlight_run_id=highlight_run_id,
+            track=True,
+            track_tags={"source": "workspace_load_tool"},
         )
+        await trace.record(
+            LoadPageEvent(
+                page_id=page.id,
+                page_headline=page.headline,
+                detail=payload.detail,
+                response=result,
+            )
+        )
+        return result
 
     return Tool(
         name="load_page",

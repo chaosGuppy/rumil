@@ -6,22 +6,20 @@ import asyncio
 import logging
 import uuid
 from collections.abc import Sequence
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, cast
 
 import httpx
+from postgrest.exceptions import APIError
 from postgrest.types import CountMethod
-from supabase import acreate_client, AsyncClient
 from supabase.lib.client_options import AsyncClientOptions
 from tenacity import (
     RetryCallState,
     retry,
-    retry_if_exception_type,
-    stop_after_attempt,
+    retry_if_exception,
     wait_exponential,
 )
 
-from rumil.settings import get_settings
 from rumil.models import (
     Call,
     CallSequence,
@@ -40,6 +38,8 @@ from rumil.models import (
     SuggestionType,
     Workspace,
 )
+from rumil.settings import get_settings
+from supabase import AsyncClient, acreate_client
 
 # Supabase SDK types APIResponse.data as JSON | None, but table queries
 # always return list[dict]. We cast to this alias for clarity.
@@ -64,6 +64,26 @@ _DB_RETRYABLE_EXCEPTIONS = (
 )
 
 
+def _is_retryable_api_error(exc: BaseException) -> bool:
+    # Gateway/upstream failures (e.g. Cloudflare 502, Supabase 503/504) come back
+    # as APIError because postgrest can't parse the HTML error page as JSON.
+    # Retry these, but not 4xx errors (auth, constraint violations, etc).
+    if not isinstance(exc, APIError):
+        return False
+    code = exc.code
+    if code is None:
+        return False
+    try:
+        status = int(code)
+    except (TypeError, ValueError):
+        return False
+    return 500 <= status < 600
+
+
+def _should_retry_db_exception(exc: BaseException) -> bool:
+    return isinstance(exc, _DB_RETRYABLE_EXCEPTIONS) or _is_retryable_api_error(exc)
+
+
 def _stop_after_db_retries(retry_state: RetryCallState) -> bool:
     return retry_state.attempt_number >= get_settings().max_db_retries
 
@@ -82,7 +102,7 @@ def _log_db_retry(retry_state: RetryCallState) -> None:
 
 
 _db_retry = retry(
-    retry=retry_if_exception_type(_DB_RETRYABLE_EXCEPTIONS),
+    retry=retry_if_exception(_should_retry_db_exception),
     stop=_stop_after_db_retries,
     wait=wait_exponential(multiplier=0.5, min=0.5, max=60),
     before_sleep=_log_db_retry,
@@ -91,14 +111,15 @@ _db_retry = retry(
 
 
 _LINK_COLUMNS = (
-    'id,from_page_id,to_page_id,link_type,direction,'
-    'strength,reasoning,role,importance,section,position,created_at,run_id'
+    "id,from_page_id,to_page_id,link_type,direction,"
+    "strength,reasoning,role,importance,section,position,"
+    "impact_on_parent_question,created_at,run_id"
 )
 
 _SLIM_PAGE_COLUMNS = (
-    'id,page_type,layer,workspace,headline,abstract,'
-    'epistemic_status,epistemic_type,credence,robustness,importance,extra,is_superseded,'
-    'project_id,created_at,superseded_by,run_id'
+    "id,page_type,layer,workspace,headline,abstract,"
+    "epistemic_status,epistemic_type,credence,robustness,importance,extra,is_superseded,"
+    "project_id,created_at,superseded_by,run_id"
 )
 
 
@@ -137,15 +158,14 @@ def _row_to_link(row: dict[str, Any]) -> PageLink:
         from_page_id=row["from_page_id"],
         to_page_id=row["to_page_id"],
         link_type=LinkType(row["link_type"]),
-        direction=(
-            ConsiderationDirection(row["direction"]) if row["direction"] else None
-        ),
+        direction=(ConsiderationDirection(row["direction"]) if row["direction"] else None),
         strength=row["strength"],
         reasoning=row["reasoning"] or "",
         role=LinkRole(row.get("role", "direct")),
         importance=row.get("importance"),
         section=row.get("section"),
         position=row.get("position"),
+        impact_on_parent_question=row.get("impact_on_parent_question"),
         created_at=datetime.fromisoformat(row["created_at"]),
         run_id=row.get("run_id") or "",
     )
@@ -167,9 +187,7 @@ def _row_to_call(row: dict[str, Any]) -> Call:
         review_json=row.get("review_json") or {},
         call_params=row.get("call_params"),
         created_at=datetime.fromisoformat(row["created_at"]),
-        completed_at=(
-            datetime.fromisoformat(row["completed_at"]) if row["completed_at"] else None
-        ),
+        completed_at=(datetime.fromisoformat(row["completed_at"]) if row["completed_at"] else None),
         sequence_id=row.get("sequence_id"),
         sequence_position=row.get("sequence_position"),
         cost_usd=row.get("cost_usd"),
@@ -189,9 +207,7 @@ def _row_to_suggestion(row: dict[str, Any]) -> Suggestion:
         status=SuggestionStatus(row["status"]),
         created_at=datetime.fromisoformat(row["created_at"]),
         reviewed_at=(
-            datetime.fromisoformat(row["reviewed_at"])
-            if row.get("reviewed_at")
-            else None
+            datetime.fromisoformat(row["reviewed_at"]) if row.get("reviewed_at") else None
         ),
         staged=bool(row.get("staged", False)),
     )
@@ -211,7 +227,12 @@ def _row_to_call_sequence(row: dict[str, Any]) -> CallSequence:
 class MutationState:
     """Cached mutation events for a staged run, keyed by target_id."""
 
-    __slots__ = ("superseded_pages", "deleted_links", "link_role_overrides", "page_content_overrides")
+    __slots__ = (
+        "deleted_links",
+        "link_role_overrides",
+        "page_content_overrides",
+        "superseded_pages",
+    )
 
     def __init__(self) -> None:
         self.superseded_pages: dict[str, str] = {}
@@ -227,16 +248,12 @@ class DB:
         client: AsyncClient,
         project_id: str = "",
         staged: bool = False,
-        ab_run_id: str | None = None,
     ):
         self.run_id = run_id
         self.client = client
         self.project_id = project_id
         self.staged = staged
-        self.ab_run_id = ab_run_id
-        self._semaphore = asyncio.Semaphore(
-            get_settings().db_max_concurrent_queries
-        )
+        self._semaphore = asyncio.Semaphore(get_settings().db_max_concurrent_queries)
         self._prod: bool = False
         self._mutation_cache: MutationState | None = None
 
@@ -248,16 +265,15 @@ class DB:
         project_id: str = "",
         client: AsyncClient | None = None,
         staged: bool = False,
-        ab_run_id: str | None = None,
     ) -> "DB":
         if client is None:
             url, key = get_settings().get_supabase_credentials(prod)
-            client = await acreate_client(
-                url, key, options=AsyncClientOptions(schema="public")
-            )
+            client = await acreate_client(url, key, options=AsyncClientOptions(schema="public"))
         db = cls(
-            run_id=run_id, client=client, project_id=project_id,
-            staged=staged, ab_run_id=ab_run_id,
+            run_id=run_id,
+            client=client,
+            project_id=project_id,
+            staged=staged,
         )
         db._prod = prod
         return db
@@ -270,15 +286,12 @@ class DB:
         call, avoiding HTTP/2 stream exhaustion on long-running jobs.
         """
         url, key = get_settings().get_supabase_credentials(self._prod)
-        client = await acreate_client(
-            url, key, options=AsyncClientOptions(schema="public")
-        )
+        client = await acreate_client(url, key, options=AsyncClientOptions(schema="public"))
         db = DB(
             run_id=self.run_id,
             client=client,
             project_id=self.project_id,
             staged=self.staged,
-            ab_run_id=self.ab_run_id,
         )
         db._prod = self._prod
         return db
@@ -288,7 +301,7 @@ class DB:
         try:
             await self.client.postgrest.aclose()
         except Exception:
-            log.debug('Failed to close postgrest client', exc_info=True)
+            log.debug("Failed to close postgrest client", exc_info=True)
 
     @_db_retry
     async def _execute(self, query: Any) -> Any:
@@ -368,32 +381,37 @@ class DB:
             if link.id in state.deleted_links:
                 continue
             if link.id in state.link_role_overrides:
-                link = link.model_copy(update={
-                    "role": state.link_role_overrides[link.id],
-                })
+                link = link.model_copy(
+                    update={
+                        "role": state.link_role_overrides[link.id],
+                    }
+                )
             result.append(link)
         return result
 
     async def record_mutation_event(
-        self, event_type: str, target_id: str, payload: dict,
+        self,
+        event_type: str,
+        target_id: str,
+        payload: dict,
     ) -> None:
         """Record a mutation event for undo/staging support."""
         await self._execute(
-            self.client.table("mutation_events").insert({
-                "id": str(uuid.uuid4()),
-                "run_id": self.run_id,
-                "event_type": event_type,
-                "target_id": target_id,
-                "payload": payload,
-            })
+            self.client.table("mutation_events").insert(
+                {
+                    "id": str(uuid.uuid4()),
+                    "run_id": self.run_id,
+                    "event_type": event_type,
+                    "target_id": target_id,
+                    "payload": payload,
+                }
+            )
         )
         self._invalidate_mutation_cache()
 
     async def get_or_create_project(self, name: str) -> Project:
         rows = _rows(
-            await self._execute(
-                self.client.table("projects").select("*").eq("name", name)
-            )
+            await self._execute(self.client.table("projects").select("*").eq("name", name))
         )
         if rows:
             row = rows[0]
@@ -403,11 +421,7 @@ class DB:
                 created_at=datetime.fromisoformat(row["created_at"]),
                 hidden=row.get("hidden", False),
             )
-        row = _rows(
-            await self._execute(
-                self.client.table("projects").insert({"name": name})
-            )
-        )[0]
+        row = _rows(await self._execute(self.client.table("projects").insert({"name": name})))[0]
         return Project(
             id=row["id"],
             name=row["name"],
@@ -433,7 +447,9 @@ class DB:
     async def save_page(self, page: Page) -> None:
         log.debug(
             "save_page: id=%s, type=%s, headline=%s",
-            page.id[:8], page.page_type.value, page.headline[:60],
+            page.id[:8],
+            page.page_type.value,
+            page.headline[:60],
         )
         if not page.project_id:
             page.project_id = self.project_id
@@ -472,9 +488,7 @@ class DB:
     async def update_page_importance(self, page_id: str, importance: int) -> None:
         """Update the importance level on a page."""
         await self._execute(
-            self.client.table("pages").update(
-                {"importance": importance}
-            ).eq("id", page_id)
+            self.client.table("pages").update({"importance": importance}).eq("id", page_id)
         )
 
     async def update_page_content(self, page_id: str, new_content: str) -> None:
@@ -483,23 +497,18 @@ class DB:
         if not page:
             raise ValueError(f"update_page_content: page {page_id} not found")
         await self.record_mutation_event(
-            "update_page_content", page_id,
+            "update_page_content",
+            page_id,
             {"old_content": page.content, "new_content": new_content},
         )
         if not self.staged:
             await self._execute(
-                self.client.table("pages").update(
-                    {"content": new_content}
-                ).eq("id", page_id)
+                self.client.table("pages").update({"content": new_content}).eq("id", page_id)
             )
 
-    async def update_page_abstract(
-        self, page_id: str, abstract: str
-    ) -> None:
+    async def update_page_abstract(self, page_id: str, abstract: str) -> None:
         await self._execute(
-            self.client.table("pages").update(
-                {"abstract": abstract}
-            ).eq("id", page_id)
+            self.client.table("pages").update({"abstract": abstract}).eq("id", page_id)
         )
 
     async def get_page(self, page_id: str) -> Page | None:
@@ -522,12 +531,10 @@ class DB:
         id_list = list(page_ids)
         batch_size = 200
         for start in range(0, len(id_list), batch_size):
-            batch = id_list[start:start + batch_size]
+            batch = id_list[start : start + batch_size]
             rows = _rows(
                 await self._execute(
-                    self._staged_filter(
-                        self.client.table("pages").select("*").in_("id", batch)
-                    )
+                    self._staged_filter(self.client.table("pages").select("*").in_("id", batch))
                 )
             )
             for r in rows:
@@ -537,9 +544,7 @@ class DB:
         await self.apply_epistemic_overrides(pages)
         return {p.id: p for p in pages}
 
-    async def resolve_page_ids(
-        self, page_ids: Sequence[str]
-    ) -> dict[str, str]:
+    async def resolve_page_ids(self, page_ids: Sequence[str]) -> dict[str, str]:
         """Batch-resolve a mix of full UUIDs and 8-char short IDs.
 
         Returns a mapping from each input id to its resolved full UUID,
@@ -559,9 +564,7 @@ class DB:
         if full_ids:
             rows = _rows(
                 await self._execute(
-                    self.client.table("pages")
-                    .select("id")
-                    .in_("id", list(set(full_ids)))
+                    self.client.table("pages").select("id").in_("id", list(set(full_ids)))
                 )
             )
             existing = {r["id"] for r in rows}
@@ -573,11 +576,7 @@ class DB:
             unique_short = list({pid for pid in short_ids})
             or_clause = ",".join(f"id.like.{p}%" for p in unique_short)
             rows = _rows(
-                await self._execute(
-                    self.client.table("pages")
-                    .select("id")
-                    .or_(or_clause)
-                )
+                await self._execute(self.client.table("pages").select("id").or_(or_clause))
             )
             matches_by_prefix: dict[str, list[str]] = {p: [] for p in unique_short}
             for r in rows:
@@ -590,9 +589,7 @@ class DB:
                 if len(hits) == 1:
                     resolved[pid] = hits[0]
                 elif len(hits) > 1:
-                    log.warning(
-                        "Ambiguous short ID '%s' matches %d pages", pid, len(hits)
-                    )
+                    log.warning("Ambiguous short ID '%s' matches %d pages", pid, len(hits))
         return resolved
 
     async def resolve_page_id(self, page_id: str) -> str | None:
@@ -602,11 +599,7 @@ class DB:
             log.debug("resolve_page_id: empty page_id")
             return None
         # Try exact match first
-        rows = _rows(
-            await self._execute(
-                self.client.table("pages").select("id").eq("id", page_id)
-            )
-        )
+        rows = _rows(await self._execute(self.client.table("pages").select("id").eq("id", page_id)))
         if rows:
             log.debug("resolve_page_id: exact match for %s", page_id[:8])
             return rows[0]["id"]
@@ -614,20 +607,21 @@ class DB:
         if len(page_id) <= 8:
             rows = _rows(
                 await self._execute(
-                    self.client.table("pages")
-                    .select("id")
-                    .like("id", f"{page_id}%")
+                    self.client.table("pages").select("id").like("id", f"{page_id}%")
                 )
             )
             if len(rows) == 1:
                 log.debug(
                     "resolve_page_id: prefix match %s -> %s",
-                    page_id, rows[0]["id"][:8],
+                    page_id,
+                    rows[0]["id"][:8],
                 )
                 return rows[0]["id"]
             if len(rows) > 1:
                 log.warning(
-                    "Ambiguous short ID '%s' matches %d pages", page_id, len(rows),
+                    "Ambiguous short ID '%s' matches %d pages",
+                    page_id,
+                    len(rows),
                 )
             else:
                 log.debug("resolve_page_id: no prefix match for %s", page_id)
@@ -635,21 +629,22 @@ class DB:
         if page_id.startswith("http"):
             rows = _rows(
                 await self._execute(
-                    self.client.table("pages")
-                    .select("id")
-                    .eq("extra->>url", page_id)
+                    self.client.table("pages").select("id").eq("extra->>url", page_id)
                 )
             )
             if len(rows) == 1:
                 log.debug(
                     "resolve_page_id: URL match %s -> %s",
-                    page_id, rows[0]["id"][:8],
+                    page_id,
+                    rows[0]["id"][:8],
                 )
                 return rows[0]["id"]
             if len(rows) > 1:
                 log.debug(
                     "resolve_page_id: URL match %s -> %s (first of %d)",
-                    page_id, rows[0]["id"][:8], len(rows),
+                    page_id,
+                    rows[0]["id"][:8],
+                    len(rows),
                 )
                 return rows[0]["id"]
         log.debug("resolve_page_id: no match for %s", page_id[:8])
@@ -660,19 +655,13 @@ class DB:
         8-char short IDs. Returns the full UUID if found, or None."""
         if not call_id:
             return None
-        rows = _rows(
-            await self._execute(
-                self.client.table("calls").select("id").eq("id", call_id)
-            )
-        )
+        rows = _rows(await self._execute(self.client.table("calls").select("id").eq("id", call_id)))
         if rows:
             return rows[0]["id"]
         if len(call_id) <= 8:
             rows = _rows(
                 await self._execute(
-                    self.client.table("calls")
-                    .select("id")
-                    .like("id", f"{call_id}%")
+                    self.client.table("calls").select("id").like("id", f"{call_id}%")
                 )
             )
             if len(rows) == 1:
@@ -691,18 +680,14 @@ class DB:
         if not link_id:
             return None
         rows = _rows(
-            await self._execute(
-                self.client.table("page_links").select("id").eq("id", link_id)
-            )
+            await self._execute(self.client.table("page_links").select("id").eq("id", link_id))
         )
         if rows:
             return rows[0]["id"]
         if len(link_id) <= 8:
             rows = _rows(
                 await self._execute(
-                    self.client.table("page_links")
-                    .select("id")
-                    .like("id", f"{link_id}%")
+                    self.client.table("page_links").select("id").like("id", f"{link_id}%")
                 )
             )
             if len(rows) == 1:
@@ -732,11 +717,7 @@ class DB:
         query = self._staged_filter(query)
         pages = [
             _row_to_page(r)
-            for r in _rows(
-                await self._execute(
-                    query.order("created_at", desc=True).limit(10000)
-                )
-            )
+            for r in _rows(await self._execute(query.order("created_at", desc=True).limit(10000)))
         ]
         pages = await self._apply_page_events(pages)
         await self.apply_epistemic_overrides(pages)
@@ -762,11 +743,7 @@ class DB:
         query = self._staged_filter(query)
         pages = [
             _row_to_page(r)
-            for r in _rows(
-                await self._execute(
-                    query.order("created_at", desc=True).limit(10000)
-                )
-            )
+            for r in _rows(await self._execute(query.order("created_at", desc=True).limit(10000)))
         ]
         pages = await self._apply_page_events(pages)
         await self.apply_epistemic_overrides(pages)
@@ -785,17 +762,21 @@ class DB:
             payload["change_magnitude"] = change_magnitude
 
         await self.record_mutation_event(
-            "supersede_page", old_id, payload,
+            "supersede_page",
+            old_id,
+            payload,
         )
 
         if not self.staged:
             await self._execute(
-                self.client.table("pages").update(
+                self.client.table("pages")
+                .update(
                     {
                         "is_superseded": True,
                         "superseded_by": new_id,
                     }
-                ).eq("id", old_id)
+                )
+                .eq("id", old_id)
             )
 
     async def get_pages_paginated(
@@ -818,12 +799,11 @@ class DB:
         if active_only:
             query = query.eq("is_superseded", False)
         if search:
-            query = query.or_(
-                f"headline.ilike.%{search}%,content.ilike.%{search}%"
-            )
+            query = query.or_(f"headline.ilike.%{search}%,content.ilike.%{search}%")
         query = self._staged_filter(query)
         query = query.order(
-            "is_human_created", desc=True,
+            "is_human_created",
+            desc=True,
         ).order("created_at", desc=True)
         end = offset + limit - 1
         result = await self._execute(query.range(offset, end))
@@ -835,33 +815,36 @@ class DB:
             pages = [p for p in pages if p.is_active()]
         return pages, total
 
-
     async def resolve_supersession_chain(
-        self, page_id: str, max_depth: int = 10,
+        self,
+        page_id: str,
+        max_depth: int = 10,
     ) -> Page | None:
         """Follow superseded_by links from *page_id* to the final active page.
 
         Returns the end-of-chain (non-superseded) page, or ``None`` if the
         chain is broken (missing page) or exceeds *max_depth*.
+
+        Delegates to the batched ``resolve_supersession_chains`` so the
+        cost is dominated by level-wise batched fetches rather than one
+        DB round trip per hop. Cycles terminate via the plural's
+        depth bound.
+
+        Note on max_depth: the singular historically counted *fetches*
+        (``max_depth`` page fetches -> chains of length <= max_depth).
+        The plural counts iterations *after* an initial fetch, so we
+        pass ``max_depth - 1`` to preserve the singular's bound.
         """
-        current_id = page_id
-        seen: set[str] = set()
-        for _ in range(max_depth):
-            page = await self.get_page(current_id)
-            if page is None:
-                return None
-            if not page.is_superseded:
-                return page if current_id != page_id else None
-            if page.superseded_by is None:
-                return None
-            if page.superseded_by in seen:
-                return None
-            seen.add(current_id)
-            current_id = page.superseded_by
-        return None
+        results = await self.resolve_supersession_chains(
+            [page_id],
+            max_depth=max(0, max_depth - 1),
+        )
+        return results.get(page_id)
 
     async def resolve_supersession_chains(
-        self, page_ids: Sequence[str], max_depth: int = 10,
+        self,
+        page_ids: Sequence[str],
+        max_depth: int = 10,
     ) -> dict[str, Page]:
         """Bulk-resolve supersession chains for multiple page IDs.
 
@@ -902,7 +885,9 @@ class DB:
     async def save_link(self, link: PageLink) -> None:
         log.debug(
             "save_link: %s -> %s, type=%s",
-            link.from_page_id[:8], link.to_page_id[:8], link.link_type.value,
+            link.from_page_id[:8],
+            link.to_page_id[:8],
+            link.link_type.value,
         )
         await self._execute(
             self.client.table("page_links").upsert(
@@ -918,6 +903,7 @@ class DB:
                     "importance": link.importance,
                     "section": link.section,
                     "position": link.position,
+                    "impact_on_parent_question": link.impact_on_parent_question,
                     "created_at": link.created_at.isoformat(),
                     "run_id": self.run_id,
                     "staged": self.staged,
@@ -961,6 +947,38 @@ class DB:
                 return page
         return None
 
+    async def get_views_for_questions(
+        self,
+        question_ids: Sequence[str],
+    ) -> dict[str, Page | None]:
+        """Bulk-fetch the active (non-superseded) View page for many questions.
+
+        Returns {question_id: view_page_or_None}. Issues two batched queries
+        (links + pages) regardless of input size.
+        """
+        result: dict[str, Page | None] = {qid: None for qid in question_ids}
+        if not question_ids:
+            return result
+        id_list = list(dict.fromkeys(question_ids))
+        links_by_target = await self.get_links_to_many(id_list)
+        view_from_ids: list[str] = []
+        view_links_by_question: dict[str, list[PageLink]] = {}
+        for qid in id_list:
+            qlinks = [l for l in links_by_target.get(qid, []) if l.link_type == LinkType.VIEW_OF]
+            if qlinks:
+                view_links_by_question[qid] = qlinks
+                view_from_ids.extend(l.from_page_id for l in qlinks)
+        if not view_from_ids:
+            return result
+        pages = await self.get_pages_by_ids(list(dict.fromkeys(view_from_ids)))
+        for qid, qlinks in view_links_by_question.items():
+            for link in qlinks:
+                page = pages.get(link.from_page_id)
+                if page and not page.is_superseded:
+                    result[qid] = page
+                    break
+        return result
+
     async def get_view_items(
         self,
         view_id: str,
@@ -974,12 +992,11 @@ class DB:
         excluded when a minimum is specified.
         """
         links = await self.get_links_from(view_id)
-        item_links = [
-            link for link in links if link.link_type == LinkType.VIEW_ITEM
-        ]
+        item_links = [link for link in links if link.link_type == LinkType.VIEW_ITEM]
         if min_importance is not None:
             item_links = [
-                link for link in item_links
+                link
+                for link in item_links
                 if link.importance is not None and link.importance >= min_importance
             ]
         if not item_links:
@@ -1012,7 +1029,8 @@ class DB:
         return await self._apply_link_events([_row_to_link(r) for r in rows])
 
     async def get_links_from_many(
-        self, page_ids: Sequence[str],
+        self,
+        page_ids: Sequence[str],
     ) -> dict[str, list[PageLink]]:
         """Bulk-fetch outgoing links for many pages. Returns {page_id: [links]}."""
         result: dict[str, list[PageLink]] = {pid: [] for pid in page_ids}
@@ -1023,18 +1041,14 @@ class DB:
         page_size = 2000
         all_links: list[PageLink] = []
         for start in range(0, len(id_list), batch_size):
-            batch = id_list[start:start + batch_size]
+            batch = id_list[start : start + batch_size]
             offset = 0
             while True:
                 query = (
-                    self.client.table("page_links")
-                    .select(_LINK_COLUMNS)
-                    .in_("from_page_id", batch)
+                    self.client.table("page_links").select(_LINK_COLUMNS).in_("from_page_id", batch)
                 )
                 query = self._staged_filter(query)
-                rows = _rows(await self._execute(
-                    query.range(offset, offset + page_size - 1)
-                ))
+                rows = _rows(await self._execute(query.range(offset, offset + page_size - 1)))
                 all_links.extend(_row_to_link(r) for r in rows)
                 if len(rows) < page_size:
                     break
@@ -1045,7 +1059,8 @@ class DB:
         return result
 
     async def get_links_to_many(
-        self, page_ids: Sequence[str],
+        self,
+        page_ids: Sequence[str],
     ) -> dict[str, list[PageLink]]:
         """Bulk-fetch incoming links for many pages. Returns {page_id: [links]}."""
         result: dict[str, list[PageLink]] = {pid: [] for pid in page_ids}
@@ -1056,18 +1071,14 @@ class DB:
         page_size = 2000
         all_links: list[PageLink] = []
         for start in range(0, len(id_list), batch_size):
-            batch = id_list[start:start + batch_size]
+            batch = id_list[start : start + batch_size]
             offset = 0
             while True:
                 query = (
-                    self.client.table("page_links")
-                    .select(_LINK_COLUMNS)
-                    .in_("to_page_id", batch)
+                    self.client.table("page_links").select(_LINK_COLUMNS).in_("to_page_id", batch)
                 )
                 query = self._staged_filter(query)
-                rows = _rows(await self._execute(
-                    query.range(offset, offset + page_size - 1)
-                ))
+                rows = _rows(await self._execute(query.range(offset, offset + page_size - 1)))
                 all_links.extend(_row_to_link(r) for r in rows)
                 if len(rows) < page_size:
                     break
@@ -1083,9 +1094,7 @@ class DB:
         summary_links = [l for l in links if l.link_type == LinkType.SUMMARIZES]
         if not summary_links:
             return None
-        pages = await self.get_pages_by_ids(
-            [l.from_page_id for l in summary_links]
-        )
+        pages = await self.get_pages_by_ids([l.from_page_id for l in summary_links])
         candidates = [
             pages[l.from_page_id]
             for l in summary_links
@@ -1097,20 +1106,52 @@ class DB:
             return None
         return max(candidates, key=lambda p: p.created_at)
 
+    async def get_latest_summaries_for_questions(
+        self,
+        question_ids: Sequence[str],
+    ) -> dict[str, Page | None]:
+        """Bulk-fetch the most recent active SUMMARY page for many questions.
+
+        Returns {question_id: summary_page_or_None}. Issues two batched queries
+        (links + pages) regardless of input size.
+        """
+        result: dict[str, Page | None] = {qid: None for qid in question_ids}
+        if not question_ids:
+            return result
+        id_list = list(dict.fromkeys(question_ids))
+        links_by_target = await self.get_links_to_many(id_list)
+        summary_from_ids: list[str] = []
+        summary_links_by_question: dict[str, list[PageLink]] = {}
+        for qid in id_list:
+            qlinks = [l for l in links_by_target.get(qid, []) if l.link_type == LinkType.SUMMARIZES]
+            if qlinks:
+                summary_links_by_question[qid] = qlinks
+                summary_from_ids.extend(l.from_page_id for l in qlinks)
+        if not summary_from_ids:
+            return result
+        pages = await self.get_pages_by_ids(list(dict.fromkeys(summary_from_ids)))
+        for qid, qlinks in summary_links_by_question.items():
+            candidates = [
+                pages[l.from_page_id]
+                for l in qlinks
+                if l.from_page_id in pages
+                and pages[l.from_page_id].is_active()
+                and pages[l.from_page_id].page_type == PageType.SUMMARY
+            ]
+            if candidates:
+                result[qid] = max(candidates, key=lambda p: p.created_at)
+        return result
+
     async def get_considerations_for_question(
         self,
         question_id: str,
     ) -> list[tuple[Page, PageLink]]:
         """Return (claim_page, link) pairs for all considerations on a question."""
         links = await self.get_links_to(question_id)
-        consideration_links = [
-            l for l in links if l.link_type == LinkType.CONSIDERATION
-        ]
+        consideration_links = [l for l in links if l.link_type == LinkType.CONSIDERATION]
         if not consideration_links:
             return []
-        pages = await self.get_pages_by_ids(
-            [l.from_page_id for l in consideration_links]
-        )
+        pages = await self.get_pages_by_ids([l.from_page_id for l in consideration_links])
         return [
             (pages[l.from_page_id], l)
             for l in consideration_links
@@ -1158,9 +1199,7 @@ class DB:
         child_links = [l for l in links if l.link_type == LinkType.CHILD_QUESTION]
         if not child_links:
             return []
-        pages = await self.get_pages_by_ids(
-            [l.to_page_id for l in child_links]
-        )
+        pages = await self.get_pages_by_ids([l.to_page_id for l in child_links])
         return [
             pages[l.to_page_id]
             for l in child_links
@@ -1168,16 +1207,15 @@ class DB:
         ]
 
     async def get_child_questions_with_links(
-        self, parent_id: str,
+        self,
+        parent_id: str,
     ) -> list[tuple[Page, PageLink]]:
         """Return (child_page, link) pairs for sub-questions of a question."""
         links = await self.get_links_from(parent_id)
         child_links = [l for l in links if l.link_type == LinkType.CHILD_QUESTION]
         if not child_links:
             return []
-        pages = await self.get_pages_by_ids(
-            [l.to_page_id for l in child_links]
-        )
+        pages = await self.get_pages_by_ids([l.to_page_id for l in child_links])
         return [
             (pages[l.to_page_id], l)
             for l in child_links
@@ -1189,9 +1227,7 @@ class DB:
         judgement_links = [l for l in links if l.link_type == LinkType.ANSWERS]
         if not judgement_links:
             return []
-        pages = await self.get_pages_by_ids(
-            [l.from_page_id for l in judgement_links]
-        )
+        pages = await self.get_pages_by_ids([l.from_page_id for l in judgement_links])
         return [
             pages[l.from_page_id]
             for l in judgement_links
@@ -1201,7 +1237,8 @@ class DB:
         ]
 
     async def get_judgements_for_questions(
-        self, question_ids: Sequence[str],
+        self,
+        question_ids: Sequence[str],
     ) -> dict[str, list[Page]]:
         """Bulk-fetch active judgements for many questions. Returns {question_id: [judgements]}.
 
@@ -1215,7 +1252,7 @@ class DB:
         page_size = 2000
         all_links: list[PageLink] = []
         for start in range(0, len(id_list), batch_size):
-            batch = id_list[start:start + batch_size]
+            batch = id_list[start : start + batch_size]
             offset = 0
             while True:
                 query = (
@@ -1225,9 +1262,7 @@ class DB:
                     .eq("link_type", LinkType.ANSWERS.value)
                 )
                 query = self._staged_filter(query)
-                rows = _rows(await self._execute(
-                    query.range(offset, offset + page_size - 1)
-                ))
+                rows = _rows(await self._execute(query.range(offset, offset + page_size - 1)))
                 all_links.extend(_row_to_link(r) for r in rows)
                 if len(rows) < page_size:
                     break
@@ -1237,25 +1272,20 @@ class DB:
         pages = await self.get_pages_by_ids(from_ids)
         for link in applied:
             page = pages.get(link.from_page_id)
-            if (
-                page is not None
-                and page.is_active()
-                and page.page_type == PageType.JUDGEMENT
-            ):
+            if page is not None and page.is_active() and page.page_type == PageType.JUDGEMENT:
                 result.setdefault(link.to_page_id, []).append(page)
         return result
 
     async def get_dependents(
-        self, page_id: str,
+        self,
+        page_id: str,
     ) -> list[tuple[Page, PageLink]]:
         """Return (dependent_page, link) for all pages that depend on this one."""
         links = await self.get_links_to(page_id)
         dep_links = [l for l in links if l.link_type == LinkType.DEPENDS_ON]
         if not dep_links:
             return []
-        pages = await self.get_pages_by_ids(
-            [l.from_page_id for l in dep_links]
-        )
+        pages = await self.get_pages_by_ids([l.from_page_id for l in dep_links])
         return [
             (pages[l.from_page_id], l)
             for l in dep_links
@@ -1263,75 +1293,123 @@ class DB:
         ]
 
     async def get_dependencies(
-        self, page_id: str,
+        self,
+        page_id: str,
     ) -> list[tuple[Page, PageLink]]:
         """Return (dependency_page, link) for all pages this one depends on."""
         links = await self.get_links_from(page_id)
         dep_links = [l for l in links if l.link_type == LinkType.DEPENDS_ON]
         if not dep_links:
             return []
-        pages = await self.get_pages_by_ids(
-            [l.to_page_id for l in dep_links]
-        )
-        return [
-            (pages[l.to_page_id], l)
-            for l in dep_links
-            if l.to_page_id in pages
-        ]
+        pages = await self.get_pages_by_ids([l.to_page_id for l in dep_links])
+        return [(pages[l.to_page_id], l) for l in dep_links if l.to_page_id in pages]
 
     async def get_stale_dependencies(self) -> list[tuple[PageLink, int | None]]:
         """Return DEPENDS_ON links where the dependency has been superseded.
 
         Returns (link, change_magnitude) pairs. change_magnitude comes from
         the supersession mutation event if available, otherwise None.
+
+        Issues O(1) round trips regardless of how many DEPENDS_ON links
+        or stale dependencies exist: one query for the links, one batched
+        lookup for target pages, one batched lookup for supersession
+        magnitudes.
         """
+        query = self.client.table("page_links").select("*").eq("link_type", "depends_on")
+        query = self._staged_filter(query)
+        rows = _rows(await self._execute(query))
+        links = await self._apply_link_events([_row_to_link(r) for r in rows])
+        if not links:
+            return []
+
+        target_ids = list({l.to_page_id for l in links})
+        pages_by_id = await self.get_pages_by_ids(target_ids)
+        superseded_ids = [pid for pid, page in pages_by_id.items() if page.is_superseded]
+        magnitudes = await self._get_supersession_magnitudes_many(superseded_ids)
+
+        stale: list[tuple[PageLink, int | None]] = []
+        for link in links:
+            dep_page = pages_by_id.get(link.to_page_id)
+            if dep_page and dep_page.is_superseded:
+                stale.append((link, magnitudes.get(dep_page.id)))
+        return stale
+
+    async def get_dependency_counts(self) -> dict[str, int]:
+        """Return a map from page_id to how many pages depend on it, within the current project.
+
+        Scopes by intersecting link endpoints with the project's page IDs.
+        `page_links` has no `project_id` column, so we resolve project membership
+        via `pages`.
+        """
+        project_page_ids: set[str] | None = None
+        if self.project_id:
+            project_page_ids = set()
+            offset = 0
+            page_size = 2000
+            while True:
+                pages_query = (
+                    self.client.table("pages").select("id").eq("project_id", self.project_id)
+                )
+                pages_query = self._staged_filter(pages_query)
+                rows = _rows(await self._execute(pages_query.range(offset, offset + page_size - 1)))
+                project_page_ids.update(r["id"] for r in rows)
+                if len(rows) < page_size:
+                    break
+                offset += page_size
+
         query = (
             self.client.table("page_links")
-            .select("*")
-            .eq("link_type", "depends_on")
+            .select(_LINK_COLUMNS)
+            .eq("link_type", LinkType.DEPENDS_ON.value)
         )
         query = self._staged_filter(query)
         rows = _rows(await self._execute(query))
         links = await self._apply_link_events([_row_to_link(r) for r in rows])
 
-        stale: list[tuple[PageLink, int | None]] = []
-        for link in links:
-            dep_page = await self.get_page(link.to_page_id)
-            if dep_page and dep_page.is_superseded:
-                magnitude = await self._get_supersession_magnitude(dep_page.id)
-                stale.append((link, magnitude))
-        return stale
-
-    async def get_dependency_counts(self) -> dict[str, int]:
-        """Return a map from page_id to how many pages depend on it."""
-        query = (
-            self.client.table("page_links")
-            .select("to_page_id")
-            .eq("link_type", LinkType.DEPENDS_ON.value)
-        )
-        query = self._staged_filter(query)
-        rows = _rows(await self._execute(query))
         counts: dict[str, int] = {}
-        for row in rows:
-            pid = row["to_page_id"]
-            counts[pid] = counts.get(pid, 0) + 1
+        for link in links:
+            if project_page_ids is not None and (
+                link.from_page_id not in project_page_ids or link.to_page_id not in project_page_ids
+            ):
+                continue
+            counts[link.to_page_id] = counts.get(link.to_page_id, 0) + 1
         return counts
 
     async def _get_supersession_magnitude(self, page_id: str) -> int | None:
         """Look up the change_magnitude from the supersession mutation event."""
+        result = await self._get_supersession_magnitudes_many([page_id])
+        return result.get(page_id)
+
+    async def _get_supersession_magnitudes_many(
+        self,
+        page_ids: Sequence[str],
+    ) -> dict[str, int | None]:
+        """Look up change_magnitude for many superseded pages in one query.
+
+        Returns a dict mapping page_id to the most-recent supersede_page
+        event's change_magnitude (or None if the event exists but carries
+        no magnitude). Pages without any supersede_page event are absent
+        from the result.
+        """
+        if not page_ids:
+            return {}
         query = (
             self.client.table("mutation_events")
-            .select("payload")
-            .eq("target_id", page_id)
+            .select("target_id, payload, created_at")
+            .in_("target_id", list(set(page_ids)))
             .eq("event_type", "supersede_page")
             .order("created_at", desc=True)
-            .limit(1)
         )
         rows = _rows(await self._execute(query))
-        if rows:
-            payload = rows[0].get("payload", {})
-            return payload.get("change_magnitude")
-        return None
+        # Rows are ordered newest-first; keep only the first per target_id.
+        result: dict[str, int | None] = {}
+        for row in rows:
+            target = row["target_id"]
+            if target in result:
+                continue
+            payload = row.get("payload") or {}
+            result[target] = payload.get("change_magnitude")
+        return result
 
     async def create_call(
         self,
@@ -1388,9 +1466,7 @@ class DB:
                     "review_json": call.review_json,
                     "call_params": call.call_params,
                     "created_at": call.created_at.isoformat(),
-                    "completed_at": (
-                        call.completed_at.isoformat() if call.completed_at else None
-                    ),
+                    "completed_at": (call.completed_at.isoformat() if call.completed_at else None),
                     "run_id": self.run_id,
                     "sequence_id": call.sequence_id,
                     "sequence_position": call.sequence_position,
@@ -1400,11 +1476,7 @@ class DB:
         )
 
     async def get_call(self, call_id: str) -> Call | None:
-        rows = _rows(
-            await self._execute(
-                self.client.table("calls").select("*").eq("id", call_id)
-            )
-        )
+        rows = _rows(await self._execute(self.client.table("calls").select("*").eq("id", call_id)))
         return _row_to_call(rows[0]) if rows else None
 
     async def update_call_status(
@@ -1413,12 +1485,9 @@ class DB:
         status: CallStatus,
         result_summary: str = "",
         call_params: dict | None = None,
+        cost_usd: float | None = None,
     ) -> None:
-        completed_at = (
-            datetime.now(timezone.utc).isoformat()
-            if status == CallStatus.COMPLETE
-            else None
-        )
+        completed_at = datetime.now(UTC).isoformat() if status == CallStatus.COMPLETE else None
         payload: dict = {
             "status": status.value,
             "result_summary": result_summary,
@@ -1426,11 +1495,9 @@ class DB:
         }
         if call_params is not None:
             payload["call_params"] = call_params
-        await self._execute(
-            self.client.table("calls").update(
-                payload
-            ).eq("id", call_id)
-        )
+        if cost_usd is not None:
+            payload["cost_usd"] = cost_usd
+        await self._execute(self.client.table("calls").update(payload).eq("id", call_id))
 
     async def increment_call_budget_used(
         self,
@@ -1459,9 +1526,7 @@ class DB:
         """Returns (total, used)."""
         rows = _rows(
             await self._execute(
-                self.client.table("budget")
-                .select("total, used")
-                .eq("run_id", self.run_id)
+                self.client.table("budget").select("total, used").eq("run_id", self.run_id)
             )
         )
         if rows:
@@ -1510,7 +1575,8 @@ class DB:
         return await self._apply_link_events([_row_to_link(r) for r in rows])
 
     async def get_all_links(
-        self, page_ids: set[str] | None = None,
+        self,
+        page_ids: set[str] | None = None,
     ) -> list[PageLink]:
         """Bulk-fetch links, scoped to a set of page IDs if provided.
 
@@ -1523,9 +1589,7 @@ class DB:
         page_size = 2000
         if self.project_id:
             page_ids_query = self._staged_filter(
-                self.client.table("pages")
-                .select("id")
-                .eq("project_id", self.project_id)
+                self.client.table("pages").select("id").eq("project_id", self.project_id)
             )
             page_ids_rows = _rows(await self._execute(page_ids_query.limit(50000)))
             proj_page_ids = {r["id"] for r in page_ids_rows}
@@ -1534,15 +1598,14 @@ class DB:
             while True:
                 query = self.client.table("page_links").select(_LINK_COLUMNS)
                 query = self._staged_filter(query)
-                rows = _rows(await self._execute(
-                    query.range(offset, offset + page_size - 1)
-                ))
+                rows = _rows(await self._execute(query.range(offset, offset + page_size - 1)))
                 all_rows.extend(rows)
                 if len(rows) < page_size:
                     break
                 offset += page_size
             links = [
-                _row_to_link(r) for r in all_rows
+                _row_to_link(r)
+                for r in all_rows
                 if r["from_page_id"] in proj_page_ids or r["to_page_id"] in proj_page_ids
             ]
         else:
@@ -1551,9 +1614,7 @@ class DB:
             while True:
                 query = self.client.table("page_links").select(_LINK_COLUMNS)
                 query = self._staged_filter(query)
-                rows = _rows(await self._execute(
-                    query.range(offset, offset + page_size - 1)
-                ))
+                rows = _rows(await self._execute(query.range(offset, offset + page_size - 1)))
                 all_rows.extend(rows)
                 if len(rows) < page_size:
                     break
@@ -1562,7 +1623,8 @@ class DB:
         return await self._apply_link_events(links)
 
     async def _get_links_for_pages(
-        self, page_ids: set[str],
+        self,
+        page_ids: set[str],
     ) -> list[PageLink]:
         """Fetch links where at least one endpoint is in *page_ids*.
 
@@ -1574,19 +1636,13 @@ class DB:
         batch_size = 100
         page_size = 2000
         for start in range(0, len(id_list), batch_size):
-            batch = id_list[start:start + batch_size]
-            for col in ('from_page_id', 'to_page_id'):
+            batch = id_list[start : start + batch_size]
+            for col in ("from_page_id", "to_page_id"):
                 offset = 0
                 while True:
-                    query = (
-                        self.client.table("page_links")
-                        .select(_LINK_COLUMNS)
-                        .in_(col, batch)
-                    )
+                    query = self.client.table("page_links").select(_LINK_COLUMNS).in_(col, batch)
                     query = self._staged_filter(query)
-                    rows = _rows(await self._execute(
-                        query.range(offset, offset + page_size - 1)
-                    ))
+                    rows = _rows(await self._execute(query.range(offset, offset + page_size - 1)))
                     for r in rows:
                         link = _row_to_link(r)
                         all_links[link.id] = link
@@ -1597,31 +1653,28 @@ class DB:
 
     async def delete_link(self, link_id: str) -> None:
         """Delete a page link by ID."""
-        rows = _rows(await self._execute(
-            self._staged_filter(
-                self.client.table("page_links").select("*").eq("id", link_id)
+        rows = _rows(
+            await self._execute(
+                self._staged_filter(self.client.table("page_links").select("*").eq("id", link_id))
             )
-        ))
+        )
         link_snapshot = rows[0] if rows else {}
         await self.record_mutation_event("delete_link", link_id, link_snapshot)
         if not self.staged:
-            await self._execute(
-                self.client.table("page_links").delete().eq("id", link_id)
-            )
+            await self._execute(self.client.table("page_links").delete().eq("id", link_id))
 
     async def update_link_role(self, link_id: str, role: LinkRole) -> None:
         """Update a link's role."""
         link = await self.get_link(link_id)
         old_role = link.role.value if link else None
         await self.record_mutation_event(
-            "change_link_role", link_id,
+            "change_link_role",
+            link_id,
             {"new_role": role.value, "old_role": old_role},
         )
         if not self.staged:
             await self._execute(
-                self.client.table("page_links").update(
-                    {"role": role.value}
-                ).eq("id", link_id)
+                self.client.table("page_links").update({"role": role.value}).eq("id", link_id)
             )
 
     async def get_last_find_considerations_info(
@@ -1717,11 +1770,7 @@ class DB:
     async def get_call_trace(self, call_id: str) -> list[dict]:
         """Fetch trace events for a call."""
         rows = _rows(
-            await self._execute(
-                self.client.table("calls")
-                .select("trace_json")
-                .eq("id", call_id)
-            )
+            await self._execute(self.client.table("calls").select("trace_json").eq("id", call_id))
         )
         if rows and rows[0].get("trace_json"):
             return rows[0]["trace_json"]
@@ -1766,7 +1815,8 @@ class DB:
         return seq
 
     async def get_sequences_for_call(
-        self, parent_call_id: str,
+        self,
+        parent_call_id: str,
     ) -> Sequence[CallSequence]:
         """Fetch sequences for a parent call, ordered by position_in_batch."""
         rows = _rows(
@@ -1780,7 +1830,8 @@ class DB:
         return [_row_to_call_sequence(r) for r in rows]
 
     async def get_calls_for_sequence(
-        self, sequence_id: str,
+        self,
+        sequence_id: str,
     ) -> Sequence[Call]:
         """Fetch calls in a sequence, ordered by sequence_position."""
         rows = _rows(
@@ -1834,7 +1885,7 @@ class DB:
                     "call_id": call_id,
                     "score": score,
                     "note": note,
-                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "created_at": datetime.now(UTC).isoformat(),
                     "run_id": self.run_id,
                 }
             )
@@ -1859,7 +1910,7 @@ class DB:
                     "page_id_a": page_id_a,
                     "page_id_b": page_id_b,
                     "note": note,
-                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "created_at": datetime.now(UTC).isoformat(),
                     "run_id": self.run_id,
                 }
             )
@@ -1881,14 +1932,51 @@ class DB:
             "credence": credence,
             "robustness": robustness,
             "reasoning": reasoning,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
             "run_id": self.run_id,
         }
         if source_page_id is not None:
             row["source_page_id"] = source_page_id
-        await self._execute(
-            self.client.table("epistemic_scores").insert(row)
+        await self._execute(self.client.table("epistemic_scores").insert(row))
+
+    async def save_page_format_events(self, call_id: str, events: Sequence[dict[str, Any]]) -> None:
+        """Batch-insert page-format tracking events."""
+        if not events:
+            return
+        rows = [
+            {
+                "id": str(uuid.uuid4()),
+                "page_id": e["page_id"],
+                "detail": e["detail"],
+                "call_id": call_id,
+                "run_id": self.run_id,
+                "tags": e.get("tags", {}),
+            }
+            for e in events
+        ]
+        await self._execute(self.client.table("page_format_events").insert(rows))
+
+    async def get_page_format_events_for_run(self, run_id: str) -> Sequence[dict[str, Any]]:
+        """Fetch all page-format events for a run, with call_type from calls."""
+        rows = _rows(
+            await self._execute(
+                self.client.table("page_format_events")
+                .select("page_id,detail,call_id,tags")
+                .eq("run_id", run_id)
+            )
         )
+        if not rows:
+            return []
+        call_ids = list({r["call_id"] for r in rows})
+        call_rows = _rows(
+            await self._execute(
+                self.client.table("calls").select("id,call_type").in_("id", call_ids)
+            )
+        )
+        call_type_map = {r["id"]: r["call_type"] for r in call_rows}
+        for r in rows:
+            r["call_type"] = call_type_map.get(r["call_id"], "unknown")
+        return rows
 
     async def apply_epistemic_overrides(self, pages: Sequence[Page]) -> None:
         """Override credence/robustness on pages with latest epistemic_scores."""
@@ -1984,9 +2072,7 @@ class DB:
             params["pid"] = self.project_id
         if self.staged:
             params["p_staged_run_id"] = self.run_id
-        rows = _rows(
-            await self._execute(self.client.rpc("get_root_questions", params))
-        )
+        rows = _rows(await self._execute(self.client.rpc("get_root_questions", params)))
         pages = [_row_to_page(r) for r in rows]
         await self.apply_epistemic_overrides(pages)
         return pages
@@ -2066,11 +2152,71 @@ class DB:
         )
         return cast(dict[str, Any], result.data or {})
 
+    async def get_assess_staleness(
+        self,
+        question_ids: Sequence[str],
+    ) -> dict[str, bool]:
+        """Check whether questions need re-assessment.
+
+        A question is stale if it has no completed ASSESS call, or if any
+        link targeting it was created after the most recent completed ASSESS
+        call's created_at.
+
+        Returns a dict mapping each question_id to True (stale) or False.
+        """
+        if not question_ids:
+            return {}
+
+        calls_query = (
+            self.client.table("calls")
+            .select("scope_page_id,created_at")
+            .eq("call_type", CallType.ASSESS.value)
+            .eq("status", CallStatus.COMPLETE.value)
+            .in_("scope_page_id", list(question_ids))
+            .order("created_at", desc=True)
+        )
+        calls_result = await self._execute(calls_query)
+
+        latest_assess: dict[str, datetime] = {}
+        for row in _rows(calls_result):
+            qid = row["scope_page_id"]
+            if qid not in latest_assess:
+                latest_assess[qid] = datetime.fromisoformat(row["created_at"])
+
+        links_query = (
+            self.client.table("page_links")
+            .select(_LINK_COLUMNS)
+            .in_("to_page_id", list(question_ids))
+        )
+        links_query = self._staged_filter(links_query)
+        links_result = await self._execute(links_query)
+        links = [_row_to_link(r) for r in _rows(links_result)]
+        links = await self._apply_link_events(links)
+
+        latest_link: dict[str, datetime] = {}
+        for link in links:
+            qid = link.to_page_id
+            ts = link.created_at
+            if qid not in latest_link or ts > latest_link[qid]:
+                latest_link[qid] = ts
+
+        staleness: dict[str, bool] = {}
+        for qid in question_ids:
+            if qid not in latest_assess or (
+                qid in latest_link and latest_link[qid] > latest_assess[qid]
+            ):
+                staleness[qid] = True
+            else:
+                staleness[qid] = False
+        return staleness
+
     async def count_pages_since(self, since: datetime) -> int:
         """Count workspace pages created after *since* (for cache invalidation)."""
-        query = self.client.table("pages").select(
-            "id", count=CountMethod.exact
-        ).gt("created_at", since.isoformat())
+        query = (
+            self.client.table("pages")
+            .select("id", count=CountMethod.exact)
+            .gt("created_at", since.isoformat())
+        )
         if self.project_id:
             query = query.eq("project_id", self.project_id)
         query = self._staged_filter(query)
@@ -2121,7 +2267,9 @@ class DB:
         rows = _rows(
             await self._execute(
                 self.client.table("call_llm_exchanges")
-                .select("id, call_id, phase, round, input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens, duration_ms, error, created_at")
+                .select(
+                    "id, call_id, phase, round, input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens, duration_ms, error, created_at"
+                )
                 .eq("call_id", call_id)
                 .order("round")
             )
@@ -2131,9 +2279,7 @@ class DB:
     async def get_llm_exchange(self, exchange_id: str) -> dict[str, Any] | None:
         rows = _rows(
             await self._execute(
-                self.client.table("call_llm_exchanges")
-                .select("*")
-                .eq("id", exchange_id)
+                self.client.table("call_llm_exchanges").select("*").eq("id", exchange_id)
             )
         )
         return rows[0] if rows else None
@@ -2141,10 +2287,7 @@ class DB:
     async def get_call_rows_for_run(self, run_id: str) -> list[dict]:
         return _rows(
             await self._execute(
-                self.client.table("calls")
-                .select("*")
-                .eq("run_id", run_id)
-                .order("created_at")
+                self.client.table("calls").select("*").eq("run_id", run_id).order("created_at")
             )
         )
 
@@ -2206,11 +2349,7 @@ class DB:
 
     async def get_run(self, run_id: str) -> dict[str, Any] | None:
         """Fetch a row from the runs table by run_id."""
-        rows = _rows(
-            await self._execute(
-                self.client.table("runs").select("*").eq("id", run_id)
-            )
-        )
+        rows = _rows(await self._execute(self.client.table("runs").select("*").eq("id", run_id)))
         return rows[0] if rows else None
 
     async def create_run(
@@ -2218,7 +2357,6 @@ class DB:
         name: str,
         question_id: str | None,
         config: dict | None = None,
-        ab_arm: str | None = None,
     ) -> None:
         """Insert a row in the runs table for this DB's run_id."""
         await self._execute(
@@ -2230,11 +2368,43 @@ class DB:
                     "question_id": question_id,
                     "config": config or {},
                     "staged": self.staged,
-                    "ab_run_id": self.ab_run_id,
-                    "ab_arm": ab_arm,
                 }
             )
         )
+
+    async def count_run_questions(self) -> int:
+        """Count question pages created by this run."""
+        query = (
+            self.client.table("pages")
+            .select("id", count=CountMethod.exact)
+            .eq("run_id", self.run_id)
+            .eq("page_type", PageType.QUESTION.value)
+        )
+        if self.project_id:
+            query = query.eq("project_id", self.project_id)
+        query = self._staged_filter(query)
+        result = await self._execute(query)
+        return result.count or 0
+
+    async def get_run_questions_since(
+        self,
+        since: datetime,
+    ) -> list[Page]:
+        """Return question pages created by this run after *since*."""
+        query = (
+            self.client.table("pages")
+            .select(_SLIM_PAGE_COLUMNS)
+            .eq("run_id", self.run_id)
+            .eq("page_type", PageType.QUESTION.value)
+            .gt("created_at", since.isoformat())
+            .order("created_at")
+        )
+        if self.project_id:
+            query = query.eq("project_id", self.project_id)
+        query = self._staged_filter(query)
+        result = await self._execute(query)
+        pages = [_row_to_page(r) for r in _rows(result)]
+        return await self._apply_page_events(pages)
 
     async def stage_run(self, run_id: str) -> None:
         """Retroactively stage a completed non-staged run.
@@ -2245,16 +2415,12 @@ class DB:
         staged reader replaying them will see the same view the run
         originally produced.
         """
-        await self._execute(
-            self.client.table("runs").update({"staged": True}).eq("id", run_id)
-        )
+        await self._execute(self.client.table("runs").update({"staged": True}).eq("id", run_id))
         await self._execute(
             self.client.table("pages").update({"staged": True}).eq("run_id", run_id)
         )
         await self._execute(
-            self.client.table("page_links")
-            .update({"staged": True})
-            .eq("run_id", run_id)
+            self.client.table("page_links").update({"staged": True}).eq("run_id", run_id)
         )
 
         events = _rows(
@@ -2298,9 +2464,7 @@ class DB:
                     "run_id": payload.get("run_id", run_id),
                     "staged": was_own_link,
                 }
-                await self._execute(
-                    self.client.table("page_links").upsert(restore_row)
-                )
+                await self._execute(self.client.table("page_links").upsert(restore_row))
 
             elif et == "change_link_role":
                 old_role = payload.get("old_role")
@@ -2310,17 +2474,15 @@ class DB:
                         tid,
                     )
                     continue
-                link_rows = _rows(await self._execute(
-                    self.client.table("page_links")
-                    .select("run_id")
-                    .eq("id", tid)
-                ))
+                link_rows = _rows(
+                    await self._execute(
+                        self.client.table("page_links").select("run_id").eq("id", tid)
+                    )
+                )
                 if link_rows and link_rows[0].get("run_id") == run_id:
                     continue
                 await self._execute(
-                    self.client.table("page_links")
-                    .update({"role": old_role})
-                    .eq("id", tid)
+                    self.client.table("page_links").update({"role": old_role}).eq("id", tid)
                 )
 
             elif et == "update_page_content":
@@ -2330,11 +2492,9 @@ class DB:
                         tid,
                     )
                     continue
-                page_rows = _rows(await self._execute(
-                    self.client.table("pages")
-                    .select("run_id")
-                    .eq("id", tid)
-                ))
+                page_rows = _rows(
+                    await self._execute(self.client.table("pages").select("run_id").eq("id", tid))
+                )
                 if page_rows and page_rows[0].get("run_id") == run_id:
                     continue
                 await self._execute(
@@ -2351,27 +2511,19 @@ class DB:
         were recorded but never written directly to the database.
         """
         run_rows = _rows(
-            await self._execute(
-                self.client.table("runs").select("id, staged").eq("id", run_id)
-            )
+            await self._execute(self.client.table("runs").select("id, staged").eq("id", run_id))
         )
         if not run_rows:
             raise ValueError(f"Run {run_id} not found")
         if not run_rows[0].get("staged"):
             raise ValueError(f"Run {run_id} is not staged")
 
+        await self._execute(self.client.table("runs").update({"staged": False}).eq("id", run_id))
         await self._execute(
-            self.client.table("runs").update({"staged": False}).eq("id", run_id)
+            self.client.table("pages").update({"staged": False}).eq("run_id", run_id)
         )
         await self._execute(
-            self.client.table("pages")
-            .update({"staged": False})
-            .eq("run_id", run_id)
-        )
-        await self._execute(
-            self.client.table("page_links")
-            .update({"staged": False})
-            .eq("run_id", run_id)
+            self.client.table("page_links").update({"staged": False}).eq("run_id", run_id)
         )
 
         events = _rows(
@@ -2400,30 +2552,24 @@ class DB:
                 )
 
             elif et == "delete_link":
-                await self._execute(
-                    self.client.table("page_links").delete().eq("id", tid)
-                )
+                await self._execute(self.client.table("page_links").delete().eq("id", tid))
 
             elif et == "change_link_role":
                 new_role = payload.get("new_role")
                 if not new_role:
                     log.warning(
-                        "Cannot apply role change for link %s: "
-                        "no new_role in event payload",
+                        "Cannot apply role change for link %s: no new_role in event payload",
                         tid,
                     )
                     continue
                 await self._execute(
-                    self.client.table("page_links")
-                    .update({"role": new_role})
-                    .eq("id", tid)
+                    self.client.table("page_links").update({"role": new_role}).eq("id", tid)
                 )
 
             elif et == "update_page_content":
                 if "new_content" not in payload:
                     log.warning(
-                        "Cannot apply content update for page %s: "
-                        "no new_content in event payload",
+                        "Cannot apply content update for page %s: no new_content in event payload",
                         tid,
                     )
                     continue
@@ -2433,24 +2579,6 @@ class DB:
                     .eq("id", tid)
                 )
 
-    async def create_ab_run(
-        self,
-        ab_run_id: str,
-        name: str,
-        question_id: str | None,
-    ) -> None:
-        """Insert a row in the ab_runs table."""
-        await self._execute(
-            self.client.table("ab_runs").insert(
-                {
-                    "id": ab_run_id,
-                    "name": name,
-                    "project_id": self.project_id,
-                    "question_id": question_id,
-                }
-            )
-        )
-
     async def save_ab_eval_report(
         self,
         run_id_a: str,
@@ -2459,6 +2587,7 @@ class DB:
         question_id_b: str,
         overall_assessment: str,
         dimension_reports: Sequence[dict[str, Any]],
+        overall_assessment_call_id: str | None = None,
     ) -> str:
         """Save an AB evaluation report. Returns the report ID."""
         report_id = str(uuid.uuid4())
@@ -2471,6 +2600,7 @@ class DB:
                     "question_id_a": question_id_a,
                     "question_id_b": question_id_b,
                     "overall_assessment": overall_assessment,
+                    "overall_assessment_call_id": overall_assessment_call_id,
                     "dimension_reports": list(dimension_reports),
                     "project_id": str(self.project_id) if self.project_id else None,
                 }
@@ -2482,8 +2612,10 @@ class DB:
         """List all AB evaluation reports for this project, newest first."""
         q = (
             self.client.table("ab_eval_reports")
-            .select("id, run_id_a, run_id_b, question_id_a, question_id_b, "
-                    "overall_assessment, dimension_reports, created_at")
+            .select(
+                "id, run_id_a, run_id_b, question_id_a, question_id_b, "
+                "overall_assessment, dimension_reports, created_at"
+            )
             .order("created_at", desc=True)
         )
         if self.project_id:
@@ -2492,11 +2624,49 @@ class DB:
 
     async def get_ab_eval_report(self, report_id: str) -> dict[str, Any] | None:
         """Get a single AB evaluation report by ID."""
-        q = (
-            self.client.table("ab_eval_reports")
-            .select("*")
-            .eq("id", report_id)
+        q = self.client.table("ab_eval_reports").select("*").eq("id", report_id)
+        if self.project_id:
+            q = q.eq("project_id", str(self.project_id))
+        rows = _rows(await self._execute(q))
+        return rows[0] if rows else None
+
+    async def save_run_eval_report(
+        self,
+        run_id: str,
+        question_id: str,
+        overall_assessment: str,
+        dimension_reports: Sequence[dict[str, Any]],
+    ) -> str:
+        """Save a single-run evaluation report. Returns the report ID."""
+        report_id = str(uuid.uuid4())
+        await self._execute(
+            self.client.table("run_eval_reports").insert(
+                {
+                    "id": report_id,
+                    "run_id": run_id,
+                    "question_id": question_id,
+                    "overall_assessment": overall_assessment,
+                    "dimension_reports": list(dimension_reports),
+                    "project_id": str(self.project_id) if self.project_id else None,
+                }
+            )
         )
+        return report_id
+
+    async def list_run_eval_reports(self) -> list[dict[str, Any]]:
+        """List all single-run evaluation reports for this project, newest first."""
+        q = (
+            self.client.table("run_eval_reports")
+            .select("id, run_id, question_id, overall_assessment, dimension_reports, created_at")
+            .order("created_at", desc=True)
+        )
+        if self.project_id:
+            q = q.eq("project_id", str(self.project_id))
+        return _rows(await self._execute(q))
+
+    async def get_run_eval_report(self, report_id: str) -> dict[str, Any] | None:
+        """Get a single run evaluation report by ID."""
+        q = self.client.table("run_eval_reports").select("*").eq("id", report_id)
         if self.project_id:
             q = q.eq("project_id", str(self.project_id))
         rows = _rows(await self._execute(q))
@@ -2505,69 +2675,18 @@ class DB:
     async def list_runs_for_project(self, project_id: str, limit: int = 50) -> list[dict[str, Any]]:
         """Return recent runs for a project, newest first.
 
-        Queries the runs table. Groups AB runs into a single entry with
-        both arm run_ids. Falls back to the calls table for legacy runs
-        that predate the runs table.
+        Queries the runs table and falls back to the calls table for legacy
+        runs that predate the runs table.
         """
         run_rows = _rows(
             await self._execute(
                 self.client.table("runs")
-                .select("id, name, question_id, config, ab_run_id, ab_arm, created_at, staged")
+                .select("id, name, question_id, config, created_at, staged")
                 .eq("project_id", project_id)
                 .order("created_at", desc=True)
                 .limit(limit * 2)
             )
         )
-        ab_groups: dict[str, dict[str, Any]] = {}
-        results: list[dict[str, Any]] = []
-        seen_run_ids: set[str] = set()
-        for row in run_rows:
-            ab_id = row.get("ab_run_id")
-            if ab_id:
-                if ab_id not in ab_groups:
-                    ab_groups[ab_id] = {
-                        "ab_run_id": ab_id,
-                        "created_at": row["created_at"],
-                        "name": row.get("name", ""),
-                        "question_summary": None,
-                        "arms": {},
-                    }
-                arm = row.get("ab_arm", "?")
-                ab_groups[ab_id]["arms"][arm] = {
-                    "run_id": row["id"],
-                    "config": row.get("config", {}),
-                }
-                seen_run_ids.add(row["id"])
-            else:
-                question_summary = None
-                qid = row.get("question_id")
-                if qid:
-                    page = await self.get_page(qid)
-                    if page:
-                        question_summary = page.headline
-                results.append({
-                    "run_id": row["id"],
-                    "created_at": row["created_at"],
-                    "name": row.get("name", ""),
-                    "config": row.get("config", {}),
-                    "question_summary": question_summary,
-                    "staged": row.get("staged", False),
-                })
-                seen_run_ids.add(row["id"])
-        for ab_group in ab_groups.values():
-            qid = None
-            for arm_info in ab_group["arms"].values():
-                rid = arm_info["run_id"]
-                q = await self.get_run_question_id(rid)
-                if q:
-                    qid = q
-                    break
-            if qid:
-                page = await self.get_page(qid)
-                if page:
-                    ab_group["question_summary"] = page.headline
-            results.append(ab_group)
-        # Fallback: include legacy runs from calls table that don't have a runs row
         legacy_rows = _rows(
             await self._execute(
                 self.client.table("calls")
@@ -2577,88 +2696,73 @@ class DB:
                 .order("created_at", desc=True)
             )
         )
+
+        page_ids: set[str] = set()
+        for row in run_rows:
+            qid = row.get("question_id")
+            if qid:
+                page_ids.add(qid)
+        for row in legacy_rows:
+            scope_id = row.get("scope_page_id")
+            if scope_id:
+                page_ids.add(scope_id)
+        pages_by_id = await self.get_pages_by_ids(list(page_ids)) if page_ids else {}
+
+        results: list[dict[str, Any]] = []
+        seen_run_ids: set[str] = set()
+        for row in run_rows:
+            qid = row.get("question_id")
+            page = pages_by_id.get(qid) if qid else None
+            results.append(
+                {
+                    "run_id": row["id"],
+                    "created_at": row["created_at"],
+                    "name": row.get("name", ""),
+                    "config": row.get("config", {}),
+                    "question_summary": page.headline if page else None,
+                    "staged": row.get("staged", False),
+                }
+            )
+            seen_run_ids.add(row["id"])
+
         seen_legacy: set[str] = set()
         for row in legacy_rows:
             rid = row.get("run_id")
             if not rid or rid in seen_run_ids or rid in seen_legacy:
                 continue
             seen_legacy.add(rid)
-            question_summary = None
             scope_id = row.get("scope_page_id")
-            if scope_id:
-                page = await self.get_page(scope_id)
-                if page:
-                    question_summary = page.headline
-            results.append({
-                "run_id": rid,
-                "created_at": row["created_at"],
-                "question_summary": question_summary,
-            })
+            page = pages_by_id.get(scope_id) if scope_id else None
+            results.append(
+                {
+                    "run_id": rid,
+                    "created_at": row["created_at"],
+                    "question_summary": page.headline if page else None,
+                }
+            )
         results.sort(key=lambda r: r.get("created_at", ""), reverse=True)
         return results[:limit]
 
     async def delete_run_data(self, delete_project: bool = False) -> None:
         """Delete all data for this run_id. Used by test teardown."""
+        await self._execute(self.client.table("mutation_events").delete().eq("run_id", self.run_id))
         await self._execute(
-            self.client.table("mutation_events").delete().eq(
-                "run_id", self.run_id
-            )
-        )
-        await self._execute(
-            self.client.table("call_llm_exchanges").delete().eq(
-                "run_id", self.run_id
-            )
+            self.client.table("call_llm_exchanges").delete().eq("run_id", self.run_id)
         )
         for table in ["page_flags", "page_ratings", "page_links"]:
-            await self._execute(
-                self.client.table(table).delete().eq("run_id", self.run_id)
-            )
+            await self._execute(self.client.table(table).delete().eq("run_id", self.run_id))
         # Null out sequence_id FK before deleting sequences and calls
         await self._execute(
-            self.client.table("calls").update(
-                {"sequence_id": None}
-            ).eq("run_id", self.run_id)
+            self.client.table("calls").update({"sequence_id": None}).eq("run_id", self.run_id)
         )
-        await self._execute(
-            self.client.table("call_sequences").delete().eq(
-                "run_id", self.run_id
-            )
-        )
-        await self._execute(
-            self.client.table("suggestions").delete().eq("run_id", self.run_id)
-        )
+        await self._execute(self.client.table("suggestions").delete().eq("run_id", self.run_id))
+        await self._execute(self.client.table("call_sequences").delete().eq("run_id", self.run_id))
         for table in ["calls", "pages"]:
-            await self._execute(
-                self.client.table(table).delete().eq("run_id", self.run_id)
-            )
-        await self._execute(
-            self.client.table("budget").delete().eq("run_id", self.run_id)
-        )
-        await self._execute(
-            self.client.table("runs").delete().eq("id", self.run_id)
-        )
-        if self.ab_run_id:
-            # Only delete ab_run if no other runs reference it
-            remaining = _rows(
-                await self._execute(
-                    self.client.table("runs")
-                    .select("id")
-                    .eq("ab_run_id", self.ab_run_id)
-                    .limit(1)
-                )
-            )
-            if not remaining:
-                await self._execute(
-                    self.client.table("ab_runs").delete().eq(
-                        "id", self.ab_run_id
-                    )
-                )
+            await self._execute(self.client.table(table).delete().eq("run_id", self.run_id))
+        await self._execute(self.client.table("budget").delete().eq("run_id", self.run_id))
+        await self._execute(self.client.table("runs").delete().eq("id", self.run_id))
         if delete_project and self.project_id:
-            await self._execute(
-                self.client.table("projects").delete().eq(
-                    "id", self.project_id
-                )
-            )
+            await self._execute(self.client.table("projects").delete().eq("id", self.project_id))
 
     async def save_suggestion(self, suggestion: Suggestion) -> None:
         """Save a suggestion to the database."""
@@ -2676,9 +2780,7 @@ class DB:
                     "status": suggestion.status.value,
                     "created_at": suggestion.created_at.isoformat(),
                     "reviewed_at": (
-                        suggestion.reviewed_at.isoformat()
-                        if suggestion.reviewed_at
-                        else None
+                        suggestion.reviewed_at.isoformat() if suggestion.reviewed_at else None
                     ),
                     "staged": suggestion.staged,
                 }
@@ -2686,7 +2788,8 @@ class DB:
         )
 
     async def get_pending_suggestions(
-        self, target_page_id: str | None = None,
+        self,
+        target_page_id: str | None = None,
     ) -> list[Suggestion]:
         """Get pending suggestions, optionally filtered by target page."""
         query = (
@@ -2723,22 +2826,18 @@ class DB:
         """Fetch a single suggestion by ID."""
         rows = _rows(
             await self._execute(
-                self.client.table("suggestions")
-                .select("*")
-                .eq("id", suggestion_id)
+                self.client.table("suggestions").select("*").eq("id", suggestion_id)
             )
         )
         return _row_to_suggestion(rows[0]) if rows else None
 
     async def update_suggestion_status(
-        self, suggestion_id: str, status: SuggestionStatus,
+        self,
+        suggestion_id: str,
+        status: SuggestionStatus,
     ) -> None:
         """Update a suggestion's status (accept/reject/dismiss)."""
         update: dict[str, Any] = {"status": status.value}
         if status != SuggestionStatus.PENDING:
-            update["reviewed_at"] = datetime.now(timezone.utc).isoformat()
-        await self._execute(
-            self.client.table("suggestions")
-            .update(update)
-            .eq("id", suggestion_id)
-        )
+            update["reviewed_at"] = datetime.now(UTC).isoformat()
+        await self._execute(self.client.table("suggestions").update(update).eq("id", suggestion_id))

@@ -53,6 +53,8 @@ def make_search_tool(
                 PageDetail.ABSTRACT,
                 linked_detail=PageDetail.HEADLINE,
                 db=db,
+                track=True,
+                track_tags={"source": "search_tool"},
             )
             sections.append(f"--- similarity: {score:.3f} ---\n{formatted}")
         return "\n\n".join(sections)

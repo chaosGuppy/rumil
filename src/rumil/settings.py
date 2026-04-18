@@ -2,20 +2,16 @@
 
 import contextvars
 import subprocess
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
-from collections.abc import Iterator
 from pathlib import Path
-
 from typing import Any
-
-from collections.abc import Sequence
 
 from pydantic import Field
 from pydantic.config import JsonDict
 from pydantic_settings import BaseSettings
 
 from rumil.models import FindConsiderationsMode
-
 
 _CAPTURE: JsonDict = {"capture": True}
 
@@ -66,9 +62,7 @@ class Settings(BaseSettings):
     available_moves: str = _capture_field(default="default")
     available_calls: str = _capture_field(default="default")
 
-    find_considerations_modes: str = _capture_field(
-        default="alternate,abstract,concrete"
-    )
+    find_considerations_modes: str = _capture_field(default="alternate,abstract,concrete")
 
     budget_pacing_enabled: bool = _capture_field(default=True)
 
@@ -83,6 +77,12 @@ class Settings(BaseSettings):
     ingest_num_claims: int = _capture_field(default=4)
 
     sonnet_model: str = _capture_field(default="claude-sonnet-4-6")
+    enable_global_prio: bool = _capture_field(default=False)
+    global_prio_budget_fraction: float = _capture_field(default=0.2)
+    global_prio_trigger_threshold: int = _capture_field(default=10)
+    global_prio_explore_rounds: int = _capture_field(default=3)
+    global_prio_subgraph_max_pages: int = _capture_field(default=80)
+
     explore_subgraph_default_max_pages: int = _capture_field(default=30)
 
     scope_subquestion_linker_max_rounds: int = _capture_field(default=6)
@@ -114,9 +114,7 @@ class Settings(BaseSettings):
     abstract_page_similarity_floor: float = _capture_field(default=0.2)
     summary_page_similarity_floor: float = _capture_field(default=0.1)
     big_assess_full_page_similarity_floor: float | None = _capture_field(default=None)
-    big_assess_abstract_page_similarity_floor: float | None = _capture_field(
-        default=None
-    )
+    big_assess_abstract_page_similarity_floor: float | None = _capture_field(default=None)
 
     @property
     def is_test_mode(self) -> bool:
@@ -131,7 +129,7 @@ class Settings(BaseSettings):
         return (
             "claude-haiku-4-5-20251001"
             if self.is_test_mode or self.is_smoke_test
-            else "claude-opus-4-6"
+            else "claude-opus-4-7"
         )
 
     @property
@@ -165,7 +163,7 @@ class Settings(BaseSettings):
 
     def require_anthropic_key(self) -> str:
         if not self.anthropic_api_key:
-            raise EnvironmentError(
+            raise OSError(
                 "ANTHROPIC_API_KEY environment variable not set. "
                 "Set it before running the workspace."
             )

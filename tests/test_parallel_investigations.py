@@ -92,9 +92,7 @@ async def test_investigations_run_concurrently(investigation_tools):
                 }
             )
             text = result["content"][0]["text"]
-            assert "dispatched" in text.lower(), (
-                f"Expected dispatch confirmation, got: {text}"
-            )
+            assert "dispatched" in text.lower(), f"Expected dispatch confirmation, got: {text}"
 
         t0 = time.monotonic()
         result = await collect_tool.handler({})

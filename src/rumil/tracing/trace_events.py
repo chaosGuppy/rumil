@@ -12,11 +12,7 @@ class PageRef(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _migrate_summary(cls, values: dict) -> dict:
-        if (
-            isinstance(values, dict)
-            and "summary" in values
-            and "headline" not in values
-        ):
+        if isinstance(values, dict) and "summary" in values and "headline" not in values:
             values["headline"] = values.pop("summary")
         return values
 
@@ -234,6 +230,14 @@ class RenderQuestionSubgraphEvent(BaseModel):
     response: str = ""
 
 
+class LoadPageEvent(BaseModel):
+    event: Literal["load_page"] = "load_page"
+    page_id: str
+    page_headline: str = ""
+    detail: str = ""
+    response: str = ""
+
+
 class ProposedSubquestion(BaseModel):
     id: str
     headline: str = ""
@@ -256,6 +260,12 @@ class PhaseSkippedEvent(BaseModel):
     event: Literal["phase_skipped"] = "phase_skipped"
     phase: str = ""
     reason: str = ""
+
+
+class GlobalPhaseCompletedEvent(BaseModel):
+    event: Literal["global_phase_completed"] = "global_phase_completed"
+    phase: str = ""
+    outcome: str = ""
 
 
 class UpdateViewPhaseCompletedEvent(BaseModel):
@@ -291,9 +301,11 @@ TraceEvent = Annotated[
     | GroundingTasksGeneratedEvent
     | WebResearchCompleteEvent
     | RenderQuestionSubgraphEvent
+    | LoadPageEvent
     | LinkSubquestionsCompleteEvent
     | ViewCreatedEvent
     | PhaseSkippedEvent
+    | GlobalPhaseCompletedEvent
     | UpdateViewPhaseCompletedEvent,
     Field(discriminator="event"),
 ]

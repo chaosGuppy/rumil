@@ -13,7 +13,8 @@ from rumil.models import (
     PageType,
     Workspace,
 )
-from rumil.moves.create_claim import CreateClaimPayload, execute as execute_create_claim
+from rumil.moves.create_claim import CreateClaimPayload
+from rumil.moves.create_claim import execute as execute_create_claim
 from rumil.moves.link_consideration import ConsiderationLinkFields
 
 

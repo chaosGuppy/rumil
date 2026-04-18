@@ -1,5 +1,6 @@
 import { Fragment } from "react";
 import Link from "next/link";
+import type { Metadata } from "next";
 import type { RunTraceTreeOut, RealtimeConfigOut } from "@/api/types.gen";
 import { TraceViewer } from "./trace-viewer";
 import "./trace.css";
@@ -7,6 +8,7 @@ import "./trace.css";
 import { API_BASE, serverFetch } from "@/lib/api-base";
 import { WorkspaceIndicator } from "@/components/workspace-indicator";
 import { fetchProjectName } from "@/lib/fetch-project-name";
+import { truncateHeadline } from "@/lib/page-titles";
 
 async function getRunTraceTree(runId: string): Promise<RunTraceTreeOut | null> {
   const res = await serverFetch(`${API_BASE}/api/runs/${runId}/trace-tree`, {
@@ -26,6 +28,23 @@ async function getRealtimeConfig(): Promise<RealtimeConfigOut | null> {
   } catch {
     return null;
   }
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ runId: string }>;
+}): Promise<Metadata> {
+  const { runId } = await params;
+  const trace = await getRunTraceTree(runId);
+  if (!trace) return { title: `trace ${runId.slice(0, 8)}` };
+  const projectName = trace.question?.project_id
+    ? await fetchProjectName(trace.question.project_id)
+    : undefined;
+  const headline = truncateHeadline(trace.question?.headline, 40);
+  const mid = headline ? ` "${headline}"` : ` ${runId.slice(0, 8)}`;
+  const suffix = projectName ? ` — ${projectName}` : "";
+  return { title: `trace${mid}${suffix}` };
 }
 
 export default async function TracePage({

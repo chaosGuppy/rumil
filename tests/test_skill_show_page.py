@@ -4,17 +4,15 @@ from __future__ import annotations
 
 import pytest
 import pytest_asyncio
+from rumil_skills import _runctx, show_page
 
 from rumil.models import LinkType, Page, PageLayer, PageLink, PageType, Workspace
-from rumil_skills import _runctx, show_page
 
 
 @pytest.fixture(autouse=True)
 def _isolate_state(monkeypatch, tmp_path):
     monkeypatch.setattr(_runctx, "STATE_DIR", tmp_path / "state")
-    monkeypatch.setattr(
-        _runctx, "STATE_FILE", tmp_path / "state" / "rumil-session.json"
-    )
+    monkeypatch.setattr(_runctx, "STATE_FILE", tmp_path / "state" / "rumil-session.json")
 
 
 async def _noop_close():
@@ -46,9 +44,7 @@ async def claim_page(tmp_db):
     return page
 
 
-async def test_show_page_prints_core_fields(
-    capsys, monkeypatch, patch_make_db, claim_page
-):
+async def test_show_page_prints_core_fields(capsys, monkeypatch, patch_make_db, claim_page):
     monkeypatch.setattr("sys.argv", ["show_page", claim_page.id, "--no-links"])
     await show_page.main()
     out = capsys.readouterr().out
@@ -61,9 +57,7 @@ async def test_show_page_prints_core_fields(
     assert "robustness=4" in out
 
 
-async def test_show_page_short_id_resolution(
-    capsys, monkeypatch, patch_make_db, claim_page
-):
+async def test_show_page_short_id_resolution(capsys, monkeypatch, patch_make_db, claim_page):
     short_id = claim_page.id[:8]
     monkeypatch.setattr("sys.argv", ["show_page", short_id, "--no-links"])
     await show_page.main()

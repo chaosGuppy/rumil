@@ -15,23 +15,15 @@ from __future__ import annotations
 import json
 import logging
 import re
+import sys
 import time
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, Generic, TYPE_CHECKING, TypeVar, overload
-
 from collections.abc import Awaitable, Callable, Sequence
-
+from dataclasses import dataclass, field
 from datetime import date
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Generic, TypeVar, overload
 
 import anthropic
-from tenacity import (
-    RetryCallState,
-    retry,
-    retry_if_exception,
-    wait_exponential,
-)
-
 from anthropic.types import (
     ServerToolUseBlock,
     TextBlock,
@@ -39,9 +31,14 @@ from anthropic.types import (
     WebSearchToolResultBlock,
 )
 from pydantic import BaseModel, ValidationError
+from tenacity import (
+    RetryCallState,
+    retry,
+    retry_if_exception,
+    wait_exponential,
+)
 
 from rumil.pricing import compute_cost
-
 from rumil.settings import get_settings
 from rumil.tracing.trace_events import ErrorEvent, LLMExchangeEvent
 from rumil.tracing.tracer import get_trace
@@ -51,6 +48,37 @@ if TYPE_CHECKING:
 
 DEFAULT_MAX_TOKENS = 20_000
 DEFAULT_TEMPERATURE = 0.15
+
+
+def _supports_sampling_params(model: str) -> bool:
+    # Opus 4.7 removed temperature/top_p/top_k — sending any returns 400.
+    # With adaptive thinking on (Opus 4.6, Sonnet 4.6), temperature must be
+    # 1.0 — we'd rather skip it than set 1.0, so gate on thinking being off.
+    if model.startswith("claude-opus-4-7"):
+        return False
+    return _thinking_config(model) is None
+
+
+def _thinking_config(model: str) -> dict | None:
+    # Adaptive thinking: Opus 4.7/4.6 and Sonnet 4.6. Haiku and older Sonnet
+    # don't support adaptive. On 4.7, thinking text is omitted by default —
+    # ask for summarized so sdk_agent can still capture it.
+    if model.startswith("claude-opus-4-7"):
+        return {"type": "adaptive", "display": "summarized"}
+    if model.startswith(("claude-opus-4-6", "claude-sonnet-4-6")):
+        return {"type": "adaptive"}
+    return None
+
+
+def _effort_level(model: str) -> str | None:
+    # xhigh is Opus 4.7-only; high is the best shared setting elsewhere.
+    # Haiku and Sonnet 4.5 don't support the effort parameter at all.
+    if model.startswith("claude-opus-4-7"):
+        return "xhigh"
+    if model.startswith(("claude-opus-4-6", "claude-sonnet-4-6")):
+        return "high"
+    return None
+
 
 PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts"
 
@@ -92,6 +120,12 @@ def _log_before_retry(retry_state: RetryCallState) -> None:
         wait,
         retry_state.attempt_number,
         max_retries,
+    )
+    print(
+        f"  [retry] API {label}, waiting {wait:g}s "
+        f"(attempt {retry_state.attempt_number}/{max_retries})",
+        file=sys.stderr,
+        flush=True,
     )
 
 
@@ -348,7 +382,6 @@ async def call_api(
     metadata: LLMExchangeMetadata | None = None,
     db: DB | None = None,
     cache: bool = False,
-    temperature: float = DEFAULT_TEMPERATURE,
 ) -> APIResponse:
     """Make a single Anthropic API call with retry logic.
 
@@ -361,10 +394,15 @@ async def call_api(
     kwargs: dict = {
         "model": model,
         "max_tokens": DEFAULT_MAX_TOKENS,
-        "temperature": temperature,
         "system": system_prompt,
         "messages": _add_cache_breakpoint(messages) if cache else messages,
     }
+    if _supports_sampling_params(model):
+        kwargs["temperature"] = DEFAULT_TEMPERATURE
+    if (thinking := _thinking_config(model)) is not None:
+        kwargs["thinking"] = thinking
+    if (effort := _effort_level(model)) is not None:
+        kwargs["output_config"] = {"effort": effort}
     if tools:
         kwargs["tools"] = tools
 
@@ -402,8 +440,7 @@ async def call_api(
 
     elapsed_ms: int = getattr(response, "_elapsed_ms", 0)
     log.debug(
-        "API response: stop_reason=%s, usage=%d/%d tokens, duration=%dms, "
-        "full_usage=%s",
+        "API response: stop_reason=%s, usage=%d/%d tokens, duration=%dms, full_usage=%s",
         response.stop_reason,
         response.usage.input_tokens,
         response.usage.output_tokens,
@@ -443,10 +480,7 @@ async def call_api(
                     response.usage, "cache_creation_input_tokens", 0
                 )
                 or 0,
-                cache_read_input_tokens=getattr(
-                    response.usage, "cache_read_input_tokens", 0
-                )
-                or 0,
+                cache_read_input_tokens=getattr(response.usage, "cache_read_input_tokens", 0) or 0,
             )
         except Exception as exc:
             log.error(
@@ -459,9 +493,7 @@ async def call_api(
             if trace:
                 await trace.record(
                     ErrorEvent(
-                        message=(
-                            f"Failed to save exchange: {type(exc).__name__}: {exc}"
-                        ),
+                        message=(f"Failed to save exchange: {type(exc).__name__}: {exc}"),
                         phase=metadata.phase,
                     )
                 )
@@ -473,22 +505,31 @@ async def text_call(
     user_message: str = "",
     *,
     messages: list[dict] | None = None,
+    metadata: LLMExchangeMetadata | None = None,
+    db: DB | None = None,
 ) -> str:
     """Make a plain text LLM call. Returns the raw text response.
 
     Pass `messages` for multi-turn conversations, or `user_message` for single-turn.
+    Pass `metadata` and `db` together to persist the exchange and record a
+    trace event against the call identified by `metadata.call_id`.
     """
     settings = get_settings()
     api_key = settings.require_anthropic_key()
     model = settings.model
     client = anthropic.AsyncAnthropic(api_key=api_key)
-    msg_list = (
-        messages
-        if messages is not None
-        else [{"role": "user", "content": user_message}]
-    )
+    msg_list = messages if messages is not None else [{"role": "user", "content": user_message}]
+    if metadata is not None and metadata.user_message is None:
+        metadata.user_message = user_message
     log.debug("text_call: messages=%d", len(msg_list))
-    api_resp = await call_api(client, model, system_prompt, msg_list)
+    api_resp = await call_api(
+        client,
+        model,
+        system_prompt,
+        msg_list,
+        metadata=metadata,
+        db=db,
+    )
     for block in api_resp.message.content:
         if isinstance(block, TextBlock):
             log.debug("text_call returned %d chars", len(block.text))
@@ -598,8 +639,7 @@ async def _structured_call_cached(
                 )
                 continue
             log.warning(
-                "structured_call (cached): all parse attempts failed (%s), "
-                "returning empty result",
+                "structured_call (cached): all parse attempts failed (%s), returning empty result",
                 exc,
             )
             trace = get_trace()
@@ -663,10 +703,15 @@ async def _structured_call_parse(
     parse_kwargs: dict = {
         "model": model,
         "max_tokens": DEFAULT_MAX_TOKENS,
-        "temperature": DEFAULT_TEMPERATURE,
         "system": system_prompt,
         "messages": msg_list,
     }
+    if _supports_sampling_params(model):
+        parse_kwargs["temperature"] = DEFAULT_TEMPERATURE
+    if (thinking := _thinking_config(model)) is not None:
+        parse_kwargs["thinking"] = thinking
+    if (effort := _effort_level(model)) is not None:
+        parse_kwargs["output_config"] = {"effort": effort}
     if response_model is not None:
         parse_kwargs["output_format"] = response_model
     if tools is not None:
@@ -704,14 +749,9 @@ async def _structured_call_parse(
             input_tokens=response.usage.input_tokens,
             output_tokens=response.usage.output_tokens,
             duration_ms=elapsed_ms,
-            cache_creation_input_tokens=getattr(
-                response.usage, "cache_creation_input_tokens", 0
-            )
+            cache_creation_input_tokens=getattr(response.usage, "cache_creation_input_tokens", 0)
             or 0,
-            cache_read_input_tokens=getattr(
-                response.usage, "cache_read_input_tokens", 0
-            )
-            or 0,
+            cache_read_input_tokens=getattr(response.usage, "cache_read_input_tokens", 0) or 0,
         )
     if response.parsed_output is not None:
         log.debug(
@@ -815,11 +855,7 @@ async def structured_call(
     if not user_message and not messages:
         raise ValueError("Either user_message or messages must be provided")
 
-    raw_msgs = (
-        messages
-        if messages is not None
-        else [{"role": "user", "content": user_message}]
-    )
+    raw_msgs = messages if messages is not None else [{"role": "user", "content": user_message}]
     model_name = response_model.__name__ if response_model else "None"
     log.debug(
         "structured_call: response_model=%s, cache=%s",

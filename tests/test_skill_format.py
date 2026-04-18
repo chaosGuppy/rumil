@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
-from rumil.settings import override_settings
 from rumil_skills._format import (
     print_event,
     print_trace,
@@ -12,6 +9,8 @@ from rumil_skills._format import (
     trace_url,
     truncate,
 )
+
+from rumil.settings import override_settings
 
 
 def test_short_from_string():

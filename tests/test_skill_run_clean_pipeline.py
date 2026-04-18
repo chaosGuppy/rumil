@@ -76,12 +76,8 @@ async def seeded_eval_workspace():
     }
 
     try:
-        resp = await db._execute(
-            db.client.table("runs").select("id").eq("project_id", project.id)
-        )
-        run_ids = [
-            r["id"] for r in (getattr(resp, "data", None) or []) if r["id"] != db.run_id
-        ]
+        resp = await db._execute(db.client.table("runs").select("id").eq("project_id", project.id))
+        run_ids = [r["id"] for r in (getattr(resp, "data", None) or []) if r["id"] != db.run_id]
         for rid in run_ids:
             cleanup_db = await DB.create(run_id=rid, staged=False)
             cleanup_db.project_id = project.id
@@ -125,9 +121,7 @@ async def test_run_clean_pipeline_grounding_subprocess(seeded_eval_workspace):
         db.client.table("runs").select("*").eq("project_id", db.project_id)
     )
     runs = list(getattr(runs_resp, "data", None) or [])
-    cc_runs = [
-        r for r in runs if (r.get("config") or {}).get("origin") == "claude-code"
-    ]
+    cc_runs = [r for r in runs if (r.get("config") or {}).get("origin") == "claude-code"]
     assert len(cc_runs) >= 1
     assert any((r.get("config") or {}).get("skill") == "rumil-clean" for r in cc_runs)
     assert any((r.get("config") or {}).get("pipeline") == "grounding" for r in cc_runs)

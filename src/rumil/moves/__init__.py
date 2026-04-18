@@ -9,8 +9,8 @@ from rumil.moves.base import MoveDef, MoveResult, MoveState
 from rumil.moves.registry import MOVES
 
 __all__ = [
+    "MOVES",
     "MoveDef",
     "MoveResult",
     "MoveState",
-    "MOVES",
 ]

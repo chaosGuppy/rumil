@@ -1,4 +1,4 @@
-# A/B Evaluation: Research Progress
+# Run Evaluation: Research Progress
 
 You are evaluating a research run for the amount of genuine **research progress** it achieved.
 

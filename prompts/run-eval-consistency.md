@@ -1,4 +1,4 @@
-# A/B Evaluation: Consistency
+# Run Evaluation: Consistency
 
 You are evaluating a research run for the **internal consistency** of its analysis.
 

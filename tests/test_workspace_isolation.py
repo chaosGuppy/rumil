@@ -81,16 +81,12 @@ async def two_workspaces():
     db_beta = await _make_db(f"beta-{uuid.uuid4().hex[:8]}")
 
     q_alpha = await _make_question(db_alpha, "What colour is the sky?")
-    claim_alpha = await _make_claim(
-        db_alpha, "The sky is blue due to Rayleigh scattering"
-    )
+    claim_alpha = await _make_claim(db_alpha, "The sky is blue due to Rayleigh scattering")
     await _link_consideration(db_alpha, claim_alpha, q_alpha)
     source_alpha = await _make_source(db_alpha, "sky-paper.pdf")
 
     q_beta = await _make_question(db_beta, "Why is the ocean salty?")
-    claim_beta = await _make_claim(
-        db_beta, "Rivers carry dissolved salts into the ocean"
-    )
+    claim_beta = await _make_claim(db_beta, "Rivers carry dissolved salts into the ocean")
     await _link_consideration(db_beta, claim_beta, q_beta)
 
     yield {
@@ -165,17 +161,11 @@ async def test_get_all_links_isolated(two_workspaces):
 
     for link in alpha_links:
         assert link.from_page_id in alpha_page_ids or link.to_page_id in alpha_page_ids
-        assert (
-            link.from_page_id not in beta_page_ids
-            and link.to_page_id not in beta_page_ids
-        )
+        assert link.from_page_id not in beta_page_ids and link.to_page_id not in beta_page_ids
 
     for link in beta_links:
         assert link.from_page_id in beta_page_ids or link.to_page_id in beta_page_ids
-        assert (
-            link.from_page_id not in alpha_page_ids
-            and link.to_page_id not in alpha_page_ids
-        )
+        assert link.from_page_id not in alpha_page_ids and link.to_page_id not in alpha_page_ids
 
 
 async def test_get_pages_slim_isolated(two_workspaces):
@@ -190,3 +180,48 @@ async def test_get_pages_slim_isolated(two_workspaces):
     assert w["q_alpha"].id not in beta_ids
     assert w["q_beta"].id in beta_ids
     assert w["q_beta"].id not in alpha_ids
+
+
+async def _link_depends_on(db: DB, dependent: Page, dependency: Page) -> None:
+    await db.save_link(
+        PageLink(
+            from_page_id=dependent.id,
+            to_page_id=dependency.id,
+            link_type=LinkType.DEPENDS_ON,
+            strength=4.0,
+            reasoning="test dep",
+        )
+    )
+
+
+async def test_dependency_counts_isolated(two_workspaces):
+    w = two_workspaces
+    dep_alpha = await _make_claim(w["db_alpha"], "Foundational claim about sky")
+    dep_beta = await _make_claim(w["db_beta"], "Foundational claim about ocean")
+
+    for _ in range(2):
+        dependent = await _make_claim(w["db_alpha"], "Derived sky claim")
+        await _link_depends_on(w["db_alpha"], dependent, dep_alpha)
+
+    for _ in range(3):
+        dependent = await _make_claim(w["db_beta"], "Derived ocean claim")
+        await _link_depends_on(w["db_beta"], dependent, dep_beta)
+
+    alpha_counts = await w["db_alpha"].get_dependency_counts()
+    beta_counts = await w["db_beta"].get_dependency_counts()
+
+    assert alpha_counts.get(dep_alpha.id) == 2
+    assert dep_beta.id not in alpha_counts
+
+    assert beta_counts.get(dep_beta.id) == 3
+    assert dep_alpha.id not in beta_counts
+
+
+async def test_prioritization_context_no_load_bearing_section_when_empty():
+    db = await _make_db(f"empty-{uuid.uuid4().hex[:8]}")
+    try:
+        question = await _make_question(db, "What is 2+2?")
+        ctx, _ = await build_prioritization_context(db, question.id)
+        assert "Load-Bearing Pages" not in ctx
+    finally:
+        await db.delete_run_data(delete_project=True)

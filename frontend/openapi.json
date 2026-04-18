@@ -1201,6 +1201,9 @@
                         "$ref": "#/components/schemas/RenderQuestionSubgraphEventOut"
                       },
                       {
+                        "$ref": "#/components/schemas/LoadPageEventOut"
+                      },
+                      {
                         "$ref": "#/components/schemas/LinkSubquestionsCompleteEventOut"
                       },
                       {
@@ -1208,6 +1211,9 @@
                       },
                       {
                         "$ref": "#/components/schemas/PhaseSkippedEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/GlobalPhaseCompletedEventOut"
                       },
                       {
                         "$ref": "#/components/schemas/UpdateViewPhaseCompletedEventOut"
@@ -1239,63 +1245,16 @@
                         "grounding_tasks_generated": "#/components/schemas/GroundingTasksGeneratedEventOut",
                         "web_research_complete": "#/components/schemas/WebResearchCompleteEventOut",
                         "render_question_subgraph": "#/components/schemas/RenderQuestionSubgraphEventOut",
+                        "load_page": "#/components/schemas/LoadPageEventOut",
                         "link_subquestions_complete": "#/components/schemas/LinkSubquestionsCompleteEventOut",
                         "view_created": "#/components/schemas/ViewCreatedEventOut",
                         "phase_skipped": "#/components/schemas/PhaseSkippedEventOut",
+                        "global_phase_completed": "#/components/schemas/GlobalPhaseCompletedEventOut",
                         "update_view_phase_completed": "#/components/schemas/UpdateViewPhaseCompletedEventOut"
                       }
                     }
                   },
                   "title": "Response Get Call Events Api Calls  Call Id  Events Get"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/ab-runs/{ab_run_id}/trace": {
-      "get": {
-        "summary": "Get Ab Run Trace",
-        "operationId": "get_ab_run_trace_api_ab_runs__ab_run_id__trace_get",
-        "parameters": [
-          {
-            "name": "ab_run_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Ab Run Id"
-            }
-          },
-          {
-            "name": "project_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "default": "",
-              "title": "Project Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ABRunTraceOut"
                 }
               }
             }
@@ -1833,6 +1792,55 @@
           }
         }
       }
+    },
+    "/api/runs/{run_id}/page-load-stats": {
+      "get": {
+        "summary": "Get Page Load Stats",
+        "operationId": "get_page_load_stats_api_runs__run_id__page_load_stats_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageLoadStatsOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1871,6 +1879,11 @@
           "call_id_b": {
             "type": "string",
             "title": "Call Id B",
+            "default": ""
+          },
+          "comparison_call_id": {
+            "type": "string",
+            "title": "Comparison Call Id",
             "default": ""
           }
         },
@@ -1997,6 +2010,11 @@
             "type": "string",
             "title": "Overall Assessment"
           },
+          "overall_assessment_call_id": {
+            "type": "string",
+            "title": "Overall Assessment Call Id",
+            "default": ""
+          },
           "dimension_reports": {
             "items": {
               "$ref": "#/components/schemas/ABEvalDimensionOut"
@@ -2031,70 +2049,6 @@
           "created_at"
         ],
         "title": "ABEvalReportOut"
-      },
-      "ABRunArmOut": {
-        "properties": {
-          "run_id": {
-            "type": "string",
-            "title": "Run Id"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name",
-            "default": ""
-          },
-          "config": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Config",
-            "default": {}
-          },
-          "trace": {
-            "$ref": "#/components/schemas/RunTraceOut"
-          }
-        },
-        "type": "object",
-        "required": [
-          "run_id",
-          "trace"
-        ],
-        "title": "ABRunArmOut"
-      },
-      "ABRunTraceOut": {
-        "properties": {
-          "ab_run_id": {
-            "type": "string",
-            "title": "Ab Run Id"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name",
-            "default": ""
-          },
-          "question": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Page"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "arms": {
-            "items": {
-              "$ref": "#/components/schemas/ABRunArmOut"
-            },
-            "type": "array",
-            "title": "Arms"
-          }
-        },
-        "type": "object",
-        "required": [
-          "ab_run_id",
-          "arms"
-        ],
-        "title": "ABRunTraceOut"
       },
       "AffectedPagesIdentifiedEventOut": {
         "properties": {
@@ -2363,32 +2317,6 @@
         ],
         "title": "CallNodeOut"
       },
-      "CallSequenceOut": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "title": "Id"
-          },
-          "position_in_batch": {
-            "type": "integer",
-            "title": "Position In Batch"
-          },
-          "calls": {
-            "items": {
-              "$ref": "#/components/schemas/CallTraceOut"
-            },
-            "type": "array",
-            "title": "Calls"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "position_in_batch",
-          "calls"
-        ],
-        "title": "CallSequenceOut"
-      },
       "CallStatus": {
         "type": "string",
         "enum": [
@@ -2515,184 +2443,6 @@
         "title": "CallSummary",
         "description": "Lightweight Call representation for tree views \u2014 excludes bulky fields\nlike review_json, result_summary, and context_page_ids."
       },
-      "CallTraceOut": {
-        "properties": {
-          "call": {
-            "$ref": "#/components/schemas/Call"
-          },
-          "scope_page_summary": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Scope Page Summary"
-          },
-          "events": {
-            "items": {
-              "oneOf": [
-                {
-                  "$ref": "#/components/schemas/ContextBuiltEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/MovesExecutedEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/ReviewCompleteEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/LLMExchangeEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/WarningEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/ErrorEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/ScoringCompletedEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/DispatchesPlannedEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/DispatchExecutedEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/ExplorePageEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/SubagentStartedEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/SubagentCompletedEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/AgentStartedEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/EvaluationCompleteEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/ToolCallEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/ReassessTriggeredEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/AffectedPagesIdentifiedEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/UpdateSubgraphComputedEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/UpdatePlanCreatedEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/ClaimReassessedEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/GroundingTasksGeneratedEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/WebResearchCompleteEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/RenderQuestionSubgraphEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/LinkSubquestionsCompleteEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/ViewCreatedEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/PhaseSkippedEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/UpdateViewPhaseCompletedEventOut"
-                }
-              ],
-              "discriminator": {
-                "propertyName": "event",
-                "mapping": {
-                  "affected_pages_identified": "#/components/schemas/AffectedPagesIdentifiedEventOut",
-                  "agent_started": "#/components/schemas/AgentStartedEventOut",
-                  "claim_reassessed": "#/components/schemas/ClaimReassessedEventOut",
-                  "context_built": "#/components/schemas/ContextBuiltEventOut",
-                  "dispatch_executed": "#/components/schemas/DispatchExecutedEventOut",
-                  "dispatches_planned": "#/components/schemas/DispatchesPlannedEventOut",
-                  "error": "#/components/schemas/ErrorEventOut",
-                  "evaluation_complete": "#/components/schemas/EvaluationCompleteEventOut",
-                  "explore_page": "#/components/schemas/ExplorePageEventOut",
-                  "grounding_tasks_generated": "#/components/schemas/GroundingTasksGeneratedEventOut",
-                  "link_subquestions_complete": "#/components/schemas/LinkSubquestionsCompleteEventOut",
-                  "llm_exchange": "#/components/schemas/LLMExchangeEventOut",
-                  "moves_executed": "#/components/schemas/MovesExecutedEventOut",
-                  "phase_skipped": "#/components/schemas/PhaseSkippedEventOut",
-                  "reassess_triggered": "#/components/schemas/ReassessTriggeredEventOut",
-                  "render_question_subgraph": "#/components/schemas/RenderQuestionSubgraphEventOut",
-                  "review_complete": "#/components/schemas/ReviewCompleteEventOut",
-                  "scoring_completed": "#/components/schemas/ScoringCompletedEventOut",
-                  "subagent_completed": "#/components/schemas/SubagentCompletedEventOut",
-                  "subagent_started": "#/components/schemas/SubagentStartedEventOut",
-                  "tool_call": "#/components/schemas/ToolCallEventOut",
-                  "update_plan_created": "#/components/schemas/UpdatePlanCreatedEventOut",
-                  "update_subgraph_computed": "#/components/schemas/UpdateSubgraphComputedEventOut",
-                  "update_view_phase_completed": "#/components/schemas/UpdateViewPhaseCompletedEventOut",
-                  "view_created": "#/components/schemas/ViewCreatedEventOut",
-                  "warning": "#/components/schemas/WarningEventOut",
-                  "web_research_complete": "#/components/schemas/WebResearchCompleteEventOut"
-                }
-              }
-            },
-            "type": "array",
-            "title": "Events"
-          },
-          "children": {
-            "items": {
-              "$ref": "#/components/schemas/CallTraceOut"
-            },
-            "type": "array",
-            "title": "Children"
-          },
-          "sequences": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/CallSequenceOut"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Sequences"
-          },
-          "cost_usd": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cost Usd"
-          }
-        },
-        "type": "object",
-        "required": [
-          "call",
-          "events",
-          "children"
-        ],
-        "title": "CallTraceOut"
-      },
       "CallType": {
         "type": "string",
         "enum": [
@@ -2724,7 +2474,11 @@
           "feedback_update",
           "link_subquestions",
           "ab_eval",
+          "ab_eval_comparison",
+          "ab_eval_summary",
+          "run_eval",
           "create_view",
+          "global_prioritization",
           "update_view",
           "chat_direct",
           "claude_code_direct"
@@ -3256,6 +3010,43 @@
         ],
         "title": "ExplorePageEventOut"
       },
+      "GlobalPhaseCompletedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "global_phase_completed",
+            "title": "Event",
+            "default": "global_phase_completed"
+          },
+          "phase": {
+            "type": "string",
+            "title": "Phase",
+            "default": ""
+          },
+          "outcome": {
+            "type": "string",
+            "title": "Outcome",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "phase",
+          "outcome"
+        ],
+        "title": "GlobalPhaseCompletedEventOut"
+      },
       "GroundingTasksGeneratedEventOut": {
         "properties": {
           "ts": {
@@ -3766,6 +3557,54 @@
         ],
         "title": "LinkedPageOut"
       },
+      "LoadPageEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "load_page",
+            "title": "Event",
+            "default": "load_page"
+          },
+          "page_id": {
+            "type": "string",
+            "title": "Page Id"
+          },
+          "page_headline": {
+            "type": "string",
+            "title": "Page Headline",
+            "default": ""
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail",
+            "default": ""
+          },
+          "response": {
+            "type": "string",
+            "title": "Response",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "page_id",
+          "page_headline",
+          "detail",
+          "response"
+        ],
+        "title": "LoadPageEventOut"
+      },
       "MoveTraceItem": {
         "properties": {
           "type": {
@@ -4143,6 +3982,17 @@
             ],
             "title": "Position"
           },
+          "impact_on_parent_question": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Impact On Parent Question"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -4167,10 +4017,63 @@
           "importance",
           "section",
           "position",
+          "impact_on_parent_question",
           "created_at",
           "run_id"
         ],
         "title": "PageLink"
+      },
+      "PageLoadEventOut": {
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "title": "Page Id"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          },
+          "tags": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Tags"
+          }
+        },
+        "type": "object",
+        "required": [
+          "page_id",
+          "detail",
+          "tags"
+        ],
+        "title": "PageLoadEventOut"
+      },
+      "PageLoadStatsOut": {
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/PageLoadEventOut"
+            },
+            "type": "array",
+            "title": "Events"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "total_unique": {
+            "type": "integer",
+            "title": "Total Unique"
+          }
+        },
+        "type": "object",
+        "required": [
+          "events",
+          "total",
+          "total_unique"
+        ],
+        "title": "PageLoadStatsOut"
       },
       "PageRef": {
         "properties": {
@@ -4680,29 +4583,6 @@
             ],
             "title": "Question Summary"
           },
-          "ab_run_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Ab Run Id"
-          },
-          "arms": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Arms"
-          },
           "staged": {
             "type": "boolean",
             "title": "Staged",
@@ -4737,49 +4617,6 @@
           "created_at"
         ],
         "title": "RunSummaryOut"
-      },
-      "RunTraceOut": {
-        "properties": {
-          "run_id": {
-            "type": "string",
-            "title": "Run Id"
-          },
-          "question": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Page"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "root_calls": {
-            "items": {
-              "$ref": "#/components/schemas/CallTraceOut"
-            },
-            "type": "array",
-            "title": "Root Calls"
-          },
-          "cost_usd": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cost Usd"
-          }
-        },
-        "type": "object",
-        "required": [
-          "run_id",
-          "question",
-          "root_calls"
-        ],
-        "title": "RunTraceOut"
       },
       "RunTraceTreeOut": {
         "properties": {

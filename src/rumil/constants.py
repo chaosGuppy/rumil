@@ -7,8 +7,9 @@ call loops, and budget allocation so they can be tuned in one place.
 
 import math
 
-
 MIN_TWOPHASE_BUDGET = 4
+MIN_GLOBAL_PRIO_BUDGET = 3
+MAX_PROPAGATION_REASSESS = 7
 LAST_CALL_THRESHOLD = 12
 
 DEFAULT_FRUIT_THRESHOLD = 4
@@ -44,10 +45,7 @@ def compute_round_budget(total: int, used: int) -> int:
     if remaining <= 0:
         return 0
     base = round((total + 50) ** 0.75)
-    if used < base:
-        f = round(math.sqrt((used + 50) * base))
-    else:
-        f = base
+    f = round(math.sqrt((used + 50) * base)) if used < base else base
     if remaining >= 2 * f:
         return f
     elif remaining < f:

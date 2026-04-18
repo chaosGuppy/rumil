@@ -12,11 +12,10 @@ import anthropic
 from anthropic.types import TextBlock, ToolUseBlock
 from pydantic import BaseModel, Field
 
+from rumil.available_moves import get_moves_for_call
 from rumil.context import format_page
 from rumil.database import DB
-from rumil.available_moves import get_moves_for_call
 from rumil.embeddings import embed_and_store_page
-from rumil.settings import get_settings
 from rumil.llm import (
     AgentResult,
     LLMExchangeMetadata,
@@ -41,10 +40,11 @@ from rumil.models import (
 from rumil.moves.base import MoveState
 from rumil.moves.load_page import LoadPagePayload
 from rumil.moves.registry import MOVES
+from rumil.settings import get_settings
 from rumil.tracing.trace_events import (
     ErrorEvent,
-    MoveTraceItem,
     MovesExecutedEvent,
+    MoveTraceItem,
     PageRef,
     WarningEvent,
 )
@@ -57,7 +57,6 @@ PAGE_ID_FIELDS: dict[MoveType, list[str]] = {
     MoveType.LINK_CONSIDERATION: ["claim_id", "question_id"],
     MoveType.LINK_CHILD_QUESTION: ["child_id", "parent_id"],
     MoveType.LINK_RELATED: ["from_page_id", "to_page_id"],
-    MoveType.LINK_DEPENDS_ON: ["dependent_page_id", "dependency_page_id"],
     MoveType.LINK_VARIANT: ["variant_page_id", "original_page_id"],
     MoveType.FLAG_FUNNINESS: ["page_id"],
     MoveType.REPORT_DUPLICATE: ["page_id_a", "page_id_b"],
@@ -204,9 +203,7 @@ async def run_single_call(
     )
 
     msg_list: list[dict] = (
-        messages
-        if messages is not None
-        else [{"role": "user", "content": user_message}]
+        messages if messages is not None else [{"role": "user", "content": user_message}]
     )
     all_warnings: list[str] = []
     meta = LLMExchangeMetadata(
@@ -311,9 +308,7 @@ async def run_agent_loop(
     )
 
     msg_list: list[dict] = (
-        messages
-        if messages is not None
-        else [{"role": "user", "content": user_message}]
+        messages if messages is not None else [{"role": "user", "content": user_message}]
     )
     text_parts: list[str] = []
     all_tool_calls: list[ToolCall] = []
@@ -407,7 +402,7 @@ async def run_agent_loop(
             }
 
         msg_list.append({"role": "assistant", "content": response.content})
-        msg_list.append({"role": "user", "content": tool_results + [budget_note]})
+        msg_list.append({"role": "user", "content": [*tool_results, budget_note]})
 
     trace = get_trace()
     for w in all_warnings:
@@ -432,11 +427,15 @@ async def run_agent_loop(
 
 
 ABSTRACT_INSTRUCTION = (
-    "Self-contained summary of ~200 words. Include: the core conclusion, "
-    "the main supporting reasoning or evidence, key counter-arguments and why "
-    "they were discounted, and the critical uncertainties or dependencies. "
-    "Preserve epistemic qualifications, confidence levels, and priority orderings. "
-    "Must make sense with zero prior context."
+    "Self-contained summary of ~200 words that makes sense with zero prior context. "
+    "Preserve epistemic qualifications, confidence levels, and priority orderings.\n"
+    "For CLAIM pages: the abstract is the pure assertion — fully detailed statement "
+    "of what the claim asserts (specifics, numbers, scope), but WITHOUT derivation, "
+    "provenance, or dependency information. No 'this rests on X', no 'because of Y', "
+    "no citations. The abstract says WHAT the claim asserts; the content says WHY.\n"
+    "For all other page types (judgement, question, source, etc.): include the core "
+    "conclusion, main supporting reasoning or evidence, key counter-arguments and why "
+    "they were discounted, and the critical uncertainties or dependencies."
 )
 
 
@@ -475,9 +474,7 @@ async def save_page_abstracts(
 
 class PageRating(BaseModel):
     page_id: str = Field(description="Short ID of the rated page")
-    score: int = Field(
-        description="-1 = confusing, 0 = no help, 1 = helpful, 2 = very helpful"
-    )
+    score: int = Field(description="-1 = confusing, 0 = no help, 1 = helpful, 2 = very helpful")
     note: str = Field("", description="One sentence on why")
 
 
@@ -490,18 +487,10 @@ class ReviewResponse(BaseModel):
             "7-8 = substantial work remains; 9-10 = barely started"
         )
     )
-    confidence_in_output: float = Field(
-        description="0-5 confidence in the work just done"
-    )
-    context_was_adequate: bool = Field(
-        description="Whether the context provided was sufficient"
-    )
-    what_was_missing: str = Field(
-        "", description="What additional context would have helped"
-    )
-    tensions_noticed: str = Field(
-        "", description="Any conflicts or inconsistencies noticed"
-    )
+    confidence_in_output: float = Field(description="0-5 confidence in the work just done")
+    context_was_adequate: bool = Field(description="Whether the context provided was sufficient")
+    what_was_missing: str = Field("", description="What additional context would have helped")
+    tensions_noticed: str = Field("", description="Any conflicts or inconsistencies noticed")
     self_assessment: str = Field("", description="1-2 sentences on how this call went")
     suggested_next_steps: str = Field("", description="What should happen next")
     page_ratings: list[PageRating] = Field(
@@ -536,7 +525,8 @@ async def _format_loaded_pages(page_ids: Sequence[str], db: DB) -> str:
         page = pages.get(pid)
         if page:
             parts.append(
-                f"### Page `{pid[:8]}`\n\n{await format_page(page, PageDetail.HEADLINE, db=db)}"
+                f"### Page `{pid[:8]}`\n\n"
+                f"{await format_page(page, PageDetail.HEADLINE, db=db, track=True, track_tags={'source': 'phase1'})}"
             )
     return "\n\n---\n\n".join(parts)
 
@@ -684,8 +674,7 @@ async def resolve_page_refs(page_ids: Sequence[str], db: DB) -> list[PageRef]:
     """Resolve a list of page IDs to PageRef objects with headlines."""
     pages = await db.get_pages_by_ids(page_ids)
     return [
-        PageRef(id=pid, headline=pages[pid].headline if pid in pages else "")
-        for pid in page_ids
+        PageRef(id=pid, headline=pages[pid].headline if pid in pages else "") for pid in page_ids
     ]
 
 
@@ -878,9 +867,7 @@ async def run_closing_review(
                     pid = resolved_rating_ids.get(r.get("page_id", ""))
                     score = r.get("score")
                     if pid and isinstance(score, int):
-                        await db.save_page_rating(
-                            pid, call.id, score, r.get("note", "")
-                        )
+                        await db.save_page_rating(pid, call.id, score, r.get("note", ""))
                 raw_summaries = review.get("page_summaries", [])
                 items = [
                     PageSummaryItem(**s)

@@ -1,10 +1,9 @@
 """Tests for MoveType enum, move definitions, and move execution."""
 
-from rumil.models import CallType, LinkType, MoveType, PageType
+from rumil.models import LinkType, MoveType, PageType
 from rumil.moves import MOVES
 from rumil.moves.base import MoveState
 from rumil.moves.create_question import MOVE as CREATE_QUESTION_MOVE
-from rumil.moves.create_question import PRIORITIZATION_MOVE
 
 
 def test_all_move_types_have_definitions():
@@ -112,101 +111,7 @@ async def test_no_links_creates_no_links(tmp_db, scout_call):
     assert len(links) == 0
 
 
-async def test_inline_dispatch_on_create_subquestion(
-    tmp_db,
-    prioritization_call,
-    question_page,
-):
-    """create_subquestion with dispatches should populate state.dispatches."""
-    state = MoveState(prioritization_call, tmp_db)
-    tool = PRIORITIZATION_MOVE.bind(state)
-    await tool.fn(
-        {
-            "headline": "What causes atmospheric scattering?",
-            "content": "Sub-question about light scattering mechanisms.",
-            "links": [
-                {
-                    "parent_id": question_page.id[:8],
-                    "reasoning": "Decomposition of main question",
-                }
-            ],
-            "dispatches": [
-                {
-                    "call_type": "find_considerations",
-                    "reason": "Need initial evidence",
-                    "max_rounds": 3,
-                    "mode": "alternate",
-                }
-            ],
-        }
-    )
-
-    assert len(state.created_page_ids) == 1
-    assert len(state.dispatches) == 1
-    d = state.dispatches[0]
-    assert d.call_type is CallType.FIND_CONSIDERATIONS
-    assert d.payload.question_id == state.created_page_ids[0]
-
-
-async def test_inline_dispatch_multiple_types(
-    tmp_db,
-    prioritization_call,
-    question_page,
-):
-    """create_subquestion with multiple dispatch types should create all."""
-    state = MoveState(prioritization_call, tmp_db)
-    tool = PRIORITIZATION_MOVE.bind(state)
-    await tool.fn(
-        {
-            "headline": "What is the role of wavelength in scattering?",
-            "content": "Investigating wavelength dependence.",
-            "links": [
-                {
-                    "parent_id": question_page.id[:8],
-                    "reasoning": "Decomposition",
-                }
-            ],
-            "dispatches": [
-                {
-                    "call_type": "find_considerations",
-                    "reason": "Explore",
-                    "max_rounds": 2,
-                    "mode": "alternate",
-                },
-                {"call_type": "assess", "reason": "Evaluate"},
-            ],
-        }
-    )
-
-    assert len(state.dispatches) == 2
-    assert state.dispatches[0].call_type is CallType.FIND_CONSIDERATIONS
-    assert state.dispatches[1].call_type is CallType.ASSESS
-    for d in state.dispatches:
-        assert d.payload.question_id == state.created_page_ids[0]
-
-
-async def test_no_dispatches_creates_no_dispatches(tmp_db, prioritization_call):
-    """create_subquestion without dispatches should still create the question."""
-    state = MoveState(prioritization_call, tmp_db)
-    tool = PRIORITIZATION_MOVE.bind(state)
-    await tool.fn(
-        {
-            "headline": "A plain subquestion",
-            "content": "No dispatches here.",
-        }
-    )
-
-    assert len(state.created_page_ids) == 1
-    assert len(state.dispatches) == 0
-    page = await tmp_db.get_page(state.created_page_ids[0])
-    assert page is not None
-    assert page.page_type is PageType.QUESTION
-
-
-def test_create_subquestion_schema_includes_dispatches():
-    """PRIORITIZATION_MOVE schema has dispatches; MOVE schema does not."""
-    sub_schema = PRIORITIZATION_MOVE.schema.model_json_schema()
-    assert "dispatches" in sub_schema["properties"]
-
-    base_schema = CREATE_QUESTION_MOVE.schema.model_json_schema()
-    assert "dispatches" not in base_schema["properties"]
+def test_create_question_schema_has_no_dispatches():
+    """CREATE_QUESTION schema does not include a dispatches field."""
+    schema = CREATE_QUESTION_MOVE.schema.model_json_schema()
+    assert "dispatches" not in schema["properties"]

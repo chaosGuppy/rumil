@@ -88,7 +88,7 @@ function DimensionSection({ dim }: { dim: AbEvalDimensionOut }) {
         <div className="ab-eval-dim-content">
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
         </div>
-        {(dim.call_id_a || dim.call_id_b) && (
+        {(dim.call_id_a || dim.call_id_b || dim.comparison_call_id) && (
           <div className="ab-eval-dim-eval-links">
             {dim.call_id_a && (
               <Link
@@ -104,6 +104,14 @@ function DimensionSection({ dim }: { dim: AbEvalDimensionOut }) {
                 className="ab-eval-dim-eval-link"
               >
                 eval trace B
+              </Link>
+            )}
+            {dim.comparison_call_id && (
+              <Link
+                href={`/traces/${dim.comparison_call_id}`}
+                className="ab-eval-dim-eval-link"
+              >
+                comparison trace
               </Link>
             )}
           </div>
@@ -234,6 +242,16 @@ export function EvalDetail({ report }: { report: AbEvalReportOut }) {
             {report.overall_assessment}
           </ReactMarkdown>
         </div>
+        {report.overall_assessment_call_id && (
+          <div className="ab-eval-dim-eval-links">
+            <Link
+              href={`/traces/${report.overall_assessment_call_id}`}
+              className="ab-eval-dim-eval-link"
+            >
+              overall assessment trace
+            </Link>
+          </div>
+        )}
       </section>
 
       <section>

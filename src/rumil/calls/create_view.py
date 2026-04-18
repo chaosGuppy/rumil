@@ -50,9 +50,7 @@ class CreateViewCall(CallRunner):
 
     async def _create_view_page(self) -> str:
         """Create the View page and VIEW_OF link before the LLM starts."""
-        existing_view = await self.infra.db.get_view_for_question(
-            self.infra.question_id
-        )
+        existing_view = await self.infra.db.get_view_for_question(self.infra.question_id)
 
         question = await self.infra.db.get_page(self.infra.question_id)
         q_headline = question.headline if question else self.infra.question_id[:8]

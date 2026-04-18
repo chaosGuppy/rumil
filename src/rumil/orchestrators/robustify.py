@@ -120,8 +120,7 @@ class RobustifyOrchestrator:
 
             if hit_threshold:
                 log.info(
-                    "RobustifyOrchestrator: credence >= %d reached, "
-                    "will do one more round",
+                    "RobustifyOrchestrator: credence >= %d reached, will do one more round",
                     CREDENCE_THRESHOLD,
                 )
 

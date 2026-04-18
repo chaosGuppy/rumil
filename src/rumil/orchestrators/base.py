@@ -8,10 +8,8 @@ import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 
-from rumil.available_calls import get_available_calls_preset
-from rumil.constants import compute_round_budget
 from rumil.calls.stages import CallRunner
-from rumil.constants import SMOKE_TEST_MAX_ROUNDS
+from rumil.constants import SMOKE_TEST_MAX_ROUNDS, compute_round_budget
 from rumil.database import DB
 from rumil.models import (
     AssessDispatchPayload,
@@ -19,7 +17,6 @@ from rumil.models import (
     Dispatch,
 )
 from rumil.orchestrators.common import (
-    _consume_budget,
     _create_broadcaster,
 )
 from rumil.orchestrators.dispatch_handlers import (
@@ -30,7 +27,6 @@ from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
 from rumil.tracing.trace_events import DispatchExecutedEvent
 from rumil.tracing.tracer import get_trace
-
 
 log = logging.getLogger(__name__)
 
@@ -55,25 +51,26 @@ class BaseOrchestrator(ABC):
             return effective
         total, used = await self._pacing_params()
         paced = min(effective, compute_round_budget(total, used))
-        log.info('Budget pacing: effective=%d, round_allocation=%d', effective, paced)
+        log.info("Budget pacing: effective=%d, round_allocation=%d", effective, paced)
         return paced
 
     async def _setup(self) -> None:
         if not self.broadcaster:
             self.broadcaster = _create_broadcaster(self.db)
             self._owns_broadcaster = True
-        log.info('Orchestrator: run_id=%s', self.db.run_id)
+        log.info("Orchestrator: run_id=%s", self.db.run_id)
         total, used = await self.db.get_budget()
         log.info(
-            'Orchestrator.run starting: budget=%d (used=%d)',
-            total, used,
+            "Orchestrator.run starting: budget=%d (used=%d)",
+            total,
+            used,
         )
 
     async def _teardown(self) -> None:
         if self.broadcaster and self._owns_broadcaster:
             await self.broadcaster.close()
         total, used = await self.db.get_budget()
-        log.info('Orchestrator.run complete: budget used %d/%d', used, total)
+        log.info("Orchestrator.run complete: budget used %d/%d", used, total)
 
     async def _run_simple_call_dispatch(
         self,
@@ -108,7 +105,9 @@ class BaseOrchestrator(ABC):
             sequence_position=sequence_position,
         )
         instance = cls(
-            question_id, call, self.db,
+            question_id,
+            call,
+            self.db,
             broadcaster=self.broadcaster,
             max_rounds=max_rounds,
             fruit_threshold=fruit_threshold,
@@ -148,31 +147,32 @@ class BaseOrchestrator(ABC):
         raw_qids = [d.payload.question_id for d in sequence]
         resolved_map = await self.db.resolve_page_ids(raw_qids)
         resolves = [resolved_map.get(qid) or scope_question_id for qid in raw_qids]
-        pages = await self.db.get_pages_by_ids(
-            [r for r in resolves if r is not None]
-        )
-        headlines = [
-            pages[r].headline if r in pages else '' for r in resolves
-        ]
+        pages = await self.db.get_pages_by_ids([r for r in resolves if r is not None])
+        headlines = [pages[r].headline if r in pages else "" for r in resolves]
 
         trace = get_trace()
         if trace:
             for i, dispatch in enumerate(sequence):
-                await trace.record(DispatchExecutedEvent(
-                    index=base_index + i,
-                    child_call_type=dispatch.call_type.value,
-                    question_id=resolves[i],
-                    question_headline=headlines[i],
-                    child_call_id=pre_ids[i],
-                ))
+                await trace.record(
+                    DispatchExecutedEvent(
+                        index=base_index + i,
+                        child_call_type=dispatch.call_type.value,
+                        question_id=resolves[i],
+                        question_headline=headlines[i],
+                        child_call_id=pre_ids[i],
+                    )
+                )
 
         executed = False
         seq_pos = 0
         for i, dispatch in enumerate(sequence):
             force = i > 0 and await self.db.budget_remaining() <= 0
             await self._execute_dispatch(
-                dispatch, scope_question_id, parent_call_id,
-                force=force, call_id=pre_ids[i],
+                dispatch,
+                scope_question_id,
+                parent_call_id,
+                force=force,
+                call_id=pre_ids[i],
                 sequence_id=seq_id,
                 sequence_position=seq_pos if is_multi_step else None,
             )
@@ -209,7 +209,7 @@ class BaseOrchestrator(ABC):
         resolved = await self.db.resolve_page_id(p.question_id)
         if not resolved:
             log.warning(
-                'Dispatch question ID not found: %s, falling back to scope',
+                "Dispatch question ID not found: %s, falling back to scope",
                 p.question_id[:8],
             )
             resolved = scope_question_id
@@ -219,7 +219,7 @@ class BaseOrchestrator(ABC):
         handler = DISPATCH_HANDLERS.get(type(p))
         if handler is None:
             log.warning(
-                'No dispatch handler registered for payload type %s',
+                "No dispatch handler registered for payload type %s",
                 type(p).__name__,
             )
             return resolved, None
@@ -247,11 +247,15 @@ class BaseOrchestrator(ABC):
         base_index = 0
         tasks = []
         for batch_pos, seq in enumerate(sequences):
-            tasks.append(self._run_dispatch_sequence(
-                seq, scope_question_id, call_id,
-                base_index,
-                position_in_batch=batch_pos,
-            ))
+            tasks.append(
+                self._run_dispatch_sequence(
+                    seq,
+                    scope_question_id,
+                    call_id,
+                    base_index,
+                    position_in_batch=batch_pos,
+                )
+            )
             base_index += len(seq)
 
         sequence_results = await asyncio.gather(*tasks)

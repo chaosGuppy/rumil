@@ -126,9 +126,7 @@ async def explore_page_impl(
             )
             frontier_for = frontier.get(pid, set())
             if frontier_for:
-                parts.append(
-                    f"  ↳ {len(frontier_for)} further connection(s) beyond this horizon"
-                )
+                parts.append(f"  ↳ {len(frontier_for)} further connection(s) beyond this horizon")
             parts.append("")
 
     if not parts:
@@ -244,9 +242,7 @@ def _render_links(
         seen.add(dedup_key)
 
         other = page_map.get(other_id)
-        other_label = (
-            f'`{other_id[:8]}` "{other.headline}"' if other else f"`{other_id[:8]}`"
-        )
+        other_label = f'`{other_id[:8]}` "{other.headline}"' if other else f"`{other_id[:8]}`"
 
         link_desc = link.link_type.value.upper()
         extras: list[str] = []
@@ -260,8 +256,6 @@ def _render_links(
         added_tag = ""
         if highlight_run_id and link.run_id and link.run_id == highlight_run_id:
             added_tag = " [ADDED BY THIS RUN]"
-        lines.append(
-            f"  {arrow} {link_desc} [link:{link.id[:8]}]: {other_label}{added_tag}"
-        )
+        lines.append(f"  {arrow} {link_desc} [link:{link.id[:8]}]: {other_label}{added_tag}")
 
     return lines

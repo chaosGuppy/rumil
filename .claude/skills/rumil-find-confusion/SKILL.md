@@ -27,7 +27,7 @@ across many scans) and a structured `ConfusionVerdict` schema.
 **Costs per-scan LLM tokens**, roughly:
 - `claude-haiku-4-5-20251001` — ~$0.005 per trace
 - `claude-sonnet-4-6` (default) — ~$0.02-0.05 per trace
-- `claude-opus-4-6` — ~$0.10-0.20 per trace
+- `claude-opus-4-7` — ~$0.10-0.20 per trace
 
 Exact cost depends on trace size (bigger traces = more tokens in the
 user message). Verdicts are cached in

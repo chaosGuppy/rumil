@@ -8,6 +8,7 @@ import type { Page, PageType, PaginatedPagesOut, Project, RunListItemOut } from 
 import { CLIENT_API_BASE as API_BASE } from "@/api-config";
 import { useStagedRun } from "@/lib/staged-run-context";
 import { WorkspaceIndicator } from "@/components/workspace-indicator";
+import { useDocumentTitle } from "@/lib/use-document-title";
 
 const PAGE_TYPES: PageType[] = [
   "question",
@@ -96,6 +97,8 @@ export default function PagesIndexPage() {
   const [showSuperseded, setShowSuperseded] = useState(false);
   const { activeStagedRunId, setActiveStagedRunId } = useStagedRun();
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  useDocumentTitle(projectName);
 
   const onSearchChange = useCallback((value: string) => {
     setSearch(value);
@@ -828,12 +831,9 @@ export default function PagesIndexPage() {
           <h2>Recent Runs</h2>
           <div className="runs-list">
             {runs.map((r, i) => {
-              const isAB = !!r.ab_run_id;
               const isStaged = !!r.staged;
               const isActive = activeStagedRunId === r.run_id;
-              const displayId = isAB
-                ? r.ab_run_id!.slice(0, 8)
-                : r.run_id?.slice(0, 8) ?? "\u2014";
+              const displayId = r.run_id?.slice(0, 8) ?? "\u2014";
               const label = r.name || r.question_summary || "(no question)";
 
               if (isStaged && r.run_id) {
@@ -863,14 +863,12 @@ export default function PagesIndexPage() {
                 );
               }
 
-              const href = isAB
-                ? `/ab-traces/${r.ab_run_id}`
-                : `/traces/${r.run_id}`;
               return (
-                <Link key={r.ab_run_id || r.run_id || i} href={href} className="run-row">
-                  {isAB && (
-                    <span className="run-ab-badge">AB</span>
-                  )}
+                <Link
+                  key={r.run_id || i}
+                  href={`/traces/${r.run_id}`}
+                  className="run-row"
+                >
                   <span className="run-question">{label}</span>
                   <div className="run-meta">
                     <span className="run-date">

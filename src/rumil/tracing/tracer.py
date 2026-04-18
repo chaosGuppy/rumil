@@ -2,12 +2,12 @@
 
 import contextvars
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from rumil.tracing.broadcast import Broadcaster
 from rumil.database import DB
-from rumil.tracing.trace_events import LLMExchangeEvent, TraceEvent
 from rumil.settings import get_settings
+from rumil.tracing.broadcast import Broadcaster
+from rumil.tracing.trace_events import LLMExchangeEvent, TraceEvent
 
 log = logging.getLogger(__name__)
 
@@ -38,6 +38,11 @@ def set_trace(trace: "CallTrace") -> contextvars.Token:
     return _trace_var.set(trace)
 
 
+def reset_trace(token: contextvars.Token) -> None:
+    """Restore the task-local CallTrace to its value before ``set_trace``."""
+    _trace_var.reset(token)
+
+
 class CallTrace:
     """Records trace events: persists each to the DB then broadcasts."""
 
@@ -47,12 +52,38 @@ class CallTrace:
         self._enabled = get_settings().tracing_enabled
         self._broadcaster = broadcaster
         self.total_cost_usd: float = 0.0
+        self._page_loads: list[dict] = []
+
+    def record_page_load(self, page_id: str, detail: str, tags: dict[str, str]) -> None:
+        """Accumulate a page-load event (flushed to DB at end of call)."""
+        self._page_loads.append(
+            {
+                "page_id": page_id,
+                "detail": detail,
+                "tags": tags,
+            }
+        )
+
+    async def flush_page_loads(self) -> None:
+        """Batch-insert accumulated page-load events into the DB."""
+        if not self._page_loads:
+            return
+        try:
+            await self.db.save_page_format_events(self.call_id, self._page_loads)
+        except Exception as e:
+            log.error(
+                "Failed to flush %d page-load events for call %s: %s",
+                len(self._page_loads),
+                self.call_id[:8],
+                e,
+            )
+        self._page_loads.clear()
 
     def _prepare_event(self, event_data: TraceEvent) -> dict:
         if isinstance(event_data, LLMExchangeEvent) and event_data.cost_usd:
             self.total_cost_usd += event_data.cost_usd
         dumped = event_data.model_dump()
-        dumped["ts"] = datetime.now(timezone.utc).isoformat()
+        dumped["ts"] = datetime.now(UTC).isoformat()
         dumped["call_id"] = self.call_id
         return dumped
 
@@ -113,7 +144,6 @@ class CallTrace:
                 e,
             )
             raise TraceRecordError(
-                f"failed to persist {dumped.get('event')!r} event for call "
-                f"{self.call_id}: {e}"
+                f"failed to persist {dumped.get('event')!r} event for call {self.call_id}: {e}"
             ) from e
         await self._broadcast(dumped)

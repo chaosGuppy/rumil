@@ -36,7 +36,7 @@ Usage:
     # Show full payload schema for one move (fields, types, required/optional,
     # descriptions, nested models). Use when --list isn't enough.
     PYTHONPATH=.claude/lib uv run python -m rumil_skills.apply_move \\
-        --schema CREATE_SUBQUESTION
+        --schema CREATE_QUESTION
 """
 
 from __future__ import annotations
@@ -56,7 +56,7 @@ from rumil.database import DB
 from rumil.models import Call, MoveType
 from rumil.moves.base import MoveResult
 from rumil.moves.registry import MOVES
-from rumil.tracing.trace_events import MoveTraceItem, MovesExecutedEvent, PageRef
+from rumil.tracing.trace_events import MovesExecutedEvent, MoveTraceItem, PageRef
 
 from ._format import print_event, print_trace, truncate
 from ._runctx import ensure_chat_envelope
@@ -78,7 +78,6 @@ ACCRETING_MOVES: frozenset[MoveType] = frozenset(
         MoveType.CREATE_CLAIM,
         MoveType.CREATE_QUESTION,
         MoveType.CREATE_SCOUT_QUESTION,
-        MoveType.CREATE_SUBQUESTION,
         MoveType.CREATE_JUDGEMENT,
         MoveType.CREATE_WIKI_PAGE,
         MoveType.CREATE_VIEW_ITEM,
@@ -87,7 +86,6 @@ ACCRETING_MOVES: frozenset[MoveType] = frozenset(
         MoveType.LINK_CHILD_QUESTION,
         MoveType.LINK_RELATED,
         MoveType.LINK_VARIANT,
-        MoveType.LINK_DEPENDS_ON,
         MoveType.FLAG_FUNNINESS,
         MoveType.REPORT_DUPLICATE,
         MoveType.LOAD_PAGE,  # read-only, harmless
@@ -128,9 +126,7 @@ def _format_type(annotation: object) -> str:
     # Parameterised generic (list[...], dict[...], Literal[...], ...)
     if origin is not None:
         origin_name = (
-            getattr(origin, "__name__", None)
-            or getattr(origin, "_name", None)
-            or str(origin)
+            getattr(origin, "__name__", None) or getattr(origin, "_name", None) or str(origin)
         )
         if args:
             return f"{origin_name}[{', '.join(_format_type(a) for a in args)}]"
@@ -456,8 +452,7 @@ async def main() -> None:
                 file=sys.stderr,
             )
             print(
-                "       the envelope may be incomplete in the frontend; "
-                f"inspect run {db.run_id}",
+                f"       the envelope may be incomplete in the frontend; inspect run {db.run_id}",
                 file=sys.stderr,
             )
             sys.exit(1)

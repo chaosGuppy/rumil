@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import pytest
 import pytest_asyncio
+from rumil_skills import _runctx, ingest_source
 
 from rumil.models import (
     CallStatus,
@@ -17,15 +18,12 @@ from rumil.models import (
     PageType,
     Workspace,
 )
-from rumil_skills import _runctx, ingest_source
 
 
 @pytest.fixture(autouse=True)
 def _isolate_state(monkeypatch, tmp_path):
     monkeypatch.setattr(_runctx, "STATE_DIR", tmp_path / "state")
-    monkeypatch.setattr(
-        _runctx, "STATE_FILE", tmp_path / "state" / "rumil-session.json"
-    )
+    monkeypatch.setattr(_runctx, "STATE_FILE", tmp_path / "state" / "rumil-session.json")
 
 
 @pytest.fixture
@@ -112,9 +110,7 @@ async def test_ingest_records_run_with_origin(
     )
     await ingest_source.main()
 
-    runs = await tmp_db._execute(
-        tmp_db.client.table("runs").select("*").eq("id", tmp_db.run_id)
-    )
+    runs = await tmp_db._execute(tmp_db.client.table("runs").select("*").eq("id", tmp_db.run_id))
     rows = list(getattr(runs, "data", None) or [])
     assert len(rows) == 1
     config = rows[0].get("config") or {}
@@ -134,9 +130,7 @@ async def test_ingest_no_source_or_page_exits(monkeypatch, patch_make_db, capsys
     assert "must pass either" in out
 
 
-async def test_ingest_both_source_and_from_page_exits(
-    monkeypatch, patch_make_db, capsys
-):
+async def test_ingest_both_source_and_from_page_exits(monkeypatch, patch_make_db, capsys):
     monkeypatch.setattr(
         "sys.argv",
         [

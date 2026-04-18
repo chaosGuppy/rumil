@@ -8,7 +8,6 @@ from rumil.models import Call, CallStatus, CallType, PageType
 from rumil.moves.base import MoveState
 from rumil.scope_subquestion_linker.prompt import build_linker_prompt
 from rumil.scope_subquestion_linker.seed_selection import select_seed_questions
-from rumil.scope_subquestion_linker.subgraph import render_question_subgraph
 from rumil.scope_subquestion_linker.tool import (
     LinkerResult,
     SubmitHolder,
@@ -23,6 +22,7 @@ from rumil.tracing.trace_events import (
     ProposedSubquestion,
 )
 from rumil.tracing.tracer import CallTrace, set_trace
+from rumil.workspace_exploration import render_question_subgraph
 
 log = logging.getLogger(__name__)
 
@@ -142,23 +142,17 @@ async def run_scope_subquestion_linker(
                 len(holder.result.question_ids),
             )
         if holder.result is None:
-            log.warning(
-                "scope_subquestion_linker: agent did not call submit_linked_subquestions"
-            )
+            log.warning("scope_subquestion_linker: agent did not call submit_linked_subquestions")
             holder.result = LinkerResult(question_ids=[])
 
-        proposed_pages = await validate_proposals(
-            holder.result, db, scope.id, current_children_ids
-        )
+        proposed_pages = await validate_proposals(holder.result, db, scope.id, current_children_ids)
         proposed_ids = [p.id for p in proposed_pages]
         log.info(
             "scope_subquestion_linker: %d proposal(s) survived validation",
             len(proposed_ids),
         )
 
-        proposed = [
-            ProposedSubquestion(id=p.id, headline=p.headline) for p in proposed_pages
-        ]
+        proposed = [ProposedSubquestion(id=p.id, headline=p.headline) for p in proposed_pages]
         await trace.record_strict(LinkSubquestionsCompleteEvent(proposed=proposed))
 
         call.review_json = {

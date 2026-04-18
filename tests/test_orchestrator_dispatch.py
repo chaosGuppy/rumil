@@ -169,10 +169,7 @@ async def test_empty_dispatches_exits_loop(tmp_db, question_page):
     await orch.run(question_page.id)
 
     rows = (
-        await tmp_db.client.table("calls")
-        .select("call_type")
-        .eq("run_id", tmp_db.run_id)
-        .execute()
+        await tmp_db.client.table("calls").select("call_type").eq("run_id", tmp_db.run_id).execute()
     )
     call_types = {r["call_type"] for r in rows.data}
     assert "find_considerations" not in call_types
@@ -249,12 +246,7 @@ async def test_dispatch_executed_events_recorded(tmp_db, question_page):
     )
     await orch.run(question_page.id)
 
-    rows = (
-        await tmp_db.client.table("calls")
-        .select("trace_json")
-        .eq("id", p_call.id)
-        .execute()
-    )
+    rows = await tmp_db.client.table("calls").select("trace_json").eq("id", p_call.id).execute()
     trace_json = rows.data[0]["trace_json"]
     dispatch_events = [e for e in trace_json if e.get("event") == "dispatch_executed"]
     assert len(dispatch_events) >= 1
@@ -303,12 +295,7 @@ async def test_concurrent_dispatch_failure_recorded_in_trace(
 
     await orch.run(question_page.id)
 
-    rows = (
-        await tmp_db.client.table("calls")
-        .select("trace_json")
-        .eq("id", p_call.id)
-        .execute()
-    )
+    rows = await tmp_db.client.table("calls").select("trace_json").eq("id", p_call.id).execute()
     trace_json = rows.data[0]["trace_json"]
     error_events = [e for e in trace_json if e.get("event") == "error"]
     assert len(error_events) >= 1
@@ -400,6 +387,10 @@ def mocked_helpers(mocker):
         "create_view": mocker.patch(
             "rumil.orchestrators.dispatch_handlers.create_view_for_question",
             return_value="child-view-id",
+        ),
+        "update_view": mocker.patch(
+            "rumil.orchestrators.dispatch_handlers.update_view_for_question",
+            return_value="child-update-view-id",
         ),
         "simple": mocker.patch.object(
             BaseOrchestrator,
@@ -548,7 +539,7 @@ async def test_execute_dispatch_assess_with_existing_view_redirects_to_create_vi
     mocker,
 ):
     """When the target question already has a view, assess should redirect
-    to create_view_for_question (iterative view update) instead of assess_question."""
+    to update_view_for_question (iterative view update) instead of assess_question."""
     mocker.patch.object(
         DB,
         "get_view_for_question",
@@ -574,10 +565,10 @@ async def test_execute_dispatch_assess_with_existing_view_redirects_to_create_vi
     )
 
     assert resolved == question_page.id
-    assert child_id == "child-view-id"
-    mocked_helpers["create_view"].assert_called_once()
-    kwargs = mocked_helpers["create_view"].call_args.kwargs
-    assert mocked_helpers["create_view"].call_args.args[0] == question_page.id
+    assert child_id == "child-update-view-id"
+    mocked_helpers["update_view"].assert_called_once()
+    kwargs = mocked_helpers["update_view"].call_args.kwargs
+    assert mocked_helpers["update_view"].call_args.args[0] == question_page.id
     assert kwargs["parent_call_id"] == "parent-3"
     assert kwargs["context_page_ids"] == ["ctx-a", "ctx-b"]
     assert kwargs["force"] is True

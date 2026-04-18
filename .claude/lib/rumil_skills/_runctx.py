@@ -48,7 +48,7 @@ from pathlib import Path
 from typing import Any
 
 from rumil.database import DB
-from rumil.models import Call, CallType, Workspace
+from rumil.models import Call, CallType
 from rumil.settings import get_settings
 
 from ._safety import assert_local_ok

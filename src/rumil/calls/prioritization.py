@@ -1,22 +1,21 @@
 """Prioritization call: plan budget allocation across questions."""
 
 import logging
+from collections.abc import Sequence
 
+from rumil.available_moves import get_moves_for_call
 from rumil.calls.common import (
     RunCallResult,
     run_single_call,
 )
-from rumil.calls.dispatches import estimate_dispatch_cost
-from collections.abc import Sequence
-
 from rumil.calls.dispatches import (
     DISPATCH_DEFS,
     DispatchDef,
+    estimate_dispatch_cost,
     filter_mode_schema,
     make_mode_validator,
 )
 from rumil.database import DB
-from rumil.available_moves import get_moves_for_call
 from rumil.llm import build_user_message
 from rumil.models import Call, CallStatus, CallType, MoveType
 from rumil.moves.base import MoveState
@@ -41,8 +40,7 @@ async def run_prioritization_call(
 ) -> RunCallResult:
     """Run a prioritization call with tool use (single LLM round).
 
-    Uses the prioritization-specific create_subquestion tool variant and
-    dispatch tools. No phase-1 page loading.
+    Binds dispatch tools and available moves. No phase-1 page loading.
     """
     log.info(
         "run_prioritization_call: call=%s, scope=%s",
@@ -62,13 +60,9 @@ async def run_prioritization_call(
     tools = []
     for mt in available_moves:
         tool = MOVES[mt].bind(state)
-        if mt == MoveType.CREATE_SUBQUESTION:
-            tool.input_schema = filter_mode_schema(tool.input_schema, allowed_fc_modes)
         tools.append(tool)
     if dispatch_types is not None:
-        selected_defs = [
-            DISPATCH_DEFS[ct] for ct in dispatch_types if ct in DISPATCH_DEFS
-        ]
+        selected_defs = [DISPATCH_DEFS[ct] for ct in dispatch_types if ct in DISPATCH_DEFS]
     else:
         selected_defs = list(DISPATCH_DEFS.values())
     if extra_dispatch_defs:

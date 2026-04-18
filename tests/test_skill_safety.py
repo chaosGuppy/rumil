@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from rumil_skills._safety import assert_local_ok
 
 

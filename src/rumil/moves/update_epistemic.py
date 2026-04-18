@@ -30,9 +30,7 @@ class UpdateEpistemicPayload(BaseModel):
     reasoning: str = Field(description="Why this update is warranted")
 
 
-async def _context_check(
-    payload: UpdateEpistemicPayload, state: MoveState
-) -> MoveResult | None:
+async def _context_check(payload: UpdateEpistemicPayload, state: MoveState) -> MoveResult | None:
     """Check whether the source judgement for current scores is in context.
 
     If the LLM hasn't seen the judgement that established the current scores,
@@ -60,7 +58,13 @@ async def _context_check(
         return None
 
     state.context_page_ids.add(source_judgement.id)
-    formatted = await format_page(source_judgement, PageDetail.CONTENT, db=state.db)
+    formatted = await format_page(
+        source_judgement,
+        PageDetail.CONTENT,
+        db=state.db,
+        track=True,
+        track_tags={"source": "epistemic_source_check"},
+    )
     return MoveResult(
         f"Before updating scores on [{page_id[:8]}], please review the "
         "judgement that established the current scores "

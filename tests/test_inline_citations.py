@@ -21,6 +21,25 @@ from rumil.models import (
 from rumil.moves.base import _CITATION_RE, extract_and_link_citations
 
 
+@pytest.fixture(autouse=True)
+def _stub_strength_helper(mocker):
+    """Stub the Sonnet-backed dependency-strength helper with a deterministic result.
+
+    The helper is invoked by extract_and_link_citations when a CLAIM or
+    JUDGEMENT cites another claim/judgement. Unit tests should not hit the
+    network; return a fixed strength + reasoning for every cited page so
+    tests can assert on it.
+    """
+
+    async def _stub(citing_page, cited_pages, call, db):
+        return {p.id: (3.5, "stub-reason") for p in cited_pages}
+
+    return mocker.patch(
+        "rumil.moves.base._assign_dependency_strengths",
+        side_effect=_stub,
+    )
+
+
 @pytest_asyncio.fixture
 async def source_page(tmp_db):
     page = Page(
@@ -62,7 +81,8 @@ async def second_claim_page(tmp_db):
 
 
 async def test_inline_citation_of_source_creates_cites_link(
-    tmp_db, source_page,
+    tmp_db,
+    source_page,
 ):
     """An inline [shortid] citing a SOURCE page should produce a CITES link."""
     citing_page = Page(
@@ -84,7 +104,8 @@ async def test_inline_citation_of_source_creates_cites_link(
 
 
 async def test_inline_citation_of_claim_creates_depends_on_link(
-    tmp_db, claim_page,
+    tmp_db,
+    claim_page,
 ):
     """An inline [shortid] citing a CLAIM from a CLAIM should produce a DEPENDS_ON link
     pointing from the citing page to the cited page."""
@@ -98,7 +119,9 @@ async def test_inline_citation_of_claim_creates_depends_on_link(
     await tmp_db.save_page(citing_page)
 
     linked = await extract_and_link_citations(
-        citing_page.id, citing_page.content, tmp_db,
+        citing_page.id,
+        citing_page.content,
+        tmp_db,
     )
 
     assert linked == {claim_page.id}
@@ -107,10 +130,14 @@ async def test_inline_citation_of_claim_creates_depends_on_link(
     assert len(deps) == 1
     assert deps[0].from_page_id == citing_page.id
     assert deps[0].to_page_id == claim_page.id
+    assert deps[0].strength == 3.5
+    assert deps[0].reasoning == "stub-reason"
 
 
 async def test_multiple_inline_citations(
-    tmp_db, claim_page, second_claim_page,
+    tmp_db,
+    claim_page,
+    second_claim_page,
 ):
     """Content with multiple [shortid] citations creates one DEPENDS_ON link per cited claim."""
     citing_page = Page(
@@ -126,7 +153,9 @@ async def test_multiple_inline_citations(
     await tmp_db.save_page(citing_page)
 
     linked = await extract_and_link_citations(
-        citing_page.id, citing_page.content, tmp_db,
+        citing_page.id,
+        citing_page.content,
+        tmp_db,
     )
 
     assert linked == {claim_page.id, second_claim_page.id}
@@ -134,13 +163,22 @@ async def test_multiple_inline_citations(
     deps = [l for l in links_from_citing if l.link_type == LinkType.DEPENDS_ON]
     assert len(deps) == 2
     assert {l.to_page_id for l in deps} == {claim_page.id, second_claim_page.id}
+    assert all(l.strength == 3.5 for l in deps)
+    assert all(l.reasoning == "stub-reason" for l in deps)
 
 
 async def test_judgement_citing_claim_creates_depends_on_link(
-    tmp_db, claim_page,
+    tmp_db,
+    claim_page,
+    _stub_strength_helper,
 ):
     """A JUDGEMENT citing a CLAIM should produce a DEPENDS_ON link
-    pointing from the judgement to the cited claim."""
+    pointing from the judgement to the cited claim.
+
+    The strength-assignment helper fires for both CLAIM and JUDGEMENT
+    citing pages, so the resulting link should carry the stubbed strength
+    and reasoning.
+    """
     judgement = Page(
         page_type=PageType.JUDGEMENT,
         layer=PageLayer.SQUIDGY,
@@ -151,7 +189,9 @@ async def test_judgement_citing_claim_creates_depends_on_link(
     await tmp_db.save_page(judgement)
 
     linked = await extract_and_link_citations(
-        judgement.id, judgement.content, tmp_db,
+        judgement.id,
+        judgement.content,
+        tmp_db,
     )
 
     assert linked == {claim_page.id}
@@ -160,10 +200,14 @@ async def test_judgement_citing_claim_creates_depends_on_link(
     assert len(deps) == 1
     assert deps[0].from_page_id == judgement.id
     assert deps[0].to_page_id == claim_page.id
+    assert deps[0].strength == 3.5
+    assert deps[0].reasoning == "stub-reason"
+    _stub_strength_helper.assert_called_once()
 
 
 async def test_question_citing_claim_creates_related_link(
-    tmp_db, claim_page,
+    tmp_db,
+    claim_page,
 ):
     """A QUESTION citing a CLAIM should produce a RELATED link (claim → question).
 
@@ -181,7 +225,9 @@ async def test_question_citing_claim_creates_related_link(
     await tmp_db.save_page(question)
 
     linked = await extract_and_link_citations(
-        question.id, question.content, tmp_db,
+        question.id,
+        question.content,
+        tmp_db,
     )
 
     assert linked == {claim_page.id}
@@ -190,9 +236,9 @@ async def test_question_citing_claim_creates_related_link(
     assert len(rel) == 1
     assert rel[0].from_page_id == claim_page.id
     assert rel[0].to_page_id == question.id
-    assert not [
-        l for l in question_links if l.link_type == LinkType.CONSIDERATION
-    ], "inline citation from a question body must not create a consideration"
+    assert not [l for l in question_links if l.link_type == LinkType.CONSIDERATION], (
+        "inline citation from a question body must not create a consideration"
+    )
 
 
 async def test_citing_question_resolves_to_its_judgement(tmp_db):
@@ -215,11 +261,13 @@ async def test_citing_question_resolves_to_its_judgement(tmp_db):
         headline="Rayleigh scattering",
     )
     await tmp_db.save_page(answer)
-    await tmp_db.save_link(PageLink(
-        from_page_id=answer.id,
-        to_page_id=question.id,
-        link_type=LinkType.ANSWERS,
-    ))
+    await tmp_db.save_link(
+        PageLink(
+            from_page_id=answer.id,
+            to_page_id=question.id,
+            link_type=LinkType.ANSWERS,
+        )
+    )
 
     citing = Page(
         page_type=PageType.JUDGEMENT,
@@ -240,10 +288,9 @@ async def test_citing_question_resolves_to_its_judgement(tmp_db):
     assert deps[0].to_page_id == answer.id
 
     links_to_question = await tmp_db.get_links_to(question.id)
-    assert not [
-        l for l in links_to_question
-        if l.from_page_id == citing.id
-    ], "no link should be created to the question itself"
+    assert not [l for l in links_to_question if l.from_page_id == citing.id], (
+        "no link should be created to the question itself"
+    )
 
 
 async def test_citing_question_without_judgement_skipped(tmp_db):
@@ -364,14 +411,16 @@ async def test_assess_produces_inline_citations(tmp_db, question_page):
             robustness=3,
         )
         await tmp_db.save_page(claim)
-        await tmp_db.save_link(PageLink(
-            from_page_id=claim.id,
-            to_page_id=question_page.id,
-            link_type=LinkType.CONSIDERATION,
-            strength=3.5,
-            reasoning=headline,
-            direction=ConsiderationDirection(direction),
-        ))
+        await tmp_db.save_link(
+            PageLink(
+                from_page_id=claim.id,
+                to_page_id=question_page.id,
+                link_type=LinkType.CONSIDERATION,
+                strength=3.5,
+                reasoning=headline,
+                direction=ConsiderationDirection(direction),
+            )
+        )
         claims.append(claim)
 
     call = Call(
@@ -382,14 +431,13 @@ async def test_assess_produces_inline_citations(tmp_db, question_page):
     )
     await tmp_db.save_call(call)
 
-
     runner = AssessCall(question_page.id, call, tmp_db)
     await runner.run()
 
     refreshed = await tmp_db.get_call(call.id)
     assert refreshed.status == CallStatus.COMPLETE
 
-    citation_pattern = re.compile(r'\[([a-f0-9]{8})\]')
+    citation_pattern = re.compile(r"\[([a-f0-9]{8})\]")
 
     created_pages = []
     for pid in runner.infra.state.created_page_ids:
@@ -397,10 +445,7 @@ async def test_assess_produces_inline_citations(tmp_db, question_page):
         if p:
             created_pages.append(p)
 
-    pages_with_citations = [
-        p for p in created_pages
-        if citation_pattern.search(p.content)
-    ]
+    pages_with_citations = [p for p in created_pages if citation_pattern.search(p.content)]
     assert len(pages_with_citations) >= 1, (
         "At least one created page should contain an inline [shortid] citation"
     )
@@ -409,10 +454,7 @@ async def test_assess_produces_inline_citations(tmp_db, question_page):
         cited_short_ids = citation_pattern.findall(p.content)
         links_from = await tmp_db.get_links_from(p.id)
         links_to = await tmp_db.get_links_to(p.id)
-        linked_ids = (
-            {l.to_page_id for l in links_from}
-            | {l.from_page_id for l in links_to}
-        )
+        linked_ids = {l.to_page_id for l in links_from} | {l.from_page_id for l in links_to}
         for sid in cited_short_ids:
             resolved = await tmp_db.resolve_page_id(sid)
             if resolved:

@@ -8,10 +8,8 @@ from typing import Any
 
 import anthropic
 from anthropic.types import ServerToolUseBlock, TextBlock
-
+from claude_agent_sdk import AgentDefinition, tool
 from pydantic import BaseModel, Field
-
-from rumil.moves.base import HEADLINE_DESCRIPTION
 
 from rumil.clean.common import (
     UpdateOperation,
@@ -23,6 +21,7 @@ from rumil.clean.common import (
     save_checkpoint,
 )
 from rumil.database import DB
+from rumil.explore_tool import make_explore_tool
 from rumil.llm import (
     LLMExchangeMetadata,
     call_api,
@@ -34,10 +33,8 @@ from rumil.models import (
     CallType,
     Page,
 )
-from claude_agent_sdk import AgentDefinition, tool
-
+from rumil.moves.base import HEADLINE_DESCRIPTION
 from rumil.moves.create_claim import ensure_source_page, execute_with_source_creation
-from rumil.explore_tool import make_explore_tool
 from rumil.sdk_agent import SdkAgentConfig, run_sdk_agent
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
@@ -102,11 +99,7 @@ def _make_create_source_tool(call: Call, db: DB):
         page_id = await ensure_source_page(url, call, db, source_cache)
         if page_id is None:
             return {"content": [{"type": "text", "text": f"Failed to scrape {url}"}]}
-        return {
-            "content": [
-                {"type": "text", "text": f"Source page created: [{page_id[:8]}]"}
-            ]
-        }
+        return {"content": [{"type": "text", "text": f"Source page created: [{page_id[:8]}]"}]}
 
     return create_source
 
@@ -160,9 +153,7 @@ _CLAIM_UPDATER_PROMPT = (
 
 class GroundingTask(BaseModel):
     claim: str = Field(description="The claim text being investigated")
-    grounding_issue: str = Field(
-        description="What is wrong with the grounding of this claim"
-    )
+    grounding_issue: str = Field(description="What is wrong with the grounding of this claim")
     search_task: str = Field(
         description=(
             "Focused description of what to search for on the web "
@@ -243,18 +234,13 @@ async def run_grounding_feedback(
                 )
             )
         else:
-            findings = [
-                (GroundingTask(**f["task"]), f["findings_text"]) for f in cp["findings"]
-            ]
+            findings = [(GroundingTask(**f["task"]), f["findings_text"]) for f in cp["findings"]]
             log.info("Stage 2: loaded %d findings from prior run", len(findings))
 
         _save_checkpoint(
             call,
             "findings",
-            [
-                {"task": task.model_dump(), "findings_text": text}
-                for task, text in findings
-            ],
+            [{"task": task.model_dump(), "findings_text": text} for task, text in findings],
         )
         await db.save_call(call)
 
@@ -284,9 +270,7 @@ async def run_grounding_feedback(
             )
         else:
             plan = UpdatePlan(
-                waves=[
-                    [UpdateOperation(**op) for op in wave] for wave in cp["update_plan"]
-                ]
+                waves=[[UpdateOperation(**op) for op in wave] for wave in cp["update_plan"]]
             )
             log.info(
                 "Stage 3: loaded plan from prior run (%d waves, %d ops)",
@@ -303,9 +287,7 @@ async def run_grounding_feedback(
 
         total_ops = sum(len(w) for w in plan.waves)
         if total_ops == 0:
-            call.result_summary = (
-                "No updates planned — findings did not warrant changes."
-            )
+            call.result_summary = "No updates planned — findings did not warrant changes."
             call.status = CallStatus.COMPLETE
             await db.save_call(call)
             return call
@@ -420,9 +402,7 @@ async def _run_web_search_task(
 
             messages.append({"role": "assistant", "content": response.content})
 
-            has_server_tools = any(
-                isinstance(b, ServerToolUseBlock) for b in response.content
-            )
+            has_server_tools = any(isinstance(b, ServerToolUseBlock) for b in response.content)
             if response.stop_reason == "end_turn" or not has_server_tools:
                 break
 
@@ -580,7 +560,7 @@ async def _plan_updates(
                 tools=subagent_tool_fqnames,
             ),
         },
-        allowed_tools=all_tool_fqnames + ["Agent", "Bash", "Read"],
+        allowed_tools=[*all_tool_fqnames, "Agent", "Bash", "Read"],
         disallowed_tools=(),
         output_format={
             "type": "json_schema",

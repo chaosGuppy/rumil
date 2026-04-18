@@ -18,8 +18,8 @@ if TYPE_CHECKING:
 from rumil.calls.call_registry import ASSESS_CALL_CLASSES
 from rumil.calls.find_considerations import FindConsiderationsCall
 from rumil.calls.ingest import IngestCall
-from rumil.calls.web_research import WebResearchCall
 from rumil.calls.summarize import summarize_question
+from rumil.calls.web_research import WebResearchCall
 from rumil.constants import (
     DEFAULT_FRUIT_THRESHOLD,
     DEFAULT_INGEST_FRUIT_THRESHOLD,
@@ -43,7 +43,6 @@ from rumil.models import (
 )
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
-
 
 log = logging.getLogger(__name__)
 
@@ -95,8 +94,7 @@ class ClaimScore(BaseModel):
     )
     broader_impact: int = Field(
         description=(
-            "0-10: how strategically important it is in general to have a "
-            "good answer on this claim"
+            "0-10: how strategically important it is in general to have a good answer on this claim"
         )
     )
     fruit: int = Field(description="0-10: how much useful investigation remains")
@@ -157,9 +155,7 @@ def _build_item_block(
         else:
             parts.append(latest_j.headline)
         if latest_j.fruit_remaining is not None:
-            parts.append(
-                f"\nPrior fruit_remaining estimate: {latest_j.fruit_remaining}/10"
-            )
+            parts.append(f"\nPrior fruit_remaining estimate: {latest_j.fruit_remaining}/10")
     else:
         parts.append("\nNo prior assessment.")
 
@@ -223,7 +219,8 @@ async def score_items_sequentially(
         child_page_ids: list[str] = []
         for qid in question_ids:
             child_page_ids.extend(
-                l.to_page_id for l in links_by_parent.get(qid, [])
+                l.to_page_id
+                for l in links_by_parent.get(qid, [])
                 if l.link_type == LinkType.CHILD_QUESTION
             )
         if child_page_ids:
@@ -269,6 +266,16 @@ async def score_items_sequentially(
             parent_parts.append(parent_judgement.headline)
         parent_parts.append("")
 
+    view = await db.get_view_for_question(parent_page.id)
+    if view:
+        from rumil.context import render_view
+
+        view_items = await db.get_view_items(view.id, min_importance=2)
+        view_text = await render_view(view, view_items, min_importance=2)
+        if view_text.strip():
+            parent_parts.append(view_text)
+            parent_parts.append("")
+
     parent_context = "\n".join(parent_parts)
     system_prompt = build_system_prompt(system_prompt_name)
     messages: list[dict] = []
@@ -299,10 +306,7 @@ async def score_items_sequentially(
             + "\n\nScore all items in this batch now."
         )
 
-        if batch_idx == 0:
-            user_content = parent_context + "\n" + batch_text
-        else:
-            user_content = batch_text
+        user_content = parent_context + "\n" + batch_text if batch_idx == 0 else batch_text
 
         messages.append({"role": "user", "content": user_content})
 
@@ -410,11 +414,7 @@ async def find_considerations_until_done(
     Returns (rounds_made, list_of_call_ids).
     """
     if max_rounds is None:
-        max_rounds = (
-            SMOKE_TEST_MAX_ROUNDS
-            if get_settings().is_smoke_test
-            else DEFAULT_MAX_ROUNDS
-        )
+        max_rounds = SMOKE_TEST_MAX_ROUNDS if get_settings().is_smoke_test else DEFAULT_MAX_ROUNDS
     elif get_settings().is_smoke_test:
         max_rounds = min(max_rounds, SMOKE_TEST_MAX_ROUNDS)
     log.info(

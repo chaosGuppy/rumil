@@ -2,13 +2,11 @@
 Data models for the research workspace.
 """
 
+import uuid
 from datetime import UTC, datetime
 from enum import Enum
-import uuid
 
-from typing import Annotated, Literal
-
-from pydantic import BaseModel, ConfigDict, Discriminator, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from rumil.constants import MIN_TWOPHASE_BUDGET
 
@@ -80,7 +78,11 @@ class CallType(str, Enum):
     FEEDBACK_UPDATE = "feedback_update"
     LINK_SUBQUESTIONS = "link_subquestions"
     AB_EVAL = "ab_eval"
+    AB_EVAL_COMPARISON = "ab_eval_comparison"
+    AB_EVAL_SUMMARY = "ab_eval_summary"
+    RUN_EVAL = "run_eval"
     CREATE_VIEW = "create_view"
+    GLOBAL_PRIORITIZATION = "global_prioritization"
     UPDATE_VIEW = "update_view"
     CHAT_DIRECT = "chat_direct"
     # Envelope call for mutations made from Claude Code's broader context
@@ -124,7 +126,9 @@ class LinkType(str, Enum):
     CHILD_QUESTION = "child_question"  # question decomposes into sub-question
     SUPERSEDES = "supersedes"  # page replaces another
     RELATED = "related"  # general relation
-    ANSWERS = "answers"  # judgement -> question: this judgement is the current answer to the question
+    ANSWERS = (
+        "answers"  # judgement -> question: this judgement is the current answer to the question
+    )
     VARIANT = "variant"  # more robust variation of a claim
     SUMMARIZES = "summarizes"  # summary page covers a question subtree
     CITES = "cites"  # claim cites a source
@@ -138,7 +142,6 @@ class MoveType(str, Enum):
     CREATE_CLAIM = "CREATE_CLAIM"
     CREATE_QUESTION = "CREATE_QUESTION"
     CREATE_SCOUT_QUESTION = "CREATE_SCOUT_QUESTION"
-    CREATE_SUBQUESTION = "CREATE_SUBQUESTION"
     CREATE_JUDGEMENT = "CREATE_JUDGEMENT"
     CREATE_WIKI_PAGE = "CREATE_WIKI_PAGE"
     LINK_CONSIDERATION = "LINK_CONSIDERATION"
@@ -151,7 +154,6 @@ class MoveType(str, Enum):
     REMOVE_LINK = "REMOVE_LINK"
     CHANGE_LINK_ROLE = "CHANGE_LINK_ROLE"
     UPDATE_EPISTEMIC = "UPDATE_EPISTEMIC"
-    LINK_DEPENDS_ON = "LINK_DEPENDS_ON"
     CREATE_VIEW_ITEM = "CREATE_VIEW_ITEM"
     PROPOSE_VIEW_ITEM = "PROPOSE_VIEW_ITEM"
 
@@ -180,9 +182,7 @@ class ConsiderationDirection(str, Enum):
 
 
 class _DispatchBase(BaseModel):
-    reason: str = Field(
-        default="", description="Why this dispatch is a good use of budget"
-    )
+    reason: str = Field(default="", description="Why this dispatch is a good use of budget")
     context_page_ids: list[str] = Field(
         default_factory=list,
         description=(
@@ -197,9 +197,7 @@ class BaseDispatchPayload(_DispatchBase):
 
 
 class MultiRoundFields(BaseModel):
-    fruit_threshold: int = Field(
-        default=4, description="Remaining fruit threshold for stopping"
-    )
+    fruit_threshold: int = Field(default=4, description="Remaining fruit threshold for stopping")
     max_rounds: int = Field(
         default=5, description="Maximum scouting rounds (each round costs 1 budget)"
     )
@@ -331,20 +329,6 @@ class RecurseClaimDispatchPayload(BaseDispatchPayload, PrioritizationFields):
     )
 
 
-class InlineScoutDispatch(_DispatchBase, _ScoutFields):
-    call_type: Literal["find_considerations"] = "find_considerations"
-
-
-class InlineAssessDispatch(_DispatchBase):
-    call_type: Literal["assess"] = "assess"
-
-
-InlineDispatch = Annotated[
-    InlineScoutDispatch | InlineAssessDispatch,
-    Discriminator("call_type"),
-]
-
-
 class Move(BaseModel):
     move_type: MoveType
     payload: BaseModel
@@ -409,6 +393,7 @@ class PageLink(BaseModel):
     importance: int | None = None  # VIEW_ITEM links: 1-5
     section: str | None = None  # VIEW_ITEM links: section name
     position: int | None = None  # VIEW_ITEM links: order within section
+    impact_on_parent_question: int | None = None  # CHILD_QUESTION links: 0-10
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     run_id: str = ""
 

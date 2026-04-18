@@ -57,13 +57,12 @@ async def build_research_tree(
             f"{'#' * (depth + 2)} Sub-question [id: {short_id}]: {question.headline}\n\n{question.content}\n"
         )
     else:
-        parts.append(
-            f"{'#' * (depth + 2)} Sub-question [id: {short_id}]: {question.headline}\n"
-        )
+        parts.append(f"{'#' * (depth + 2)} Sub-question [id: {short_id}]: {question.headline}\n")
 
     # Considerations
     considerations = await db.get_considerations_for_question(question_id)
     if considerations:
+
         def format_consideration(claim, link) -> str:
             cid = claim.id[:8]
             strength_note = f" (strength {link.strength:.1f})" if link.strength else ""
@@ -72,7 +71,7 @@ async def build_research_tree(
                 lines.append(f"  {claim.content}")
                 if link.reasoning:
                     lines.append(f"  *Bearing on question: {link.reasoning}*")
-                return '\n'.join(lines)
+                return "\n".join(lines)
             return f"- {claim.headline} [id: {cid}]{strength_note}"
 
         parts.append(f"{indent}**Considerations:**\n")
@@ -85,16 +84,10 @@ async def build_research_tree(
     if judgements:
         ordered = sorted(judgements, key=lambda j: j.created_at)
         for i, j in enumerate(ordered):
-            label = (
-                f"Judgement {i + 1} of {len(ordered)}"
-                if len(ordered) > 1
-                else "Judgement"
-            )
+            label = f"Judgement {i + 1} of {len(ordered)}" if len(ordered) > 1 else "Judgement"
             jid = j.id[:8]
             if full_detail:
-                parts.append(
-                    f"{indent}**{label}** [id: {jid}] (C{j.credence}/R{j.robustness}):\n"
-                )
+                parts.append(f"{indent}**{label}** [id: {jid}] (C{j.credence}/R{j.robustness}):\n")
                 parts.append(j.content)
                 extra = j.extra or {}
                 if extra.get("key_dependencies"):
@@ -103,8 +96,7 @@ async def build_research_tree(
                     parts.append(f"\n*Sensitivity: {extra['sensitivity_analysis']}*")
             else:
                 parts.append(
-                    f"{indent}**{label}** [id: {jid}] (C{j.credence}/R{j.robustness}): "
-                    f"{j.headline}"
+                    f"{indent}**{label}** [id: {jid}] (C{j.credence}/R{j.robustness}): {j.headline}"
                 )
             parts.append("")
 
@@ -115,7 +107,8 @@ async def build_research_tree(
             for child in children:
                 parts.append(
                     await build_research_tree(
-                        child.id, db,
+                        child.id,
+                        db,
                         depth=depth + 1,
                         max_depth=max_depth,
                         summary_cutoff=summary_cutoff,
@@ -156,9 +149,7 @@ async def generate_summary(
         f"{closing}"
     )
 
-    return await text_call(
-        system_prompt=system_prompt, user_message=user_message
-    )
+    return await text_call(system_prompt=system_prompt, user_message=user_message)
 
 
 def save_summary(summary_text: str, question_summary: str) -> Path:

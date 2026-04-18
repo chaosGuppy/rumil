@@ -18,7 +18,6 @@ import asyncio
 import sys
 
 from ._runctx import (
-    SessionState,
     load_session_state,
     make_db,
     save_session_state,

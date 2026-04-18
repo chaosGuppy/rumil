@@ -4,7 +4,6 @@ FastAPI application for the Rumil research workspace.
 Read-only API for browsing projects, pages, links, and calls.
 """
 
-import asyncio
 import base64
 import logging
 import os
@@ -17,6 +16,30 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import TypeAdapter, ValidationError
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from rumil.api.chat import ChatRequest, ChatResponse, handle_chat, handle_chat_stream
+from rumil.api.schemas import (
+    ABEvalDimensionOut,
+    ABEvalDimensionSummaryOut,
+    ABEvalReportListItemOut,
+    ABEvalReportOut,
+    CallNodeOut,
+    CallSummary,
+    LinkedPageOut,
+    LLMExchangeOut,
+    LLMExchangeSummaryOut,
+    PageCountsOut,
+    PageDetailOut,
+    PageLoadEventOut,
+    PageLoadStatsOut,
+    PaginatedPagesOut,
+    ProjectStatsOut,
+    QuestionStatsOut,
+    RealtimeConfigOut,
+    RunListItemOut,
+    RunSummaryOut,
+    RunTraceTreeOut,
+    TraceEventOut,
+)
 from rumil.database import DB, _row_to_call, _rows
 from rumil.models import (
     Call,
@@ -30,35 +53,8 @@ from rumil.models import (
     SuggestionType,
     Workspace,
 )
-from rumil.views import View, build_view
 from rumil.settings import get_settings
-from rumil.api.chat import ChatRequest, ChatResponse, handle_chat, handle_chat_stream
-from rumil.api.schemas import (
-    ABEvalDimensionOut,
-    ABEvalDimensionSummaryOut,
-    ABEvalReportListItemOut,
-    ABEvalReportOut,
-    ABRunArmOut,
-    ABRunTraceOut,
-    CallSequenceOut,
-    CallTraceOut,
-    LinkedPageOut,
-    LLMExchangeOut,
-    LLMExchangeSummaryOut,
-    PageCountsOut,
-    PageDetailOut,
-    PaginatedPagesOut,
-    ProjectStatsOut,
-    QuestionStatsOut,
-    RealtimeConfigOut,
-    RunListItemOut,
-    CallNodeOut,
-    CallSummary,
-    RunSummaryOut,
-    RunTraceOut,
-    RunTraceTreeOut,
-    TraceEventOut,
-)
+from rumil.views import View, build_view
 
 log = logging.getLogger(__name__)
 _trace_event_adapter = TypeAdapter(TraceEventOut)
@@ -168,9 +164,7 @@ async def list_projects(db: DB = Depends(_get_db)):
 
 @app.get("/api/projects/{project_id}", response_model=Project)
 async def get_project(project_id: str, db: DB = Depends(_get_db)):
-    rows = _rows(
-        await db.client.table("projects").select("*").eq("id", project_id).execute()
-    )
+    rows = _rows(await db.client.table("projects").select("*").eq("id", project_id).execute())
     if not rows:
         raise HTTPException(status_code=404, detail="Project not found")
     r = rows[0]
@@ -270,9 +264,7 @@ async def get_page_detail(
         raise HTTPException(status_code=404, detail="Page not found")
     raw_from = await db.get_links_from(page_id)
     raw_to = await db.get_links_to(page_id)
-    all_linked_ids = [link.to_page_id for link in raw_from] + [
-        link.from_page_id for link in raw_to
-    ]
+    all_linked_ids = [link.to_page_id for link in raw_from] + [link.from_page_id for link in raw_to]
     pages_by_id = await db.get_pages_by_ids(all_linked_ids)
     links_from = [
         LinkedPageOut(page=pages_by_id[link.to_page_id], link=link)
@@ -370,56 +362,6 @@ async def get_child_calls(call_id: str, db: DB = Depends(_get_db)):
     return await db.get_child_calls(call_id)
 
 
-async def _build_call_trace(db: DB, call_id: str) -> CallTraceOut:
-    call = await db.get_call(call_id)
-    if not call:
-        raise HTTPException(status_code=404, detail="Call not found")
-    events, children, db_sequences = await asyncio.gather(
-        _parse_trace_events(db, call_id),
-        db.get_child_calls(call_id),
-        db.get_sequences_for_call(call_id),
-    )
-    scope_page_summary = None
-    if call.scope_page_id:
-        scope_page = await db.get_page(call.scope_page_id)
-        if scope_page:
-            scope_page_summary = scope_page.headline
-    child_traces = list(
-        await asyncio.gather(*[_build_call_trace(db, c.id) for c in children])
-    )
-
-    sequences_out: list[CallSequenceOut] | None = None
-    if db_sequences:
-        seq_call_lists = await asyncio.gather(
-            *[db.get_calls_for_sequence(seq.id) for seq in db_sequences]
-        )
-        seq_trace_lists = await asyncio.gather(
-            *[
-                asyncio.gather(*[_build_call_trace(db, sc.id) for sc in seq_calls])
-                for seq_calls in seq_call_lists
-            ]
-        )
-        sequences_out = [
-            CallSequenceOut(
-                id=seq.id,
-                position_in_batch=seq.position_in_batch,
-                calls=list(seq_traces),
-            )
-            for seq, seq_traces in zip(db_sequences, seq_trace_lists)
-        ]
-
-    child_costs = [ct.cost_usd for ct in child_traces if ct.cost_usd is not None]
-    total = (call.cost_usd or 0) + sum(child_costs)
-    return CallTraceOut(
-        call=call,
-        scope_page_summary=scope_page_summary,
-        events=events,
-        children=child_traces,
-        sequences=sequences_out,
-        cost_usd=total if total > 0 else None,
-    )
-
-
 async def _parse_trace_events(db: DB, call_id: str) -> list[TraceEventOut]:
     raw_events = await db.get_call_trace(call_id)
     events: list[TraceEventOut] = []
@@ -473,12 +415,7 @@ async def get_run_trace_tree(run_id: str, db: DB = Depends(_get_db)):
             )
         )
     total_cost = sum(c.cost_usd or 0 for c in calls)
-    run_resp = (
-        await db.client.table("runs")
-        .select("staged, config")
-        .eq("id", run_id)
-        .execute()
-    )
+    run_resp = await db.client.table("runs").select("staged, config").eq("id", run_id).execute()
     run_data: list[dict[str, object]] = run_resp.data or []  # type: ignore[assignment]
     is_staged = bool(run_data and run_data[0].get("staged"))
     run_config: dict = {}
@@ -502,73 +439,15 @@ async def get_call_events(call_id: str, db: DB = Depends(_get_db)):
     return await _parse_trace_events(db, call_id)
 
 
-@app.get("/api/ab-runs/{ab_run_id}/trace", response_model=ABRunTraceOut)
-async def get_ab_run_trace(ab_run_id: str, db: DB = Depends(_get_db)):
-    ab_rows = _rows(
-        await db.client.table("ab_runs").select("*").eq("id", ab_run_id).execute()
-    )
-    if not ab_rows:
-        raise HTTPException(status_code=404, detail="AB run not found")
-    ab_row = ab_rows[0]
-    arm_rows = _rows(
-        await db.client.table("runs")
-        .select("id, name, config, ab_arm")
-        .eq("ab_run_id", ab_run_id)
-        .order("ab_arm")
-        .execute()
-    )
-    question_page = None
-    qid = ab_row.get("question_id")
-    if qid:
-        question_page = await db.get_page(qid)
-
-    async def _build_arm(arm_row: dict) -> ABRunArmOut:
-        run_id = arm_row["id"]
-        question_id = await db.get_run_question_id(run_id)
-        q_page = None
-        if question_id:
-            q_page = await db.get_page(question_id)
-        calls = await db.get_calls_for_run(run_id)
-        root_calls = [c for c in calls if c.parent_call_id is None]
-        root_traces = list(
-            await asyncio.gather(*[_build_call_trace(db, c.id) for c in root_calls])
-        )
-        run_costs = [ct.cost_usd for ct in root_traces if ct.cost_usd is not None]
-        run_total = sum(run_costs)
-        trace = RunTraceOut(
-            run_id=run_id,
-            question=q_page,
-            root_calls=root_traces,
-            cost_usd=run_total if run_total > 0 else None,
-        )
-        return ABRunArmOut(
-            run_id=run_id,
-            name=arm_row.get("name", ""),
-            config=arm_row.get("config", {}),
-            trace=trace,
-        )
-
-    arms = list(await asyncio.gather(*[_build_arm(arm_row) for arm_row in arm_rows]))
-    return ABRunTraceOut(
-        ab_run_id=ab_run_id,
-        name=ab_row.get("name", ""),
-        question=question_page,
-        arms=arms,
-    )
-
-
 @app.get(
     "/api/ab-evals",
     response_model=list[ABEvalReportListItemOut],
 )
-async def list_ab_evals(project_id: str = "", db: DB = Depends(_get_db)):
+async def list_ab_evals(db: DB = Depends(_get_db)):
     rows = await db.list_ab_eval_reports()
 
     question_ids = {
-        qid
-        for row in rows
-        for qid in (row.get("question_id_a"), row.get("question_id_b"))
-        if qid
+        qid for row in rows for qid in (row.get("question_id_a"), row.get("question_id_b")) if qid
     }
     pages_by_id: dict[str, Page] = {}
     if question_ids:
@@ -606,11 +485,7 @@ async def list_ab_evals(project_id: str = "", db: DB = Depends(_get_db)):
     "/api/ab-evals/{eval_id}",
     response_model=ABEvalReportOut,
 )
-async def get_ab_eval(
-    eval_id: str,
-    project_id: str = "",
-    db: DB = Depends(_get_db),
-):
+async def get_ab_eval(eval_id: str, db: DB = Depends(_get_db)):
     row = await db.get_ab_eval_report(eval_id)
     if not row:
         raise HTTPException(status_code=404, detail="AB eval report not found")
@@ -633,6 +508,7 @@ async def get_ab_eval(
         question_id_b=row.get("question_id_b") or "",
         question_headline=q_page.headline if q_page else "",
         overall_assessment=row.get("overall_assessment") or "",
+        overall_assessment_call_id=row.get("overall_assessment_call_id") or "",
         dimension_reports=[
             ABEvalDimensionOut(
                 name=d.get("name", ""),
@@ -643,6 +519,7 @@ async def get_ab_eval(
                 comparison=d.get("comparison", ""),
                 call_id_a=d.get("call_id_a", ""),
                 call_id_b=d.get("call_id_b", ""),
+                comparison_call_id=d.get("comparison_call_id", ""),
             )
             for d in dims
         ],
@@ -849,3 +726,27 @@ async def chat(request: ChatRequest) -> ChatResponse:
 @app.post("/api/chat/stream")
 async def chat_stream(request: ChatRequest):
     return await handle_chat_stream(request)
+
+
+@app.get(
+    "/api/runs/{run_id}/page-load-stats",
+    response_model=PageLoadStatsOut,
+)
+async def get_page_load_stats(run_id: str, db: DB = Depends(_get_db)):
+    rows = await db.get_page_format_events_for_run(run_id)
+
+    events = [
+        PageLoadEventOut(
+            page_id=r["page_id"],
+            detail=r["detail"],
+            tags=r.get("tags") or {},
+        )
+        for r in rows
+    ]
+    unique_pages = {r["page_id"] for r in rows}
+
+    return PageLoadStatsOut(
+        events=events,
+        total=len(rows),
+        total_unique=len(unique_pages),
+    )

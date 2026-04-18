@@ -70,10 +70,7 @@ def _render_event(ev: dict, brief: bool) -> str:
         bits = [m.get("type", "?") for m in moves]
         return f"{head}  moves={bits}"
     if name == "review_complete":
-        return (
-            f"{head}  fruit={ev.get('remaining_fruit')} "
-            f"confidence={ev.get('confidence')}"
-        )
+        return f"{head}  fruit={ev.get('remaining_fruit')} confidence={ev.get('confidence')}"
     if name == "error":
         return f"{head}  phase={ev.get('phase')!r}  {ev.get('message', '')}"
     if name == "warning":
@@ -151,9 +148,7 @@ async def main() -> None:
         if not full_id:
             print(f"no call matching {args.call_id!r}")
             sys.exit(1)
-        call_rows = await db._execute(
-            db.client.table("calls").select("*").eq("id", full_id)
-        )
+        call_rows = await db._execute(db.client.table("calls").select("*").eq("id", full_id))
         call = (getattr(call_rows, "data", None) or [None])[0]
         if not call:
             print(f"call {full_id[:8]} not found")
@@ -168,10 +163,7 @@ async def main() -> None:
     _print_header(call, call.get("run_id") or "")
 
     print("=== trace events ===")
-    if args.only:
-        shown = [e for e in events if e.get("event") == args.only]
-    else:
-        shown = events
+    shown = [e for e in events if e.get("event") == args.only] if args.only else events
     if not shown:
         print("  (no events)")
     else:

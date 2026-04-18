@@ -35,9 +35,7 @@ class IngestCall(CallRunner):
         self._source_page = source_page
         extra = source_page.extra or {}
         self._filename = extra.get("filename", source_page.id[:8])
-        super().__init__(
-            question_id, call, db, broadcaster=broadcaster, up_to_stage=up_to_stage
-        )
+        super().__init__(question_id, call, db, broadcaster=broadcaster, up_to_stage=up_to_stage)
 
     def _make_context_builder(self) -> ContextBuilder:
         return IngestEmbeddingContext(self._source_page)

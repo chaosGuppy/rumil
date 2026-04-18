@@ -1,11 +1,11 @@
-"""Agent specifications for A/B evaluation."""
+"""Agent specifications for run evaluation."""
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 
 @dataclass
-class ABEvalAgentSpec:
+class EvalAgentSpec:
     """Defines one evaluation agent's identity and configuration."""
 
     name: str
@@ -14,31 +14,31 @@ class ABEvalAgentSpec:
     extra_tools: Sequence[str] = field(default_factory=list)
 
 
-EVAL_AGENTS: Sequence[ABEvalAgentSpec] = [
-    ABEvalAgentSpec(
+EVAL_AGENTS: Sequence[EvalAgentSpec] = [
+    EvalAgentSpec(
         name="grounding",
         display_name="Grounding & Factual Correctness",
-        prompt_file="ab-eval-grounding.md",
+        prompt_file="run-eval-grounding.md",
         extra_tools=["WebSearch"],
     ),
-    ABEvalAgentSpec(
+    EvalAgentSpec(
         name="subquestion_relevance",
         display_name="Subquestion Relevance",
-        prompt_file="ab-eval-subquestion-relevance.md",
+        prompt_file="run-eval-subquestion-relevance.md",
     ),
-    ABEvalAgentSpec(
+    EvalAgentSpec(
         name="consistency",
         display_name="Consistency",
-        prompt_file="ab-eval-consistency.md",
+        prompt_file="run-eval-consistency.md",
     ),
-    ABEvalAgentSpec(
+    EvalAgentSpec(
         name="research_progress",
         display_name="Research Progress",
-        prompt_file="ab-eval-research-progress.md",
+        prompt_file="run-eval-research-progress.md",
     ),
-    ABEvalAgentSpec(
+    EvalAgentSpec(
         name="general_quality",
         display_name="General Quality",
-        prompt_file="ab-eval-general-quality.md",
+        prompt_file="run-eval-general-quality.md",
     ),
 ]

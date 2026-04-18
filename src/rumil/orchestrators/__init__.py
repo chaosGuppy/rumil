@@ -16,6 +16,7 @@ from rumil.orchestrators.common import (
     SubquestionScoringResult,
     assess_question,
     compute_priority_score,
+    count_sources_for_question,
     create_root_question,
     create_view_for_question,
     find_considerations_until_done,
@@ -28,6 +29,7 @@ from rumil.orchestrators.critique_first import CritiqueFirstOrchestrator
 from rumil.orchestrators.distill_first import DistillFirstOrchestrator
 from rumil.orchestrators.experimental import ExperimentalOrchestrator
 from rumil.orchestrators.global_prio import GlobalPrioOrchestrator
+from rumil.orchestrators.source_first import SourceFirstOrchestrator
 from rumil.orchestrators.two_phase import TwoPhaseOrchestrator
 from rumil.orchestrators.worldview import WorldviewOrchestrator
 from rumil.settings import get_settings

@@ -455,3 +455,23 @@ class ReputationSummaryOut(BaseModel):
     project_id: str
     total_events: int
     buckets: list[ReputationBucketOut]
+
+
+class ViewItemFlagRequest(BaseModel):
+    category: Annotated[str, Field(pattern="^(problem|improvement)$")]
+    message: str
+    suggested_fix: str = ""
+
+
+class ViewItemFlagOut(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    ok: bool
+    flag_id: str
+    page_id: str
+
+
+class AppConfigOut(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    enable_flag_issue: bool

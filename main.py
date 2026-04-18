@@ -37,6 +37,7 @@ from rumil.models import (
     Workspace,
 )
 from rumil.orchestrators import Orchestrator, create_root_question
+from rumil.question_triage import auto_triage_and_save
 from rumil.report import generate_report, save_report
 from rumil.run_eval import run_run_eval
 from rumil.run_eval.agents import EVAL_AGENTS, EvalAgentSpec
@@ -121,6 +122,7 @@ async def cmd_add_question(
 
         await auto_tag_and_save(page.id, q.headline, q.abstract or q.content, db)
 
+    resolved_parent_id: str | None = None
     if parent_id:
         parent = await db.get_page(parent_id)
         if not parent:
@@ -135,7 +137,10 @@ async def cmd_add_question(
                 reasoning="Manually added sub-question",
             )
             await db.save_link(link)
+            resolved_parent_id = parent_id
             print(f"\nAdded as sub-question of: {parent.headline[:70]}")
+
+    await auto_triage_and_save(db, page.id, parent_id=resolved_parent_id)
 
     print(f"\nQuestion added: {page.id}")
     print(f"Headline:       {q.headline}")

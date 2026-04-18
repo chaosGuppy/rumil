@@ -10,6 +10,7 @@ import os
 import secrets
 import uuid
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -32,6 +33,7 @@ from rumil.api.schemas import (
     ABEvalDimensionSummaryOut,
     ABEvalReportListItemOut,
     ABEvalReportOut,
+    AppConfigOut,
     CallNodeOut,
     CallSummary,
     LinkedPageOut,
@@ -51,6 +53,8 @@ from rumil.api.schemas import (
     RunSummaryOut,
     RunTraceTreeOut,
     TraceEventOut,
+    ViewItemFlagOut,
+    ViewItemFlagRequest,
 )
 from rumil.database import DB, _row_to_call, _rows
 from rumil.models import (
@@ -730,6 +734,112 @@ async def get_question_view(
             "max_depth": view.health.max_depth,
         },
     }
+
+
+@app.get("/api/config", response_model=AppConfigOut)
+async def get_app_config():
+    """Expose feature flags needed by the frontend.
+
+    The friendly-user view-reading UI uses this to decide whether to show
+    flag affordances. enable_flag_issue=False means flagging is disabled
+    server-side; the frontend should hide the UI.
+    """
+    settings = get_settings()
+    return AppConfigOut(enable_flag_issue=settings.enable_flag_issue)
+
+
+@app.post(
+    "/api/view-items/{item_id}/flag",
+    response_model=ViewItemFlagOut,
+)
+async def flag_view_item(
+    item_id: str,
+    request: ViewItemFlagRequest,
+    db: DB = Depends(_get_db),
+):
+    """Record a friendly-user flag on a specific view item (page).
+
+    Friendly-user surface for the View reader. Accepts a short or full
+    page id. Writes a page_flags row with flag_type='view_item_issue'
+    and records a human_feedback reputation event mirroring the
+    flag_funniness hook.
+
+    Gated by settings.enable_flag_issue: returns 403 if disabled.
+    """
+    settings = get_settings()
+    if not settings.enable_flag_issue:
+        raise HTTPException(
+            status_code=403,
+            detail="Flagging is currently disabled (enable_flag_issue=False).",
+        )
+
+    resolved = await db.resolve_page_id(item_id)
+    if not resolved:
+        raise HTTPException(status_code=404, detail=f"View item {item_id} not found")
+
+    page = await db.get_page(resolved)
+    if page is None:
+        raise HTTPException(status_code=404, detail=f"View item {item_id} not found")
+    if page.project_id and not db.project_id:
+        db.project_id = page.project_id
+
+    await db.create_run(
+        name="friendly-user-flag",
+        question_id=None,
+        config={"origin": "friendly-user-flag"},
+    )
+
+    note = f"[{request.category}] {request.message}"
+    if request.suggested_fix:
+        note += f"\n\nSuggested fix: {request.suggested_fix}"
+
+    flag_id = str(uuid.uuid4())
+    await db._execute(
+        db.client.table("page_flags").insert(
+            {
+                "id": flag_id,
+                "flag_type": "view_item_issue",
+                "page_id": resolved,
+                "call_id": None,
+                "page_id_a": None,
+                "page_id_b": None,
+                "note": note,
+                "created_at": datetime.now(UTC).isoformat(),
+                "run_id": db.run_id,
+                "staged": db.staged,
+            }
+        ),
+    )
+
+    subject_run_id = page.run_id if page is not None else ""
+    orchestrator: str | None = None
+    if subject_run_id:
+        run_row = await db.get_run(subject_run_id)
+        if run_row:
+            config = run_row.get("config") or {}
+            if isinstance(config, dict):
+                val = config.get("orchestrator")
+                orchestrator = val if isinstance(val, str) else None
+
+    await db.record_reputation_event(
+        source="human_feedback",
+        dimension="view_item_issue",
+        score=1.0,
+        orchestrator=orchestrator,
+        extra={
+            "subject_run_id": subject_run_id,
+            "flagged_page_id": resolved,
+            "category": request.category,
+        },
+    )
+
+    log.info(
+        "View item flagged: page=%s, category=%s, message=%s",
+        resolved[:8],
+        request.category,
+        request.message[:80],
+    )
+    return ViewItemFlagOut(ok=True, flag_id=flag_id, page_id=resolved)
 
 
 @app.post("/api/chat", response_model=ChatResponse)

@@ -96,6 +96,11 @@ class Settings(BaseSettings):
     linker_cache_invalidation_threshold: int = _capture_field(default=100)
     subquestion_linker_enabled: bool = _capture_field(default=True)
 
+    enable_question_triage: bool = _capture_field(default=False)
+    question_triage_neighbor_count: int = _capture_field(default=5)
+    question_triage_neighbor_threshold: float = _capture_field(default=0.5)
+    question_triage_auto_duplicate_threshold: float = _capture_field(default=0.85)
+
     max_db_retries: int = _capture_field(default=60)
     max_api_retries: int = _capture_field(default=60)
     max_api_retries_429: int | None = _capture_field(default=None)

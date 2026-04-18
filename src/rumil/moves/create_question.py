@@ -15,6 +15,7 @@ from rumil.models import (
 )
 from rumil.moves.base import CreatePagePayload, MoveDef, MoveResult, create_page
 from rumil.moves.link_child_question import ChildQuestionLinkFields
+from rumil.question_triage import auto_triage_and_save
 from rumil.task_shape import auto_tag_and_save
 
 log = logging.getLogger(__name__)
@@ -40,6 +41,7 @@ async def execute(payload: CreateQuestionPayload, call: Call, db: DB) -> MoveRes
     if not payload.links:
         return result
 
+    first_parent_id: str | None = None
     for link_spec in payload.links:
         resolved = await db.resolve_page_id(link_spec.parent_id)
         if not resolved:
@@ -48,6 +50,9 @@ async def execute(payload: CreateQuestionPayload, call: Call, db: DB) -> MoveRes
                 link_spec.parent_id,
             )
             continue
+
+        if first_parent_id is None:
+            first_parent_id = resolved
 
         await db.save_link(
             PageLink(
@@ -65,6 +70,7 @@ async def execute(payload: CreateQuestionPayload, call: Call, db: DB) -> MoveRes
             result.created_page_id[:8],
         )
 
+    await auto_triage_and_save(db, result.created_page_id, parent_id=first_parent_id)
     return result
 
 
@@ -80,22 +86,22 @@ async def execute_scout_question(
 
     await auto_tag_and_save(result.created_page_id, payload.headline, payload.content, db)
 
-    if not call.scope_page_id:
-        return result
-
-    await db.save_link(
-        PageLink(
-            from_page_id=call.scope_page_id,
-            to_page_id=result.created_page_id,
-            link_type=LinkType.CHILD_QUESTION,
-            reasoning="Auto-linked to scope question",
+    if call.scope_page_id:
+        await db.save_link(
+            PageLink(
+                from_page_id=call.scope_page_id,
+                to_page_id=result.created_page_id,
+                link_type=LinkType.CHILD_QUESTION,
+                reasoning="Auto-linked to scope question",
+            )
         )
-    )
-    log.info(
-        "Scout question auto-linked: %s -> %s",
-        call.scope_page_id[:8],
-        result.created_page_id[:8],
-    )
+        log.info(
+            "Scout question auto-linked: %s -> %s",
+            call.scope_page_id[:8],
+            result.created_page_id[:8],
+        )
+
+    await auto_triage_and_save(db, result.created_page_id, parent_id=call.scope_page_id)
     return result
 
 

@@ -1719,6 +1719,85 @@
         }
       }
     },
+    "/api/config": {
+      "get": {
+        "summary": "Get App Config",
+        "description": "Expose feature flags needed by the frontend.\n\nThe friendly-user view-reading UI uses this to decide whether to show\nflag affordances. enable_flag_issue=False means flagging is disabled\nserver-side; the frontend should hide the UI.",
+        "operationId": "get_app_config_api_config_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppConfigOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/view-items/{item_id}/flag": {
+      "post": {
+        "summary": "Flag View Item",
+        "description": "Record a friendly-user flag on a specific view item (page).\n\nFriendly-user surface for the View reader. Accepts a short or full\npage id. Writes a page_flags row with flag_type='view_item_issue'\nand records a human_feedback reputation event mirroring the\nflag_funniness hook.\n\nGated by settings.enable_flag_issue: returns 403 if disabled.",
+        "operationId": "flag_view_item_api_view_items__item_id__flag_post",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Item Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ViewItemFlagRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViewItemFlagOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/chat": {
       "post": {
         "summary": "Chat",
@@ -2589,6 +2668,19 @@
           "user_message"
         ],
         "title": "AgentStartedEventOut"
+      },
+      "AppConfigOut": {
+        "properties": {
+          "enable_flag_issue": {
+            "type": "boolean",
+            "title": "Enable Flag Issue"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enable_flag_issue"
+        ],
+        "title": "AppConfigOut"
       },
       "Call": {
         "properties": {
@@ -6165,6 +6257,53 @@
           "superseded_view_id"
         ],
         "title": "ViewCreatedEventOut"
+      },
+      "ViewItemFlagOut": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "flag_id": {
+            "type": "string",
+            "title": "Flag Id"
+          },
+          "page_id": {
+            "type": "string",
+            "title": "Page Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ok",
+          "flag_id",
+          "page_id"
+        ],
+        "title": "ViewItemFlagOut"
+      },
+      "ViewItemFlagRequest": {
+        "properties": {
+          "category": {
+            "type": "string",
+            "pattern": "^(problem|improvement)$",
+            "title": "Category"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "suggested_fix": {
+            "type": "string",
+            "title": "Suggested Fix",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "category",
+          "message"
+        ],
+        "title": "ViewItemFlagRequest"
       },
       "WarningEventOut": {
         "properties": {

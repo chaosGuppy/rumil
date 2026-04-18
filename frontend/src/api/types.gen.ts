@@ -215,6 +215,16 @@ export type AgentStartedEventOut = {
 };
 
 /**
+ * AppConfigOut
+ */
+export type AppConfigOut = {
+    /**
+     * Enable Flag Issue
+     */
+    enable_flag_issue: boolean;
+};
+
+/**
  * Call
  */
 export type Call = {
@@ -2350,6 +2360,42 @@ export type ViewCreatedEventOut = {
 };
 
 /**
+ * ViewItemFlagOut
+ */
+export type ViewItemFlagOut = {
+    /**
+     * Ok
+     */
+    ok: boolean;
+    /**
+     * Flag Id
+     */
+    flag_id: string;
+    /**
+     * Page Id
+     */
+    page_id: string;
+};
+
+/**
+ * ViewItemFlagRequest
+ */
+export type ViewItemFlagRequest = {
+    /**
+     * Category
+     */
+    category: string;
+    /**
+     * Message
+     */
+    message: string;
+    /**
+     * Suggested Fix
+     */
+    suggested_fix?: string;
+};
+
+/**
  * WarningEventOut
  */
 export type WarningEventOut = {
@@ -3517,6 +3563,57 @@ export type GetQuestionViewApiQuestionsQuestionIdViewGetResponses = {
      */
     200: unknown;
 };
+
+export type GetAppConfigApiConfigGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/config';
+};
+
+export type GetAppConfigApiConfigGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: AppConfigOut;
+};
+
+export type GetAppConfigApiConfigGetResponse = GetAppConfigApiConfigGetResponses[keyof GetAppConfigApiConfigGetResponses];
+
+export type FlagViewItemApiViewItemsItemIdFlagPostData = {
+    body: ViewItemFlagRequest;
+    path: {
+        /**
+         * Item Id
+         */
+        item_id: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/view-items/{item_id}/flag';
+};
+
+export type FlagViewItemApiViewItemsItemIdFlagPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type FlagViewItemApiViewItemsItemIdFlagPostError = FlagViewItemApiViewItemsItemIdFlagPostErrors[keyof FlagViewItemApiViewItemsItemIdFlagPostErrors];
+
+export type FlagViewItemApiViewItemsItemIdFlagPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: ViewItemFlagOut;
+};
+
+export type FlagViewItemApiViewItemsItemIdFlagPostResponse = FlagViewItemApiViewItemsItemIdFlagPostResponses[keyof FlagViewItemApiViewItemsItemIdFlagPostResponses];
 
 export type ChatApiChatPostData = {
     body: ChatRequest;

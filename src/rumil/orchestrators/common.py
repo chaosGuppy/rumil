@@ -48,6 +48,7 @@ from rumil.models import (
     PageType,
     Workspace,
 )
+from rumil.question_triage import auto_triage_and_save
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
 
@@ -382,6 +383,7 @@ async def create_root_question(
         from rumil.task_shape import auto_tag_and_save
 
         await auto_tag_and_save(page.id, question_text, abstract or content, db)
+    await auto_triage_and_save(db, page.id, parent_id=None)
     return page.id
 
 
@@ -794,3 +796,44 @@ def _create_broadcaster(db: DB) -> Broadcaster | None:
     settings = get_settings()
     url, key = settings.get_supabase_credentials(prod=settings.is_prod_db)
     return Broadcaster(db.run_id, url, key)
+
+
+async def count_sources_for_question(db: DB, question_id: str) -> int:
+    """Return the number of Source pages attached to a question (directly or via cites).
+
+    Two discovery paths are checked in one level of BFS:
+
+    * Directly linked from the question (any link type) where the target
+      page is a SOURCE. This covers ``cites`` or ``related`` edges placed
+      on the question itself.
+    * Linked from any active consideration (claim) on the question via a
+      ``cites`` edge to a SOURCE. This covers the common shape where
+      claims cite source pages.
+
+    Returns the number of unique Source page IDs discovered. Two batched
+    DB round trips: one for links, one for pages.
+    """
+    links_from_q = await db.get_links_from(question_id)
+    links_to_q = await db.get_links_to(question_id)
+    considerations = await db.get_considerations_for_question(question_id)
+    claim_ids = [p.id for p, _ in considerations]
+
+    links_from_claims = await db.get_links_from_many(claim_ids) if claim_ids else {}
+
+    candidate_ids: set[str] = set()
+    for link in links_from_q:
+        candidate_ids.add(link.to_page_id)
+    for link in links_to_q:
+        candidate_ids.add(link.from_page_id)
+    for claim_links in links_from_claims.values():
+        for link in claim_links:
+            if link.link_type == LinkType.CITES:
+                candidate_ids.add(link.to_page_id)
+
+    if not candidate_ids:
+        return 0
+
+    pages = await db.get_pages_by_ids(list(candidate_ids))
+    return sum(
+        1 for page in pages.values() if page.page_type == PageType.SOURCE and page.is_active()
+    )

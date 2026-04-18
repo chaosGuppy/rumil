@@ -732,6 +732,20 @@ class DB:
                 coverage[dim][value] = coverage[dim].get(value, 0) + 1
         return coverage
 
+    async def merge_page_extra(self, page_id: str, updates: dict) -> None:
+        """Merge ``updates`` into a page's ``extra`` JSONB column.
+
+        Reads the current ``extra`` (if any), shallow-merges ``updates`` into
+        it, and writes the result back. Caller-provided keys overwrite existing
+        ones. No mutation event is recorded — ``extra`` is append-only
+        metadata that is not part of the staged-runs mutation surface.
+        """
+        page = await self.get_page(page_id)
+        if not page:
+            raise ValueError(f"merge_page_extra: page {page_id} not found")
+        merged = {**(page.extra or {}), **updates}
+        await self._execute(self.client.table("pages").update({"extra": merged}).eq("id", page_id))
+
     async def get_page(self, page_id: str) -> Page | None:
         query = self.client.table("pages").select("*").eq("id", page_id)
         query = self._staged_filter(query)

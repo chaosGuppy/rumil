@@ -3264,3 +3264,220 @@ details[open] > .article-supplementary-toggle::before {
   line-height: 1.5;
   color: var(--fg-muted);
 }
+
+/* inspect panel — opens when a node-ref is clicked anywhere in the app.
+   Visually echoes source-drawer but sits on top of it if both are open. */
+.inspect-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.18);
+  z-index: 110;
+  animation: fade-in 0.1s ease-out;
+}
+
+.inspect-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(560px, 88vw);
+  background: var(--bg-pane);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  box-shadow: -8px 0 40px rgba(0, 0, 0, 0.12);
+  animation: source-drawer-in 0.15s ease-out;
+}
+
+.inspect-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.inspect-close {
+  background: none;
+  border: none;
+  font-family: var(--font-mono-stack);
+  font-size: 12px;
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 2px 6px;
+  letter-spacing: 0.04em;
+  transition: color 0.1s;
+}
+
+.inspect-close:hover { color: var(--fg); }
+
+.inspect-short-id {
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+  color: var(--fg-dim);
+  letter-spacing: 0.04em;
+}
+
+.inspect-scroll {
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.inspect-status {
+  padding: 40px 32px;
+  font-family: var(--font-mono-stack);
+  font-size: 12px;
+  color: var(--fg-dim);
+  letter-spacing: 0.02em;
+}
+
+.inspect-status-err {
+  color: var(--fg-muted);
+}
+
+.inspect-status-hint {
+  margin-top: 10px;
+  font-family: var(--font-body-stack);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--fg-dim);
+}
+
+.inspect-body {
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 28px 32px 80px;
+}
+
+.inspect-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.inspect-meta-chip {
+  font-family: var(--font-mono-stack);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--fg-dim);
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+}
+
+.inspect-meta-chip-warn {
+  color: var(--link-opposes, #a86a4a);
+  border-color: var(--link-opposes, #a86a4a);
+}
+
+.inspect-headline {
+  font-family: var(--font-body-stack);
+  font-size: 22px;
+  font-weight: 400;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  margin: 0 0 16px 0;
+  color: var(--fg);
+}
+
+.inspect-abstract {
+  margin-top: 20px;
+  padding: 12px 14px;
+  background: var(--bg);
+  border-left: 2px solid var(--border-strong);
+  border-radius: 0 3px 3px 0;
+}
+
+.inspect-abstract p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--fg-muted);
+  font-style: italic;
+}
+
+.inspect-section-label {
+  font-family: var(--font-mono-stack);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+  margin: 20px 0 8px 0;
+}
+
+.inspect-links ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.inspect-link-row {
+  display: grid;
+  grid-template-columns: 80px 110px 1fr;
+  gap: 10px;
+  align-items: baseline;
+  padding: 6px 0;
+  border-bottom: 1px dotted var(--border);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.inspect-link-row:last-child { border-bottom: none; }
+
+.inspect-link-id {
+  font-size: 11px;
+  justify-self: start;
+}
+
+.inspect-link-verb {
+  font-family: var(--font-mono-stack);
+  font-size: 10px;
+  color: var(--fg-dim);
+  letter-spacing: 0.03em;
+}
+
+.inspect-link-headline {
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.inspect-provenance {
+  margin-top: 28px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  display: grid;
+  grid-template-columns: 70px 1fr;
+  gap: 4px 16px;
+}
+
+.inspect-prov-row {
+  display: contents;
+}
+
+.inspect-prov-label {
+  font-family: var(--font-mono-stack);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+  padding: 3px 0;
+}
+
+.inspect-prov-value {
+  font-size: 12px;
+  color: var(--fg-muted);
+  padding: 3px 0;
+  word-break: break-all;
+}
+
+.inspect-prov-mono {
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}

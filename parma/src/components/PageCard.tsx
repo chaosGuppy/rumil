@@ -5,7 +5,7 @@ import { CredenceBadge } from "./CredenceBadge";
 import { LinkBadges } from "./LinkBadges";
 import { NodeTypeLabel } from "./NodeTypeLabel";
 import { SourceBadge } from "./SourceBadge";
-import { TextWithConcepts } from "./ConceptRef";
+import { PageContent } from "./PageContent";
 
 interface PageCardProps {
   page: Page;
@@ -52,9 +52,7 @@ export function PageCard({
       >
         <div className="concept-node-label">concept</div>
         <h3>{page.headline}</h3>
-        <div className="view-prose">
-          <p style={{ margin: 0 }}>{page.content}</p>
-        </div>
+        <PageContent text={page.content} excludeConceptId={page.id} />
       </div>
     );
   }
@@ -140,11 +138,7 @@ export function PageCard({
         {page.headline}
       </h3>
 
-      <div className="view-prose">
-        <p style={{ margin: 0, fontSize: "15px" }}>
-          <TextWithConcepts text={page.content} excludeConceptId={page.id} />
-        </p>
-      </div>
+      <PageContent text={page.content} excludeConceptId={page.id} />
 
       {page.abstract && page.abstract !== page.content && (
         <div

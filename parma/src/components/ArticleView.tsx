@@ -6,7 +6,7 @@ import { CredenceBadge } from "./CredenceBadge";
 import { LinkBadges } from "./LinkBadges";
 import { NodeTypeLabel } from "./NodeTypeLabel";
 import { SourceBadge } from "./SourceBadge";
-import { TextWithConcepts } from "./ConceptRef";
+import { PageContent } from "./PageContent";
 
 interface ArticleViewProps {
   view: QuestionView;
@@ -88,9 +88,7 @@ function ArticleItem({
         <SourceBadge sourceIds={citedSourceIds} onOpenDrawer={onOpenSource} />
         <LinkBadges links={item.links} />
       </div>
-      <div className="view-prose">
-        <p><TextWithConcepts text={page.content} excludeConceptId={page.id} /></p>
-      </div>
+      <PageContent text={page.content} excludeConceptId={page.id} />
     </div>
   );
 }

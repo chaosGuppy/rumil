@@ -3,7 +3,7 @@
 import type { Page } from "@/lib/types";
 import { CredenceBadge } from "./CredenceBadge";
 import { NodeTypeLabel } from "./NodeTypeLabel";
-import { TextWithConcepts } from "./ConceptRef";
+import { PageContent } from "./PageContent";
 
 interface JudgementHistoryProps {
   supersededJudgements: Page[];
@@ -26,11 +26,7 @@ export function JudgementHistory({ supersededJudgements }: JudgementHistoryProps
             </div>
             <h4>{page.headline}</h4>
             {page.content && (
-              <div className="view-prose">
-                <p style={{ margin: 0 }}>
-                  <TextWithConcepts text={page.content} excludeConceptId={page.id} />
-                </p>
-              </div>
+              <PageContent text={page.content} excludeConceptId={page.id} />
             )}
           </div>
         ))}

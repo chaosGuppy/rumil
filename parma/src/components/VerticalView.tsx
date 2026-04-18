@@ -6,7 +6,7 @@ import { CredenceBadge } from "./CredenceBadge";
 import { LinkBadges } from "./LinkBadges";
 import { NodeTypeLabel } from "./NodeTypeLabel";
 import { SourceBadge } from "./SourceBadge";
-import { TextWithConcepts } from "./ConceptRef";
+import { PageContent } from "./PageContent";
 
 interface VerticalViewProps {
   view: QuestionView;
@@ -85,8 +85,8 @@ function VerticalItem({
         </div>
 
         {expanded && (
-          <div className="view-prose vertical-content">
-            <p><TextWithConcepts text={page.content} excludeConceptId={page.id} /></p>
+          <div className="vertical-content">
+            <PageContent text={page.content} excludeConceptId={page.id} />
           </div>
         )}
       </div>

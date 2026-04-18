@@ -12,6 +12,10 @@ import { SuggestionReview } from "@/components/SuggestionReview";
 import { SourcesView } from "@/components/SourcesView";
 import { SourceDrawer } from "@/components/SourceDrawer";
 import { ConceptProvider } from "@/components/ConceptContext";
+import {
+  InspectPanelProvider,
+  useInspectPanel,
+} from "@/components/InspectPanelContext";
 import { fetchProjects, fetchRootQuestions, fetchQuestionView } from "@/lib/api";
 import type { QuestionView, Page, Project } from "@/lib/types";
 
@@ -200,6 +204,7 @@ function QuestionViewPage({
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
+  const { openInspect } = useInspectPanel();
 
   const verticalRef = useRef<VerticalViewHandle>(null);
   const [chatOpen, setChatOpen] = useState(false);
@@ -210,6 +215,17 @@ function QuestionViewPage({
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
   const [showReview, setShowReview] = useState(false);
   const [drawerSource, setDrawerSource] = useState<Page | null>(null);
+
+  // When a node ref is clicked in chat: open the inspect panel AND nudge the
+  // view to scroll to the matching card if one is visible. The inspect
+  // panel is the richer surface; focus-scroll is a nice-to-have.
+  const handleNodeRef = useCallback(
+    (id: string) => {
+      openInspect(id);
+      setFocusNodeId(id);
+    },
+    [openInspect],
+  );
 
   const rawView = searchParams.get("view") ?? "panes";
   const viewMode: ViewMode = isViewMode(rawView) ? rawView : "panes";
@@ -338,7 +354,7 @@ function QuestionViewPage({
         isOpen={chatOpen}
         onToggle={toggleChat}
         onMessageSent={refreshView}
-        onNodeRef={setFocusNodeId}
+        onNodeRef={handleNodeRef}
         onShowReview={() => setShowReview(true)}
         workspace={project.name}
         projectId={project.id}
@@ -469,7 +485,9 @@ export default function Page() {
     <Suspense
       fallback={<div className="view-loading">Loading...</div>}
     >
-      <AppContent />
+      <InspectPanelProvider>
+        <AppContent />
+      </InspectPanelProvider>
     </Suspense>
   );
 }

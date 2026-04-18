@@ -1,6 +1,7 @@
 import type {
   Project,
   Page,
+  PageLink,
   QuestionView,
 } from "./types";
 
@@ -108,6 +109,28 @@ export async function fetchPageByShortId(
   shortId: string,
 ): Promise<Page | null> {
   const res = await fetch(`${API_BASE}/api/pages/short/${shortId}`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+export interface LinkedPage {
+  page: Page;
+  link: PageLink;
+}
+
+export interface PageDetail {
+  page: Page;
+  links_from: LinkedPage[];
+  links_to: LinkedPage[];
+}
+
+// Fetch a page + its outgoing/incoming links by full id. Used by InspectPanel
+// after resolving a short id via fetchPageByShortId. The API doesn't expose
+// a single short-id→detail endpoint today, so we do two hops.
+export async function fetchPageDetail(
+  pageId: string,
+): Promise<PageDetail | null> {
+  const res = await fetch(`${API_BASE}/api/pages/${pageId}/detail`);
   if (!res.ok) return null;
   return res.json();
 }

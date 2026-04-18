@@ -3,6 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import type { QuestionView, ViewItem, Page } from "@/lib/types";
 import { PageCard } from "./PageCard";
+import { PageContent } from "./PageContent";
 
 interface PaneState {
   item: ViewItem;
@@ -280,8 +281,8 @@ function DetailContent({
         </span>
       </div>
 
-      <div className="view-prose" style={{ marginBottom: "16px" }}>
-        <p style={{ fontSize: "15px", lineHeight: 1.7, margin: 0 }}>{page.content}</p>
+      <div style={{ marginBottom: "16px" }}>
+        <PageContent text={page.content} excludeConceptId={page.id} />
       </div>
 
       {page.abstract && page.abstract !== page.content && (

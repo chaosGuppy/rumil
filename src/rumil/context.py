@@ -1042,6 +1042,25 @@ async def build_view_centered_context(
     if fallback_char_budget is None:
         fallback_char_budget = total_budget
 
+    scope_page = await db.get_page(scope_question_id)
+    if scope_page is None or scope_page.page_type != PageType.QUESTION:
+        log.debug(
+            "View-centered context: %s is not a question (%s) — falling back to embedding context.",
+            scope_question_id[:8],
+            scope_page.page_type.value if scope_page else "missing",
+        )
+        return await build_embedding_based_context(
+            question_text,
+            db,
+            scope_question_id=scope_question_id,
+            full_page_char_budget=full_page_char_budget,
+            abstract_page_char_budget=abstract_page_char_budget,
+            summary_page_char_budget=summary_page_char_budget,
+            distillation_page_char_budget=distillation_page_char_budget,
+            require_judgement_for_questions=require_judgement_for_questions,
+            exclude_page_ids=exclude_page_ids,
+        )
+
     view = await build_view(
         db,
         scope_question_id,

@@ -30,13 +30,20 @@ def make_load_page_tool(
 ) -> Tool:
     """Build a page-loading tool that returns abstract or full content.
 
-    *default_detail* sets the detail level used when the LLM omits the
-    ``detail`` parameter (default ``"content"``).
+    Accepts a list of page IDs so the caller can fetch many pages in a
+    single tool call rather than one at a time. *default_detail* sets the
+    detail level used when the LLM omits the ``detail`` parameter (default
+    ``"content"``).
     """
 
     class _LoadPageInput(BaseModel):
-        page_id: str = Field(
-            description="Short ID (first 8 chars) or full UUID of a page",
+        page_ids: list[str] = Field(
+            description=(
+                "One or more page IDs to load (short 8-char prefixes or full "
+                "UUIDs). Prefer batching several IDs in one call over issuing "
+                "many sequential calls."
+            ),
+            min_length=1,
         )
         detail: str = Field(
             default=default_detail,
@@ -44,37 +51,50 @@ def make_load_page_tool(
         )
 
     async def fn(args: dict) -> str:
+        # Backward-compat: accept legacy `page_id` (singular) as a one-element list.
+        if "page_ids" not in args and "page_id" in args:
+            args = {**args, "page_ids": [args["page_id"]]}
         payload = _LoadPageInput.model_validate(args)
-        full_id = await db.resolve_page_id(payload.page_id.strip())
-        if not full_id:
-            return f"Page '{payload.page_id}' not found."
-        page = await db.get_page(full_id)
-        if not page:
-            return f"Page '{payload.page_id}' not found."
         detail = _DETAIL_MAP.get(payload.detail, PageDetail.CONTENT)
-        result = await format_page(
-            page,
-            detail,
-            db=db,
-            highlight_run_id=highlight_run_id,
-            track=True,
-            track_tags={"source": "workspace_load_tool"},
-        )
-        await trace.record(
-            LoadPageEvent(
-                page_id=page.id,
-                page_headline=page.headline,
-                detail=payload.detail,
-                response=result,
+
+        rendered: list[str] = []
+        for raw_id in payload.page_ids:
+            page_id = raw_id.strip()
+            full_id = await db.resolve_page_id(page_id)
+            if not full_id:
+                rendered.append(f"## `{page_id}`\n\nPage not found.")
+                continue
+            page = await db.get_page(full_id)
+            if not page:
+                rendered.append(f"## `{page_id}`\n\nPage not found.")
+                continue
+            body = await format_page(
+                page,
+                detail,
+                db=db,
+                highlight_run_id=highlight_run_id,
+                track=True,
+                track_tags={"source": "workspace_load_tool"},
             )
-        )
-        return result
+            await trace.record(
+                LoadPageEvent(
+                    page_id=page.id,
+                    page_headline=page.headline,
+                    detail=payload.detail,
+                    response=body,
+                )
+            )
+            rendered.append(body)
+
+        return "\n\n---\n\n".join(rendered)
 
     return Tool(
         name="load_page",
         description=(
-            "Load a page by short ID. Returns full content by default; "
-            "pass detail='abstract' for a concise summary."
+            "Load one or more pages by short ID. Returns full content by "
+            "default; pass detail='abstract' for concise summaries. Pass "
+            "multiple IDs in `page_ids` to batch rather than calling this "
+            "tool repeatedly."
         ),
         input_schema=_LoadPageInput.model_json_schema(),
         fn=fn,

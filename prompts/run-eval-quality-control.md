@@ -31,7 +31,7 @@ Focus on these failure modes first, in rough priority order:
 
 ## How to work
 
-1. Use `explore_subgraph` to find pages created by this run. Use `load_page` to read claims and their cited sources in full before flagging a citation issue.
+1. Use `explore_subgraph` to find pages created by this run. Use `load_page` to read claims and their cited sources in full before flagging a citation issue — pass multiple IDs in `page_ids` to batch (e.g. a claim plus all of its cited sources in one call).
 2. Cap yourself at roughly **10 findings**. Hard maximum: 20. If you are at 10 and tempted to add more, ask whether the new candidate is genuinely sharper than your weakest existing finding — drop the weakest if so, otherwise stop.
 3. For each finding, cite the exact page IDs involved and quote the problem in one sentence.
 4. If you have no confident findings, say so. An empty list is a legitimate and useful result.

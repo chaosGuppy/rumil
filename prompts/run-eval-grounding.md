@@ -20,7 +20,7 @@ Assess the following dimensions:
 
 ## How to work
 
-1. Use `explore_subgraph` to navigate the workspace graph, starting from the root question. Use `load_page` to read the full content of individual pages
+1. Use `explore_subgraph` to navigate the workspace graph, starting from the root question. Use `load_page` to read the full content of individual pages — pass multiple IDs in `page_ids` to fetch several pages in one call rather than looping
 2. Identify claims marked `[ADDED BY THIS RUN]`
 3. For factual claims that are load-bearing, verify them using WebSearch where possible
 4. Assess source quality and citation accuracy

@@ -44,7 +44,7 @@ Do not re-evaluate those areas — stay on calibration.
 
 ## How to work
 
-1. Use `explore_subgraph` to find claims added by this run. Use `load_page` to read each claim's full content and its cited sources.
+1. Use `explore_subgraph` to find claims added by this run. Use `load_page` to read each claim's full content and its cited sources — pass multiple IDs in `page_ids` to batch (e.g. a claim plus all of its cited sources in one call).
 2. If a claim has no cited source, skip it — you cannot calibrate without source material.
 3. If a claim has no self-reported credence, skip it.
 4. Be specific -- cite page IDs for every sampled claim.

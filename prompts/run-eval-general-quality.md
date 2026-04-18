@@ -30,7 +30,7 @@ These are not exhaustive -- use your judgement to flag any quality issues you no
 
 ## How to work
 
-1. Use `explore_subgraph` to navigate the workspace graph, starting from the root question. Use `load_page` to read the full content of individual pages
+1. Use `explore_subgraph` to navigate the workspace graph, starting from the root question. Use `load_page` to read the full content of individual pages — pass multiple IDs in `page_ids` to fetch several pages in one call rather than looping
 2. Read through the content marked `[ADDED BY THIS RUN]`
 3. Note anything that strikes you as a quality issue
 4. Be specific -- cite page IDs and give concrete examples

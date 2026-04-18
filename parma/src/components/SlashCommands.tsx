@@ -68,12 +68,15 @@ export const COMMANDS: SlashCommand[] = [
   },
 ];
 
+const MODEL_COMMAND_NAMES = new Set(["sonnet", "opus", "haiku"]);
+
 interface SlashCommandDropdownProps {
   input: string;
   cursorPosition: number;
   onSelect: (command: SlashCommand) => void;
   visible: boolean;
   onDismiss: () => void;
+  activeModel?: "sonnet" | "opus" | "haiku";
 }
 
 export function SlashCommandDropdown({
@@ -81,6 +84,7 @@ export function SlashCommandDropdown({
   onSelect,
   visible,
   onDismiss,
+  activeModel,
 }: SlashCommandDropdownProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -127,20 +131,34 @@ export function SlashCommandDropdown({
 
   return (
     <div ref={containerRef} className="slash-dropdown">
-      {filtered.map((cmd, i) => (
-        <button
-          key={cmd.name}
-          className={`slash-item ${i === selectedIndex ? "slash-item-active" : ""}`}
-          onClick={() => onSelect(cmd)}
-          onMouseEnter={() => setSelectedIndex(i)}
-        >
-          <div className="slash-item-header">
-            <span className="slash-item-name">/{cmd.name}</span>
-            {cmd.args && <span className="slash-item-args">{cmd.args}</span>}
-          </div>
-          <div className="slash-item-desc">{cmd.description}</div>
-        </button>
-      ))}
+      {filtered.map((cmd, i) => {
+        const isActiveModel =
+          MODEL_COMMAND_NAMES.has(cmd.name) && cmd.name === activeModel;
+        return (
+          <button
+            key={cmd.name}
+            className={[
+              "slash-item",
+              i === selectedIndex ? "slash-item-active" : "",
+              isActiveModel ? "slash-item-current" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            onClick={() => onSelect(cmd)}
+            onMouseEnter={() => setSelectedIndex(i)}
+            aria-current={isActiveModel ? "true" : undefined}
+          >
+            <div className="slash-item-header">
+              <span className="slash-item-name">/{cmd.name}</span>
+              {cmd.args && <span className="slash-item-args">{cmd.args}</span>}
+              {isActiveModel && (
+                <span className="slash-item-current-tag">(current)</span>
+              )}
+            </div>
+            <div className="slash-item-desc">{cmd.description}</div>
+          </button>
+        );
+      })}
       <div className="slash-hint">
         tab to complete · esc to dismiss
       </div>

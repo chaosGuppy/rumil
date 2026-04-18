@@ -204,7 +204,7 @@ export function ChatPanel({
     id: "initial",
     role: "assistant",
     content:
-      "Ask me about this view \u2014 I can explain the reasoning behind claims, surface tensions between findings, or discuss what the research might be missing.",
+      "Ask me about this view \u2014 I can explain the reasoning behind claims, surface tensions between findings, or discuss what the research might be missing. Or use `/` for slash commands.",
     timestamp: new Date(),
   };
   const [messages, setMessages] = useState<Message[]>([initialAssistantMessage]);
@@ -300,6 +300,24 @@ export function ChatPanel({
   const [model, setModel] = useState<"sonnet" | "opus" | "haiku">("sonnet");
   const { showDropdown, handleSelect: handleSlashSelect, handleDismiss } =
     useSlashCommands(input, setInput, textareaRef);
+
+  const seedSlashCommand = useCallback(
+    (prefix: string) => {
+      setInput(prefix);
+      requestAnimationFrame(() => {
+        const el = textareaRef.current;
+        if (!el) return;
+        el.focus();
+        el.setSelectionRange(prefix.length, prefix.length);
+        el.style.height = "auto";
+        el.style.height = Math.min(el.scrollHeight, 120) + "px";
+      });
+    },
+    [],
+  );
+
+  const isFreshChat =
+    messages.length === 1 && messages[0]?.id === "initial" && !isLoading;
 
   const handleSubmit = useCallback(async () => {
     const trimmed = input.trim();
@@ -636,6 +654,43 @@ export function ChatPanel({
             {messages.map((msg) => (
               <MessageEntry key={msg.id} message={msg} onNodeRef={onNodeRef} />
             ))}
+            {isFreshChat && (
+              <div className="chat-starter-chips" role="group" aria-label="Starter prompts">
+                <div className="chat-starter-chips-label">Starters</div>
+                <div className="chat-starter-chips-row">
+                  <button
+                    type="button"
+                    className="chat-starter-chip"
+                    onClick={() => seedSlashCommand("/search")}
+                    title="Search the workspace for relevant research"
+                  >
+                    <span className="chat-starter-chip-cmd">/search</span>
+                    <span className="chat-starter-chip-desc">Find related pages</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="chat-starter-chip"
+                    onClick={() => seedSlashCommand("/ask")}
+                    title="Add a new research question to the workspace"
+                  >
+                    <span className="chat-starter-chip-cmd">/ask</span>
+                    <span className="chat-starter-chip-desc">Add a question to investigate</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="chat-starter-chip"
+                    onClick={() => {
+                      setInput("");
+                      onShowReview?.();
+                    }}
+                    title="Show pending suggestions in the review queue"
+                  >
+                    <span className="chat-starter-chip-cmd">/review</span>
+                    <span className="chat-starter-chip-desc">Show pending suggestions</span>
+                  </button>
+                </div>
+              </div>
+            )}
             <div ref={messagesEndRef} />
           </div>
 
@@ -646,6 +701,7 @@ export function ChatPanel({
               onSelect={handleSlashSelect}
               visible={showDropdown}
               onDismiss={handleDismiss}
+              activeModel={model}
             />
             <textarea
               ref={textareaRef}

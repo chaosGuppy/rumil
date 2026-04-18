@@ -53,6 +53,8 @@ def Orchestrator(db: DB, broadcaster: Broadcaster | None = None) -> BaseOrchestr
         orch = CritiqueFirstOrchestrator(db, broadcaster)
     elif variant == "cascade":
         orch = CascadeOrchestrator(db, broadcaster)
+    elif variant == "source_first":
+        orch = SourceFirstOrchestrator(db, broadcaster)
     else:
         raise ValueError(f"Unknown prioritizer_variant: {variant}")
 

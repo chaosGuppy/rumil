@@ -15,26 +15,27 @@ Data model:
 import json
 import os
 import sqlite3
+
+# Add orchestrator package to import path
+import sys as _sys
 import time
 import uuid
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from collections.abc import Callable
 from typing import Any
 
 import anthropic
 import httpx
 import uvicorn
 from anthropic.types import ServerToolUseBlock, TextBlock, ToolUseBlock
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup  # pyright: ignore[reportMissingImports]
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-# Add orchestrator package to import path
-import sys as _sys
 _sys.path.insert(0, str(Path(__file__).parent))
 
 from orchestrator import (
@@ -57,6 +58,7 @@ from orchestrator.tracing import RunTracer
 
 DB_PATH = Path(__file__).parent / "worldview.db"
 PROMPTS_DIR = Path(__file__).parent / "orchestrator" / "prompts"
+
 
 def get_db() -> sqlite3.Connection:
     conn = sqlite3.connect(str(DB_PATH))
@@ -256,7 +258,9 @@ def _seed_nodes_recursive(
             "credence, robustness, importance, position, source_ids, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
-                node_id, ws_id, parent_id,
+                node_id,
+                ws_id,
+                parent_id,
                 node.get("node_type", "claim"),
                 node.get("headline", ""),
                 node.get("content", ""),
@@ -281,9 +285,14 @@ def seed_from_python_mock() -> None:
         return
 
     import sys
+
     sys.path.insert(0, str(Path(__file__).parent))
     try:
-        from _mock_data import MOCK_NODES, MOCK_HEADLINE, MOCK_SUMMARY  # type: ignore[import-not-found]
+        from _mock_data import (  # type: ignore[import-not-found]
+            MOCK_HEADLINE,
+            MOCK_NODES,
+            MOCK_SUMMARY,
+        )
     except ImportError:
         conn.close()
         return
@@ -358,7 +367,14 @@ TOOLS: list[dict[str, Any]] = [
             "properties": {
                 "node_type": {
                     "type": "string",
-                    "enum": ["claim", "hypothesis", "evidence", "uncertainty", "context", "question"],
+                    "enum": [
+                        "claim",
+                        "hypothesis",
+                        "evidence",
+                        "uncertainty",
+                        "context",
+                        "question",
+                    ],
                 },
                 "headline": {"type": "string"},
                 "content": {"type": "string"},
@@ -585,13 +601,17 @@ def execute_tool(
                 "credence, robustness, position, created_at, created_by) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
-                    node_id, ws_id, parent_full,
+                    node_id,
+                    ws_id,
+                    parent_full,
                     tool_input.get("node_type", "claim"),
                     tool_input["headline"],
                     tool_input.get("content", ""),
                     tool_input.get("credence"),
                     tool_input.get("robustness"),
-                    0, now_iso(), "agent",
+                    0,
+                    now_iso(),
+                    "agent",
                 ),
             )
             conn.commit()
@@ -627,7 +647,9 @@ def execute_tool(
     elif name == "preview_run":
         target_short = tool_input.get("node_id")
         run_type = tool_input.get("run_type", "explore")
-        target_full = resolve_node_id(conn, target_short) if target_short else pick_next_branch(conn, ws_id)
+        target_full = (
+            resolve_node_id(conn, target_short) if target_short else pick_next_branch(conn, ws_id)
+        )
         if not target_full:
             output = json.dumps({"error": "No branch to preview."})
         else:
@@ -651,18 +673,22 @@ def execute_tool(
         target_short = tool_input.get("node_id")
         run_type = tool_input.get("run_type", "explore")
         dry = tool_input.get("dry_run", False)
-        target_full = resolve_node_id(conn, target_short) if target_short else pick_next_branch(conn, ws_id)
+        target_full = (
+            resolve_node_id(conn, target_short) if target_short else pick_next_branch(conn, ws_id)
+        )
         if not target_full:
             output = "No branch to orchestrate."
         else:
             # Store resolved params for the async handler to pick up
-            output = json.dumps({
-                "__async_orchestrate__": True,
-                "scope_id": target_full,
-                "run_type": run_type,
-                "dry_run": dry,
-                "ws_id": ws_id,
-            })
+            output = json.dumps(
+                {
+                    "__async_orchestrate__": True,
+                    "scope_id": target_full,
+                    "run_type": run_type,
+                    "dry_run": dry,
+                    "ws_id": ws_id,
+                }
+            )
 
     elif name == "start_research":
         target_short = tool_input.get("node_id")
@@ -670,30 +696,36 @@ def execute_tool(
         if not target_full:
             output = f"Node '{target_short}' not found."
         else:
-            output = json.dumps({
-                "__async_research__": True,
-                "ws_id": ws_id,
-                "scope_id": target_full,
-                "budget": tool_input.get("budget", 5),
-                "strategy": tool_input.get("strategy", "full_cycle"),
-            })
+            output = json.dumps(
+                {
+                    "__async_research__": True,
+                    "ws_id": ws_id,
+                    "scope_id": target_full,
+                    "budget": tool_input.get("budget", 5),
+                    "strategy": tool_input.get("strategy", "full_cycle"),
+                }
+            )
 
     elif name == "run_orchestrator_loop":
-        output = json.dumps({
-            "__async_orchestrate_loop__": True,
-            "ws_id": ws_id,
-            "steps": tool_input.get("steps", 3),
-            "strategy": tool_input.get("strategy", "auto"),
-        })
+        output = json.dumps(
+            {
+                "__async_orchestrate_loop__": True,
+                "ws_id": ws_id,
+                "steps": tool_input.get("steps", 3),
+                "strategy": tool_input.get("strategy", "auto"),
+            }
+        )
 
     elif name == "ingest_source":
-        output = json.dumps({
-            "__async_ingest__": True,
-            "ws_id": ws_id,
-            "url": tool_input["url"],
-            "target_node_id": tool_input.get("target_node_id"),
-            "title": tool_input.get("title"),
-        })
+        output = json.dumps(
+            {
+                "__async_ingest__": True,
+                "ws_id": ws_id,
+                "url": tool_input["url"],
+                "target_node_id": tool_input.get("target_node_id"),
+                "title": tool_input.get("title"),
+            }
+        )
 
     else:
         output = f"Unknown tool: {name}"
@@ -897,7 +929,9 @@ def accept_suggestion(suggestion_id: str):
             "credence, robustness, importance, position, created_at, created_by) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'suggestion')",
             (
-                node_id, sd["workspace_id"], target,
+                node_id,
+                sd["workspace_id"],
+                target,
                 payload.get("node_type", "claim"),
                 payload.get("headline", ""),
                 payload.get("content", ""),
@@ -917,7 +951,10 @@ def accept_suggestion(suggestion_id: str):
                 "INSERT INTO node_links (id, workspace_id, source_id, target_id, link_type, "
                 "reasoning, created_at, created_by) VALUES (?, ?, ?, ?, 'opposes', ?, ?, 'suggestion')",
                 (
-                    link_id, sd["workspace_id"], target, other_id,
+                    link_id,
+                    sd["workspace_id"],
+                    target,
+                    other_id,
                     payload.get("reasoning", ""),
                     now_iso(),
                 ),
@@ -998,9 +1035,7 @@ def list_sources(name: str):
 @app.get("/api/sources/short/{short_id}")
 def get_source_by_short_id(short_id: str):
     conn = get_db()
-    row = conn.execute(
-        "SELECT * FROM sources WHERE id LIKE ?", (f"{short_id}%",)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM sources WHERE id LIKE ?", (f"{short_id}%",)).fetchone()
     conn.close()
     if not row:
         return {"error": f"No source matching '{short_id}'"}
@@ -1075,14 +1110,24 @@ async def ingest_source(name: str, request: IngestRequest):
         conn.execute(
             "INSERT INTO runs (id, workspace_id, run_type, scope_node_id, started_at, status, description, config) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (run_id, ws_id, "ingest", target_full, now_iso(), "running",
-             f"ingest: {title[:50]} → {target_headline[:30]}",
-             json.dumps({"source_id": source_id, "url": request.url})),
+            (
+                run_id,
+                ws_id,
+                "ingest",
+                target_full,
+                now_iso(),
+                "running",
+                f"ingest: {title[:50]} → {target_headline[:30]}",
+                json.dumps({"source_id": source_id, "url": request.url}),
+            ),
         )
         conn.commit()
 
         context = build_branch_context(
-            conn, target_full, layers=config["context_layers"], ws_id=ws_id,
+            conn,
+            target_full,
+            layers=config["context_layers"],
+            ws_id=ws_id,
         )
 
         source_section = (
@@ -1090,7 +1135,7 @@ async def ingest_source(name: str, request: IngestRequest):
             f"**Source ID:** {source_id}\n"
             f"**Title:** {title}\n"
             f"**URL:** {request.url}\n\n"
-            f"Set `source_ids` to `[\"{source_id}\"]` on every node you create from this source.\n\n"
+            f'Set `source_ids` to `["{source_id}"]` on every node you create from this source.\n\n'
             f"## Source Content\n\n{content[:30000]}"
         )
 
@@ -1104,7 +1149,10 @@ async def ingest_source(name: str, request: IngestRequest):
         )
 
         executor = make_tool_executor(
-            conn, ws_id, target_full, run_id,
+            conn,
+            ws_id,
+            target_full,
+            run_id,
             resolve_node_id=resolve_node_id,
             new_id=new_id,
             now_iso=now_iso,
@@ -1243,29 +1291,38 @@ async def orchestrate(
     conn.execute(
         "INSERT INTO runs (id, workspace_id, run_type, scope_node_id, started_at, status, description, config) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (run_id, ws_id, "orchestrate", scope_id, now_iso(), "running",
-         f"orchestrate ({run_type}): {scope_headline[:50]}",
-         json.dumps({"dry_run": dry_run, "run_type": run_type})),
+        (
+            run_id,
+            ws_id,
+            "orchestrate",
+            scope_id,
+            now_iso(),
+            "running",
+            f"orchestrate ({run_type}): {scope_headline[:50]}",
+            json.dumps({"dry_run": dry_run, "run_type": run_type}),
+        ),
     )
     conn.commit()
 
     context = build_branch_context(
-        conn, scope_id,
+        conn,
+        scope_id,
         layers=config["context_layers"],
         ws_id=ws_id,
     )
     system_prompt = config["system_prompt"]
     if dry_run:
-        system_prompt += "\n\nDRY RUN: describe what you would do but tools will not actually mutate."
+        system_prompt += (
+            "\n\nDRY RUN: describe what you would do but tools will not actually mutate."
+        )
 
-    user_message = (
-        f"# Scope: {scope_headline}\n\n"
-        f"{context}\n\n"
-        f"{config['user_task']}"
-    )
+    user_message = f"# Scope: {scope_headline}\n\n{context}\n\n{config['user_task']}"
 
     executor = make_tool_executor(
-        conn, ws_id, scope_id, run_id,
+        conn,
+        ws_id,
+        scope_id,
+        run_id,
         dry_run=dry_run,
         resolve_node_id=resolve_node_id,
         new_id=new_id,
@@ -1352,18 +1409,23 @@ async def _run_orchestrator_from_chat(
     except ValueError as e:
         return str(e)
 
-    scope_node = conn.execute(
-        "SELECT headline FROM nodes WHERE id = ?", (scope_id,)
-    ).fetchone()
+    scope_node = conn.execute("SELECT headline FROM nodes WHERE id = ?", (scope_id,)).fetchone()
     scope_headline = dict(scope_node)["headline"] if scope_node else "?"
 
     orch_run_id = new_id()
     conn.execute(
         "INSERT INTO runs (id, workspace_id, run_type, scope_node_id, started_at, status, description, config) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (orch_run_id, ws_id, "orchestrate", scope_id, now_iso(), "running",
-         f"orchestrate ({run_type_name}): {scope_headline[:50]}",
-         json.dumps({"dry_run": dry_run, "run_type": run_type_name, "from_chat": chat_run_id})),
+        (
+            orch_run_id,
+            ws_id,
+            "orchestrate",
+            scope_id,
+            now_iso(),
+            "running",
+            f"orchestrate ({run_type_name}): {scope_headline[:50]}",
+            json.dumps({"dry_run": dry_run, "run_type": run_type_name, "from_chat": chat_run_id}),
+        ),
     )
     conn.commit()
 
@@ -1371,20 +1433,24 @@ async def _run_orchestrator_from_chat(
         on_progress(f"starting {run_type_name} on '{scope_headline[:40]}'...")
 
     context = build_branch_context(
-        conn, scope_id, layers=config["context_layers"], ws_id=ws_id,
+        conn,
+        scope_id,
+        layers=config["context_layers"],
+        ws_id=ws_id,
     )
     system_prompt = config["system_prompt"]
     if dry_run:
-        system_prompt += "\n\nDRY RUN: describe what you would do but tools will not actually mutate."
+        system_prompt += (
+            "\n\nDRY RUN: describe what you would do but tools will not actually mutate."
+        )
 
-    user_message = (
-        f"# Scope: {scope_headline}\n\n"
-        f"{context}\n\n"
-        f"{config['user_task']}"
-    )
+    user_message = f"# Scope: {scope_headline}\n\n{context}\n\n{config['user_task']}"
 
     executor = make_tool_executor(
-        conn, ws_id, scope_id, orch_run_id,
+        conn,
+        ws_id,
+        scope_id,
+        orch_run_id,
         dry_run=dry_run,
         resolve_node_id=resolve_node_id,
         new_id=new_id,
@@ -1421,9 +1487,7 @@ async def _run_orchestrator_from_chat(
     )
     conn.commit()
 
-    actions_summary = "\n".join(
-        f"  {a['tool']}: {a['result'][:100]}" for a in result.actions_taken
-    )
+    actions_summary = "\n".join(f"  {a['tool']}: {a['result'][:100]}" for a in result.actions_taken)
     return (
         f"Orchestrator {run_type_name} on '{scope_headline[:40]}' "
         f"({'dry run' if dry_run else 'live'}, {result.rounds_used} rounds):\n"
@@ -1454,9 +1518,15 @@ async def _run_loop_from_chat(
     conn.execute(
         "INSERT INTO runs (id, workspace_id, run_type, started_at, status, description, config) "
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (loop_run_id, ws_id, "orchestrate-loop", now_iso(), "running",
-         f"loop from chat: {steps} steps, {strategy}",
-         json.dumps({"steps": steps, "strategy": strategy, "from_chat": chat_run_id})),
+        (
+            loop_run_id,
+            ws_id,
+            "orchestrate-loop",
+            now_iso(),
+            "running",
+            f"loop from chat: {steps} steps, {strategy}",
+            json.dumps({"steps": steps, "strategy": strategy, "from_chat": chat_run_id}),
+        ),
     )
     conn.commit()
 
@@ -1474,9 +1544,7 @@ async def _run_loop_from_chat(
             break
 
         run_type_name = decide_run_type(conn, ws_id, scope_id, strategy, step_index=i)
-        scope_node = conn.execute(
-            "SELECT headline FROM nodes WHERE id = ?", (scope_id,)
-        ).fetchone()
+        scope_node = conn.execute("SELECT headline FROM nodes WHERE id = ?", (scope_id,)).fetchone()
         scope_headline = dict(scope_node)["headline"] if scope_node else "?"
 
         if on_progress:
@@ -1484,7 +1552,13 @@ async def _run_loop_from_chat(
 
         try:
             step_result = await _run_loop_step(
-                conn, ws_id, scope_id, run_type_name, False, api_key, loop_run_id,
+                conn,
+                ws_id,
+                scope_id,
+                run_type_name,
+                False,
+                api_key,
+                loop_run_id,
             )
             action_count = len(step_result["actions_taken"])
             step_summaries.append(
@@ -1492,9 +1566,7 @@ async def _run_loop_from_chat(
                 f"{action_count} actions, {step_result['rounds_used']} rounds"
             )
             if on_progress:
-                on_progress(
-                    f"step {i + 1} done: {action_count} actions on '{scope_headline[:30]}'"
-                )
+                on_progress(f"step {i + 1} done: {action_count} actions on '{scope_headline[:30]}'")
         except Exception as e:
             step_summaries.append(f"  Step {i + 1}: error — {e}")
             if on_progress:
@@ -1508,9 +1580,8 @@ async def _run_loop_from_chat(
     )
     conn.commit()
 
-    return (
-        f"Loop completed ({len(step_summaries)}/{steps} steps, {strategy}):\n"
-        + "\n".join(step_summaries)
+    return f"Loop completed ({len(step_summaries)}/{steps} steps, {strategy}):\n" + "\n".join(
+        step_summaries
     )
 
 
@@ -1533,18 +1604,23 @@ async def _run_research_from_chat(
     if strategy not in RESEARCH_STRATEGIES:
         return f"Unknown strategy '{strategy}'. Available: {', '.join(RESEARCH_STRATEGIES)}"
 
-    scope_node = conn.execute(
-        "SELECT headline FROM nodes WHERE id = ?", (scope_id,)
-    ).fetchone()
+    scope_node = conn.execute("SELECT headline FROM nodes WHERE id = ?", (scope_id,)).fetchone()
     scope_headline = dict(scope_node)["headline"] if scope_node else "?"
 
     research_run_id = new_id()
     conn.execute(
         "INSERT INTO runs (id, workspace_id, run_type, scope_node_id, started_at, status, description, config) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (research_run_id, ws_id, "research", scope_id, now_iso(), "running",
-         f"research: {budget} steps on '{scope_headline[:50]}'",
-         json.dumps({"budget": budget, "strategy": strategy, "from_chat": chat_run_id})),
+        (
+            research_run_id,
+            ws_id,
+            "research",
+            scope_id,
+            now_iso(),
+            "running",
+            f"research: {budget} steps on '{scope_headline[:50]}'",
+            json.dumps({"budget": budget, "strategy": strategy, "from_chat": chat_run_id}),
+        ),
     )
     conn.commit()
 
@@ -1561,7 +1637,13 @@ async def _run_research_from_chat(
 
         try:
             step_result = await _run_loop_step(
-                conn, ws_id, scope_id, run_type_name, False, api_key, research_run_id,
+                conn,
+                ws_id,
+                scope_id,
+                run_type_name,
+                False,
+                api_key,
+                research_run_id,
             )
             action_count = len(step_result["actions_taken"])
             step_summaries.append(
@@ -1569,9 +1651,7 @@ async def _run_research_from_chat(
                 f"{action_count} actions, {step_result['rounds_used']} rounds"
             )
             if on_progress:
-                on_progress(
-                    f"step {i + 1} done: {run_type_name}, {action_count} actions"
-                )
+                on_progress(f"step {i + 1} done: {run_type_name}, {action_count} actions")
         except Exception as e:
             step_summaries.append(f"  Step {i + 1}: error — {e}")
             if on_progress:
@@ -1585,8 +1665,7 @@ async def _run_research_from_chat(
 
     return (
         f"Research on '{scope_headline[:40]}' completed "
-        f"({len(step_summaries)}/{budget} steps, {strategy}):\n"
-        + "\n".join(step_summaries)
+        f"({len(step_summaries)}/{budget} steps, {strategy}):\n" + "\n".join(step_summaries)
     )
 
 
@@ -1640,18 +1719,23 @@ async def _run_ingest_from_chat(
 
     config = resolve_run_type("ingest")
 
-    target_node = conn.execute(
-        "SELECT headline FROM nodes WHERE id = ?", (target_full,)
-    ).fetchone()
+    target_node = conn.execute("SELECT headline FROM nodes WHERE id = ?", (target_full,)).fetchone()
     target_headline = dict(target_node)["headline"] if target_node else "?"
 
     run_id = new_id()
     conn.execute(
         "INSERT INTO runs (id, workspace_id, run_type, scope_node_id, started_at, status, description, config) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (run_id, ws_id, "ingest", target_full, now_iso(), "running",
-         f"ingest: {title[:50]} → {target_headline[:30]}",
-         json.dumps({"source_id": source_id, "url": url, "from_chat": chat_run_id})),
+        (
+            run_id,
+            ws_id,
+            "ingest",
+            target_full,
+            now_iso(),
+            "running",
+            f"ingest: {title[:50]} → {target_headline[:30]}",
+            json.dumps({"source_id": source_id, "url": url, "from_chat": chat_run_id}),
+        ),
     )
     conn.commit()
 
@@ -1659,7 +1743,10 @@ async def _run_ingest_from_chat(
         on_progress(f"extracting into '{target_headline[:40]}'...")
 
     context = build_branch_context(
-        conn, target_full, layers=config["context_layers"], ws_id=ws_id,
+        conn,
+        target_full,
+        layers=config["context_layers"],
+        ws_id=ws_id,
     )
 
     source_section = (
@@ -1667,7 +1754,7 @@ async def _run_ingest_from_chat(
         f"**Source ID:** {source_id}\n"
         f"**Title:** {title}\n"
         f"**URL:** {url}\n\n"
-        f"Set `source_ids` to `[\"{source_id}\"]` on every node you create from this source.\n\n"
+        f'Set `source_ids` to `["{source_id}"]` on every node you create from this source.\n\n'
         f"## Source Content\n\n{content[:30000]}"
     )
 
@@ -1690,7 +1777,10 @@ async def _run_ingest_from_chat(
             on_progress(f"[{action_count[0]}] {tool_name}: {result_preview}")
 
     executor = make_tool_executor(
-        conn, ws_id, target_full, run_id,
+        conn,
+        ws_id,
+        target_full,
+        run_id,
         resolve_node_id=resolve_node_id,
         new_id=new_id,
         now_iso=now_iso,
@@ -1728,12 +1818,14 @@ async def _run_ingest_from_chat(
     )
 
 
-_ASYNC_DISPATCH.update({
-    "__async_orchestrate__": ("run_orchestrator", _run_orchestrator_from_chat),
-    "__async_orchestrate_loop__": ("run_orchestrator_loop", _run_loop_from_chat),
-    "__async_research__": ("start_research", _run_research_from_chat),
-    "__async_ingest__": ("ingest_source", _run_ingest_from_chat),
-})
+_ASYNC_DISPATCH.update(
+    {
+        "__async_orchestrate__": ("run_orchestrator", _run_orchestrator_from_chat),
+        "__async_orchestrate_loop__": ("run_orchestrator_loop", _run_loop_from_chat),
+        "__async_research__": ("start_research", _run_research_from_chat),
+        "__async_ingest__": ("ingest_source", _run_ingest_from_chat),
+    }
+)
 
 
 async def _run_loop_step(
@@ -1748,36 +1840,47 @@ async def _run_loop_step(
     """Run a single orchestrator step within a loop. Returns step summary dict."""
     config = resolve_run_type(run_type_name)
 
-    scope_node = conn.execute(
-        "SELECT headline FROM nodes WHERE id = ?", (scope_id,)
-    ).fetchone()
+    scope_node = conn.execute("SELECT headline FROM nodes WHERE id = ?", (scope_id,)).fetchone()
     scope_headline = dict(scope_node)["headline"] if scope_node else "?"
 
     step_run_id = new_id()
     conn.execute(
         "INSERT INTO runs (id, workspace_id, run_type, scope_node_id, started_at, status, description, config) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (step_run_id, ws_id, "orchestrate", scope_id, now_iso(), "running",
-         f"loop step ({run_type_name}): {scope_headline[:50]}",
-         json.dumps({"dry_run": dry_run, "run_type": run_type_name, "parent_run": parent_run_id})),
+        (
+            step_run_id,
+            ws_id,
+            "orchestrate",
+            scope_id,
+            now_iso(),
+            "running",
+            f"loop step ({run_type_name}): {scope_headline[:50]}",
+            json.dumps(
+                {"dry_run": dry_run, "run_type": run_type_name, "parent_run": parent_run_id}
+            ),
+        ),
     )
     conn.commit()
 
     context = build_branch_context(
-        conn, scope_id, layers=config["context_layers"], ws_id=ws_id,
+        conn,
+        scope_id,
+        layers=config["context_layers"],
+        ws_id=ws_id,
     )
     system_prompt = config["system_prompt"]
     if dry_run:
-        system_prompt += "\n\nDRY RUN: describe what you would do but tools will not actually mutate."
+        system_prompt += (
+            "\n\nDRY RUN: describe what you would do but tools will not actually mutate."
+        )
 
-    user_message = (
-        f"# Scope: {scope_headline}\n\n"
-        f"{context}\n\n"
-        f"{config['user_task']}"
-    )
+    user_message = f"# Scope: {scope_headline}\n\n{context}\n\n{config['user_task']}"
 
     executor = make_tool_executor(
-        conn, ws_id, scope_id, step_run_id,
+        conn,
+        ws_id,
+        scope_id,
+        step_run_id,
         dry_run=dry_run,
         resolve_node_id=resolve_node_id,
         new_id=new_id,
@@ -1831,13 +1934,20 @@ async def orchestrate_loop(
     """
     api_key = _get_api_key()
     if not api_key:
+
         async def error_gen():
             yield _sse("error", {"message": "ANTHROPIC_API_KEY not set."})
+
         return StreamingResponse(error_gen(), media_type="text/event-stream")
 
     if strategy not in STRATEGIES:
+
         async def error_gen():
-            yield _sse("error", {"message": f"Unknown strategy '{strategy}'. Available: {', '.join(STRATEGIES)}"})
+            yield _sse(
+                "error",
+                {"message": f"Unknown strategy '{strategy}'. Available: {', '.join(STRATEGIES)}"},
+            )
+
         return StreamingResponse(error_gen(), media_type="text/event-stream")
 
     steps = max(1, min(steps, 10))
@@ -1846,8 +1956,10 @@ async def orchestrate_loop(
     ws = conn.execute("SELECT * FROM workspaces WHERE name = ?", (name,)).fetchone()
     if not ws:
         conn.close()
+
         async def error_gen():
             yield _sse("error", {"message": f"Workspace '{name}' not found."})
+
         return StreamingResponse(error_gen(), media_type="text/event-stream")
     ws_id = dict(ws)["id"]
 
@@ -1855,9 +1967,15 @@ async def orchestrate_loop(
     conn.execute(
         "INSERT INTO runs (id, workspace_id, run_type, started_at, status, description, config) "
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (loop_run_id, ws_id, "orchestrate-loop", now_iso(), "running",
-         f"loop: {steps} steps, {strategy}",
-         json.dumps({"steps": steps, "strategy": strategy, "dry_run": dry_run})),
+        (
+            loop_run_id,
+            ws_id,
+            "orchestrate-loop",
+            now_iso(),
+            "running",
+            f"loop: {steps} steps, {strategy}",
+            json.dumps({"steps": steps, "strategy": strategy, "dry_run": dry_run}),
+        ),
     )
     conn.commit()
 
@@ -1865,28 +1983,48 @@ async def orchestrate_loop(
         visited_branches: list[str] = []
         step_results: list[dict] = []
 
-        yield _sse("loop_start", {
-            "run_id": loop_run_id, "steps": steps,
-            "strategy": strategy, "dry_run": dry_run,
-        })
+        yield _sse(
+            "loop_start",
+            {
+                "run_id": loop_run_id,
+                "steps": steps,
+                "strategy": strategy,
+                "dry_run": dry_run,
+            },
+        )
 
         for i in range(steps):
             scope_id = pick_next_branch(conn, ws_id, exclude=visited_branches)
             if not scope_id:
-                yield _sse("step_skipped", {
-                    "step": i + 1, "reason": "no more branches to process",
-                })
+                yield _sse(
+                    "step_skipped",
+                    {
+                        "step": i + 1,
+                        "reason": "no more branches to process",
+                    },
+                )
                 break
 
             run_type_name = decide_run_type(conn, ws_id, scope_id, strategy, step_index=i)
 
-            yield _sse("step_start", {
-                "step": i + 1, "scope_node_id": scope_id[:8], "run_type": run_type_name,
-            })
+            yield _sse(
+                "step_start",
+                {
+                    "step": i + 1,
+                    "scope_node_id": scope_id[:8],
+                    "run_type": run_type_name,
+                },
+            )
 
             try:
                 step_result = await _run_loop_step(
-                    conn, ws_id, scope_id, run_type_name, dry_run, api_key, loop_run_id,
+                    conn,
+                    ws_id,
+                    scope_id,
+                    run_type_name,
+                    dry_run,
+                    api_key,
+                    loop_run_id,
                 )
                 step_result["step"] = i + 1
                 step_results.append(step_result)
@@ -1902,18 +2040,23 @@ async def orchestrate_loop(
         )
         conn.commit()
 
-        yield _sse("done", {
-            "run_id": loop_run_id,
-            "steps_completed": len(step_results),
-            "total_cost_usd": sum(r.get("cost_usd", 0) for r in step_results),
-            "summary": [
-                {
-                    "step": r["step"], "scope_node": r["scope_node"],
-                    "run_type": r["run_type"], "actions": len(r["actions_taken"]),
-                }
-                for r in step_results
-            ],
-        })
+        yield _sse(
+            "done",
+            {
+                "run_id": loop_run_id,
+                "steps_completed": len(step_results),
+                "total_cost_usd": sum(r.get("cost_usd", 0) for r in step_results),
+                "summary": [
+                    {
+                        "step": r["step"],
+                        "scope_node": r["scope_node"],
+                        "run_type": r["run_type"],
+                        "actions": len(r["actions_taken"]),
+                    }
+                    for r in step_results
+                ],
+            },
+        )
         conn.close()
 
     return StreamingResponse(generate(), media_type="text/event-stream")
@@ -1936,13 +2079,22 @@ async def research(
     """
     api_key = _get_api_key()
     if not api_key:
+
         async def error_gen():
             yield _sse("error", {"message": "ANTHROPIC_API_KEY not set."})
+
         return StreamingResponse(error_gen(), media_type="text/event-stream")
 
     if strategy not in RESEARCH_STRATEGIES:
+
         async def error_gen():
-            yield _sse("error", {"message": f"Unknown strategy '{strategy}'. Available: {', '.join(RESEARCH_STRATEGIES)}"})
+            yield _sse(
+                "error",
+                {
+                    "message": f"Unknown strategy '{strategy}'. Available: {', '.join(RESEARCH_STRATEGIES)}"
+                },
+            )
+
         return StreamingResponse(error_gen(), media_type="text/event-stream")
 
     budget = max(1, min(budget, 10))
@@ -1951,8 +2103,10 @@ async def research(
     ws = conn.execute("SELECT * FROM workspaces WHERE name = ?", (name,)).fetchone()
     if not ws:
         conn.close()
+
         async def error_gen():
             yield _sse("error", {"message": f"Workspace '{name}' not found."})
+
         return StreamingResponse(error_gen(), media_type="text/event-stream")
     ws_id = dict(ws)["id"]
 
@@ -1963,8 +2117,10 @@ async def research(
 
     if not scope_id:
         conn.close()
+
         async def error_gen():
             yield _sse("error", {"message": "No branch to research."})
+
         return StreamingResponse(error_gen(), media_type="text/event-stream")
 
     scope_node = conn.execute("SELECT headline FROM nodes WHERE id = ?", (scope_id,)).fetchone()
@@ -1974,31 +2130,54 @@ async def research(
     conn.execute(
         "INSERT INTO runs (id, workspace_id, run_type, scope_node_id, started_at, status, description, config) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (research_run_id, ws_id, "research", scope_id, now_iso(), "running",
-         f"research: {budget} steps on '{scope_headline[:50]}'",
-         json.dumps({"budget": budget, "strategy": strategy})),
+        (
+            research_run_id,
+            ws_id,
+            "research",
+            scope_id,
+            now_iso(),
+            "running",
+            f"research: {budget} steps on '{scope_headline[:50]}'",
+            json.dumps({"budget": budget, "strategy": strategy}),
+        ),
     )
     conn.commit()
 
     async def generate():
         step_results: list[dict] = []
 
-        yield _sse("research_start", {
-            "run_id": research_run_id, "budget": budget,
-            "strategy": strategy, "scope_node_id": scope_id[:8],
-            "scope_headline": scope_headline,
-        })
+        yield _sse(
+            "research_start",
+            {
+                "run_id": research_run_id,
+                "budget": budget,
+                "strategy": strategy,
+                "scope_node_id": scope_id[:8],
+                "scope_headline": scope_headline,
+            },
+        )
 
         for i in range(budget):
             run_type_name = decide_next_phase(conn, ws_id, scope_id, strategy)
 
-            yield _sse("step_start", {
-                "step": i + 1, "scope_node_id": scope_id[:8], "run_type": run_type_name,
-            })
+            yield _sse(
+                "step_start",
+                {
+                    "step": i + 1,
+                    "scope_node_id": scope_id[:8],
+                    "run_type": run_type_name,
+                },
+            )
 
             try:
                 step_result = await _run_loop_step(
-                    conn, ws_id, scope_id, run_type_name, False, api_key, research_run_id,
+                    conn,
+                    ws_id,
+                    scope_id,
+                    run_type_name,
+                    False,
+                    api_key,
+                    research_run_id,
                 )
                 step_result["step"] = i + 1
                 step_results.append(step_result)
@@ -2012,18 +2191,23 @@ async def research(
         )
         conn.commit()
 
-        yield _sse("done", {
-            "run_id": research_run_id,
-            "steps_completed": len(step_results),
-            "total_cost_usd": sum(r.get("cost_usd", 0) for r in step_results),
-            "summary": [
-                {
-                    "step": r["step"], "scope_node": r["scope_node"],
-                    "run_type": r["run_type"], "actions": len(r["actions_taken"]),
-                }
-                for r in step_results
-            ],
-        })
+        yield _sse(
+            "done",
+            {
+                "run_id": research_run_id,
+                "steps_completed": len(step_results),
+                "total_cost_usd": sum(r.get("cost_usd", 0) for r in step_results),
+                "summary": [
+                    {
+                        "step": r["step"],
+                        "scope_node": r["scope_node"],
+                        "run_type": r["run_type"],
+                        "actions": len(r["actions_taken"]),
+                    }
+                    for r in step_results
+                ],
+            },
+        )
         conn.close()
 
     return StreamingResponse(generate(), media_type="text/event-stream")
@@ -2039,9 +2223,7 @@ async def chat(request: ChatRequest):
         )
 
     conn = get_db()
-    ws = conn.execute(
-        "SELECT * FROM workspaces WHERE name = ?", (request.workspace,)
-    ).fetchone()
+    ws = conn.execute("SELECT * FROM workspaces WHERE name = ?", (request.workspace,)).fetchone()
     if not ws:
         conn.close()
         return ChatResponse(response=f"Workspace '{request.workspace}' not found.", tool_uses=[])
@@ -2075,7 +2257,9 @@ async def chat(request: ChatRequest):
     context = format_tree(tree)
 
     prompt_path = PROMPTS_DIR / "api_chat.md"
-    system_prompt = prompt_path.read_text() if prompt_path.exists() else "You are a research assistant."
+    system_prompt = (
+        prompt_path.read_text() if prompt_path.exists() else "You are a research assistant."
+    )
     full_system = f"{system_prompt}\n\n---\n\n# Current worldview\n\n{context}"
 
     model_id = MODEL_MAP.get(request.model, MODEL_MAP["sonnet"])
@@ -2112,7 +2296,8 @@ async def chat(request: ChatRequest):
                 "input_tokens": usage.input_tokens,
                 "output_tokens": usage.output_tokens,
                 "cache_read_input_tokens": getattr(usage, "cache_read_input_tokens", 0) or 0,
-                "cache_creation_input_tokens": getattr(usage, "cache_creation_input_tokens", 0) or 0,
+                "cache_creation_input_tokens": getattr(usage, "cache_creation_input_tokens", 0)
+                or 0,
             },
             duration_ms=duration_ms,
         )
@@ -2153,11 +2338,13 @@ async def chat(request: ChatRequest):
                 duration_ms=tool_duration_ms,
             )
             tool_uses_log.append(ToolUseInfo(name=tc.name, input=tc.input, result=result_str))  # type: ignore[arg-type]
-            tool_results.append({
-                "type": "tool_result",
-                "tool_use_id": tc.id,
-                "content": result_str,
-            })
+            tool_results.append(
+                {
+                    "type": "tool_result",
+                    "tool_use_id": tc.id,
+                    "content": result_str,
+                }
+            )
 
         tracer.span_end(round_span)
         messages.append({"role": "user", "content": tool_results})
@@ -2195,18 +2382,20 @@ async def chat_stream(request: ChatRequest):
 
     api_key = _get_api_key()
     if not api_key:
+
         async def error_gen():
             yield _sse("error", {"message": "ANTHROPIC_API_KEY not set."})
+
         return StreamingResponse(error_gen(), media_type="text/event-stream")
 
     conn = get_db()
-    ws = conn.execute(
-        "SELECT * FROM workspaces WHERE name = ?", (request.workspace,)
-    ).fetchone()
+    ws = conn.execute("SELECT * FROM workspaces WHERE name = ?", (request.workspace,)).fetchone()
     if not ws:
         conn.close()
+
         async def error_gen():
             yield _sse("error", {"message": f"Workspace '{request.workspace}' not found."})
+
         return StreamingResponse(error_gen(), media_type="text/event-stream")
 
     ws_dict = dict(ws)
@@ -2218,8 +2407,10 @@ async def chat_stream(request: ChatRequest):
     ).fetchone()
     if not root:
         conn.close()
+
         async def error_gen():
             yield _sse("error", {"message": "No root node in workspace."})
+
         return StreamingResponse(error_gen(), media_type="text/event-stream")
 
     root_dict = dict(root)
@@ -2240,7 +2431,9 @@ async def chat_stream(request: ChatRequest):
     context = format_tree(tree)
 
     prompt_path = PROMPTS_DIR / "api_chat.md"
-    system_prompt = prompt_path.read_text() if prompt_path.exists() else "You are a research assistant."
+    system_prompt = (
+        prompt_path.read_text() if prompt_path.exists() else "You are a research assistant."
+    )
     full_system = f"{system_prompt}\n\n---\n\n# Current worldview\n\n{context}"
 
     model_id = MODEL_MAP.get(request.model, MODEL_MAP["sonnet"])
@@ -2271,9 +2464,7 @@ async def chat_stream(request: ChatRequest):
                                 yield _sse("text", {"content": event.delta.text})
                         elif event.type == "content_block_start":
                             cb = event.content_block
-                            if isinstance(cb, ToolUseBlock):
-                                yield _sse("tool_use_start", {"name": cb.name})
-                            elif isinstance(cb, ServerToolUseBlock):
+                            if isinstance(cb, ToolUseBlock) or isinstance(cb, ServerToolUseBlock):
                                 yield _sse("tool_use_start", {"name": cb.name})
 
                 response = await stream.get_final_message()
@@ -2292,8 +2483,12 @@ async def chat_stream(request: ChatRequest):
                     usage={
                         "input_tokens": usage.input_tokens,
                         "output_tokens": usage.output_tokens,
-                        "cache_read_input_tokens": getattr(usage, "cache_read_input_tokens", 0) or 0,
-                        "cache_creation_input_tokens": getattr(usage, "cache_creation_input_tokens", 0) or 0,
+                        "cache_read_input_tokens": getattr(usage, "cache_read_input_tokens", 0)
+                        or 0,
+                        "cache_creation_input_tokens": getattr(
+                            usage, "cache_creation_input_tokens", 0
+                        )
+                        or 0,
                     },
                     duration_ms=duration_ms,
                 )
@@ -2311,7 +2506,10 @@ async def chat_stream(request: ChatRequest):
                     result_str = execute_tool(conn, ws_id, root_id, tc.name, tc.input, run_id)
                     progress_msgs: list[str] = []
                     result_str = await _resolve_async_tool(
-                        result_str, conn, api_key, run_id,
+                        result_str,
+                        conn,
+                        api_key,
+                        run_id,
                         on_progress=lambda msg: progress_msgs.append(msg),
                     )
                     for pmsg in progress_msgs:
@@ -2324,16 +2522,21 @@ async def chat_stream(request: ChatRequest):
                         result=result_str,
                         duration_ms=tool_duration_ms,
                     )
-                    yield _sse("tool_use_result", {
-                        "name": tc.name,
-                        "input": tc.input,
-                        "result": result_str,
-                    })
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": tc.id,
-                        "content": result_str,
-                    })
+                    yield _sse(
+                        "tool_use_result",
+                        {
+                            "name": tc.name,
+                            "input": tc.input,
+                            "result": result_str,
+                        },
+                    )
+                    tool_results.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": tc.id,
+                            "content": result_str,
+                        }
+                    )
                 tracer.span_end(round_span)
                 messages.append({"role": "user", "content": tool_results})
 
@@ -2419,33 +2622,36 @@ def operator_list_runs(
         if started and completed:
             try:
                 from datetime import datetime as dt
+
                 t0 = dt.fromisoformat(started)
                 t1 = dt.fromisoformat(completed)
                 duration_ms = int((t1 - t0).total_seconds() * 1000)
             except (ValueError, TypeError):
                 pass
 
-        runs.append({
-            "id": run_id,
-            "workspace_id": rd["workspace_id"],
-            "workspace_name": rd.get("workspace_name", ""),
-            "run_type": rd["run_type"],
-            "status": rd["status"],
-            "started_at": started,
-            "completed_at": completed,
-            "description": rd.get("description"),
-            "scope_node_headline": rd.get("scope_node_headline"),
-            "total_cost_usd": ts.get("total_cost", 0),
-            "total_usage": {
-                "input_tokens": int(ts.get("input_tokens", 0)),
-                "output_tokens": int(ts.get("output_tokens", 0)),
-                "cache_read_tokens": int(ts.get("cache_read", 0)),
-                "cache_write_tokens": int(ts.get("cache_write", 0)),
-            },
-            "model_call_count": int(ts.get("model_calls", 0)),
-            "tool_call_count": int(ts.get("tool_calls", 0)),
-            "duration_ms": duration_ms,
-        })
+        runs.append(
+            {
+                "id": run_id,
+                "workspace_id": rd["workspace_id"],
+                "workspace_name": rd.get("workspace_name", ""),
+                "run_type": rd["run_type"],
+                "status": rd["status"],
+                "started_at": started,
+                "completed_at": completed,
+                "description": rd.get("description"),
+                "scope_node_headline": rd.get("scope_node_headline"),
+                "total_cost_usd": ts.get("total_cost", 0),
+                "total_usage": {
+                    "input_tokens": int(ts.get("input_tokens", 0)),
+                    "output_tokens": int(ts.get("output_tokens", 0)),
+                    "cache_read_tokens": int(ts.get("cache_read", 0)),
+                    "cache_write_tokens": int(ts.get("cache_write", 0)),
+                },
+                "model_call_count": int(ts.get("model_calls", 0)),
+                "tool_call_count": int(ts.get("tool_calls", 0)),
+                "duration_ms": duration_ms,
+            }
+        )
 
     conn.close()
     return {"runs": runs, "total": total}
@@ -2506,9 +2712,10 @@ def operator_run_detail(run_id: str):
         elif ed["event_type"] == "tool":
             event.update(data)
             tool_calls += 1
-        elif ed["event_type"] in ("span_begin", "span_end"):
-            event.update(data)
-        elif ed["event_type"] in ("info", "error"):
+        elif ed["event_type"] in ("span_begin", "span_end") or ed["event_type"] in (
+            "info",
+            "error",
+        ):
             event.update(data)
 
         events.append(event)
@@ -2519,6 +2726,7 @@ def operator_run_detail(run_id: str):
     if started and completed:
         try:
             from datetime import datetime as dt
+
             t0 = dt.fromisoformat(started)
             t1 = dt.fromisoformat(completed)
             duration_ms = int((t1 - t0).total_seconds() * 1000)

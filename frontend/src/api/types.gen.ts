@@ -379,7 +379,7 @@ export type CallSummary = {
 /**
  * CallType
  */
-export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'ab_eval' | 'ab_eval_comparison' | 'ab_eval_summary' | 'run_eval' | 'single_call_baseline' | 'create_view' | 'global_prioritization' | 'update_view' | 'chat_direct' | 'adversarial_review' | 'claude_code_direct';
+export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'ab_eval' | 'ab_eval_comparison' | 'ab_eval_summary' | 'run_eval' | 'single_call_baseline' | 'create_view' | 'global_prioritization' | 'update_view' | 'chat_direct' | 'adversarial_review' | 'draft_artifact' | 'claude_code_direct';
 
 /**
  * CallTypeFruitScoreItem
@@ -1417,7 +1417,7 @@ export type PageRef = {
 /**
  * PageType
  */
-export type PageType = 'source' | 'claim' | 'question' | 'judgement' | 'wiki' | 'summary' | 'view' | 'view_item' | 'view_meta';
+export type PageType = 'source' | 'claim' | 'question' | 'judgement' | 'wiki' | 'summary' | 'view' | 'view_item' | 'view_meta' | 'artifact';
 
 /**
  * PaginatedPagesOut

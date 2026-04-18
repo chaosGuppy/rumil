@@ -86,6 +86,10 @@ uv run python main.py "Your question here" --budget 20 --summary
 # Generate a multi-section research report
 uv run python main.py --report QUESTION_ID
 
+# Draft an external-facing artifact from a question's View (single-pass render)
+# --shape options: strategy_brief (default), scenario_forecast, market_research
+uv run python main.py --draft-artifact QUESTION_ID --shape strategy_brief
+
 # Evaluate the judgement quality for a question
 uv run python main.py --evaluate QUESTION_ID
 

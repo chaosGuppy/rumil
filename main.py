@@ -20,6 +20,12 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from rumil.ab_eval import run_ab_eval
+from rumil.calls.draft_artifact import (
+    DEFAULT_SHAPE,
+    SUPPORTED_SHAPES,
+    ArtifactShape,
+    DraftArtifactCall,
+)
 from rumil.chat import run_chat, run_continuation_chat, run_scoping_chat
 from rumil.clean import run_feedback_update, run_grounding_feedback
 from rumil.constants import MIN_TWOPHASE_BUDGET
@@ -473,6 +479,56 @@ async def cmd_show_evaluation(call_id: str, db: DB) -> None:
         print(f"Evaluation for: {scope.headline[:80]}")
     print(f"Call: {call.id[:8]}  Status: {call.status.value}\n")
     _print_evaluation(call)
+
+
+async def cmd_draft_artifact(
+    question_id: str,
+    shape: ArtifactShape,
+    db: DB,
+    name: str = "",
+) -> None:
+    """Render a shape-parameterized artifact from the question's View."""
+    resolved_id = await db.resolve_page_id(question_id) or question_id
+    question = await db.get_page(resolved_id)
+    if not question:
+        print(f"Error: question '{question_id}' not found. Run --list to see existing questions.")
+        sys.exit(1)
+    if question.page_type != PageType.QUESTION:
+        print(f"Error: page '{question_id}' is a {question.page_type.value}, not a question.")
+        sys.exit(1)
+
+    if question.project_id and question.project_id != db.project_id:
+        db.project_id = question.project_id
+
+    await db.create_run(
+        name=name or f"draft-artifact ({shape}): {question.headline[:80]}",
+        question_id=resolved_id,
+        config=get_settings().capture_config(),
+    )
+
+    frontend = get_settings().frontend_url.rstrip("/")
+    print(f"\nDrafting artifact (shape={shape}) for: {question.headline[:80]}")
+    print(f"Trace: {frontend}/traces/{db.run_id}\n")
+
+    call = await db.create_call(
+        CallType.DRAFT_ARTIFACT,
+        scope_page_id=resolved_id,
+    )
+    runner = DraftArtifactCall(resolved_id, call, db, shape=shape)
+    await runner.run()
+
+    artifact_id = None
+    if runner.update_result and runner.update_result.created_page_ids:
+        artifact_id = runner.update_result.created_page_ids[0]
+
+    if artifact_id:
+        artifact = await db.get_page(artifact_id)
+        if artifact:
+            print(f"\nArtifact created: {artifact_id}")
+            print(f"Title: {artifact.headline}")
+            print(f"Page:  {frontend}/pages/{artifact_id}")
+    else:
+        print("\nNo artifact was created.")
 
 
 async def cmd_summary(
@@ -1048,6 +1104,20 @@ async def async_main():
         help="Force the two-phase orchestrator to dispatch two recurse calls",
     )
     parser.add_argument(
+        "--draft-artifact",
+        dest="draft_artifact_id",
+        metavar="QUESTION_ID",
+        help="Draft an external-facing artifact (shape-parameterized) from the "
+        "question's View. Single-pass render, no refinement loop.",
+    )
+    parser.add_argument(
+        "--shape",
+        dest="artifact_shape",
+        default=DEFAULT_SHAPE,
+        choices=list(SUPPORTED_SHAPES),
+        help=f"Artifact shape for --draft-artifact (default: {DEFAULT_SHAPE}).",
+    )
+    parser.add_argument(
         "--enable-adversarial-review",
         dest="enable_adversarial_review",
         action="store_true",
@@ -1238,6 +1308,14 @@ async def async_main():
         return
     elif args.show_evaluation_id:
         await cmd_show_evaluation(args.show_evaluation_id, db)
+        return
+    elif args.draft_artifact_id:
+        await cmd_draft_artifact(
+            args.draft_artifact_id,
+            args.artifact_shape,
+            db,
+            name=args.run_name,
+        )
         return
     elif args.scope_question:
         await cmd_scope(

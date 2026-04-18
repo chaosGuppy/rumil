@@ -4,6 +4,7 @@ from rumil.calls.adversarial_review import AdversarialReviewCall, AdversarialVer
 from rumil.calls.assess import AssessCall, BigAssessCall
 from rumil.calls.call_registry import ASSESS_CALL_CLASSES
 from rumil.calls.create_view import CreateViewCall
+from rumil.calls.draft_artifact import DraftArtifactCall, DraftArtifactResult
 from rumil.calls.find_considerations import FindConsiderationsCall
 from rumil.calls.ingest import IngestCall
 from rumil.calls.link_subquestions import LinkSubquestionsCall
@@ -34,6 +35,8 @@ __all__ = [
     "BigAssessCall",
     "CallRunner",
     "CreateViewCall",
+    "DraftArtifactCall",
+    "DraftArtifactResult",
     "FindConsiderationsCall",
     "IngestCall",
     "LinkSubquestionsCall",

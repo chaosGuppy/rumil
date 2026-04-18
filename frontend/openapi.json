@@ -3153,6 +3153,7 @@
           "update_view",
           "chat_direct",
           "adversarial_review",
+          "draft_artifact",
           "claude_code_direct"
         ],
         "title": "CallType"
@@ -4950,7 +4951,8 @@
           "summary",
           "view",
           "view_item",
-          "view_meta"
+          "view_meta",
+          "artifact"
         ],
         "title": "PageType"
       },

@@ -31,6 +31,7 @@ class PageType(str, Enum):
     VIEW = "view"
     VIEW_ITEM = "view_item"
     VIEW_META = "view_meta"
+    ARTIFACT = "artifact"
 
 
 class PageDetail(str, Enum):
@@ -87,6 +88,7 @@ class CallType(str, Enum):
     UPDATE_VIEW = "update_view"
     CHAT_DIRECT = "chat_direct"
     ADVERSARIAL_REVIEW = "adversarial_review"
+    DRAFT_ARTIFACT = "draft_artifact"
     # Envelope call for mutations made from Claude Code's broader context
     # (not a rumil-internal call with carefully scoped prompt). Never
     # dispatchable from prioritization — only created by .claude/ skills.

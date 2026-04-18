@@ -214,13 +214,20 @@ async def evaluate_run_with_agent(
         if trace.total_cost_usd > 0:
             call.cost_usd = trace.total_cost_usd
         await parent_db.save_call(call)
-        await _record_eval_reputation(
-            parent_db,
-            agent_name=spec.name,
-            run_id=run_id,
-            question_id=question_id,
-            call_id=call.id,
-        )
+        try:
+            await _record_eval_reputation(
+                parent_db,
+                agent_name=spec.name,
+                run_id=run_id,
+                question_id=question_id,
+                call_id=call.id,
+            )
+        except Exception:
+            log.exception(
+                "Reputation hook failed for eval agent %s on run %s",
+                spec.name,
+                run_id,
+            )
     except Exception:
         log.exception(
             "Eval agent %s failed for run %s",

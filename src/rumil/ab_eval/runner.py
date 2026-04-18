@@ -417,16 +417,22 @@ async def run_single_eval_agent(
         broadcaster=broadcaster,
     )
 
-    await _record_ab_preference_reputation(
-        db,
-        agent_name=spec.name,
-        preference=preference,
-        run_id_a=run_id_a,
-        run_id_b=run_id_b,
-        question_id_a=question_id_a,
-        question_id_b=question_id_b,
-        comparison_call_id=comparison_call.id,
-    )
+    try:
+        await _record_ab_preference_reputation(
+            db,
+            agent_name=spec.name,
+            preference=preference,
+            run_id_a=run_id_a,
+            run_id_b=run_id_b,
+            question_id_a=question_id_a,
+            question_id_b=question_id_b,
+            comparison_call_id=comparison_call.id,
+        )
+    except Exception:
+        log.exception(
+            "Reputation hook failed for AB-eval comparison %s",
+            comparison_call.id,
+        )
 
     return ABEvalResult(
         agent_name=spec.name,

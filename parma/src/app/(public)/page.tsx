@@ -558,6 +558,10 @@ function AppContent() {
   const [hydratingFromUrl, setHydratingFromUrl] = useState<boolean>(
     Boolean(projectParam),
   );
+  // True when the hydration effect ran and couldn't resolve the project —
+  // e.g. project not found, or API error. Used to stop showing a loading
+  // screen forever on a bad deep link.
+  const [hydrationFailed, setHydrationFailed] = useState<boolean>(false);
 
   // Cold-load hydration from searchParams. Without this, any deep link
   // (`?project=...&q=...&view=...`) would mount with `selectedProject=null`
@@ -583,6 +587,7 @@ function AppContent() {
           (p) => p.id === projectParam || p.name === projectParam,
         );
         if (!match) {
+          setHydrationFailed(true);
           setHydratingFromUrl(false);
           return;
         }
@@ -667,7 +672,11 @@ function AppContent() {
   }, [selectedProject]);
 
   if (!selectedProject) {
-    if (hydratingFromUrl) {
+    // If the URL has ?project=X, always show loading until either the
+    // hydration effect resolves the project or explicitly marks failure.
+    // Using `projectParam` directly (rather than a `hydratingFromUrl` bool
+    // that can desync with URL state) makes refresh-with-deep-link robust.
+    if (projectParam && !hydrationFailed) {
       return <div className="view-loading">Loading research...</div>;
     }
     return <ProjectBrowser onSelectProject={handleSelectProject} />;

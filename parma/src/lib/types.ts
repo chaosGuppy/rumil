@@ -85,6 +85,30 @@ export interface Project {
   hidden: boolean;
 }
 
+// Mirrors AdversarialVerdictSummaryOut in src/rumil/api/schemas.py.
+// Returned by /api/pages/{page_id}/adversarial-verdicts and the batch
+// /api/adversarial-verdicts?page_ids=... endpoint. `stronger_side` is the
+// synthesizer's read on which scout's case was stronger; `claim_holds`
+// may diverge (a claim can survive even if the how-false side was
+// rhetorically stronger). `expired` is computed server-side from
+// sunset_after_days + verdict_created_at.
+export type AdversarialStrongerSide = "how_true" | "how_false" | "tie";
+
+export interface AdversarialVerdictSummary {
+  verdict_page_id: string;
+  target_page_id: string;
+  stronger_side: AdversarialStrongerSide;
+  claim_holds: boolean;
+  confidence: number;
+  rationale: string;
+  concurrences: string[];
+  dissents: string[];
+  sunset_after_days: number | null;
+  verdict_created_at: string;
+  expired: boolean;
+  page_created_at: string;
+}
+
 // Mirrors ProjectSummaryOut in src/rumil/api/schemas.py. Produced by the
 // list_projects_summary RPC in a single SQL call.
 export interface ProjectSummary {

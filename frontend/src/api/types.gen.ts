@@ -165,6 +165,77 @@ export type AbEvalReportOut = {
 };
 
 /**
+ * AdversarialVerdictSummaryOut
+ *
+ * Summary of a single adversarial-review verdict targeting a page.
+ *
+ * Produced by GET /api/pages/{page_id}/adversarial-verdicts. The frontend
+ * renders this inline as a ``VerdictBadge`` next to credence/robustness.
+ *
+ * Field mapping from the underlying ``AdversarialVerdict``
+ * (src/rumil/calls/adversarial_review.py):
+ *
+ * - ``stronger_side`` → which scout's case was stronger
+ * (``"how_true"`` / ``"how_false"`` / ``"tie"``)
+ * - ``claim_holds`` → whether the claim survived review
+ * - ``confidence``, ``rationale`` → synthesizer's epistemic read
+ * - ``concurrences``, ``dissents`` → notable secondary points worth
+ * preserving
+ * - ``sunset_after_days`` + ``verdict_created_at`` → shelf-life. When
+ * expired, the frontend mutes the badge and adds a "stale" tag.
+ */
+export type AdversarialVerdictSummaryOut = {
+    /**
+     * Verdict Page Id
+     */
+    verdict_page_id: string;
+    /**
+     * Target Page Id
+     */
+    target_page_id: string;
+    /**
+     * Stronger Side
+     */
+    stronger_side: string;
+    /**
+     * Claim Holds
+     */
+    claim_holds: boolean;
+    /**
+     * Confidence
+     */
+    confidence: number;
+    /**
+     * Rationale
+     */
+    rationale: string;
+    /**
+     * Concurrences
+     */
+    concurrences: Array<string>;
+    /**
+     * Dissents
+     */
+    dissents: Array<string>;
+    /**
+     * Sunset After Days
+     */
+    sunset_after_days: number | null;
+    /**
+     * Verdict Created At
+     */
+    verdict_created_at: string;
+    /**
+     * Expired
+     */
+    expired: boolean;
+    /**
+     * Page Created At
+     */
+    page_created_at: string;
+};
+
+/**
  * AffectedPagesIdentifiedEventOut
  */
 export type AffectedPagesIdentifiedEventOut = {
@@ -534,7 +605,7 @@ export type CallSummary = {
 /**
  * CallType
  */
-export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'ab_eval' | 'ab_eval_comparison' | 'ab_eval_summary' | 'run_eval' | 'single_call_baseline' | 'create_view' | 'global_prioritization' | 'update_view' | 'chat_direct' | 'adversarial_review' | 'draft_artifact' | 'claude_code_direct';
+export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'ab_eval' | 'ab_eval_comparison' | 'ab_eval_summary' | 'run_eval' | 'single_call_baseline' | 'create_view' | 'global_prioritization' | 'update_view' | 'chat_direct' | 'adversarial_review' | 'explore_tension' | 'draft_artifact' | 'claude_code_direct';
 
 /**
  * CallTypeFruitScoreItem
@@ -3190,6 +3261,89 @@ export type GetPageCountsApiPagesPageIdCountsGetResponses = {
 };
 
 export type GetPageCountsApiPagesPageIdCountsGetResponse = GetPageCountsApiPagesPageIdCountsGetResponses[keyof GetPageCountsApiPagesPageIdCountsGetResponses];
+
+export type GetAdversarialVerdictsApiPagesPageIdAdversarialVerdictsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Page Id
+         */
+        page_id: string;
+    };
+    query?: {
+        /**
+         * Staged Run Id
+         */
+        staged_run_id?: string | null;
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/pages/{page_id}/adversarial-verdicts';
+};
+
+export type GetAdversarialVerdictsApiPagesPageIdAdversarialVerdictsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetAdversarialVerdictsApiPagesPageIdAdversarialVerdictsGetError = GetAdversarialVerdictsApiPagesPageIdAdversarialVerdictsGetErrors[keyof GetAdversarialVerdictsApiPagesPageIdAdversarialVerdictsGetErrors];
+
+export type GetAdversarialVerdictsApiPagesPageIdAdversarialVerdictsGetResponses = {
+    /**
+     * Response Get Adversarial Verdicts Api Pages  Page Id  Adversarial Verdicts Get
+     *
+     * Successful Response
+     */
+    200: Array<AdversarialVerdictSummaryOut>;
+};
+
+export type GetAdversarialVerdictsApiPagesPageIdAdversarialVerdictsGetResponse = GetAdversarialVerdictsApiPagesPageIdAdversarialVerdictsGetResponses[keyof GetAdversarialVerdictsApiPagesPageIdAdversarialVerdictsGetResponses];
+
+export type GetAdversarialVerdictsBatchApiAdversarialVerdictsGetData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Page Ids
+         */
+        page_ids: string;
+        /**
+         * Staged Run Id
+         */
+        staged_run_id?: string | null;
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/adversarial-verdicts';
+};
+
+export type GetAdversarialVerdictsBatchApiAdversarialVerdictsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetAdversarialVerdictsBatchApiAdversarialVerdictsGetError = GetAdversarialVerdictsBatchApiAdversarialVerdictsGetErrors[keyof GetAdversarialVerdictsBatchApiAdversarialVerdictsGetErrors];
+
+export type GetAdversarialVerdictsBatchApiAdversarialVerdictsGetResponses = {
+    /**
+     * Response Get Adversarial Verdicts Batch Api Adversarial Verdicts Get
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: Array<AdversarialVerdictSummaryOut>;
+    };
+};
+
+export type GetAdversarialVerdictsBatchApiAdversarialVerdictsGetResponse = GetAdversarialVerdictsBatchApiAdversarialVerdictsGetResponses[keyof GetAdversarialVerdictsBatchApiAdversarialVerdictsGetResponses];
 
 export type GetProjectStatsApiProjectsProjectIdStatsGetData = {
     body?: never;

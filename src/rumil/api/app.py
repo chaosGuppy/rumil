@@ -9,7 +9,7 @@ import logging
 import os
 import secrets
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from datetime import UTC, datetime
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
@@ -33,6 +33,7 @@ from rumil.api.schemas import (
     ABEvalDimensionSummaryOut,
     ABEvalReportListItemOut,
     ABEvalReportOut,
+    AdversarialVerdictSummaryOut,
     AnnotationCreateOut,
     AnnotationCreateRequest,
     AppConfigOut,
@@ -62,6 +63,7 @@ from rumil.api.schemas import (
     ViewItemReadOut,
     ViewItemReadRequest,
 )
+from rumil.calls.adversarial_review import AdversarialVerdict, is_verdict_expired
 from rumil.database import DB, _row_to_call, _rows
 from rumil.models import (
     AnnotationEvent,
@@ -380,6 +382,118 @@ async def get_page_detail(
 async def get_page_counts(page_id: str, db: DB = Depends(_get_db)):
     counts = await db.count_pages_for_question(page_id)
     return PageCountsOut(**counts)
+
+
+async def _collect_adversarial_verdicts(
+    db: DB,
+    page_ids: Sequence[str],
+) -> dict[str, list[AdversarialVerdictSummaryOut]]:
+    """Return ``{page_id: [verdicts]}`` for every id in *page_ids*.
+
+    Resolves short/full ids, walks incoming ``DEPENDS_ON`` links in one
+    batched fetch, bulk-fetches the candidate JUDGEMENT source pages, and
+    returns only those whose ``extra['adversarial_verdict']`` parses cleanly
+    as an ``AdversarialVerdict`` payload. This is the batched path behind
+    both the single-page and bulk endpoints, so the frontend can call with
+    one round-trip for a whole view.
+    """
+    if not page_ids:
+        return {}
+
+    resolved_map = await db.resolve_page_ids(list(page_ids))
+    if not resolved_map:
+        return {pid: [] for pid in page_ids}
+    resolved_ids = list(dict.fromkeys(resolved_map.values()))
+
+    links_by_target = await db.get_links_to_many(resolved_ids)
+
+    candidate_ids: set[str] = set()
+    for links in links_by_target.values():
+        for link in links:
+            if link.link_type == LinkType.DEPENDS_ON:
+                candidate_ids.add(link.from_page_id)
+
+    pages_by_id = await db.get_pages_by_ids(list(candidate_ids)) if candidate_ids else {}
+
+    summaries_by_verdict_page: dict[str, AdversarialVerdictSummaryOut] = {}
+    for verdict_page_id, page in pages_by_id.items():
+        if page.page_type != PageType.JUDGEMENT:
+            continue
+        raw = (page.extra or {}).get("adversarial_verdict")
+        if not isinstance(raw, dict):
+            continue
+        try:
+            verdict = AdversarialVerdict.model_validate(raw)
+        except ValidationError:
+            log.warning("Skipping unparseable adversarial verdict on page %s", page.id[:8])
+            continue
+        expired = is_verdict_expired(verdict)
+        summaries_by_verdict_page[verdict_page_id] = AdversarialVerdictSummaryOut(
+            verdict_page_id=verdict_page_id,
+            target_page_id="",
+            stronger_side=verdict.stronger_side,
+            claim_holds=verdict.claim_holds,
+            confidence=verdict.confidence,
+            rationale=verdict.rationale,
+            concurrences=list(verdict.concurrences),
+            dissents=list(verdict.dissents),
+            sunset_after_days=verdict.sunset_after_days,
+            verdict_created_at=verdict.created_at,
+            expired=expired,
+            page_created_at=page.created_at,
+        )
+
+    result: dict[str, list[AdversarialVerdictSummaryOut]] = {pid: [] for pid in page_ids}
+    for input_id, full_id in resolved_map.items():
+        per_target: list[AdversarialVerdictSummaryOut] = []
+        for link in links_by_target.get(full_id, []):
+            if link.link_type != LinkType.DEPENDS_ON:
+                continue
+            summary = summaries_by_verdict_page.get(link.from_page_id)
+            if summary is None:
+                continue
+            per_target.append(summary.model_copy(update={"target_page_id": full_id}))
+        per_target.sort(key=lambda s: s.verdict_created_at, reverse=True)
+        result[input_id] = per_target
+    return result
+
+
+@app.get(
+    "/api/pages/{page_id}/adversarial-verdicts",
+    response_model=list[AdversarialVerdictSummaryOut],
+)
+async def get_adversarial_verdicts(
+    page_id: str,
+    db: DB = Depends(_get_db_maybe_staged),
+):
+    """List adversarial-review verdicts that target *page_id*.
+
+    Verdicts are JUDGEMENT pages with ``extra['adversarial_verdict']`` set,
+    linked to the target via a ``DEPENDS_ON`` link (verdict → target).
+    Newest verdict first. Expired verdicts are still returned with
+    ``expired=true`` so the UI can render them muted.
+    """
+    verdicts_by_id = await _collect_adversarial_verdicts(db, [page_id])
+    return verdicts_by_id.get(page_id, [])
+
+
+@app.get(
+    "/api/adversarial-verdicts",
+    response_model=dict[str, list[AdversarialVerdictSummaryOut]],
+)
+async def get_adversarial_verdicts_batch(
+    page_ids: str,
+    db: DB = Depends(_get_db_maybe_staged),
+):
+    """Batched adversarial-verdict lookup. ``page_ids`` is a comma-separated
+    list of page ids (full or short). Returns ``{page_id: [verdicts]}`` with
+    one entry per input id. Used by the ``useAdversarialVerdicts`` frontend
+    hook to avoid N+1 fetches when rendering a whole view.
+    """
+    ids = [pid.strip() for pid in page_ids.split(",") if pid.strip()]
+    if not ids:
+        return {}
+    return await _collect_adversarial_verdicts(db, ids)
 
 
 @app.get("/api/projects/{project_id}/stats", response_model=ProjectStatsOut)

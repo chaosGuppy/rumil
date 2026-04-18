@@ -546,3 +546,38 @@ class AnnotationCreateOut(BaseModel):
 
     ok: bool
     annotation_id: str
+
+
+class AdversarialVerdictSummaryOut(BaseModel):
+    """Summary of a single adversarial-review verdict targeting a page.
+
+    Produced by GET /api/pages/{page_id}/adversarial-verdicts. The frontend
+    renders this inline as a ``VerdictBadge`` next to credence/robustness.
+
+    Field mapping from the underlying ``AdversarialVerdict``
+    (src/rumil/calls/adversarial_review.py):
+
+    - ``stronger_side`` → which scout's case was stronger
+      (``"how_true"`` / ``"how_false"`` / ``"tie"``)
+    - ``claim_holds`` → whether the claim survived review
+    - ``confidence``, ``rationale`` → synthesizer's epistemic read
+    - ``concurrences``, ``dissents`` → notable secondary points worth
+      preserving
+    - ``sunset_after_days`` + ``verdict_created_at`` → shelf-life. When
+      expired, the frontend mutes the badge and adds a "stale" tag.
+    """
+
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    verdict_page_id: str
+    target_page_id: str
+    stronger_side: str
+    claim_holds: bool
+    confidence: int
+    rationale: str
+    concurrences: list[str]
+    dissents: list[str]
+    sunset_after_days: int | None
+    verdict_created_at: datetime
+    expired: bool
+    page_created_at: datetime

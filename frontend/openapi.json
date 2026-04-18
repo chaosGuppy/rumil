@@ -790,6 +790,149 @@
         }
       }
     },
+    "/api/pages/{page_id}/adversarial-verdicts": {
+      "get": {
+        "summary": "Get Adversarial Verdicts",
+        "description": "List adversarial-review verdicts that target *page_id*.\n\nVerdicts are JUDGEMENT pages with ``extra['adversarial_verdict']`` set,\nlinked to the target via a ``DEPENDS_ON`` link (verdict \u2192 target).\nNewest verdict first. Expired verdicts are still returned with\n``expired=true`` so the UI can render them muted.",
+        "operationId": "get_adversarial_verdicts_api_pages__page_id__adversarial_verdicts_get",
+        "parameters": [
+          {
+            "name": "page_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Page Id"
+            }
+          },
+          {
+            "name": "staged_run_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Staged Run Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdversarialVerdictSummaryOut"
+                  },
+                  "title": "Response Get Adversarial Verdicts Api Pages  Page Id  Adversarial Verdicts Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/adversarial-verdicts": {
+      "get": {
+        "summary": "Get Adversarial Verdicts Batch",
+        "description": "Batched adversarial-verdict lookup. ``page_ids`` is a comma-separated\nlist of page ids (full or short). Returns ``{page_id: [verdicts]}`` with\none entry per input id. Used by the ``useAdversarialVerdicts`` frontend\nhook to avoid N+1 fetches when rendering a whole view.",
+        "operationId": "get_adversarial_verdicts_batch_api_adversarial_verdicts_get",
+        "parameters": [
+          {
+            "name": "page_ids",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Page Ids"
+            }
+          },
+          {
+            "name": "staged_run_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Staged Run Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/AdversarialVerdictSummaryOut"
+                    }
+                  },
+                  "title": "Response Get Adversarial Verdicts Batch Api Adversarial Verdicts Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{project_id}/stats": {
       "get": {
         "summary": "Get Project Stats",
@@ -2910,6 +3053,90 @@
           "created_at"
         ],
         "title": "ABEvalReportOut"
+      },
+      "AdversarialVerdictSummaryOut": {
+        "properties": {
+          "verdict_page_id": {
+            "type": "string",
+            "title": "Verdict Page Id"
+          },
+          "target_page_id": {
+            "type": "string",
+            "title": "Target Page Id"
+          },
+          "stronger_side": {
+            "type": "string",
+            "title": "Stronger Side"
+          },
+          "claim_holds": {
+            "type": "boolean",
+            "title": "Claim Holds"
+          },
+          "confidence": {
+            "type": "integer",
+            "title": "Confidence"
+          },
+          "rationale": {
+            "type": "string",
+            "title": "Rationale"
+          },
+          "concurrences": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Concurrences"
+          },
+          "dissents": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Dissents"
+          },
+          "sunset_after_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sunset After Days"
+          },
+          "verdict_created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Verdict Created At"
+          },
+          "expired": {
+            "type": "boolean",
+            "title": "Expired"
+          },
+          "page_created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Page Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "verdict_page_id",
+          "target_page_id",
+          "stronger_side",
+          "claim_holds",
+          "confidence",
+          "rationale",
+          "concurrences",
+          "dissents",
+          "sunset_after_days",
+          "verdict_created_at",
+          "expired",
+          "page_created_at"
+        ],
+        "title": "AdversarialVerdictSummaryOut",
+        "description": "Summary of a single adversarial-review verdict targeting a page.\n\nProduced by GET /api/pages/{page_id}/adversarial-verdicts. The frontend\nrenders this inline as a ``VerdictBadge`` next to credence/robustness.\n\nField mapping from the underlying ``AdversarialVerdict``\n(src/rumil/calls/adversarial_review.py):\n\n- ``stronger_side`` \u2192 which scout's case was stronger\n  (``\"how_true\"`` / ``\"how_false\"`` / ``\"tie\"``)\n- ``claim_holds`` \u2192 whether the claim survived review\n- ``confidence``, ``rationale`` \u2192 synthesizer's epistemic read\n- ``concurrences``, ``dissents`` \u2192 notable secondary points worth\n  preserving\n- ``sunset_after_days`` + ``verdict_created_at`` \u2192 shelf-life. When\n  expired, the frontend mutes the badge and adds a \"stale\" tag."
       },
       "AffectedPagesIdentifiedEventOut": {
         "properties": {

@@ -26,6 +26,26 @@ function directionLabel(links: PageLink[]): string | null {
   return null;
 }
 
+// Truncate an abstract without cutting a [8-hex] ref in half. If position
+// `max` lands inside a `[...]` bracket, extend forward to the nearest closing
+// `]` so the ref regex in PageContent can still match. Otherwise pull back to
+// the nearest whitespace for a natural word boundary.
+function truncateAbstract(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const openIdx = text.lastIndexOf("[", max - 1);
+  const closeIdx = text.lastIndexOf("]", max - 1);
+  if (openIdx > closeIdx) {
+    const nextClose = text.indexOf("]", max);
+    if (nextClose !== -1 && nextClose - max < 40) {
+      return text.slice(0, nextClose + 1) + "…";
+    }
+    return text.slice(0, openIdx).trimEnd() + "…";
+  }
+  const cutAt = text.lastIndexOf(" ", max);
+  const end = cutAt > max - 40 ? cutAt : max;
+  return text.slice(0, end).trimEnd() + "…";
+}
+
 export function PageCard({
   page,
   links,
@@ -150,7 +170,12 @@ export function PageCard({
             lineHeight: 1.5,
           }}
         >
-          {page.abstract.length > 200 ? page.abstract.slice(0, 200) + "..." : page.abstract}
+          <PageContent
+            text={truncateAbstract(page.abstract, 200)}
+            excludeConceptId={page.id}
+            inline
+            className=""
+          />
         </div>
       )}
     </div>

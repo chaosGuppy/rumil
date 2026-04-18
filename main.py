@@ -1043,6 +1043,13 @@ async def async_main():
         help="Force the two-phase orchestrator to dispatch two recurse calls",
     )
     parser.add_argument(
+        "--enable-adversarial-review",
+        dest="enable_adversarial_review",
+        action="store_true",
+        help="Fire adversarial review on high-credence claims during "
+        "claim-investigation (budget-neutral; default off).",
+    )
+    parser.add_argument(
         "--prod",
         dest="prod_db",
         action="store_true",
@@ -1155,6 +1162,8 @@ async def async_main():
         get_settings().tracing_enabled = False
     if args.force_twophase_recurse:
         get_settings().force_twophase_recurse = True
+    if args.enable_adversarial_review:
+        get_settings().enable_adversarial_review = True
 
     task_shape_override: dict | None = None
     if args.task_shape:

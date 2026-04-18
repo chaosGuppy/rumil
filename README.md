@@ -146,6 +146,9 @@ uv run python main.py --ingest FILE --for-question QUESTION_ID --ingest-num-clai
 # Override the task-shape tag on a new root question (skips the auto-tagger)
 uv run python main.py "Your question" --task-shape 'deliverable_shape=audit,source_posture=source_bound' --budget 10
 
+# Fire adversarial review on high-credence claims during claim-investigation (budget-neutral; default off)
+uv run python main.py "Your question" --enable-adversarial-review --budget 20
+
 # Suppress info-level logging (only warnings and errors)
 uv run python main.py "Your question" --budget 5 -q
 

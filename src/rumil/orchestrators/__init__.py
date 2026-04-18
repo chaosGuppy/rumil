@@ -24,6 +24,8 @@ from rumil.orchestrators.common import (
     update_view_for_question,
     web_research_question,
 )
+from rumil.orchestrators.critique_first import CritiqueFirstOrchestrator
+from rumil.orchestrators.distill_first import DistillFirstOrchestrator
 from rumil.orchestrators.experimental import ExperimentalOrchestrator
 from rumil.orchestrators.global_prio import GlobalPrioOrchestrator
 from rumil.orchestrators.two_phase import TwoPhaseOrchestrator
@@ -42,6 +44,10 @@ def Orchestrator(db: DB, broadcaster: Broadcaster | None = None) -> BaseOrchestr
         orch = ExperimentalOrchestrator(db, broadcaster)
     elif variant == "worldview":
         orch = WorldviewOrchestrator(db, broadcaster)
+    elif variant == "distill_first":
+        orch = DistillFirstOrchestrator(db, broadcaster)
+    elif variant == "critique_first":
+        orch = CritiqueFirstOrchestrator(db, broadcaster)
     else:
         raise ValueError(f"Unknown prioritizer_variant: {variant}")
 
@@ -56,6 +62,8 @@ __all__ = [
     "ClaimInvestigationOrchestrator",
     "ClaimScore",
     "ClaimScoringResult",
+    "CritiqueFirstOrchestrator",
+    "DistillFirstOrchestrator",
     "ExperimentalOrchestrator",
     "FruitResult",
     "GlobalPrioOrchestrator",

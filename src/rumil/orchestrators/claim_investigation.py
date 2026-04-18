@@ -33,10 +33,13 @@ from rumil.orchestrators.base import BaseOrchestrator
 from rumil.orchestrators.common import (
     ClaimScore,
     PrioritizationResult,
+    adversarially_review_claim,
     assess_question,
     compute_priority_score,
+    has_adversarial_review,
     score_items_sequentially,
 )
+from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
 from rumil.tracing.trace_events import (
     CallTypeFruitScoreItem,
@@ -204,6 +207,7 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
                     )
                     if self._sequence_id is not None:
                         self._seq_position += 2
+                    await self._maybe_adversarial_review(claim_id)
 
                 if last_call:
                     break
@@ -229,6 +233,62 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
         if result:
             self._consumed += len(sequence)
         return result
+
+    async def _maybe_adversarial_review(self, claim_id: str) -> None:
+        """Fire an adversarial review when the claim's credence crosses threshold.
+
+        Gated by ``settings.enable_adversarial_review``. Skipped if the claim
+        has already been adversarially reviewed (one review per claim per run).
+        Budget-neutral: does not consume research budget.
+        """
+        settings = get_settings()
+        if not settings.enable_adversarial_review:
+            return
+        threshold = settings.adversarial_review_credence_threshold
+
+        judgements = await self.db.get_judgements_for_question(claim_id)
+        if not judgements:
+            return
+        latest = max(judgements, key=lambda j: j.created_at)
+        if latest.credence is None or latest.credence < threshold:
+            return
+
+        if await has_adversarial_review(self.db, claim_id):
+            log.info(
+                "_maybe_adversarial_review: claim %s already reviewed, skipping",
+                claim_id[:8],
+            )
+            return
+
+        parent = self._initial_call
+        if parent is None and self._call_id is not None:
+            parent = await self.db.get_call(self._call_id)
+        if parent is None:
+            log.warning(
+                "_maybe_adversarial_review: no parent call available for claim %s",
+                claim_id[:8],
+            )
+            return
+
+        log.info(
+            "_maybe_adversarial_review: firing review for claim %s (credence=%d)",
+            claim_id[:8],
+            latest.credence,
+        )
+        verdict = await adversarially_review_claim(
+            self.db,
+            parent,
+            claim_id,
+            broadcaster=self.broadcaster,
+        )
+        if verdict is not None and not verdict.claim_holds:
+            log.info(
+                "_maybe_adversarial_review: verdict says claim %s does NOT hold "
+                "(stronger_side=%s, confidence=%d)",
+                claim_id[:8],
+                verdict.stronger_side,
+                verdict.confidence,
+            )
 
     async def _is_new_claim(self, claim_id: str) -> bool:
         """A claim is 'new' if no other page depends on it yet."""

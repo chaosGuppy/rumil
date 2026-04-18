@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 if TYPE_CHECKING:
     from rumil.orchestrators.base import BaseOrchestrator
 
+from rumil.calls.adversarial_review import AdversarialReviewCall, AdversarialVerdict
 from rumil.calls.call_registry import ASSESS_CALL_CLASSES
 from rumil.calls.find_considerations import FindConsiderationsCall
 from rumil.calls.ingest import IngestCall
@@ -31,6 +32,8 @@ from rumil.constants import (
 from rumil.database import DB
 from rumil.embeddings import embed_and_store_page
 from rumil.models import (
+    Call,
+    CallStatus,
     CallType,
     Dispatch,
     FindConsiderationsMode,
@@ -570,6 +573,79 @@ async def assess_question(
     assess = cls(question_id, call, db, broadcaster=broadcaster)
     await assess.run()
     return call.id
+
+
+async def adversarially_review_claim(
+    db: DB,
+    parent_call: Call,
+    target_page_id: str,
+    broadcaster: Broadcaster | None = None,
+) -> AdversarialVerdict | None:
+    """Run an adversarial review on target_page_id and return the verdict.
+
+    Budget-neutral — adversarial review is a review call, not a research call.
+    Returns None if no verdict was produced (e.g., scout failure).
+    """
+    log.info(
+        "adversarially_review_claim: target=%s, parent_call=%s",
+        target_page_id[:8],
+        parent_call.id[:8],
+    )
+    call = await db.create_call(
+        CallType.ADVERSARIAL_REVIEW,
+        scope_page_id=target_page_id,
+        parent_call_id=parent_call.id,
+    )
+    runner = AdversarialReviewCall(
+        target_page_id,
+        call,
+        db,
+        broadcaster=broadcaster,
+    )
+    try:
+        await runner.run()
+    except Exception:
+        log.warning(
+            "adversarially_review_claim: run failed for target %s",
+            target_page_id[:8],
+            exc_info=True,
+        )
+        return None
+
+    refreshed = await db.get_call(call.id)
+    if refreshed is None or refreshed.status != CallStatus.COMPLETE:
+        return None
+
+    verdict_rows = await db._execute(
+        db.client.table("pages")
+        .select("extra")
+        .eq("provenance_call_id", call.id)
+        .eq("page_type", PageType.JUDGEMENT.value)
+        .eq("is_superseded", False)
+        .order("created_at", desc=True)
+        .limit(1)
+    )
+    rows = verdict_rows.data or []
+    if not rows:
+        return None
+    extra = rows[0].get("extra") or {}
+    verdict_data = extra.get("adversarial_verdict")
+    if not verdict_data:
+        return None
+    return AdversarialVerdict(**verdict_data)
+
+
+async def has_adversarial_review(db: DB, target_page_id: str) -> bool:
+    """Return True if target_page_id has a completed adversarial review."""
+    rows = await db._execute(
+        db.client.table("calls")
+        .select("id")
+        .eq("call_type", CallType.ADVERSARIAL_REVIEW.value)
+        .eq("scope_page_id", target_page_id)
+        .eq("status", CallStatus.COMPLETE.value)
+        .limit(1)
+    )
+    return bool(rows.data)
 
 
 async def create_view_for_question(

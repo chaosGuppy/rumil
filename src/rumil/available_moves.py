@@ -298,18 +298,25 @@ PRESETS: dict[str, AvailableMoves] = {
 
 
 def get_moves_for_call(call_type: CallType) -> Sequence[MoveType]:
-    """Look up available moves for a call type from the active preset."""
-    preset_name = get_settings().available_moves
-    preset = PRESETS.get(preset_name)
+    """Look up available moves for a call type from the active preset.
+
+    When ``settings.enable_flag_issue`` is True, appends ``MoveType.FLAG_ISSUE``
+    to any non-empty preset list so meta-feedback is available from every call
+    where the model has tool-use rights.
+    """
+    settings = get_settings()
+    preset = PRESETS.get(settings.available_moves)
     if preset is None:
         raise ValueError(
-            f"Unknown available-moves preset: {preset_name!r}. "
+            f"Unknown available-moves preset: {settings.available_moves!r}. "
             f"Available presets: {', '.join(sorted(PRESETS))}"
         )
     moves = preset.get(call_type)
     if moves is None:
         raise ValueError(
-            f"Preset {preset_name!r} has no entry for call type {call_type.value!r}. "
-            f"Add an entry to the {preset_name!r} preset in available_moves.py."
+            f"Preset {settings.available_moves!r} has no entry for call type "
+            f"{call_type.value!r}. Add an entry to the preset in available_moves.py."
         )
+    if settings.enable_flag_issue and moves and MoveType.FLAG_ISSUE not in moves:
+        return [*moves, MoveType.FLAG_ISSUE]
     return moves

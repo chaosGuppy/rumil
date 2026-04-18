@@ -67,6 +67,10 @@ class Settings(BaseSettings):
 
     budget_pacing_enabled: bool = _capture_field(default=True)
 
+    enable_adversarial_review: bool = _capture_field(default=False)
+    adversarial_review_credence_threshold: int = _capture_field(default=6)
+    enable_flag_issue: bool = _capture_field(default=False)
+
     evaluate_content_hops: int = _capture_field(default=0)
     evaluate_abstract_hops: int = _capture_field(default=1)
     evaluate_headline_hops: int = _capture_field(default=2)

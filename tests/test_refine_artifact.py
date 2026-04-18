@@ -274,6 +274,42 @@ async def test_accepts_on_iteration_one_when_verdict_clean(tmp_db, question_with
     assert draft_cap["refine_contexts"] == [None]
 
 
+async def test_accepts_when_confidence_clears_even_with_surviving_dissents(
+    tmp_db, question_with_view, mocker
+):
+    """Dissents are epistemic preservation, not acceptance blockers.
+
+    The synthesizer prompt asks for dissents "even when you are confident in
+    the verdict", so gating on `not dissents` would mean the loop never
+    accepts. Confidence is the real acceptance signal.
+    """
+    q = question_with_view["question"]
+    _install_draft_stub(mocker, tmp_db, q.id)
+    _install_review_stub(
+        mocker,
+        tmp_db,
+        [
+            _verdict(
+                claim_holds=True,
+                confidence=8,
+                dissents=["one surviving objection the losing side raised"],
+            )
+        ],
+    )
+
+    orch = RefineArtifactOrchestrator(
+        tmp_db,
+        question_id=q.id,
+        shape="strategy_brief",
+        max_iterations=3,
+        accept_confidence=7,
+    )
+    result = await orch.run()
+
+    assert result.outcome == "accepted"
+    assert result.iteration_count == 1
+
+
 async def test_accepts_on_iteration_two_after_refine(tmp_db, question_with_view, mocker):
     """Draft with dissents triggers a refine pass; second review is clean -> accept."""
     q = question_with_view["question"]

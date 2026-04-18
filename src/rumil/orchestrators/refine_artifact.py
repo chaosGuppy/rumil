@@ -295,11 +295,12 @@ class RefineArtifactOrchestrator:
         return verdict, call.id
 
     def _should_accept(self, verdict: AdversarialVerdict) -> bool:
-        return (
-            verdict.claim_holds
-            and verdict.confidence >= self.accept_confidence
-            and not verdict.dissents
-        )
+        # Dissents are epistemic preservation ("what the losing side said, for
+        # future readers"), not gate-blockers — the synthesizer prompt tells
+        # the model to emit them even when the verdict holds cleanly. Gating
+        # on dissents meant the loop could never accept. Confidence is the
+        # real acceptance signal.
+        return verdict.claim_holds and verdict.confidence >= self.accept_confidence
 
     async def _supersede_prior_drafts(
         self,

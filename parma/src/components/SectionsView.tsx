@@ -47,6 +47,19 @@ const SECTION_LABELS: Record<string, string> = {
 
 type CardVariant = "headline" | "oneliner" | "medium" | "large";
 
+// When every item in a View has null importance (common on older/smoke-test
+// workspaces that never ran prioritization), treating null as "low" hides
+// every card behind a disclosure button. Callers pass `allNull` so we can
+// promote null → 3 (headline) in that degenerate case, keeping the kanban UX
+// functional instead of showing nothing but +N folders.
+function effectiveImportance(
+  importance: number | null,
+  allNull: boolean,
+): number | null {
+  if (importance != null) return importance;
+  return allNull ? 3 : null;
+}
+
 function variantForImportance(imp: number | null): CardVariant | "low" {
   if (imp === null || imp <= 1) return "low";
   if (imp === 2) return "oneliner";
@@ -110,6 +123,10 @@ function ImportanceChip({ importance }: { importance: number | null }) {
       <span className="sections-imp-chip-label">L{importance}</span>
     </span>
   );
+}
+
+function collectAllItems(view: QuestionView): ViewItem[] {
+  return view.sections.flatMap((s) => s.items);
 }
 
 function DirectionTag({ direction }: { direction: string }) {
@@ -216,9 +233,11 @@ function CardShell({
 
 function SectionsCard({
   item,
+  allNull,
   onOpenSource,
 }: {
   item: ViewItem;
+  allNull: boolean;
   onOpenSource?: (source: Page) => void;
 }) {
   const { openInspect } = useInspectPanel();
@@ -226,7 +245,9 @@ function SectionsCard({
     (id: string) => openInspect(id.slice(0, 8)),
     [openInspect],
   );
-  const variant = variantForImportance(item.page.importance);
+  const variant = variantForImportance(
+    effectiveImportance(item.page.importance, allNull),
+  );
   if (variant === "low") return null;
 
   const verdict = readAdversarialVerdict(item.page);
@@ -356,10 +377,12 @@ function LowImportanceFolder({
 function SectionColumn({
   section,
   accentIndex,
+  allNull,
   onOpenSource,
 }: {
   section: ViewSection;
   accentIndex: number;
+  allNull: boolean;
   onOpenSource?: (source: Page) => void;
 }) {
   const { visible, low } = useMemo(() => {
@@ -370,12 +393,14 @@ function SectionColumn({
       (a, b) => (b.page.importance ?? 0) - (a.page.importance ?? 0),
     );
     for (const item of sorted) {
-      const v = variantForImportance(item.page.importance);
+      const v = variantForImportance(
+        effectiveImportance(item.page.importance, allNull),
+      );
       if (v === "low") low.push(item);
       else visible.push(item);
     }
     return { visible, low };
-  }, [section.items]);
+  }, [section.items, allNull]);
 
   // If the entire column is low-importance, expand the folder by default
   // so it still looks populated instead of a collapsed hint.
@@ -406,6 +431,7 @@ function SectionColumn({
           <SectionsCard
             key={item.page.id}
             item={item}
+            allNull={allNull}
             onOpenSource={onOpenSource}
           />
         ))}
@@ -421,6 +447,15 @@ function SectionColumn({
 
 export function SectionsView({ view, onOpenSource }: SectionsViewProps) {
   const hasAnyItems = view.sections.some((s) => s.items.length > 0);
+  // Null-importance fallback: if every item has null, promote to headline
+  // variant so the kanban columns render real cards instead of a wall of
+  // +N low-importance folders. Backfilling importance is the real fix; this
+  // keeps the UX usable until that lands.
+  const allNull =
+    hasAnyItems &&
+    view.sections.every((s) =>
+      s.items.every((i) => i.page.importance == null),
+    );
 
   if (view.sections.length === 0 || !hasAnyItems) {
     return (
@@ -461,6 +496,7 @@ export function SectionsView({ view, onOpenSource }: SectionsViewProps) {
             key={section.name}
             section={section}
             accentIndex={i}
+            allNull={allNull}
             onOpenSource={onOpenSource}
           />
         ))}

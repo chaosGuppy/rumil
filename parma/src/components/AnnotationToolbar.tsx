@@ -87,15 +87,11 @@ export function AnnotationToolbar({
 
   if (!selection) return null;
 
-  const viewport = typeof window === "undefined" ? null : window;
-  const scrollX = viewport?.scrollX ?? 0;
-  const scrollY = viewport?.scrollY ?? 0;
-
-  const top = selection.anchorRect.top + scrollY - 52;
-  const left =
-    selection.anchorRect.left +
-    scrollX +
-    selection.anchorRect.width / 2;
+  // Toolbar is position: fixed, so selection.anchorRect (viewport coords) maps
+  // directly without adding window scroll — and the value stays correct even
+  // if the pane body has been scrolled.
+  const top = selection.anchorRect.top - 52;
+  const left = selection.anchorRect.left + selection.anchorRect.width / 2;
 
   async function submitSpan(category: "comment" | "dispute" | "endorsement") {
     if (!selection) return;

@@ -184,8 +184,10 @@ export function StackedPanes({
         focusedId={focusedId}
         onSelectItem={(item) => {
           setActiveItemId(item.page.id);
-          // Plain selection: push pane at depth 0 (root), truncating all.
-          pushPane(item.page.id.slice(0, 8), 0);
+          // Append a pane to the end of the stack — don't truncate existing
+          // panes, since the user often wants to add another pane to their
+          // workbench rather than destroy what they've built up.
+          pushPane(item.page.id.slice(0, 8));
         }}
         onOpenSource={onOpenSource}
       />
@@ -456,13 +458,19 @@ function DetailPane({
             </div>
           </div>
         )}
-        {detail && <DetailPaneBody detail={detail} />}
+        {detail && <DetailPaneBody detail={detail} onPromote={onPromote} />}
       </div>
     </div>
   );
 }
 
-function DetailPaneBody({ detail }: { detail: PageDetail }) {
+function DetailPaneBody({
+  detail,
+  onPromote,
+}: {
+  detail: PageDetail;
+  onPromote: (shortId: string) => void;
+}) {
   const { page, links_from: linksFrom, links_to: linksTo } = detail;
   return (
     <article>
@@ -496,9 +504,14 @@ function DetailPaneBody({ detail }: { detail: PageDetail }) {
               const rel = lp.link.direction ? ` (${lp.link.direction})` : "";
               return (
                 <li key={lp.link.id}>
-                  <span className="pane-detail-link-id node-ref-link">
+                  <button
+                    type="button"
+                    className="pane-detail-link-id node-ref-link"
+                    onClick={() => onPromote(sid)}
+                    title="Click to open as pane"
+                  >
                     {sid}
-                  </span>
+                  </button>
                   <span className="pane-detail-link-verb">
                     {lp.link.link_type}
                     {rel}
@@ -524,9 +537,14 @@ function DetailPaneBody({ detail }: { detail: PageDetail }) {
               const rel = lp.link.direction ? ` (${lp.link.direction})` : "";
               return (
                 <li key={lp.link.id}>
-                  <span className="pane-detail-link-id node-ref-link">
+                  <button
+                    type="button"
+                    className="pane-detail-link-id node-ref-link"
+                    onClick={() => onPromote(sid)}
+                    title="Click to open as pane"
+                  >
                     {sid}
-                  </span>
+                  </button>
                   <span className="pane-detail-link-verb">
                     {lp.link.link_type}-of{rel}
                   </span>

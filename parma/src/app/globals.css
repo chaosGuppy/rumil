@@ -5208,7 +5208,7 @@ mark.ann-mark.ann-mark-dispute:hover {
  * Floating selection toolbar
  * ------------------------------------------------------- */
 .ann-toolbar {
-  position: absolute;
+  position: fixed;
   transform: translate(-50%, -100%);
   z-index: 50;
   background: var(--bg-pane);

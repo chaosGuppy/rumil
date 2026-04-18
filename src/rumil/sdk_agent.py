@@ -3,6 +3,7 @@
 import json
 import logging
 import re
+import shutil
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -395,6 +396,9 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
         model=settings.model,
         output_format=config.output_format,
     )
+    host_cli = shutil.which("claude")
+    if host_cli:
+        options_kwargs["cli_path"] = host_cli
     # Opus 4.7 / Opus 4.6 / Sonnet 4.6 require thinking.type=adaptive — the bundled
     # CLI's default (thinking.type.enabled) is rejected by adaptive-only models.
     # For models without adaptive support, explicitly disable thinking so no default

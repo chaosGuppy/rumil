@@ -3625,6 +3625,7 @@
           "update_view",
           "chat_direct",
           "adversarial_review",
+          "explore_tension",
           "draft_artifact",
           "claude_code_direct"
         ],

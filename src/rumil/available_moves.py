@@ -150,6 +150,7 @@ PRESETS: dict[str, AvailableMoves] = {
             MoveType.UPDATE_EPISTEMIC,
         ],
         CallType.ADVERSARIAL_REVIEW: [],
+        CallType.EXPLORE_TENSION: [],
         CallType.DRAFT_ARTIFACT: [],
     },
     "judge-on-assess": {
@@ -294,6 +295,7 @@ PRESETS: dict[str, AvailableMoves] = {
             MoveType.UPDATE_EPISTEMIC,
         ],
         CallType.ADVERSARIAL_REVIEW: [],
+        CallType.EXPLORE_TENSION: [],
         CallType.DRAFT_ARTIFACT: [],
     },
 }

@@ -5,6 +5,7 @@ from rumil.calls.assess import AssessCall, BigAssessCall
 from rumil.calls.call_registry import ASSESS_CALL_CLASSES
 from rumil.calls.create_view import CreateViewCall
 from rumil.calls.draft_artifact import DraftArtifactCall, DraftArtifactResult
+from rumil.calls.explore_tension import ExploreTensionCall, TensionVerdict
 from rumil.calls.find_considerations import FindConsiderationsCall
 from rumil.calls.ingest import IngestCall
 from rumil.calls.link_subquestions import LinkSubquestionsCall
@@ -37,6 +38,7 @@ __all__ = [
     "CreateViewCall",
     "DraftArtifactCall",
     "DraftArtifactResult",
+    "ExploreTensionCall",
     "FindConsiderationsCall",
     "IngestCall",
     "LinkSubquestionsCall",
@@ -55,6 +57,7 @@ __all__ = [
     "ScoutParadigmCasesCall",
     "ScoutSubquestionsCall",
     "ScoutWebQuestionsCall",
+    "TensionVerdict",
     "UpdateViewCall",
     "WebResearchCall",
 ]

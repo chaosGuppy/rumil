@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from rumil.database import DB
-from rumil.models import CallType, Page, SuggestionType
+from rumil.models import CallType, Page, Suggestion, SuggestionStatus, SuggestionType
 from rumil.orchestrators.base import BaseOrchestrator
 from rumil.orchestrators.common import (
     assess_question,
@@ -27,6 +27,7 @@ from rumil.orchestrators.common import (
     update_view_for_question,
     web_research_question,
 )
+from rumil.tensions import TENSION_CREDENCE_THRESHOLD, unexplored_tension_candidates
 from rumil.tracing.broadcast import Broadcaster
 
 log = logging.getLogger(__name__)
@@ -301,6 +302,105 @@ class ViewHealthPolicy(Policy):
         return None
 
 
+class TensionExplorationPolicy(Policy):
+    """Dispatch an ExploreTensionCall against the highest-confidence unexplored tension.
+
+    Owen-bolded priority: track + explore tensions. On each iteration we
+    scan the root question's considerations for pairs of high-credence
+    claims whose directions conflict on the question (cheap structural
+    scan; see ``rumil.tensions``). For the top unexplored candidate we
+    emit a ``DispatchCall(CallType.EXPLORE_TENSION)`` with the tension
+    triple in ``kwargs``.
+
+    ``emit_suggestion=True`` also writes a RESOLVE_TENSION suggestion to
+    the suggestions table so the reputation dashboard / UI can surface
+    the tension to the user even before the explorer runs.
+
+    Returns None when the question has no unexplored tensions — lets
+    downstream policies take over.
+    """
+
+    name = "tension_exploration"
+
+    def __init__(
+        self,
+        *,
+        credence_threshold: int = TENSION_CREDENCE_THRESHOLD,
+        include_semantic: bool = False,
+        emit_suggestion: bool = True,
+    ) -> None:
+        self._credence_threshold = credence_threshold
+        self._include_semantic = include_semantic
+        self._emit_suggestion = emit_suggestion
+        self._db: DB | None = None
+
+    def bind_db(self, db: DB) -> None:
+        """Attach the DB used for the workspace-read scan.
+
+        Exposed as a separate step because ``Policy.decide`` takes only
+        state; the scan needs DB access. ``PolicyOrchestrator`` calls this
+        once at run setup — bespoke callers must bind explicitly.
+        """
+        self._db = db
+
+    async def decide(self, state: QuestionState) -> Intent | None:
+        if self._db is None:
+            log.debug("TensionExplorationPolicy: no DB bound, skipping")
+            return None
+
+        candidates = await unexplored_tension_candidates(
+            self._db,
+            state.question_id,
+            credence_threshold=self._credence_threshold,
+            include_semantic=self._include_semantic,
+        )
+        if not candidates:
+            return None
+
+        top = max(candidates, key=lambda c: c.confidence)
+
+        if self._emit_suggestion:
+            await self._emit_suggestion_for(top)
+
+        return DispatchCall(
+            call_type=CallType.EXPLORE_TENSION,
+            kwargs={
+                "tension_question_id": top.question_id,
+                "tension_claim_a_id": top.claim_a_id,
+                "tension_claim_b_id": top.claim_b_id,
+                "tension_kind": top.kind,
+                "tension_reason": top.reason,
+            },
+        )
+
+    async def _emit_suggestion_for(self, candidate) -> None:
+        assert self._db is not None
+        suggestion = Suggestion(
+            project_id=self._db.project_id,
+            workspace="research",
+            run_id=self._db.run_id,
+            suggestion_type=SuggestionType.RESOLVE_TENSION,
+            target_page_id=candidate.claim_a_id,
+            source_page_id=candidate.claim_b_id,
+            status=SuggestionStatus.PENDING,
+            payload={
+                "question_id": candidate.question_id,
+                "claim_a_id": candidate.claim_a_id,
+                "claim_b_id": candidate.claim_b_id,
+                "other_node_id": candidate.claim_b_id,
+                "kind": candidate.kind,
+                "reason": candidate.reason,
+                "confidence": candidate.confidence,
+                "reasoning": candidate.reason,
+            },
+            staged=self._db.staged,
+        )
+        try:
+            await self._db.save_suggestion(suggestion)
+        except Exception:
+            log.debug("TensionExplorationPolicy: save_suggestion failed", exc_info=True)
+
+
 class PolicyOrchestrator(BaseOrchestrator):
     """Boring loop: capture state, ask policies in order, execute intent.
 
@@ -329,6 +429,10 @@ class PolicyOrchestrator(BaseOrchestrator):
         self._policies = list(policies)
         self._max_iterations = max_iterations
         self._parent_call_id: str | None = None
+        for policy in self._policies:
+            binder = getattr(policy, "bind_db", None)
+            if callable(binder):
+                binder(db)
 
     async def run(self, root_question_id: str) -> None:
         await self._setup()
@@ -413,6 +517,18 @@ class PolicyOrchestrator(BaseOrchestrator):
                 db=self.db,
                 **kwargs,
             )
+        elif intent.call_type == CallType.EXPLORE_TENSION:
+            await _explore_tension_dispatch(
+                db=self.db,
+                question_id=kwargs.get("question_id", scope_question_id),
+                parent_call_id=kwargs.get("parent_call_id"),
+                broadcaster=kwargs.get("broadcaster"),
+                tension_question_id=kwargs["tension_question_id"],
+                tension_claim_a_id=kwargs["tension_claim_a_id"],
+                tension_claim_b_id=kwargs["tension_claim_b_id"],
+                tension_kind=kwargs.get("tension_kind", "direction_conflict"),
+                tension_reason=kwargs.get("tension_reason", ""),
+            )
         else:
             raise NotImplementedError(
                 f"DispatchCall for {intent.call_type.value} not wired in "
@@ -436,6 +552,48 @@ class PolicyOrchestrator(BaseOrchestrator):
         kwargs.setdefault("parent_call_id", self._parent_call_id)
         kwargs.setdefault("broadcaster", self.broadcaster)
         await helper(db=self.db, **kwargs)
+
+
+async def _explore_tension_dispatch(
+    *,
+    db: DB,
+    question_id: str,
+    parent_call_id: str | None,
+    broadcaster: Broadcaster | None,
+    tension_question_id: str,
+    tension_claim_a_id: str,
+    tension_claim_b_id: str,
+    tension_kind: str,
+    tension_reason: str,
+) -> str:
+    """Create + run a single ExploreTensionCall. Returns the call id.
+
+    Kept at module scope (not a class method) so tests can patch it cleanly
+    via ``mocker.patch("rumil.orchestrators.policy_layer._explore_tension_dispatch")``.
+    """
+    from rumil.calls.explore_tension import ExploreTensionCall
+
+    call = await db.create_call(
+        CallType.EXPLORE_TENSION,
+        scope_page_id=tension_question_id,
+        parent_call_id=parent_call_id,
+    )
+    call.call_params = {
+        **(call.call_params or {}),
+        "tension_question_id": tension_question_id,
+        "tension_claim_a_id": tension_claim_a_id,
+        "tension_claim_b_id": tension_claim_b_id,
+        "tension_kind": tension_kind,
+        "tension_reason": tension_reason,
+    }
+    runner = ExploreTensionCall(
+        tension_question_id,
+        call,
+        db,
+        broadcaster=broadcaster,
+    )
+    await runner.run()
+    return call.id
 
 
 def two_phase_like_policies() -> Sequence[Policy]:
@@ -473,6 +631,7 @@ __all__ = [
     "QuestionState",
     "RunHelper",
     "SparseQuestionPolicy",
+    "TensionExplorationPolicy",
     "Terminate",
     "ViewHealthPolicy",
     "two_phase_like_policies",

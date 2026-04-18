@@ -1,4 +1,4 @@
-"""Chat endpoint for the worldview UI.
+"""Chat endpoint for the research UI.
 
 Wraps the Anthropic API with tools that operate on the rumil workspace.
 The model sees the research context and can search, inspect, create, and

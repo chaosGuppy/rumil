@@ -204,7 +204,7 @@ export function ChatPanel({
       id: "initial",
       role: "assistant",
       content:
-        "Ask me about this worldview \u2014 I can explain the reasoning behind claims, surface tensions between findings, or discuss what the research might be missing.",
+        "Ask me about this view \u2014 I can explain the reasoning behind claims, surface tensions between findings, or discuss what the research might be missing.",
       timestamp: new Date(),
     },
   ]);

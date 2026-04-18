@@ -52,7 +52,7 @@ export function PageCard({
       >
         <div className="concept-node-label">concept</div>
         <h3>{page.headline}</h3>
-        <div className="worldview-prose">
+        <div className="view-prose">
           <p style={{ margin: 0 }}>{page.content}</p>
         </div>
       </div>
@@ -140,7 +140,7 @@ export function PageCard({
         {page.headline}
       </h3>
 
-      <div className="worldview-prose">
+      <div className="view-prose">
         <p style={{ margin: 0, fontSize: "15px" }}>
           <TextWithConcepts text={page.content} excludeConceptId={page.id} />
         </p>

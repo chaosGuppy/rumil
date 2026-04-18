@@ -4,7 +4,7 @@ You are creating a **View page** for a question. A View is a curated, structured
 
 ## What a View Is
 
-A View consists of **atomic items** organized into **sections**. Each item is a short, self-contained claim or observation with epistemic scores. Together, the items in a View represent the workspace's current worldview on the question.
+A View consists of **atomic items** organized into **sections**. Each item is a short, self-contained claim or observation with epistemic scores. Together, the items in a View represent the workspace's current view on the question.
 
 Think of the View as the workspace's collective intelligence on this question, distilled into its most useful form. It should orient future instances toward productive work and away from redundant investigation.
 

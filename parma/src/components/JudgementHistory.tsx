@@ -26,7 +26,7 @@ export function JudgementHistory({ supersededJudgements }: JudgementHistoryProps
             </div>
             <h4>{page.headline}</h4>
             {page.content && (
-              <div className="worldview-prose">
+              <div className="view-prose">
                 <p style={{ margin: 0 }}>
                   <TextWithConcepts text={page.content} excludeConceptId={page.id} />
                 </p>

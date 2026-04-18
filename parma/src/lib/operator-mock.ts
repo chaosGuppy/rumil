@@ -9,7 +9,7 @@ import type {
 const CHAT_TOOLS: ToolDef[] = [
   { name: "search_workspace", description: "Search workspace nodes by keyword" },
   { name: "get_node", description: "Get a node and its subtree by ID" },
-  { name: "create_node", description: "Create a new worldview node" },
+  { name: "create_node", description: "Create a new view item" },
   { name: "list_workspace", description: "List the entire workspace tree" },
   { name: "get_suggestions", description: "View pending suggestions" },
   { name: "run_orchestrator", description: "Trigger orchestrator on a branch" },
@@ -59,10 +59,10 @@ const CHAT_EVENTS: TraceEvent[] = [
       {
         role: "system",
         content:
-          "You are a research assistant helping explore a worldview workspace. "
+          "You are a research assistant helping explore a research workspace. "
           + "You have tools to search, read, and create nodes in the workspace. "
           + "The workspace investigates: What governance structures best handle AI development?\n\n"
-          + "## Current Worldview\n\n"
+          + "## Current View\n\n"
           + "- [claim] International coordination is necessary but insufficient (credence: 7/9)\n"
           + "  - [evidence] Historical precedent from nuclear governance shows limitations\n"
           + "  - [uncertainty] Whether competitive dynamics can be overcome\n"
@@ -116,10 +116,10 @@ const CHAT_EVENTS: TraceEvent[] = [
       {
         role: "system",
         content:
-          "You are a research assistant helping explore a worldview workspace. "
+          "You are a research assistant helping explore a research workspace. "
           + "You have tools to search, read, and create nodes in the workspace. "
           + "The workspace investigates: What governance structures best handle AI development?\n\n"
-          + "## Current Worldview\n\n"
+          + "## Current View\n\n"
           + "- [claim] International coordination is necessary but insufficient (credence: 7/9)\n"
           + "  - [evidence] Historical precedent from nuclear governance shows limitations\n"
           + "  - [uncertainty] Whether competitive dynamics can be overcome\n"
@@ -273,7 +273,7 @@ const ORCHESTRATE_EVENTS: TraceEvent[] = [
         role: "system",
         content:
           "You are a research orchestrator. Your job is to improve the depth and quality "
-          + "of a worldview branch. You can add new nodes, suggest cross-branch changes, "
+          + "of a view. You can add new nodes, suggest cross-branch changes, "
           + "and adjust importance levels. Be thorough but precise.",
       },
       {

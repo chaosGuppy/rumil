@@ -88,7 +88,7 @@ function ArticleItem({
         <SourceBadge sourceIds={citedSourceIds} onOpenDrawer={onOpenSource} />
         <LinkBadges links={item.links} />
       </div>
-      <div className="worldview-prose">
+      <div className="view-prose">
         <p><TextWithConcepts text={page.content} excludeConceptId={page.id} /></p>
       </div>
     </div>
@@ -184,7 +184,7 @@ export function ArticleView({
           <header className="article-header">
             <h1>{view.question.headline}</h1>
             {view.question.abstract && (
-              <div className="article-summary worldview-prose">
+              <div className="article-summary view-prose">
                 <p>{view.question.abstract}</p>
               </div>
             )}

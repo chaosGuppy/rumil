@@ -85,7 +85,7 @@ function VerticalItem({
         </div>
 
         {expanded && (
-          <div className="worldview-prose vertical-content">
+          <div className="view-prose vertical-content">
             <p><TextWithConcepts text={page.content} excludeConceptId={page.id} /></p>
           </div>
         )}
@@ -177,7 +177,7 @@ export const VerticalView = forwardRef<VerticalViewHandle, VerticalViewProps>(
           <h1>{view.question.headline}</h1>
           {view.question.abstract && (
             <div
-              className="worldview-prose"
+              className="view-prose"
               style={{
                 color: "var(--fg-muted)",
                 borderLeft: "2px solid var(--border)",

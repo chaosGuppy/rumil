@@ -186,24 +186,24 @@ body {
   background: var(--active-tint, var(--active-0));
 }
 
-/* prose overrides for worldview content */
-.worldview-prose {
+/* prose overrides for view content */
+.view-prose {
   font-family: var(--font-body-stack);
   font-size: 15px;
   line-height: 1.7;
   color: var(--fg);
 }
 
-.worldview-prose p {
+.view-prose p {
   margin: 0.75em 0;
 }
 
-.worldview-prose strong {
+.view-prose strong {
   font-weight: 600;
   color: var(--fg);
 }
 
-.worldview-prose em {
+.view-prose em {
   font-style: italic;
   color: var(--fg-muted);
 }
@@ -331,7 +331,7 @@ body {
   letter-spacing: 0.03em;
 }
 
-.judgement-history-item .worldview-prose {
+.judgement-history-item .view-prose {
   font-size: 13px;
   color: var(--fg-muted);
 }
@@ -2896,7 +2896,7 @@ details[open] > .article-supplementary-toggle::before {
   font-family: var(--font-body-stack);
 }
 
-.concept-node-card .worldview-prose {
+.concept-node-card .view-prose {
   font-size: 14px;
 }
 

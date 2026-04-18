@@ -108,7 +108,7 @@ export function StackedPanes({
             </h1>
             {view.question.abstract && (
               <div
-                className="worldview-prose"
+                className="view-prose"
                 style={{
                   fontSize: "15px",
                   color: "var(--fg-muted)",
@@ -280,7 +280,7 @@ function DetailContent({
         </span>
       </div>
 
-      <div className="worldview-prose" style={{ marginBottom: "16px" }}>
+      <div className="view-prose" style={{ marginBottom: "16px" }}>
         <p style={{ fontSize: "15px", lineHeight: 1.7, margin: 0 }}>{page.content}</p>
       </div>
 

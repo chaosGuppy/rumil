@@ -233,7 +233,7 @@ export function SuggestionReview({
             padding: "4px 8px",
           }}
         >
-          back to worldview
+          back to view
         </button>
       </div>
 

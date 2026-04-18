@@ -20,6 +20,7 @@ from rumil.calls.common import (
 from rumil.calls.stages import CallInfra, ContextBuilder, ContextResult
 from rumil.context import (
     build_embedding_based_context,
+    build_view_centered_context,
     format_page,
 )
 from rumil.database import DB
@@ -170,12 +171,21 @@ class EmbeddingContext(ContextBuilder):
     async def build_context(self, infra: CallInfra) -> ContextResult:
         question = await infra.db.get_page(infra.question_id)
         query = question.headline if question else infra.question_id
-        result = await build_embedding_based_context(
-            query,
-            infra.db,
-            scope_question_id=infra.question_id,
-            require_judgement_for_questions=self._require_judgement_for_questions,
-        )
+        settings = get_settings()
+        if settings.context_view_centered:
+            result = await build_view_centered_context(
+                query,
+                infra.db,
+                scope_question_id=infra.question_id,
+                require_judgement_for_questions=self._require_judgement_for_questions,
+            )
+        else:
+            result = await build_embedding_based_context(
+                query,
+                infra.db,
+                scope_question_id=infra.question_id,
+                require_judgement_for_questions=self._require_judgement_for_questions,
+            )
         working_page_ids = result.page_ids
         preloaded_ids = infra.call.context_page_ids or []
 
@@ -900,20 +910,32 @@ class BigAssessContext(ContextBuilder):
 
         query = question.headline
         settings = get_settings()
-        result = await build_embedding_based_context(
-            query,
-            db,
-            scope_question_id=infra.question_id,
-            scope_detail=PageDetail.CONTENT,
-            scope_linked_detail=PageDetail.ABSTRACT,
-            require_judgement_for_questions=True,
-            full_page_char_budget=settings.big_assess_full_page_char_budget,
-            abstract_page_char_budget=settings.big_assess_abstract_page_char_budget,
-            summary_page_char_budget=settings.big_assess_summary_page_char_budget,
-            full_page_similarity_floor=settings.big_assess_full_page_similarity_floor,
-            abstract_page_similarity_floor=settings.big_assess_abstract_page_similarity_floor,
-            exclude_page_ids=exclude_ids,
-        )
+        if settings.context_view_centered:
+            result = await build_view_centered_context(
+                query,
+                db,
+                scope_question_id=infra.question_id,
+                full_page_char_budget=settings.big_assess_full_page_char_budget,
+                abstract_page_char_budget=settings.big_assess_abstract_page_char_budget,
+                summary_page_char_budget=settings.big_assess_summary_page_char_budget,
+                require_judgement_for_questions=True,
+                exclude_page_ids=exclude_ids,
+            )
+        else:
+            result = await build_embedding_based_context(
+                query,
+                db,
+                scope_question_id=infra.question_id,
+                scope_detail=PageDetail.CONTENT,
+                scope_linked_detail=PageDetail.ABSTRACT,
+                require_judgement_for_questions=True,
+                full_page_char_budget=settings.big_assess_full_page_char_budget,
+                abstract_page_char_budget=settings.big_assess_abstract_page_char_budget,
+                summary_page_char_budget=settings.big_assess_summary_page_char_budget,
+                full_page_similarity_floor=settings.big_assess_full_page_similarity_floor,
+                abstract_page_similarity_floor=settings.big_assess_abstract_page_similarity_floor,
+                exclude_page_ids=exclude_ids,
+            )
         working_page_ids = result.page_ids
 
         judgement_cited_ids: list[str] = []

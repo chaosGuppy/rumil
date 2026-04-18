@@ -127,6 +127,10 @@ class Settings(BaseSettings):
     big_assess_full_page_similarity_floor: float | None = _capture_field(default=None)
     big_assess_abstract_page_similarity_floor: float | None = _capture_field(default=None)
 
+    context_view_centered: bool = _capture_field(default=False)
+    view_centered_importance_threshold: int = _capture_field(default=3)
+    view_centered_top_k_references: int = _capture_field(default=3)
+
     eval_include_single_call_baseline: bool = _capture_field(default=False)
     single_call_baseline_model: str = _capture_field(default="claude-opus-4-7")
     single_call_baseline_max_claims: int = _capture_field(default=30)

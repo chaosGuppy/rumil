@@ -17,6 +17,7 @@ from rumil.models import Page, PageDetail, PageLink, PageType
 from rumil.settings import get_settings
 from rumil.tracing.page_load_tracking import get_page_track_tags
 from rumil.tracing.tracer import get_trace
+from rumil.views import View, build_view, render_view_as_context
 
 log = logging.getLogger(__name__)
 
@@ -986,5 +987,237 @@ async def build_embedding_based_context(
         abstract_page_ids=abstract_ids,
         summary_page_ids=summary_ids,
         distillation_page_ids=distillation_ids,
+        budget_usage=budget_usage,
+    )
+
+
+def _view_has_content(view: View) -> bool:
+    """True if the View has any rendered material — a judgement, any item, or sections."""
+    return view.health.total_pages > 0 and any(s.items for s in view.sections)
+
+
+def _collect_top_k_view_page_ids(view: View, k: int) -> list[str]:
+    """Pick the top-K page IDs across all View sections by sort_key (lowest = most important).
+
+    Deduplicates across sections (a page may appear in multiple sections) and
+    preserves the top-importance ordering.
+    """
+    seen: set[str] = set()
+    candidates: list[tuple[tuple[int, int, int], str]] = []
+    for section in view.sections:
+        for item in section.items:
+            if item.page.id in seen:
+                continue
+            seen.add(item.page.id)
+            candidates.append((item.sort_key, item.page.id))
+    candidates.sort(key=lambda t: t[0])
+    return [pid for _, pid in candidates[:k]]
+
+
+async def build_view_centered_context(
+    question_text: str,
+    db: DB,
+    *,
+    scope_question_id: str,
+    importance_threshold: int | None = None,
+    top_k_references: int | None = None,
+    fallback_char_budget: int | None = None,
+    full_page_char_budget: int | None = None,
+    abstract_page_char_budget: int | None = None,
+    summary_page_char_budget: int | None = None,
+    distillation_page_char_budget: int | None = None,
+    require_judgement_for_questions: bool = False,
+    exclude_page_ids: set[str] | None = None,
+) -> EmbeddingBasedContextResult:
+    """Build context centered on the current View for *scope_question_id*.
+
+    When the View is empty (no items, no judgement), falls back to
+    :func:`build_embedding_based_context` so fresh questions don't regress.
+    Otherwise renders:
+
+    1. A header block (question headline + abstract).
+    2. The View at *importance_threshold* (sections + items with epistemic badges).
+    3. A "key references" tail with full CONTENT for the top-K items.
+    4. Embedding-based neighbors filling remaining budget — "View first, neighbors to top up".
+
+    Returns the same :class:`EmbeddingBasedContextResult` shape as
+    :func:`build_embedding_based_context` so callers are drop-in compatible.
+    """
+    settings = get_settings()
+    if importance_threshold is None:
+        importance_threshold = settings.view_centered_importance_threshold
+    if top_k_references is None:
+        top_k_references = settings.view_centered_top_k_references
+    if full_page_char_budget is None:
+        full_page_char_budget = settings.full_page_char_budget
+    if abstract_page_char_budget is None:
+        abstract_page_char_budget = settings.abstract_page_char_budget
+    if summary_page_char_budget is None:
+        summary_page_char_budget = settings.summary_page_char_budget
+    if distillation_page_char_budget is None:
+        distillation_page_char_budget = settings.distillation_page_char_budget
+
+    total_budget = (
+        full_page_char_budget
+        + abstract_page_char_budget
+        + summary_page_char_budget
+        + distillation_page_char_budget
+    )
+    if fallback_char_budget is None:
+        fallback_char_budget = total_budget
+
+    view = await build_view(
+        db,
+        scope_question_id,
+        importance_threshold=importance_threshold,
+    )
+
+    if not _view_has_content(view):
+        log.debug(
+            "View-centered context: no View material for %s — falling back to embedding context",
+            scope_question_id[:8],
+        )
+        return await build_embedding_based_context(
+            question_text,
+            db,
+            scope_question_id=scope_question_id,
+            full_page_char_budget=full_page_char_budget,
+            abstract_page_char_budget=abstract_page_char_budget,
+            summary_page_char_budget=summary_page_char_budget,
+            distillation_page_char_budget=distillation_page_char_budget,
+            require_judgement_for_questions=require_judgement_for_questions,
+            exclude_page_ids=exclude_page_ids,
+        )
+
+    header_parts: list[str] = [
+        "## Current View",
+        "",
+        "This is the current, structured view of research on the scope question. ",
+        "Sections are ordered by research role; items carry epistemic badges ",
+        "(credence C, robustness R, importance L).",
+        "",
+    ]
+    header_text = "\n".join(header_parts)
+
+    view_text = render_view_as_context(view, char_budget=total_budget)
+
+    view_page_ids: set[str] = set()
+    for section in view.sections:
+        for item in section.items:
+            view_page_ids.add(item.page.id)
+
+    used_chars = len(header_text) + len(view_text)
+
+    top_k_ids = _collect_top_k_view_page_ids(view, top_k_references)
+    references_section = ""
+    reference_page_ids: list[str] = []
+    if top_k_ids and used_chars < total_budget:
+        ref_pages = await db.get_pages_by_ids(top_k_ids)
+        ref_parts: list[str] = ["", "---", "", "## Key References", ""]
+        remaining = total_budget - used_chars
+        for pid in top_k_ids:
+            page = ref_pages.get(pid)
+            if not page or not page.is_active():
+                continue
+            formatted = await format_page(
+                page,
+                PageDetail.CONTENT,
+                linked_detail=None,
+                db=db,
+                track=True,
+                track_tags={"source": "view_centered_key_reference"},
+            )
+            cost = len(formatted) + 2
+            if cost > remaining:
+                break
+            ref_parts += [formatted, ""]
+            reference_page_ids.append(pid)
+            remaining -= cost
+        if reference_page_ids:
+            references_section = "\n".join(ref_parts)
+            used_chars += len(references_section)
+
+    neighbor_exclude: set[str] = (exclude_page_ids or set()) | view_page_ids | {scope_question_id}
+    remaining_budget = max(0, total_budget - used_chars)
+    neighbors_text = ""
+    neighbor_full_ids: list[str] = []
+    neighbor_abstract_ids: list[str] = []
+    neighbor_summary_ids: list[str] = []
+    neighbor_distillation_ids: list[str] = []
+    neighbor_budget_usage: dict[str, int] = {
+        "full": 0,
+        "abstract": 0,
+        "summary": 0,
+        "distillation": 0,
+    }
+    if remaining_budget > 0:
+        scale = remaining_budget / total_budget if total_budget > 0 else 0
+        neighbor_result = await build_embedding_based_context(
+            question_text,
+            db,
+            full_page_char_budget=int(full_page_char_budget * scale),
+            abstract_page_char_budget=int(abstract_page_char_budget * scale),
+            summary_page_char_budget=int(summary_page_char_budget * scale),
+            distillation_page_char_budget=int(distillation_page_char_budget * scale),
+            require_judgement_for_questions=require_judgement_for_questions,
+            exclude_page_ids=neighbor_exclude,
+        )
+        if neighbor_result.context_text.strip():
+            neighbors_text = (
+                "\n\n---\n\n## Additional Relevant Pages (embedding neighbors)\n\n"
+                + neighbor_result.context_text
+            )
+        neighbor_full_ids = neighbor_result.full_page_ids
+        neighbor_abstract_ids = neighbor_result.abstract_page_ids
+        neighbor_summary_ids = neighbor_result.summary_page_ids
+        neighbor_distillation_ids = neighbor_result.distillation_page_ids
+        neighbor_budget_usage = neighbor_result.budget_usage
+
+    context_text = header_text + view_text
+    if references_section:
+        context_text += references_section
+    if neighbors_text:
+        context_text += neighbors_text
+
+    all_ids = (
+        [scope_question_id]
+        + [pid for pid in view_page_ids if pid != scope_question_id]
+        + [pid for pid in reference_page_ids if pid not in view_page_ids]
+        + neighbor_full_ids
+        + neighbor_abstract_ids
+        + neighbor_summary_ids
+        + neighbor_distillation_ids
+    )
+    seen: set[str] = set()
+    deduped_ids: list[str] = []
+    for pid in all_ids:
+        if pid in seen:
+            continue
+        seen.add(pid)
+        deduped_ids.append(pid)
+
+    log.info(
+        "View-centered context: view_chars=%d, refs=%d, neighbor_chars=%d, "
+        "budget=%d, total_pages=%d",
+        len(view_text),
+        len(reference_page_ids),
+        len(neighbors_text),
+        total_budget,
+        len(deduped_ids),
+    )
+
+    budget_usage = {
+        "view": len(view_text),
+        "references": sum(1 for _ in reference_page_ids),
+        **neighbor_budget_usage,
+    }
+
+    return EmbeddingBasedContextResult(
+        context_text=context_text,
+        page_ids=deduped_ids,
+        full_page_ids=neighbor_full_ids,
+        abstract_page_ids=neighbor_abstract_ids,
+        summary_page_ids=neighbor_summary_ids,
+        distillation_page_ids=neighbor_distillation_ids,
         budget_usage=budget_usage,
     )

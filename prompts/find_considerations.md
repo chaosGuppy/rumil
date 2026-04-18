@@ -41,6 +41,6 @@ Don't propose a hypothesis if the view is already well-represented in the existi
 ## Quality Bar
 
 - **One excellent consideration beats three weak ones.** If you can only find one thing that would meaningfully move the imminent answer, produce one. Produce none if nothing clears the bar.
-- **Specificity is essential.** A claim must be a concrete, evaluable assertion — not a gesture toward a class of considerations.
+- **Specificity is essential.** A claim must be a concrete, falsifiable (or at least evaluable) assertion — specific enough that a credence score (how likely is this to be true) is at least roughly meaningful. If the best you can do is a gesture toward a class of considerations, make it a question or a judgement rather than forcing it into a claim.
 - **Do not restate existing considerations** in different words. Paraphrases don't help.
 - **Immediate payoff only.** If the reader has to squint to see how this would affect the next answer, it doesn't belong here.

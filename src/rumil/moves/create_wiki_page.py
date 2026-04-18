@@ -2,11 +2,19 @@
 
 from rumil.database import DB
 from rumil.models import Call, MoveType, PageLayer, PageType
-from rumil.moves.base import CreatePagePayload, MoveDef, MoveResult, create_page
+from rumil.moves.base import MoveDef, MoveResult, ScoredPagePayload, create_page
 
 
-async def execute(payload: CreatePagePayload, call: Call, db: DB) -> MoveResult:
-    return await create_page(payload, call, db, PageType.WIKI, PageLayer.WIKI)
+async def execute(payload: ScoredPagePayload, call: Call, db: DB) -> MoveResult:
+    return await create_page(
+        payload,
+        call,
+        db,
+        PageType.WIKI,
+        PageLayer.WIKI,
+        robustness=payload.robustness,
+        robustness_reasoning=payload.robustness_reasoning,
+    )
 
 
 MOVE = MoveDef(
@@ -15,6 +23,6 @@ MOVE = MoveDef(
     description=(
         "Create a wiki page — a maintained, living summary of current understanding on a topic."
     ),
-    schema=CreatePagePayload,
+    schema=ScoredPagePayload,
     execute=execute,
 )

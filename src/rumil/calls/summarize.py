@@ -120,7 +120,7 @@ async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[Pa
             direction = f" [{link.direction.value}]" if link.direction else ""
             index_lines.append(f"- [consideration{direction}] {page.headline}")
         for j in judgements:
-            index_lines.append(f"- [judgement C{j.credence}/R{j.robustness}] {j.headline}")
+            index_lines.append(f"- [judgement R{j.robustness}] {j.headline}")
         for child in children:
             index_lines.append(f"- [child question] {child.headline}")
         parts.append(_section("Index", "\n".join(index_lines)))
@@ -342,8 +342,12 @@ async def summarize_question(
                 content=data.content,
                 headline=data.headline or page_headline,
                 abstract=data.abstract,
-                credence=5,
                 robustness=2,
+                robustness_reasoning=(
+                    "Auto-generated subtree summary — robustness could be "
+                    "strengthened by cross-checking the cited judgements and "
+                    "resolving any conflicting subtree conclusions."
+                ),
                 provenance_model=get_settings().model,
                 provenance_call_type=CallType.SUMMARIZE.value,
                 provenance_call_id=call.id,

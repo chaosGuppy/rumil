@@ -73,10 +73,11 @@ function pageHref(page: Page, stagedRunId?: string | null): string {
 }
 
 function epistemicLabel(page: Page) {
-  if (page.credence == null) return null;
-  return (
-    <span className="ep-label">C{page.credence}/R{page.robustness}</span>
-  );
+  const parts: string[] = [];
+  if (page.credence != null) parts.push(`C${page.credence}`);
+  if (page.robustness != null) parts.push(`R${page.robustness}`);
+  if (parts.length === 0) return null;
+  return <span className="ep-label">{parts.join("/")}</span>;
 }
 
 export default function PagesIndexPage() {

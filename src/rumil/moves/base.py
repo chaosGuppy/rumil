@@ -180,23 +180,17 @@ HEADLINE_DESCRIPTION = (
 
 
 class CreatePagePayload(BaseModel):
+    """Base payload shared by every create_* move.
+
+    Carries only fields that make sense for every page type, including
+    questions. Subclasses representing scored page types (claims, judgements,
+    view items, wikis, summaries) should inherit from ScoredPagePayload to
+    add the robustness fields.
+    """
+
     headline: str = Field(description=HEADLINE_DESCRIPTION)
     content: str = Field(
         description="Full explanation with reasoning. Be specific and substantive."
-    )
-    credence: int = Field(
-        5,
-        description=(
-            "1-9 credence scale. 1=virtually impossible, 5=genuinely uncertain, "
-            "9=completely uncontroversial. See preamble for full rubric."
-        ),
-    )
-    robustness: int = Field(
-        1,
-        description=(
-            "1-5 robustness scale. 1=wild guess, 3=considered view, "
-            "5=highly robust. See preamble for full rubric."
-        ),
     )
     workspace: str = Field("research", description="research or prioritization")
     supersedes: str | None = Field(
@@ -222,6 +216,27 @@ class CreatePagePayload(BaseModel):
         metadata that should be persisted on the page itself.
         """
         return {}
+
+
+class ScoredPagePayload(CreatePagePayload):
+    """Base for page types that carry a robustness score: claims,
+    judgements, view items, wikis, summaries. Questions do not inherit
+    from this — they have no robustness.
+    """
+
+    robustness: int = Field(
+        description=(
+            "1-5 robustness scale. 1=wild guess, 3=considered view, "
+            "5=highly robust. See preamble for full rubric."
+        ),
+    )
+    robustness_reasoning: str = Field(
+        description=(
+            "Where the remaining uncertainty stems from and how reducible "
+            "it is (e.g. 'would resolve with one clean benchmark run' vs "
+            "'inherent — depends on future human behaviour')."
+        ),
+    )
 
 
 def _resolve_workspace(ws: str) -> Workspace:
@@ -272,20 +287,32 @@ async def create_page(
     db: DB,
     page_type: PageType,
     layer: PageLayer,
+    credence: int | None = None,
+    credence_reasoning: str | None = None,
+    robustness: int | None = None,
+    robustness_reasoning: str | None = None,
 ) -> MoveResult:
-    """Create a page from payload, save to DB and file system."""
+    """Create a page from payload, save to DB and file system.
+
+    `credence` is only meaningful for CLAIM pages. `robustness` is meaningful
+    for every scored page type (claim, judgement, view item, wiki, summary);
+    questions leave both at None.
+    """
     workspace = _resolve_workspace(payload.workspace)
     extra = payload.page_extra_fields()
 
     fruit_remaining = getattr(payload, "fruit_remaining", None)
+    is_claim = page_type == PageType.CLAIM
     page = Page(
         page_type=page_type,
         layer=layer,
         workspace=workspace,
         content=payload.content,
         headline=payload.headline,
-        credence=None if page_type == PageType.QUESTION else payload.credence,
-        robustness=None if page_type == PageType.QUESTION else payload.robustness,
+        credence=credence if is_claim else None,
+        credence_reasoning=credence_reasoning if is_claim else None,
+        robustness=robustness,
+        robustness_reasoning=robustness_reasoning,
         fruit_remaining=fruit_remaining,
         provenance_model=get_settings().model,
         provenance_call_type=call.call_type.value,

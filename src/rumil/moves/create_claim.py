@@ -18,9 +18,9 @@ from rumil.models import (
     Workspace,
 )
 from rumil.moves.base import (
-    CreatePagePayload,
     MoveDef,
     MoveResult,
+    ScoredPagePayload,
     create_page,
 )
 from rumil.moves.link_consideration import ConsiderationLinkFields
@@ -29,7 +29,24 @@ from rumil.scraper import scrape_url
 log = logging.getLogger(__name__)
 
 
-class CreateClaimPayload(CreatePagePayload):
+class CreateClaimPayload(ScoredPagePayload):
+    credence: int = Field(
+        description=(
+            "1-9 credence scale — how likely is this claim to be true? "
+            "1=virtually impossible, 5=genuinely uncertain, 9=uncontroversial. "
+            "See preamble for the full rubric. A claim must be specific enough "
+            "that this score is at least roughly meaningful; if you can't "
+            "assign one, you don't have a claim yet — refine it or record the "
+            "thought as a question or judgement instead."
+        ),
+    )
+    credence_reasoning: str = Field(
+        description=(
+            "Why this credence level — what the claim would have to look "
+            "like for a higher or lower credence, and which way you'd "
+            "expect new evidence to push it."
+        ),
+    )
     source_urls: Sequence[str] = Field(
         default_factory=list,
         description=(
@@ -51,7 +68,17 @@ class CreateClaimPayload(CreatePagePayload):
 
 
 async def execute(payload: CreateClaimPayload, call: Call, db: DB) -> MoveResult:
-    result = await create_page(payload, call, db, PageType.CLAIM, PageLayer.SQUIDGY)
+    result = await create_page(
+        payload,
+        call,
+        db,
+        PageType.CLAIM,
+        PageLayer.SQUIDGY,
+        credence=payload.credence,
+        credence_reasoning=payload.credence_reasoning,
+        robustness=payload.robustness,
+        robustness_reasoning=payload.robustness_reasoning,
+    )
     if not result.created_page_id:
         return result
 
@@ -119,10 +146,14 @@ MOVE = MoveDef(
     move_type=MoveType.CREATE_CLAIM,
     name="create_claim",
     description=(
-        "Create a new claim — an assertion with supporting reasoning and "
-        "epistemic status. The atomic unit of knowledge. Use the links field "
-        "to simultaneously link this claim as a consideration on one or more "
-        "questions."
+        "Create a new claim — a positive assertion specific enough that a "
+        "credence score (how likely it is to be true) can be at least "
+        "roughly meaningfully assigned. A claim names its subject, makes a "
+        "falsifiable statement, and stands alone. Vague, context-dependent, "
+        "or non-committal statements are not claims: sharpen them, turn them "
+        "into questions, or record them as judgements instead. Use the `links` "
+        "field to simultaneously link this claim as a consideration on one or "
+        "more questions."
     ),
     schema=CreateClaimPayload,
     execute=execute,
@@ -156,8 +187,6 @@ async def ensure_source_page(
         workspace=Workspace.RESEARCH,
         content=scraped.content,
         headline=scraped.title[:120],
-        credence=5,
-        robustness=1,
         provenance_model="scraper",
         provenance_call_type=call.call_type.value,
         provenance_call_id=call.id,

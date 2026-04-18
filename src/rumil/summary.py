@@ -87,7 +87,7 @@ async def build_research_tree(
             label = f"Judgement {i + 1} of {len(ordered)}" if len(ordered) > 1 else "Judgement"
             jid = j.id[:8]
             if full_detail:
-                parts.append(f"{indent}**{label}** [id: {jid}] (C{j.credence}/R{j.robustness}):\n")
+                parts.append(f"{indent}**{label}** [id: {jid}] (R{j.robustness}):\n")
                 parts.append(j.content)
                 extra = j.extra or {}
                 if extra.get("key_dependencies"):
@@ -95,9 +95,7 @@ async def build_research_tree(
                 if extra.get("sensitivity_analysis"):
                     parts.append(f"\n*Sensitivity: {extra['sensitivity_analysis']}*")
             else:
-                parts.append(
-                    f"{indent}**{label}** [id: {jid}] (C{j.credence}/R{j.robustness}): {j.headline}"
-                )
+                parts.append(f"{indent}**{label}** [id: {jid}] (R{j.robustness}): {j.headline}")
             parts.append("")
 
     # Sub-questions (recurse)

@@ -117,7 +117,7 @@ class CreateViewContext(ContextBuilder):
                         track_tags={"source": "existing_view_items"},
                     )
                     parts.append(
-                        f"\n### [{page.page_type.value.upper()} C{page.credence}/R{page.robustness} {imp}] "
+                        f"\n### [{page.page_type.value.upper()} R{page.robustness} {imp}] "
                         f"`{page.id[:8]}` — {page.headline}\n\n"
                         f"{formatted}\n"
                     )

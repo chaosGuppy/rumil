@@ -1764,6 +1764,11 @@
             "title": "Overall Assessment Call Id",
             "default": ""
           },
+          "eval_run_id": {
+            "type": "string",
+            "title": "Eval Run Id",
+            "default": ""
+          },
           "dimension_reports": {
             "items": {
               "$ref": "#/components/schemas/ABEvalDimensionOut"

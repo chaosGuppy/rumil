@@ -23,9 +23,10 @@ log = logging.getLogger(__name__)
 _PROMPTS_DIR = Path(__file__).resolve().parents[3] / "prompts"
 
 
-def _frontend_trace_url(call_id: str) -> str:
+def _frontend_trace_url(run_id: str, call_id: str | None = None) -> str:
     base = get_settings().frontend_url.rstrip("/")
-    return f"{base}/traces/{call_id}"
+    anchor = f"#call-{call_id[:8]}" if call_id else ""
+    return f"{base}/traces/{run_id}{anchor}"
 
 
 def _frontend_ab_eval_url(report_id: str) -> str:
@@ -33,9 +34,9 @@ def _frontend_ab_eval_url(report_id: str) -> str:
     return f"{base}/ab-evals/{report_id}"
 
 
-def _announce_call(label: str, call_id: str) -> None:
+def _announce_call(label: str, run_id: str, call_id: str) -> None:
     """Print a trace URL for a freshly-created call, flushed immediately."""
-    print(f"  {label}: {_frontend_trace_url(call_id)}", flush=True)
+    print(f"  {label}: {_frontend_trace_url(run_id, call_id)}", flush=True)
 
 
 def _print_error(label: str, exc: BaseException) -> None:
@@ -93,7 +94,7 @@ async def _traced_text_call(
     trace = CallTrace(call.id, db, broadcaster=broadcaster)
     await db.update_call_status(call.id, CallStatus.RUNNING)
     if announce_label:
-        _announce_call(announce_label, call.id)
+        _announce_call(announce_label, db.run_id, call.id)
 
     token = set_trace(trace)
     try:
@@ -188,7 +189,7 @@ async def run_single_eval_agent(
             call_type=CallType.AB_EVAL,
             scope_page_id=question_id,
         )
-        _announce_call(f"{spec.name} {label}", arm_call.id)
+        _announce_call(f"{spec.name} {label}", db.run_id, arm_call.id)
         return await evaluate_run_with_agent(
             spec,
             run_id,

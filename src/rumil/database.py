@@ -2571,6 +2571,7 @@ class DB:
                     "question_id_b": question_id_b,
                     "overall_assessment": overall_assessment,
                     "overall_assessment_call_id": overall_assessment_call_id,
+                    "eval_run_id": self.run_id,
                     "dimension_reports": list(dimension_reports),
                     "project_id": str(self.project_id) if self.project_id else None,
                 }

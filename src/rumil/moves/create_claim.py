@@ -187,11 +187,6 @@ async def ensure_source_page(
         workspace=Workspace.RESEARCH,
         content=scraped.content,
         headline=scraped.title[:120],
-        robustness=1,
-        robustness_reasoning=(
-            "Source pages carry a baseline robustness of 1 — they report what "
-            "the underlying document says, not a judged view of its contents."
-        ),
         provenance_model="scraper",
         provenance_call_type=call.call_type.value,
         provenance_call_id=call.id,

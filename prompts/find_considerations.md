@@ -19,7 +19,7 @@ Examples of the shift:
 - Abstract: "What will the economic effects be?" → Concrete: "Will US manufacturing employment recover to pre-2024 levels by 2030, or has automation permanently lowered the floor?"
 - Abstract: "AI may have important safety implications" → Concrete: "Current RLHF methods will fail to prevent specification gaming in the majority of real-world deployments by 2028"
 
-When making such concrete-but-tentative claims, be sure to set low credence and robustness.
+When making such concrete-but-tentative claims, be sure to set low credence and robustness, with paired reasoning fields per the preamble rubric.
 
 In abstract mode, look for:
 - Angles not yet represented in the existing considerations
@@ -51,5 +51,5 @@ Don't propose a hypothesis if the view is already well-represented in the existi
 ## Quality Bar
 
 - **One excellent consideration beats three weak ones.** If you can only find one genuinely important missing angle, produce one.
-- **Specificity is essential.** A claim must be a concrete, falsifiable (or at least evaluable) assertion — not a gesture toward a class of considerations.
+- **Specificity is essential.** A claim must be a concrete, falsifiable (or at least evaluable) assertion — specific enough that a credence score (how likely is this to be true) is at least roughly meaningful. If the best you can do is a gesture toward a class of considerations, make it a question or a judgement rather than forcing it into a claim.
 - **Do not restate existing considerations** in different words.

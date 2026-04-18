@@ -111,7 +111,16 @@ class ReassessedClaim(BaseModel):
     headline: str = Field(description=HEADLINE_DESCRIPTION)
     content: str = Field(description="Full standalone content of the replacement claim")
     credence: int = Field(description="Probability bucket 1-9 (1=very unlikely, 9=very likely)")
+    credence_reasoning: str = Field(
+        description=(
+            "Why this credence level — what would have to be true for a "
+            "higher or lower credence, and how new evidence would move it."
+        )
+    )
     robustness: int = Field(description="Resilience of view 1-5 (1=fragile, 5=very robust)")
+    robustness_reasoning: str = Field(
+        description=("Where the remaining uncertainty stems from and how reducible it is.")
+    )
 
 
 class _PageAbstractList(BaseModel):
@@ -290,7 +299,9 @@ async def reassess_claim(
         content=reassessed.content,
         headline=reassessed.headline,
         credence=reassessed.credence,
+        credence_reasoning=reassessed.credence_reasoning,
         robustness=reassessed.robustness,
+        robustness_reasoning=reassessed.robustness_reasoning,
         provenance_model=get_settings().model,
         provenance_call_type=call.call_type.value,
         provenance_call_id=call.id,
@@ -377,7 +388,16 @@ class ReassessedClaimItem(BaseModel):
     headline: str = Field(description=HEADLINE_DESCRIPTION)
     content: str = Field(description="Full standalone content of the replacement claim")
     credence: int = Field(description="Probability bucket 1-9 (1=very unlikely, 9=very likely)")
+    credence_reasoning: str = Field(
+        description=(
+            "Why this credence level — what would have to be true for a "
+            "higher or lower credence, and how new evidence would move it."
+        )
+    )
     robustness: int = Field(description="Resilience of view 1-5 (1=fragile, 5=very robust)")
+    robustness_reasoning: str = Field(
+        description=("Where the remaining uncertainty stems from and how reducible it is.")
+    )
     supersedes: list[str] = Field(
         default_factory=list,
         description=(
@@ -538,7 +558,9 @@ async def reassess_claims(
             content=item.content,
             headline=item.headline,
             credence=item.credence,
+            credence_reasoning=item.credence_reasoning,
             robustness=item.robustness,
+            robustness_reasoning=item.robustness_reasoning,
             provenance_model=get_settings().model,
             provenance_call_type=call.call_type.value,
             provenance_call_id=call.id,

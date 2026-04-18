@@ -55,6 +55,10 @@ async def test_cites_link_created_for_source(tmp_db, scout_call, source_page):
         {
             "headline": "Blue sky from scattering",
             "content": "Rayleigh scattering causes blue sky.",
+            "credence": 6,
+            "credence_reasoning": "Rayleigh scattering is textbook physics.",
+            "robustness": 3,
+            "robustness_reasoning": "Sourced from a single page; cross-check would firm it.",
             "source_urls": [source_page.id[:8]],
         }
     )
@@ -79,6 +83,10 @@ async def test_no_cites_link_when_source_urls_empty(tmp_db, scout_call):
         {
             "headline": "Unsourced claim",
             "content": "This claim cites nothing.",
+            "credence": 5,
+            "credence_reasoning": "Placeholder test reasoning.",
+            "robustness": 2,
+            "robustness_reasoning": "No supporting sources recorded.",
         }
     )
 
@@ -102,6 +110,10 @@ async def test_multiple_cites_links(
         {
             "headline": "Combined scattering evidence",
             "content": "Multiple sources confirm scattering.",
+            "credence": 6,
+            "credence_reasoning": "Multiple converging sources.",
+            "robustness": 3,
+            "robustness_reasoning": "Two sources; a third would firm it further.",
             "source_urls": [source_page.id[:8], second_source_page.id[:8]],
         }
     )
@@ -128,6 +140,10 @@ async def test_cites_and_consideration_links_coexist(
         {
             "headline": "Sourced and linked claim",
             "content": "This claim cites a source and bears on a question.",
+            "credence": 6,
+            "credence_reasoning": "Source-backed assertion.",
+            "robustness": 3,
+            "robustness_reasoning": "One source plus a linking question.",
             "source_urls": [source_page.id[:8]],
             "links": [
                 {

@@ -115,7 +115,8 @@ _LINK_COLUMNS = (
 
 _SLIM_PAGE_COLUMNS = (
     "id,page_type,layer,workspace,headline,abstract,"
-    "epistemic_status,epistemic_type,credence,robustness,extra,is_superseded,"
+    "epistemic_status,epistemic_type,credence,credence_reasoning,"
+    "robustness,robustness_reasoning,extra,is_superseded,"
     "project_id,created_at,superseded_by,run_id"
 )
 
@@ -132,7 +133,9 @@ def _row_to_page(row: dict[str, Any]) -> Page:
         epistemic_status=row.get("epistemic_status") or 0.0,
         epistemic_type=row.get("epistemic_type") or "",
         credence=row.get("credence"),
+        credence_reasoning=row.get("credence_reasoning"),
         robustness=row.get("robustness"),
+        robustness_reasoning=row.get("robustness_reasoning"),
         provenance_model=row.get("provenance_model") or "",
         provenance_call_type=row.get("provenance_call_type") or "",
         provenance_call_id=row.get("provenance_call_id") or "",
@@ -205,9 +208,13 @@ class MutationState:
     """Cached mutation events for a staged run, keyed by target_id."""
 
     __slots__ = (
+        "credence_source",
         "deleted_links",
+        "latest_credence",
+        "latest_robustness",
         "link_role_overrides",
         "page_content_overrides",
+        "robustness_source",
         "superseded_pages",
     )
 
@@ -216,6 +223,10 @@ class MutationState:
         self.deleted_links: set[str] = set()
         self.link_role_overrides: dict[str, LinkRole] = {}
         self.page_content_overrides: dict[str, str] = {}
+        self.latest_credence: dict[str, tuple[int, str]] = {}
+        self.latest_robustness: dict[str, tuple[int, str]] = {}
+        self.credence_source: dict[str, str] = {}
+        self.robustness_source: dict[str, str] = {}
 
 
 class DB:
@@ -324,6 +335,26 @@ class DB:
                 state.link_role_overrides[tid] = LinkRole(payload["new_role"])
             elif et == "update_page_content":
                 state.page_content_overrides[tid] = payload.get("new_content", "")
+            elif et == "set_credence":
+                value = payload.get("value")
+                if value is not None:
+                    state.latest_credence[tid] = (
+                        int(value),
+                        payload.get("reasoning") or "",
+                    )
+                    source = payload.get("source_page_id")
+                    if source:
+                        state.credence_source[tid] = source
+            elif et == "set_robustness":
+                value = payload.get("value")
+                if value is not None:
+                    state.latest_robustness[tid] = (
+                        int(value),
+                        payload.get("reasoning") or "",
+                    )
+                    source = payload.get("source_page_id")
+                    if source:
+                        state.robustness_source[tid] = source
         self._mutation_cache = state
         return state
 
@@ -333,7 +364,12 @@ class DB:
     async def _apply_page_events(self, pages: Sequence[Page]) -> list[Page]:
         """Overlay mutation events onto a batch of pages."""
         state = await self._load_mutation_state()
-        if not state.superseded_pages and not state.page_content_overrides:
+        if (
+            not state.superseded_pages
+            and not state.page_content_overrides
+            and not state.latest_credence
+            and not state.latest_robustness
+        ):
             return list(pages)
         result: list[Page] = []
         for p in pages:
@@ -343,6 +379,14 @@ class DB:
                 updates["superseded_by"] = state.superseded_pages[p.id]
             if p.id in state.page_content_overrides:
                 updates["content"] = state.page_content_overrides[p.id]
+            if p.id in state.latest_credence:
+                value, reasoning = state.latest_credence[p.id]
+                updates["credence"] = value
+                updates["credence_reasoning"] = reasoning
+            if p.id in state.latest_robustness:
+                value, reasoning = state.latest_robustness[p.id]
+                updates["robustness"] = value
+                updates["robustness_reasoning"] = reasoning
             if updates:
                 p = p.model_copy(update=updates)
             result.append(p)
@@ -443,7 +487,9 @@ class DB:
                     "epistemic_status": page.epistemic_status,
                     "epistemic_type": page.epistemic_type,
                     "credence": page.credence,
+                    "credence_reasoning": page.credence_reasoning,
                     "robustness": page.robustness,
+                    "robustness_reasoning": page.robustness_reasoning,
                     "provenance_model": page.provenance_model,
                     "provenance_call_type": page.provenance_call_type,
                     "provenance_call_id": page.provenance_call_id,
@@ -476,6 +522,58 @@ class DB:
                 self.client.table("pages").update({"content": new_content}).eq("id", page_id)
             )
 
+    async def update_epistemic_score(
+        self,
+        page_id: str,
+        *,
+        credence: int | None = None,
+        credence_reasoning: str | None = None,
+        robustness: int | None = None,
+        robustness_reasoning: str | None = None,
+        source_page_id: str | None = None,
+    ) -> None:
+        """Record a credence and/or robustness update.
+
+        Each non-null score becomes one ``set_credence`` or ``set_robustness``
+        mutation event. For non-staged runs, the baseline ``pages`` columns
+        are dual-written so non-replay readers see the new value. Reasoning
+        is required whenever the paired score is provided.
+        """
+        if credence is None and robustness is None:
+            return
+        direct_updates: dict[str, Any] = {}
+        if credence is not None:
+            if credence_reasoning is None:
+                raise ValueError(
+                    "update_epistemic_score: credence_reasoning is required when credence is set"
+                )
+            payload: dict[str, Any] = {
+                "value": int(credence),
+                "reasoning": credence_reasoning,
+            }
+            if source_page_id is not None:
+                payload["source_page_id"] = source_page_id
+            await self.record_mutation_event("set_credence", page_id, payload)
+            direct_updates["credence"] = int(credence)
+            direct_updates["credence_reasoning"] = credence_reasoning
+        if robustness is not None:
+            if robustness_reasoning is None:
+                raise ValueError(
+                    "update_epistemic_score: robustness_reasoning is required "
+                    "when robustness is set"
+                )
+            payload = {
+                "value": int(robustness),
+                "reasoning": robustness_reasoning,
+            }
+            if source_page_id is not None:
+                payload["source_page_id"] = source_page_id
+            await self.record_mutation_event("set_robustness", page_id, payload)
+            direct_updates["robustness"] = int(robustness)
+            direct_updates["robustness_reasoning"] = robustness_reasoning
+        if direct_updates and not self.staged:
+            await self._execute(self.client.table("pages").update(direct_updates).eq("id", page_id))
+
     async def update_page_abstract(self, page_id: str, abstract: str) -> None:
         await self._execute(
             self.client.table("pages").update({"abstract": abstract}).eq("id", page_id)
@@ -490,7 +588,6 @@ class DB:
         pages = await self._apply_page_events([_row_to_page(rows[0])])
         if not pages:
             return None
-        await self.apply_epistemic_overrides(pages)
         return pages[0]
 
     async def get_pages_by_ids(self, page_ids: Sequence[str]) -> dict[str, Page]:
@@ -511,7 +608,6 @@ class DB:
                 page = _row_to_page(r)
                 result[page.id] = page
         pages = await self._apply_page_events(list(result.values()))
-        await self.apply_epistemic_overrides(pages)
         return {p.id: p for p in pages}
 
     async def resolve_page_ids(self, page_ids: Sequence[str]) -> dict[str, str]:
@@ -690,7 +786,6 @@ class DB:
             for r in _rows(await self._execute(query.order("created_at", desc=True).limit(10000)))
         ]
         pages = await self._apply_page_events(pages)
-        await self.apply_epistemic_overrides(pages)
         if active_only:
             pages = [p for p in pages if p.is_active()]
         return pages
@@ -716,7 +811,6 @@ class DB:
             for r in _rows(await self._execute(query.order("created_at", desc=True).limit(10000)))
         ]
         pages = await self._apply_page_events(pages)
-        await self.apply_epistemic_overrides(pages)
         if active_only:
             pages = [p for p in pages if p.is_active()]
         return pages
@@ -780,7 +874,6 @@ class DB:
         total = result.count or 0
         pages = [_row_to_page(r) for r in _rows(result)]
         pages = await self._apply_page_events(pages)
-        await self.apply_epistemic_overrides(pages)
         if active_only:
             pages = [p for p in pages if p.is_active()]
         return pages, total
@@ -1886,29 +1979,6 @@ class DB:
             )
         )
 
-    async def save_epistemic_score(
-        self,
-        page_id: str,
-        call_id: str,
-        credence: int,
-        robustness: int,
-        reasoning: str = "",
-        source_page_id: str | None = None,
-    ) -> None:
-        row: dict[str, Any] = {
-            "id": str(uuid.uuid4()),
-            "page_id": page_id,
-            "call_id": call_id,
-            "credence": credence,
-            "robustness": robustness,
-            "reasoning": reasoning,
-            "created_at": datetime.now(UTC).isoformat(),
-            "run_id": self.run_id,
-        }
-        if source_page_id is not None:
-            row["source_page_id"] = source_page_id
-        await self._execute(self.client.table("epistemic_scores").insert(row))
-
     async def save_page_format_events(self, call_id: str, events: Sequence[dict[str, Any]]) -> None:
         """Batch-insert page-format tracking events."""
         if not events:
@@ -1948,73 +2018,6 @@ class DB:
             r["call_type"] = call_type_map.get(r["call_id"], "unknown")
         return rows
 
-    async def apply_epistemic_overrides(self, pages: Sequence[Page]) -> None:
-        """Override credence/robustness on pages with latest epistemic_scores."""
-        if not pages:
-            return
-        page_ids = [p.id for p in pages]
-        batch_size = 200
-        rows: list[dict[str, Any]] = []
-        for i in range(0, len(page_ids), batch_size):
-            batch = page_ids[i : i + batch_size]
-            rows.extend(
-                _rows(
-                    await self._execute(
-                        self.client.table("epistemic_scores")
-                        .select("page_id,credence,robustness,created_at")
-                        .in_("page_id", batch)
-                        .eq("run_id", self.run_id)
-                        .order("created_at", desc=True)
-                    )
-                )
-            )
-        seen: set[str] = set()
-        overrides: dict[str, tuple[int, int]] = {}
-        for row in rows:
-            pid = row["page_id"]
-            if pid not in seen:
-                seen.add(pid)
-                overrides[pid] = (row["credence"], row["robustness"])
-        for page in pages:
-            if page.id in overrides:
-                page.credence, page.robustness = overrides[page.id]
-
-    async def get_epistemic_score_source(
-        self,
-        page_id: str,
-    ) -> tuple[dict[str, Any] | None, Page | None]:
-        """Return the latest epistemic score entry and its source judgement (if any).
-
-        Returns (score_row, judgement_page) where either or both may be None.
-        """
-        rows = _rows(
-            await self._execute(
-                self.client.table("epistemic_scores")
-                .select("*")
-                .eq("page_id", page_id)
-                .eq("run_id", self.run_id)
-                .order("created_at", desc=True)
-                .limit(1)
-            )
-        )
-        if not rows:
-            return None, None
-        score_row = rows[0]
-        call_id = score_row["call_id"]
-        judgement_rows = _rows(
-            await self._execute(
-                self.client.table("pages")
-                .select("*")
-                .eq("provenance_call_id", call_id)
-                .eq("page_type", PageType.JUDGEMENT.value)
-                .eq("is_superseded", False)
-                .order("created_at", desc=True)
-                .limit(1)
-            )
-        )
-        judgement = _row_to_page(judgement_rows[0]) if judgement_rows else None
-        return score_row, judgement
-
     async def get_latest_judgement_for_call(
         self,
         call_id: str,
@@ -2044,7 +2047,6 @@ class DB:
             params["p_staged_run_id"] = self.run_id
         rows = _rows(await self._execute(self.client.rpc("get_root_questions", params)))
         pages = [_row_to_page(r) for r in rows]
-        await self.apply_epistemic_overrides(pages)
         return pages
 
     async def get_human_questions(
@@ -2072,7 +2074,6 @@ class DB:
         rows = _rows(await self._execute(query))
         pages = [_row_to_page(r) for r in rows]
         pages = await self._apply_page_events(pages)
-        await self.apply_epistemic_overrides(pages)
         return [p for p in pages if p.is_active()]
 
     async def count_pages_for_question(self, question_id: str) -> dict:

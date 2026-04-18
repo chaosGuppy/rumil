@@ -24,6 +24,8 @@ def _judgement_payload(**overrides):
     base = {
         "headline": "The sky is blue",
         "content": "Based on evidence, the sky is blue.",
+        "robustness": 3,
+        "robustness_reasoning": "Placeholder robustness reasoning for test judgement.",
     }
     base.update(overrides)
     return base

@@ -1082,9 +1082,17 @@ export type Page = {
      */
     credence: number | null;
     /**
+     * Credence Reasoning
+     */
+    credence_reasoning: string | null;
+    /**
      * Robustness
      */
     robustness: number | null;
+    /**
+     * Robustness Reasoning
+     */
+    robustness_reasoning: string | null;
     /**
      * Provenance Model
      */

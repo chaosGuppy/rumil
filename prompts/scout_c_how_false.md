@@ -28,4 +28,4 @@ Use `CREATE_CLAIM` to create each story and `LINK_CONSIDERATION` to link it to t
 - **Compatible with observations.** The story must explain why we see what we see, not just assert the claim is wrong.
 - **Concrete mechanisms.** Spell out what is actually happening in this alternative picture.
 - **Do not duplicate** stories already present in the workspace (but it's okay to have variations which patch important weak points).
-- **Set credence and robustness honestly.** These are initial assessments — low robustness is expected.
+- **Set credence and robustness honestly, with reasoning.** These are initial assessments — low robustness is expected. Every score needs its paired reasoning field per the preamble rubric.

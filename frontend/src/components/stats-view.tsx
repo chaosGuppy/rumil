@@ -799,9 +799,9 @@ export function StatsView({
 
       <div className="two-col-histograms">
         <div className="panel">
-          <div className="panel-label">Credence</div>
+          <div className="panel-label">Claim credence</div>
           {Object.keys(data.credence_histogram).length === 0 ? (
-            <div className="hist-empty">no credence-scored pages</div>
+            <div className="hist-empty">no credence-scored claims</div>
           ) : (
             <>
               <div className="hist-wrap">
@@ -850,7 +850,7 @@ export function StatsView({
                   </BarChart>
                 </ResponsiveContainer>
               </div>
-              <div className="hist-caption">bins 1–9 · claims and judgements</div>
+              <div className="hist-caption">bins 1–9 · claim pages only</div>
             </>
           )}
         </div>

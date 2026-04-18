@@ -22,7 +22,7 @@ For each web question target:
 
 ### Factual claims (1-3)
 
-Alongside your questions, produce claims about concrete facts that you are confident in, that are both non-obvious and important for the parent question. These should be specific factual statements — not vague generalities — where you have high confidence (credence 7-9). The value is in surfacing facts you know well that a reader might not, and that bear on the parent question. Use `create_claim` and `link_consideration` to attach each to the parent question.
+Alongside your questions, produce claims about concrete facts that you are confident in, that are both non-obvious and important for the parent question. These should be specific factual statements — not vague generalities — where you have high confidence (credence 7-9). The value is in surfacing facts you know well that a reader might not, and that bear on the parent question. Use `create_claim` and `link_consideration` to attach each to the parent question. Include `credence_reasoning` and `robustness_reasoning` per the preamble rubric.
 
 ## How to Proceed
 

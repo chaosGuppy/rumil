@@ -7,11 +7,12 @@ The View consists of **atomic items** organized into **sections**, each with epi
 <!-- PHASE:context — DO NOT RENAME THIS MARKER -->
 ## Shared Context
 
-A View is a curated, structured summary of the workspace's current best understanding on a research question. Each View item is a short, self-contained claim or observation with:
+A View is a curated, structured summary of the workspace's current best understanding on a research question. Each View item is a short, self-contained observation with:
 
-* **Credence (1-9)**: How likely this is to be true (see preamble for full scale)
 * **Robustness (1-5)**: How well-investigated (1=wild guess, 3=considered view, 5=thoroughly tested)
 * **Importance (1-5)**: How core to the View (5=essential, 1=marginal)
+
+View items do **not** carry a credence score — credence applies only to claim pages. If a View item's underlying assertion is sharp and falsifiable enough to deserve a credence score, a separate claim page should exist (or be created) and the View item should cite it.
 
 **Sections:** broader\_context, confident\_views, live\_hypotheses, key\_evidence, assessments, key\_uncertainties, other.
 
@@ -26,7 +27,6 @@ These items were proposed by other calls but have not yet been scored. For each 
 
 * **importance** (1-5): How core is this item to the View?
 * **section**: Which section best fits this item's role?
-* **credence** (optional): Override if the current score looks wrong given what you know
 * **robustness** (optional): Override if the current score looks wrong
 
 Do not enforce importance caps at this stage — just score each item on its merits.
@@ -48,11 +48,11 @@ For each item in this batch, choose one action:
 
 * **keep**: The item is fine as-is after closer inspection. No changes.
 * **adjust**: The item's scores or section assignment need updating. Provide the new values and brief reasoning.
-* **supersede**: The item should be replaced with a new version. Provide a new headline, content, credence, robustness, importance, and section. The old item will be superseded and the new one linked to the View.
+* **supersede**: The item should be replaced with a new version. Provide a new headline, content, robustness, robustness_reasoning, importance, and section. The old item will be superseded and the new one linked to the View.
 
-When superseding, write the replacement item as you would a fresh View item: a clear headline, content with an epistemic gloss explaining the scores, and careful scoring.
+When superseding, write the replacement item as you would a fresh View item: a clear headline, content with an epistemic gloss explaining the robustness score, and careful scoring. Provide `robustness_reasoning` per the preamble rubric — where the uncertainty sits and how reducible it is.
 
-You may also **propose entirely new items** if you notice gaps — evidence or conclusions that the View should capture but currently doesn't. New items should include full scores (credence, robustness, importance, section) and follow the same format as existing items.
+You may also **propose entirely new items** if you notice gaps — evidence or conclusions that the View should capture but currently doesn't. New items should include full scores (robustness, robustness_reasoning, importance, section) and follow the same format as existing items.
 
 <!-- PHASE:enforce_caps — DO NOT RENAME THIS MARKER -->
 ## Phase: Importance Cap Enforcement

@@ -87,8 +87,11 @@ async def _create_source_page_from_file(filepath: str, db: DB) -> Page | None:
         workspace=Workspace.RESEARCH,
         content=content,
         headline=summary,
-        credence=5,
         robustness=1,
+        robustness_reasoning=(
+            "Source pages carry a baseline robustness of 1 — they report what "
+            "the underlying document says, not a judged view of its contents."
+        ),
         provenance_model="human",
         provenance_call_type="ingest",
         provenance_call_id="manual",
@@ -119,8 +122,11 @@ async def _create_source_page_from_url(url: str, db: DB) -> Page | None:
         workspace=Workspace.RESEARCH,
         content=content,
         headline=summary,
-        credence=5,
         robustness=1,
+        robustness_reasoning=(
+            "Source pages carry a baseline robustness of 1 — they report what "
+            "the underlying document says, not a judged view of its contents."
+        ),
         provenance_model="human",
         provenance_call_type="ingest",
         provenance_call_id="manual",

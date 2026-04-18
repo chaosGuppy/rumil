@@ -13,21 +13,20 @@ from collections.abc import AsyncIterator, Callable, Sequence
 from pathlib import Path
 from typing import Any
 
-from fastapi.responses import StreamingResponse
-
 import anthropic
 from anthropic.types import TextBlock, TextDelta, ToolUseBlock
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from rumil.calls import (
     ASSESS_CALL_CLASSES,
     FindConsiderationsCall,
     IngestCall,
-    WebResearchCall,
     ScoutAnalogiesCall,
     ScoutEstimatesCall,
     ScoutHypothesesCall,
     ScoutSubquestionsCall,
+    WebResearchCall,
 )
 from rumil.calls.stages import CallRunner
 from rumil.context import build_embedding_based_context
@@ -38,7 +37,7 @@ from rumil.moves.registry import MOVES
 from rumil.scraper import scrape_url
 from rumil.settings import get_settings
 from rumil.summary import build_research_tree
-from rumil.views import build_view
+from rumil.views import View, build_view
 
 log = logging.getLogger(__name__)
 PROMPTS_DIR = Path(__file__).parent.parent.parent.parent / "prompts"
@@ -217,6 +216,57 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "get_view",
+        "description": (
+            "Fetch the structured view of a question — the distilled research "
+            "state, organized into sections (core_findings, live_hypotheses, "
+            "key_evidence, key_uncertainties, etc.) plus a health block. "
+            "Prefer this over scattered get_page calls when the user asks "
+            "'what do we know about X' or 'show me the view'. Returns item "
+            "summaries (id, headline, scores); use get_view_item for full content."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "question_id": {
+                    "type": "string",
+                    "description": (
+                        "Short ID of the question. Omit to use the current question in scope."
+                    ),
+                },
+                "importance_threshold": {
+                    "type": "integer",
+                    "description": "Max importance level to include (default 3)",
+                },
+            },
+        },
+    },
+    {
+        "name": "get_view_item",
+        "description": (
+            "Drill into a specific view item by its short page ID. Returns "
+            "the full content, linked considerations, and the item's role "
+            "in the view (which section, supporting/opposing direction)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "item_id": {
+                    "type": "string",
+                    "description": "8-character page ID of the view item",
+                },
+                "question_id": {
+                    "type": "string",
+                    "description": (
+                        "Short ID of the question whose view to consult "
+                        "for role context. Omit to use the current question."
+                    ),
+                },
+            },
+            "required": ["item_id"],
+        },
+    },
+    {
         "name": "ingest_source",
         "description": (
             "Ingest a URL as a source — fetch its content, create a Source page, "
@@ -292,6 +342,45 @@ def _format_page(page: Page) -> str:
     return "\n".join(parts)
 
 
+def _serialize_view(view: View) -> dict[str, Any]:
+    """Lean JSON payload of a view — item summaries only, not full content."""
+    return {
+        "question_id": view.question.id[:8],
+        "question_full_id": view.question.id,
+        "question_headline": view.question.headline,
+        "sections": [
+            {
+                "name": s.name,
+                "description": s.description,
+                "items": [
+                    {
+                        "id": item.page.id[:8],
+                        "page_type": item.page.page_type.value,
+                        "headline": item.page.headline,
+                        "credence": item.page.credence,
+                        "robustness": item.page.robustness,
+                        "importance": item.page.importance,
+                        "section": item.section,
+                        "direction": next(
+                            (lk.direction.value for lk in item.links if lk.direction is not None),
+                            None,
+                        ),
+                    }
+                    for item in s.items
+                ],
+            }
+            for s in view.sections
+        ],
+        "health": {
+            "total_pages": view.health.total_pages,
+            "missing_credence": view.health.missing_credence,
+            "missing_importance": view.health.missing_importance,
+            "child_questions_without_judgements": view.health.child_questions_without_judgements,
+            "max_depth": view.health.max_depth,
+        },
+    }
+
+
 async def _execute_tool(
     name: str,
     tool_input: dict[str, Any],
@@ -302,9 +391,7 @@ async def _execute_tool(
     if name == "search_workspace":
         query = tool_input["query"]
         vector = await embed_query(query)
-        results = await search_pages_by_vector(
-            db, vector, match_count=8, match_threshold=0.3
-        )
+        results = await search_pages_by_vector(db, vector, match_count=8, match_threshold=0.3)
         if not results:
             return "No matching pages found."
         lines = [f"Found {len(results)} relevant pages:\n"]
@@ -344,9 +431,7 @@ async def _execute_tool(
             payload["content"] = content
         validated = move_def.schema(**payload)
 
-        call = await db.create_call(
-            CallType.CHAT_DIRECT, scope_page_id=None
-        )
+        call = await db.create_call(CallType.CHAT_DIRECT, scope_page_id=None)
         result = await move_def.execute(validated, call, db)
 
         created_id = result.created_page_id or ""
@@ -361,9 +446,7 @@ async def _execute_tool(
                     child_id=result.created_page_id,
                 )
                 await link_def.execute(link_payload, call, db)
-                response_parts.append(
-                    f"Linked as child of {parent_short}"
-                )
+                response_parts.append(f"Linked as child of {parent_short}")
 
         return "\n".join(response_parts)
 
@@ -375,10 +458,7 @@ async def _execute_tool(
         for q in questions:
             counts = await db.count_pages_for_question(q.id)
             total = counts.get("considerations", 0) + counts.get("judgements", 0)
-            lines.append(
-                f"  [{q.id[:8]}] {q.headline}"
-                f"  ({total} pages)"
-            )
+            lines.append(f"  [{q.id[:8]}] {q.headline}  ({total} pages)")
         return "\n".join(lines)
 
     if name == "get_suggestions":
@@ -427,6 +507,94 @@ async def _execute_tool(
         ]
         return "\n".join(lines)
 
+    if name == "get_view":
+        qid_short = tool_input.get("question_id") or scope_question_id[:8]
+        importance_threshold = int(tool_input.get("importance_threshold", 3))
+        full_id = await db.resolve_page_id(qid_short)
+        if not full_id:
+            return f"Question '{qid_short}' not found."
+        try:
+            view = await build_view(db, full_id, importance_threshold=importance_threshold)
+        except ValueError as e:
+            return str(e)
+        payload = _serialize_view(view)
+        return json.dumps(payload)
+
+    if name == "get_view_item":
+        item_short = tool_input["item_id"]
+        qid_short = tool_input.get("question_id") or scope_question_id[:8]
+        item_full = await db.resolve_page_id(item_short)
+        if not item_full:
+            return f"Item '{item_short}' not found."
+        item_page = await db.get_page(item_full)
+        if not item_page:
+            return f"Item '{item_short}' not found."
+        question_full = await db.resolve_page_id(qid_short) if qid_short else None
+        section_name: str | None = None
+        direction: str | None = None
+        if question_full:
+            try:
+                view = await build_view(db, question_full)
+                for s in view.sections:
+                    for it in s.items:
+                        if it.page.id == item_page.id:
+                            section_name = s.name
+                            for lk in it.links:
+                                if lk.direction is not None:
+                                    direction = lk.direction.value
+                                    break
+                            break
+                    if section_name:
+                        break
+            except ValueError:
+                pass
+        outgoing = await db.get_links_from(item_full)
+        incoming = await db.get_links_to(item_full)
+        linked_ids = {lk.to_page_id for lk in outgoing} | {lk.from_page_id for lk in incoming}
+        linked_pages = await db.get_pages_by_ids(list(linked_ids)) if linked_ids else {}
+        payload: dict[str, Any] = {
+            "id": item_page.id[:8],
+            "full_id": item_page.id,
+            "page_type": item_page.page_type.value,
+            "headline": item_page.headline,
+            "content": item_page.content,
+            "abstract": item_page.abstract,
+            "credence": item_page.credence,
+            "robustness": item_page.robustness,
+            "importance": item_page.importance,
+            "section": section_name,
+            "direction": direction,
+            "outgoing_links": [
+                {
+                    "link_type": lk.link_type.value,
+                    "to_id": lk.to_page_id[:8],
+                    "to_headline": (
+                        linked_pages[lk.to_page_id].headline
+                        if lk.to_page_id in linked_pages
+                        else None
+                    ),
+                    "direction": lk.direction.value if lk.direction else None,
+                    "role": lk.role.value if lk.role else None,
+                }
+                for lk in outgoing
+            ],
+            "incoming_links": [
+                {
+                    "link_type": lk.link_type.value,
+                    "from_id": lk.from_page_id[:8],
+                    "from_headline": (
+                        linked_pages[lk.from_page_id].headline
+                        if lk.from_page_id in linked_pages
+                        else None
+                    ),
+                    "direction": lk.direction.value if lk.direction else None,
+                    "role": lk.role.value if lk.role else None,
+                }
+                for lk in incoming
+            ],
+        }
+        return json.dumps(payload)
+
     if name == "dispatch_call":
         qid_short = tool_input["question_id"]
         call_type_str = tool_input["call_type"]
@@ -437,12 +605,14 @@ async def _execute_tool(
             return f"Unknown call type: {call_type_str}"
         question = await db.get_page(full_id)
         headline = question.headline if question else qid_short
-        return json.dumps({
-            "__async_dispatch__": True,
-            "question_id": full_id,
-            "headline": headline,
-            "call_type": call_type_str,
-        })
+        return json.dumps(
+            {
+                "__async_dispatch__": True,
+                "question_id": full_id,
+                "headline": headline,
+                "call_type": call_type_str,
+            }
+        )
 
     if name == "start_research":
         qid_short = tool_input["question_id"]
@@ -453,12 +623,14 @@ async def _execute_tool(
         question = await db.get_page(full_id)
         if not question:
             return f"Question '{qid_short}' not found."
-        return json.dumps({
-            "__async_research__": True,
-            "question_id": full_id,
-            "headline": question.headline,
-            "budget": budget,
-        })
+        return json.dumps(
+            {
+                "__async_research__": True,
+                "question_id": full_id,
+                "headline": question.headline,
+                "budget": budget,
+            }
+        )
 
     if name == "ingest_source":
         url = tool_input["url"]
@@ -495,7 +667,9 @@ async def _execute_tool(
                     f"targeting question {target_short}."
                 )
             else:
-                result_parts.append(f"Target question '{target_short}' not found \u2014 source saved but no extraction.")
+                result_parts.append(
+                    f"Target question '{target_short}' not found \u2014 source saved but no extraction."
+                )
         return "\n".join(result_parts)
 
     return f"Unknown tool: {name}"
@@ -579,7 +753,9 @@ async def _run_research(
         runner = cls(question_id, call, db)
         try:
             await runner.run()
-            step_summaries.append(f"  Step {i + 1}: {call_type_str} \u2014 call {call.id[:8]} completed")
+            step_summaries.append(
+                f"  Step {i + 1}: {call_type_str} \u2014 call {call.id[:8]} completed"
+            )
             if on_progress:
                 on_progress(f"Step {i + 1} done: {call_type_str} call {call.id[:8]}")
         except Exception as e:
@@ -742,8 +918,10 @@ async def handle_chat_stream(request: ChatRequest) -> StreamingResponse:
 
     full_id = await db.resolve_page_id(request.question_id)
     if not full_id:
+
         async def error_gen() -> AsyncIterator[str]:
             yield _sse("error", {"message": f"No question found matching '{request.question_id}'"})
+
         return StreamingResponse(error_gen(), media_type="text/event-stream")
 
     system_prompt = (PROMPTS_DIR / "api_chat.md").read_text(encoding="utf-8")
@@ -775,9 +953,7 @@ async def handle_chat_stream(request: ChatRequest) -> StreamingResponse:
 
                 response = await stream.get_final_message()
 
-                tool_calls = [
-                    b for b in response.content if isinstance(b, ToolUseBlock)
-                ]
+                tool_calls = [b for b in response.content if isinstance(b, ToolUseBlock)]
                 if not tool_calls:
                     break
 
@@ -790,27 +966,36 @@ async def handle_chat_stream(request: ChatRequest) -> StreamingResponse:
                     if has_async:
                         progress_q: asyncio.Queue[str] = asyncio.Queue()
                         task = asyncio.create_task(
-                            _resolve_async(result_str, db, on_progress=lambda m: progress_q.put_nowait(m))
+                            _resolve_async(
+                                result_str, db, on_progress=lambda m: progress_q.put_nowait(m)
+                            )
                         )
                         while not task.done():
                             try:
                                 msg = await asyncio.wait_for(progress_q.get(), timeout=0.5)
                                 yield _sse("orchestrator_progress", {"message": msg})
-                            except asyncio.TimeoutError:
+                            except TimeoutError:
                                 continue
                         result_str = await task
                         while not progress_q.empty():
-                            yield _sse("orchestrator_progress", {"message": progress_q.get_nowait()})
-                    yield _sse("tool_use_result", {
-                        "name": tc.name,
-                        "input": tc.input,
-                        "result": result_str[:500],
-                    })
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": tc.id,
-                        "content": result_str,
-                    })
+                            yield _sse(
+                                "orchestrator_progress", {"message": progress_q.get_nowait()}
+                            )
+                    yield _sse(
+                        "tool_use_result",
+                        {
+                            "name": tc.name,
+                            "input": tc.input,
+                            "result": result_str[:500],
+                        },
+                    )
+                    tool_results.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": tc.id,
+                            "content": result_str,
+                        }
+                    )
                 messages.append({"role": "user", "content": tool_results})
 
             yield _sse("done", {})

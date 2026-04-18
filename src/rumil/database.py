@@ -1564,15 +1564,22 @@ class DB:
         Returns (link, change_magnitude) pairs. change_magnitude comes from
         the supersession mutation event if available, otherwise None.
 
-        Issues O(1) round trips regardless of how many DEPENDS_ON links
-        or stale dependencies exist: one query for the links, one batched
-        lookup for target pages, one batched lookup for supersession
-        magnitudes.
+        Issues O(N_links / page_size) round trips to page through the
+        depends_on table, plus one batched lookup each for target pages and
+        supersession magnitudes — constant in the number of *stale* deps.
         """
-        query = self.client.table("page_links").select("*").eq("link_type", "depends_on")
-        query = self._staged_filter(query)
-        rows = _rows(await self._execute(query))
-        links = await self._apply_link_events([_row_to_link(r) for r in rows])
+        page_size = 1000
+        offset = 0
+        raw_rows: list[dict] = []
+        while True:
+            query = self.client.table("page_links").select("*").eq("link_type", "depends_on")
+            query = self._staged_filter(query)
+            rows = _rows(await self._execute(query.range(offset, offset + page_size - 1)))
+            raw_rows.extend(rows)
+            if len(rows) < page_size:
+                break
+            offset += page_size
+        links = await self._apply_link_events([_row_to_link(r) for r in raw_rows])
         if not links:
             return []
 
@@ -1599,7 +1606,7 @@ class DB:
         if self.project_id:
             project_page_ids = set()
             offset = 0
-            page_size = 2000
+            page_size = 1000
             while True:
                 pages_query = (
                     self.client.table("pages").select("id").eq("project_id", self.project_id)
@@ -1611,14 +1618,22 @@ class DB:
                     break
                 offset += page_size
 
-        query = (
-            self.client.table("page_links")
-            .select(_LINK_COLUMNS)
-            .eq("link_type", LinkType.DEPENDS_ON.value)
-        )
-        query = self._staged_filter(query)
-        rows = _rows(await self._execute(query))
-        links = await self._apply_link_events([_row_to_link(r) for r in rows])
+        page_size = 1000
+        offset = 0
+        raw_link_rows: list[dict] = []
+        while True:
+            query = (
+                self.client.table("page_links")
+                .select(_LINK_COLUMNS)
+                .eq("link_type", LinkType.DEPENDS_ON.value)
+            )
+            query = self._staged_filter(query)
+            rows = _rows(await self._execute(query.range(offset, offset + page_size - 1)))
+            raw_link_rows.extend(rows)
+            if len(rows) < page_size:
+                break
+            offset += page_size
+        links = await self._apply_link_events([_row_to_link(r) for r in raw_link_rows])
 
         counts: dict[str, int] = {}
         for link in links:

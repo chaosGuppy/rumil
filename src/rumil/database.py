@@ -2086,7 +2086,8 @@ class DB:
             params["p_staged_run_id"] = self.run_id
         rows = _rows(await self._execute(self.client.rpc("get_root_questions", params)))
         pages = [_row_to_page(r) for r in rows]
-        return pages
+        pages = await self._apply_page_events(pages)
+        return [p for p in pages if p.is_active()]
 
     async def get_human_questions(
         self,

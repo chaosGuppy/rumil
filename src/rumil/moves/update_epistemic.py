@@ -85,6 +85,7 @@ async def _context_check(payload: UpdateEpistemicPayload, state: MoveState) -> M
             state.db.client.table("mutation_events")
             .select("payload, created_at")
             .eq("target_id", page_id)
+            .eq("run_id", state.db.run_id)
             .in_("event_type", event_types)
             .order("created_at", desc=True)
             .limit(1)

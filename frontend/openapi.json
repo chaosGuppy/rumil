@@ -72,6 +72,51 @@
         }
       }
     },
+    "/api/projects/summary": {
+      "get": {
+        "summary": "List Projects Summary",
+        "description": "Per-project summary for the public landing page.\n\nOne SQL call produces every project's question_count, claim_count,\ncall_count, and last_activity_at. Consumed by the parma landing grid.",
+        "operationId": "list_projects_summary_api_projects_summary_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProjectSummaryOut"
+                  },
+                  "title": "Response List Projects Summary Api Projects Summary Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{project_id}": {
       "get": {
         "summary": "Get Project",
@@ -5554,6 +5599,57 @@
           "project_id"
         ],
         "title": "ProjectStatsOut"
+      },
+      "ProjectSummaryOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "hidden": {
+            "type": "boolean",
+            "title": "Hidden"
+          },
+          "question_count": {
+            "type": "integer",
+            "title": "Question Count"
+          },
+          "claim_count": {
+            "type": "integer",
+            "title": "Claim Count"
+          },
+          "call_count": {
+            "type": "integer",
+            "title": "Call Count"
+          },
+          "last_activity_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Last Activity At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "created_at",
+          "hidden",
+          "question_count",
+          "claim_count",
+          "call_count",
+          "last_activity_at"
+        ],
+        "title": "ProjectSummaryOut",
+        "description": "Per-project summary row for the public landing page.\n\nProduced by the list_projects_summary RPC in one N+1-free SQL call.\nSurfaced from GET /api/projects/summary."
       },
       "ProposedSubquestion": {
         "properties": {

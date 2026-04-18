@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Suspense } from "react";
 import { StackedPanes } from "@/components/StackedPanes";
@@ -16,8 +16,76 @@ import {
   InspectPanelProvider,
   useInspectPanel,
 } from "@/components/InspectPanelContext";
-import { fetchProjects, fetchRootQuestions, fetchQuestionView } from "@/lib/api";
-import type { QuestionView, Page, Project } from "@/lib/types";
+import {
+  fetchProjectsSummary,
+  fetchRootQuestions,
+  fetchQuestionView,
+} from "@/lib/api";
+import type { QuestionView, Page, Project, ProjectSummary } from "@/lib/types";
+
+const TEST_PROJECT_PATTERN = /^(test|scratch|smoke|tmp|scratchpad|skyblue-scratch|test-scratch)([-_].*)?$/i;
+
+function isTestProject(name: string): boolean {
+  return TEST_PROJECT_PATTERN.test(name);
+}
+
+type SortMode = "newest" | "oldest" | "alpha";
+const SORT_MODES: SortMode[] = ["newest", "oldest", "alpha"];
+
+function sortProjects(rows: ProjectSummary[], mode: SortMode): ProjectSummary[] {
+  const copy = [...rows];
+  switch (mode) {
+    case "newest":
+      return copy.sort(
+        (a, b) =>
+          new Date(b.last_activity_at).getTime() -
+          new Date(a.last_activity_at).getTime(),
+      );
+    case "oldest":
+      return copy.sort(
+        (a, b) =>
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+      );
+    case "alpha":
+      return copy.sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+      );
+  }
+}
+
+const SHOW_TEST_STORAGE_KEY = "parma:showTestProjects";
+const SORT_STORAGE_KEY = "parma:projectSort";
+
+function loadShowTest(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.localStorage.getItem(SHOW_TEST_STORAGE_KEY) === "1";
+}
+
+function loadSort(): SortMode {
+  if (typeof window === "undefined") return "newest";
+  const raw = window.localStorage.getItem(SORT_STORAGE_KEY);
+  return SORT_MODES.includes(raw as SortMode) ? (raw as SortMode) : "newest";
+}
+
+function formatRelative(iso: string): string {
+  const now = Date.now();
+  const then = new Date(iso).getTime();
+  const diffMs = now - then;
+  if (diffMs < 0) return "just now";
+  const mins = Math.floor(diffMs / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 14) return `${days}d ago`;
+  const weeks = Math.floor(days / 7);
+  if (weeks < 8) return `${weeks}w ago`;
+  const months = Math.floor(days / 30);
+  if (months < 18) return `${months}mo ago`;
+  const years = Math.floor(days / 365);
+  return `${years}y ago`;
+}
 
 const VIEW_MODES = ["panes", "article", "vertical", "sources"] as const;
 type ViewMode = (typeof VIEW_MODES)[number];
@@ -78,55 +146,161 @@ function ProjectBrowser({
 }: {
   onSelectProject: (project: Project) => void;
 }) {
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState<ProjectSummary[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [showTest, setShowTest] = useState(false);
+  const [sort, setSort] = useState<SortMode>("newest");
 
+  // Hydrate UI preferences from localStorage. Deferred to an effect so the
+  // first render matches the server and we don't flash-unhydrate.
   useEffect(() => {
-    fetchProjects()
-      .then(setProjects)
-      .catch(() => setProjects([]))
-      .finally(() => setLoading(false));
+    setShowTest(loadShowTest());
+    setSort(loadSort());
   }, []);
 
-  if (loading) {
+  useEffect(() => {
+    fetchProjectsSummary()
+      .then(setRows)
+      .catch((e) => setError(e?.message ?? "failed"));
+  }, []);
+
+  const persistShowTest = useCallback((next: boolean) => {
+    setShowTest(next);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(SHOW_TEST_STORAGE_KEY, next ? "1" : "0");
+    }
+  }, []);
+
+  const persistSort = useCallback((next: SortMode) => {
+    setSort(next);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(SORT_STORAGE_KEY, next);
+    }
+  }, []);
+
+  const filtered = useMemo(() => {
+    if (!rows) return null;
+    const live = showTest ? rows : rows.filter((r) => !isTestProject(r.name));
+    return sortProjects(live, sort);
+  }, [rows, showTest, sort]);
+
+  const hiddenTestCount = useMemo(() => {
+    if (!rows) return 0;
+    return showTest ? 0 : rows.filter((r) => isTestProject(r.name)).length;
+  }, [rows, showTest]);
+
+  if (!rows && !error) {
+    return <div className="browser-loading">Loading projects...</div>;
+  }
+
+  if (error) {
     return (
-      <div className="browser-loading">Loading projects...</div>
+      <div className="view-error">
+        Could not load projects: {error}
+        <br />
+        Is the rumil API running? (./scripts/dev-api.sh)
+      </div>
     );
   }
 
+  const projects = filtered ?? [];
+
   return (
-    <div className="browser">
-      <div className="browser-header">
-        <h1 className="browser-title">Research</h1>
-        <p className="browser-subtitle">
-          Research projects. Pick one to explore.
-        </p>
-      </div>
-
-      {projects.length > 0 && (
-        <div className="browser-list">
-          {projects.map((project) => (
-            <button
-              key={project.id}
-              className="browser-card"
-              onClick={() => onSelectProject(project)}
-            >
-              <div className="browser-card-name">{project.name}</div>
-              <div className="browser-card-stats">
-                {new Date(project.created_at).toLocaleDateString("en-US", {
-                  year: "numeric",
-                  month: "short",
-                  day: "numeric",
-                })}
-              </div>
-            </button>
-          ))}
+    <div className="landing">
+      <header className="landing-header">
+        <div className="landing-header-inner">
+          <h1 className="landing-title">Research</h1>
+          <p className="landing-subtitle">
+            An index of investigations. Each project is a living graph of
+            questions, claims, and the calls that produced them.
+          </p>
         </div>
-      )}
 
-      {projects.length === 0 && (
-        <div style={{ padding: "20px 0", color: "var(--fg-muted)", fontSize: "14px" }}>
-          No projects found. Start the rumil API and create a workspace.
+        <div className="landing-controls">
+          <div className="landing-sort" role="tablist" aria-label="Sort">
+            {SORT_MODES.map((mode) => (
+              <button
+                key={mode}
+                role="tab"
+                aria-selected={sort === mode}
+                className={`landing-sort-btn ${sort === mode ? "active" : ""}`}
+                onClick={() => persistSort(mode)}
+              >
+                {mode}
+              </button>
+            ))}
+          </div>
+
+          <label className="landing-toggle">
+            <input
+              type="checkbox"
+              checked={showTest}
+              onChange={(e) => persistShowTest(e.target.checked)}
+            />
+            <span>
+              show test projects
+              {hiddenTestCount > 0 && (
+                <em className="landing-toggle-hint">({hiddenTestCount} hidden)</em>
+              )}
+            </span>
+          </label>
+        </div>
+      </header>
+
+      {projects.length === 0 ? (
+        <div className="landing-empty">
+          {rows && rows.length > 0
+            ? "All projects filtered out. Toggle 'show test projects' to reveal them."
+            : "No projects found. Start the rumil API and create a workspace."}
+        </div>
+      ) : (
+        <div className="landing-grid">
+          {projects.map((p) => {
+            const empty =
+              p.question_count === 0 &&
+              p.claim_count === 0 &&
+              p.call_count === 0;
+            return (
+              <button
+                key={p.id}
+                className={`landing-card ${empty ? "is-empty" : ""}`}
+                onClick={() =>
+                  onSelectProject({
+                    id: p.id,
+                    name: p.name,
+                    created_at: p.created_at,
+                    hidden: p.hidden,
+                  })
+                }
+              >
+                <div className="landing-card-top">
+                  <div className="landing-card-name">{p.name}</div>
+                  {empty && (
+                    <span className="landing-card-empty-badge">empty</span>
+                  )}
+                </div>
+
+                <dl className="landing-card-stats">
+                  <div className="landing-stat">
+                    <dt>questions</dt>
+                    <dd>{p.question_count}</dd>
+                  </div>
+                  <div className="landing-stat">
+                    <dt>claims</dt>
+                    <dd>{p.claim_count}</dd>
+                  </div>
+                  <div className="landing-stat">
+                    <dt>calls</dt>
+                    <dd>{p.call_count}</dd>
+                  </div>
+                </dl>
+
+                <div className="landing-card-foot">
+                  <span>last activity {formatRelative(p.last_activity_at)}</span>
+                </div>
+              </button>
+            );
+          })}
         </div>
       )}
     </div>

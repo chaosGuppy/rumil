@@ -61,6 +61,25 @@ class PageCountsOut(BaseModel):
     judgements: int
 
 
+class ProjectSummaryOut(BaseModel):
+    """Per-project summary row for the public landing page.
+
+    Produced by the list_projects_summary RPC in one N+1-free SQL call.
+    Surfaced from GET /api/projects/summary.
+    """
+
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    id: str
+    name: str
+    created_at: datetime
+    hidden: bool
+    question_count: int
+    claim_count: int
+    call_count: int
+    last_activity_at: datetime
+
+
 class _TraceEnvelopeMixin(BaseModel):
     model_config = ConfigDict(json_schema_extra=_all_fields_required)
 

@@ -84,3 +84,16 @@ export interface Project {
   created_at: string;
   hidden: boolean;
 }
+
+// Mirrors ProjectSummaryOut in src/rumil/api/schemas.py. Produced by the
+// list_projects_summary RPC in a single SQL call.
+export interface ProjectSummary {
+  id: string;
+  name: string;
+  created_at: string;
+  hidden: boolean;
+  question_count: number;
+  claim_count: number;
+  call_count: number;
+  last_activity_at: string;
+}

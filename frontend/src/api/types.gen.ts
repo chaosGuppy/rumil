@@ -1699,6 +1699,49 @@ export type ProjectStatsOut = {
 };
 
 /**
+ * ProjectSummaryOut
+ *
+ * Per-project summary row for the public landing page.
+ *
+ * Produced by the list_projects_summary RPC in one N+1-free SQL call.
+ * Surfaced from GET /api/projects/summary.
+ */
+export type ProjectSummaryOut = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Hidden
+     */
+    hidden: boolean;
+    /**
+     * Question Count
+     */
+    question_count: number;
+    /**
+     * Claim Count
+     */
+    claim_count: number;
+    /**
+     * Call Count
+     */
+    call_count: number;
+    /**
+     * Last Activity At
+     */
+    last_activity_at: string;
+};
+
+/**
  * ProposedSubquestion
  */
 export type ProposedSubquestion = {
@@ -2694,6 +2737,38 @@ export type ListProjectsApiProjectsGetResponses = {
 };
 
 export type ListProjectsApiProjectsGetResponse = ListProjectsApiProjectsGetResponses[keyof ListProjectsApiProjectsGetResponses];
+
+export type ListProjectsSummaryApiProjectsSummaryGetData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/projects/summary';
+};
+
+export type ListProjectsSummaryApiProjectsSummaryGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListProjectsSummaryApiProjectsSummaryGetError = ListProjectsSummaryApiProjectsSummaryGetErrors[keyof ListProjectsSummaryApiProjectsSummaryGetErrors];
+
+export type ListProjectsSummaryApiProjectsSummaryGetResponses = {
+    /**
+     * Response List Projects Summary Api Projects Summary Get
+     *
+     * Successful Response
+     */
+    200: Array<ProjectSummaryOut>;
+};
+
+export type ListProjectsSummaryApiProjectsSummaryGetResponse = ListProjectsSummaryApiProjectsSummaryGetResponses[keyof ListProjectsSummaryApiProjectsSummaryGetResponses];
 
 export type GetProjectApiProjectsProjectIdGetData = {
     body?: never;

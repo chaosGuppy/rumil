@@ -1,5 +1,6 @@
 import type {
   Project,
+  ProjectSummary,
   Page,
   PageLink,
   QuestionView,
@@ -12,6 +13,15 @@ export async function fetchProjects(): Promise<Project[]> {
   if (!res.ok) throw new Error(`API error: ${res.status}`);
   const projects: Project[] = await res.json();
   return projects.filter((p) => !p.hidden);
+}
+
+// Landing-page summary: one row per project with question/claim/call counts
+// and last_activity_at, computed server-side by the list_projects_summary
+// RPC in a single SQL query.
+export async function fetchProjectsSummary(): Promise<ProjectSummary[]> {
+  const res = await fetch(`${API_BASE}/api/projects/summary`);
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  return res.json();
 }
 
 export async function fetchRootQuestions(

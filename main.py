@@ -531,6 +531,60 @@ async def cmd_draft_artifact(
         print("\nNo artifact was created.")
 
 
+async def cmd_refine_artifact(
+    question_id: str,
+    shape: ArtifactShape,
+    db: DB,
+    *,
+    budget: int | None = None,
+    max_iterations: int | None = None,
+    name: str = "",
+) -> None:
+    """Run the draft -> adversarial review -> refine loop on a question's View."""
+    from rumil.orchestrators import RefineArtifactOrchestrator
+
+    resolved_id = await db.resolve_page_id(question_id) or question_id
+    question = await db.get_page(resolved_id)
+    if not question:
+        print(f"Error: question '{question_id}' not found. Run --list to see existing questions.")
+        sys.exit(1)
+    if question.page_type != PageType.QUESTION:
+        print(f"Error: page '{question_id}' is a {question.page_type.value}, not a question.")
+        sys.exit(1)
+
+    if question.project_id and question.project_id != db.project_id:
+        db.project_id = question.project_id
+
+    effective_budget = budget if budget is not None else 10
+    await db.init_budget(effective_budget)
+    await db.create_run(
+        name=name or f"refine-artifact ({shape}): {question.headline[:80]}",
+        question_id=resolved_id,
+        config=get_settings().capture_config(),
+    )
+
+    frontend = get_settings().frontend_url.rstrip("/")
+    print(f"\nRefining artifact (shape={shape}) for: {question.headline[:80]}")
+    print(f"Budget: {effective_budget} calls")
+    print(f"Trace:  {frontend}/traces/{db.run_id}\n")
+
+    orch = RefineArtifactOrchestrator(
+        db,
+        question_id=resolved_id,
+        shape=shape,
+        max_iterations=max_iterations,
+    )
+    result = await orch.run()
+
+    print(f"\nOutcome: {result.outcome}  (iterations: {result.iteration_count})")
+    if result.final_artifact_id:
+        artifact = await db.get_page(result.final_artifact_id)
+        if artifact:
+            print(f"Final artifact: {result.final_artifact_id}")
+            print(f"Title:          {artifact.headline}")
+            print(f"Page:           {frontend}/pages/{result.final_artifact_id}")
+
+
 async def cmd_summary(
     question_id: str,
     db: DB,
@@ -1111,6 +1165,22 @@ async def async_main():
         "question's View. Single-pass render, no refinement loop.",
     )
     parser.add_argument(
+        "--refine-artifact",
+        dest="refine_artifact_id",
+        metavar="QUESTION_ID",
+        help="Run the draft -> adversarial review -> refine loop on a "
+        "question's View. Composes DraftArtifactCall + AdversarialReviewCall; "
+        "terminates on accept, iteration cap, budget exhaustion, or stuck dissents.",
+    )
+    parser.add_argument(
+        "--refine-max-iterations",
+        dest="refine_max_iterations",
+        type=int,
+        default=None,
+        help="Override the max refinement iterations for --refine-artifact "
+        "(default: refine_artifact_max_iterations setting, 3).",
+    )
+    parser.add_argument(
         "--shape",
         dest="artifact_shape",
         default=DEFAULT_SHAPE,
@@ -1314,6 +1384,16 @@ async def async_main():
             args.draft_artifact_id,
             args.artifact_shape,
             db,
+            name=args.run_name,
+        )
+        return
+    elif args.refine_artifact_id:
+        await cmd_refine_artifact(
+            args.refine_artifact_id,
+            args.artifact_shape,
+            db,
+            budget=args.budget,
+            max_iterations=args.refine_max_iterations,
             name=args.run_name,
         )
         return

@@ -58,9 +58,22 @@ class QuestionState:
 
     recent_call_types: Sequence[CallType]
 
+    consideration_page_ids: Sequence[str] = field(default_factory=tuple)
+    child_question_ids: Sequence[str] = field(default_factory=tuple)
+
     @property
     def page_count(self) -> int:
         return self.consideration_count + self.child_question_count
+
+    @property
+    def view_scope_page_ids(self) -> frozenset[str]:
+        """Page IDs that belong to this question's view scope.
+
+        Question itself + considerations + child questions. Used by
+        policies that need to match pending suggestions (e.g.
+        cascade-review targets) against the current research subtree.
+        """
+        return frozenset((self.question_id, *self.consideration_page_ids, *self.child_question_ids))
 
     @classmethod
     async def capture(
@@ -124,6 +137,8 @@ class QuestionState:
             missing_importance_item_ids=missing_importance,
             unjudged_child_question_ids=unjudged_children,
             recent_call_types=recent_call_types,
+            consideration_page_ids=tuple(p.id for p in consideration_pages),
+            child_question_ids=tuple(child_ids),
         )
 
 

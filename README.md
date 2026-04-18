@@ -90,6 +90,11 @@ uv run python main.py --report QUESTION_ID
 # --shape options: strategy_brief (default), scenario_forecast, market_research
 uv run python main.py --draft-artifact QUESTION_ID --shape strategy_brief
 
+# Draft + adversarial review + refine loop (up to N iterations).
+# Terminates on: accept, iteration cap, budget exhaustion, or stuck dissents.
+# --refine-max-iterations overrides the default of 3.
+uv run python main.py --refine-artifact QUESTION_ID --shape strategy_brief --budget 10
+
 # Evaluate the judgement quality for a question
 uv run python main.py --evaluate QUESTION_ID
 

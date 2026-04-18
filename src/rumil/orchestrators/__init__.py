@@ -27,18 +27,33 @@ from rumil.orchestrators.common import (
     web_research_question,
 )
 from rumil.orchestrators.critique_first import CritiqueFirstOrchestrator
-from rumil.orchestrators.distill_first import DistillFirstOrchestrator
 from rumil.orchestrators.experimental import ExperimentalOrchestrator
 from rumil.orchestrators.global_prio import GlobalPrioOrchestrator
+from rumil.orchestrators.policies import (
+    distill_first_policies,
+    worldview_policies,
+)
+from rumil.orchestrators.policy_layer import PolicyOrchestrator
+from rumil.orchestrators.refine_artifact import (
+    RefineArtifactOrchestrator,
+    RefineArtifactResult,
+    RefineIteration,
+)
 from rumil.orchestrators.source_first import SourceFirstOrchestrator
 from rumil.orchestrators.two_phase import TwoPhaseOrchestrator
-from rumil.orchestrators.worldview import WorldviewOrchestrator
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
 
 
-def Orchestrator(db: DB, broadcaster: Broadcaster | None = None) -> BaseOrchestrator:
-    """Factory function: returns the appropriate orchestrator subclass."""
+def Orchestrator(db: DB, broadcaster: Broadcaster | None = None):
+    """Factory function: returns the appropriate orchestrator subclass.
+
+    Returns ``BaseOrchestrator`` for most variants, or
+    ``RefineArtifactOrchestrator`` when ``prioritizer_variant='refine_artifact'``.
+    The latter shares the ``run(question_id)`` interface but is not a
+    ``BaseOrchestrator`` subclass — it composes existing calls rather than
+    driving prioritization.
+    """
     settings = get_settings()
     variant = settings.prioritizer_variant
     if variant == "two_phase":
@@ -46,15 +61,17 @@ def Orchestrator(db: DB, broadcaster: Broadcaster | None = None) -> BaseOrchestr
     elif variant == "experimental":
         orch = ExperimentalOrchestrator(db, broadcaster)
     elif variant == "worldview":
-        orch = WorldviewOrchestrator(db, broadcaster)
+        orch = PolicyOrchestrator(db, worldview_policies(db), broadcaster)
     elif variant == "distill_first":
-        orch = DistillFirstOrchestrator(db, broadcaster)
+        orch = PolicyOrchestrator(db, distill_first_policies(), broadcaster)
     elif variant == "critique_first":
         orch = CritiqueFirstOrchestrator(db, broadcaster)
     elif variant == "cascade":
         orch = CascadeOrchestrator(db, broadcaster)
     elif variant == "source_first":
         orch = SourceFirstOrchestrator(db, broadcaster)
+    elif variant == "refine_artifact":
+        return RefineArtifactOrchestrator(db, broadcaster)
     else:
         raise ValueError(f"Unknown prioritizer_variant: {variant}")
 
@@ -71,23 +88,27 @@ __all__ = [
     "ClaimScore",
     "ClaimScoringResult",
     "CritiqueFirstOrchestrator",
-    "DistillFirstOrchestrator",
     "ExperimentalOrchestrator",
     "FruitResult",
     "GlobalPrioOrchestrator",
     "Orchestrator",
+    "PolicyOrchestrator",
     "PrioritizationResult",
+    "RefineArtifactOrchestrator",
+    "RefineArtifactResult",
+    "RefineIteration",
     "SubquestionScore",
     "SubquestionScoringResult",
     "TwoPhaseOrchestrator",
-    "WorldviewOrchestrator",
     "assess_question",
     "compute_priority_score",
     "create_root_question",
     "create_view_for_question",
+    "distill_first_policies",
     "find_considerations_until_done",
     "ingest_until_done",
     "score_items_sequentially",
     "update_view_for_question",
     "web_research_question",
+    "worldview_policies",
 ]

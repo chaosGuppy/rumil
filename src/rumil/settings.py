@@ -69,6 +69,8 @@ class Settings(BaseSettings):
 
     enable_adversarial_review: bool = _capture_field(default=False)
     adversarial_review_credence_threshold: int = _capture_field(default=6)
+    refine_artifact_max_iterations: int = _capture_field(default=3)
+    refine_artifact_accept_confidence: int = _capture_field(default=6)
     enable_flag_issue: bool = _capture_field(default=False)
     enable_annotation_moves: bool = _capture_field(default=False)
 

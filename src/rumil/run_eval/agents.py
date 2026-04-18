@@ -46,4 +46,9 @@ EVAL_AGENTS: Sequence[EvalAgentSpec] = [
         display_name="Calibration",
         prompt_file="run-eval-calibration.md",
     ),
+    EvalAgentSpec(
+        name="quality_control",
+        display_name="Quality Control",
+        prompt_file="run-eval-quality-control.md",
+    ),
 ]

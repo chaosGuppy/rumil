@@ -50,6 +50,7 @@ export default function ReputationPage() {
   const [projectName, setProjectName] = useState<string>();
   const [summary, setSummary] = useState<ReputationSummaryOut | null>(null);
   const [events, setEvents] = useState<ReputationEvent[]>([]);
+  const [qcFindings, setQcFindings] = useState<ReputationEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -82,6 +83,16 @@ export default function ReputationPage() {
     eventsQs.set("limit", "20");
     const eventsUrl = `${API_BASE}/api/projects/${projectId}/reputation/events?${eventsQs.toString()}`;
 
+    // Separate fetch for QC findings so the "Quality issues" panel always
+    // reflects the full QC picture for the active filter set, not just the
+    // most recent 20 mixed events. Limit is generous but bounded.
+    const qcQs = new URLSearchParams();
+    if (orchestrator) qcQs.set("orchestrator", orchestrator);
+    qcQs.set("source", "eval_agent");
+    qcQs.set("dimension", "quality_control");
+    qcQs.set("limit", "200");
+    const qcUrl = `${API_BASE}/api/projects/${projectId}/reputation/events?${qcQs.toString()}`;
+
     Promise.all([
       fetch(summaryUrl, { cache: "no-store" }).then(async (r) => {
         if (!r.ok) throw new Error(`summary ${r.status}`);
@@ -91,10 +102,15 @@ export default function ReputationPage() {
         if (!r.ok) throw new Error(`events ${r.status}`);
         return (await r.json()) as ReputationEvent[];
       }),
+      fetch(qcUrl, { cache: "no-store" }).then(async (r) => {
+        if (!r.ok) throw new Error(`qc ${r.status}`);
+        return (await r.json()) as ReputationEvent[];
+      }),
     ])
-      .then(([s, e]) => {
+      .then(([s, e, qc]) => {
         setSummary(s);
         setEvents(e);
+        setQcFindings(qc.filter((ev) => ev.score < 0));
         setLoading(false);
       })
       .catch((e) => {
@@ -330,6 +346,103 @@ export default function ReputationPage() {
           border-style: dashed;
         }
 
+        .rep-qc {
+          margin-top: 2.5rem;
+          border: 1px solid var(--color-border);
+        }
+        .rep-qc-header {
+          display: flex;
+          align-items: baseline;
+          justify-content: space-between;
+          padding: 0.55rem 0.75rem;
+          border-bottom: 1px solid var(--color-border);
+          background: var(--color-surface);
+        }
+        .rep-qc-title {
+          font-size: 0.85rem;
+          font-weight: 600;
+          font-family: var(--font-geist-mono), monospace;
+          letter-spacing: 0.02em;
+        }
+        .rep-qc-subtitle {
+          font-size: 0.7rem;
+          color: var(--color-muted);
+          font-family: var(--font-geist-mono), monospace;
+        }
+        .rep-qc-list {
+          display: flex;
+          flex-direction: column;
+        }
+        .rep-qc-row {
+          display: grid;
+          grid-template-columns: 5.5rem 9rem 1fr;
+          gap: 0.75rem;
+          padding: 0.55rem 0.75rem;
+          border-bottom: 1px solid var(--color-border);
+          align-items: baseline;
+          font-size: 0.8rem;
+        }
+        .rep-qc-row:last-child {
+          border-bottom: none;
+        }
+        .rep-qc-sev {
+          font-family: var(--font-geist-mono), monospace;
+          font-size: 0.65rem;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          padding: 0.1rem 0.4rem;
+          border: 1px solid var(--color-border);
+          align-self: start;
+          justify-self: start;
+        }
+        .rep-qc-sev.critical {
+          color: #b54a3b;
+          border-color: #b54a3b;
+        }
+        .rep-qc-sev.moderate {
+          color: #a87a2b;
+          border-color: #a87a2b;
+        }
+        .rep-qc-sev.low {
+          color: var(--color-muted);
+        }
+        .rep-qc-kind {
+          font-family: var(--font-geist-mono), monospace;
+          font-size: 0.75rem;
+          color: var(--color-muted);
+        }
+        .rep-qc-body {
+          display: flex;
+          flex-direction: column;
+          gap: 0.3rem;
+        }
+        .rep-qc-evidence {
+          line-height: 1.4;
+        }
+        .rep-qc-fix {
+          font-size: 0.72rem;
+          color: var(--color-muted);
+          font-style: italic;
+        }
+        .rep-qc-pages {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.3rem;
+          font-family: var(--font-geist-mono), monospace;
+          font-size: 0.7rem;
+        }
+        .rep-qc-pages a {
+          color: var(--color-muted);
+          text-decoration: none;
+          padding: 0.05rem 0.35rem;
+          border: 1px solid var(--color-border);
+          transition: all 0.12s ease;
+        }
+        .rep-qc-pages a:hover {
+          color: var(--color-foreground);
+          border-color: var(--color-accent);
+        }
+
         .rep-events {
           margin-top: 2.5rem;
         }
@@ -558,6 +671,63 @@ export default function ReputationPage() {
                 </table>
               </div>
             ))
+          )}
+
+          {qcFindings.length > 0 && (
+            <div className="rep-qc">
+              <div className="rep-qc-header">
+                <span className="rep-qc-title">Quality issues</span>
+                <span className="rep-qc-subtitle">
+                  {qcFindings.length} finding
+                  {qcFindings.length === 1 ? "" : "s"} from quality_control
+                  agent
+                </span>
+              </div>
+              <div className="rep-qc-list">
+                {qcFindings.map((f) => {
+                  const extra = (f.extra ?? {}) as {
+                    kind?: string;
+                    severity?: string;
+                    page_ids?: string[];
+                    evidence?: string;
+                    suggested_fix?: string;
+                  };
+                  const sev = (extra.severity ?? "low").toLowerCase();
+                  const kind = extra.kind ?? "other";
+                  const pages = extra.page_ids ?? [];
+                  return (
+                    <div key={f.id} className="rep-qc-row">
+                      <span className={`rep-qc-sev ${sev}`}>{sev}</span>
+                      <span className="rep-qc-kind">{kind}</span>
+                      <div className="rep-qc-body">
+                        <span className="rep-qc-evidence">
+                          {extra.evidence ?? "(no evidence given)"}
+                        </span>
+                        {extra.suggested_fix && (
+                          <span className="rep-qc-fix">
+                            fix: {extra.suggested_fix}
+                          </span>
+                        )}
+                        {pages.length > 0 && (
+                          <div className="rep-qc-pages">
+                            {pages.map((pid) => (
+                              <Link
+                                key={pid}
+                                href={`/projects/${projectId}/pages/${pid}`}
+                              >
+                                {pid.length > 10
+                                  ? `${pid.slice(0, 8)}\u2026`
+                                  : pid}
+                              </Link>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           )}
 
           <div className="rep-events">

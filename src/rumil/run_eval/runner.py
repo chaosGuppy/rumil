@@ -3,7 +3,7 @@
 import asyncio
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -18,6 +18,13 @@ from rumil.run_eval.baselines import (
     SingleCallBaselineResult,
     render_baseline_view,
     run_single_call_baseline,
+)
+from rumil.run_eval.quality_control import (
+    QualityControlFinding,
+    cap_findings,
+    format_findings_markdown,
+    parse_findings_from_report,
+    severity_to_score,
 )
 from rumil.run_eval.report import format_run_eval_report, save_run_eval_report
 from rumil.sdk_agent import SdkAgentConfig, run_sdk_agent
@@ -82,6 +89,55 @@ async def _record_eval_reputation(
     )
 
 
+async def _record_qc_findings_reputation(
+    parent_db: DB,
+    *,
+    findings: Sequence[QualityControlFinding],
+    run_id: str,
+    question_id: str,
+    call_id: str,
+) -> None:
+    """Emit one negative-score reputation event per QC finding.
+
+    Each finding's severity maps to a negative score (see
+    ``severity_to_score``) so the ``quality_control`` dimension's mean
+    score tracks "how many quality deficits did this run ship". Raw events
+    remain per-finding — no collapsing at write time. The findings
+    themselves are also persisted on the run_eval_report JSONB so the
+    dashboard can render the full detail, not just the score.
+    """
+    if not findings:
+        return
+    run_row = await parent_db.get_run(run_id)
+    config = (run_row or {}).get("config") or {}
+    orchestrator = config.get("orchestrator") if isinstance(config, dict) else None
+
+    task_shape: dict | None = None
+    question = await parent_db.get_page(question_id)
+    if question is not None:
+        extra = question.extra or {}
+        if isinstance(extra.get("task_shape"), dict):
+            task_shape = extra["task_shape"]
+
+    for finding in findings:
+        await parent_db.record_reputation_event(
+            source="eval_agent",
+            dimension="quality_control",
+            score=severity_to_score(finding.severity),
+            orchestrator=orchestrator,
+            task_shape=task_shape,
+            source_call_id=call_id,
+            extra={
+                "subject_run_id": run_id,
+                "kind": finding.kind,
+                "severity": finding.severity.value,
+                "page_ids": list(finding.page_ids),
+                "evidence": finding.evidence,
+                "suggested_fix": finding.suggested_fix,
+            },
+        )
+
+
 def build_system_prompt(
     spec: EvalAgentSpec,
     all_agents: Sequence[EvalAgentSpec] = (),
@@ -117,6 +173,7 @@ class RunEvalResult:
     display_name: str
     report: str
     call_id: str
+    findings: list[QualityControlFinding] = field(default_factory=list)
 
 
 async def evaluate_run_with_agent(
@@ -228,6 +285,22 @@ async def evaluate_run_with_agent(
                 spec.name,
                 run_id,
             )
+        if spec.name == "quality_control":
+            try:
+                raw_findings = parse_findings_from_report(report_text)
+                findings = cap_findings(raw_findings)
+                await _record_qc_findings_reputation(
+                    parent_db,
+                    findings=findings,
+                    run_id=run_id,
+                    question_id=question_id,
+                    call_id=call.id,
+                )
+            except Exception:
+                log.exception(
+                    "QC findings hook failed for run %s",
+                    run_id,
+                )
     except Exception:
         log.exception(
             "Eval agent %s failed for run %s",
@@ -334,6 +407,11 @@ async def run_run_eval(
             display_name=spec.display_name,
             report=t.result()[0],
             call_id=t.result()[1].id,
+            findings=(
+                cap_findings(parse_findings_from_report(t.result()[0]))
+                if spec.name == "quality_control"
+                else []
+            ),
         )
         for spec, t in zip(agents, tasks)
     ]
@@ -344,6 +422,13 @@ async def run_run_eval(
 
     overall_assessment = await _generate_run_assessment(agent_reports)
     aggregate = format_run_eval_report(agent_reports, run_id, overall_assessment)
+    qc_findings_all: list[QualityControlFinding] = [f for r in eval_results for f in r.findings]
+    if qc_findings_all:
+        aggregate += (
+            "\n---\n\n"
+            "# Quality Control Findings (structured)\n\n"
+            f"{format_findings_markdown(qc_findings_all)}\n"
+        )
     if baseline_result is not None:
         aggregate += (
             "\n---\n\n"
@@ -367,6 +452,7 @@ async def run_run_eval(
             "display_name": r.display_name,
             "report": r.report,
             "call_id": r.call_id,
+            "findings": [f.model_dump(mode="json") for f in r.findings],
         }
         for r in eval_results
     ]

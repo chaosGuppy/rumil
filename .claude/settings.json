@@ -35,7 +35,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "jq -r '.tool_input.file_path' | { read -r f; case \"$f\" in *.ts|*.tsx) cd frontend && npx tsc --noEmit;; *) exit 0;; esac; }"
+            "command": "jq -r '.tool_input.file_path' | { read -r f; case \"$f\" in */parma/*.ts|*/parma/*.tsx) cd parma && npx tsc --noEmit;; *.ts|*.tsx) cd frontend && npx tsc --noEmit;; *) exit 0;; esac; }"
           }
         ]
       },

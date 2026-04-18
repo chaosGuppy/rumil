@@ -207,7 +207,6 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
                     )
                     if self._sequence_id is not None:
                         self._seq_position += 2
-                    await self._maybe_adversarial_review(claim_id)
 
                 if last_call:
                     break

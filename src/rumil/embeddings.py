@@ -136,11 +136,17 @@ async def search_pages_by_vector(
     match_count: int = 10,
     workspace: Workspace | None = None,
     field_name: str | None = None,
+    project_id: str | None = None,
 ) -> list[tuple[Page, float]]:
     """Search for pages similar to a given embedding vector.
 
     Returns (page, similarity_score) pairs sorted by descending similarity.
     Optionally filter to embeddings of a specific field_name.
+
+    ``project_id`` explicitly scopes the search. When not supplied, falls back
+    to ``db.project_id`` (the default for most callers). Pass an explicit
+    value at call sites where cross-project leakage would be a bug and you
+    want to make intent visible.
     """
     embedding_str = "[" + ",".join(str(x) for x in query_embedding) + "]"
     params: dict[str, Any] = {
@@ -150,8 +156,9 @@ async def search_pages_by_vector(
     }
     if workspace:
         params["filter_workspace"] = workspace.value
-    if db.project_id:
-        params["filter_project_id"] = db.project_id
+    effective_project_id = project_id if project_id is not None else db.project_id
+    if effective_project_id:
+        params["filter_project_id"] = effective_project_id
     if field_name:
         params["filter_field_name"] = field_name
     if db.staged:

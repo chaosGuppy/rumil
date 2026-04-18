@@ -552,6 +552,13 @@ async def assess_question(
     When ``sequence_id`` is provided, the summarise call is placed at
     ``sequence_position`` and the assess call at ``sequence_position + 1``.
     Callers should account for two positions being consumed.
+
+    After the assess completes, if ``settings.enable_adversarial_review`` is
+    True, the assessed page's latest judgement has credence >= the configured
+    threshold, and the page has not already been adversarially reviewed, an
+    adversarial review is dispatched. The review is budget-neutral (it does
+    not consume research budget). Failures are logged and swallowed so the
+    assess result is not affected.
     """
     log.info("assess_question: question=%s", question_id[:8])
     if not await _consume_budget(db, force=force):
@@ -578,7 +585,76 @@ async def assess_question(
     cls = ASSESS_CALL_CLASSES[get_settings().assess_call_variant]
     assess = cls(question_id, call, db, broadcaster=broadcaster)
     await assess.run()
+
+    try:
+        await _maybe_adversarial_review_after_assess(
+            question_id,
+            call,
+            db,
+            broadcaster=broadcaster,
+        )
+    except Exception:
+        log.warning(
+            "assess_question: adversarial-review gate raised for %s — continuing",
+            question_id[:8],
+            exc_info=True,
+        )
+
     return call.id
+
+
+async def _maybe_adversarial_review_after_assess(
+    question_id: str,
+    assess_call: Call,
+    db: DB,
+    broadcaster: Broadcaster | None = None,
+) -> None:
+    """Post-assess gate: fire adversarial review when the assessed page's
+    latest judgement crosses the credence threshold.
+
+    Shared by all orchestrators via ``assess_question``. Budget-neutral.
+    Skipped when the feature is disabled, the page has no judgement, the
+    judgement's credence is below threshold, or the page has already been
+    adversarially reviewed (``has_adversarial_review``).
+    """
+    settings = get_settings()
+    if not settings.enable_adversarial_review:
+        return
+    threshold = settings.adversarial_review_credence_threshold
+
+    judgements = await db.get_judgements_for_question(question_id)
+    if not judgements:
+        return
+    latest = max(judgements, key=lambda j: j.created_at)
+    if latest.credence is None or latest.credence < threshold:
+        return
+
+    if await has_adversarial_review(db, question_id):
+        log.info(
+            "adversarial-review gate: page %s already reviewed, skipping",
+            question_id[:8],
+        )
+        return
+
+    log.info(
+        "adversarial-review gate: firing review for %s (credence=%d)",
+        question_id[:8],
+        latest.credence,
+    )
+    verdict = await adversarially_review_claim(
+        db,
+        assess_call,
+        question_id,
+        broadcaster=broadcaster,
+    )
+    if verdict is not None and not verdict.claim_holds:
+        log.info(
+            "adversarial-review gate: verdict says %s does NOT hold "
+            "(stronger_side=%s, confidence=%d)",
+            question_id[:8],
+            verdict.stronger_side,
+            verdict.confidence,
+        )
 
 
 async def adversarially_review_claim(

@@ -1,11 +1,15 @@
 """Tests for question_triage (assess-on-creation)."""
 
+import uuid
+
 import pytest
 
+from rumil.database import DB
 from rumil.llm import StructuredCallResult
 from rumil.models import Page, PageLayer, PageType, Workspace
 from rumil.question_triage import (
     TriageVerdict,
+    _fetch_neighbors,
     auto_triage_and_save,
     triage_question,
 )
@@ -171,6 +175,81 @@ async def test_auto_triage_disabled_is_noop(tmp_db, mocker):
     stored = await tmp_db.get_page(page.id)
     assert stored is not None
     assert "triage" not in (stored.extra or {})
+
+
+async def test_triage_scopes_neighbor_search_to_current_project(tmp_db, mocker):
+    """Regression for wave-7 bug: cross-project false-positive duplicates.
+
+    The bug: on an empty project B, the root question got duplicate=True
+    because the embedding search returned matches from project A (e.g. the
+    metr or redwood workspaces). Fix: neighbor search must be scoped to
+    ``db.project_id``.
+
+    This asserts the fix at the boundary where it matters: the underlying
+    ``search_pages_by_vector`` call receives a ``project_id`` kwarg equal to
+    the current db's project — if someone removes that scoping in the future,
+    this test fails.
+    """
+    mocker.patch("rumil.question_triage.embed_query", return_value=[0.0] * 1024)
+    search_mock = mocker.patch(
+        "rumil.question_triage.search_pages_by_vector",
+        return_value=[],
+    )
+
+    assert tmp_db.project_id is not None
+    neighbors = await _fetch_neighbors(
+        tmp_db,
+        question_headline="Will frontier labs pool safety research by 2027?",
+        question_abstract=None,
+        exclude_ids=set(),
+    )
+
+    assert neighbors == []
+    assert search_mock.call_count == 1
+    kwargs = search_mock.call_args.kwargs
+    assert kwargs.get("project_id") == tmp_db.project_id
+
+
+async def test_triage_does_not_flag_duplicate_from_other_project(tmp_db, mocker):
+    """End-to-end: a near-duplicate question in project A must not cause a
+    new project-B question to be flagged as duplicate."""
+    project_a = await tmp_db.get_or_create_project(f"triage-other-{uuid.uuid4().hex[:8]}")
+    other_db = await DB.create(run_id=str(uuid.uuid4()))
+    other_db.project_id = project_a.id
+    await other_db.init_budget(10)
+    try:
+        near_dupe = _question(
+            "How often do AI companies go bankrupt in their second year?",
+            abstract="Historical base-rate analysis.",
+        )
+        await other_db.save_page(near_dupe)
+
+        async def fake_search(db, *_args, **kwargs):
+            if kwargs.get("project_id") == project_a.id:
+                return [(near_dupe, 0.98)]
+            return []
+
+        mocker.patch("rumil.question_triage.embed_query", return_value=[0.0] * 1024)
+        mocker.patch(
+            "rumil.question_triage.search_pages_by_vector",
+            side_effect=fake_search,
+        )
+        _mock_structured_call(
+            mocker,
+            _verdict(fertility_score=5, is_duplicate=False, duplicate_of=None),
+        )
+
+        verdict = await triage_question(
+            tmp_db,
+            question_headline="What is the base rate for AI firms failing in year 2?",
+            question_abstract="",
+            parent_question=None,
+        )
+
+        assert verdict.is_duplicate is False
+        assert verdict.duplicate_of is None
+    finally:
+        await other_db.delete_run_data(delete_project=True)
 
 
 async def test_triage_includes_parent_headline_in_prompt(tmp_db, mocker):

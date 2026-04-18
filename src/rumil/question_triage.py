@@ -138,12 +138,19 @@ async def _fetch_neighbors(
         query_text = f"{question_headline}\n\n{question_abstract.strip()}"
     embedding = await embed_query(query_text)
     fetch_count = settings.question_triage_neighbor_count + len(exclude_ids) + 1
+    if not db.project_id:
+        log.warning(
+            "question_triage._fetch_neighbors called without db.project_id; "
+            "refusing to search across projects"
+        )
+        return []
     matches = await search_pages_by_vector(
         db,
         embedding,
         match_threshold=settings.question_triage_neighbor_threshold,
         match_count=fetch_count,
         workspace=Workspace.RESEARCH,
+        project_id=db.project_id,
     )
     neighbors: list[tuple[Page, float]] = []
     for page, similarity in matches:

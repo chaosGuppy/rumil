@@ -185,12 +185,47 @@ def _resolve_prompt_filename(call_type: str) -> str:
 
 
 def build_system_prompt(call_type: str) -> str:
-    """Combine preamble + call-type instructions + citations into one system prompt."""
+    """Combine preamble + call-type instructions + citations into one system prompt.
+
+    When ``settings.enable_flag_issue`` is on AND the call type actually has
+    ``FLAG_ISSUE`` in its move list, a short addendum is appended telling the
+    model it can flag meta-issues about the call's framing/context/tools.
+    Gating on the resolved move list (not just the global setting) ensures the
+    addendum never appears for calls whose preset entry is empty or otherwise
+    omits the move.
+    """
     preamble = _load_file("preamble.md")
     instructions = _load_file(_resolve_prompt_filename(call_type))
     citations = _load_file("citations.md")
     grounding = _load_file("grounding.md")
-    return f"{preamble}\n\n---\n\n{instructions}\n\n---\n\n{citations}\n\n---\n\n{grounding}"
+    parts = [preamble, instructions, citations, grounding]
+    if _flag_issue_active_for_call(call_type):
+        parts.append(_load_file("flag_issue_addendum.md"))
+    return "\n\n---\n\n".join(parts)
+
+
+def _flag_issue_active_for_call(call_type: str) -> bool:
+    """Return True if the flag_issue move is actually wired up for this call.
+
+    Checks both the global setting AND that the resolved move list for the
+    given call type actually contains ``FLAG_ISSUE`` — so turning the feature
+    off or running a call whose preset omits it never leaves stale addendum
+    text in the prompt.
+    """
+    from rumil.available_moves import get_moves_for_call
+    from rumil.models import CallType, MoveType
+
+    if not get_settings().enable_flag_issue:
+        return False
+    try:
+        ct = CallType(call_type)
+    except ValueError:
+        return False
+    try:
+        moves = get_moves_for_call(ct)
+    except ValueError:
+        return False
+    return MoveType.FLAG_ISSUE in moves
 
 
 def build_user_message(context_text: str, task_description: str) -> str:

@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useState } from "react";
+import { createContext, useCallback, useContext, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { InspectPanel } from "./InspectPanel";
 
@@ -8,6 +8,17 @@ interface InspectPanelContextValue {
   openInspect: (shortId: string) => void;
   closeInspect: () => void;
   openShortId: string | null;
+  // Promote a short id onto the pane stack (if a promote handler is
+  // registered — typically by the active view's page component). Closes the
+  // drawer as a side effect. Falls back to openInspect when no promote
+  // handler is registered, so callers don't need to null-check.
+  promoteToPane: (shortId: string) => void;
+  // Register a handler that maps a short id → pane-stack push. The view
+  // that owns the URL (e.g. StackedPanes) calls this on mount and passes
+  // null on unmount.
+  registerPromoteHandler: (
+    handler: ((shortId: string) => void) | null,
+  ) => void;
 }
 
 const InspectPanelCtx = createContext<InspectPanelContextValue | null>(null);
@@ -16,6 +27,7 @@ const InspectPanelCtx = createContext<InspectPanelContextValue | null>(null);
 // Mounts the single global inspect drawer at the tree's edge.
 export function InspectPanelProvider({ children }: { children: ReactNode }) {
   const [openShortId, setOpenShortId] = useState<string | null>(null);
+  const promoteHandlerRef = useRef<((id: string) => void) | null>(null);
 
   const openInspect = useCallback((shortId: string) => {
     // Accept the 8-char prefix form (most common in-body usage) but also
@@ -25,15 +37,42 @@ export function InspectPanelProvider({ children }: { children: ReactNode }) {
 
   const closeInspect = useCallback(() => setOpenShortId(null), []);
 
+  const registerPromoteHandler = useCallback(
+    (handler: ((shortId: string) => void) | null) => {
+      promoteHandlerRef.current = handler;
+    },
+    [],
+  );
+
+  const promoteToPane = useCallback((shortId: string) => {
+    const id = shortId.slice(0, 8);
+    const handler = promoteHandlerRef.current;
+    if (handler) {
+      handler(id);
+      // Close the drawer — the pane is the richer surface now.
+      setOpenShortId(null);
+    } else {
+      // No pane-owning view mounted → fall back to the drawer.
+      setOpenShortId(id);
+    }
+  }, []);
+
   return (
     <InspectPanelCtx.Provider
-      value={{ openInspect, closeInspect, openShortId }}
+      value={{
+        openInspect,
+        closeInspect,
+        openShortId,
+        promoteToPane,
+        registerPromoteHandler,
+      }}
     >
       {children}
       <InspectPanel
         shortId={openShortId}
         onClose={closeInspect}
         onOpen={openInspect}
+        onPromote={promoteToPane}
       />
     </InspectPanelCtx.Provider>
   );
@@ -48,5 +87,7 @@ export function useInspectPanel(): InspectPanelContextValue {
     openInspect: () => {},
     closeInspect: () => {},
     openShortId: null,
+    promoteToPane: () => {},
+    registerPromoteHandler: () => {},
   };
 }

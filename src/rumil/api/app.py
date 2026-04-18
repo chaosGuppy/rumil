@@ -120,6 +120,10 @@ def _is_friendly_user_path(method: str, path: str) -> bool:
             return True
         if path.startswith("/api/pages/") and path.count("/") == 3:
             return True
+        if path.startswith("/api/pages/") and path.endswith("/annotations"):
+            return True
+        if path.startswith("/api/calls/") and path.endswith("/annotations"):
+            return True
     if method == "POST":
         if path.startswith("/api/view-items/") and (
             path.endswith("/flag") or path.endswith("/read")

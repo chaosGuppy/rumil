@@ -7,6 +7,7 @@ import { LinkBadges } from "./LinkBadges";
 import { NodeTypeLabel } from "./NodeTypeLabel";
 import { SourceBadge } from "./SourceBadge";
 import { PageContent } from "./PageContent";
+import { PageAnnotationActions } from "./PageAnnotationActions";
 
 interface ArticleViewProps {
   view: QuestionView;
@@ -87,8 +88,13 @@ function ArticleItem({
         <CredenceBadge credence={page.credence} robustness={page.robustness} />
         <SourceBadge sourceIds={citedSourceIds} onOpenDrawer={onOpenSource} />
         <LinkBadges links={item.links} />
+        <PageAnnotationActions pageId={page.id} />
       </div>
-      <PageContent text={page.content} excludeConceptId={page.id} />
+      <PageContent
+        text={page.content}
+        excludeConceptId={page.id}
+        pageId={page.id}
+      />
     </div>
   );
 }

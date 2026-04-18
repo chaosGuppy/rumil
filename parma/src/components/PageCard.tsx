@@ -6,6 +6,7 @@ import { LinkBadges } from "./LinkBadges";
 import { NodeTypeLabel } from "./NodeTypeLabel";
 import { SourceBadge } from "./SourceBadge";
 import { PageContent } from "./PageContent";
+import { PageAnnotationActions } from "./PageAnnotationActions";
 
 interface PageCardProps {
   page: Page;
@@ -128,6 +129,7 @@ export function PageCard({
         <CredenceBadge credence={page.credence} robustness={page.robustness} />
         <SourceBadge sourceIds={citedSourceIds} onOpenDrawer={onOpenSource} />
         <LinkBadges links={links} />
+        <PageAnnotationActions pageId={page.id} />
         {page.provenance_call_type && page.provenance_call_type !== "system" && (
           <span
             style={{
@@ -158,7 +160,11 @@ export function PageCard({
         {page.headline}
       </h3>
 
-      <PageContent text={page.content} excludeConceptId={page.id} />
+      <PageContent
+        text={page.content}
+        excludeConceptId={page.id}
+        pageId={page.id}
+      />
 
       {page.abstract && page.abstract !== page.content && (
         <div

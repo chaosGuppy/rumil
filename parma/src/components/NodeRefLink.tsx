@@ -1,11 +1,20 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
+import { useInspectPanel } from "./InspectPanelContext";
 
 // 8-char lowercase hex short IDs with word boundaries. Matches both bare
 // refs (`abc12345`) and bracketed refs (`[abc12345]`) because the brackets
 // are not word characters. The capture group is the id.
 export const NODE_ID_RE = /\b([0-9a-f]{8})\b/g;
+
+// Plain click → `onNodeRef` (typically drawer). Shift/cmd/ctrl click →
+// promote the ref onto the active view's pane stack (if one has registered
+// a handler) and close the drawer. Falls back to the plain handler if no
+// pane-owner is mounted.
+export function isPromoteEvent(e: MouseEvent): boolean {
+  return e.shiftKey || e.metaKey || e.ctrlKey;
+}
 
 export function TextWithNodeRefs({
   text,
@@ -14,6 +23,7 @@ export function TextWithNodeRefs({
   text: string;
   onNodeRef?: (id: string) => void;
 }) {
+  const { promoteToPane } = useInspectPanel();
   if (!onNodeRef) return <>{text}</>;
   const parts: ReactNode[] = [];
   let lastIndex = 0;
@@ -28,9 +38,16 @@ export function TextWithNodeRefs({
       <button
         key={match.index}
         type="button"
-        onClick={() => onNodeRef(id)}
+        onClick={(e) => {
+          if (isPromoteEvent(e)) {
+            e.preventDefault();
+            promoteToPane(id);
+          } else {
+            onNodeRef(id);
+          }
+        }}
         className="node-ref-link"
-        title={`Inspect ${id}`}
+        title={`Click to inspect · shift-click to pin as pane · ${id}`}
       >
         {id}
       </button>,

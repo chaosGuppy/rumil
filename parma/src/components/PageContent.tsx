@@ -1,14 +1,28 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-import { NODE_ID_RE } from "./NodeRefLink";
+import { NODE_ID_RE, isPromoteEvent } from "./NodeRefLink";
 import { useConcepts } from "./ConceptContext";
 import { useInspectPanel } from "./InspectPanelContext";
+import {
+  useAnnotations,
+  useRegisterPage,
+} from "./AnnotationContext";
+import type { AnnotationEvent } from "@/lib/annotations";
 import type { Page } from "@/lib/types";
+import { AnnotationToolbar } from "./AnnotationToolbar";
+import type { ToolbarSelection } from "./AnnotationToolbar";
+import { AnnotationDrawer } from "./AnnotationDrawer";
 
 /**
  * PageContent — the canonical renderer for `page.content` strings.
@@ -21,6 +35,10 @@ import type { Page } from "@/lib/types";
  *      global inspect panel.
  *   3. Linkify inline concept matches (headlines of `concept` pages), the
  *      same behavior `TextWithConcepts` previously provided.
+ *   4. When `pageId` is provided: attach annotation affordances —
+ *      - selection → floating toolbar
+ *      - existing span annotations overlaid as underlines
+ *      - page-level annotation indicator + drawer toggle
  *
  * Option B (unified pass) rationale: scanning each markdown text leaf once
  * for both node refs and concepts, rather than nesting a second pass on
@@ -35,6 +53,14 @@ import type { Page } from "@/lib/types";
  *
  * Both refs and concepts are optional: if no concepts are loaded and no
  * onNodeRef is provided, the function fast-paths back to raw strings.
+ *
+ * Span anchoring: offsets are into the rendered `textContent` of the body,
+ * not the markdown source. We picked textContent-offsets because they're
+ * easy to round-trip between selection.toString() and mark overlay, and
+ * because concept/ref linkification doesn't alter the character stream.
+ * Drift risk is real — if the page is superseded with new text, offsets
+ * will silently misalign. Acceptable for the MVP per doc 28; a v2 would
+ * anchor via prefix+suffix text match.
  */
 
 interface PageContentProps {
@@ -44,6 +70,13 @@ interface PageContentProps {
   className?: string;
   /** Override the default inline-prose tag; useful when embedding in a list. */
   inline?: boolean;
+  /**
+   * When set, this PageContent becomes annotatable: text selections raise a
+   * floating toolbar, existing spans are underlined, and a page-level
+   * indicator opens an annotations drawer. Leave undefined for contexts
+   * where annotation makes no sense (e.g. concept popovers, toy renders).
+   */
+  pageId?: string;
 }
 
 function escapeRegex(str: string): string {
@@ -88,6 +121,7 @@ function ConceptRefInline({ concept }: { concept: Page }) {
 function linkifyString(
   text: string,
   onNodeRef: ((id: string) => void) | undefined,
+  onPromote: ((id: string) => void) | undefined,
   conceptRegex: RegExp | null,
   conceptMap: Map<string, Page>,
   keyPrefix: string,
@@ -117,9 +151,16 @@ function linkifyString(
         <button
           key={`${keyPrefix}-ref-${match.index}`}
           type="button"
-          onClick={() => onNodeRef(matched)}
+          onClick={(e) => {
+            if (onPromote && isPromoteEvent(e)) {
+              e.preventDefault();
+              onPromote(matched);
+            } else {
+              onNodeRef(matched);
+            }
+          }}
           className="node-ref-link"
-          title={`Inspect ${matched}`}
+          title={`Click to inspect · shift-click to pin as pane · ${matched}`}
         >
           {matched}
         </button>,
@@ -152,9 +193,11 @@ export function PageContent({
   excludeConceptId,
   className,
   inline = false,
+  pageId,
 }: PageContentProps) {
   const inspect = useInspectPanel();
   const handleNodeRef = onNodeRef ?? inspect.openInspect;
+  const handlePromote = inspect.promoteToPane;
   const concepts = useConcepts();
 
   const { conceptRegex, conceptMap } = useMemo(() => {
@@ -188,6 +231,7 @@ export function PageContent({
           return linkifyString(
             children,
             handleNodeRef,
+            handlePromote,
             conceptRegex,
             conceptMap,
             keyPrefix,
@@ -202,6 +246,7 @@ export function PageContent({
               {linkifyString(
                 child,
                 handleNodeRef,
+                handlePromote,
                 conceptRegex,
                 conceptMap,
                 `${keyPrefix}-${i}`,
@@ -212,66 +257,372 @@ export function PageContent({
         return child;
       });
     },
-    [handleNodeRef, conceptRegex, conceptMap],
+    [handleNodeRef, handlePromote, conceptRegex, conceptMap],
   );
 
   const wrapperClass = className ?? "view-prose";
 
-  // For inline use (e.g. inside an existing <p>), render a span so we
-  // don't nest block elements.
+  const markdown = (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={
+        inline
+          ? {
+              p: ({ children }) => <>{processChildren(children, "p")}</>,
+              li: ({ children }) => (
+                <li>{processChildren(children, "li")}</li>
+              ),
+              strong: ({ children }) => (
+                <strong>{processChildren(children, "strong")}</strong>
+              ),
+              em: ({ children }) => (
+                <em>{processChildren(children, "em")}</em>
+              ),
+              a: ({ children, href }) => (
+                <a href={href} target="_blank" rel="noopener noreferrer">
+                  {processChildren(children, "a")}
+                </a>
+              ),
+            }
+          : {
+              p: ({ children }) => <p>{processChildren(children, "p")}</p>,
+              li: ({ children }) => (
+                <li>{processChildren(children, "li")}</li>
+              ),
+              strong: ({ children }) => (
+                <strong>{processChildren(children, "strong")}</strong>
+              ),
+              em: ({ children }) => (
+                <em>{processChildren(children, "em")}</em>
+              ),
+              h1: ({ children }) => (
+                <h1>{processChildren(children, "h1")}</h1>
+              ),
+              h2: ({ children }) => (
+                <h2>{processChildren(children, "h2")}</h2>
+              ),
+              h3: ({ children }) => (
+                <h3>{processChildren(children, "h3")}</h3>
+              ),
+              h4: ({ children }) => (
+                <h4>{processChildren(children, "h4")}</h4>
+              ),
+              blockquote: ({ children }) => (
+                <blockquote>{processChildren(children, "bq")}</blockquote>
+              ),
+              a: ({ children, href }) => (
+                <a href={href} target="_blank" rel="noopener noreferrer">
+                  {processChildren(children, "a")}
+                </a>
+              ),
+            }
+      }
+    >
+      {text}
+    </ReactMarkdown>
+  );
+
+  // Non-annotatable path: same render tree the file has always produced.
+  if (!pageId) {
+    if (inline) return <span className={wrapperClass}>{markdown}</span>;
+    return <div className={wrapperClass}>{markdown}</div>;
+  }
+
+  return (
+    <AnnotatablePageContent
+      pageId={pageId}
+      wrapperClass={wrapperClass}
+      inline={inline}
+    >
+      {markdown}
+    </AnnotatablePageContent>
+  );
+}
+
+// Wrapper that handles the annotation-specific side of the world. Kept as
+// a sibling component so the non-annotatable path stays cheap and the hook
+// surface is isolated from the ReactMarkdown config above.
+function AnnotatablePageContent({
+  pageId,
+  wrapperClass,
+  inline,
+  children,
+}: {
+  pageId: string;
+  wrapperClass: string;
+  inline: boolean;
+  children: ReactNode;
+}) {
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const spanBodyRef = useRef<HTMLSpanElement | null>(null);
+  const [selection, setSelection] = useState<ToolbarSelection | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const { annotationsForPage } = useAnnotations();
+  useRegisterPage(pageId);
+
+  const annotations = annotationsForPage(pageId);
+  const spanAnnotations = useMemo(
+    () =>
+      annotations.filter(
+        (a) => a.span_start !== null && a.span_end !== null,
+      ),
+    [annotations],
+  );
+  const pageLevelCount = annotations.length - spanAnnotations.length;
+
+  const handleSelection = useCallback(() => {
+    const sel = window.getSelection();
+    const body = bodyRef.current ?? spanBodyRef.current;
+    if (!sel || !body || sel.isCollapsed) {
+      setSelection(null);
+      return;
+    }
+    if (!body.contains(sel.anchorNode) || !body.contains(sel.focusNode)) {
+      setSelection(null);
+      return;
+    }
+    const range = sel.getRangeAt(0);
+    const text = sel.toString();
+    if (!text.trim()) {
+      setSelection(null);
+      return;
+    }
+    const [start, end] = offsetsForRange(body, range);
+    if (start === end) {
+      setSelection(null);
+      return;
+    }
+    const rect = range.getBoundingClientRect();
+    setSelection({ pageId, text, start, end, anchorRect: rect });
+  }, [pageId]);
+
+  // Overlay existing span annotations as <mark> underlines. Done
+  // imperatively after render because we don't own the inner DOM (it comes
+  // from react-markdown). This is a best-effort: if a span crosses block
+  // boundaries, we underline the portion that fits in a single text node
+  // range and let Range.surroundContents refuse otherwise (we catch).
+  useEffect(() => {
+    const body = bodyRef.current ?? spanBodyRef.current;
+    if (!body) return;
+    // Remove any prior marks.
+    body.querySelectorAll("mark.ann-mark").forEach((m) => {
+      const parent = m.parentNode;
+      if (!parent) return;
+      while (m.firstChild) parent.insertBefore(m.firstChild, m);
+      parent.removeChild(m);
+      parent.normalize?.();
+    });
+    if (spanAnnotations.length === 0) return;
+
+    // Group by (start,end) so duplicate spans show one underline with a
+    // count rather than stacking.
+    const grouped = new Map<string, AnnotationEvent[]>();
+    for (const a of spanAnnotations) {
+      const key = `${a.span_start}:${a.span_end}`;
+      const bucket = grouped.get(key) ?? [];
+      bucket.push(a);
+      grouped.set(key, bucket);
+    }
+
+    for (const [key, anns] of grouped) {
+      const [s, e] = key.split(":").map(Number);
+      const range = rangeForOffsets(body, s, e);
+      if (!range) continue;
+      const mark = document.createElement("mark");
+      mark.className = `ann-mark ann-mark-${kindClass(anns)}`;
+      mark.dataset.annKey = key;
+      mark.title = annotationTooltip(anns);
+      try {
+        range.surroundContents(mark);
+        if (anns.length > 1) {
+          const sup = document.createElement("sup");
+          sup.className = "ann-mark-count";
+          sup.textContent = `(${anns.length})`;
+          mark.appendChild(sup);
+        }
+      } catch {
+        // Range spans multiple block elements; skip. A future patch could
+        // split the range across text nodes instead.
+      }
+    }
+  }, [spanAnnotations]);
+
+  const indicator =
+    pageLevelCount > 0 ? (
+      <button
+        type="button"
+        className="ann-page-indicator"
+        onClick={() => setDrawerOpen(true)}
+      >
+        <span aria-hidden>📎</span>
+        {pageLevelCount} {pageLevelCount === 1 ? "annotation" : "annotations"}{" "}
+        on this page
+      </button>
+    ) : spanAnnotations.length > 0 ? (
+      <button
+        type="button"
+        className="ann-page-indicator ann-page-indicator-dim"
+        onClick={() => setDrawerOpen(true)}
+      >
+        <span aria-hidden>📎</span>
+        {spanAnnotations.length} span{" "}
+        {spanAnnotations.length === 1 ? "annotation" : "annotations"}
+      </button>
+    ) : null;
+
   if (inline) {
     return (
-      <span className={wrapperClass}>
-        <ReactMarkdown
-          remarkPlugins={[remarkGfm]}
-          components={{
-            // Unwrap paragraphs when asked for inline rendering.
-            p: ({ children }) => <>{processChildren(children, "p")}</>,
-            li: ({ children }) => <li>{processChildren(children, "li")}</li>,
-            strong: ({ children }) => (
-              <strong>{processChildren(children, "strong")}</strong>
-            ),
-            em: ({ children }) => <em>{processChildren(children, "em")}</em>,
-            a: ({ children, href }) => (
-              <a href={href} target="_blank" rel="noopener noreferrer">
-                {processChildren(children, "a")}
-              </a>
-            ),
-          }}
-        >
-          {text}
-        </ReactMarkdown>
+      <span
+        className={wrapperClass}
+        onMouseUp={handleSelection}
+        onTouchEnd={handleSelection}
+      >
+        <span ref={spanBodyRef} className="ann-body">
+          {children}
+        </span>
+        {indicator}
+        <AnnotationToolbar
+          selection={selection}
+          onClose={() => setSelection(null)}
+        />
+        {drawerOpen && (
+          <AnnotationDrawer
+            pageId={pageId}
+            pageText={bodyText(spanBodyRef.current)}
+            annotations={annotations}
+            onClose={() => setDrawerOpen(false)}
+          />
+        )}
       </span>
     );
   }
 
   return (
-    <div className={wrapperClass}>
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={{
-          p: ({ children }) => <p>{processChildren(children, "p")}</p>,
-          li: ({ children }) => <li>{processChildren(children, "li")}</li>,
-          strong: ({ children }) => (
-            <strong>{processChildren(children, "strong")}</strong>
-          ),
-          em: ({ children }) => <em>{processChildren(children, "em")}</em>,
-          h1: ({ children }) => <h1>{processChildren(children, "h1")}</h1>,
-          h2: ({ children }) => <h2>{processChildren(children, "h2")}</h2>,
-          h3: ({ children }) => <h3>{processChildren(children, "h3")}</h3>,
-          h4: ({ children }) => <h4>{processChildren(children, "h4")}</h4>,
-          blockquote: ({ children }) => (
-            <blockquote>{processChildren(children, "bq")}</blockquote>
-          ),
-          a: ({ children, href }) => (
-            <a href={href} target="_blank" rel="noopener noreferrer">
-              {processChildren(children, "a")}
-            </a>
-          ),
-        }}
-      >
-        {text}
-      </ReactMarkdown>
+    <div
+      className={wrapperClass}
+      onMouseUp={handleSelection}
+      onTouchEnd={handleSelection}
+    >
+      {indicator}
+      <div ref={bodyRef} className="ann-body">
+        {children}
+      </div>
+      <AnnotationToolbar
+        selection={selection}
+        onClose={() => setSelection(null)}
+      />
+      {drawerOpen && (
+        <AnnotationDrawer
+          pageId={pageId}
+          pageText={bodyText(bodyRef.current)}
+          annotations={annotations}
+          onClose={() => setDrawerOpen(false)}
+        />
+      )}
     </div>
   );
+}
+
+// Return [startOffset, endOffset] into the concatenated textContent of
+// `root`, given a Range inside it.
+function offsetsForRange(root: HTMLElement, range: Range): [number, number] {
+  const start = charOffsetToNode(root, range.startContainer, range.startOffset);
+  const end = charOffsetToNode(root, range.endContainer, range.endOffset);
+  return start <= end ? [start, end] : [end, start];
+}
+
+function charOffsetToNode(
+  root: HTMLElement,
+  target: Node,
+  offsetInTarget: number,
+): number {
+  let offset = 0;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let node: Node | null = walker.nextNode();
+  while (node) {
+    if (node === target) return offset + offsetInTarget;
+    offset += (node.nodeValue ?? "").length;
+    node = walker.nextNode();
+  }
+  // target wasn't a text node (e.g. the element itself) — fall back to the
+  // offset of the element within root's text stream, treating offsetInTarget
+  // as a child-node index into its text children.
+  if (target instanceof HTMLElement && root.contains(target)) {
+    let acc = 0;
+    const w2 = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let n: Node | null = w2.nextNode();
+    while (n) {
+      if (target.contains(n)) return acc;
+      acc += (n.nodeValue ?? "").length;
+      n = w2.nextNode();
+    }
+    return acc;
+  }
+  return offset;
+}
+
+// Inverse of offsetsForRange: build a Range spanning [start, end] within
+// root's textContent. Returns null if out-of-bounds.
+function rangeForOffsets(
+  root: HTMLElement,
+  start: number,
+  end: number,
+): Range | null {
+  if (start < 0 || end <= start) return null;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let acc = 0;
+  let startNode: Node | null = null;
+  let startOff = 0;
+  let endNode: Node | null = null;
+  let endOff = 0;
+  let node: Node | null = walker.nextNode();
+  while (node) {
+    const len = (node.nodeValue ?? "").length;
+    if (!startNode && acc + len >= start) {
+      startNode = node;
+      startOff = start - acc;
+    }
+    if (acc + len >= end) {
+      endNode = node;
+      endOff = end - acc;
+      break;
+    }
+    acc += len;
+    node = walker.nextNode();
+  }
+  if (!startNode || !endNode) return null;
+  try {
+    const range = document.createRange();
+    range.setStart(startNode, startOff);
+    range.setEnd(endNode, endOff);
+    return range;
+  } catch {
+    return null;
+  }
+}
+
+function bodyText(root: HTMLElement | null): string {
+  return root?.textContent ?? "";
+}
+
+function kindClass(anns: AnnotationEvent[]): string {
+  for (const a of anns) {
+    if (a.category === "dispute" || a.category === "factual_error") {
+      return "dispute";
+    }
+  }
+  for (const a of anns) {
+    if (a.category === "endorsement") return "endorse";
+  }
+  return "comment";
+}
+
+function annotationTooltip(anns: AnnotationEvent[]): string {
+  return anns
+    .map((a) => {
+      const kind = a.category ?? a.annotation_type;
+      const note = a.note ? ` — ${a.note}` : "";
+      return `${kind} (${a.author_type})${note}`;
+    })
+    .join("\n");
 }

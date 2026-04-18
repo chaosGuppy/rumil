@@ -7,6 +7,7 @@ import { LinkBadges } from "./LinkBadges";
 import { NodeTypeLabel } from "./NodeTypeLabel";
 import { SourceBadge } from "./SourceBadge";
 import { PageContent } from "./PageContent";
+import { PageAnnotationActions } from "./PageAnnotationActions";
 
 interface VerticalViewProps {
   view: QuestionView;
@@ -82,11 +83,16 @@ function VerticalItem({
           {page.importance !== null && page.importance > 0 && (
             <span className="vertical-label-dim">L{page.importance}</span>
           )}
+          <PageAnnotationActions pageId={page.id} />
         </div>
 
         {expanded && (
           <div className="vertical-content">
-            <PageContent text={page.content} excludeConceptId={page.id} />
+            <PageContent
+              text={page.content}
+              excludeConceptId={page.id}
+              pageId={page.id}
+            />
           </div>
         )}
       </div>

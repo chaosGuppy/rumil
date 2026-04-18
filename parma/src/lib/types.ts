@@ -19,7 +19,10 @@ export type LinkType =
   | "variant"
   | "summarizes"
   | "cites"
-  | "depends_on";
+  | "depends_on"
+  | "view_item"
+  | "view_of"
+  | "meta_for";
 
 export type ConsiderationDirection = "supports" | "opposes" | "neutral";
 
@@ -50,6 +53,13 @@ export interface PageLink {
   strength: number;
   reasoning: string;
   role: LinkRole;
+  // Optional fields present on the backend PageLink model; not every link
+  // populates them. view_item links use importance/section/position;
+  // child_question links use impact_on_parent_question (0-10).
+  importance?: number | null;
+  section?: string | null;
+  position?: number | null;
+  impact_on_parent_question?: number | null;
 }
 
 export interface ViewItem {

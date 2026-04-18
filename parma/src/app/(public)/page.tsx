@@ -10,8 +10,10 @@ import type { VerticalViewHandle } from "@/components/VerticalView";
 import { ChatPanel } from "@/components/ChatPanel";
 import { SuggestionReview } from "@/components/SuggestionReview";
 import { SourcesView } from "@/components/SourcesView";
+import { SectionsView } from "@/components/SectionsView";
 import { SourceDrawer } from "@/components/SourceDrawer";
 import { ConceptProvider } from "@/components/ConceptContext";
+import { AnnotationProvider } from "@/components/AnnotationContext";
 import {
   InspectPanelProvider,
   useInspectPanel,
@@ -88,7 +90,7 @@ function formatRelative(iso: string): string {
   return `${years}y ago`;
 }
 
-const VIEW_MODES = ["panes", "article", "vertical", "sources"] as const;
+const VIEW_MODES = ["panes", "article", "vertical", "sections", "sources"] as const;
 type ViewMode = (typeof VIEW_MODES)[number];
 
 function isViewMode(v: string): v is ViewMode {
@@ -515,6 +517,12 @@ function QuestionViewPage({
               onFocusHandled={() => setFocusNodeId(null)}
             />
           )}
+          {viewMode === "sections" && (
+            <SectionsView
+              view={view}
+              onOpenSource={setDrawerSource}
+            />
+          )}
           {viewMode === "sources" && (
             <SourcesView
               projectId={project.id}
@@ -735,9 +743,11 @@ export default function Page() {
     <Suspense
       fallback={<div className="view-loading">Loading...</div>}
     >
-      <InspectPanelProvider>
-        <AppContent />
-      </InspectPanelProvider>
+      <AnnotationProvider>
+        <InspectPanelProvider>
+          <AppContent />
+        </InspectPanelProvider>
+      </AnnotationProvider>
     </Suspense>
   );
 }

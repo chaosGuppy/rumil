@@ -1367,21 +1367,82 @@ class DB:
         pages = await self.get_pages_by_ids([l.to_page_id for l in dep_links])
         return [(pages[l.to_page_id], l) for l in dep_links if l.to_page_id in pages]
 
+    async def _get_project_page_ids(self) -> set[str] | None:
+        """Fetch all page IDs belonging to the current project.
+
+        Returns None if no project_id is set (meaning no project scoping).
+        """
+        if not self.project_id:
+            return None
+        page_ids: set[str] = set()
+        offset = 0
+        page_size = 1000
+        while True:
+            query = self.client.table("pages").select("id").eq("project_id", self.project_id)
+            query = self._staged_filter(query)
+            rows = _rows(await self._execute(query.range(offset, offset + page_size - 1)))
+            page_ids.update(r["id"] for r in rows)
+            if len(rows) < page_size:
+                break
+            offset += page_size
+        return page_ids
+
+    async def _get_depends_on_links_for_pages(
+        self,
+        page_ids: set[str] | None,
+    ) -> list[PageLink]:
+        """Fetch DEPENDS_ON links, optionally scoped to pages in page_ids.
+
+        When page_ids is provided, fetches links whose from_page_id is in
+        the set using batched in_() queries. When None, fetches all
+        DEPENDS_ON links with pagination.
+        """
+        all_links: list[PageLink] = []
+        if page_ids is not None:
+            id_list = list(page_ids)
+            batch_size = 100
+            page_size = 1000
+            for start in range(0, len(id_list), batch_size):
+                batch = id_list[start : start + batch_size]
+                offset = 0
+                while True:
+                    query = (
+                        self.client.table("page_links")
+                        .select("*")
+                        .eq("link_type", "depends_on")
+                        .in_("from_page_id", batch)
+                    )
+                    query = self._staged_filter(query)
+                    rows = _rows(await self._execute(query.range(offset, offset + page_size - 1)))
+                    all_links.extend(_row_to_link(r) for r in rows)
+                    if len(rows) < page_size:
+                        break
+                    offset += page_size
+        else:
+            offset = 0
+            page_size = 1000
+            while True:
+                query = self.client.table("page_links").select("*").eq("link_type", "depends_on")
+                query = self._staged_filter(query)
+                rows = _rows(await self._execute(query.range(offset, offset + page_size - 1)))
+                all_links.extend(_row_to_link(r) for r in rows)
+                if len(rows) < page_size:
+                    break
+                offset += page_size
+        return await self._apply_link_events(all_links)
+
     async def get_stale_dependencies(self) -> list[tuple[PageLink, int | None]]:
         """Return DEPENDS_ON links where the dependency has been superseded.
 
         Returns (link, change_magnitude) pairs. change_magnitude comes from
         the supersession mutation event if available, otherwise None.
 
-        Issues O(1) round trips regardless of how many DEPENDS_ON links
-        or stale dependencies exist: one query for the links, one batched
-        lookup for target pages, one batched lookup for supersession
-        magnitudes.
+        Scoped to the current project when project_id is set. Issues
+        O(ceil(N_project_pages/batch_size)) round trips for the link query,
+        plus batched lookups for target pages and supersession magnitudes.
         """
-        query = self.client.table("page_links").select("*").eq("link_type", "depends_on")
-        query = self._staged_filter(query)
-        rows = _rows(await self._execute(query))
-        links = await self._apply_link_events([_row_to_link(r) for r in rows])
+        project_page_ids = await self._get_project_page_ids()
+        links = await self._get_depends_on_links_for_pages(project_page_ids)
         if not links:
             return []
 
@@ -1400,34 +1461,12 @@ class DB:
     async def get_dependency_counts(self) -> dict[str, int]:
         """Return a map from page_id to how many pages depend on it, within the current project.
 
-        Scopes by intersecting link endpoints with the project's page IDs.
+        Scoped to the current project when project_id is set.
         `page_links` has no `project_id` column, so we resolve project membership
         via `pages`.
         """
-        project_page_ids: set[str] | None = None
-        if self.project_id:
-            project_page_ids = set()
-            offset = 0
-            page_size = 2000
-            while True:
-                pages_query = (
-                    self.client.table("pages").select("id").eq("project_id", self.project_id)
-                )
-                pages_query = self._staged_filter(pages_query)
-                rows = _rows(await self._execute(pages_query.range(offset, offset + page_size - 1)))
-                project_page_ids.update(r["id"] for r in rows)
-                if len(rows) < page_size:
-                    break
-                offset += page_size
-
-        query = (
-            self.client.table("page_links")
-            .select(_LINK_COLUMNS)
-            .eq("link_type", LinkType.DEPENDS_ON.value)
-        )
-        query = self._staged_filter(query)
-        rows = _rows(await self._execute(query))
-        links = await self._apply_link_events([_row_to_link(r) for r in rows])
+        project_page_ids = await self._get_project_page_ids()
+        links = await self._get_depends_on_links_for_pages(project_page_ids)
 
         counts: dict[str, int] = {}
         for link in links:

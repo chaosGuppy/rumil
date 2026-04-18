@@ -3,6 +3,7 @@
 import pytest
 
 from rumil.constants import compute_round_budget
+from rumil.orchestrators.two_phase import TwoPhaseOrchestrator
 
 
 @pytest.mark.parametrize(
@@ -47,3 +48,27 @@ def test_base_allocation_scaling() -> None:
         assert steady > 0
         assert steady >= prev or total <= 20
         prev = steady
+
+
+@pytest.mark.asyncio
+async def test_paced_budget_uses_budget_cap_in_nested_orchestrator(tmp_db):
+    """When budget_cap is set, _pacing_params returns the local cap/consumed, not global.
+
+    Nested orchestrators pace against their own allocation; a child with cap=20
+    paces like a 20-budget run regardless of the global pool size.
+    """
+    await tmp_db.init_budget(100)
+    await tmp_db.consume_budget(40)
+
+    capped = TwoPhaseOrchestrator(tmp_db, budget_cap=20)
+    capped._consumed = 5
+    total, used = await capped._pacing_params()
+    assert (total, used) == (20, 5), (
+        f"capped orch should pace from (budget_cap, _consumed); got ({total}, {used})"
+    )
+
+    uncapped = TwoPhaseOrchestrator(tmp_db)
+    g_total, g_used = await uncapped._pacing_params()
+    assert (g_total, g_used) == (100, 40), (
+        f"uncapped orch should pace from global budget; got ({g_total}, {g_used})"
+    )

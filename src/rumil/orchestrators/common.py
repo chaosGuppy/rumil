@@ -720,10 +720,10 @@ async def _maybe_adversarial_review_after_assess(
     if verdict is not None and not verdict.claim_holds:
         log.info(
             "adversarial-review gate: verdict says %s does NOT hold "
-            "(stronger_side=%s, confidence=%d)",
+            "(stronger_side=%s, claim_confidence=%d)",
             question_id[:8],
             verdict.stronger_side,
-            verdict.confidence,
+            verdict.claim_confidence,
         )
 
 

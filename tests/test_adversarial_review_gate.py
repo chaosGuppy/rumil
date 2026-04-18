@@ -102,7 +102,7 @@ def _stub_adversarial_run(mocker, verdict: AdversarialVerdict | None = None):
         v = verdict or AdversarialVerdict(
             stronger_side="how_true",
             claim_holds=True,
-            confidence=7,
+            claim_confidence=7,
             rationale="Stub verdict satisfying min-length for test purposes.",
         )
         verdict_page = Page(
@@ -111,7 +111,7 @@ def _stub_adversarial_run(mocker, verdict: AdversarialVerdict | None = None):
             workspace=Workspace.RESEARCH,
             headline=f"Adversarial verdict: {target_id[:8]}",
             content=v.rationale,
-            credence=v.confidence,
+            credence=v.claim_confidence,
             robustness=3,
             provenance_call_id=call.id,
             provenance_call_type=call.call_type.value,
@@ -182,7 +182,7 @@ async def test_gate_skips_page_already_reviewed(tmp_db, target_claim, mocker):
     prior_verdict = AdversarialVerdict(
         stronger_side="how_true",
         claim_holds=True,
-        confidence=6,
+        claim_confidence=6,
         rationale="Prior verdict already on file; gate must respect it.",
     )
     prior_verdict_page = Page(
@@ -191,7 +191,7 @@ async def test_gate_skips_page_already_reviewed(tmp_db, target_claim, mocker):
         workspace=Workspace.RESEARCH,
         headline=f"Prior verdict: {target_claim.id[:8]}",
         content=prior_verdict.rationale,
-        credence=prior_verdict.confidence,
+        credence=prior_verdict.claim_confidence,
         robustness=3,
         provenance_call_id=prior_call.id,
         provenance_call_type=prior_call.call_type.value,

@@ -96,7 +96,7 @@ def _stub_adversarial_run(mocker, verdict: AdversarialVerdict | None = None):
         v = verdict or AdversarialVerdict(
             stronger_side="how_true",
             claim_holds=True,
-            confidence=7,
+            claim_confidence=7,
             rationale="Stub rationale that satisfies the min-length constraint.",
         )
         verdict_page = Page(
@@ -105,7 +105,7 @@ def _stub_adversarial_run(mocker, verdict: AdversarialVerdict | None = None):
             workspace=Workspace.RESEARCH,
             headline=f"Adversarial verdict: {target_id[:8]}",
             content=v.rationale,
-            credence=v.confidence,
+            credence=v.claim_confidence,
             robustness=3,
             provenance_call_id=call.id,
             provenance_call_type=call.call_type.value,
@@ -202,7 +202,7 @@ async def test_verdict_that_denies_claim_lands_visible_signal(
     denying_verdict = AdversarialVerdict(
         stronger_side="how_false",
         claim_holds=False,
-        confidence=3,
+        claim_confidence=3,
         rationale=(
             "The how-false side surfaced a direct defeater the how-true side "
             "did not engage with. The claim does not hold at current evidence."

@@ -129,7 +129,7 @@ async def _persist_verdict_for_target(
         workspace=Workspace.RESEARCH,
         headline=f"Adversarial verdict: {target_id[:8]}",
         content=verdict.rationale,
-        credence=verdict.confidence,
+        credence=verdict.claim_confidence,
         robustness=3,
         provenance_call_id=call.id,
         provenance_call_type=call.call_type.value,
@@ -160,7 +160,7 @@ async def test_synthesizer_returns_verdict_with_concurrences_and_dissents(
     verdict = AdversarialVerdict(
         stronger_side="how_true",
         claim_holds=True,
-        confidence=7,
+        claim_confidence=7,
         rationale=(
             "Scaling trends support the claim; the how-false critique did not "
             "engage with recent frontier runs."
@@ -207,7 +207,7 @@ def test_is_verdict_expired_fresh_verdict_not_expired():
     verdict = AdversarialVerdict(
         stronger_side="how_true",
         claim_holds=True,
-        confidence=6,
+        claim_confidence=6,
         rationale="Fresh verdict.",
         sunset_after_days=30,
     )
@@ -219,7 +219,7 @@ def test_is_verdict_expired_old_verdict_is_expired():
     verdict = AdversarialVerdict(
         stronger_side="how_true",
         claim_holds=True,
-        confidence=6,
+        claim_confidence=6,
         rationale="Old verdict.",
         sunset_after_days=30,
         created_at=datetime.now(UTC) - timedelta(days=31),
@@ -232,7 +232,7 @@ def test_is_verdict_expired_null_sunset_never_expires():
     verdict = AdversarialVerdict(
         stronger_side="how_true",
         claim_holds=True,
-        confidence=8,
+        claim_confidence=8,
         rationale="Structural claim about logical necessity.",
         sunset_after_days=None,
         created_at=datetime.now(UTC) - timedelta(days=10_000),
@@ -246,7 +246,7 @@ async def test_has_adversarial_review_re_reviews_expired_verdict(tmp_db, target_
     fresh_verdict = AdversarialVerdict(
         stronger_side="how_true",
         claim_holds=True,
-        confidence=7,
+        claim_confidence=7,
         rationale="Fresh verdict that is still within its sunset window.",
         sunset_after_days=30,
     )
@@ -258,7 +258,7 @@ async def test_has_adversarial_review_re_reviews_expired_verdict(tmp_db, target_
     expired_verdict = AdversarialVerdict(
         stronger_side="how_true",
         claim_holds=True,
-        confidence=7,
+        claim_confidence=7,
         rationale="Verdict past its sunset window.",
         sunset_after_days=30,
         created_at=datetime.now(UTC) - timedelta(days=45),

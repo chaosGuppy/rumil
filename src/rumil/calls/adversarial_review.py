@@ -22,7 +22,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from rumil.calls.closing_reviewers import StandardClosingReview
 from rumil.calls.common import resolve_page_refs
@@ -66,7 +66,23 @@ StrongerSide = Literal["how_true", "how_false", "tie"]
 
 
 class AdversarialVerdict(BaseModel):
-    """Structured output of the synthesizer LLM."""
+    """Structured output of the synthesizer LLM.
+
+    `claim_confidence` and `dissents` are **independent** signals.
+    `claim_confidence` answers "would you bet on the claim?" — it is the
+    quantity downstream gates (e.g. refine-artifact acceptance) consume.
+    `dissents` answers "what should a future reader know the losing side
+    argued?" — epistemic preservation regardless of whether the claim holds.
+
+    Historically this model had a single `confidence` field. Empirical smoke
+    tests (9/9 verdicts across 3 parallel runs clamped at exactly 6) showed
+    the synthesizer was entangling the two: because the prompt asks for
+    surviving dissents, the model treated "dissents exist → shouldn't be too
+    confident" and clamped `confidence` at 6 regardless of claim strength.
+    Splitting the field decouples the signals. The model validator below
+    still accepts the legacy `confidence` payload so verdicts persisted
+    before this split continue to round-trip.
+    """
 
     stronger_side: StrongerSide = Field(
         description=(
@@ -80,10 +96,18 @@ class AdversarialVerdict(BaseModel):
             "need not, agree with stronger_side."
         )
     )
-    confidence: int = Field(
+    claim_confidence: int = Field(
         ge=1,
         le=9,
-        description="Rumil-style credence on the verdict (1-9, 5 = genuinely uncertain).",
+        description=(
+            "How sure are you the claim holds, IGNORING any dissents you are "
+            "preserving for future readers? Rumil credence scale (1-9; 5 is "
+            "genuinely uncertain; 1 or 9 means you are very sure). This is "
+            "the bet-on-the-claim signal and is independent of the dissents "
+            "field — it is fine to return claim_confidence=8 with two "
+            "dissents if the verdict is strong but the losing side still "
+            "produced points worth preserving."
+        ),
     )
     rationale: str = Field(
         description=(
@@ -105,7 +129,9 @@ class AdversarialVerdict(BaseModel):
         description=(
             "1-3 dissenting points: surviving arguments from the losing side "
             "that still have merit. A careful reader should know these even "
-            "if the verdict went the other way."
+            "if the verdict went the other way. Preserving dissents is "
+            "independent of claim_confidence — emit them whenever the losing "
+            "side had something worth flagging, even on strong verdicts."
         ),
     )
     sunset_after_days: int | None = Field(
@@ -121,6 +147,19 @@ class AdversarialVerdict(BaseModel):
         default_factory=lambda: datetime.now(UTC),
         description="When the verdict was synthesized. Used for sunset expiry.",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_legacy_confidence(cls, data):
+        """Back-compat: accept the pre-split `confidence` field name.
+
+        Verdicts persisted in ``page.extra["adversarial_verdict"]`` before the
+        split used `confidence`; deserializing those must continue to work.
+        """
+        if isinstance(data, dict) and "claim_confidence" not in data and "confidence" in data:
+            data = dict(data)
+            data["claim_confidence"] = data.pop("confidence")
+        return data
 
 
 def is_verdict_expired(
@@ -268,12 +307,12 @@ async def _persist_verdict(
     }[verdict.stronger_side]
     headline = (
         f"Adversarial verdict: {target.headline[:80]} — {claim_holds_word} "
-        f"(C{verdict.confidence}; {side_word})"
+        f"(C{verdict.claim_confidence}; {side_word})"
     )
     content = (
         f"**Claim holds:** {verdict.claim_holds}  \n"
         f"**Stronger side:** {verdict.stronger_side}  \n"
-        f"**Confidence:** {verdict.confidence}\n\n"
+        f"**Claim confidence:** {verdict.claim_confidence}\n\n"
         f"{verdict.rationale}"
     )
     page = Page(
@@ -282,7 +321,7 @@ async def _persist_verdict(
         workspace=Workspace.RESEARCH,
         content=content,
         headline=headline[:200],
-        credence=verdict.confidence,
+        credence=verdict.claim_confidence,
         robustness=3,
         provenance_model="adversarial_review_synthesizer",
         provenance_call_type=call.call_type.value,
@@ -302,11 +341,11 @@ async def _persist_verdict(
         )
     )
     log.info(
-        "AdversarialReview: verdict page %s created for target %s (holds=%s, conf=%d)",
+        "AdversarialReview: verdict page %s created for target %s (holds=%s, claim_conf=%d)",
         page.id[:8],
         target.id[:8],
         verdict.claim_holds,
-        verdict.confidence,
+        verdict.claim_confidence,
     )
     return page.id
 

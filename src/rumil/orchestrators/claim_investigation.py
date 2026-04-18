@@ -283,10 +283,10 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
         if verdict is not None and not verdict.claim_holds:
             log.info(
                 "_maybe_adversarial_review: verdict says claim %s does NOT hold "
-                "(stronger_side=%s, confidence=%d)",
+                "(stronger_side=%s, claim_confidence=%d)",
                 claim_id[:8],
                 verdict.stronger_side,
-                verdict.confidence,
+                verdict.claim_confidence,
             )
 
     async def _is_new_claim(self, claim_id: str) -> bool:

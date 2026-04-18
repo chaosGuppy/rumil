@@ -79,7 +79,7 @@ def _canned_verdict() -> AdversarialVerdict:
     return AdversarialVerdict(
         stronger_side="how_false",
         claim_holds=False,
-        confidence=3,
+        claim_confidence=3,
         rationale=(
             "The how-false scout surfaced a direct defeater — the current "
             "deployment trajectory shows the bottleneck is integration, not "
@@ -159,7 +159,7 @@ async def test_synthesizer_prompt_is_loadable():
     assert text.strip()
     assert "stronger_side" in text
     assert "claim_holds" in text
-    assert "confidence" in text
+    assert "claim_confidence" in text
     assert "rationale" in text
 
 
@@ -174,20 +174,34 @@ def test_adversarial_verdict_validates_fields():
     v = AdversarialVerdict(
         stronger_side="how_true",
         claim_holds=True,
-        confidence=7,
+        claim_confidence=7,
         rationale="Adequate rationale.",
     )
     assert v.stronger_side == "how_true"
     assert v.claim_holds is True
-    assert v.confidence == 7
+    assert v.claim_confidence == 7
 
     with pytest.raises(Exception):
         AdversarialVerdict(
             stronger_side="how_true",
             claim_holds=True,
-            confidence=10,
-            rationale="Out of range confidence.",
+            claim_confidence=10,
+            rationale="Out of range claim_confidence.",
         )
+
+
+def test_adversarial_verdict_accepts_legacy_confidence_field():
+    """Back-compat shim: verdicts persisted before the `confidence` ->
+    `claim_confidence` split must still round-trip via model_validate.
+    """
+    legacy_payload = {
+        "stronger_side": "how_true",
+        "claim_holds": True,
+        "confidence": 7,
+        "rationale": "Persisted under the old schema.",
+    }
+    v = AdversarialVerdict.model_validate(legacy_payload)
+    assert v.claim_confidence == 7
 
 
 def test_adversarial_review_is_exported():
@@ -232,13 +246,13 @@ async def test_updater_records_verdict_page_and_link(tmp_db, call_infra, target_
     verdict_page = await tmp_db.get_page(verdict_id)
     assert verdict_page is not None
     assert verdict_page.page_type == PageType.JUDGEMENT
-    assert verdict_page.credence == verdict.confidence
+    assert verdict_page.credence == verdict.claim_confidence
     assert verdict_page.provenance_call_id == call_infra.call.id
     assert verdict_page.extra["target_page_id"] == target_claim.id
     stored = verdict_page.extra["adversarial_verdict"]
     assert stored["stronger_side"] == verdict.stronger_side
     assert stored["claim_holds"] == verdict.claim_holds
-    assert stored["confidence"] == verdict.confidence
+    assert stored["claim_confidence"] == verdict.claim_confidence
     assert "does not hold" in verdict_page.headline
     assert verdict.rationale in verdict_page.content
 

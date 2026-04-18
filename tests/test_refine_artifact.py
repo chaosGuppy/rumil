@@ -99,7 +99,7 @@ async def question_with_view(tmp_db):
 def _verdict(
     *,
     claim_holds: bool,
-    confidence: int,
+    claim_confidence: int,
     dissents: Sequence[str] = (),
     concurrences: Sequence[str] = (),
     stronger_side: str = "how_true",
@@ -107,7 +107,7 @@ def _verdict(
     return AdversarialVerdict(
         stronger_side=stronger_side,  # type: ignore[arg-type]
         claim_holds=claim_holds,
-        confidence=confidence,
+        claim_confidence=claim_confidence,
         rationale="Rationale synthesised for test purposes; long enough to validate.",
         dissents=list(dissents),
         concurrences=list(concurrences),
@@ -210,7 +210,7 @@ def _install_review_stub(mocker, tmp_db, verdicts: Sequence[AdversarialVerdict])
                 workspace=Workspace.RESEARCH,
                 headline=f"Adversarial verdict for {self._qid[:8]}",
                 content=v.rationale,
-                credence=v.confidence,
+                credence=v.claim_confidence,
                 robustness=3,
                 provenance_call_id=self._call.id,
                 provenance_call_type=self._call.call_type.value,
@@ -254,7 +254,7 @@ async def test_accepts_on_iteration_one_when_verdict_clean(tmp_db, question_with
     _install_review_stub(
         mocker,
         tmp_db,
-        [_verdict(claim_holds=True, confidence=8)],
+        [_verdict(claim_holds=True, claim_confidence=8)],
     )
 
     orch = RefineArtifactOrchestrator(
@@ -291,7 +291,7 @@ async def test_accepts_when_confidence_clears_even_with_surviving_dissents(
         [
             _verdict(
                 claim_holds=True,
-                confidence=8,
+                claim_confidence=8,
                 dissents=["one surviving objection the losing side raised"],
             )
         ],
@@ -310,6 +310,56 @@ async def test_accepts_when_confidence_clears_even_with_surviving_dissents(
     assert result.iteration_count == 1
 
 
+async def test_claim_confidence_and_dissents_are_independent_gate_signals(
+    tmp_db, question_with_view, mocker
+):
+    """Regression for the conflation bug documented in marketplace-thread/32.
+
+    Before the schema split, the synthesizer entangled "claim confidence" with
+    "are there surviving dissents" and clamped `confidence=6` across the board
+    (9/9 verdicts in smoke-test runs). After the split, `claim_confidence` is
+    the bet-on-the-claim signal and is independent of `dissents`: a verdict
+    with multiple surviving dissents can still ship `claim_confidence=8` and
+    must be accepted above the default threshold of 6.
+    """
+    q = question_with_view["question"]
+    _install_draft_stub(mocker, tmp_db, q.id)
+    _install_review_stub(
+        mocker,
+        tmp_db,
+        [
+            _verdict(
+                claim_holds=True,
+                claim_confidence=8,
+                dissents=[
+                    "param-count proxy critique",
+                    "alternative scaling-path hypothesis",
+                ],
+            )
+        ],
+    )
+
+    orch = RefineArtifactOrchestrator(
+        tmp_db,
+        question_id=q.id,
+        shape="strategy_brief",
+        max_iterations=3,
+        accept_confidence=6,
+    )
+    result = await orch.run()
+
+    assert result.outcome == "accepted"
+    assert result.iteration_count == 1
+    final = await tmp_db.get_page(result.final_artifact_id)  # type: ignore[arg-type]
+    assert final is not None
+    block = final.extra["refinement"]
+    assert block["final_verdict"]["claim_confidence"] == 8
+    assert block["remaining_dissents"] == [
+        "param-count proxy critique",
+        "alternative scaling-path hypothesis",
+    ]
+
+
 async def test_accepts_on_iteration_two_after_refine(tmp_db, question_with_view, mocker):
     """Draft with dissents triggers a refine pass; second review is clean -> accept."""
     q = question_with_view["question"]
@@ -320,11 +370,13 @@ async def test_accepts_on_iteration_two_after_refine(tmp_db, question_with_view,
         [
             _verdict(
                 claim_holds=False,
-                confidence=5,
+                claim_confidence=5,
                 dissents=["missed the integration bottleneck", "forecasts underspecified"],
                 concurrences=["good framing of scale trends"],
             ),
-            _verdict(claim_holds=True, confidence=7, concurrences=["addressed dissents cleanly"]),
+            _verdict(
+                claim_holds=True, claim_confidence=7, concurrences=["addressed dissents cleanly"]
+            ),
         ],
     )
 
@@ -365,8 +417,8 @@ async def test_stuck_when_dissents_repeat_unchanged(tmp_db, question_with_view, 
         mocker,
         tmp_db,
         [
-            _verdict(claim_holds=False, confidence=4, dissents=list(repeated)),
-            _verdict(claim_holds=False, confidence=4, dissents=list(reversed(repeated))),
+            _verdict(claim_holds=False, claim_confidence=4, dissents=list(repeated)),
+            _verdict(claim_holds=False, claim_confidence=4, dissents=list(reversed(repeated))),
         ],
     )
 
@@ -398,9 +450,9 @@ async def test_iteration_cap_reached_saves_last_draft(tmp_db, question_with_view
         mocker,
         tmp_db,
         [
-            _verdict(claim_holds=False, confidence=4, dissents=["a1"]),
-            _verdict(claim_holds=False, confidence=4, dissents=["a2"]),
-            _verdict(claim_holds=False, confidence=4, dissents=["a3"]),
+            _verdict(claim_holds=False, claim_confidence=4, dissents=["a1"]),
+            _verdict(claim_holds=False, claim_confidence=4, dissents=["a2"]),
+            _verdict(claim_holds=False, claim_confidence=4, dissents=["a3"]),
         ],
     )
 
@@ -431,8 +483,8 @@ async def test_budget_exhaustion_mid_loop_terminates(tmp_db, question_with_view,
         mocker,
         tmp_db,
         [
-            _verdict(claim_holds=False, confidence=4, dissents=["d1"]),
-            _verdict(claim_holds=True, confidence=8),
+            _verdict(claim_holds=False, claim_confidence=4, dissents=["d1"]),
+            _verdict(claim_holds=True, claim_confidence=8),
         ],
     )
 
@@ -460,8 +512,8 @@ async def test_refinement_extra_block_populated_on_accept(tmp_db, question_with_
         mocker,
         tmp_db,
         [
-            _verdict(claim_holds=False, confidence=5, dissents=list(first_dissents)),
-            _verdict(claim_holds=True, confidence=8, concurrences=["clean revision"]),
+            _verdict(claim_holds=False, claim_confidence=5, dissents=list(first_dissents)),
+            _verdict(claim_holds=True, claim_confidence=8, concurrences=["clean revision"]),
         ],
     )
 
@@ -485,7 +537,7 @@ async def test_refinement_extra_block_populated_on_accept(tmp_db, question_with_
     assert set(block["dissents_addressed"]) == set(first_dissents)
     # Final verdict was the clean one.
     assert block["final_verdict"]["claim_holds"] is True
-    assert block["final_verdict"]["confidence"] == 8
+    assert block["final_verdict"]["claim_confidence"] == 8
     # Remaining dissents on the accepted verdict should be empty.
     assert block["remaining_dissents"] == []
     # And only the accepted draft is the 'active' artifact.

@@ -296,11 +296,12 @@ class RefineArtifactOrchestrator:
 
     def _should_accept(self, verdict: AdversarialVerdict) -> bool:
         # Dissents are epistemic preservation ("what the losing side said, for
-        # future readers"), not gate-blockers — the synthesizer prompt tells
-        # the model to emit them even when the verdict holds cleanly. Gating
-        # on dissents meant the loop could never accept. Confidence is the
-        # real acceptance signal.
-        return verdict.claim_holds and verdict.confidence >= self.accept_confidence
+        # future readers"), not gate-blockers. claim_confidence is the signal
+        # decoupled from dissent-preservation: it answers "would you bet on
+        # the claim?" independent of whether the losing side had points worth
+        # flagging. Gating on the old entangled `confidence` clamped the gate
+        # at 6 across the board (see commit message / marketplace-thread/32).
+        return verdict.claim_holds and verdict.claim_confidence >= self.accept_confidence
 
     async def _supersede_prior_drafts(
         self,

@@ -476,7 +476,7 @@ async def _collect_adversarial_verdicts(
             target_page_id="",
             stronger_side=verdict.stronger_side,
             claim_holds=verdict.claim_holds,
-            confidence=verdict.confidence,
+            confidence=verdict.claim_confidence,
             rationale=verdict.rationale,
             concurrences=list(verdict.concurrences),
             dissents=list(verdict.dissents),

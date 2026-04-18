@@ -15,9 +15,9 @@ from rumil.models import (
     PageType,
 )
 from rumil.moves.base import (
-    CreatePagePayload,
     MoveDef,
     MoveResult,
+    ScoredPagePayload,
     create_page,
     supersede_old_judgements,
 )
@@ -25,7 +25,7 @@ from rumil.moves.base import (
 log = logging.getLogger(__name__)
 
 
-class CreateJudgementPayload(CreatePagePayload):
+class CreateJudgementPayload(ScoredPagePayload):
     key_dependencies: str | None = Field(None, description="What this judgement most depends on")
     sensitivity_analysis: str | None = Field(
         None, description="What would shift this judgement, and in which direction"
@@ -112,7 +112,15 @@ async def _link_and_supersede(
 
 
 async def execute(payload: CreateJudgementPayload, call: Call, db: DB) -> MoveResult:
-    result = await create_page(payload, call, db, PageType.JUDGEMENT, PageLayer.SQUIDGY)
+    result = await create_page(
+        payload,
+        call,
+        db,
+        PageType.JUDGEMENT,
+        PageLayer.SQUIDGY,
+        robustness=payload.robustness,
+        robustness_reasoning=payload.robustness_reasoning,
+    )
     if not result.created_page_id or not call.scope_page_id:
         return result
 
@@ -132,7 +140,15 @@ async def execute_for_question(
     if not resolved:
         return MoveResult(message=f"Question {payload.question_id} not found")
 
-    result = await create_page(payload, call, db, PageType.JUDGEMENT, PageLayer.SQUIDGY)
+    result = await create_page(
+        payload,
+        call,
+        db,
+        PageType.JUDGEMENT,
+        PageLayer.SQUIDGY,
+        robustness=payload.robustness,
+        robustness_reasoning=payload.robustness_reasoning,
+    )
     if not result.created_page_id:
         return result
 
@@ -150,10 +166,14 @@ MOVE = MoveDef(
     name="create_judgement",
     description=(
         "Create a judgement — a considered position synthesising the "
-        "considerations bearing on a question. Must engage with "
-        "considerations on multiple sides. Include key_dependencies and "
-        "sensitivity_analysis fields. The judgement is automatically linked "
-        "to the scope question and supersedes any prior judgement on it."
+        "considerations bearing on a question. It is the system's best "
+        "current take on the question, so it carries a `robustness` score "
+        "(how solid is the view) but no credence (credence is reserved for "
+        "claims — positive assertions for which 'how likely is this to be "
+        "true?' is the right question). Must engage with considerations on "
+        "multiple sides. Include key_dependencies and sensitivity_analysis "
+        "fields. The judgement is automatically linked to the scope question "
+        "and supersedes any prior judgement on it."
     ),
     schema=CreateJudgementPayload,
     execute=execute,
@@ -166,7 +186,8 @@ QUESTION_MOVE = MoveDef(
         "Create a judgement linked to an explicit question (by ID). "
         "The judgement supersedes any prior judgement on that question. "
         "Use this when the target question is not the scope question of "
-        "the current call. Include key_dependencies and "
+        "the current call. Judgements carry `robustness` only (no credence "
+        "— see create_judgement). Include key_dependencies and "
         "sensitivity_analysis fields."
     ),
     schema=CreateJudgementForQuestionPayload,

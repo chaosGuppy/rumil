@@ -80,9 +80,7 @@ async def small_project(tmp_db):
     c_2 = await _make_page(
         tmp_db, page_type=PageType.CLAIM, headline="c_2", credence=3, robustness=2
     )
-    j_1 = await _make_page(
-        tmp_db, page_type=PageType.JUDGEMENT, headline="j_1", credence=5, robustness=4
-    )
+    j_1 = await _make_page(tmp_db, page_type=PageType.JUDGEMENT, headline="j_1", robustness=4)
 
     await _link(tmp_db, q_a, q_b, LinkType.CHILD_QUESTION)
     await _link(tmp_db, c_1, q_a, LinkType.CONSIDERATION)
@@ -147,10 +145,10 @@ async def test_project_stats_histograms(tmp_db, small_project):
     credence = blob["credence_histogram"]
     robustness = blob["robustness_histogram"]
 
-    # Questions have credence=None so they're excluded. Claims: 7, 3. Judgement: 5.
+    # Credence is claim-only. Claims: 7, 3.
     assert credence.get("7") == 1
     assert credence.get("3") == 1
-    assert credence.get("5") == 1
+    assert credence.get("5") is None
 
     # Claims: 3, 2. Judgement: 4.
     assert robustness.get("3") == 1

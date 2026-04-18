@@ -59,9 +59,10 @@ def _view(headline: str = "View: Test question", **kw) -> Page:
 
 
 def _view_item(headline: str = "Test item", **kw) -> Page:
-    defaults = {"credence": 6, "robustness": 3}
+    defaults = {"robustness": 3}
     defaults.update(kw)
-    return _page(PageType.VIEW_ITEM, headline, layer=PageLayer.WIKI, **defaults)
+    kw_no_credence = {k: v for k, v in defaults.items() if k != "credence"}
+    return _page(PageType.VIEW_ITEM, headline, layer=PageLayer.WIKI, **kw_no_credence)
 
 
 def _claim(headline: str = "Test claim", **kw) -> Page:
@@ -156,11 +157,12 @@ def test_parse_prompt_sections_empty():
 
 
 def test_render_item_compact_shows_scores():
-    page = _view_item("Important finding", credence=7, robustness=4)
+    page = _view_item("Important finding", robustness=4)
     link = _view_item_link("view-id", page.id, importance=5, section="key_evidence")
     rendered = _render_item_compact(page, link)
     assert "I5" in rendered
-    assert "C7/R4" in rendered
+    assert "R4" in rendered
+    assert "C" not in rendered.split("—")[0]
     assert "Important finding" in rendered
     assert page.id[:8] in rendered
 
@@ -331,12 +333,12 @@ async def test_apply_item_score_updates_link(tmp_db, view_setup, call_infra):
         pytest.fail("Target item not found in view items")
 
 
-async def test_apply_item_score_updates_credence_robustness(
+async def test_apply_item_score_updates_robustness(
     tmp_db,
     view_setup,
     call_infra,
 ):
-    """_apply_item_score with credence/robustness overrides should update the page."""
+    """_apply_item_score with a robustness override should update the page."""
     _, v, items = view_setup
     updater = UpdateViewWorkspaceUpdater(v.id, CallType.UPDATE_VIEW)
 
@@ -347,16 +349,19 @@ async def test_apply_item_score_updates_credence_robustness(
         item_id=target.id[:8],
         importance=4,
         section="live_hypotheses",
-        credence=8,
         robustness=4,
+        robustness_reasoning="Cross-checked against two cited sources; would firm up with a third.",
     )
 
     await updater._apply_item_score(tmp_db, score, target_page, target_link)
 
     updated_page = await tmp_db.get_page(target.id)
     assert updated_page is not None
-    assert updated_page.credence == 8
     assert updated_page.robustness == 4
+    assert updated_page.robustness_reasoning == (
+        "Cross-checked against two cited sources; would firm up with a third."
+    )
+    assert updated_page.credence is None
 
 
 async def test_apply_demotion_lowers_importance(tmp_db, view_setup, call_infra):
@@ -434,7 +439,8 @@ async def test_apply_item_review_adjust(tmp_db, view_setup, call_infra):
         action="adjust",
         new_importance=5,
         new_section="confident_views",
-        new_credence=9,
+        new_robustness=4,
+        new_robustness_reasoning="Deep-review batch confirmed the citations cover the main failure modes.",
     )
     changed = await updater._apply_item_review(
         call_infra, review, target.id, target_page, target_link
@@ -452,7 +458,91 @@ async def test_apply_item_review_adjust(tmp_db, view_setup, call_infra):
 
     page = await tmp_db.get_page(target.id)
     assert page is not None
-    assert page.credence == 9
+    assert page.robustness == 4
+    assert page.robustness_reasoning == (
+        "Deep-review batch confirmed the citations cover the main failure modes."
+    )
+
+
+def test_unscored_item_score_requires_reasoning_with_robustness():
+    """Pydantic validator: setting robustness without reasoning must fail."""
+    with pytest.raises(Exception, match="robustness_reasoning is required"):
+        UnscoredItemScore(
+            item_id="abcdef12",
+            importance=3,
+            section="key_evidence",
+            robustness=4,
+        )
+
+
+def test_item_review_requires_reasoning_when_new_robustness_set():
+    """Pydantic validator: adjusting robustness without reasoning must fail."""
+    with pytest.raises(Exception, match="new_robustness_reasoning is required"):
+        ItemReview(
+            item_id="abcdef12",
+            action="adjust",
+            new_robustness=3,
+        )
+
+
+async def test_apply_item_score_records_mutation_event(tmp_db, view_setup):
+    """Robustness updates via _apply_item_score must land as set_robustness mutation events."""
+    _, v, items = view_setup
+    updater = UpdateViewWorkspaceUpdater(v.id, CallType.UPDATE_VIEW)
+
+    target = items[0]
+    view_items = await tmp_db.get_view_items(v.id)
+    target_page, target_link = next((p, l) for p, l in view_items if p.id == target.id)
+    score = UnscoredItemScore(
+        item_id=target.id[:8],
+        importance=4,
+        section="live_hypotheses",
+        robustness=5,
+        robustness_reasoning="Strongly corroborated by the cited benchmark runs.",
+    )
+
+    await updater._apply_item_score(tmp_db, score, target_page, target_link)
+
+    events = (
+        await tmp_db._execute(
+            tmp_db.client.table("mutation_events")
+            .select("event_type, payload")
+            .eq("target_id", target.id)
+            .eq("event_type", "set_robustness")
+        )
+    ).data
+    assert len(events) == 1
+    assert events[0]["payload"]["value"] == 5
+    assert "benchmark" in events[0]["payload"]["reasoning"]
+
+
+async def test_apply_item_review_adjust_records_mutation_event(tmp_db, view_setup, call_infra):
+    """Robustness adjustments via _apply_item_review must land as set_robustness mutation events."""
+    _, v, items = view_setup
+    updater = UpdateViewWorkspaceUpdater(v.id, CallType.UPDATE_VIEW)
+
+    target = items[1]
+    view_items = await tmp_db.get_view_items(v.id)
+    target_page, target_link = next((p, l) for p, l in view_items if p.id == target.id)
+    review = ItemReview(
+        item_id=target.id[:8],
+        action="adjust",
+        new_robustness=2,
+        new_robustness_reasoning="Re-reading the citation shows it was overstated.",
+    )
+    await updater._apply_item_review(call_infra, review, target.id, target_page, target_link)
+
+    events = (
+        await tmp_db._execute(
+            tmp_db.client.table("mutation_events")
+            .select("event_type, payload")
+            .eq("target_id", target.id)
+            .eq("event_type", "set_robustness")
+        )
+    ).data
+    assert len(events) == 1
+    assert events[0]["payload"]["value"] == 2
+    assert "overstated" in events[0]["payload"]["reasoning"]
 
 
 async def test_apply_item_review_supersede(tmp_db, view_setup, call_infra):
@@ -500,8 +590,8 @@ async def test_create_proposed_item(tmp_db, view_setup, call_infra):
     proposal = ProposedItem(
         headline="Newly discovered pattern",
         content="Evidence suggests a recurring pattern in the data.",
-        credence=7,
         robustness=3,
+        robustness_reasoning="Based on three independent replications",
         importance=4,
         section="key_evidence",
         reasoning="Fills a gap in evidence coverage",
@@ -514,7 +604,8 @@ async def test_create_proposed_item(tmp_db, view_setup, call_infra):
     assert page is not None
     assert page.page_type == PageType.VIEW_ITEM
     assert page.headline == "Newly discovered pattern"
-    assert page.credence == 7
+    assert page.credence is None
+    assert page.robustness == 3
 
     result_items = await tmp_db.get_view_items(v.id)
     new_item_ids = {p.id for p, _ in result_items}

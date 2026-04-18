@@ -15,7 +15,7 @@ Each replacement claim must be:
 - **Accurate.** Reflect what the evidence and context pages actually say. If context pages contradict a claim, the replacement must reflect the corrected information.
 - **Well-sourced.** Reference source page IDs using `[page_id]` notation where appropriate.
 
-Do NOT describe claims as "confirmed", "verified", or "empirically grounded" — let citations and credence/robustness speak for themselves.
+Do NOT describe claims as "confirmed", "verified", or "empirically grounded" — let citations and credence/robustness speak for themselves. Every replacement claim needs fresh `credence_reasoning` and `robustness_reasoning` per the preamble rubric, reflecting the reassessment's current view (not the old claim's).
 
 ## Supersession
 

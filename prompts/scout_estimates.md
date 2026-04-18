@@ -23,5 +23,5 @@ For each informative quantity (aim for 2–4):
 - **Informative quantities over comprehensive enumeration.** Two numbers that would materially change the answer beat five that are merely tangentially relevant.
 - **Be specific.** "The cost is probably high" is not an estimate. "Annual US spending on X is likely $5–15B" is.
 - **Show your reasoning.** Even rough Fermi reasoning in the claim content helps later calls evaluate and refine the estimate.
-- **Appropriate uncertainty.** Use robustness 1–2 for rough guesses, 2–3 for estimates grounded in some reasoning, higher only if you have genuine basis for confidence. Set credence to reflect how likely the estimate is to be in the right ballpark.
+- **Appropriate uncertainty, with reasoning.** Use robustness 1–2 for rough guesses, 2–3 for estimates grounded in some reasoning, higher only if you have genuine basis for confidence. Set credence to reflect how likely the estimate is to be in the right ballpark. Pair every score with its reasoning field per the preamble rubric — robustness_reasoning should call out what kind of evidence would firm up the estimate (a benchmark, a primary source, a domain expert).
 - **Do not duplicate** quantities or estimates already present in the workspace.

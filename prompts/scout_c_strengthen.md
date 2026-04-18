@@ -33,6 +33,7 @@ Consider these approaches (use whichever are most appropriate):
 4. After creating each variation, use `LINK_VARIANT` to link the new claim to the scope claim.
 5. Set credence at least as high as the original — if you cannot maintain high credence, the strengthening is too aggressive.
 6. Set robustness at least as high as the original.
+7. Pair every score with its reasoning field per the preamble rubric — in credence_reasoning, explain why the stronger wording is still supported; in robustness_reasoning, say what would further firm it up or what could still move it.
 
 ## Quality Bar
 

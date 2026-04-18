@@ -12,10 +12,9 @@ Score each item on three dimensions:
 
 ## Reading the latest judgement
 
-Each subquestion may show one or more **active judgements**, each tagged with credence and robustness:
+Each subquestion may show one or more **active judgements**, each tagged with a robustness score:
 
-- **Credence (1-9)** is the system's degree of belief in the judgement's headline answer (1 = very unlikely, 5 = uncertain, 9 = very likely). It tells you *what* the workspace currently believes.
-- **Robustness (1-5)** is how well-supported that belief is — how much scrutiny the answer has survived, how rich the evidence base is, how stable the credence would be under further investigation. 1 = a tentative first pass, 5 = thoroughly vetted and unlikely to move with more work.
+- **Robustness (1-5)** is how well-supported the judgement's current view is — how much scrutiny the answer has survived, how rich the evidence base is, how stable it would be under further investigation. 1 = a tentative first pass, 5 = thoroughly vetted and unlikely to move with more work. (Judgements do not carry a separate credence score; robustness is the epistemic signal.)
 
 **Robustness is the single most important signal for `fruit`.** A subquestion with a low-robustness judgement (1-2/5) almost always has substantial room for improvement: more evidence, more scrutiny, or alternative framings could meaningfully shift either the answer or your confidence in it. A subquestion with a high-robustness judgement (4-5/5) is mostly exhausted — further investigation is unlikely to change much. Treat low robustness as a strong reason to score `fruit` higher and high robustness as a strong reason to score it lower, even when you find the current answer plausible.
 

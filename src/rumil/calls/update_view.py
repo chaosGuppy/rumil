@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Literal
 
 import pydantic
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from rumil.calls.closing_reviewers import ViewClosingReview
 from rumil.calls.stages import (
@@ -58,12 +58,22 @@ class UnscoredItemScore(BaseModel):
     item_id: str = Field(description="Short ID (first 8 chars) of the VIEW_ITEM page")
     importance: int = Field(description="1-5 importance score", ge=1, le=5)
     section: str = Field(description="Section name for this item")
-    credence: int | None = Field(
-        default=None, description="1-9 credence override (omit to keep current)"
-    )
     robustness: int | None = Field(
         default=None, description="1-5 robustness override (omit to keep current)"
     )
+    robustness_reasoning: str | None = Field(
+        default=None,
+        description=(
+            "Where uncertainty in this item stems from and how reducible it is. "
+            "Required whenever robustness is set."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _robustness_requires_reasoning(self) -> "UnscoredItemScore":
+        if self.robustness is not None and not (self.robustness_reasoning or "").strip():
+            raise ValueError("robustness_reasoning is required when robustness is set")
+        return self
 
 
 class TriageFlag(BaseModel):
@@ -76,18 +86,32 @@ class ItemReview(BaseModel):
     action: Literal["keep", "adjust", "supersede"] = Field(description="What to do with this item")
     new_importance: int | None = Field(default=None, ge=1, le=5)
     new_section: str | None = None
-    new_credence: int | None = Field(default=None, ge=1, le=9)
     new_robustness: int | None = Field(default=None, ge=1, le=5)
+    new_robustness_reasoning: str | None = Field(
+        default=None,
+        description=(
+            "Where uncertainty in this item stems from and how reducible it "
+            "is. Required whenever new_robustness is set."
+        ),
+    )
     new_headline: str | None = None
     new_content: str | None = None
     reasoning: str = ""
+
+    @model_validator(mode="after")
+    def _new_robustness_requires_reasoning(self) -> "ItemReview":
+        if self.new_robustness is not None and not (self.new_robustness_reasoning or "").strip():
+            raise ValueError("new_robustness_reasoning is required when new_robustness is set")
+        return self
 
 
 class ProposedItem(BaseModel):
     headline: str = Field(description="Clear, specific headline for the new item")
     content: str = Field(description="Content with epistemic gloss")
-    credence: int = Field(ge=1, le=9)
     robustness: int = Field(ge=1, le=5)
+    robustness_reasoning: str = Field(
+        description=("Where uncertainty in this item stems from and how reducible it is."),
+    )
     importance: int = Field(ge=1, le=5)
     section: str = Field(description="Section name")
     reasoning: str = ""
@@ -144,7 +168,7 @@ def _render_item_compact(page: Page, link: PageLink) -> str:
     imp = f"I{link.importance}" if link.importance is not None else "I?"
     snippet = (page.content or "")[:120].replace("\n", " ")
     return (
-        f"- [{page.id[:8]}] C{page.credence}/R{page.robustness} {imp} "
+        f"- [{page.id[:8]}] R{page.robustness} {imp} "
         f"sec={link.section or '?'} — {page.headline}\n"
         f"  {snippet}"
     )
@@ -159,8 +183,7 @@ def _render_item_full(
     """Full rendering with cited pages for deep review."""
     imp = f"I{link.importance}" if link.importance is not None else "I?"
     parts = [
-        f"### [{page.id[:8]}] C{page.credence}/R{page.robustness} {imp} "
-        f"sec={link.section or '?'} — {page.headline}",
+        f"### [{page.id[:8]}] R{page.robustness} {imp} sec={link.section or '?'} — {page.headline}",
         "",
         page.content or "(no content)",
     ]
@@ -174,10 +197,13 @@ def _render_item_full(
             parts.append("")
             parts.append("**Cited evidence:**")
             for cp in cited:
-                parts.append(
-                    f"- `{cp.id[:8]}` [{cp.page_type.value}] "
-                    f"C{cp.credence}/R{cp.robustness} — {cp.headline}"
-                )
+                score_parts = []
+                if cp.credence is not None:
+                    score_parts.append(f"C{cp.credence}")
+                if cp.robustness is not None:
+                    score_parts.append(f"R{cp.robustness}")
+                score_str = f" {'/'.join(score_parts)}" if score_parts else ""
+                parts.append(f"- `{cp.id[:8]}` [{cp.page_type.value}]{score_str} — {cp.headline}")
                 if cp.abstract:
                     parts.append(f"  {cp.abstract[:200]}")
 
@@ -321,7 +347,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
                     f"### Item {global_idx + 1}/{len(unscored)}\n"
                     f"ID: `{page.id[:8]}`\n"
                     f"Headline: {page.headline}\n"
-                    f"C{page.credence}/R{page.robustness} sec={link.section or '?'}\n\n"
+                    f"R{page.robustness} sec={link.section or '?'}\n\n"
                     f"{page.content or '(no content)'}"
                 )
 
@@ -769,12 +795,12 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
         link.section = score.section
         await db.save_link(link)
 
-        if score.credence is not None or score.robustness is not None:
-            if score.credence is not None:
-                page.credence = score.credence
-            if score.robustness is not None:
-                page.robustness = score.robustness
-            await db.save_page(page)
+        if score.robustness is not None:
+            await db.update_epistemic_score(
+                page.id,
+                robustness=score.robustness,
+                robustness_reasoning=score.robustness_reasoning,
+            )
 
         return True
 
@@ -798,15 +824,12 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
                     link.section = review.new_section
                 await infra.db.save_link(link)
 
-            changed = False
-            if review.new_credence is not None:
-                page.credence = review.new_credence
-                changed = True
             if review.new_robustness is not None:
-                page.robustness = review.new_robustness
-                changed = True
-            if changed:
-                await infra.db.save_page(page)
+                await infra.db.update_epistemic_score(
+                    page.id,
+                    robustness=review.new_robustness,
+                    robustness_reasoning=review.new_robustness_reasoning,
+                )
             return True
 
         if review.action == "supersede":
@@ -828,8 +851,8 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
             workspace=Workspace.RESEARCH,
             content=review.new_content or old_page.content,
             headline=review.new_headline or old_page.headline,
-            credence=review.new_credence or old_page.credence,
             robustness=review.new_robustness or old_page.robustness,
+            robustness_reasoning=(review.new_robustness_reasoning or old_page.robustness_reasoning),
             provenance_model=get_settings().model,
             provenance_call_type=infra.call.call_type.value,
             provenance_call_id=infra.call.id,
@@ -888,8 +911,8 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
             workspace=Workspace.RESEARCH,
             content=proposal.content,
             headline=proposal.headline,
-            credence=proposal.credence,
             robustness=proposal.robustness,
+            robustness_reasoning=proposal.robustness_reasoning,
             provenance_model=get_settings().model,
             provenance_call_type=infra.call.call_type.value,
             provenance_call_id=infra.call.id,

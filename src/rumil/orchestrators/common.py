@@ -146,10 +146,7 @@ def _build_item_block(
     judgements = judgements_by_id.get(item.id, [])
     if judgements:
         latest_j = max(judgements, key=lambda j: j.created_at)
-        parts.append(
-            f"\nLatest judgement (credence {latest_j.credence}/9, "
-            f"robustness {latest_j.robustness}/5):"
-        )
+        parts.append(f"\nLatest judgement (robustness {latest_j.robustness}/5):")
         if latest_j.abstract:
             parts.append(latest_j.abstract)
         else:
@@ -256,10 +253,7 @@ async def score_items_sequentially(
         parent_parts.append(parent_page.abstract)
         parent_parts.append("")
     if parent_judgement:
-        parent_parts.append(
-            f"Latest judgement (credence {parent_judgement.credence}/9, "
-            f"robustness {parent_judgement.robustness}/5):"
-        )
+        parent_parts.append(f"Latest judgement (robustness {parent_judgement.robustness}/5):")
         if parent_judgement.abstract:
             parent_parts.append(parent_judgement.abstract)
         else:

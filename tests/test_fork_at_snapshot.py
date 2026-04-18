@@ -294,6 +294,49 @@ async def test_nonstaged_db_ignores_snapshot(project_id):
     await observer.delete_run_data()
 
 
+@pytest.mark.xfail(
+    reason=(
+        "Known gap: baseline delete_link after a staged run's snapshot "
+        "physically removes the row from page_links (non-staged delete "
+        "issues DELETE FROM). A staged reader at an earlier snapshot then "
+        "sees the row as gone even though it existed at snapshot time. "
+        "TODO: reconstruct the deleted row from the delete_link event "
+        "payload in MutationState._load_mutation_state, mirroring the "
+        "unapply_supersessions / unapply_update_content pattern at "
+        "database.py:~480. Flagged in audit M1 (marketplace-thread/33-wave-audit.md)."
+    ),
+    strict=True,
+)
+@pytest.mark.asyncio
+async def test_staged_run_still_sees_link_baseline_deleted_after_snapshot(project_id):
+    """Fork-at-snapshot should make a baseline link deletion invisible to
+    a staged reader whose snapshot pre-dates the delete. Currently fails
+    because delete_link on a non-staged run physically removes the row
+    and the event-overlay pass doesn't re-insert it. See xfail reason.
+    """
+    baseline = await _make_db(project_id, staged=False)
+    await baseline.init_budget(100)
+    src = await _make_page(baseline, "source")
+    dst = await _make_page(baseline, "dest")
+    link = await _link(baseline, src, dst)
+    await asyncio.sleep(0.05)
+
+    staged = await _make_db(project_id, staged=True)
+    assert staged.snapshot_ts is not None
+
+    await asyncio.sleep(0.05)
+    await baseline.delete_link(link.id)
+
+    links = await staged.get_links_from(src.id)
+    try:
+        assert link.id in {lk.id for lk in links}, (
+            "staged reader at pre-delete snapshot should still see the link"
+        )
+    finally:
+        await baseline.delete_run_data()
+        await staged.delete_run_data()
+
+
 @pytest.mark.asyncio
 async def test_fork_preserves_snapshot_ts(project_id):
     baseline = await _make_db(project_id, staged=False)

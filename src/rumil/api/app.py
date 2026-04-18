@@ -47,6 +47,7 @@ from rumil.api.schemas import (
     PageLoadStatsOut,
     PaginatedPagesOut,
     ProjectStatsOut,
+    ProjectSummaryOut,
     QuestionStatsOut,
     RealtimeConfigOut,
     ReputationBucketOut,
@@ -233,6 +234,29 @@ async def _get_db_maybe_staged(
 @app.get("/api/projects", response_model=list[Project])
 async def list_projects(db: DB = Depends(_get_db)):
     return await db.list_projects()
+
+
+@app.get("/api/projects/summary", response_model=list[ProjectSummaryOut])
+async def list_projects_summary(db: DB = Depends(_get_db)):
+    """Per-project summary for the public landing page.
+
+    One SQL call produces every project's question_count, claim_count,
+    call_count, and last_activity_at. Consumed by the parma landing grid.
+    """
+    rows = await db.list_projects_summary(include_hidden=False)
+    return [
+        ProjectSummaryOut(
+            id=row["project_id"],
+            name=row["name"],
+            created_at=row["created_at"],
+            hidden=row.get("hidden", False),
+            question_count=row.get("question_count", 0),
+            claim_count=row.get("claim_count", 0),
+            call_count=row.get("call_count", 0),
+            last_activity_at=row["last_activity_at"],
+        )
+        for row in rows
+    ]
 
 
 @app.get("/api/projects/{project_id}", response_model=Project)
@@ -844,10 +868,11 @@ async def flag_view_item(
     if page.project_id and not db.project_id:
         db.project_id = page.project_id
 
-    await db.create_run(
-        name="friendly-user-flag",
-        question_id=None,
-        config={"origin": "friendly-user-flag"},
+    assert db.project_id, "project_id must be set before recording friendly-user events"
+    db.run_id = await db.get_or_create_named_run(
+        project_id=db.project_id,
+        name="friendly-user-feedback",
+        config={"origin": "friendly-user-feedback"},
     )
 
     note = f"[{request.category}] {request.message}"
@@ -945,12 +970,17 @@ async def undo_view_item_flag(
     await db._execute(db.client.table("page_flags").delete().eq("id", flag_id))
 
     if flag_run_id and page_id:
+        # Narrow by flagged_page_id in extra — since the flag endpoint now
+        # shares one run row per project for friendly-user telemetry, an
+        # unfiltered delete would remove every view_item_issue event in the
+        # project. Scope to this specific flag's page instead.
         await db._execute(
             db.client.table("reputation_events")
             .delete()
             .eq("run_id", flag_run_id)
             .eq("source", "human_feedback")
             .eq("dimension", "view_item_issue")
+            .contains("extra", {"flagged_page_id": page_id})
         )
         log.info("View item flag undone: flag=%s page=%s", flag_id[:8], page_id[:8])
 
@@ -985,10 +1015,11 @@ async def record_view_item_read(
     if page.project_id and not db.project_id:
         db.project_id = page.project_id
 
-    await db.create_run(
-        name="friendly-user-read",
-        question_id=None,
-        config={"origin": "friendly-user-read"},
+    assert db.project_id, "project_id must be set before recording friendly-user events"
+    db.run_id = await db.get_or_create_named_run(
+        project_id=db.project_id,
+        name="friendly-user-feedback",
+        config={"origin": "friendly-user-feedback"},
     )
 
     subject_run_id = page.run_id or ""

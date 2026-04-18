@@ -488,3 +488,84 @@ async def test_middleware_no_passwords_set_everything_open(api_client, _restore_
     app_module._FRIENDLY_USER_PASSWORD = ""
     resp = await api_client.get("/api/projects")
     assert resp.status_code == 200
+
+
+async def _count_friendly_feedback_runs(tmp_db) -> int:
+    rows = (
+        await tmp_db._execute(
+            tmp_db.client.table("runs")
+            .select("id")
+            .eq("project_id", tmp_db.project_id)
+            .eq("name", "friendly-user-feedback")
+        )
+    ).data
+    return len(rows)
+
+
+async def test_many_flag_and_read_posts_reuse_one_run(api_client, tmp_db):
+    """Regression for C2: repeated flag/read events must not create a new
+    runs row per POST. Prior behaviour was O(N) rows in the runs table
+    (one per click / dwell ping) flooding /api/projects/{id}/runs with
+    telemetry noise and satisfying reputation_events.run_id FK with
+    disposable no-op runs. Fixed by routing through
+    get_or_create_named_run(project_id, 'friendly-user-feedback').
+    """
+    page = await _make_claim_page(tmp_db)
+
+    # Sanity: no feedback run yet.
+    assert await _count_friendly_feedback_runs(tmp_db) == 0
+
+    with override_settings(enable_flag_issue=True):
+        for i in range(3):
+            flag_resp = await api_client.post(
+                f"/api/view-items/{page.id}/flag",
+                json={"category": "other", "message": f"flag {i}"},
+            )
+            assert flag_resp.status_code == 200
+
+        for i in range(5):
+            read_resp = await api_client.post(
+                f"/api/view-items/{page.id}/read",
+                json={"seconds": 2.0 + i},
+            )
+            assert read_resp.status_code == 200
+
+    # Across 8 POSTs there should be exactly one friendly-feedback run.
+    count = await _count_friendly_feedback_runs(tmp_db)
+    assert count == 1, f"expected 1 shared friendly-feedback run, got {count}"
+
+
+async def test_undo_flag_only_removes_this_page_reputation_event(api_client, tmp_db):
+    """Regression for C2 undo narrowing: because every flag for a project
+    now shares one run_id, the undo endpoint must scope the reputation_event
+    delete to the specific flagged_page_id. Otherwise undoing flag A would
+    wipe the reputation_event for flag B on a different page.
+    """
+    page_a = await _make_claim_page(tmp_db)
+    page_b = await _make_claim_page(tmp_db)
+
+    with override_settings(enable_flag_issue=True):
+        resp_a = await api_client.post(
+            f"/api/view-items/{page_a.id}/flag",
+            json={"category": "other", "message": "A"},
+        )
+        resp_b = await api_client.post(
+            f"/api/view-items/{page_b.id}/flag",
+            json={"category": "other", "message": "B"},
+        )
+        flag_a_id = resp_a.json()["flag_id"]
+
+        undo = await api_client.delete(f"/api/view-items/flags/{flag_a_id}")
+        assert undo.status_code == 200
+
+    rep_events = (
+        await tmp_db._execute(
+            tmp_db.client.table("reputation_events")
+            .select("*")
+            .eq("project_id", tmp_db.project_id)
+            .eq("dimension", "view_item_issue")
+        )
+    ).data
+    pages_seen = {ev["extra"]["flagged_page_id"] for ev in rep_events}
+    assert pages_seen == {page_b.id}, "undo should only remove the A event; B event must remain"
+    _ = resp_b  # silence unused

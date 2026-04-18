@@ -610,6 +610,25 @@ class DB:
             hidden=row.get("hidden", False),
         )
 
+    async def list_projects_summary(
+        self,
+        include_hidden: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Per-project summary rows for the public landing page.
+
+        Calls the list_projects_summary RPC (see migration
+        20260418052703_projects_summary_rpc.sql). Returns raw rows with
+        id/name/created_at/hidden plus question_count/claim_count/call_count
+        and last_activity_at aggregated in one SQL pass.
+        """
+        result = await self._execute(
+            self.client.rpc(
+                "list_projects_summary",
+                {"include_hidden": include_hidden},
+            )
+        )
+        return cast(list[dict[str, Any]], result.data or [])
+
     async def list_projects(self, include_hidden: bool = False) -> list[Project]:
         query = self.client.table("projects").select("*").order("created_at")
         if not include_hidden:
@@ -2886,6 +2905,49 @@ class DB:
                 }
             )
         )
+
+    async def get_or_create_named_run(
+        self,
+        project_id: str,
+        name: str,
+        config: dict | None = None,
+    ) -> str:
+        """Return an existing non-staged run id for (project, name), creating one if absent.
+
+        Used by telemetry endpoints (friendly-user flag, read-dwell, etc.) that
+        want a stable FK target for reputation_events without creating a fresh
+        runs row per event. Race-safe-enough for the current write volume: two
+        concurrent first-time callers might each create a row, but subsequent
+        calls will pick the earliest and further rows become orphans (not
+        correctness-affecting).
+        """
+        existing = _rows(
+            await self._execute(
+                self.client.table("runs")
+                .select("id")
+                .eq("project_id", project_id)
+                .eq("name", name)
+                .eq("staged", False)
+                .order("created_at")
+                .limit(1)
+            )
+        )
+        if existing:
+            return existing[0]["id"]
+        new_id = str(uuid.uuid4())
+        await self._execute(
+            self.client.table("runs").insert(
+                {
+                    "id": new_id,
+                    "name": name,
+                    "project_id": project_id,
+                    "question_id": None,
+                    "config": config or {},
+                    "staged": False,
+                }
+            )
+        )
+        return new_id
 
     async def count_run_questions(self) -> int:
         """Count question pages created by this run."""

@@ -26,6 +26,7 @@ from claude_agent_sdk import (
 from claude_agent_sdk.types import HookEvent, SyncHookJSONOutput
 
 from rumil.database import DB
+from rumil.llm import sdk_thinking_config
 from rumil.models import Call, CallStatus, CallType
 from rumil.pricing import compute_cost
 from rumil.settings import get_settings
@@ -382,7 +383,8 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
     for hook_type, matchers in config.extra_hooks.items():
         hooks.setdefault(hook_type, []).extend(matchers)
 
-    options = ClaudeAgentOptions(
+    thinking_cfg = sdk_thinking_config(settings.model)
+    options_kwargs: dict[str, Any] = dict(
         system_prompt=config.system_prompt,
         mcp_servers={config.server_name: server},
         allowed_tools=allowed,
@@ -393,6 +395,15 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
         model=settings.model,
         output_format=config.output_format,
     )
+    # Opus 4.7 / Opus 4.6 / Sonnet 4.6 require thinking.type=adaptive — the bundled
+    # CLI's default (thinking.type.enabled) is rejected by adaptive-only models.
+    # For models without adaptive support, explicitly disable thinking so no default
+    # can resurrect the bug.
+    if thinking_cfg is not None:
+        options_kwargs["thinking"] = thinking_cfg
+    else:
+        options_kwargs["max_thinking_tokens"] = 0
+    options = ClaudeAgentOptions(**options_kwargs)
 
     await config.trace.record(
         AgentStartedEvent(

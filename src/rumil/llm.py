@@ -70,6 +70,18 @@ def _thinking_config(model: str) -> dict | None:
     return None
 
 
+def sdk_thinking_config(model: str) -> dict | None:
+    # ThinkingConfig shape for claude_agent_sdk.ClaudeAgentOptions.
+    # The SDK's ThinkingConfigAdaptive TypedDict only accepts {"type": "adaptive"}
+    # (no `display` key, unlike the Anthropic API). Returning None tells callers
+    # to set max_thinking_tokens=0 for models that don't support adaptive thinking,
+    # which avoids the bundled CLI defaulting to thinking.type.enabled (rejected
+    # by adaptive-only models like Opus 4.7).
+    if model.startswith(("claude-opus-4-7", "claude-opus-4-6", "claude-sonnet-4-6")):
+        return {"type": "adaptive"}
+    return None
+
+
 def _effort_level(model: str) -> str | None:
     # xhigh is Opus 4.7-only; high is the best shared setting elsewhere.
     # Haiku and Sonnet 4.5 don't support the effort parameter at all.

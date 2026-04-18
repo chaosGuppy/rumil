@@ -2217,6 +2217,80 @@ class DB:
             for r in rows
         ]
 
+    async def get_reputation_summary(
+        self,
+        project_id: str,
+        *,
+        orchestrator: str | None = None,
+        source: str | None = None,
+        dimension: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Group reputation events by (source, dimension, orchestrator).
+
+        Returns a list of dicts with keys: source, dimension, orchestrator,
+        n_events, mean_score, min_score, max_score, latest_at. Sources are
+        never collapsed — each (source, dimension, orchestrator) triple is a
+        separate bucket. Respects staging via the same visibility rule as
+        ``get_reputation_events``.
+
+        Grouping happens in Python over the filtered event set. This is
+        simple and sufficient for dashboard-scale event counts; a SQL-level
+        aggregate would need a new RPC that reproduces the staged-visibility
+        logic (see "Staged Runs and the Mutation Log" in CLAUDE.md).
+        """
+        query = self.client.table("reputation_events").select("*").eq("project_id", project_id)
+        if orchestrator is not None:
+            query = query.eq("orchestrator", orchestrator)
+        if source is not None:
+            query = query.eq("source", source)
+        if dimension is not None:
+            query = query.eq("dimension", dimension)
+        query = self._staged_filter(query)
+        rows = _rows(await self._execute(query))
+
+        buckets: dict[tuple[str, str, str | None], dict[str, Any]] = {}
+        for r in rows:
+            key = (r["source"], r["dimension"], r.get("orchestrator"))
+            score = float(r["score"])
+            created_at = r["created_at"]
+            bucket = buckets.get(key)
+            if bucket is None:
+                buckets[key] = {
+                    "source": r["source"],
+                    "dimension": r["dimension"],
+                    "orchestrator": r.get("orchestrator"),
+                    "n_events": 1,
+                    "sum_score": score,
+                    "min_score": score,
+                    "max_score": score,
+                    "latest_at": created_at,
+                }
+            else:
+                bucket["n_events"] += 1
+                bucket["sum_score"] += score
+                bucket["min_score"] = min(bucket["min_score"], score)
+                bucket["max_score"] = max(bucket["max_score"], score)
+                if created_at > bucket["latest_at"]:
+                    bucket["latest_at"] = created_at
+
+        result: list[dict[str, Any]] = []
+        for b in buckets.values():
+            n = b["n_events"]
+            result.append(
+                {
+                    "source": b["source"],
+                    "dimension": b["dimension"],
+                    "orchestrator": b["orchestrator"],
+                    "n_events": n,
+                    "mean_score": b["sum_score"] / n,
+                    "min_score": b["min_score"],
+                    "max_score": b["max_score"],
+                    "latest_at": b["latest_at"],
+                }
+            )
+        result.sort(key=lambda b: (b["source"], b["dimension"], b["orchestrator"] or ""))
+        return result
+
     async def save_epistemic_score(
         self,
         page_id: str,

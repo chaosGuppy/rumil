@@ -45,6 +45,8 @@ from rumil.api.schemas import (
     ProjectStatsOut,
     QuestionStatsOut,
     RealtimeConfigOut,
+    ReputationBucketOut,
+    ReputationSummaryOut,
     RunListItemOut,
     RunSummaryOut,
     RunTraceTreeOut,
@@ -59,6 +61,7 @@ from rumil.models import (
     PageLink,
     PageType,
     Project,
+    ReputationEvent,
     Suggestion,
     SuggestionStatus,
     SuggestionType,
@@ -894,3 +897,60 @@ async def get_page_load_stats(run_id: str, db: DB = Depends(_get_db)):
         total=len(rows),
         total_unique=len(unique_pages),
     )
+
+
+@app.get(
+    "/api/projects/{project_id}/reputation",
+    response_model=ReputationSummaryOut,
+)
+async def get_reputation_summary(
+    project_id: str,
+    orchestrator: str | None = None,
+    source: str | None = None,
+    dimension: str | None = None,
+    db: DB = Depends(_get_db),
+):
+    """Grouped reputation summary for a project.
+
+    Buckets are grouped by (source, dimension, orchestrator). Each row is a
+    non-collapsed summary so eval_agent and human_feedback signals always
+    surface separately. See marketplace-thread/13-reputation-governance.md.
+    """
+    buckets = await db.get_reputation_summary(
+        project_id,
+        orchestrator=orchestrator,
+        source=source,
+        dimension=dimension,
+    )
+    return ReputationSummaryOut(
+        project_id=project_id,
+        total_events=sum(b["n_events"] for b in buckets),
+        buckets=[ReputationBucketOut(**b) for b in buckets],
+    )
+
+
+@app.get(
+    "/api/projects/{project_id}/reputation/events",
+    response_model=list[ReputationEvent],
+)
+async def list_reputation_events(
+    project_id: str,
+    orchestrator: str | None = None,
+    source: str | None = None,
+    dimension: str | None = None,
+    limit: int = 100,
+    db: DB = Depends(_get_db),
+):
+    """Recent raw reputation events for a project (newest first).
+
+    The DB helper already applies staged-visibility + project scoping.
+    Limit is clamped to [1, 500].
+    """
+    limit = max(1, min(limit, 500))
+    events = await db.get_reputation_events(
+        source=source,
+        dimension=dimension,
+        orchestrator=orchestrator,
+    )
+    events.sort(key=lambda e: e.created_at, reverse=True)
+    return events[:limit]

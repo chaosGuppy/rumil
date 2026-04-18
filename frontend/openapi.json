@@ -2119,6 +2119,196 @@
           }
         }
       }
+    },
+    "/api/projects/{project_id}/reputation": {
+      "get": {
+        "summary": "Get Reputation Summary",
+        "description": "Grouped reputation summary for a project.\n\nBuckets are grouped by (source, dimension, orchestrator). Each row is a\nnon-collapsed summary so eval_agent and human_feedback signals always\nsurface separately. See marketplace-thread/13-reputation-governance.md.",
+        "operationId": "get_reputation_summary_api_projects__project_id__reputation_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "orchestrator",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Orchestrator"
+            }
+          },
+          {
+            "name": "source",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
+            }
+          },
+          {
+            "name": "dimension",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dimension"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReputationSummaryOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/reputation/events": {
+      "get": {
+        "summary": "List Reputation Events",
+        "description": "Recent raw reputation events for a project (newest first).\n\nThe DB helper already applies staged-visibility + project scoping.\nLimit is clamped to [1, 500].",
+        "operationId": "list_reputation_events_api_projects__project_id__reputation_events_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "orchestrator",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Orchestrator"
+            }
+          },
+          {
+            "name": "source",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
+            }
+          },
+          {
+            "name": "dimension",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dimension"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ReputationEvent"
+                  },
+                  "title": "Response List Reputation Events Api Projects  Project Id  Reputation Events Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -4942,6 +5132,182 @@
           "response"
         ],
         "title": "RenderQuestionSubgraphEventOut"
+      },
+      "ReputationBucketOut": {
+        "properties": {
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "dimension": {
+            "type": "string",
+            "title": "Dimension"
+          },
+          "orchestrator": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Orchestrator"
+          },
+          "n_events": {
+            "type": "integer",
+            "title": "N Events"
+          },
+          "mean_score": {
+            "type": "number",
+            "title": "Mean Score"
+          },
+          "min_score": {
+            "type": "number",
+            "title": "Min Score"
+          },
+          "max_score": {
+            "type": "number",
+            "title": "Max Score"
+          },
+          "latest_at": {
+            "type": "string",
+            "title": "Latest At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source",
+          "dimension",
+          "orchestrator",
+          "n_events",
+          "mean_score",
+          "min_score",
+          "max_score",
+          "latest_at"
+        ],
+        "title": "ReputationBucketOut",
+        "description": "One aggregated (source, dimension, orchestrator) bucket.\n\nSources are intentionally not collapsed \u2014 consumers render buckets\nseparately so eval_agent and human_feedback scores are never mixed\ninto a single number. See marketplace-thread/13-reputation-governance.md."
+      },
+      "ReputationEvent": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "dimension": {
+            "type": "string",
+            "title": "Dimension"
+          },
+          "score": {
+            "type": "number",
+            "title": "Score"
+          },
+          "orchestrator": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Orchestrator"
+          },
+          "task_shape": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Shape"
+          },
+          "source_call_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Call Id"
+          },
+          "extra": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Extra"
+          },
+          "staged": {
+            "type": "boolean",
+            "title": "Staged",
+            "default": false
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "project_id",
+          "source",
+          "dimension",
+          "score",
+          "orchestrator",
+          "task_shape",
+          "source_call_id",
+          "extra",
+          "staged",
+          "id",
+          "created_at"
+        ],
+        "title": "ReputationEvent",
+        "description": "One append-only reputation signal.\n\nThe table is a multi-source substrate: each event is tagged with its\n``source`` (eval_agent, human_feedback, proposal_survival, budget_flow,\nsubscription) and ``dimension`` (consistency, general_quality, grounding,\n...). Consumers aggregate at query time with their own weighting scheme.\nNever collapse to a scalar at write time."
+      },
+      "ReputationSummaryOut": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "total_events": {
+            "type": "integer",
+            "title": "Total Events"
+          },
+          "buckets": {
+            "items": {
+              "$ref": "#/components/schemas/ReputationBucketOut"
+            },
+            "type": "array",
+            "title": "Buckets"
+          }
+        },
+        "type": "object",
+        "required": [
+          "project_id",
+          "total_events",
+          "buckets"
+        ],
+        "title": "ReputationSummaryOut"
       },
       "ReviewCompleteEventOut": {
         "properties": {

@@ -427,3 +427,31 @@ class PageLoadStatsOut(BaseModel):
     events: list[PageLoadEventOut]
     total: int
     total_unique: int
+
+
+class ReputationBucketOut(BaseModel):
+    """One aggregated (source, dimension, orchestrator) bucket.
+
+    Sources are intentionally not collapsed — consumers render buckets
+    separately so eval_agent and human_feedback scores are never mixed
+    into a single number. See marketplace-thread/13-reputation-governance.md.
+    """
+
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    source: str
+    dimension: str
+    orchestrator: str | None = None
+    n_events: int
+    mean_score: float
+    min_score: float
+    max_score: float
+    latest_at: str
+
+
+class ReputationSummaryOut(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    project_id: str
+    total_events: int
+    buckets: list[ReputationBucketOut]

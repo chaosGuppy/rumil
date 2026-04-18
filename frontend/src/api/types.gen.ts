@@ -1681,6 +1681,134 @@ export type RenderQuestionSubgraphEventOut = {
 };
 
 /**
+ * ReputationBucketOut
+ *
+ * One aggregated (source, dimension, orchestrator) bucket.
+ *
+ * Sources are intentionally not collapsed — consumers render buckets
+ * separately so eval_agent and human_feedback scores are never mixed
+ * into a single number. See marketplace-thread/13-reputation-governance.md.
+ */
+export type ReputationBucketOut = {
+    /**
+     * Source
+     */
+    source: string;
+    /**
+     * Dimension
+     */
+    dimension: string;
+    /**
+     * Orchestrator
+     */
+    orchestrator: string | null;
+    /**
+     * N Events
+     */
+    n_events: number;
+    /**
+     * Mean Score
+     */
+    mean_score: number;
+    /**
+     * Min Score
+     */
+    min_score: number;
+    /**
+     * Max Score
+     */
+    max_score: number;
+    /**
+     * Latest At
+     */
+    latest_at: string;
+};
+
+/**
+ * ReputationEvent
+ *
+ * One append-only reputation signal.
+ *
+ * The table is a multi-source substrate: each event is tagged with its
+ * ``source`` (eval_agent, human_feedback, proposal_survival, budget_flow,
+ * subscription) and ``dimension`` (consistency, general_quality, grounding,
+ * ...). Consumers aggregate at query time with their own weighting scheme.
+ * Never collapse to a scalar at write time.
+ */
+export type ReputationEvent = {
+    /**
+     * Run Id
+     */
+    run_id: string;
+    /**
+     * Project Id
+     */
+    project_id: string;
+    /**
+     * Source
+     */
+    source: string;
+    /**
+     * Dimension
+     */
+    dimension: string;
+    /**
+     * Score
+     */
+    score: number;
+    /**
+     * Orchestrator
+     */
+    orchestrator: string | null;
+    /**
+     * Task Shape
+     */
+    task_shape: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Source Call Id
+     */
+    source_call_id: string | null;
+    /**
+     * Extra
+     */
+    extra: {
+        [key: string]: unknown;
+    };
+    /**
+     * Staged
+     */
+    staged: boolean;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Created At
+     */
+    created_at: string;
+};
+
+/**
+ * ReputationSummaryOut
+ */
+export type ReputationSummaryOut = {
+    /**
+     * Project Id
+     */
+    project_id: string;
+    /**
+     * Total Events
+     */
+    total_events: number;
+    /**
+     * Buckets
+     */
+    buckets: Array<ReputationBucketOut>;
+};
+
+/**
  * ReviewCompleteEventOut
  */
 export type ReviewCompleteEventOut = {
@@ -3649,3 +3777,95 @@ export type GetPageLoadStatsApiRunsRunIdPageLoadStatsGetResponses = {
 };
 
 export type GetPageLoadStatsApiRunsRunIdPageLoadStatsGetResponse = GetPageLoadStatsApiRunsRunIdPageLoadStatsGetResponses[keyof GetPageLoadStatsApiRunsRunIdPageLoadStatsGetResponses];
+
+export type GetReputationSummaryApiProjectsProjectIdReputationGetData = {
+    body?: never;
+    path: {
+        /**
+         * Project Id
+         */
+        project_id: string;
+    };
+    query?: {
+        /**
+         * Orchestrator
+         */
+        orchestrator?: string | null;
+        /**
+         * Source
+         */
+        source?: string | null;
+        /**
+         * Dimension
+         */
+        dimension?: string | null;
+    };
+    url: '/api/projects/{project_id}/reputation';
+};
+
+export type GetReputationSummaryApiProjectsProjectIdReputationGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetReputationSummaryApiProjectsProjectIdReputationGetError = GetReputationSummaryApiProjectsProjectIdReputationGetErrors[keyof GetReputationSummaryApiProjectsProjectIdReputationGetErrors];
+
+export type GetReputationSummaryApiProjectsProjectIdReputationGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ReputationSummaryOut;
+};
+
+export type GetReputationSummaryApiProjectsProjectIdReputationGetResponse = GetReputationSummaryApiProjectsProjectIdReputationGetResponses[keyof GetReputationSummaryApiProjectsProjectIdReputationGetResponses];
+
+export type ListReputationEventsApiProjectsProjectIdReputationEventsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Project Id
+         */
+        project_id: string;
+    };
+    query?: {
+        /**
+         * Orchestrator
+         */
+        orchestrator?: string | null;
+        /**
+         * Source
+         */
+        source?: string | null;
+        /**
+         * Dimension
+         */
+        dimension?: string | null;
+        /**
+         * Limit
+         */
+        limit?: number;
+    };
+    url: '/api/projects/{project_id}/reputation/events';
+};
+
+export type ListReputationEventsApiProjectsProjectIdReputationEventsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListReputationEventsApiProjectsProjectIdReputationEventsGetError = ListReputationEventsApiProjectsProjectIdReputationEventsGetErrors[keyof ListReputationEventsApiProjectsProjectIdReputationEventsGetErrors];
+
+export type ListReputationEventsApiProjectsProjectIdReputationEventsGetResponses = {
+    /**
+     * Response List Reputation Events Api Projects  Project Id  Reputation Events Get
+     *
+     * Successful Response
+     */
+    200: Array<ReputationEvent>;
+};
+
+export type ListReputationEventsApiProjectsProjectIdReputationEventsGetResponse = ListReputationEventsApiProjectsProjectIdReputationEventsGetResponses[keyof ListReputationEventsApiProjectsProjectIdReputationEventsGetResponses];

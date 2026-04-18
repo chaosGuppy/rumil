@@ -85,6 +85,7 @@ class CallType(str, Enum):
     GLOBAL_PRIORITIZATION = "global_prioritization"
     UPDATE_VIEW = "update_view"
     CHAT_DIRECT = "chat_direct"
+    ADVERSARIAL_REVIEW = "adversarial_review"
     # Envelope call for mutations made from Claude Code's broader context
     # (not a rumil-internal call with carefully scoped prompt). Never
     # dispatchable from prioritization — only created by .claude/ skills.
@@ -367,14 +368,13 @@ class Page(BaseModel):
     superseded_by: str | None = None
     is_superseded: bool = False
     extra: dict = Field(default_factory=dict)
-    importance: int | None = (
-        None  # 0-4 editorial importance (0=core, 4=deep supplementary)
-    )
+    importance: int | None = None  # 0-4 editorial importance (0=core, 4=deep supplementary)
     abstract: str = ""
     fruit_remaining: int | None = None
     sections: list[str] | None = None  # VIEW pages: ordered section names
     meta_type: str | None = None  # VIEW_META pages: priority/annotation/proposal
     run_id: str = ""
+    task_shape: dict | None = None  # v1 task-shape taxonomy, questions only
 
     def is_active(self) -> bool:
         return not self.is_superseded

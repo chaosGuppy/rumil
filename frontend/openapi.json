@@ -2481,6 +2481,7 @@
           "global_prioritization",
           "update_view",
           "chat_direct",
+          "adversarial_review",
           "claude_code_direct"
         ],
         "title": "CallType"
@@ -3823,6 +3824,18 @@
             "type": "string",
             "title": "Run Id",
             "default": ""
+          },
+          "task_shape": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Shape"
           }
         },
         "type": "object",
@@ -3850,7 +3863,8 @@
           "fruit_remaining",
           "sections",
           "meta_type",
-          "run_id"
+          "run_id",
+          "task_shape"
         ],
         "title": "Page"
       },

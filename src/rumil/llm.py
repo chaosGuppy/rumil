@@ -145,10 +145,37 @@ def _load_file(name: str) -> str:
     return path.read_text(encoding="utf-8")
 
 
+_CALL_TYPE_VARIANTS: dict[str, dict[str, str]] = {
+    "find_considerations": {
+        "default": "find_considerations.md",
+        "source_first": "find_considerations_source_first.md",
+    },
+}
+
+
+def _resolve_prompt_filename(call_type: str) -> str:
+    """Resolve the call-type instruction file, consulting settings for variants.
+
+    Keeps the lookup local to llm.py so callers can pass a plain call_type string.
+    """
+    variants = _CALL_TYPE_VARIANTS.get(call_type)
+    if variants is None:
+        return f"{call_type}.md"
+
+    settings = get_settings()
+    variant_attr = f"{call_type}_variant"
+    variant_name = getattr(settings, variant_attr, "default")
+    if variant_name not in variants:
+        raise ValueError(
+            f"Unknown {variant_attr}={variant_name!r}. Valid options: {sorted(variants)}"
+        )
+    return variants[variant_name]
+
+
 def build_system_prompt(call_type: str) -> str:
     """Combine preamble + call-type instructions + citations into one system prompt."""
     preamble = _load_file("preamble.md")
-    instructions = _load_file(f"{call_type}.md")
+    instructions = _load_file(_resolve_prompt_filename(call_type))
     citations = _load_file("citations.md")
     grounding = _load_file("grounding.md")
     return f"{preamble}\n\n---\n\n{instructions}\n\n---\n\n{citations}\n\n---\n\n{grounding}"

@@ -15,6 +15,7 @@ from rumil.models import (
 )
 from rumil.moves.base import CreatePagePayload, MoveDef, MoveResult, create_page
 from rumil.moves.link_child_question import ChildQuestionLinkFields
+from rumil.task_shape import auto_tag_and_save
 
 log = logging.getLogger(__name__)
 
@@ -31,7 +32,12 @@ class CreateQuestionPayload(CreatePagePayload):
 
 async def execute(payload: CreateQuestionPayload, call: Call, db: DB) -> MoveResult:
     result = await create_page(payload, call, db, PageType.QUESTION, PageLayer.SQUIDGY)
-    if not result.created_page_id or not payload.links:
+    if not result.created_page_id:
+        return result
+
+    await auto_tag_and_save(result.created_page_id, payload.headline, payload.content, db)
+
+    if not payload.links:
         return result
 
     for link_spec in payload.links:
@@ -69,7 +75,12 @@ async def execute_scout_question(
 ) -> MoveResult:
     """Create a question and auto-link it as a child of the call's scope question."""
     result = await create_page(payload, call, db, PageType.QUESTION, PageLayer.SQUIDGY)
-    if not result.created_page_id or not call.scope_page_id:
+    if not result.created_page_id:
+        return result
+
+    await auto_tag_and_save(result.created_page_id, payload.headline, payload.content, db)
+
+    if not call.scope_page_id:
         return result
 
     await db.save_link(

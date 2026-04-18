@@ -359,7 +359,12 @@ async def format_page(
 
     body = page.abstract if detail == PageDetail.ABSTRACT else page.content
     if body:
-        lines += ["", body]
+        lines += [
+            "",
+            f'<workspace_page id="{page.id[:8]}" untrusted="true">',
+            body,
+            "</workspace_page>",
+        ]
         if db:
             notes = await _supersession_notes(body, db)
             if notes:

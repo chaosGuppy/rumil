@@ -2,15 +2,19 @@
 
 import asyncio
 import logging
+import random
 import sys
 import traceback
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Literal
+
+from pydantic import BaseModel, Field
 
 from rumil.database import DB
-from rumil.llm import LLMExchangeMetadata, text_call
+from rumil.llm import LLMExchangeMetadata, structured_call, text_call
 from rumil.models import Call, CallStatus, CallType
 from rumil.run_eval.agents import EVAL_AGENTS, EvalAgentSpec
 from rumil.run_eval.runner import evaluate_run_with_agent
@@ -60,13 +64,20 @@ def _print_exception_group(label: str, eg: BaseExceptionGroup) -> None:
 
 @dataclass
 class ABEvalResult:
-    """Result from a single evaluation agent comparing runs A and B."""
+    """Result from a single evaluation agent comparing runs A and B.
+
+    `preference` is expressed in the caller's A/B frame (i.e. it refers to the
+    original `run_id_a` / `run_id_b` passed in), regardless of which run
+    occupied the "Run A" slot in the comparison prompt. `a_was_first` records
+    the randomized slot assignment so the effect can be audited.
+    """
 
     agent_name: str
     report_a: str
     report_b: str
     comparison: str
     preference: str
+    a_was_first: bool = True
     call_id_a: str = ""
     call_id_b: str = ""
     comparison_call_id: str = ""
@@ -120,7 +131,7 @@ async def _traced_text_call(
     return response_text, call
 
 
-_PREFERENCE_LABELS = [
+PreferenceLabel = Literal[
     "A strongly preferred",
     "A somewhat preferred",
     "A slightly preferred",
@@ -130,14 +141,74 @@ _PREFERENCE_LABELS = [
     "B strongly preferred",
 ]
 
+_PREFERENCE_LABELS: Sequence[PreferenceLabel] = [
+    "A strongly preferred",
+    "A somewhat preferred",
+    "A slightly preferred",
+    "Approximately indifferent between A and B",
+    "B slightly preferred",
+    "B somewhat preferred",
+    "B strongly preferred",
+]
 
-def _extract_preference(text: str) -> str:
-    """Extract the preference rating from comparison text."""
-    text_lower = text.lower()
-    for label in _PREFERENCE_LABELS:
-        if label.lower() in text_lower:
-            return label
-    return "Could not determine preference"
+_SWAP_MAP: dict[PreferenceLabel, PreferenceLabel] = {
+    "A strongly preferred": "B strongly preferred",
+    "A somewhat preferred": "B somewhat preferred",
+    "A slightly preferred": "B slightly preferred",
+    "Approximately indifferent between A and B": "Approximately indifferent between A and B",
+    "B slightly preferred": "A slightly preferred",
+    "B somewhat preferred": "A somewhat preferred",
+    "B strongly preferred": "A strongly preferred",
+}
+
+
+def _deswap_preference(prompt_preference: PreferenceLabel, a_was_first: bool) -> PreferenceLabel:
+    """Map a preference from the comparison-prompt's A/B frame to the caller's A/B frame.
+
+    When `a_was_first` is True, the caller's run A occupied the "Run A" slot, so
+    the preference is already in the caller's frame. When False, the runs were
+    swapped in the prompt, so we flip A<->B labels to restore the caller's frame.
+    """
+    if a_was_first:
+        return prompt_preference
+    return _SWAP_MAP[prompt_preference]
+
+
+class _PreferenceExtraction(BaseModel):
+    """Structured output for extracting a preference label from a comparison."""
+
+    preference: PreferenceLabel = Field(
+        description=(
+            "The preference rating stated in the comparison text. Must be "
+            "exactly one of the seven allowed labels."
+        )
+    )
+
+
+_PREFERENCE_EXTRACTION_SYSTEM = (
+    "You extract a single preference rating from an A/B research-run comparison. "
+    "You will be given the comparison text. Return the one preference label that "
+    "the author of the comparison stated as their final rating. The label must be "
+    "exactly one of: " + ", ".join(f'"{label}"' for label in _PREFERENCE_LABELS) + "."
+)
+
+
+async def _extract_preference_structured(
+    comparison_text: str,
+    db: DB,
+    metadata: LLMExchangeMetadata,
+) -> PreferenceLabel:
+    """Extract the preference rating from comparison text via structured LLM call."""
+    result = await structured_call(
+        _PREFERENCE_EXTRACTION_SYSTEM,
+        f"Comparison text:\n\n{comparison_text}",
+        response_model=_PreferenceExtraction,
+        metadata=metadata,
+        db=db,
+    )
+    if result.parsed is None:
+        raise ValueError("Structured preference extraction returned no parseable output")
+    return result.parsed.preference
 
 
 async def _run_comparison(
@@ -147,16 +218,30 @@ async def _run_comparison(
     db: DB,
     scope_page_id: str | None,
     broadcaster: Broadcaster | None,
-) -> tuple[str, str, Call]:
-    """Run the comparison LLM call as a traced call. Returns (text, preference, call)."""
+    rng: random.Random | None = None,
+) -> tuple[str, PreferenceLabel, Call, bool]:
+    """Run the comparison LLM call as a traced call.
+
+    Randomizes which of the caller's runs (A or B) is presented as "Run A" in
+    the prompt to neutralize LLM position bias, then de-swaps the returned
+    preference back to the caller's A/B frame.
+
+    Returns (comparison_text, preference, call, a_was_first). The preference is
+    expressed in the caller's frame; `a_was_first` records the slot assignment.
+    """
+    chooser = rng if rng is not None else random
+    a_was_first = chooser.random() < 0.5
+    prompt_report_a = report_a if a_was_first else report_b
+    prompt_report_b = report_b if a_was_first else report_a
+
     comparison_prompt = (_PROMPTS_DIR / "ab-eval-comparison.md").read_text()
     user_message = (
         f"## Evaluation Dimension: {spec.display_name}\n\n"
         "## Run A Report\n\n"
-        f"{report_a}\n\n"
+        f"{prompt_report_a}\n\n"
         "---\n\n"
         "## Run B Report\n\n"
-        f"{report_b}"
+        f"{prompt_report_b}"
     )
     comparison_text, call = await _traced_text_call(
         db,
@@ -168,7 +253,16 @@ async def _run_comparison(
         broadcaster=broadcaster,
         announce_label=f"compare {spec.name}",
     )
-    return comparison_text, _extract_preference(comparison_text), call
+    prompt_preference = await _extract_preference_structured(
+        comparison_text,
+        db,
+        LLMExchangeMetadata(
+            call_id=call.id,
+            phase=f"ab_eval_preference_extract_{spec.name}",
+        ),
+    )
+    preference = _deswap_preference(prompt_preference, a_was_first)
+    return comparison_text, preference, call, a_was_first
 
 
 async def run_single_eval_agent(
@@ -211,7 +305,7 @@ async def run_single_eval_agent(
     report_a, call_a = task_a.result()
     report_b, call_b = task_b.result()
 
-    comparison, preference, comparison_call = await _run_comparison(
+    comparison, preference, comparison_call, a_was_first = await _run_comparison(
         spec,
         report_a,
         report_b,
@@ -226,6 +320,7 @@ async def run_single_eval_agent(
         report_b=report_b,
         comparison=comparison,
         preference=preference,
+        a_was_first=a_was_first,
         call_id_a=call_a.id,
         call_id_b=call_b.id,
         comparison_call_id=comparison_call.id,

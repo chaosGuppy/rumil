@@ -96,7 +96,11 @@ def _default_budget(budget: int | None, fallback: int = NORMAL_BUDGET_DEFAULT) -
 
 
 async def cmd_add_question(
-    q: QuestionInput, parent_id: str | None, budget: int | None, db: DB
+    q: QuestionInput,
+    parent_id: str | None,
+    budget: int | None,
+    db: DB,
+    task_shape: dict | None = None,
 ) -> None:
     page = Page(
         page_type=PageType.QUESTION,
@@ -109,8 +113,13 @@ async def cmd_add_question(
         provenance_call_type="manual",
         provenance_call_id="manual",
         extra={"status": "open"},
+        task_shape=task_shape,
     )
     await db.save_page(page)
+    if task_shape is None:
+        from rumil.task_shape import auto_tag_and_save
+
+        await auto_tag_and_save(page.id, q.headline, q.abstract or q.content, db)
 
     if parent_id:
         parent = await db.get_page(parent_id)
@@ -539,6 +548,7 @@ async def cmd_new(
     ingest_files: list[str] | None = None,
     name: str = "",
     auto_summary: bool = False,
+    task_shape: dict | None = None,
 ) -> str:
     budget = _default_budget(budget)
     await db.init_budget(budget)
@@ -547,6 +557,7 @@ async def cmd_new(
         db,
         abstract=q.abstract,
         content=q.content,
+        task_shape=task_shape,
     )
     await db.create_run(
         name=name or q.headline,
@@ -1100,6 +1111,17 @@ async def async_main():
         action="store_true",
         help="Enable debug-level logging to stderr (very verbose)",
     )
+    parser.add_argument(
+        "--task-shape",
+        dest="task_shape",
+        metavar="K=V,...",
+        default=None,
+        help=(
+            "Override the task-shape tagger for a new root question. "
+            "Format: 'deliverable_shape=audit,source_posture=source_bound'. "
+            "Both dimensions required."
+        ),
+    )
     args = parser.parse_args()
 
     if args.debug:
@@ -1133,6 +1155,15 @@ async def async_main():
         get_settings().tracing_enabled = False
     if args.force_twophase_recurse:
         get_settings().force_twophase_recurse = True
+
+    task_shape_override: dict | None = None
+    if args.task_shape:
+        from rumil.task_shape import parse_task_shape_override
+
+        try:
+            task_shape_override = parse_task_shape_override(args.task_shape)
+        except ValueError as exc:
+            sys.exit(f"Error: {exc}")
 
     db = await DB.create(run_id=str(uuid.uuid4()), prod=args.prod_db, staged=args.staged)
 
@@ -1206,7 +1237,7 @@ async def async_main():
         await run_chat(args.chat_id, db)
     elif args.add_question:
         q = parse_question_input(args.add_question)
-        await cmd_add_question(q, args.parent_id, args.budget, db)
+        await cmd_add_question(q, args.parent_id, args.budget, db, task_shape=task_shape_override)
     elif args.summary_id and args.summary_id != "__auto__":
         await cmd_summary(
             args.summary_id,
@@ -1243,6 +1274,7 @@ async def async_main():
             ingest_files=args.ingest_files,
             name=args.run_name,
             auto_summary=do_summary,
+            task_shape=task_shape_override,
         )
         if do_summary:
             await cmd_summary(

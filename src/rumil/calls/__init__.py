@@ -1,5 +1,6 @@
 """Call types for the research workspace."""
 
+from rumil.calls.adversarial_review import AdversarialReviewCall, AdversarialVerdict
 from rumil.calls.assess import AssessCall, BigAssessCall
 from rumil.calls.call_registry import ASSESS_CALL_CLASSES
 from rumil.calls.create_view import CreateViewCall
@@ -27,6 +28,8 @@ from rumil.calls.web_research import WebResearchCall
 
 __all__ = [
     "ASSESS_CALL_CLASSES",
+    "AdversarialReviewCall",
+    "AdversarialVerdict",
     "AssessCall",
     "BigAssessCall",
     "CallRunner",

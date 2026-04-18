@@ -353,6 +353,30 @@ function AssociationBoxes({
   );
 }
 
+function TaskShapeBadges({ taskShape }: { taskShape: Page["task_shape"] }) {
+  if (!taskShape) return null;
+  const deliverable = taskShape["deliverable_shape"];
+  const posture = taskShape["source_posture"];
+  const taggedBy = taskShape["tagged_by"];
+  const items: { label: string; value: string }[] = [];
+  if (typeof deliverable === "string") items.push({ label: "shape", value: deliverable });
+  if (typeof posture === "string") items.push({ label: "posture", value: posture });
+  if (items.length === 0) return null;
+  return (
+    <div className="task-shape-row">
+      {items.map(({ label, value }) => (
+        <span key={label} className="task-shape-badge">
+          <span className="task-shape-label">{label}</span>
+          <span className="task-shape-value">{value}</span>
+        </span>
+      ))}
+      {typeof taggedBy === "string" && (
+        <span className="task-shape-origin">{taggedBy}</span>
+      )}
+    </div>
+  );
+}
+
 function SegmentGauge({ value, max, label }: { value: number; max: number; label: string }) {
   return (
     <div className="ep-gauge">
@@ -477,6 +501,9 @@ export default async function PageDetailPage({
             )}
           </div>
           <h1 className="page-summary">{page.headline}</h1>
+          {page.page_type === "question" && (
+            <TaskShapeBadges taskShape={page.task_shape} />
+          )}
           <AssociationBoxes page={page} linksFrom={links_from} linksTo={links_to} stagedRunId={stagedRunId} />
           {page.page_type === "source" && typeof page.extra?.url === "string" && (
             <a
@@ -717,6 +744,43 @@ const styles = `
     letter-spacing: -0.02em;
     line-height: 1.3;
     margin: 0;
+  }
+
+  .task-shape-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    margin-top: 0.6rem;
+  }
+  .task-shape-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-family: var(--font-geist-mono), monospace;
+    font-size: 0.65rem;
+    padding: 0.2rem 0.5rem;
+    background: var(--type-question-bg);
+    border: 1px solid var(--type-question-border);
+    color: var(--type-question);
+    letter-spacing: 0.02em;
+  }
+  .task-shape-label {
+    opacity: 0.6;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 0.6rem;
+  }
+  .task-shape-value {
+    font-weight: 600;
+  }
+  .task-shape-origin {
+    font-family: var(--font-geist-mono), monospace;
+    font-size: 0.6rem;
+    color: var(--color-muted);
+    opacity: 0.6;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
   }
 
   .source-url {

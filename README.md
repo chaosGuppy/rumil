@@ -143,6 +143,9 @@ uv run python main.py "Your question" --available-calls multi-subquestion --budg
 # Tune how many considerations each ingest call extracts (default: 4)
 uv run python main.py --ingest FILE --for-question QUESTION_ID --ingest-num-claims 6 --budget 5
 
+# Override the task-shape tag on a new root question (skips the auto-tagger)
+uv run python main.py "Your question" --task-shape 'deliverable_shape=audit,source_posture=source_bound' --budget 10
+
 # Suppress info-level logging (only warnings and errors)
 uv run python main.py "Your question" --budget 5 -q
 
@@ -199,6 +202,25 @@ scripts/ab_branch.sh \
 The script runs 5 concurrent evaluation agents that compare the runs on: grounding & factual correctness, subquestion relevance, consistency, research progress, and general quality. Each agent independently evaluates both arms, then a comparison LLM produces a structured preference rating (7-point scale from "A strongly preferred" to "B strongly preferred"). A final LLM synthesizes all comparisons into an overall assessment.
 
 Reports are saved to `data/ab-reports/` and to the `ab_eval_reports` database table. View them in the frontend at `/ab-evals`.
+
+#### Proposer-policy A/B (source-first vs default)
+
+`find_considerations` has two prompt variants selectable via `FIND_CONSIDERATIONS_VARIANT`: `default` and `source_first`. The source-first variant instructs the proposer to check the context for loaded sources and to call `web_research` or `ingest` first when evidence is thin, then propose considerations grounded in those sources.
+
+To run the A/B: copy the templates to per-arm env files, then invoke `ab_branch.sh` against a question ID:
+
+```bash
+cp .a.env.template .a.env   # FIND_CONSIDERATIONS_VARIANT=default
+cp .b.env.template .b.env   # FIND_CONSIDERATIONS_VARIANT=source_first
+
+scripts/ab_branch.sh \
+  --env-a .a.env \
+  --env-b .b.env \
+  --workspace ab-proposer-policy \
+  --continue <QUESTION_ID> --budget 10
+```
+
+Omit `--branch-a` / `--branch-b` to run both arms off the current branch — the variant difference lives purely in the env files.
 
 ### Single-run evaluation
 

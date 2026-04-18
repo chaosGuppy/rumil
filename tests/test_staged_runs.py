@@ -7,6 +7,9 @@ import pytest_asyncio
 
 from rumil.database import DB
 from rumil.models import (
+    Call,
+    CallStatus,
+    CallType,
     LinkRole,
     LinkType,
     Page,
@@ -769,4 +772,301 @@ async def test_retroactively_staged_update_page_content_visible_to_staged_reader
     await baseline.delete_run_data()
     await run_db.delete_run_data()
     await helper.delete_run_data()
+    await observer.delete_run_data()
+
+
+async def _make_call(db: DB, scope: Page) -> Call:
+    call = Call(
+        call_type=CallType.FIND_CONSIDERATIONS,
+        workspace=Workspace.RESEARCH,
+        scope_page_id=scope.id,
+        status=CallStatus.COMPLETE,
+        project_id=db.project_id,
+    )
+    await db.save_call(call)
+    return call
+
+
+async def _rating_rows_for_page(db: DB, page_id: str) -> list[dict]:
+    result = await db._execute(
+        db.client.table("page_ratings").select("id,staged,run_id,score").eq("page_id", page_id)
+    )
+    return result.data or []
+
+
+async def _flag_rows_for_page(db: DB, page_id: str) -> list[dict]:
+    result = await db._execute(
+        db.client.table("page_flags").select("id,staged,run_id,flag_type").eq("page_id", page_id)
+    )
+    return result.data or []
+
+
+async def _epistemic_score_rows(db: DB, page_id: str) -> list[dict]:
+    result = await db._execute(
+        db.client.table("epistemic_scores")
+        .select("id,staged,run_id,credence,robustness")
+        .eq("page_id", page_id)
+    )
+    return result.data or []
+
+
+async def _format_event_rows(db: DB, call_id: str) -> list[dict]:
+    result = await db._execute(
+        db.client.table("page_format_events")
+        .select("id,staged,run_id,page_id,detail")
+        .eq("call_id", call_id)
+    )
+    return result.data or []
+
+
+async def _llm_exchange_rows(db: DB, call_id: str) -> list[dict]:
+    result = await db._execute(
+        db.client.table("call_llm_exchanges")
+        .select("id,staged,run_id,phase")
+        .eq("call_id", call_id)
+    )
+    return result.data or []
+
+
+def _visible_to_observer(rows: list[dict]) -> list[dict]:
+    return [r for r in rows if not r["staged"]]
+
+
+def _visible_to_staged(rows: list[dict], run_id: str) -> list[dict]:
+    return [r for r in rows if (not r["staged"]) or r["run_id"] == run_id]
+
+
+async def test_staged_page_rating_is_isolated(baseline_db, staged_db, observer_db):
+    page = await _make_page(baseline_db, "rated page")
+    baseline_call = await _make_call(baseline_db, page)
+    staged_call = await _make_call(staged_db, page)
+
+    await baseline_db.save_page_rating(page.id, baseline_call.id, score=1, note="baseline")
+    await staged_db.save_page_rating(page.id, staged_call.id, score=2, note="staged")
+
+    all_rows = await _rating_rows_for_page(observer_db, page.id)
+
+    observer_visible = _visible_to_observer(all_rows)
+    assert len(observer_visible) == 1
+    assert observer_visible[0]["run_id"] == baseline_db.run_id
+
+    staged_visible = _visible_to_staged(all_rows, staged_db.run_id)
+    assert len(staged_visible) == 2
+
+
+async def test_stage_run_hides_page_ratings_from_baseline(project_id):
+    run_db = await _make_db(project_id, staged=False)
+    await run_db.init_budget(100)
+    helper = await _make_db(project_id, staged=False)
+    observer = await _make_db(project_id, staged=False)
+
+    page = await _make_page(run_db, "rated page")
+    call = await _make_call(run_db, page)
+    await run_db.save_page_rating(page.id, call.id, score=3, note="will be staged")
+
+    pre_rows = await _rating_rows_for_page(observer, page.id)
+    assert len(_visible_to_observer(pre_rows)) == 1
+
+    await helper.stage_run(run_db.run_id)
+
+    post_rows = await _rating_rows_for_page(observer, page.id)
+    assert len(_visible_to_observer(post_rows)) == 0
+
+    staged_reader = await DB.create(run_id=run_db.run_id, staged=True)
+    staged_reader.project_id = project_id
+    staged_rows = await _rating_rows_for_page(staged_reader, page.id)
+    assert len(_visible_to_staged(staged_rows, run_db.run_id)) == 1
+
+    await run_db.delete_run_data()
+    await helper.delete_run_data()
+    await observer.delete_run_data()
+
+
+async def test_staged_page_flag_is_isolated(baseline_db, staged_db, observer_db):
+    page = await _make_page(baseline_db, "flagged page")
+    baseline_call = await _make_call(baseline_db, page)
+    staged_call = await _make_call(staged_db, page)
+
+    await baseline_db.save_page_flag("issue", call_id=baseline_call.id, page_id=page.id)
+    await staged_db.save_page_flag("duplicate", call_id=staged_call.id, page_id=page.id)
+
+    all_rows = await _flag_rows_for_page(observer_db, page.id)
+    observer_visible = _visible_to_observer(all_rows)
+    assert {r["flag_type"] for r in observer_visible} == {"issue"}
+
+    staged_visible = _visible_to_staged(all_rows, staged_db.run_id)
+    assert {r["flag_type"] for r in staged_visible} == {"issue", "duplicate"}
+
+
+async def test_stage_run_hides_page_flags_from_baseline(project_id):
+    run_db = await _make_db(project_id, staged=False)
+    await run_db.init_budget(100)
+    helper = await _make_db(project_id, staged=False)
+    observer = await _make_db(project_id, staged=False)
+
+    page = await _make_page(run_db, "flagged page")
+    call = await _make_call(run_db, page)
+    await run_db.save_page_flag("issue", call_id=call.id, page_id=page.id)
+
+    pre_rows = await _flag_rows_for_page(observer, page.id)
+    assert len(_visible_to_observer(pre_rows)) == 1
+
+    await helper.stage_run(run_db.run_id)
+
+    post_rows = await _flag_rows_for_page(observer, page.id)
+    assert len(_visible_to_observer(post_rows)) == 0
+
+    await run_db.delete_run_data()
+    await helper.delete_run_data()
+    await observer.delete_run_data()
+
+
+async def test_staged_epistemic_score_is_isolated(baseline_db, staged_db, observer_db):
+    page = await _make_page(baseline_db, "scored page")
+    baseline_call = await _make_call(baseline_db, page)
+    staged_call = await _make_call(staged_db, page)
+
+    await baseline_db.save_epistemic_score(page.id, baseline_call.id, credence=5, robustness=2)
+    await staged_db.save_epistemic_score(page.id, staged_call.id, credence=8, robustness=4)
+
+    all_rows = await _epistemic_score_rows(observer_db, page.id)
+    observer_visible = _visible_to_observer(all_rows)
+    assert len(observer_visible) == 1
+    assert observer_visible[0]["credence"] == 5
+
+    staged_visible = _visible_to_staged(all_rows, staged_db.run_id)
+    assert len(staged_visible) == 2
+
+
+async def test_stage_run_hides_epistemic_scores_from_baseline(project_id):
+    run_db = await _make_db(project_id, staged=False)
+    await run_db.init_budget(100)
+    helper = await _make_db(project_id, staged=False)
+    observer = await _make_db(project_id, staged=False)
+
+    page = await _make_page(run_db, "scored page")
+    call = await _make_call(run_db, page)
+    await run_db.save_epistemic_score(page.id, call.id, credence=7, robustness=3)
+
+    pre_rows = await _epistemic_score_rows(observer, page.id)
+    assert len(_visible_to_observer(pre_rows)) == 1
+
+    await helper.stage_run(run_db.run_id)
+
+    post_rows = await _epistemic_score_rows(observer, page.id)
+    assert len(_visible_to_observer(post_rows)) == 0
+
+    await run_db.delete_run_data()
+    await helper.delete_run_data()
+    await observer.delete_run_data()
+
+
+async def test_staged_page_format_events_are_isolated(baseline_db, staged_db, observer_db):
+    page = await _make_page(baseline_db, "formatted page")
+    baseline_call = await _make_call(baseline_db, page)
+    staged_call = await _make_call(staged_db, page)
+
+    await baseline_db.save_page_format_events(
+        baseline_call.id, [{"page_id": page.id, "detail": "baseline-fmt"}]
+    )
+    await staged_db.save_page_format_events(
+        staged_call.id, [{"page_id": page.id, "detail": "staged-fmt"}]
+    )
+
+    baseline_rows = await _format_event_rows(observer_db, baseline_call.id)
+    assert len(_visible_to_observer(baseline_rows)) == 1
+
+    staged_rows = await _format_event_rows(observer_db, staged_call.id)
+    assert len(_visible_to_observer(staged_rows)) == 0
+    assert len(_visible_to_staged(staged_rows, staged_db.run_id)) == 1
+
+
+async def test_stage_run_hides_page_format_events_from_baseline(project_id):
+    run_db = await _make_db(project_id, staged=False)
+    await run_db.init_budget(100)
+    helper = await _make_db(project_id, staged=False)
+    observer = await _make_db(project_id, staged=False)
+
+    page = await _make_page(run_db, "formatted page")
+    call = await _make_call(run_db, page)
+    await run_db.save_page_format_events(
+        call.id, [{"page_id": page.id, "detail": "fertility-signal"}]
+    )
+
+    pre_rows = await _format_event_rows(observer, call.id)
+    assert len(_visible_to_observer(pre_rows)) == 1
+
+    await helper.stage_run(run_db.run_id)
+
+    post_rows = await _format_event_rows(observer, call.id)
+    assert len(_visible_to_observer(post_rows)) == 0
+
+    await run_db.delete_run_data()
+    await helper.delete_run_data()
+    await observer.delete_run_data()
+
+
+async def test_staged_llm_exchanges_are_isolated(baseline_db, staged_db):
+    page = await _make_page(baseline_db, "exchange page")
+    baseline_call = await _make_call(baseline_db, page)
+    staged_call = await _make_call(staged_db, page)
+
+    await baseline_db.save_llm_exchange(
+        call_id=baseline_call.id,
+        phase="build_context",
+        system_prompt=None,
+        user_message=None,
+        response_text=None,
+    )
+    await staged_db.save_llm_exchange(
+        call_id=staged_call.id,
+        phase="build_context",
+        system_prompt=None,
+        user_message=None,
+        response_text=None,
+    )
+
+    baseline_rows = await _llm_exchange_rows(baseline_db, baseline_call.id)
+    assert len(baseline_rows) == 1
+    assert baseline_rows[0]["staged"] is False
+
+    staged_rows = await _llm_exchange_rows(staged_db, staged_call.id)
+    assert len(staged_rows) == 1
+    assert staged_rows[0]["staged"] is True
+
+
+async def test_stats_rpc_staged_isolation(project_id):
+    """Staged runs see own pages in stats; non-staged runs see baseline only."""
+    baseline = await _make_db(project_id, staged=False)
+    await baseline.init_budget(100)
+    staged = await _make_db(project_id, staged=True)
+    await staged.init_budget(100)
+    observer = await _make_db(project_id, staged=False)
+
+    baseline_q = await _make_page(baseline, "baseline q", PageType.QUESTION)
+    await _make_page(baseline, "baseline claim")
+
+    await _make_page(staged, "staged claim")
+    staged_claim2 = await _make_page(staged, "staged claim 2")
+    await _link(staged, staged_claim2, baseline_q)
+
+    observer_stats = await observer.get_project_stats(project_id)
+    observer_pages = observer_stats.get("pages_total", 0)
+
+    staged_stats = await staged.get_project_stats(project_id)
+    staged_pages = staged_stats.get("pages_total", 0)
+
+    assert staged_pages == observer_pages + 2
+
+    q_stats_observer = await observer.get_question_stats(baseline_q.id)
+    q_stats_staged = await staged.get_question_stats(baseline_q.id)
+
+    assert q_stats_staged["subgraph_page_count"] > q_stats_observer["subgraph_page_count"]
+    assert staged_claim2.id in {n["id"] for n in q_stats_staged["subgraph"]["nodes"]}
+    assert staged_claim2.id not in {n["id"] for n in q_stats_observer["subgraph"]["nodes"]}
+
+    # Teardown order matters: the staged run holds links to baseline pages, so
+    # tear it down before the baseline.
+    await staged.delete_run_data()
+    await baseline.delete_run_data()
     await observer.delete_run_data()

@@ -4,6 +4,7 @@ Supabase database layer for the research workspace.
 
 import asyncio
 import logging
+import time
 import uuid
 from collections.abc import Sequence
 from datetime import UTC, datetime
@@ -149,6 +150,7 @@ def _row_to_page(row: dict[str, Any]) -> Page:
         sections=row.get("sections"),
         meta_type=row.get("meta_type"),
         run_id=row.get("run_id") or "",
+        task_shape=row.get("task_shape"),
     )
 
 
@@ -256,6 +258,7 @@ class DB:
         self._semaphore = asyncio.Semaphore(get_settings().db_max_concurrent_queries)
         self._prod: bool = False
         self._mutation_cache: MutationState | None = None
+        self._mutation_cache_ts: float = 0.0
 
     @classmethod
     async def create(
@@ -319,12 +322,19 @@ class DB:
             return query.or_(f"staged.eq.false,run_id.eq.{self.run_id}")
         return query.eq("staged", False)
 
+    _MUTATION_CACHE_TTL_S = 5.0
+
     async def _load_mutation_state(self) -> MutationState:
         """Fetch and cache mutation events for this staged run."""
-        if self._mutation_cache is not None:
+        now = time.monotonic()
+        if (
+            self._mutation_cache is not None
+            and now - self._mutation_cache_ts < self._MUTATION_CACHE_TTL_S
+        ):
             return self._mutation_cache
         if not self.staged:
             self._mutation_cache = MutationState()
+            self._mutation_cache_ts = now
             return self._mutation_cache
         rows = _rows(
             await self._execute(
@@ -348,10 +358,12 @@ class DB:
             elif et == "update_page_content":
                 state.page_content_overrides[tid] = payload.get("new_content", "")
         self._mutation_cache = state
+        self._mutation_cache_ts = now
         return state
 
     def _invalidate_mutation_cache(self) -> None:
         self._mutation_cache = None
+        self._mutation_cache_ts = 0.0
 
     async def _apply_page_events(self, pages: Sequence[Page]) -> list[Page]:
         """Overlay mutation events onto a batch of pages."""
@@ -481,6 +493,7 @@ class DB:
                     "run_id": self.run_id,
                     "staged": self.staged,
                     "abstract": page.abstract,
+                    "task_shape": page.task_shape,
                 }
             )
         )
@@ -510,6 +523,46 @@ class DB:
         await self._execute(
             self.client.table("pages").update({"abstract": abstract}).eq("id", page_id)
         )
+
+    async def update_page_task_shape(self, page_id: str, task_shape: dict | None) -> None:
+        """Set the task_shape JSONB payload on a page.
+
+        Task-shape is metadata attached only to questions (v1 taxonomy).
+        Non-question pages always store NULL.
+        """
+        await self._execute(
+            self.client.table("pages").update({"task_shape": task_shape}).eq("id", page_id)
+        )
+
+    async def workspace_coverage(self) -> dict[str, dict[str, int]]:
+        """Aggregate task_shape tag values across all question pages in the project.
+
+        Returns a mapping ``{dimension: {value: count}}`` for every dimension
+        that appears in any tagged question. Untagged questions contribute
+        nothing. Used to report distribution of deliverable_shape /
+        source_posture across a project.
+        """
+        query = (
+            self.client.table("pages")
+            .select("task_shape")
+            .eq("page_type", PageType.QUESTION.value)
+            .not_.is_("task_shape", "null")
+        )
+        if self.project_id:
+            query = query.eq("project_id", self.project_id)
+        query = self._staged_filter(query)
+        rows = _rows(await self._execute(query))
+        coverage: dict[str, dict[str, int]] = {}
+        for row in rows:
+            shape = row.get("task_shape") or {}
+            if not isinstance(shape, dict):
+                continue
+            for dim, value in shape.items():
+                if not isinstance(value, str):
+                    continue
+                coverage.setdefault(dim, {})
+                coverage[dim][value] = coverage[dim].get(value, 0) + 1
+        return coverage
 
     async def get_page(self, page_id: str) -> Page | None:
         query = self.client.table("pages").select("*").eq("id", page_id)
@@ -1887,6 +1940,7 @@ class DB:
                     "note": note,
                     "created_at": datetime.now(UTC).isoformat(),
                     "run_id": self.run_id,
+                    "staged": self.staged,
                 }
             )
         )
@@ -1912,6 +1966,7 @@ class DB:
                     "note": note,
                     "created_at": datetime.now(UTC).isoformat(),
                     "run_id": self.run_id,
+                    "staged": self.staged,
                 }
             )
         )
@@ -1934,6 +1989,7 @@ class DB:
             "reasoning": reasoning,
             "created_at": datetime.now(UTC).isoformat(),
             "run_id": self.run_id,
+            "staged": self.staged,
         }
         if source_page_id is not None:
             row["source_page_id"] = source_page_id
@@ -1950,6 +2006,7 @@ class DB:
                 "detail": e["detail"],
                 "call_id": call_id,
                 "run_id": self.run_id,
+                "staged": self.staged,
                 "tags": e.get("tags", {}),
             }
             for e in events
@@ -2128,12 +2185,16 @@ class DB:
         """Compute aggregate stats for a project via the compute_project_stats RPC.
 
         Returns a JSONB blob (see supabase/migrations/20260411204240_add_stats_rpcs.sql
-        for the shape). v1 is baseline-only: staged runs are not applied.
+        for the shape). Staged runs see baseline plus their own rows; non-staged
+        runs see baseline only.
         """
         result = await self._execute(
             self.client.rpc(
                 "compute_project_stats",
-                {"p_project_id": project_id},
+                {
+                    "p_project_id": project_id,
+                    "p_staged_run_id": self.run_id if self.staged else None,
+                },
             )
         )
         return cast(dict[str, Any], result.data or {})
@@ -2142,12 +2203,16 @@ class DB:
         """Compute aggregate stats for the 2-hop undirected neighborhood of a question.
 
         Returns the same JSONB shape as get_project_stats plus a subgraph_page_count
-        field. v1 is baseline-only: staged runs are not applied.
+        field. Staged runs see baseline plus their own rows; non-staged runs see
+        baseline only.
         """
         result = await self._execute(
             self.client.rpc(
                 "compute_question_stats",
-                {"p_question_id": question_id},
+                {
+                    "p_question_id": question_id,
+                    "p_staged_run_id": self.run_id if self.staged else None,
+                },
             )
         )
         return cast(dict[str, Any], result.data or {})
@@ -2245,6 +2310,7 @@ class DB:
             "id": exchange_id,
             "call_id": call_id,
             "run_id": self.run_id,
+            "staged": self.staged,
             "phase": phase,
             "round": round_num,
             "system_prompt": system_prompt,
@@ -2416,12 +2482,18 @@ class DB:
         originally produced.
         """
         await self._execute(self.client.table("runs").update({"staged": True}).eq("id", run_id))
-        await self._execute(
-            self.client.table("pages").update({"staged": True}).eq("run_id", run_id)
-        )
-        await self._execute(
-            self.client.table("page_links").update({"staged": True}).eq("run_id", run_id)
-        )
+        for table in (
+            "pages",
+            "page_links",
+            "page_ratings",
+            "page_flags",
+            "epistemic_scores",
+            "call_llm_exchanges",
+            "page_format_events",
+        ):
+            await self._execute(
+                self.client.table(table).update({"staged": True}).eq("run_id", run_id)
+            )
 
         events = _rows(
             await self._execute(
@@ -2519,12 +2591,18 @@ class DB:
             raise ValueError(f"Run {run_id} is not staged")
 
         await self._execute(self.client.table("runs").update({"staged": False}).eq("id", run_id))
-        await self._execute(
-            self.client.table("pages").update({"staged": False}).eq("run_id", run_id)
-        )
-        await self._execute(
-            self.client.table("page_links").update({"staged": False}).eq("run_id", run_id)
-        )
+        for table in (
+            "pages",
+            "page_links",
+            "page_ratings",
+            "page_flags",
+            "epistemic_scores",
+            "call_llm_exchanges",
+            "page_format_events",
+        ):
+            await self._execute(
+                self.client.table(table).update({"staged": False}).eq("run_id", run_id)
+            )
 
         events = _rows(
             await self._execute(
@@ -2749,7 +2827,13 @@ class DB:
         await self._execute(
             self.client.table("call_llm_exchanges").delete().eq("run_id", self.run_id)
         )
-        for table in ["page_flags", "page_ratings", "page_links"]:
+        for table in [
+            "page_flags",
+            "page_ratings",
+            "page_format_events",
+            "epistemic_scores",
+            "page_links",
+        ]:
             await self._execute(self.client.table(table).delete().eq("run_id", self.run_id))
         # Null out sequence_id FK before deleting sequences and calls
         await self._execute(

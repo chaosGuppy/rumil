@@ -347,6 +347,7 @@ async def create_root_question(
     *,
     abstract: str = "",
     content: str = "",
+    task_shape: dict | None = None,
 ) -> str:
     page = Page(
         page_type=PageType.QUESTION,
@@ -359,6 +360,7 @@ async def create_root_question(
         provenance_call_type="init",
         provenance_call_id="init",
         extra={"status": "open"},
+        task_shape=task_shape,
     )
     await db.save_page(page)
     try:
@@ -369,6 +371,10 @@ async def create_root_question(
             page.id[:8],
             exc_info=True,
         )
+    if task_shape is None:
+        from rumil.task_shape import auto_tag_and_save
+
+        await auto_tag_and_save(page.id, question_text, abstract or content, db)
     return page.id
 
 

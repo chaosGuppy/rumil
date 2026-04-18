@@ -6,6 +6,10 @@ policies that were written to port specific orchestrators plus the named
 compositions that stitch them together.
 """
 
+from rumil.orchestrators.policies.cascade import (
+    NoMoreCascadesPolicy,
+    cascade_policies,
+)
 from rumil.orchestrators.policies.distill_first import (
     SeedViewPolicy,
     UpdateViewPolicy,
@@ -20,8 +24,10 @@ from rumil.orchestrators.policies.worldview import (
 __all__ = [
     "EvaluateModePolicy",
     "ExploreModePolicy",
+    "NoMoreCascadesPolicy",
     "SeedViewPolicy",
     "UpdateViewPolicy",
+    "cascade_policies",
     "distill_first_policies",
     "worldview_policies",
 ]

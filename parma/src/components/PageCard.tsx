@@ -7,6 +7,7 @@ import { NodeTypeLabel } from "./NodeTypeLabel";
 import { SourceBadge } from "./SourceBadge";
 import { PageContent } from "./PageContent";
 import { PageAnnotationActions } from "./PageAnnotationActions";
+import { useInspectPanel } from "./InspectPanelContext";
 
 interface PageCardProps {
   page: Page;
@@ -131,17 +132,7 @@ export function PageCard({
         <LinkBadges links={links} />
         <PageAnnotationActions pageId={page.id} />
         {page.provenance_call_type && page.provenance_call_type !== "system" && (
-          <span
-            style={{
-              fontFamily: "var(--font-mono-stack)",
-              fontSize: "9px",
-              color: "var(--fg-dim)",
-              letterSpacing: "0.04em",
-              opacity: 0.7,
-            }}
-          >
-            via {page.provenance_call_type}
-          </span>
+          <ProvenanceChip page={page} />
         )}
       </div>
 
@@ -185,5 +176,51 @@ export function PageCard({
         </div>
       )}
     </div>
+  );
+}
+
+// Provenance chip in the PageCard meta row. Used to be a static label
+// "via {call_type}"; now when the page carries a run_id it becomes a
+// button that jumps into TRACE view mode with the producing call
+// pre-selected. Falls back to the static label if run_id is missing
+// (older pages written before run_id was captured).
+function ProvenanceChip({ page }: { page: Page }) {
+  const { openTrace } = useInspectPanel();
+  const runId = page.run_id;
+  const callId = page.provenance_call_id;
+
+  const baseStyle: React.CSSProperties = {
+    fontFamily: "var(--font-mono-stack)",
+    fontSize: "9px",
+    color: "var(--fg-dim)",
+    letterSpacing: "0.04em",
+    opacity: 0.7,
+  };
+
+  if (!runId) {
+    return <span style={baseStyle}>via {page.provenance_call_type}</span>;
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        openTrace(runId, callId);
+      }}
+      style={{
+        ...baseStyle,
+        background: "none",
+        border: "none",
+        padding: 0,
+        cursor: "pointer",
+        textDecoration: "underline",
+        textUnderlineOffset: "2px",
+        textDecorationColor: "var(--border)",
+      }}
+      title={`View trace (run ${runId.slice(0, 8)})`}
+    >
+      via {page.provenance_call_type}
+    </button>
   );
 }

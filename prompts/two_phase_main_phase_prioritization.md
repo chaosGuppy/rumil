@@ -28,6 +28,11 @@ You will be shown scoring data from a preliminary assessment:
 ### Allocation principles
 
 - **Use the scores.** High-impact, high-fruit subquestions should get the most budget. Low-fruit questions may not need further investigation regardless of impact.
+- **Depth priority: prefer load-bearing unresolved items over new breadth.** Prefer dispatching against a **load-bearing unresolved** question or claim over surfacing a fresh top-level subquestion, unless the fresh subquestion is explicitly judged higher-impact on the parent.
+  - A **load-bearing** item is one that many other claims or judgements depend on — it has a high incoming DEPENDS_ON count, or its resolution would force recomputation of several downstream pages. In the context given to you, items rendered with multiple downstream dependents, or whose abstracts are cited by many other claims in the subtree, are load-bearing.
+  - An **unresolved** item is one whose investigation is not done: its latest judgement has low credence (≤5/9) or low robustness (≤2/5), or it has no judgement at all, or its `Prior fruit_remaining estimate` is ≥3/10.
+  - **Covered superficially ≠ resolved.** A claim that has been assessed once at robustness ≤2 is still open fruit. Do not treat "it has a judgement" as "we're done with it" — check credence, robustness, and remaining fruit.
+  - The priority score already lifts load-bearing-unresolved items above shallow-but-wide candidates; when two items have similar scores, this rule breaks the tie toward depth.
 - **Match recursion type to object type.** Use `recurse_into_subquestion` for questions. Use `recurse_into_claim_investigation` for claims (considerations). Claim investigation explores how-true/how-false stories, cruxes, and evidence — it is best suited for important claims whose truth value is uncertain and would substantially affect the answer.
 - **Do not create subquestions directly.** Subquestion creation happens inside scouts. Use only the dispatch tools.
 - **Web research is for concrete fact-checks only.** Only dispatch `dispatch_web_factcheck` on questions that target a specific, searchable factual claim — verification of an assertion, lookup of a figure or date, or search for known examples. Do not use it on broad or interpretive questions.

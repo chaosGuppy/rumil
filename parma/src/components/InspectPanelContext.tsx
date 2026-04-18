@@ -19,6 +19,14 @@ interface InspectPanelContextValue {
   registerPromoteHandler: (
     handler: ((shortId: string) => void) | null,
   ) => void;
+  // Jump into TRACE view mode for the given run, optionally preselecting a
+  // call. Routed through a handler the QuestionViewPage registers, so the
+  // provider stays URL-agnostic. Falls back to a no-op if no handler is
+  // registered (e.g. operator views).
+  openTrace: (runId: string, callId?: string) => void;
+  registerTraceHandler: (
+    handler: ((runId: string, callId?: string) => void) | null,
+  ) => void;
 }
 
 const InspectPanelCtx = createContext<InspectPanelContextValue | null>(null);
@@ -28,6 +36,9 @@ const InspectPanelCtx = createContext<InspectPanelContextValue | null>(null);
 export function InspectPanelProvider({ children }: { children: ReactNode }) {
   const [openShortId, setOpenShortId] = useState<string | null>(null);
   const promoteHandlerRef = useRef<((id: string) => void) | null>(null);
+  const traceHandlerRef = useRef<
+    ((runId: string, callId?: string) => void) | null
+  >(null);
 
   const openInspect = useCallback((shortId: string) => {
     // Accept the 8-char prefix form (most common in-body usage) but also
@@ -57,6 +68,22 @@ export function InspectPanelProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const openTrace = useCallback((runId: string, callId?: string) => {
+    const handler = traceHandlerRef.current;
+    if (handler) {
+      handler(runId, callId);
+      // Close the drawer; the trace view is taking over.
+      setOpenShortId(null);
+    }
+  }, []);
+
+  const registerTraceHandler = useCallback(
+    (handler: ((runId: string, callId?: string) => void) | null) => {
+      traceHandlerRef.current = handler;
+    },
+    [],
+  );
+
   return (
     <InspectPanelCtx.Provider
       value={{
@@ -65,6 +92,8 @@ export function InspectPanelProvider({ children }: { children: ReactNode }) {
         openShortId,
         promoteToPane,
         registerPromoteHandler,
+        openTrace,
+        registerTraceHandler,
       }}
     >
       {children}
@@ -89,5 +118,7 @@ export function useInspectPanel(): InspectPanelContextValue {
     openShortId: null,
     promoteToPane: () => {},
     registerPromoteHandler: () => {},
+    openTrace: () => {},
+    registerTraceHandler: () => {},
   };
 }

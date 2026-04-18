@@ -77,21 +77,20 @@ export async function listPageAnnotations(
   return res.json();
 }
 
-// Batched fetch — issues one request per page but in parallel. There is no
-// batch endpoint today; keep this in one place so we can swap in a single
-// /api/projects/<id>/annotations call later without touching consumers.
+// Batched fetch — one HTTP call hits the /api/pages/annotations endpoint
+// and returns the per-page grouping. This replaces the previous
+// N-parallel-per-page implementation that stacked up hundreds of ms of
+// contention when rendering a view of ~25 items. The old
+// listPageAnnotations() remains for standalone single-page consumers.
 export async function listPageAnnotationsBatch(
   pageIds: readonly string[],
 ): Promise<Map<string, AnnotationEvent[]>> {
-  const entries = await Promise.all(
-    pageIds.map(async (id) => {
-      try {
-        const rows = await listPageAnnotations(id);
-        return [id, rows] as const;
-      } catch {
-        return [id, [] as AnnotationEvent[]] as const;
-      }
-    }),
+  if (pageIds.length === 0) return new Map();
+  const ids = pageIds.join(",");
+  const res = await fetch(
+    `${API_BASE}/api/pages/annotations?ids=${encodeURIComponent(ids)}`,
   );
-  return new Map(entries);
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  const obj = (await res.json()) as Record<string, AnnotationEvent[]>;
+  return new Map(Object.entries(obj));
 }

@@ -12,6 +12,7 @@ import { PageContent } from "./PageContent";
 import { CredenceBadge } from "./CredenceBadge";
 import { NodeTypeLabel } from "./NodeTypeLabel";
 import { PageAnnotationActions } from "./PageAnnotationActions";
+import { useInspectPanel } from "./InspectPanelContext";
 
 interface InspectPanelProps {
   shortId: string | null;
@@ -205,6 +206,7 @@ function InspectBody({
         {page.provenance_call_type && (
           <ProvenanceRow label="via" value={page.provenance_call_type} mono />
         )}
+        {page.run_id && <InspectTraceLink page={page} />}
       </footer>
     </article>
   );
@@ -687,5 +689,28 @@ function ProvenanceRow({
         {value}
       </span>
     </div>
+  );
+}
+
+// Row-shaped "open in TRACE" action on the provenance footer. Renders as
+// a button styled like a ProvenanceRow so the footer keeps its grid
+// alignment. The ProvenanceChip on PageCard is the primary entry point,
+// but a reader who has drilled into a page via the inspect drawer needs
+// the same affordance here.
+function InspectTraceLink({ page }: { page: import("@/lib/types").Page }) {
+  const { openTrace } = useInspectPanel();
+  const runId = page.run_id!;
+  return (
+    <button
+      type="button"
+      className="inspect-prov-row inspect-prov-trace"
+      onClick={() => openTrace(runId, page.provenance_call_id)}
+      title={`View trace for run ${runId.slice(0, 8)}`}
+    >
+      <span className="inspect-prov-label">trace</span>
+      <span className="inspect-prov-value inspect-prov-mono inspect-prov-trace-link">
+        → open trace ({runId.slice(0, 8)})
+      </span>
+    </button>
   );
 }

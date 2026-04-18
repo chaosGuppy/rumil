@@ -307,4 +307,133 @@ export async function deleteChatConversation(conversationId: string): Promise<vo
   if (!res.ok) throw new Error(`API error: ${res.status}`);
 }
 
+// Trace-related types. Mirror subsets of the API schemas (CallSummary,
+// CallNodeOut, RunTraceTreeOut, TraceEventOut, LLMExchange*). We hand-type
+// these rather than using codegen — parma doesn't share the generated SDK
+// with the rumil frontend, and keeping TRACE self-contained keeps the
+// coupling small.
+
+export interface TraceCallSummary {
+  id: string;
+  call_type: string;
+  status: string;
+  parent_call_id: string | null;
+  scope_page_id: string | null;
+  call_params: Record<string, unknown> | null;
+  created_at: string;
+  completed_at: string | null;
+  sequence_id: string | null;
+  sequence_position: number | null;
+  cost_usd: number | null;
+}
+
+export interface TraceCallNode {
+  call: TraceCallSummary;
+  scope_page_summary: string | null;
+  warning_count: number;
+  error_count: number;
+}
+
+export interface RunTraceTree {
+  run_id: string;
+  question: Page | null;
+  calls: TraceCallNode[];
+  cost_usd: number | null;
+  staged: boolean;
+  config: Record<string, unknown>;
+}
+
+// TraceEvent is intentionally typed as a loose shape. The backend uses a
+// discriminated union; in the UI we render generically (pretty-print JSON
+// with a couple of event-specific shortcuts in TraceView). Typing every
+// event variant would more than double the component's surface for little
+// ergonomic gain — events are read, not written, here.
+export interface TraceEvent {
+  event: string;
+  ts: string;
+  call_id: string;
+  [key: string]: unknown;
+}
+
+export interface LLMExchangeSummary {
+  id: string;
+  phase: string;
+  round: number | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  duration_ms: number | null;
+  error: string | null;
+  created_at: string;
+}
+
+export interface LLMExchangeToolCall {
+  name: string;
+  input: Record<string, unknown> | string;
+}
+
+export interface LLMExchangeDetail {
+  id: string;
+  call_id: string;
+  phase: string;
+  round: number | null;
+  system_prompt: string | null;
+  user_message: string | null;
+  user_messages: Array<Record<string, unknown>> | null;
+  response_text: string | null;
+  tool_calls: LLMExchangeToolCall[];
+  input_tokens: number | null;
+  output_tokens: number | null;
+  duration_ms: number | null;
+  error: string | null;
+  created_at: string;
+}
+
+export async function fetchRunTraceTree(runId: string): Promise<RunTraceTree> {
+  const res = await fetch(`${API_BASE}/api/runs/${runId}/trace-tree`);
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchCallEvents(callId: string): Promise<TraceEvent[]> {
+  const res = await fetch(`${API_BASE}/api/calls/${callId}/events`);
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchCallLLMExchanges(
+  callId: string,
+): Promise<LLMExchangeSummary[]> {
+  const res = await fetch(`${API_BASE}/api/calls/${callId}/llm-exchanges`);
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchLLMExchange(
+  exchangeId: string,
+): Promise<LLMExchangeDetail> {
+  const res = await fetch(`${API_BASE}/api/llm-exchanges/${exchangeId}`);
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  return res.json();
+}
+
+// Recent runs for the TRACE mode picker. We reuse the existing
+// /api/projects/{id}/runs endpoint — one SQL call for the active project's
+// runs, ordered most-recent first.
+export interface RunListItem {
+  run_id: string | null;
+  created_at: string;
+  name: string;
+  config: Record<string, unknown> | null;
+  question_summary: string | null;
+  staged: boolean;
+}
+
+export async function fetchProjectRuns(
+  projectId: string,
+): Promise<RunListItem[]> {
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/runs`);
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  return res.json();
+}
+
 export { API_BASE };

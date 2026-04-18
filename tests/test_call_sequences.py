@@ -208,14 +208,11 @@ async def test_multi_step_sequence_creates_record_and_assigns_positions(tmp_db, 
     db_seqs = await tmp_db.get_sequences_for_call(p_call.id)
     assert len(db_seqs) == 1
     seq_calls = await tmp_db.get_calls_for_sequence(db_seqs[0].id)
-    # assess_question creates 2 calls (summarize + assess), so 3 total
-    assert len(seq_calls) == 3
+    assert len(seq_calls) == 2
     assert seq_calls[0].sequence_position == 0
     assert seq_calls[1].sequence_position == 1
-    assert seq_calls[2].sequence_position == 2
     types = [c.call_type for c in seq_calls]
     assert CallType.FIND_CONSIDERATIONS in types
-    assert CallType.SUMMARIZE in types
     assert CallType.ASSESS in types
 
 

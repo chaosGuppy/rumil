@@ -3,7 +3,7 @@
 Covers the hoisted gate that fires adversarial review for any orchestrator
 that routes through ``assess_question`` (source_first, distill_first,
 critique_first, worldview, two_phase, claim_investigation). All tests mock
-the assess call and summarize_question to avoid any real LLM traffic.
+the assess call to avoid any real LLM traffic.
 """
 
 import pytest
@@ -89,18 +89,6 @@ def _stub_assess(mocker, credence: int):
     )
 
 
-def _stub_summarize(mocker):
-    """Replace ``summarize_question`` with a no-op to avoid its LLM call."""
-
-    async def fake_summarize(question_id, db, **kwargs):
-        return None
-
-    mocker.patch(
-        "rumil.orchestrators.common.summarize_question",
-        side_effect=fake_summarize,
-    )
-
-
 def _stub_adversarial_run(mocker, verdict: AdversarialVerdict | None = None):
     """Replace ``AdversarialReviewCall.run`` with a fake that writes a verdict
     JUDGEMENT and completes the call. Returns a list that captures the target
@@ -158,7 +146,6 @@ async def test_gate_fires_after_assess_when_enabled_and_credence_crosses_thresho
     on the assessed page meets the threshold. This gives every orchestrator the
     gate for free — the whole point of hoisting it out of claim_investigation.
     """
-    _stub_summarize(mocker)
     _stub_assess(mocker, credence=7)
     fired = _stub_adversarial_run(mocker)
 
@@ -172,7 +159,6 @@ async def test_gate_fires_after_assess_when_enabled_and_credence_crosses_thresho
 async def test_gate_does_not_fire_when_disabled(tmp_db, target_claim, mocker):
     """With enable_adversarial_review=False (default), assess_question does not
     trigger review even when credence crosses the threshold."""
-    _stub_summarize(mocker)
     _stub_assess(mocker, credence=8)
     fired = _stub_adversarial_run(mocker)
 
@@ -224,7 +210,6 @@ async def test_gate_skips_page_already_reviewed(tmp_db, target_claim, mocker):
         )
     )
 
-    _stub_summarize(mocker)
     _stub_assess(mocker, credence=9)
     fired = _stub_adversarial_run(mocker)
 
@@ -236,7 +221,6 @@ async def test_gate_skips_page_already_reviewed(tmp_db, target_claim, mocker):
 
 async def test_gate_skips_when_credence_below_threshold(tmp_db, target_claim, mocker):
     """When assess results in credence < threshold, the gate stays silent."""
-    _stub_summarize(mocker)
     _stub_assess(mocker, credence=5)
     fired = _stub_adversarial_run(mocker)
 
@@ -250,7 +234,6 @@ async def test_gate_skips_when_credence_below_threshold(tmp_db, target_claim, mo
 async def test_gate_failure_does_not_propagate_to_assess_caller(tmp_db, target_claim, mocker):
     """If the adversarial review raises, assess_question must still return its
     assess call ID — review failures are logged and swallowed."""
-    _stub_summarize(mocker)
     _stub_assess(mocker, credence=8)
 
     async def boom(self):

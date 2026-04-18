@@ -28,8 +28,10 @@ from rumil.models import (
 from rumil.orchestrators.policies import (
     EvaluateModePolicy,
     ExploreModePolicy,
+    NoMoreCascadesPolicy,
     SeedViewPolicy,
     UpdateViewPolicy,
+    cascade_policies,
     distill_first_policies,
     worldview_policies,
 )
@@ -135,6 +137,11 @@ def _make_db(
 @pytest.fixture
 def patched_helpers(mocker):
     """Patch the common helpers the PolicyOrchestrator routes through."""
+    mocker.patch(
+        "rumil.orchestrators.policy_layer.check_triage_before_run",
+        new_callable=AsyncMock,
+        return_value=True,
+    )
     find = mocker.patch(
         "rumil.orchestrators.policy_layer.find_considerations_until_done",
         new_callable=AsyncMock,
@@ -557,3 +564,117 @@ async def test_worldview_loop_handles_multi_iteration_with_terminate(patched_hel
     await orch.run(qid)
 
     assert patched_helpers["assess"].call_count >= 1
+
+
+async def test_cascade_policies_single_suggestion_dispatches_assess(patched_helpers):
+    qid = "q-cascade"
+    target_id = "target-page"
+    suggestion = _cascade_suggestion(target_page_id=target_id)
+
+    db = _make_db(budget=5, pending_suggestions=[suggestion])
+
+    orch = PolicyOrchestrator(db, cascade_policies(db), max_iterations=1)
+    await orch.run(qid)
+
+    assert patched_helpers["assess"].call_count == 1
+    assert patched_helpers["assess"].call_args.kwargs["question_id"] == target_id
+
+
+async def test_cascade_policies_empty_queue_terminates(patched_helpers):
+    qid = "q-no-cascades"
+    db = _make_db(budget=5, pending_suggestions=[])
+
+    orch = PolicyOrchestrator(db, cascade_policies(db), max_iterations=10)
+    await orch.run(qid)
+
+    assert patched_helpers["assess"].call_count == 0
+
+
+async def test_cascade_policies_skips_already_assessed_target(patched_helpers):
+    qid = "q-dedupe"
+    target_id = "target-page"
+    suggestion = _cascade_suggestion(target_page_id=target_id)
+
+    db = _make_db(budget=5, pending_suggestions=[suggestion])
+
+    orch = PolicyOrchestrator(db, cascade_policies(db), max_iterations=5)
+    await orch.run(qid)
+
+    assert patched_helpers["assess"].call_count == 1
+    assert patched_helpers["assess"].call_args.kwargs["question_id"] == target_id
+
+
+async def test_no_more_cascades_policy_returns_none_when_pending_exists():
+    suggestion = _cascade_suggestion(target_page_id="t")
+    db = _make_db(pending_suggestions=[suggestion])
+    state = QuestionState(
+        question_id="q",
+        budget_remaining=5,
+        iteration=0,
+        consideration_count=0,
+        child_question_count=0,
+        source_count=0,
+        view=None,
+        missing_credence_page_ids=[],
+        missing_importance_item_ids=[],
+        unjudged_child_question_ids=[],
+        recent_call_types=[],
+    )
+    assert await NoMoreCascadesPolicy(db).decide(state) is None
+
+
+async def test_no_more_cascades_policy_terminates_when_empty():
+    db = _make_db(pending_suggestions=[])
+    state = QuestionState(
+        question_id="q",
+        budget_remaining=5,
+        iteration=0,
+        consideration_count=0,
+        child_question_count=0,
+        source_count=0,
+        view=None,
+        missing_credence_page_ids=[],
+        missing_importance_item_ids=[],
+        unjudged_child_question_ids=[],
+        recent_call_types=[],
+    )
+    intent = await NoMoreCascadesPolicy(db).decide(state)
+    assert isinstance(intent, Terminate)
+    assert "cascade_review" in intent.reason
+
+
+async def test_no_more_cascades_policy_ignores_non_cascade_suggestions():
+    non_cascade = Suggestion(
+        suggestion_type=SuggestionType.RELEVEL,
+        target_page_id="unrelated",
+    )
+    db = _make_db(pending_suggestions=[non_cascade])
+    state = QuestionState(
+        question_id="q",
+        budget_remaining=5,
+        iteration=0,
+        consideration_count=0,
+        child_question_count=0,
+        source_count=0,
+        view=None,
+        missing_credence_page_ids=[],
+        missing_importance_item_ids=[],
+        unjudged_child_question_ids=[],
+        recent_call_types=[],
+    )
+    intent = await NoMoreCascadesPolicy(db).decide(state)
+    assert isinstance(intent, Terminate)
+
+
+async def test_cascade_variant_registered_in_factory(mocker):
+    from rumil.orchestrators import Orchestrator
+    from rumil.settings import override_settings
+
+    fake_db = mocker.MagicMock()
+    fake_db.get_budget = AsyncMock(return_value=(100, 0))
+    fake_db.budget_remaining = AsyncMock(return_value=100)
+
+    with override_settings(prioritizer_variant="cascade"):
+        orch = Orchestrator(fake_db)
+
+    assert isinstance(orch, PolicyOrchestrator)

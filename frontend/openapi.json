@@ -397,6 +397,80 @@
         }
       }
     },
+    "/api/pages/annotations": {
+      "get": {
+        "summary": "List Pages Annotations Batch",
+        "description": "Batched annotation fetch for many pages in a single request.\n\nReplaces the N-parallel per-page fetch parma previously issued when\nrendering a view. One DB query (``in_()`` over ``target_page_id``) is\nused regardless of how many ids are passed. Response shape is\n``{page_id: [AnnotationEvent, ...]}`` \u2014 pages with no annotations are\nstill present with an empty list so the frontend doesn't have to\nsecond-guess.\n\nDeclared before ``/api/pages/{page_id}`` so FastAPI's declaration-order\nrouting doesn't swallow the literal ``annotations`` segment as a\npage_id.",
+        "operationId": "list_pages_annotations_batch_api_pages_annotations_get",
+        "parameters": [
+          {
+            "name": "ids",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Ids"
+            }
+          },
+          {
+            "name": "staged_run_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Staged Run Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/AnnotationEvent"
+                    }
+                  },
+                  "title": "Response List Pages Annotations Batch Api Pages Annotations Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/pages/{page_id}": {
       "get": {
         "summary": "Get Page",

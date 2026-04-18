@@ -519,17 +519,16 @@ async def render_child_investigation_results(
     Detail level varies by newness (created after *last_view_created_at*):
     - NEW View: NL content + compact I4/I5 item headlines
     - Old View: NL content only
-    - NEW Summary/Judgement: full content
-    - Old Summary/Judgement: abstract only
+    - NEW Judgement: full content
+    - Old Judgement: abstract only
     """
     children = await db.get_child_questions(parent_question_id)
     if not children:
         return "", []
 
     child_ids = [c.id for c in children]
-    views_map, summaries_map, judgements_map = await asyncio.gather(
+    views_map, judgements_map = await asyncio.gather(
         db.get_views_for_questions(child_ids),
-        db.get_latest_summaries_for_questions(child_ids),
         db.get_judgements_for_questions(child_ids),
     )
 
@@ -555,7 +554,6 @@ async def render_child_investigation_results(
     for child in children:
         cid = child.id
         view = views_map.get(cid)
-        summary = summaries_map.get(cid)
         judgements = judgements_map.get(cid, [])
         latest_judgement = max(judgements, key=lambda p: p.created_at) if judgements else None
 
@@ -590,22 +588,6 @@ async def render_child_investigation_results(
                         r = page.robustness if page.robustness is not None else "?"
                         lines.append(f"- [C{c}/R{r} I{imp}] `{page.id[:8]}` — {page.headline}")
                         page_ids.append(page.id)
-        elif summary:
-            new = _is_new(summary)
-            page_ids.append(summary.id)
-            detail = PageDetail.CONTENT if new else PageDetail.ABSTRACT
-            lines.append(f"**Status:** Summary available{' [NEW]' if new else ''}")
-            lines.append("")
-            lines.append(
-                await format_page(
-                    summary,
-                    detail,
-                    linked_detail=None,
-                    db=db,
-                    track=True,
-                    track_tags={"source": "child_investigation"},
-                )
-            )
         elif latest_judgement:
             new = _is_new(latest_judgement)
             page_ids.append(latest_judgement.id)
@@ -754,12 +736,6 @@ async def build_prioritization_context(
     return "\n".join(parts), short_id_map
 
 
-def _filter_summary_pages(
-    ranked: Sequence[tuple[Page, float]],
-) -> list[tuple[Page, float]]:
-    return [(p, score) for p, score in ranked if p.page_type == PageType.SUMMARY]
-
-
 async def build_embedding_based_context(
     question_text: str,
     db: DB,
@@ -852,7 +828,7 @@ async def build_embedding_based_context(
     abstract_budget = abstract_page_char_budget
     summary_budget = summary_page_char_budget
 
-    distillation_pages = _filter_summary_pages(ranked)
+    distillation_pages: list[tuple[Page, float]] = []
     distillation_ids: list[str] = []
     distillation_chars = 0
     all_items: list[tuple[str, Page]] = []

@@ -23,7 +23,6 @@ from rumil.calls.adversarial_review import (
 from rumil.calls.call_registry import ASSESS_CALL_CLASSES
 from rumil.calls.find_considerations import FindConsiderationsCall
 from rumil.calls.ingest import IngestCall
-from rumil.calls.summarize import summarize_question
 from rumil.calls.web_research import WebResearchCall
 from rumil.constants import (
     DEFAULT_FRUIT_THRESHOLD,
@@ -63,16 +62,29 @@ PRIORITIZATION_MOVES: list[MoveType] = [
 ]
 
 
+DEPTH_BONUS_K = 1.0
+
+
 def compute_priority_score(
     impact_on_question: int,
     broader_impact: int,
     fruit: int,
+    unresolved_load_bearing_weight: float = 0.0,
 ) -> int:
-    """Synthetic priority from three scoring dimensions.
+    """Synthetic priority from three scoring dimensions plus an optional depth bonus.
 
-    Formula: floor((2 * 2^(ioq/2) + 2^(bi/2)) * fruit / 10)
+    Base formula: floor((2 * 2^(ioq/2) + 2^(bi/2)) * fruit / 10)
+
+    When ``unresolved_load_bearing_weight`` (``w`` in [0, 1]) is non-zero, the
+    raw score is multiplied by ``(1 + k * w)`` with ``k = DEPTH_BONUS_K``,
+    lifting load-bearing unresolved items over shallow-but-wide candidates.
+    A weight of 1 means "many downstream dependents AND weak-or-missing
+    judgement" — the caller composes it from DEPENDS_ON count and judgement
+    credence/robustness. Default 0 keeps the formula backward-compatible.
     """
+    w = max(0.0, min(1.0, unresolved_load_bearing_weight))
     raw = (2 * 2 ** (impact_on_question / 2) + 2 ** (broader_impact / 2)) * fruit
+    raw *= 1 + DEPTH_BONUS_K * w
     return math.floor(raw / 10)
 
 
@@ -620,10 +632,6 @@ async def assess_question(
 ) -> str | None:
     """Run one Assess call on a question. Returns call ID, or None if no budget.
 
-    When ``sequence_id`` is provided, the summarise call is placed at
-    ``sequence_position`` and the assess call at ``sequence_position + 1``.
-    Callers should account for two positions being consumed.
-
     After the assess completes, if ``settings.enable_adversarial_review`` is
     True, the assessed page's latest judgement has credence >= the configured
     threshold, and the page has not already been adversarially reviewed, an
@@ -635,15 +643,6 @@ async def assess_question(
     if not await _consume_budget(db, force=force):
         return None
 
-    await summarize_question(
-        question_id,
-        db,
-        parent_call_id=parent_call_id,
-        sequence_id=sequence_id,
-        sequence_position=sequence_position,
-    )
-
-    assess_position = sequence_position + 1 if sequence_position is not None else None
     call = await db.create_call(
         CallType.ASSESS,
         scope_page_id=question_id,
@@ -651,7 +650,7 @@ async def assess_question(
         context_page_ids=context_page_ids,
         call_id=call_id,
         sequence_id=sequence_id,
-        sequence_position=assess_position,
+        sequence_position=sequence_position,
     )
     cls = ASSESS_CALL_CLASSES[get_settings().assess_call_variant]
     assess = cls(question_id, call, db, broadcaster=broadcaster)

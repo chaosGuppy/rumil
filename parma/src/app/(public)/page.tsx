@@ -12,6 +12,7 @@ import { SuggestionReview } from "@/components/SuggestionReview";
 import { SourcesView } from "@/components/SourcesView";
 import { SectionsView } from "@/components/SectionsView";
 import { SourceDrawer } from "@/components/SourceDrawer";
+import { TraceView } from "@/components/TraceView";
 import { ConceptProvider } from "@/components/ConceptContext";
 import { AnnotationProvider } from "@/components/AnnotationContext";
 import {
@@ -90,7 +91,7 @@ function formatRelative(iso: string): string {
   return `${years}y ago`;
 }
 
-const VIEW_MODES = ["panes", "article", "vertical", "sections", "sources"] as const;
+const VIEW_MODES = ["panes", "article", "vertical", "sections", "sources", "trace"] as const;
 type ViewMode = (typeof VIEW_MODES)[number];
 
 function isViewMode(v: string): v is ViewMode {
@@ -381,7 +382,7 @@ function QuestionViewPage({
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
-  const { openInspect } = useInspectPanel();
+  const { openInspect, registerTraceHandler } = useInspectPanel();
 
   const verticalRef = useRef<VerticalViewHandle>(null);
   const [chatOpen, setChatOpen] = useState(false);
@@ -406,6 +407,13 @@ function QuestionViewPage({
 
   const rawView = searchParams.get("view") ?? "panes";
   const viewMode: ViewMode = isViewMode(rawView) ? rawView : "panes";
+  const traceRunId = searchParams.get("run_id");
+  const traceCallId = searchParams.get("call_id");
+
+  // Remember the view the user was in before jumping into TRACE mode.
+  // When they hit "back" on the trace head, we restore it. Falls back to
+  // "panes" if we've never seen them use another mode.
+  const [previousView, setPreviousView] = useState<ViewMode>("panes");
 
   const setViewMode = useCallback(
     (mode: ViewMode) => {
@@ -415,6 +423,11 @@ function QuestionViewPage({
       } else {
         params.set("view", mode);
       }
+      // Trace-mode params make no sense outside trace mode.
+      if (mode !== "trace") {
+        params.delete("run_id");
+        params.delete("call_id");
+      }
       const query = params.toString();
       router.replace(`${pathname}${query ? `?${query}` : ""}`, {
         scroll: false,
@@ -422,6 +435,49 @@ function QuestionViewPage({
     },
     [searchParams, router, pathname],
   );
+
+  // Remember previous view whenever the user switches INTO trace mode so
+  // the back button can restore it.
+  useEffect(() => {
+    if (viewMode !== "trace") {
+      setPreviousView(viewMode);
+    }
+  }, [viewMode]);
+
+  const setTraceRun = useCallback(
+    (runId: string) => {
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("view", "trace");
+      params.set("run_id", runId);
+      params.delete("call_id");
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    },
+    [searchParams, router, pathname],
+  );
+
+  const backFromTrace = useCallback(() => {
+    setViewMode(previousView);
+  }, [previousView, setViewMode]);
+
+  // Register a trace-jump handler so provenance chips anywhere in the tree
+  // can call openTrace(runId, callId) and land here with trace mode
+  // activated. We re-register whenever the deps change; the ref inside the
+  // provider always holds the latest closure.
+  useEffect(() => {
+    const handler = (runId: string, callId?: string) => {
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("view", "trace");
+      params.set("run_id", runId);
+      if (callId) {
+        params.set("call_id", callId);
+      } else {
+        params.delete("call_id");
+      }
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    };
+    registerTraceHandler(handler);
+    return () => registerTraceHandler(null);
+  }, [searchParams, router, pathname, registerTraceHandler]);
 
   const refreshView = useCallback(() => {
     setRefreshKey((k) => k + 1);
@@ -527,6 +583,15 @@ function QuestionViewPage({
             <SourcesView
               projectId={project.id}
               onOpenDrawer={setDrawerSource}
+            />
+          )}
+          {viewMode === "trace" && (
+            <TraceView
+              runId={traceRunId}
+              projectId={project.id}
+              initialCallId={traceCallId}
+              onSelectRun={setTraceRun}
+              onBack={backFromTrace}
             />
           )}
         </div>

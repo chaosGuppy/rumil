@@ -50,6 +50,16 @@ Allocation principles
 
 Use the scores. High-impact, high-fruit lines of investigation should get the most budget. Low-fruit lines may not need further investigation regardless of impact.
 
+\*\*Depth priority: prefer load-bearing unresolved items over new breadth.\*\* Prefer dispatching against a \*\*load-bearing unresolved\*\* claim or question over surfacing a fresh top-level subquestion or fresh scout dimension, unless the fresh item is explicitly judged higher-impact on the parent investigation.
+
+\- A \*\*load-bearing\*\* item is one that many other claims, judgements, or downstream investigations depend on — it has a high incoming DEPENDS\_ON count, or its resolution would force recomputation of several downstream pages. Items rendered with multiple downstream dependents, or whose abstracts are cited by many other claims in the subtree, are load-bearing.
+
+\- An \*\*unresolved\*\* item is one whose investigation is not done: its latest judgement has low credence (≤5/9) or low robustness (≤2/5), or it has no judgement at all, or its \`Prior fruit\_remaining estimate\` is ≥3/10.
+
+\- \*\*Covered superficially ≠ resolved.\*\* A claim that has been assessed once at robustness ≤2 is still open fruit. Do not treat "it has a judgement" as "we're done with it" — check credence, robustness, and remaining fruit.
+
+\- The priority score already lifts load-bearing-unresolved items above shallow-but-wide candidates; when two items have similar scores, this rule breaks the tie toward depth.
+
 Sequence matters. If how-true and how-false stories are thin, more scouting there may be more valuable than recursing into cruxes. If cruxes haven't been identified yet, dispatch scout\_c\_cruxes before recursing into them.
 
 Match recursion type to object type. Use recurse\_into\_claim\_investigation for claims (how-true mechanisms, how-false mechanisms, claim-type cruxes). Use recurse\_into\_subquestion for questions (relevant-evidence questions, stress-test cases, question-type cruxes).

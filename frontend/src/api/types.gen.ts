@@ -3001,6 +3001,48 @@ export type GetPageByShortIdApiPagesShortShortIdGetResponses = {
 
 export type GetPageByShortIdApiPagesShortShortIdGetResponse = GetPageByShortIdApiPagesShortShortIdGetResponses[keyof GetPageByShortIdApiPagesShortShortIdGetResponses];
 
+export type ListPagesAnnotationsBatchApiPagesAnnotationsGetData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Ids
+         */
+        ids?: string;
+        /**
+         * Staged Run Id
+         */
+        staged_run_id?: string | null;
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/pages/annotations';
+};
+
+export type ListPagesAnnotationsBatchApiPagesAnnotationsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListPagesAnnotationsBatchApiPagesAnnotationsGetError = ListPagesAnnotationsBatchApiPagesAnnotationsGetErrors[keyof ListPagesAnnotationsBatchApiPagesAnnotationsGetErrors];
+
+export type ListPagesAnnotationsBatchApiPagesAnnotationsGetResponses = {
+    /**
+     * Response List Pages Annotations Batch Api Pages Annotations Get
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: Array<AnnotationEvent>;
+    };
+};
+
+export type ListPagesAnnotationsBatchApiPagesAnnotationsGetResponse = ListPagesAnnotationsBatchApiPagesAnnotationsGetResponses[keyof ListPagesAnnotationsBatchApiPagesAnnotationsGetResponses];
+
 export type GetPageApiPagesPageIdGetData = {
     body?: never;
     path: {

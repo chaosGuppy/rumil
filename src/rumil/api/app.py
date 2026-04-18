@@ -120,6 +120,8 @@ def _is_friendly_user_path(method: str, path: str) -> bool:
             return True
         if path.startswith("/api/pages/") and path.count("/") == 3:
             return True
+        if path == "/api/pages/annotations":
+            return True
         if path.startswith("/api/pages/") and path.endswith("/annotations"):
             return True
         if path.startswith("/api/calls/") and path.endswith("/annotations"):
@@ -323,6 +325,43 @@ async def get_page_by_short_id(
     if not page:
         raise HTTPException(status_code=404, detail="Page not found")
     return page
+
+
+_ANNOTATIONS_BATCH_MAX = 200
+
+
+@app.get("/api/pages/annotations", response_model=dict[str, list[AnnotationEvent]])
+async def list_pages_annotations_batch(
+    ids: str = "",
+    db: DB = Depends(_get_db_maybe_staged),
+):
+    """Batched annotation fetch for many pages in a single request.
+
+    Replaces the N-parallel per-page fetch parma previously issued when
+    rendering a view. One DB query (``in_()`` over ``target_page_id``) is
+    used regardless of how many ids are passed. Response shape is
+    ``{page_id: [AnnotationEvent, ...]}`` — pages with no annotations are
+    still present with an empty list so the frontend doesn't have to
+    second-guess.
+
+    Declared before ``/api/pages/{page_id}`` so FastAPI's declaration-order
+    routing doesn't swallow the literal ``annotations`` segment as a
+    page_id.
+    """
+    if not ids:
+        return {}
+    page_ids = [s for s in ids.split(",") if s]
+    if len(page_ids) > _ANNOTATIONS_BATCH_MAX:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Too many ids: max {_ANNOTATIONS_BATCH_MAX} per call",
+        )
+    project_rows = _rows(
+        await db.client.table("pages").select("project_id").in_("id", page_ids).limit(1).execute()
+    )
+    if project_rows and project_rows[0].get("project_id") and not db.project_id:
+        db.project_id = project_rows[0]["project_id"]
+    return await db.get_annotations_by_target_pages(page_ids)
 
 
 @app.get("/api/pages/{page_id}", response_model=Page)

@@ -40,6 +40,9 @@ export interface Page {
   superseded_by: string | null;
   is_superseded: boolean;
   provenance_call_type: string;
+  provenance_call_id?: string;
+  provenance_model?: string;
+  run_id?: string;
   extra: Record<string, unknown>;
   created_at: string;
 }

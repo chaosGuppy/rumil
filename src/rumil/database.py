@@ -231,6 +231,28 @@ def _row_to_call_sequence(row: dict[str, Any]) -> CallSequence:
     )
 
 
+def _row_to_annotation_event(row: dict[str, Any]) -> AnnotationEvent:
+    return AnnotationEvent(
+        id=row["id"],
+        project_id=row.get("project_id"),
+        run_id=row.get("run_id"),
+        annotation_type=row["annotation_type"],
+        author_type=row["author_type"],
+        author_id=row["author_id"],
+        target_page_id=row.get("target_page_id"),
+        target_call_id=row.get("target_call_id"),
+        target_event_seq=row.get("target_event_seq"),
+        span_start=row.get("span_start"),
+        span_end=row.get("span_end"),
+        category=row.get("category"),
+        note=row.get("note") or "",
+        payload=row.get("payload") or {},
+        extra=row.get("extra") or {},
+        staged=row.get("staged", False),
+        created_at=datetime.fromisoformat(row["created_at"]),
+    )
+
+
 class MutationState:
     """Cached mutation events for a staged run, keyed by target_id.
 
@@ -1380,60 +1402,6 @@ class DB:
             result.setdefault(link.to_page_id, []).append(link)
         return result
 
-    async def get_latest_summary_for_question(self, question_id: str) -> "Page | None":
-        """Return the most recent active SUMMARY page linked to a question."""
-        links = await self.get_links_to(question_id)
-        summary_links = [l for l in links if l.link_type == LinkType.SUMMARIZES]
-        if not summary_links:
-            return None
-        pages = await self.get_pages_by_ids([l.from_page_id for l in summary_links])
-        candidates = [
-            pages[l.from_page_id]
-            for l in summary_links
-            if l.from_page_id in pages
-            and pages[l.from_page_id].is_active()
-            and pages[l.from_page_id].page_type == PageType.SUMMARY
-        ]
-        if not candidates:
-            return None
-        return max(candidates, key=lambda p: p.created_at)
-
-    async def get_latest_summaries_for_questions(
-        self,
-        question_ids: Sequence[str],
-    ) -> dict[str, Page | None]:
-        """Bulk-fetch the most recent active SUMMARY page for many questions.
-
-        Returns {question_id: summary_page_or_None}. Issues two batched queries
-        (links + pages) regardless of input size.
-        """
-        result: dict[str, Page | None] = {qid: None for qid in question_ids}
-        if not question_ids:
-            return result
-        id_list = list(dict.fromkeys(question_ids))
-        links_by_target = await self.get_links_to_many(id_list)
-        summary_from_ids: list[str] = []
-        summary_links_by_question: dict[str, list[PageLink]] = {}
-        for qid in id_list:
-            qlinks = [l for l in links_by_target.get(qid, []) if l.link_type == LinkType.SUMMARIZES]
-            if qlinks:
-                summary_links_by_question[qid] = qlinks
-                summary_from_ids.extend(l.from_page_id for l in qlinks)
-        if not summary_from_ids:
-            return result
-        pages = await self.get_pages_by_ids(list(dict.fromkeys(summary_from_ids)))
-        for qid, qlinks in summary_links_by_question.items():
-            candidates = [
-                pages[l.from_page_id]
-                for l in qlinks
-                if l.from_page_id in pages
-                and pages[l.from_page_id].is_active()
-                and pages[l.from_page_id].page_type == PageType.SUMMARY
-            ]
-            if candidates:
-                result[qid] = max(candidates, key=lambda p: p.created_at)
-        return result
-
     async def get_considerations_for_question(
         self,
         question_id: str,
@@ -2455,28 +2423,37 @@ class DB:
             query = query.eq("annotation_type", annotation_type)
         query = self._staged_filter(query)
         rows = _rows(await self._execute(query))
-        return [
-            AnnotationEvent(
-                id=r["id"],
-                project_id=r.get("project_id"),
-                run_id=r.get("run_id"),
-                annotation_type=r["annotation_type"],
-                author_type=r["author_type"],
-                author_id=r["author_id"],
-                target_page_id=r.get("target_page_id"),
-                target_call_id=r.get("target_call_id"),
-                target_event_seq=r.get("target_event_seq"),
-                span_start=r.get("span_start"),
-                span_end=r.get("span_end"),
-                category=r.get("category"),
-                note=r.get("note") or "",
-                payload=r.get("payload") or {},
-                extra=r.get("extra") or {},
-                staged=r.get("staged", False),
-                created_at=datetime.fromisoformat(r["created_at"]),
-            )
-            for r in rows
-        ]
+        return [_row_to_annotation_event(r) for r in rows]
+
+    async def get_annotations_by_target_pages(
+        self,
+        page_ids: Sequence[str],
+    ) -> dict[str, list[AnnotationEvent]]:
+        """Batched annotation fetch: one query for many target pages.
+
+        Returns a dict keyed by every input page_id — pages with no matching
+        annotations map to an empty list. Respects the staged-visibility
+        rule via ``_staged_filter`` (same semantics as ``get_annotations``).
+
+        This replaces N parallel per-page fetches from parma's view
+        rendering; the single ``in_()`` query keeps us at O(1) round trips.
+        """
+        result: dict[str, list[AnnotationEvent]] = {pid: [] for pid in page_ids}
+        if not page_ids:
+            return result
+        query = (
+            self.client.table("annotation_events").select("*").in_("target_page_id", list(page_ids))
+        )
+        if self.project_id:
+            query = query.eq("project_id", self.project_id)
+        query = self._staged_filter(query)
+        rows = _rows(await self._execute(query))
+        for r in rows:
+            pid = r.get("target_page_id")
+            if pid is None or pid not in result:
+                continue
+            result[pid].append(_row_to_annotation_event(r))
+        return result
 
     async def save_epistemic_score(
         self,

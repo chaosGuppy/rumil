@@ -14,7 +14,7 @@ from rumil.calls.common import mark_call_completed
 from rumil.calls.dispatches import DISPATCH_DEFS, RECURSE_DISPATCH_DEF, DispatchDef
 from rumil.calls.link_subquestions import LinkSubquestionsCall
 from rumil.calls.prioritization import run_prioritization_call
-from rumil.constants import MIN_TWOPHASE_BUDGET
+from rumil.constants import MIN_EXPERIMENTAL_INITIAL_PRIO_BUDGET, MIN_TWOPHASE_BUDGET
 from rumil.context import build_prioritization_context
 from rumil.database import DB
 from rumil.llm import (
@@ -244,7 +244,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         view = await self.db.get_view_for_question(question_id)
         return view is None
 
-    async def _cancel_initial_call(self) -> None:
+    async def _cancel_initial_call(self, reason: str) -> None:
         """Mark the eagerly-created initial_prioritization call as complete when it is skipped."""
         if self._initial_call is None:
             return
@@ -260,13 +260,13 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         await trace.record(
             PhaseSkippedEvent(
                 phase="initial_prioritization",
-                reason="Question already has a judgement or view.",
+                reason=reason,
             )
         )
         await mark_call_completed(
             call,
             self.db,
-            "Initial prioritization skipped — question already has a judgement or view.",
+            f"Initial prioritization skipped — {reason}",
         )
 
     async def _get_next_batch(
@@ -278,14 +278,22 @@ class ExperimentalOrchestrator(BaseOrchestrator):
     ) -> PrioritizationResult:
         if self._invocation == 0:
             self._invocation += 1
-            if await self._needs_initial_prioritization(question_id):
+            effective_remaining = total_remaining if total_remaining is not None else budget
+            if effective_remaining < MIN_EXPERIMENTAL_INITIAL_PRIO_BUDGET:
+                await self._cancel_initial_call(
+                    f"Budget too low for initial prioritization "
+                    f"({effective_remaining} < {MIN_EXPERIMENTAL_INITIAL_PRIO_BUDGET}); "
+                    "proceeding straight to main-phase."
+                )
+            elif await self._needs_initial_prioritization(question_id):
                 return await self._initial_prioritization(
                     question_id,
                     budget,
                     parent_call_id,
                     total_remaining=total_remaining,
                 )
-            await self._cancel_initial_call()
+            else:
+                await self._cancel_initial_call("Question already has a judgement or view.")
             self._executed_since_last_plan = True
 
         if not self._executed_since_last_plan:

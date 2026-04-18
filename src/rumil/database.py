@@ -45,6 +45,7 @@ from rumil.models import (
     Workspace,
 )
 from rumil.settings import get_settings
+from rumil.staged_overlay import StagedOverlay
 from supabase import AsyncClient, acreate_client
 
 # Supabase SDK types APIResponse.data as JSON | None, but table queries
@@ -308,6 +309,7 @@ class DB:
         self._prod: bool = False
         self._mutation_cache: MutationState | None = None
         self._mutation_cache_ts: float = 0.0
+        self.overlay = StagedOverlay(self)
 
     @classmethod
     async def create(
@@ -790,15 +792,11 @@ class DB:
 
     async def get_page(self, page_id: str) -> Page | None:
         query = self.client.table("pages").select("*").eq("id", page_id)
-        query = self._staged_filter(query)
-        rows = _rows(await self._execute(query))
-        if not rows:
+        page = await self.overlay.read_page_opt(query)
+        if page is None:
             return None
-        pages = await self._apply_page_events([_row_to_page(rows[0])])
-        if not pages:
-            return None
-        await self.apply_epistemic_overrides(pages)
-        return pages[0]
+        await self.apply_epistemic_overrides([page])
+        return page
 
     async def get_pages_by_ids(self, page_ids: Sequence[str]) -> dict[str, Page]:
         """Bulk-fetch pages by ID. Returns {id: Page} for pages that exist."""
@@ -809,15 +807,10 @@ class DB:
         batch_size = 200
         for start in range(0, len(id_list), batch_size):
             batch = id_list[start : start + batch_size]
-            rows = _rows(
-                await self._execute(
-                    self._staged_filter(self.client.table("pages").select("*").in_("id", batch))
-                )
-            )
-            for r in rows:
-                page = _row_to_page(r)
+            query = self.client.table("pages").select("*").in_("id", batch)
+            for page in await self.overlay.read_pages(query):
                 result[page.id] = page
-        pages = await self._apply_page_events(list(result.values()))
+        pages = list(result.values())
         await self.apply_epistemic_overrides(pages)
         return {p.id: p for p in pages}
 
@@ -1338,9 +1331,7 @@ class DB:
 
     async def get_links_from(self, page_id: str) -> list[PageLink]:
         query = self.client.table("page_links").select("*").eq("from_page_id", page_id)
-        query = self._staged_filter(query)
-        rows = _rows(await self._execute(query))
-        return await self._apply_link_events([_row_to_link(r) for r in rows])
+        return await self.overlay.read_links(query)
 
     async def get_links_from_many(
         self,

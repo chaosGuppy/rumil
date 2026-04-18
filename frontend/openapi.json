@@ -3430,6 +3430,17 @@
             ],
             "title": "Credence"
           },
+          "credence_reasoning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credence Reasoning"
+          },
           "robustness": {
             "anyOf": [
               {
@@ -3440,6 +3451,17 @@
               }
             ],
             "title": "Robustness"
+          },
+          "robustness_reasoning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Robustness Reasoning"
           },
           "provenance_model": {
             "type": "string",
@@ -3541,7 +3563,9 @@
           "epistemic_status",
           "epistemic_type",
           "credence",
+          "credence_reasoning",
           "robustness",
+          "robustness_reasoning",
           "provenance_model",
           "provenance_call_type",
           "provenance_call_id",

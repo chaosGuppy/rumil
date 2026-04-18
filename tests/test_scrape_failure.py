@@ -59,6 +59,10 @@ async def test_create_claim_succeeds_when_no_source_urls(
         {
             "headline": "Some claim",
             "content": "Claim content",
+            "credence": 5,
+            "credence_reasoning": "Placeholder reasoning.",
+            "robustness": 2,
+            "robustness_reasoning": "Placeholder robustness reasoning.",
         },
         call,
         tmp_db,

@@ -192,7 +192,6 @@ async def search_pages_by_vector(
         pages = await db._apply_page_events([p for p, _ in results])
         scores = {p.id: s for p, s in results}
         results = [(p, scores[p.id]) for p in pages if p.is_active()]
-    await db.apply_epistemic_overrides([p for p, _ in results])
     return results
 
 

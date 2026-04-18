@@ -7,16 +7,16 @@ from pydantic import Field
 from rumil.database import DB
 from rumil.models import Call, LinkType, MoveType, PageLayer, PageLink, PageType
 from rumil.moves.base import (
-    CreatePagePayload,
     MoveDef,
     MoveResult,
+    ScoredPagePayload,
     create_page,
 )
 
 log = logging.getLogger(__name__)
 
 
-class CreateViewItemPayload(CreatePagePayload):
+class CreateViewItemPayload(ScoredPagePayload):
     view_id: str = Field(description="Page ID of the View this item belongs to.")
     section: str = Field(
         description=(
@@ -35,7 +35,15 @@ class CreateViewItemPayload(CreatePagePayload):
 
 
 async def execute(payload: CreateViewItemPayload, call: Call, db: DB) -> MoveResult:
-    result = await create_page(payload, call, db, PageType.VIEW_ITEM, PageLayer.WIKI)
+    result = await create_page(
+        payload,
+        call,
+        db,
+        PageType.VIEW_ITEM,
+        PageLayer.WIKI,
+        robustness=payload.robustness,
+        robustness_reasoning=payload.robustness_reasoning,
+    )
     if not result.created_page_id:
         return result
 
@@ -72,9 +80,11 @@ MOVE = MoveDef(
     move_type=MoveType.CREATE_VIEW_ITEM,
     name="create_view_item",
     description=(
-        "Create a View item — an atomic claim or observation within a View page. "
-        "The item is scored for credence, robustness, and importance, and assigned "
-        "to a section of the View."
+        "Create a View item — an atomic observation within a View page. "
+        "The item is scored for robustness and importance, and assigned to a "
+        "section of the View. (View items are not themselves claims and do "
+        "not carry a credence score; if the observation is actually a sharp "
+        "positive assertion, create a claim and cite it from the View item.)"
     ),
     schema=CreateViewItemPayload,
     execute=execute,

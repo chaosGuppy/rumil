@@ -17,7 +17,7 @@ Before extracting, consider:
 - **Perspective and incentives:** Does the author or institution have a stake in the question? Does the framing suggest a particular agenda?
 - **Evidence quality:** Are claims supported by data, argument, or assertion? Primary evidence or secondary?
 
-Calibrate your `credence` and `robustness` accordingly. A well-evidenced finding from a peer-reviewed paper might warrant credence 7 and robustness 3–4. A claim from an industry-funded report should have lower robustness, reflecting the potential for bias.
+Calibrate your `credence` and `robustness` accordingly. A well-evidenced finding from a peer-reviewed paper might warrant credence 7 and robustness 3–4. A claim from an industry-funded report should have lower robustness, reflecting the potential for bias. Every score needs its paired `credence_reasoning` / `robustness_reasoning` per the preamble rubric — in robustness_reasoning, spell out the source-quality logic (peer-reviewed replication, single primary source, industry-funded write-up, etc.).
 
 ## What to Produce
 

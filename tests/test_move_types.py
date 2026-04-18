@@ -24,7 +24,16 @@ async def test_create_claim_via_bind(tmp_db, scout_call):
     """Calling a bound CREATE_CLAIM tool should create a claim page in the DB."""
     state = MoveState(scout_call, tmp_db)
     tool = MOVES[MoveType.CREATE_CLAIM].bind(state)
-    await tool.fn({"headline": "Sky is blue", "content": "The sky appears blue."})
+    await tool.fn(
+        {
+            "headline": "Sky is blue",
+            "content": "The sky appears blue.",
+            "credence": 6,
+            "credence_reasoning": "Everyday observation.",
+            "robustness": 3,
+            "robustness_reasoning": "Common knowledge.",
+        }
+    )
 
     assert len(state.created_page_ids) == 1
     page = await tmp_db.get_page(state.created_page_ids[0])
@@ -50,6 +59,10 @@ async def test_inline_consideration_link(tmp_db, scout_call, question_page):
         {
             "headline": "Sky scatters blue light",
             "content": "Rayleigh scattering causes blue wavelengths to dominate.",
+            "credence": 6,
+            "credence_reasoning": "Textbook Rayleigh result.",
+            "robustness": 3,
+            "robustness_reasoning": "Well-established physics.",
             "links": [
                 {
                     "question_id": question_page.id[:8],
@@ -102,6 +115,10 @@ async def test_no_links_creates_no_links(tmp_db, scout_call):
         {
             "headline": "Unlinked claim",
             "content": "This claim is not linked.",
+            "credence": 6,
+            "credence_reasoning": "Placeholder.",
+            "robustness": 3,
+            "robustness_reasoning": "Placeholder.",
         }
     )
 

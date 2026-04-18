@@ -123,7 +123,7 @@ class CreateViewCall(CallRunner):
             f"Question ID: `{self.infra.question_id}`\n"
             f"View ID: `{self._view_id}`\n\n"
             "Survey the available evidence and create atomic View items, "
-            "each assigned to a section with credence, robustness, and importance scores.\n\n"
+            "each assigned to a section with robustness and importance scores.\n\n"
             f"**Available sections:** {sections_list}\n\n"
             "**Importance caps:**\n"
             f"- Importance 5: max {settings.view_importance_5_cap} items\n"

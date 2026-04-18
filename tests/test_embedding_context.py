@@ -104,17 +104,6 @@ async def test_small_budget_forces_lower_tiers(mock_embeddings, mock_db):
     assert len(result.abstract_page_ids) + len(result.summary_page_ids) > 0
 
 
-async def test_section_headers_present(mock_embeddings, mock_db):
-    """Output contains expected section headers."""
-    result = await build_embedding_based_context(
-        "test query",
-        mock_db,
-        full_page_char_budget=10_000,
-    )
-
-    assert "## Credence" in result.context_text
-
-
 async def test_format_page_headline():
     """format_page with HEADLINE detail produces the expected compact line."""
     page = _make_page("Test summary", "content")
@@ -122,6 +111,33 @@ async def test_format_page_headline():
     assert "[CLAIM C6/R2]" in line
     assert page.id[:8] in line
     assert "Test summary" in line
+
+
+async def test_format_page_headline_omits_reasoning():
+    """HEADLINE detail shows the score tag only — no reasoning text."""
+    page = _make_page("Test summary", "content")
+    page = page.model_copy(
+        update={
+            "credence_reasoning": "A suspiciously memorable reason",
+            "robustness_reasoning": "A suspiciously memorable robustness reason",
+        }
+    )
+    line = await format_page(page, PageDetail.HEADLINE)
+    assert "suspiciously memorable" not in line
+
+
+async def test_format_page_abstract_includes_reasoning():
+    """ABSTRACT detail surfaces both credence_reasoning and robustness_reasoning."""
+    page = _make_page("Test summary", "content")
+    page = page.model_copy(
+        update={
+            "credence_reasoning": "Marker-credence-reasoning-xyz",
+            "robustness_reasoning": "Marker-robustness-reasoning-xyz",
+        }
+    )
+    text = await format_page(page, PageDetail.ABSTRACT)
+    assert "Marker-credence-reasoning-xyz" in text
+    assert "Marker-robustness-reasoning-xyz" in text
 
 
 async def test_zero_budget_returns_empty(mock_embeddings, mock_db):

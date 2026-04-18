@@ -238,9 +238,14 @@ function ViewItemsSection({
                     />
                     <div className="view-item-body">
                       <div className="view-item-scores">
-                        {lp.page.credence != null && (
+                        {(lp.page.credence != null || lp.page.robustness != null) && (
                           <span className="view-item-score">
-                            C{lp.page.credence}/R{lp.page.robustness}
+                            {[
+                              lp.page.credence != null ? `C${lp.page.credence}` : null,
+                              lp.page.robustness != null ? `R${lp.page.robustness}` : null,
+                            ]
+                              .filter(Boolean)
+                              .join("/")}
                           </span>
                         )}
                         {imp != null && (
@@ -533,16 +538,26 @@ export default async function PageDetailPage({
           />
         )}
 
-        {page.credence != null && (
+        {(page.credence != null || page.robustness != null) && (
           <div className="page-meta-row">
-            <div className="meta-block">
-              <span className="meta-label">credence</span>
-              <SegmentGauge value={page.credence} max={9} label="C" />
-            </div>
-            <div className="meta-block">
-              <span className="meta-label">robustness</span>
-              <SegmentGauge value={page.robustness ?? 0} max={5} label="R" />
-            </div>
+            {page.credence != null && (
+              <div className="meta-block">
+                <span className="meta-label">credence</span>
+                <SegmentGauge value={page.credence} max={9} label="C" />
+                {page.credence_reasoning && (
+                  <p className="meta-reasoning">{page.credence_reasoning}</p>
+                )}
+              </div>
+            )}
+            {page.robustness != null && (
+              <div className="meta-block">
+                <span className="meta-label">robustness</span>
+                <SegmentGauge value={page.robustness} max={5} label="R" />
+                {page.robustness_reasoning && (
+                  <p className="meta-reasoning">{page.robustness_reasoning}</p>
+                )}
+              </div>
+            )}
           </div>
         )}
       </article>
@@ -892,6 +907,14 @@ const styles = `
     display: flex;
     flex-direction: column;
     gap: 0.3rem;
+    max-width: 28rem;
+  }
+  .meta-reasoning {
+    margin: 0.15rem 0 0;
+    font-size: 0.78rem;
+    line-height: 1.45;
+    color: var(--color-muted);
+    font-style: italic;
   }
   .meta-label {
     font-size: 0.65rem;

@@ -26,7 +26,6 @@ from rumil.models import (
     CallType,
     CreateViewDispatchPayload,
     Dispatch,
-    FindConsiderationsMode,
     ScoutAnalogiesDispatchPayload,
     ScoutCCruxesDispatchPayload,
     ScoutCHowFalseDispatchPayload,
@@ -83,7 +82,6 @@ class ScriptedOrchestrator(BaseOrchestrator):
 
 
 def _scout_dispatch(question_id: str, **kwargs) -> Dispatch:
-    kwargs.setdefault("mode", FindConsiderationsMode.ALTERNATE)
     return Dispatch(
         call_type=CallType.FIND_CONSIDERATIONS,
         payload=ScoutDispatchPayload(question_id=question_id, **kwargs),
@@ -418,7 +416,6 @@ async def test_execute_dispatch_find_considerations_forwards_fields(
             question_id=question_page.id,
             reason="test-reason",
             context_page_ids=["ctx-1"],
-            mode=FindConsiderationsMode.CONCRETE,
             max_rounds=3,
             fruit_threshold=2,
         ),
@@ -441,7 +438,6 @@ async def test_execute_dispatch_find_considerations_forwards_fields(
     assert mocked_helpers["find_considerations"].call_args.args[0] == question_page.id
     assert kwargs["max_rounds"] == 3
     assert kwargs["fruit_threshold"] == 2
-    assert kwargs["mode"] == FindConsiderationsMode.CONCRETE
     assert kwargs["parent_call_id"] == "parent-1"
     assert kwargs["context_page_ids"] == ["ctx-1"]
     assert kwargs["force"] is True
@@ -474,7 +470,6 @@ async def test_execute_dispatch_find_considerations_returns_none_when_no_child_i
         call_type=CallType.FIND_CONSIDERATIONS,
         payload=ScoutDispatchPayload(
             question_id=question_page.id,
-            mode=FindConsiderationsMode.ALTERNATE,
             reason="no-children",
         ),
     )

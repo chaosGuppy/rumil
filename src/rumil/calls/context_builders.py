@@ -52,14 +52,12 @@ async def _record_context_built(
     preloaded_ids: Sequence[str],
     *,
     source_page_id: str | None = None,
-    scout_mode: str | None = None,
 ) -> None:
     await infra.trace.record(
         ContextBuiltEvent(
             working_context_page_ids=await resolve_page_refs(working_page_ids, infra.db),
             preloaded_page_ids=await resolve_page_refs(preloaded_ids, infra.db),
             source_page_id=source_page_id,
-            scout_mode=scout_mode,
         )
     )
 

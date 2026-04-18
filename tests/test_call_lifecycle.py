@@ -16,7 +16,6 @@ from rumil.models import (
     Call,
     CallStatus,
     CallType,
-    FindConsiderationsMode,
     Page,
     PageLayer,
     PageType,
@@ -107,7 +106,6 @@ async def test_scout_lifecycle(tmp_db, question_page, scout_call):
         tmp_db,
         max_rounds=2,
         fruit_threshold=4,
-        mode=FindConsiderationsMode.ALTERNATE,
     )
     await scout.run()
 
@@ -118,7 +116,6 @@ async def test_scout_lifecycle(tmp_db, question_page, scout_call):
     assert refreshed.completed_at is not None
     assert "Scout session complete" in refreshed.result_summary
     assert refreshed.call_params is not None
-    assert refreshed.call_params["mode"] == "alternate"
 
     trace = await tmp_db.get_call_trace(scout_call.id)
     event_types = [e.get("event") for e in trace]

@@ -787,6 +787,44 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
         </div>
       )}
 
+      {event.event === "experimental_scoring_completed" && (
+        <div className="trace-event-body">
+          {(event.subquestion_scores ?? []).length > 0 && (
+            <div className="trace-scoring-section">
+              <div className="trace-kv">
+                <span className="trace-kv-key">subquestion scores</span>
+              </div>
+              {(event.subquestion_scores ?? []).map((s, i) => (
+                <div key={i} className="trace-score-row">
+                  <span className="trace-score-headline">{s.headline || s.question_id.slice(0, 8)}</span>
+                  {s.impact_curve && (
+                    <span className="trace-score-reasoning" style={{ whiteSpace: 'pre-wrap' }}>{s.impact_curve}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          {(event.per_type_fruit ?? []).length > 0 && (
+            <div className="trace-scoring-section">
+              <div className="trace-kv">
+                <span className="trace-kv-key">per-scout-type fruit</span>
+              </div>
+              {(event.per_type_fruit ?? []).map((s, i) => (
+                <div key={i} className="trace-fruit-type-row">
+                  <div className="trace-fruit-type-header">
+                    <span className="trace-score-headline">{s.call_type}</span>
+                    <span className="trace-kv-value">{s.fruit}/10</span>
+                  </div>
+                  {s.reasoning && (
+                    <div className="trace-score-reasoning">{s.reasoning}</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {event.event === "scoring_completed" && (
         <div className="trace-event-body">
           {(event.subquestion_scores ?? []).length > 0 && (

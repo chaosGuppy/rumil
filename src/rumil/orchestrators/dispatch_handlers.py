@@ -96,9 +96,8 @@ async def _handle_find_considerations(
 ) -> str | None:
     assert isinstance(payload, ScoutDispatchPayload)
     log.info(
-        "Dispatch: find_considerations on %s (mode=%s, fruit_threshold=%d, max_rounds=%d) — %s",
+        "Dispatch: find_considerations on %s (fruit_threshold=%d, max_rounds=%d) — %s",
         ctx.d_label,
-        payload.mode.value,
         payload.fruit_threshold,
         payload.max_rounds,
         payload.reason,
@@ -110,7 +109,6 @@ async def _handle_find_considerations(
         fruit_threshold=payload.fruit_threshold,
         parent_call_id=ctx.parent_call_id,
         context_page_ids=payload.context_page_ids,
-        mode=payload.mode,
         broadcaster=ctx.orchestrator.broadcaster,
         force=ctx.force,
         call_id=ctx.call_id,

@@ -2,7 +2,7 @@
 
 import contextvars
 import subprocess
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -10,8 +10,6 @@ from typing import Any
 from pydantic import Field
 from pydantic.config import JsonDict
 from pydantic_settings import BaseSettings
-
-from rumil.models import FindConsiderationsMode
 
 _CAPTURE: JsonDict = {"capture": True}
 
@@ -61,8 +59,6 @@ class Settings(BaseSettings):
 
     available_moves: str = _capture_field(default="default")
     available_calls: str = _capture_field(default="default")
-
-    find_considerations_modes: str = _capture_field(default="alternate,abstract,concrete")
 
     budget_pacing_enabled: bool = _capture_field(default=True)
 
@@ -131,14 +127,6 @@ class Settings(BaseSettings):
             if self.is_test_mode or self.is_smoke_test
             else "claude-opus-4-7"
         )
-
-    @property
-    def allowed_find_considerations_modes(self) -> Sequence[FindConsiderationsMode]:
-        return [
-            FindConsiderationsMode(m.strip())
-            for m in self.find_considerations_modes.split(",")
-            if m.strip()
-        ]
 
     def get_max_retries(self, status: int | None = None) -> int:
         """Return the max retry count, optionally specialized by HTTP status."""

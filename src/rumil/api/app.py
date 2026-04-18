@@ -377,22 +377,11 @@ def _count_trace_events(trace_json: list[dict] | None) -> tuple[int, int]:
 
 @app.get("/api/runs/{run_id}/trace-tree", response_model=RunTraceTreeOut)
 async def get_run_trace_tree(run_id: str, db: DB = Depends(_get_db)):
-    raw_rows = await db.get_call_rows_for_run(run_id)
-    actual_run_id = run_id
-
-    if not raw_rows:
-        # The ID might be a call_id rather than a run_id (e.g. links from
-        # AB eval detail pages use call IDs in trace URLs). Look up the
-        # call's actual run_id and retry.
-        resolved_run_id = await db.get_run_id_for_call(run_id)
-        if resolved_run_id:
-            actual_run_id = resolved_run_id
-            raw_rows = await db.get_call_rows_for_run(actual_run_id)
-
-    question_id = await db.get_run_question_id(actual_run_id)
+    question_id = await db.get_run_question_id(run_id)
     question_page = None
     if question_id:
         question_page = await db.get_page(question_id)
+    raw_rows = await db.get_call_rows_for_run(run_id)
     calls = [_row_to_call(r) for r in raw_rows]
 
     scope_ids = [c.scope_page_id for c in calls if c.scope_page_id]
@@ -413,16 +402,14 @@ async def get_run_trace_tree(run_id: str, db: DB = Depends(_get_db)):
             )
         )
     total_cost = sum(c.cost_usd or 0 for c in calls)
-    run_resp = (
-        await db.client.table("runs").select("staged, config").eq("id", actual_run_id).execute()
-    )
+    run_resp = await db.client.table("runs").select("staged, config").eq("id", run_id).execute()
     run_data: list[dict[str, object]] = run_resp.data or []  # type: ignore[assignment]
     is_staged = bool(run_data and run_data[0].get("staged"))
     run_config: dict = {}
     if run_data:
         run_config = run_data[0].get("config") or {}  # type: ignore[assignment]
     return RunTraceTreeOut(
-        run_id=actual_run_id,
+        run_id=run_id,
         question=question_page,
         calls=nodes,
         cost_usd=total_cost if total_cost > 0 else None,

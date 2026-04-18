@@ -2261,16 +2261,6 @@ class DB:
             )
         )
 
-    async def get_run_id_for_call(self, call_id: str) -> str | None:
-        """Look up the run_id for a given call. Used when a call_id is
-        mistakenly passed where a run_id is expected (e.g. trace URLs)."""
-        rows = _rows(
-            await self._execute(
-                self.client.table("calls").select("run_id").eq("id", call_id).limit(1)
-            )
-        )
-        return rows[0]["run_id"] if rows else None
-
     async def get_calls_for_run(self, run_id: str) -> list[Call]:
         rows = await self.get_call_rows_for_run(run_id)
         return [_row_to_call(r) for r in rows]

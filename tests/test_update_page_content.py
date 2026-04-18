@@ -10,6 +10,7 @@ and any call to update_page_content would fail with a Postgres APIError
 """
 
 import uuid
+from datetime import UTC, datetime
 from typing import Any, cast
 
 import pytest
@@ -45,7 +46,19 @@ async def project_id():
 
 
 async def _make_db(project_id: str, staged: bool = False) -> DB:
-    db = await DB.create(run_id=str(uuid.uuid4()), staged=staged)
+    # Staged DBs in this test file use the pre-fork-at-snapshot loose
+    # semantics (baseline visible whenever queried) so that tests which
+    # seed baseline data *after* constructing the staged DB continue to
+    # work. See tests/test_fork_at_snapshot.py for tests that exercise
+    # the pinned-snapshot contract.
+    if staged:
+        db = await DB.create(
+            run_id=str(uuid.uuid4()),
+            staged=staged,
+            snapshot_ts=datetime.max.replace(tzinfo=UTC),
+        )
+    else:
+        db = await DB.create(run_id=str(uuid.uuid4()), staged=staged)
     db.project_id = project_id
     return db
 

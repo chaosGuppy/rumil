@@ -81,6 +81,7 @@ class CallType(str, Enum):
     AB_EVAL_COMPARISON = "ab_eval_comparison"
     AB_EVAL_SUMMARY = "ab_eval_summary"
     RUN_EVAL = "run_eval"
+    SINGLE_CALL_BASELINE = "single_call_baseline"
     CREATE_VIEW = "create_view"
     GLOBAL_PRIORITIZATION = "global_prioritization"
     UPDATE_VIEW = "update_view"
@@ -460,3 +461,61 @@ class Suggestion(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     reviewed_at: datetime | None = None
     staged: bool = False
+
+
+class ReputationEvent(BaseModel):
+    """One append-only reputation signal.
+
+    The table is a multi-source substrate: each event is tagged with its
+    ``source`` (eval_agent, human_feedback, proposal_survival, budget_flow,
+    subscription) and ``dimension`` (consistency, general_quality, grounding,
+    ...). Consumers aggregate at query time with their own weighting scheme.
+    Never collapse to a scalar at write time.
+    """
+
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+    run_id: str
+    project_id: str
+    source: str
+    dimension: str
+    score: float
+    orchestrator: str | None = None
+    task_shape: dict | None = None
+    source_call_id: str | None = None
+    extra: dict = Field(default_factory=dict)
+    staged: bool = False
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class ChatMessageRole(str, Enum):
+    USER = "user"
+    ASSISTANT = "assistant"
+    TOOL_USE = "tool_use"
+    TOOL_RESULT = "tool_result"
+    SYSTEM = "system"
+
+
+class ChatConversation(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    project_id: str
+    question_id: str | None = None
+    title: str = ""
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    deleted_at: datetime | None = None
+    staged: bool = False
+    run_id: str | None = None
+
+
+class ChatMessage(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    conversation_id: str
+    role: ChatMessageRole
+    content: dict = Field(default_factory=dict)
+    seq: int = 0
+    ts: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    staged: bool = False
+    run_id: str | None = None

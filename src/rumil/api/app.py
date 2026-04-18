@@ -16,7 +16,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import TypeAdapter, ValidationError
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from rumil.api.chat import ChatRequest, ChatResponse, handle_chat, handle_chat_stream
+from rumil.api.chat import (
+    ChatRequest,
+    ChatResponse,
+    ConversationDetail,
+    ConversationListItem,
+    CreateConversationRequest,
+    UpdateConversationRequest,
+    _derive_title,
+    handle_chat,
+    handle_chat_stream,
+)
 from rumil.api.schemas import (
     ABEvalDimensionOut,
     ABEvalDimensionSummaryOut,
@@ -43,6 +53,7 @@ from rumil.api.schemas import (
 from rumil.database import DB, _row_to_call, _rows
 from rumil.models import (
     Call,
+    ChatMessageRole,
     LinkType,
     Page,
     PageLink,
@@ -726,6 +737,139 @@ async def chat(request: ChatRequest) -> ChatResponse:
 @app.post("/api/chat/stream")
 async def chat_stream(request: ChatRequest):
     return await handle_chat_stream(request)
+
+
+@app.get(
+    "/api/chat/conversations",
+    response_model=list[ConversationListItem],
+)
+async def list_chat_conversations(
+    project_id: str,
+    question_id: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+    db: DB = Depends(_get_db),
+):
+    conversations = await db.list_chat_conversations(
+        project_id=project_id,
+        question_id=question_id,
+        limit=limit,
+        offset=offset,
+    )
+    return [
+        ConversationListItem(
+            id=c.id,
+            project_id=c.project_id,
+            question_id=c.question_id,
+            title=c.title,
+            created_at=c.created_at.isoformat(),
+            updated_at=c.updated_at.isoformat(),
+        )
+        for c in conversations
+    ]
+
+
+@app.get(
+    "/api/chat/conversations/{conversation_id}",
+    response_model=ConversationDetail,
+)
+async def get_chat_conversation(
+    conversation_id: str,
+    db: DB = Depends(_get_db),
+):
+    conv = await db.get_chat_conversation(conversation_id)
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    messages = await db.list_chat_messages(conversation_id)
+    return ConversationDetail(
+        id=conv.id,
+        project_id=conv.project_id,
+        question_id=conv.question_id,
+        title=conv.title,
+        created_at=conv.created_at.isoformat(),
+        updated_at=conv.updated_at.isoformat(),
+        messages=[
+            {
+                "id": m.id,
+                "role": m.role.value,
+                "content": m.content,
+                "seq": m.seq,
+                "ts": m.ts.isoformat(),
+            }
+            for m in messages
+        ],
+    )
+
+
+@app.post(
+    "/api/chat/conversations",
+    response_model=ConversationListItem,
+)
+async def create_chat_conversation(
+    request: CreateConversationRequest,
+    db: DB = Depends(_get_db),
+):
+    title = request.title
+    if not title and request.first_message:
+        title = _derive_title(request.first_message)
+    if not title:
+        title = "(new conversation)"
+    conv = await db.create_chat_conversation(
+        project_id=request.project_id,
+        question_id=request.question_id,
+        title=title,
+    )
+    if request.first_message:
+        await db.save_chat_message(
+            conversation_id=conv.id,
+            role=ChatMessageRole.USER,
+            content={"text": request.first_message},
+        )
+    return ConversationListItem(
+        id=conv.id,
+        project_id=conv.project_id,
+        question_id=conv.question_id,
+        title=conv.title,
+        created_at=conv.created_at.isoformat(),
+        updated_at=conv.updated_at.isoformat(),
+    )
+
+
+@app.patch(
+    "/api/chat/conversations/{conversation_id}",
+    response_model=ConversationListItem,
+)
+async def update_chat_conversation(
+    conversation_id: str,
+    request: UpdateConversationRequest,
+    db: DB = Depends(_get_db),
+):
+    existing = await db.get_chat_conversation(conversation_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    await db.update_chat_conversation(conversation_id, title=request.title)
+    refreshed = await db.get_chat_conversation(conversation_id)
+    assert refreshed is not None
+    return ConversationListItem(
+        id=refreshed.id,
+        project_id=refreshed.project_id,
+        question_id=refreshed.question_id,
+        title=refreshed.title,
+        created_at=refreshed.created_at.isoformat(),
+        updated_at=refreshed.updated_at.isoformat(),
+    )
+
+
+@app.delete("/api/chat/conversations/{conversation_id}")
+async def delete_chat_conversation(
+    conversation_id: str,
+    db: DB = Depends(_get_db),
+):
+    existing = await db.get_chat_conversation(conversation_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    await db.soft_delete_chat_conversation(conversation_id)
+    return {"ok": True, "id": conversation_id}
 
 
 @app.get(

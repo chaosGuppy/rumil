@@ -32,7 +32,17 @@ from rumil.calls.stages import CallRunner
 from rumil.context import build_embedding_based_context
 from rumil.database import DB
 from rumil.embeddings import embed_query, search_pages_by_vector
-from rumil.models import CallType, MoveType, Page, PageLayer, PageType, Workspace
+from rumil.models import (
+    CallType,
+    ChatConversation,
+    ChatMessage,
+    ChatMessageRole,
+    MoveType,
+    Page,
+    PageLayer,
+    PageType,
+    Workspace,
+)
 from rumil.moves.registry import MOVES
 from rumil.scraper import scrape_url
 from rumil.settings import get_settings
@@ -55,6 +65,7 @@ class ChatRequest(BaseModel):
     messages: list[dict[str, Any]]
     workspace: str = "default"
     model: str = "sonnet"
+    conversation_id: str | None = None
 
 
 class ToolUseInfo(BaseModel):
@@ -66,6 +77,45 @@ class ToolUseInfo(BaseModel):
 class ChatResponse(BaseModel):
     response: str
     tool_uses: list[ToolUseInfo]
+    conversation_id: str
+
+
+class ConversationListItem(BaseModel):
+    id: str
+    project_id: str
+    question_id: str | None
+    title: str
+    created_at: str
+    updated_at: str
+
+
+class ConversationDetail(BaseModel):
+    id: str
+    project_id: str
+    question_id: str | None
+    title: str
+    created_at: str
+    updated_at: str
+    messages: list[dict[str, Any]]
+
+
+class CreateConversationRequest(BaseModel):
+    project_id: str
+    question_id: str | None = None
+    first_message: str | None = None
+    title: str | None = None
+
+
+class UpdateConversationRequest(BaseModel):
+    title: str
+
+
+def _derive_title(first_user_message: str) -> str:
+    """Slugify-ish: first 80 chars of the first user message, trimmed."""
+    text = first_user_message.strip().replace("\n", " ")
+    if len(text) > 80:
+        text = text[:77].rstrip() + "..."
+    return text
 
 
 TOOLS: list[dict[str, Any]] = [
@@ -820,6 +870,96 @@ async def build_chat_context(
     return "\n".join(parts)
 
 
+async def _ensure_conversation(
+    db: DB,
+    request: ChatRequest,
+    question_full_id: str | None,
+) -> ChatConversation:
+    """Load an existing conversation or auto-create one from the first user message."""
+    if request.conversation_id:
+        existing = await db.get_chat_conversation(request.conversation_id)
+        if existing:
+            return existing
+
+    first_user = next(
+        (m for m in request.messages if m.get("role") == "user"),
+        None,
+    )
+    first_content = ""
+    if first_user:
+        content = first_user.get("content")
+        if isinstance(content, str):
+            first_content = content
+        elif isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    first_content = str(block.get("text", ""))
+                    break
+    title = _derive_title(first_content) if first_content else "(new conversation)"
+    return await db.create_chat_conversation(
+        project_id=db.project_id,
+        question_id=question_full_id,
+        title=title,
+    )
+
+
+def _content_to_text(content: Any) -> str:
+    """Extract plain text from a message content field (string or block list)."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                parts.append(str(block.get("text", "")))
+            elif hasattr(block, "text"):
+                parts.append(str(block.text))  # type: ignore[union-attr]
+        return "\n".join(p for p in parts if p)
+    return ""
+
+
+def _serialize_assistant_content(content: Sequence[Any]) -> list[dict[str, Any]]:
+    """Convert Anthropic SDK content blocks into JSON-serializable dicts."""
+    out: list[dict[str, Any]] = []
+    for block in content:
+        if isinstance(block, TextBlock):
+            out.append({"type": "text", "text": block.text})
+        elif isinstance(block, ToolUseBlock):
+            out.append(
+                {
+                    "type": "tool_use",
+                    "id": block.id,
+                    "name": block.name,
+                    "input": block.input,
+                }
+            )
+        elif isinstance(block, dict):
+            out.append(block)
+    return out
+
+
+async def _persist_user_turn(db: DB, conv: ChatConversation, request: ChatRequest) -> None:
+    """Persist the newest user message from the request (if not already persisted).
+
+    Existing messages are addressed by count: if the DB already has N stored
+    messages and the request carries >N messages, persist everything new
+    (only the user-originated entries; assistant turns are persisted as they
+    happen during generation).
+    """
+    existing = await db.list_chat_messages(conv.id)
+    persisted_user_turns = sum(1 for m in existing if m.role == ChatMessageRole.USER)
+    incoming_user_turns = [m for m in request.messages if m.get("role") == "user"]
+    for idx, m in enumerate(incoming_user_turns):
+        if idx < persisted_user_turns:
+            continue
+        text = _content_to_text(m.get("content"))
+        await db.save_chat_message(
+            conversation_id=conv.id,
+            role=ChatMessageRole.USER,
+            content={"text": text},
+        )
+
+
 async def handle_chat(request: ChatRequest) -> ChatResponse:
     """Handle a chat request: build context, call LLM with tools, return response."""
     settings = get_settings()
@@ -831,20 +971,34 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
     db.project_id = project.id
 
     try:
-        full_id = await db.resolve_page_id(request.question_id)
-        if not full_id:
+        full_id = await db.resolve_page_id(request.question_id) if request.question_id else None
+        if request.question_id and not full_id:
+            conv_stub = await _ensure_conversation(db, request, None)
             return ChatResponse(
                 response=f"No question found matching '{request.question_id}'",
                 tool_uses=[],
+                conversation_id=conv_stub.id,
             )
 
+        conv = await _ensure_conversation(db, request, full_id)
+
+        prior_messages = await db.list_chat_messages(conv.id)
+        resume = bool(prior_messages)
+        if resume:
+            replay = _replay_messages_for_api(prior_messages)
+            messages = replay + list(request.messages[len(_user_turns(prior_messages)) :])
+        else:
+            messages = list(request.messages)
+
+        await _persist_user_turn(db, conv, request)
+
         system_prompt = (PROMPTS_DIR / "api_chat.md").read_text(encoding="utf-8")
-        context = await build_chat_context(full_id, db)
-        full_system = f"{system_prompt}\n\n---\n\n{context}"
+        context_scope_id = full_id or ""
+        context_text = await build_chat_context(full_id, db) if full_id else "(no question scope)"
+        full_system = f"{system_prompt}\n\n---\n\n{context_text}"
 
         model_id = MODEL_MAP.get(request.model, MODEL_MAP["sonnet"])
         client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
-        messages = list(request.messages)
         tool_uses_log: list[ToolUseInfo] = []
 
         for _ in range(10):
@@ -865,17 +1019,25 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
                 elif isinstance(block, ToolUseBlock):
                     tool_calls.append(block)
 
+            await db.save_chat_message(
+                conversation_id=conv.id,
+                role=ChatMessageRole.ASSISTANT,
+                content={"blocks": _serialize_assistant_content(response.content)},
+            )
+
             if not tool_calls:
+                await db.update_chat_conversation(conv.id, touch=True)
                 return ChatResponse(
                     response="\n".join(text_parts),
                     tool_uses=tool_uses_log,
+                    conversation_id=conv.id,
                 )
 
             messages.append({"role": "assistant", "content": response.content})
 
             tool_results = []
             for tc in tool_calls:
-                result_str = await _execute_tool(tc.name, tc.input, db, full_id)
+                result_str = await _execute_tool(tc.name, tc.input, db, context_scope_id)
                 result_str = await _resolve_async(result_str, db)
                 tool_uses_log.append(
                     ToolUseInfo(
@@ -892,14 +1054,42 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
                     }
                 )
 
+            await db.save_chat_message(
+                conversation_id=conv.id,
+                role=ChatMessageRole.TOOL_RESULT,
+                content={"results": tool_results},
+            )
+
             messages.append({"role": "user", "content": tool_results})
 
+        await db.update_chat_conversation(conv.id, touch=True)
         return ChatResponse(
             response="Reached maximum tool-use rounds.",
             tool_uses=tool_uses_log,
+            conversation_id=conv.id,
         )
     finally:
         await db.close()
+
+
+def _user_turns(messages: Sequence[ChatMessage]) -> list[ChatMessage]:
+    return [m for m in messages if m.role == ChatMessageRole.USER]
+
+
+def _replay_messages_for_api(prior: Sequence[ChatMessage]) -> list[dict[str, Any]]:
+    """Convert persisted messages back into Anthropic-API shape for a resume call."""
+    out: list[dict[str, Any]] = []
+    for m in prior:
+        if m.role == ChatMessageRole.USER:
+            text = m.content.get("text", "") if isinstance(m.content, dict) else ""
+            out.append({"role": "user", "content": text})
+        elif m.role == ChatMessageRole.ASSISTANT:
+            blocks = m.content.get("blocks", []) if isinstance(m.content, dict) else []
+            out.append({"role": "assistant", "content": blocks})
+        elif m.role == ChatMessageRole.TOOL_RESULT:
+            results = m.content.get("results", []) if isinstance(m.content, dict) else []
+            out.append({"role": "user", "content": results})
+    return out
 
 
 def _sse(event: str, data: dict[str, Any]) -> str:
@@ -916,24 +1106,36 @@ async def handle_chat_stream(request: ChatRequest) -> StreamingResponse:
     project = await db.get_or_create_project(request.workspace)
     db.project_id = project.id
 
-    full_id = await db.resolve_page_id(request.question_id)
-    if not full_id:
+    full_id = await db.resolve_page_id(request.question_id) if request.question_id else None
+    if request.question_id and not full_id:
 
         async def error_gen() -> AsyncIterator[str]:
             yield _sse("error", {"message": f"No question found matching '{request.question_id}'"})
 
         return StreamingResponse(error_gen(), media_type="text/event-stream")
 
+    conv = await _ensure_conversation(db, request, full_id)
+
+    prior_messages = await db.list_chat_messages(conv.id)
+    if prior_messages:
+        replay = _replay_messages_for_api(prior_messages)
+        messages = replay + list(request.messages[len(_user_turns(prior_messages)) :])
+    else:
+        messages = list(request.messages)
+
+    await _persist_user_turn(db, conv, request)
+
     system_prompt = (PROMPTS_DIR / "api_chat.md").read_text(encoding="utf-8")
-    context = await build_chat_context(full_id, db)
-    full_system = f"{system_prompt}\n\n---\n\n{context}"
+    context_text = await build_chat_context(full_id, db) if full_id else "(no question scope)"
+    full_system = f"{system_prompt}\n\n---\n\n{context_text}"
     model_id = MODEL_MAP.get(request.model, MODEL_MAP["sonnet"])
     client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
-    messages = list(request.messages)
+    context_scope_id = full_id or ""
 
     async def generate() -> AsyncIterator[str]:
         nonlocal messages
         try:
+            yield _sse("conversation", {"conversation_id": conv.id, "title": conv.title})
             for _ in range(10):
                 async with client.messages.stream(
                     model=model_id,
@@ -953,6 +1155,12 @@ async def handle_chat_stream(request: ChatRequest) -> StreamingResponse:
 
                 response = await stream.get_final_message()
 
+                await db.save_chat_message(
+                    conversation_id=conv.id,
+                    role=ChatMessageRole.ASSISTANT,
+                    content={"blocks": _serialize_assistant_content(response.content)},
+                )
+
                 tool_calls = [b for b in response.content if isinstance(b, ToolUseBlock)]
                 if not tool_calls:
                     break
@@ -961,7 +1169,7 @@ async def handle_chat_stream(request: ChatRequest) -> StreamingResponse:
 
                 tool_results = []
                 for tc in tool_calls:
-                    result_str = await _execute_tool(tc.name, tc.input, db, full_id)
+                    result_str = await _execute_tool(tc.name, tc.input, db, context_scope_id)
                     has_async = any(f'"{s}"' in result_str for s in _ASYNC_HANDLERS)
                     if has_async:
                         progress_q: asyncio.Queue[str] = asyncio.Queue()
@@ -996,9 +1204,17 @@ async def handle_chat_stream(request: ChatRequest) -> StreamingResponse:
                             "content": result_str,
                         }
                     )
+
+                await db.save_chat_message(
+                    conversation_id=conv.id,
+                    role=ChatMessageRole.TOOL_RESULT,
+                    content={"results": tool_results},
+                )
+
                 messages.append({"role": "user", "content": tool_results})
 
-            yield _sse("done", {})
+            await db.update_chat_conversation(conv.id, touch=True)
+            yield _sse("done", {"conversation_id": conv.id})
         except Exception as e:
             log.error("Chat stream error: %s", e, exc_info=True)
             yield _sse("error", {"message": str(e)})

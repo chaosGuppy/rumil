@@ -26,6 +26,9 @@ from rumil.models import (
     CallSequence,
     CallStatus,
     CallType,
+    ChatConversation,
+    ChatMessage,
+    ChatMessageRole,
     ConsiderationDirection,
     LinkRole,
     LinkType,
@@ -34,6 +37,7 @@ from rumil.models import (
     PageLink,
     PageType,
     Project,
+    ReputationEvent,
     Suggestion,
     SuggestionStatus,
     SuggestionType,
@@ -227,13 +231,24 @@ def _row_to_call_sequence(row: dict[str, Any]) -> CallSequence:
 
 
 class MutationState:
-    """Cached mutation events for a staged run, keyed by target_id."""
+    """Cached mutation events for a staged run, keyed by target_id.
+
+    The "forward" fields (``superseded_pages`` etc.) replay events *visible*
+    to the staged run — its own events plus baseline events up to
+    ``snapshot_ts``. The "unapply" fields undo baseline mutations that were
+    *written directly to the base tables* after the snapshot: the base
+    rows now reflect post-snapshot state that the staged run must not see,
+    and we use the mutation event log to revert them on read.
+    """
 
     __slots__ = (
         "deleted_links",
         "link_role_overrides",
         "page_content_overrides",
         "superseded_pages",
+        "unapply_role_overrides",
+        "unapply_supersessions",
+        "unapply_update_content",
     )
 
     def __init__(self) -> None:
@@ -241,6 +256,15 @@ class MutationState:
         self.deleted_links: set[str] = set()
         self.link_role_overrides: dict[str, LinkRole] = {}
         self.page_content_overrides: dict[str, str] = {}
+        # Pages whose baseline row currently shows superseded/updated content
+        # but whose supersession/update event landed *after* snapshot_ts.
+        # On read, the staged run should see the pre-mutation state:
+        # is_superseded=False + original content from the event payload.
+        self.unapply_supersessions: set[str] = set()
+        self.unapply_update_content: dict[str, str] = {}
+        # Links whose role was changed on the base table after the snapshot.
+        # Maps link_id -> the role value to restore (the event's old_role).
+        self.unapply_role_overrides: dict[str, LinkRole] = {}
 
 
 class DB:
@@ -250,11 +274,13 @@ class DB:
         client: AsyncClient,
         project_id: str = "",
         staged: bool = False,
+        snapshot_ts: datetime | None = None,
     ):
         self.run_id = run_id
         self.client = client
         self.project_id = project_id
         self.staged = staged
+        self.snapshot_ts = snapshot_ts
         self._semaphore = asyncio.Semaphore(get_settings().db_max_concurrent_queries)
         self._prod: bool = False
         self._mutation_cache: MutationState | None = None
@@ -268,7 +294,17 @@ class DB:
         project_id: str = "",
         client: AsyncClient | None = None,
         staged: bool = False,
+        snapshot_ts: datetime | None = None,
     ) -> "DB":
+        """Create a DB handle.
+
+        When ``staged=True`` and no explicit ``snapshot_ts`` is supplied, the
+        new handle pins itself to the current server time (via ``now()``) so
+        baseline rows and mutation events that land *after* this point are
+        invisible to this run. This gives each staged run a fixed view of the
+        workspace — the "fork-at-snapshot" contract from
+        ``marketplace-thread/11-staging-concurrency.md``.
+        """
         if client is None:
             url, key = get_settings().get_supabase_credentials(prod)
             client = await acreate_client(url, key, options=AsyncClientOptions(schema="public"))
@@ -277,16 +313,35 @@ class DB:
             client=client,
             project_id=project_id,
             staged=staged,
+            snapshot_ts=snapshot_ts,
         )
         db._prod = prod
+        if staged and snapshot_ts is None:
+            db.snapshot_ts = await db._fetch_db_now()
         return db
+
+    async def _fetch_db_now(self) -> datetime:
+        """Return the database server's current timestamp.
+
+        Used to pin a staged run's snapshot boundary to a server-side instant,
+        avoiding any local-clock drift between worker and DB.
+        """
+        try:
+            result = await self._execute(self.client.rpc("db_now", {}))
+            value = result.data
+            if isinstance(value, str):
+                return datetime.fromisoformat(value)
+        except Exception:
+            log.debug("db_now() RPC not available, falling back to local clock", exc_info=True)
+        return datetime.now(UTC)
 
     async def fork(self) -> "DB":
         """Create a new DB instance with a fresh Supabase client.
 
-        Shares run_id, project_id, and staged flag with the parent but gets
-        its own HTTP connection. Use this to scope connections to a single
-        call, avoiding HTTP/2 stream exhaustion on long-running jobs.
+        Shares run_id, project_id, staged flag, and snapshot_ts with the
+        parent but gets its own HTTP connection. Use this to scope
+        connections to a single call, avoiding HTTP/2 stream exhaustion on
+        long-running jobs.
         """
         url, key = get_settings().get_supabase_credentials(self._prod)
         client = await acreate_client(url, key, options=AsyncClientOptions(schema="public"))
@@ -295,6 +350,7 @@ class DB:
             client=client,
             project_id=self.project_id,
             staged=self.staged,
+            snapshot_ts=self.snapshot_ts,
         )
         db._prod = self._prod
         return db
@@ -315,17 +371,43 @@ class DB:
     def _staged_filter(self, query: Any) -> Any:
         """Apply staged-run visibility filter to a query.
 
-        Staged runs see baseline (staged=false) + their own rows.
-        Non-staged runs see only baseline rows.
+        Staged runs see baseline (staged=false) + their own rows. When a
+        ``snapshot_ts`` is pinned, baseline rows must additionally have been
+        created at or before that instant — rows committed by other runs
+        after the snapshot are invisible. Own-run rows are always visible
+        regardless of timestamp. Non-staged runs see only baseline rows.
         """
         if self.staged:
+            if self.snapshot_ts is not None:
+                ts = self.snapshot_ts.isoformat()
+                return query.or_(
+                    f"and(staged.eq.false,created_at.lte.{ts}),run_id.eq.{self.run_id}"
+                )
             return query.or_(f"staged.eq.false,run_id.eq.{self.run_id}")
         return query.eq("staged", False)
 
     _MUTATION_CACHE_TTL_S = 5.0
 
     async def _load_mutation_state(self) -> MutationState:
-        """Fetch and cache mutation events for this staged run."""
+        """Fetch and cache mutation events visible to this staged run.
+
+        Own-run events are always forwarded onto the view. When a
+        ``snapshot_ts`` is pinned, events committed by *other* runs are
+        split two ways:
+
+        - Events with ``created_at <= snapshot_ts`` are forwarded normally —
+          the staged run saw the baseline mutation happen within its
+          snapshot.
+        - Events with ``created_at > snapshot_ts`` (other runs' writes after
+          the fork) are recorded as *unapply* entries: the base table was
+          dual-written and now shows post-snapshot state, but this staged
+          run must not observe those mutations. ``_apply_page_events`` /
+          ``_apply_link_events`` use the unapply set to roll the base-table
+          values back to their pre-mutation values on read.
+
+        Without a snapshot, only own-run events are included (matching
+        pre-fork behavior).
+        """
         now = time.monotonic()
         if (
             self._mutation_cache is not None
@@ -336,16 +418,42 @@ class DB:
             self._mutation_cache = MutationState()
             self._mutation_cache_ts = now
             return self._mutation_cache
-        rows = _rows(
+        own_rows = _rows(
             await self._execute(
                 self.client.table("mutation_events")
-                .select("event_type, target_id, payload")
+                .select("event_type, target_id, payload, created_at, run_id")
                 .eq("run_id", self.run_id)
                 .order("created_at")
             )
         )
+        baseline_rows: list[dict[str, Any]] = []
+        post_snapshot_rows: list[dict[str, Any]] = []
+        if self.snapshot_ts is not None:
+            ts = self.snapshot_ts.isoformat()
+            baseline_rows = _rows(
+                await self._execute(
+                    self.client.table("mutation_events")
+                    .select("event_type, target_id, payload, created_at, run_id")
+                    .neq("run_id", self.run_id)
+                    .lte("created_at", ts)
+                    .order("created_at")
+                )
+            )
+            post_snapshot_rows = _rows(
+                await self._execute(
+                    self.client.table("mutation_events")
+                    .select("event_type, target_id, payload, created_at, run_id")
+                    .neq("run_id", self.run_id)
+                    .gt("created_at", ts)
+                    .order("created_at")
+                )
+            )
+        combined = sorted(
+            [*baseline_rows, *own_rows],
+            key=lambda r: r.get("created_at") or "",
+        )
         state = MutationState()
-        for row in rows:
+        for row in combined:
             et = row["event_type"]
             tid = row["target_id"]
             payload = row.get("payload") or {}
@@ -357,6 +465,41 @@ class DB:
                 state.link_role_overrides[tid] = LinkRole(payload["new_role"])
             elif et == "update_page_content":
                 state.page_content_overrides[tid] = payload.get("new_content", "")
+        # Post-snapshot baseline events: record how to undo them on read.
+        # We iterate oldest-first so that the *earliest* post-snapshot
+        # mutation wins for unapply_update_content — its ``old_content`` is
+        # the pre-snapshot value. Same logic for role overrides.
+        post_sorted = sorted(
+            post_snapshot_rows,
+            key=lambda r: r.get("created_at") or "",
+        )
+        for row in post_sorted:
+            et = row["event_type"]
+            tid = row["target_id"]
+            payload = row.get("payload") or {}
+            if et == "supersede_page":
+                # Only mark as "unapply" if this is not already superseded
+                # in the pre-snapshot view.
+                if tid not in state.superseded_pages:
+                    state.unapply_supersessions.add(tid)
+            elif et == "update_page_content":
+                if (
+                    tid not in state.page_content_overrides
+                    and tid not in state.unapply_update_content
+                ):
+                    state.unapply_update_content[tid] = payload.get("old_content", "")
+            elif et == "change_link_role":
+                if tid not in state.link_role_overrides and tid not in state.unapply_role_overrides:
+                    old_role = payload.get("old_role")
+                    if old_role:
+                        state.unapply_role_overrides[tid] = LinkRole(old_role)
+            # Note: baseline delete_link events after snapshot physically
+            # remove the row from page_links (non-staged deletes DELETE FROM).
+            # Restoring them on read would require reinserting from the
+            # event payload; see CLAUDE.md on deletion semantics. For now,
+            # deletions landing after the snapshot are visible to the
+            # staged run — a deviation from pure fork-at-snapshot, flagged
+            # as a known gap.
         self._mutation_cache = state
         self._mutation_cache_ts = now
         return state
@@ -366,9 +509,21 @@ class DB:
         self._mutation_cache_ts = 0.0
 
     async def _apply_page_events(self, pages: Sequence[Page]) -> list[Page]:
-        """Overlay mutation events onto a batch of pages."""
+        """Overlay mutation events onto a batch of pages.
+
+        Applies both forward overlays (supersessions/content updates this
+        run should see) and unapply overlays (baseline mutations committed
+        after this run's snapshot that the base table reflects but this
+        run should not).
+        """
         state = await self._load_mutation_state()
-        if not state.superseded_pages and not state.page_content_overrides:
+        has_any = (
+            state.superseded_pages
+            or state.page_content_overrides
+            or state.unapply_supersessions
+            or state.unapply_update_content
+        )
+        if not has_any:
             return list(pages)
         result: list[Page] = []
         for p in pages:
@@ -376,17 +531,28 @@ class DB:
             if p.id in state.superseded_pages:
                 updates["is_superseded"] = True
                 updates["superseded_by"] = state.superseded_pages[p.id]
+            elif p.id in state.unapply_supersessions and p.is_superseded:
+                updates["is_superseded"] = False
+                updates["superseded_by"] = None
             if p.id in state.page_content_overrides:
                 updates["content"] = state.page_content_overrides[p.id]
+            elif p.id in state.unapply_update_content:
+                updates["content"] = state.unapply_update_content[p.id]
             if updates:
                 p = p.model_copy(update=updates)
             result.append(p)
         return result
 
     async def _apply_link_events(self, links: Sequence[PageLink]) -> list[PageLink]:
-        """Overlay mutation events onto a batch of links."""
+        """Overlay mutation events onto a batch of links.
+
+        Applies forward overlays (deletes and role changes this run saw)
+        and unapply overlays for role changes that landed after this run's
+        snapshot.
+        """
         state = await self._load_mutation_state()
-        if not state.deleted_links and not state.link_role_overrides:
+        has_any = state.deleted_links or state.link_role_overrides or state.unapply_role_overrides
+        if not has_any:
             return list(links)
         result: list[PageLink] = []
         for link in links:
@@ -394,9 +560,11 @@ class DB:
                 continue
             if link.id in state.link_role_overrides:
                 link = link.model_copy(
-                    update={
-                        "role": state.link_role_overrides[link.id],
-                    }
+                    update={"role": state.link_role_overrides[link.id]},
+                )
+            elif link.id in state.unapply_role_overrides:
+                link = link.model_copy(
+                    update={"role": state.unapply_role_overrides[link.id]},
                 )
             result.append(link)
         return result
@@ -1971,6 +2139,84 @@ class DB:
             )
         )
 
+    async def record_reputation_event(
+        self,
+        *,
+        source: str,
+        dimension: str,
+        score: float,
+        orchestrator: str | None = None,
+        task_shape: dict | None = None,
+        source_call_id: str | None = None,
+        extra: dict | None = None,
+    ) -> None:
+        """Append a raw reputation signal for this run.
+
+        Writes staged=self.staged and run_id=self.run_id so staged runs are
+        isolated from baseline readers (see "Staged Runs and the Mutation
+        Log" in CLAUDE.md). Never aggregate or normalize at this layer —
+        callers keep each (source, dimension) raw.
+        """
+        row: dict[str, Any] = {
+            "id": str(uuid.uuid4()),
+            "run_id": self.run_id,
+            "project_id": self.project_id,
+            "source": source,
+            "dimension": dimension,
+            "score": score,
+            "orchestrator": orchestrator,
+            "task_shape": task_shape,
+            "source_call_id": source_call_id,
+            "extra": extra or {},
+            "staged": self.staged,
+            "created_at": datetime.now(UTC).isoformat(),
+        }
+        await self._execute(self.client.table("reputation_events").insert(row))
+
+    async def get_reputation_events(
+        self,
+        *,
+        run_id: str | None = None,
+        source: str | None = None,
+        dimension: str | None = None,
+        orchestrator: str | None = None,
+    ) -> list[ReputationEvent]:
+        """Fetch reputation events, respecting the staged-visibility rule.
+
+        Staged DBs see baseline (staged=false) events plus their own
+        run_id's events. Non-staged DBs see only baseline events.
+        """
+        query = self.client.table("reputation_events").select("*")
+        if self.project_id:
+            query = query.eq("project_id", self.project_id)
+        if run_id is not None:
+            query = query.eq("run_id", run_id)
+        if source is not None:
+            query = query.eq("source", source)
+        if dimension is not None:
+            query = query.eq("dimension", dimension)
+        if orchestrator is not None:
+            query = query.eq("orchestrator", orchestrator)
+        query = self._staged_filter(query)
+        rows = _rows(await self._execute(query))
+        return [
+            ReputationEvent(
+                id=r["id"],
+                run_id=r["run_id"],
+                project_id=r["project_id"],
+                source=r["source"],
+                dimension=r["dimension"],
+                score=r["score"],
+                orchestrator=r.get("orchestrator"),
+                task_shape=r.get("task_shape"),
+                source_call_id=r.get("source_call_id"),
+                extra=r.get("extra") or {},
+                staged=r.get("staged", False),
+                created_at=datetime.fromisoformat(r["created_at"]),
+            )
+            for r in rows
+        ]
+
     async def save_epistemic_score(
         self,
         page_id: str,
@@ -2129,6 +2375,8 @@ class DB:
             params["pid"] = self.project_id
         if self.staged:
             params["p_staged_run_id"] = self.run_id
+        if self.snapshot_ts is not None:
+            params["p_snapshot_ts"] = self.snapshot_ts.isoformat()
         rows = _rows(await self._execute(self.client.rpc("get_root_questions", params)))
         pages = [_row_to_page(r) for r in rows]
         await self.apply_epistemic_overrides(pages)
@@ -2188,15 +2436,13 @@ class DB:
         for the shape). Staged runs see baseline plus their own rows; non-staged
         runs see baseline only.
         """
-        result = await self._execute(
-            self.client.rpc(
-                "compute_project_stats",
-                {
-                    "p_project_id": project_id,
-                    "p_staged_run_id": self.run_id if self.staged else None,
-                },
-            )
-        )
+        params: dict[str, Any] = {
+            "p_project_id": project_id,
+            "p_staged_run_id": self.run_id if self.staged else None,
+        }
+        if self.snapshot_ts is not None:
+            params["p_snapshot_ts"] = self.snapshot_ts.isoformat()
+        result = await self._execute(self.client.rpc("compute_project_stats", params))
         return cast(dict[str, Any], result.data or {})
 
     async def get_question_stats(self, question_id: str) -> dict[str, Any]:
@@ -2206,15 +2452,13 @@ class DB:
         field. Staged runs see baseline plus their own rows; non-staged runs see
         baseline only.
         """
-        result = await self._execute(
-            self.client.rpc(
-                "compute_question_stats",
-                {
-                    "p_question_id": question_id,
-                    "p_staged_run_id": self.run_id if self.staged else None,
-                },
-            )
-        )
+        params: dict[str, Any] = {
+            "p_question_id": question_id,
+            "p_staged_run_id": self.run_id if self.staged else None,
+        }
+        if self.snapshot_ts is not None:
+            params["p_snapshot_ts"] = self.snapshot_ts.isoformat()
+        result = await self._execute(self.client.rpc("compute_question_stats", params))
         return cast(dict[str, Any], result.data or {})
 
     async def get_assess_staleness(
@@ -2490,6 +2734,7 @@ class DB:
             "epistemic_scores",
             "call_llm_exchanges",
             "page_format_events",
+            "reputation_events",
         ):
             await self._execute(
                 self.client.table(table).update({"staged": True}).eq("run_id", run_id)
@@ -2599,6 +2844,7 @@ class DB:
             "epistemic_scores",
             "call_llm_exchanges",
             "page_format_events",
+            "reputation_events",
         ):
             await self._execute(
                 self.client.table(table).update({"staged": False}).eq("run_id", run_id)
@@ -2833,6 +3079,7 @@ class DB:
             "page_format_events",
             "epistemic_scores",
             "page_links",
+            "reputation_events",
         ]:
             await self._execute(self.client.table(table).delete().eq("run_id", self.run_id))
         # Null out sequence_id FK before deleting sequences and calls
@@ -2925,3 +3172,178 @@ class DB:
         if status != SuggestionStatus.PENDING:
             update["reviewed_at"] = datetime.now(UTC).isoformat()
         await self._execute(self.client.table("suggestions").update(update).eq("id", suggestion_id))
+
+    async def create_chat_conversation(
+        self,
+        project_id: str,
+        question_id: str | None = None,
+        title: str = "",
+    ) -> ChatConversation:
+        """Create a new chat conversation row."""
+        conv = ChatConversation(
+            project_id=project_id,
+            question_id=question_id,
+            title=title,
+            staged=self.staged,
+            run_id=self.run_id if self.staged else None,
+        )
+        await self._execute(
+            self.client.table("chat_conversations").insert(
+                {
+                    "id": conv.id,
+                    "project_id": conv.project_id,
+                    "question_id": conv.question_id,
+                    "title": conv.title,
+                    "created_at": conv.created_at.isoformat(),
+                    "updated_at": conv.updated_at.isoformat(),
+                    "staged": conv.staged,
+                    "run_id": conv.run_id,
+                }
+            )
+        )
+        return conv
+
+    async def get_chat_conversation(self, conversation_id: str) -> ChatConversation | None:
+        """Fetch a single conversation (staged-run-aware, excludes soft-deleted)."""
+        query = (
+            self.client.table("chat_conversations")
+            .select("*")
+            .eq("id", conversation_id)
+            .is_("deleted_at", "null")
+        )
+        query = self._staged_filter(query)
+        rows = _rows(await self._execute(query))
+        return _row_to_chat_conversation(rows[0]) if rows else None
+
+    async def list_chat_conversations(
+        self,
+        project_id: str,
+        limit: int = 50,
+        offset: int = 0,
+        question_id: str | None = None,
+    ) -> Sequence[ChatConversation]:
+        """List conversations for a project, most-recently-updated first."""
+        query = (
+            self.client.table("chat_conversations")
+            .select("*")
+            .eq("project_id", project_id)
+            .is_("deleted_at", "null")
+        )
+        if question_id:
+            query = query.eq("question_id", question_id)
+        query = self._staged_filter(query).order("updated_at", desc=True)
+        query = query.range(offset, offset + max(0, limit - 1))
+        rows = _rows(await self._execute(query))
+        return [_row_to_chat_conversation(r) for r in rows]
+
+    async def update_chat_conversation(
+        self,
+        conversation_id: str,
+        title: str | None = None,
+        touch: bool = False,
+    ) -> None:
+        """Rename or touch updated_at on a conversation."""
+        update: dict[str, Any] = {}
+        if title is not None:
+            update["title"] = title
+        if touch or title is not None:
+            update["updated_at"] = datetime.now(UTC).isoformat()
+        if not update:
+            return
+        await self._execute(
+            self.client.table("chat_conversations").update(update).eq("id", conversation_id)
+        )
+
+    async def soft_delete_chat_conversation(self, conversation_id: str) -> None:
+        """Mark a conversation as soft-deleted."""
+        await self._execute(
+            self.client.table("chat_conversations")
+            .update({"deleted_at": datetime.now(UTC).isoformat()})
+            .eq("id", conversation_id)
+        )
+
+    async def save_chat_message(
+        self,
+        conversation_id: str,
+        role: ChatMessageRole,
+        content: dict,
+        seq: int | None = None,
+    ) -> ChatMessage:
+        """Append a message to a conversation. Auto-assigns seq if omitted."""
+        if seq is None:
+            seq = await self._next_chat_message_seq(conversation_id)
+        msg = ChatMessage(
+            conversation_id=conversation_id,
+            role=role,
+            content=content,
+            seq=seq,
+            staged=self.staged,
+            run_id=self.run_id if self.staged else None,
+        )
+        await self._execute(
+            self.client.table("chat_messages").insert(
+                {
+                    "id": msg.id,
+                    "conversation_id": msg.conversation_id,
+                    "role": msg.role.value,
+                    "content": msg.content,
+                    "seq": msg.seq,
+                    "ts": msg.ts.isoformat(),
+                    "staged": msg.staged,
+                    "run_id": msg.run_id,
+                }
+            )
+        )
+        return msg
+
+    async def _next_chat_message_seq(self, conversation_id: str) -> int:
+        """Return the next sequence number for a conversation."""
+        rows = _rows(
+            await self._execute(
+                self.client.table("chat_messages")
+                .select("seq")
+                .eq("conversation_id", conversation_id)
+                .order("seq", desc=True)
+                .limit(1)
+            )
+        )
+        return (rows[0]["seq"] + 1) if rows else 0
+
+    async def list_chat_messages(
+        self,
+        conversation_id: str,
+    ) -> Sequence[ChatMessage]:
+        """List all messages in a conversation in order."""
+        query = (
+            self.client.table("chat_messages").select("*").eq("conversation_id", conversation_id)
+        )
+        query = self._staged_filter(query).order("seq", desc=False)
+        rows = _rows(await self._execute(query))
+        return [_row_to_chat_message(r) for r in rows]
+
+
+def _row_to_chat_conversation(row: dict[str, Any]) -> ChatConversation:
+    return ChatConversation(
+        id=row["id"],
+        project_id=row["project_id"],
+        question_id=row.get("question_id"),
+        title=row.get("title") or "",
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+        deleted_at=row.get("deleted_at"),
+        staged=row.get("staged", False),
+        run_id=row.get("run_id"),
+    )
+
+
+def _row_to_chat_message(row: dict[str, Any]) -> ChatMessage:
+    return ChatMessage(
+        id=row["id"],
+        conversation_id=row["conversation_id"],
+        role=ChatMessageRole(row["role"]),
+        content=row.get("content") or {},
+        seq=row.get("seq", 0),
+        ts=row["ts"],
+        staged=row.get("staged", False),
+        run_id=row.get("run_id"),
+    )

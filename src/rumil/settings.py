@@ -121,6 +121,10 @@ class Settings(BaseSettings):
     big_assess_full_page_similarity_floor: float | None = _capture_field(default=None)
     big_assess_abstract_page_similarity_floor: float | None = _capture_field(default=None)
 
+    eval_include_single_call_baseline: bool = _capture_field(default=False)
+    single_call_baseline_model: str = _capture_field(default="claude-opus-4-7")
+    single_call_baseline_max_claims: int = _capture_field(default=30)
+
     @property
     def is_test_mode(self) -> bool:
         return bool(self.rumil_test_mode)

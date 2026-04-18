@@ -14,8 +14,14 @@ from rumil.evaluate.explore import explore_page_impl
 from rumil.llm import Tool, text_call
 from rumil.models import Call, CallStatus, CallType
 from rumil.run_eval.agents import EVAL_AGENTS, EvalAgentSpec
+from rumil.run_eval.baselines import (
+    SingleCallBaselineResult,
+    render_baseline_view,
+    run_single_call_baseline,
+)
 from rumil.run_eval.report import format_run_eval_report, save_run_eval_report
 from rumil.sdk_agent import SdkAgentConfig, run_sdk_agent
+from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
 from rumil.tracing.tracer import CallTrace
 from rumil.workspace_exploration import make_explore_subgraph_tool, make_load_page_tool
@@ -35,6 +41,45 @@ def wrap_as_mcp_tool(llm_tool: Tool):
         return {"content": [{"type": "text", "text": result}]}
 
     return wrapped
+
+
+async def _record_eval_reputation(
+    parent_db: DB,
+    *,
+    agent_name: str,
+    run_id: str,
+    question_id: str,
+    call_id: str,
+) -> None:
+    """Record a reputation event for a completed eval-agent assessment.
+
+    Endogenous substrate hook (see CLAUDE.md and
+    marketplace-thread/07-feedback.md). The eval agent's free-form text
+    report is not itself a numeric score, so we record a completion-sentinel
+    (1.0) here and let AB-eval's comparison step emit the real preference
+    score. Callers can aggregate these per (source, dimension) at query time
+    without losing the raw signal. Never collapse sources at write time.
+    """
+    run_row = await parent_db.get_run(run_id)
+    config = (run_row or {}).get("config") or {}
+    orchestrator = config.get("orchestrator") if isinstance(config, dict) else None
+
+    task_shape: dict | None = None
+    question = await parent_db.get_page(question_id)
+    if question is not None:
+        extra = question.extra or {}
+        if isinstance(extra.get("task_shape"), dict):
+            task_shape = extra["task_shape"]
+
+    await parent_db.record_reputation_event(
+        source="eval_agent",
+        dimension=agent_name,
+        score=1.0,
+        orchestrator=orchestrator,
+        task_shape=task_shape,
+        source_call_id=call_id,
+        extra={"subject_run_id": run_id},
+    )
 
 
 def build_system_prompt(
@@ -169,6 +214,13 @@ async def evaluate_run_with_agent(
         if trace.total_cost_usd > 0:
             call.cost_usd = trace.total_cost_usd
         await parent_db.save_call(call)
+        await _record_eval_reputation(
+            parent_db,
+            agent_name=spec.name,
+            run_id=run_id,
+            question_id=question_id,
+            call_id=call.id,
+        )
     except Exception:
         log.exception(
             "Eval agent %s failed for run %s",
@@ -191,6 +243,32 @@ async def _generate_run_assessment(
         sections.append(f"### {spec.display_name}\n\n{report}")
     user_message = "\n\n---\n\n".join(sections)
     return await text_call(system_prompt=final_prompt, user_message=user_message)
+
+
+async def _maybe_run_single_call_baseline(
+    question_id: str,
+    db: DB,
+    broadcaster: Broadcaster | None,
+) -> SingleCallBaselineResult | None:
+    """Fire the single-call baseline if enabled in settings.
+
+    Opt-in via ``settings.eval_include_single_call_baseline``. Keeps the
+    comparison flow minimal — we just record the baseline output alongside
+    agent reports so humans can inspect it.
+    """
+    settings = get_settings()
+    if not settings.eval_include_single_call_baseline:
+        return None
+    try:
+        return await run_single_call_baseline(
+            db,
+            question_id,
+            model=settings.single_call_baseline_model,
+            broadcaster=broadcaster,
+        )
+    except Exception:
+        log.exception("Single-call baseline failed for question %s", question_id)
+        return None
 
 
 async def run_run_eval(
@@ -216,6 +294,18 @@ async def run_run_eval(
     print(f"\nRun Evaluation: {run_id[:8]}")
     print(f"Question: {question_id}")
     print(f"Running {len(agents)} evaluation agents concurrently...\n")
+
+    baseline_result = await _maybe_run_single_call_baseline(
+        question_id,
+        db,
+        broadcaster,
+    )
+    if baseline_result is not None:
+        print(
+            f"Single-call baseline: call {baseline_result.call_id[:8] if baseline_result.call_id else '??'}"
+            f" ({baseline_result.input_tokens}/{baseline_result.output_tokens} tokens,"
+            f" ${baseline_result.cost_usd:.4f})"
+        )
 
     async with asyncio.TaskGroup() as tg:
         tasks = [
@@ -247,6 +337,21 @@ async def run_run_eval(
 
     overall_assessment = await _generate_run_assessment(agent_reports)
     aggregate = format_run_eval_report(agent_reports, run_id, overall_assessment)
+    if baseline_result is not None:
+        aggregate += (
+            "\n---\n\n"
+            "# Single-Call Baseline (comparator)\n\n"
+            f"**Model:** `{baseline_result.model}`  \n"
+            f"**Call:** `{baseline_result.call_id}`  \n"
+            f"**Tokens:** {baseline_result.input_tokens} in / "
+            f"{baseline_result.output_tokens} out  \n"
+            f"**Cost:** ${baseline_result.cost_usd:.4f}\n\n"
+            "> Produced in a single LLM call given the same context the "
+            "orchestrator would have seen. Compare manually against the "
+            "orchestrator-produced view to sanity-check that the orchestrator "
+            "is net-positive.\n\n"
+            f"{render_baseline_view(baseline_result.view, baseline_result.response_text)}\n"
+        )
     report_path = save_run_eval_report(aggregate, run_id)
 
     dimension_rows = [

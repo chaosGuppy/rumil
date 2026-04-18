@@ -141,7 +141,7 @@ export async function sendChatMessage(
   return res.json();
 }
 
-export type ChatStreamEventType = "text" | "tool_use_start" | "tool_use_result" | "orchestrator_progress" | "done" | "error";
+export type ChatStreamEventType = "text" | "tool_use_start" | "tool_use_result" | "orchestrator_progress" | "done" | "error" | "conversation";
 
 export interface ChatStreamEvent {
   type: ChatStreamEventType;
@@ -154,6 +154,7 @@ export async function streamChatMessage(
   onEvent: (event: ChatStreamEvent) => void,
   workspace: string = "default",
   model: string = "sonnet",
+  conversationId?: string,
 ): Promise<void> {
   const res = await fetch(`${API_BASE}/api/chat/stream`, {
     method: "POST",
@@ -163,6 +164,7 @@ export async function streamChatMessage(
       messages,
       workspace,
       model,
+      conversation_id: conversationId ?? null,
     }),
   });
   if (!res.ok) throw new Error(`API error: ${res.status}`);
@@ -193,6 +195,82 @@ export async function streamChatMessage(
       }
     }
   }
+}
+
+export interface ChatConversationSummary {
+  id: string;
+  project_id: string;
+  question_id: string | null;
+  title: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChatConversationDetail extends ChatConversationSummary {
+  messages: Array<{
+    id: string;
+    role: string;
+    content: Record<string, unknown>;
+    seq: number;
+    ts: string;
+  }>;
+}
+
+export async function listChatConversations(
+  projectId: string,
+  questionId?: string,
+): Promise<ChatConversationSummary[]> {
+  const params = new URLSearchParams({ project_id: projectId });
+  if (questionId) params.set("question_id", questionId);
+  const res = await fetch(`${API_BASE}/api/chat/conversations?${params}`);
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  return res.json();
+}
+
+export async function getChatConversation(
+  conversationId: string,
+): Promise<ChatConversationDetail> {
+  const res = await fetch(`${API_BASE}/api/chat/conversations/${conversationId}`);
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  return res.json();
+}
+
+export async function createChatConversation(
+  projectId: string,
+  questionId?: string,
+  firstMessage?: string,
+): Promise<ChatConversationSummary> {
+  const res = await fetch(`${API_BASE}/api/chat/conversations`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      project_id: projectId,
+      question_id: questionId ?? null,
+      first_message: firstMessage ?? null,
+    }),
+  });
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  return res.json();
+}
+
+export async function renameChatConversation(
+  conversationId: string,
+  title: string,
+): Promise<ChatConversationSummary> {
+  const res = await fetch(`${API_BASE}/api/chat/conversations/${conversationId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title }),
+  });
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteChatConversation(conversationId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/chat/conversations/${conversationId}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
 }
 
 export { API_BASE };

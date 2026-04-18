@@ -1,6 +1,7 @@
 """Test staged run isolation: pages, links, superseding, and link mutations."""
 
 import uuid
+from datetime import UTC, datetime
 
 import pytest
 import pytest_asyncio
@@ -20,8 +21,32 @@ from rumil.models import (
 )
 
 
-async def _make_db(project_id: str, staged: bool = False) -> DB:
-    db = await DB.create(run_id=str(uuid.uuid4()), staged=staged)
+async def _make_db(
+    project_id: str,
+    staged: bool = False,
+    pin_snapshot: bool = False,
+) -> DB:
+    """Test helper to create a DB handle.
+
+    By default, staged DBs created in these tests do NOT pin a
+    fork-at-snapshot boundary — they use pre-fork loose-staging semantics
+    where the staged run sees the current baseline at query time, not a
+    frozen view. This preserves the original test scenarios which seed
+    baseline data *after* the staged_db fixture is created.
+
+    Pass ``pin_snapshot=True`` to opt into the production default (DB
+    server ``now()`` captured at ``DB.create`` time). See
+    ``tests/test_fork_at_snapshot.py`` for tests that exercise the
+    pinned-snapshot contract.
+    """
+    if staged and not pin_snapshot:
+        db = await DB.create(
+            run_id=str(uuid.uuid4()),
+            staged=staged,
+            snapshot_ts=datetime.max.replace(tzinfo=UTC),
+        )
+    else:
+        db = await DB.create(run_id=str(uuid.uuid4()), staged=staged)
     db.project_id = project_id
     return db
 
@@ -69,7 +94,13 @@ async def baseline_db(project_id):
 
 @pytest_asyncio.fixture
 async def staged_db(project_id):
-    """A staged DB whose writes should be isolated."""
+    """A staged DB whose writes should be isolated.
+
+    Uses loose-staging semantics (``snapshot_ts`` pinned to the far future)
+    so that baseline data seeded later in the test body is visible. Tests
+    exercising fork-at-snapshot (pinned snapshot_ts = DB-now) live in
+    ``tests/test_fork_at_snapshot.py``.
+    """
     db = await _make_db(project_id, staged=True)
     await db.init_budget(100)
     yield db

@@ -369,7 +369,7 @@ export type CallSummary = {
 /**
  * CallType
  */
-export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'ab_eval' | 'ab_eval_comparison' | 'ab_eval_summary' | 'run_eval' | 'create_view' | 'global_prioritization' | 'update_view' | 'chat_direct' | 'adversarial_review' | 'claude_code_direct';
+export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'ab_eval' | 'ab_eval_comparison' | 'ab_eval_summary' | 'run_eval' | 'single_call_baseline' | 'create_view' | 'global_prioritization' | 'update_view' | 'chat_direct' | 'adversarial_review' | 'claude_code_direct';
 
 /**
  * CallTypeFruitScoreItem
@@ -435,6 +435,10 @@ export type ChatRequest = {
      * Model
      */
     model?: string;
+    /**
+     * Conversation Id
+     */
+    conversation_id?: string | null;
 };
 
 /**
@@ -449,6 +453,10 @@ export type ChatResponse = {
      * Tool Uses
      */
     tool_uses: Array<ToolUseInfo>;
+    /**
+     * Conversation Id
+     */
+    conversation_id: string;
 };
 
 /**
@@ -556,6 +564,94 @@ export type ContextBuiltEventOut = {
      * Scout Mode
      */
     scout_mode: string | null;
+};
+
+/**
+ * ConversationDetail
+ */
+export type ConversationDetail = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Project Id
+     */
+    project_id: string;
+    /**
+     * Question Id
+     */
+    question_id: string | null;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Updated At
+     */
+    updated_at: string;
+    /**
+     * Messages
+     */
+    messages: Array<{
+        [key: string]: unknown;
+    }>;
+};
+
+/**
+ * ConversationListItem
+ */
+export type ConversationListItem = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Project Id
+     */
+    project_id: string;
+    /**
+     * Question Id
+     */
+    question_id: string | null;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Updated At
+     */
+    updated_at: string;
+};
+
+/**
+ * CreateConversationRequest
+ */
+export type CreateConversationRequest = {
+    /**
+     * Project Id
+     */
+    project_id: string;
+    /**
+     * Question Id
+     */
+    question_id?: string | null;
+    /**
+     * First Message
+     */
+    first_message?: string | null;
+    /**
+     * Title
+     */
+    title?: string | null;
 };
 
 /**
@@ -1956,6 +2052,16 @@ export type ToolUseInfo = {
 };
 
 /**
+ * UpdateConversationRequest
+ */
+export type UpdateConversationRequest = {
+    /**
+     * Title
+     */
+    title: string;
+};
+
+/**
  * UpdatePlanCreatedEventOut
  */
 export type UpdatePlanCreatedEventOut = {
@@ -3331,6 +3437,183 @@ export type ChatStreamApiChatStreamPostResponses = {
      */
     200: unknown;
 };
+
+export type ListChatConversationsApiChatConversationsGetData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Project Id
+         */
+        project_id: string;
+        /**
+         * Question Id
+         */
+        question_id?: string | null;
+        /**
+         * Limit
+         */
+        limit?: number;
+        /**
+         * Offset
+         */
+        offset?: number;
+    };
+    url: '/api/chat/conversations';
+};
+
+export type ListChatConversationsApiChatConversationsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListChatConversationsApiChatConversationsGetError = ListChatConversationsApiChatConversationsGetErrors[keyof ListChatConversationsApiChatConversationsGetErrors];
+
+export type ListChatConversationsApiChatConversationsGetResponses = {
+    /**
+     * Response List Chat Conversations Api Chat Conversations Get
+     *
+     * Successful Response
+     */
+    200: Array<ConversationListItem>;
+};
+
+export type ListChatConversationsApiChatConversationsGetResponse = ListChatConversationsApiChatConversationsGetResponses[keyof ListChatConversationsApiChatConversationsGetResponses];
+
+export type CreateChatConversationApiChatConversationsPostData = {
+    body: CreateConversationRequest;
+    path?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/chat/conversations';
+};
+
+export type CreateChatConversationApiChatConversationsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateChatConversationApiChatConversationsPostError = CreateChatConversationApiChatConversationsPostErrors[keyof CreateChatConversationApiChatConversationsPostErrors];
+
+export type CreateChatConversationApiChatConversationsPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: ConversationListItem;
+};
+
+export type CreateChatConversationApiChatConversationsPostResponse = CreateChatConversationApiChatConversationsPostResponses[keyof CreateChatConversationApiChatConversationsPostResponses];
+
+export type DeleteChatConversationApiChatConversationsConversationIdDeleteData = {
+    body?: never;
+    path: {
+        /**
+         * Conversation Id
+         */
+        conversation_id: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/chat/conversations/{conversation_id}';
+};
+
+export type DeleteChatConversationApiChatConversationsConversationIdDeleteErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeleteChatConversationApiChatConversationsConversationIdDeleteError = DeleteChatConversationApiChatConversationsConversationIdDeleteErrors[keyof DeleteChatConversationApiChatConversationsConversationIdDeleteErrors];
+
+export type DeleteChatConversationApiChatConversationsConversationIdDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type GetChatConversationApiChatConversationsConversationIdGetData = {
+    body?: never;
+    path: {
+        /**
+         * Conversation Id
+         */
+        conversation_id: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/chat/conversations/{conversation_id}';
+};
+
+export type GetChatConversationApiChatConversationsConversationIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetChatConversationApiChatConversationsConversationIdGetError = GetChatConversationApiChatConversationsConversationIdGetErrors[keyof GetChatConversationApiChatConversationsConversationIdGetErrors];
+
+export type GetChatConversationApiChatConversationsConversationIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ConversationDetail;
+};
+
+export type GetChatConversationApiChatConversationsConversationIdGetResponse = GetChatConversationApiChatConversationsConversationIdGetResponses[keyof GetChatConversationApiChatConversationsConversationIdGetResponses];
+
+export type UpdateChatConversationApiChatConversationsConversationIdPatchData = {
+    body: UpdateConversationRequest;
+    path: {
+        /**
+         * Conversation Id
+         */
+        conversation_id: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/chat/conversations/{conversation_id}';
+};
+
+export type UpdateChatConversationApiChatConversationsConversationIdPatchErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpdateChatConversationApiChatConversationsConversationIdPatchError = UpdateChatConversationApiChatConversationsConversationIdPatchErrors[keyof UpdateChatConversationApiChatConversationsConversationIdPatchErrors];
+
+export type UpdateChatConversationApiChatConversationsConversationIdPatchResponses = {
+    /**
+     * Successful Response
+     */
+    200: ConversationListItem;
+};
+
+export type UpdateChatConversationApiChatConversationsConversationIdPatchResponse = UpdateChatConversationApiChatConversationsConversationIdPatchResponses[keyof UpdateChatConversationApiChatConversationsConversationIdPatchResponses];
 
 export type GetPageLoadStatsApiRunsRunIdPageLoadStatsGetData = {
     body?: never;

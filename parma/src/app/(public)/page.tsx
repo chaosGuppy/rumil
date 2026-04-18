@@ -341,6 +341,7 @@ function QuestionViewPage({
         onNodeRef={setFocusNodeId}
         onShowReview={() => setShowReview(true)}
         workspace={project.name}
+        projectId={project.id}
       />
       <SourceDrawer
         source={drawerSource}

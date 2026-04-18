@@ -3,8 +3,14 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { streamChatMessage } from "@/lib/api";
-import type { ChatToolUse } from "@/lib/api";
+import {
+  streamChatMessage,
+  listChatConversations,
+  getChatConversation,
+  renameChatConversation,
+  deleteChatConversation,
+} from "@/lib/api";
+import type { ChatToolUse, ChatConversationSummary } from "@/lib/api";
 import { SlashCommandDropdown, useSlashCommands } from "./SlashCommands";
 
 type MessageBlock =
@@ -29,6 +35,54 @@ interface ChatPanelProps {
   onNodeRef?: (nodeId: string) => void;
   onShowReview?: () => void;
   workspace?: string;
+  projectId?: string;
+}
+
+function contentToText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (content && typeof content === "object" && "text" in content) {
+    return String((content as { text: string }).text);
+  }
+  return "";
+}
+
+function persistedMessagesToUi(
+  raw: Array<{ id: string; role: string; content: Record<string, unknown>; seq: number; ts: string }>,
+): Message[] {
+  const out: Message[] = [];
+  for (const m of raw) {
+    if (m.role === "user") {
+      out.push({
+        id: m.id,
+        role: "user",
+        content: contentToText(m.content),
+        timestamp: new Date(m.ts),
+      });
+    } else if (m.role === "assistant") {
+      const blocksIn = (m.content?.blocks ?? []) as Array<{ type: string; text?: string; name?: string; input?: Record<string, unknown> }>;
+      const blocks: MessageBlock[] = [];
+      let textAccum = "";
+      for (const b of blocksIn) {
+        if (b.type === "text") {
+          textAccum += b.text ?? "";
+          blocks.push({ type: "text", content: b.text ?? "" });
+        } else if (b.type === "tool_use") {
+          blocks.push({
+            type: "tool",
+            tool: { name: b.name ?? "", input: b.input ?? {}, result: "" },
+          });
+        }
+      }
+      out.push({
+        id: m.id,
+        role: "assistant",
+        content: textAccum,
+        timestamp: new Date(m.ts),
+        blocks,
+      });
+    }
+  }
+  return out;
 }
 
 function formatTime(date: Date): string {
@@ -198,19 +252,78 @@ export function ChatPanel({
   onNodeRef,
   onShowReview,
   workspace = "default",
+  projectId,
 }: ChatPanelProps) {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: "initial",
-      role: "assistant",
-      content:
-        "Ask me about this view \u2014 I can explain the reasoning behind claims, surface tensions between findings, or discuss what the research might be missing.",
-      timestamp: new Date(),
-    },
-  ]);
+  const initialAssistantMessage: Message = {
+    id: "initial",
+    role: "assistant",
+    content:
+      "Ask me about this view \u2014 I can explain the reasoning behind claims, surface tensions between findings, or discuss what the research might be missing.",
+    timestamp: new Date(),
+  };
+  const [messages, setMessages] = useState<Message[]>([initialAssistantMessage]);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [conversations, setConversations] = useState<ChatConversationSummary[]>([]);
+  const [showSidebar, setShowSidebar] = useState(false);
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const refreshConversations = useCallback(async () => {
+    if (!projectId) return;
+    try {
+      const items = await listChatConversations(projectId, questionId || undefined);
+      setConversations(items);
+    } catch {
+      /* ignore — API may not be available yet */
+    }
+  }, [projectId, questionId]);
+
+  useEffect(() => {
+    if (isOpen) refreshConversations();
+  }, [isOpen, refreshConversations]);
+
+  const handleNewChat = useCallback(() => {
+    setConversationId(null);
+    setMessages([initialAssistantMessage]);
+    setShowSidebar(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleLoadConversation = useCallback(async (id: string) => {
+    try {
+      const detail = await getChatConversation(id);
+      const uiMessages = persistedMessagesToUi(detail.messages);
+      setMessages(uiMessages.length ? uiMessages : [initialAssistantMessage]);
+      setConversationId(id);
+      setShowSidebar(false);
+    } catch (e) {
+      console.error("Failed to load conversation", e);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleRenameConversation = useCallback(async (id: string, currentTitle: string) => {
+    const next = typeof window !== "undefined" ? window.prompt("Rename conversation", currentTitle) : null;
+    if (!next || next === currentTitle) return;
+    try {
+      await renameChatConversation(id, next);
+      await refreshConversations();
+    } catch (e) {
+      console.error("Failed to rename", e);
+    }
+  }, [refreshConversations]);
+
+  const handleDeleteConversation = useCallback(async (id: string) => {
+    if (typeof window !== "undefined" && !window.confirm("Delete this conversation?")) return;
+    try {
+      await deleteChatConversation(id);
+      if (id === conversationId) handleNewChat();
+      await refreshConversations();
+    } catch (e) {
+      console.error("Failed to delete", e);
+    }
+  }, [conversationId, handleNewChat, refreshConversations]);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -319,6 +432,11 @@ export function ChatPanel({
       };
 
       await streamChatMessage(questionId, apiMessages, (event) => {
+        if (event.type === "conversation") {
+          const cid = (event.data.conversation_id as string) || null;
+          if (cid && cid !== conversationId) setConversationId(cid);
+          return;
+        }
         if (event.type === "text") {
           const chunk = event.data.content as string;
           currentText += chunk;
@@ -373,7 +491,7 @@ export function ChatPanel({
           }
           updateMsg();
         }
-      }, workspace, model);
+      }, workspace, model, conversationId ?? undefined);
 
       setMessages((prev) =>
         prev.map((m) =>
@@ -381,6 +499,7 @@ export function ChatPanel({
         ),
       );
       onMessageSent?.();
+      refreshConversations();
     } catch (e) {
       setMessages((prev) =>
         prev.map((m) =>
@@ -396,7 +515,7 @@ export function ChatPanel({
     } finally {
       setIsLoading(false);
     }
-  }, [input, isLoading, messages, questionId, onMessageSent, onNodeRef, workspace, onShowReview]);
+  }, [input, isLoading, messages, questionId, onMessageSent, onNodeRef, workspace, onShowReview, conversationId, model, refreshConversations]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -464,6 +583,22 @@ export function ChatPanel({
               </div>
             </div>
             <button
+              onClick={() => setShowSidebar((s) => !s)}
+              className="chat-close-btn"
+              title="Toggle conversation list"
+              style={{ marginRight: "4px" }}
+            >
+              {showSidebar ? "hide" : "history"}
+            </button>
+            <button
+              onClick={handleNewChat}
+              className="chat-close-btn"
+              title="Start a new conversation"
+              style={{ marginRight: "4px" }}
+            >
+              new
+            </button>
+            <button
               onClick={onToggle}
               className="chat-close-btn"
               title="Close chat (\u2318/)"
@@ -471,6 +606,85 @@ export function ChatPanel({
               close
             </button>
           </div>
+
+          {showSidebar && (
+            <div
+              style={{
+                borderBottom: "1px solid var(--border)",
+                maxHeight: "220px",
+                overflowY: "auto",
+                padding: "6px 10px",
+                fontFamily: "var(--font-mono-stack)",
+                fontSize: "11px",
+              }}
+            >
+              {conversations.length === 0 ? (
+                <div style={{ color: "var(--fg-dim)", padding: "6px 0" }}>
+                  No past conversations in this project.
+                </div>
+              ) : (
+                conversations.map((c) => (
+                  <div
+                    key={c.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      padding: "4px 0",
+                      borderBottom: "1px dotted var(--border)",
+                      opacity: c.id === conversationId ? 1 : 0.75,
+                    }}
+                  >
+                    <button
+                      onClick={() => handleLoadConversation(c.id)}
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        textAlign: "left",
+                        background: "transparent",
+                        border: 0,
+                        color: c.id === conversationId ? "var(--accent)" : "var(--fg-muted)",
+                        cursor: "pointer",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        padding: "2px 0",
+                      }}
+                      title={c.title}
+                    >
+                      {c.title || "(untitled)"}
+                    </button>
+                    <button
+                      onClick={() => handleRenameConversation(c.id, c.title)}
+                      style={{
+                        background: "transparent",
+                        border: 0,
+                        color: "var(--fg-dim)",
+                        cursor: "pointer",
+                        fontSize: "10px",
+                      }}
+                      title="Rename"
+                    >
+                      rename
+                    </button>
+                    <button
+                      onClick={() => handleDeleteConversation(c.id)}
+                      style={{
+                        background: "transparent",
+                        border: 0,
+                        color: "var(--fg-dim)",
+                        cursor: "pointer",
+                        fontSize: "10px",
+                      }}
+                      title="Delete"
+                    >
+                      del
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
 
           <div className="chat-messages">
             {messages.map((msg) => (

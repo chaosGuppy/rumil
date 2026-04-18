@@ -156,6 +156,8 @@ async def search_pages_by_vector(
         params["filter_field_name"] = field_name
     if db.staged:
         params["filter_staged_run_id"] = db.run_id
+    if db.snapshot_ts is not None:
+        params["p_snapshot_ts"] = db.snapshot_ts.isoformat()
     rows: _Rows = _rows(await db.client.rpc("match_pages", params).execute())
     results: list[tuple[Page, float]] = []
     for row in rows:

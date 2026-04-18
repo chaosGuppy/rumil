@@ -211,6 +211,109 @@ async def _extract_preference_structured(
     return result.parsed.preference
 
 
+_PREFERENCE_SCORES_FOR_A: dict[str, float] = {
+    "A strongly preferred": 3.0,
+    "A somewhat preferred": 2.0,
+    "A slightly preferred": 1.0,
+    "Approximately indifferent between A and B": 0.0,
+    "B slightly preferred": -1.0,
+    "B somewhat preferred": -2.0,
+    "B strongly preferred": -3.0,
+}
+
+
+def preference_to_score(preference: str, for_arm: str) -> float | None:
+    """Map a 7-label AB-eval preference to a symmetric numeric score.
+
+    Returns a float in [-3, +3] from arm's perspective: +3 = "our arm
+    strongly preferred", -3 = "the other arm strongly preferred". Returns
+    None for "Could not determine preference" so callers can skip recording.
+    The mapping is deliberately symmetric so consumers can aggregate without
+    double-counting direction.
+    """
+    if preference not in _PREFERENCE_SCORES_FOR_A:
+        return None
+    a_score = _PREFERENCE_SCORES_FOR_A[preference]
+    if for_arm == "A":
+        return a_score
+    if for_arm == "B":
+        return -a_score
+    raise ValueError(f"for_arm must be 'A' or 'B', got {for_arm!r}")
+
+
+async def _record_ab_preference_reputation(
+    db: DB,
+    *,
+    agent_name: str,
+    preference: str,
+    run_id_a: str,
+    run_id_b: str,
+    question_id_a: str,
+    question_id_b: str,
+    comparison_call_id: str,
+) -> None:
+    """Record a reputation_event per arm for a 7-label AB-eval preference.
+
+    Never collapse sources or dimensions: A and B each get their own event
+    tagged with source='eval_agent', dimension=<agent_name>, score derived
+    symmetrically from the preference label. See
+    marketplace-thread/13-reputation-governance.md.
+    """
+    score_a = preference_to_score(preference, "A")
+    score_b = preference_to_score(preference, "B")
+    if score_a is None or score_b is None:
+        return
+
+    run_row_a = await db.get_run(run_id_a)
+    run_row_b = await db.get_run(run_id_b)
+    orch_a = _extract_orchestrator(run_row_a)
+    orch_b = _extract_orchestrator(run_row_b)
+
+    task_shape_a = await _extract_task_shape(db, question_id_a)
+    task_shape_b = await _extract_task_shape(db, question_id_b)
+
+    extra_base = {"preference_label": preference}
+
+    await db.record_reputation_event(
+        source="eval_agent",
+        dimension=agent_name,
+        score=score_a,
+        orchestrator=orch_a,
+        task_shape=task_shape_a,
+        source_call_id=comparison_call_id,
+        extra={**extra_base, "subject_run_id": run_id_a, "arm": "A"},
+    )
+    await db.record_reputation_event(
+        source="eval_agent",
+        dimension=agent_name,
+        score=score_b,
+        orchestrator=orch_b,
+        task_shape=task_shape_b,
+        source_call_id=comparison_call_id,
+        extra={**extra_base, "subject_run_id": run_id_b, "arm": "B"},
+    )
+
+
+def _extract_orchestrator(run_row: dict | None) -> str | None:
+    if not run_row:
+        return None
+    config = run_row.get("config") or {}
+    if isinstance(config, dict):
+        val = config.get("orchestrator")
+        return val if isinstance(val, str) else None
+    return None
+
+
+async def _extract_task_shape(db: DB, question_id: str | None) -> dict | None:
+    if not question_id:
+        return None
+    page = await db.get_page(question_id)
+    if page is None:
+        return None
+    shape = (page.extra or {}).get("task_shape")
+    return shape if isinstance(shape, dict) else None
+
+
 async def _run_comparison(
     spec: EvalAgentSpec,
     report_a: str,
@@ -312,6 +415,17 @@ async def run_single_eval_agent(
         db,
         scope_page_id=question_id_a,
         broadcaster=broadcaster,
+    )
+
+    await _record_ab_preference_reputation(
+        db,
+        agent_name=spec.name,
+        preference=preference,
+        run_id_a=run_id_a,
+        run_id_b=run_id_b,
+        question_id_a=question_id_a,
+        question_id_b=question_id_b,
+        comparison_call_id=comparison_call.id,
     )
 
     return ABEvalResult(

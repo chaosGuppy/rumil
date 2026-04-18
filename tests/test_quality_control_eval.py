@@ -14,7 +14,7 @@ import pytest
 import pytest_asyncio
 
 from rumil.database import DB
-from rumil.models import Page, PageLayer, PageType, Workspace
+from rumil.models import Page, PageLayer, PageType, SuggestionType, Workspace
 from rumil.run_eval import runner as run_eval_runner
 from rumil.run_eval.agents import EVAL_AGENTS, EvalAgentSpec
 from rumil.run_eval.quality_control import (
@@ -26,6 +26,7 @@ from rumil.run_eval.quality_control import (
     parse_findings_from_report,
     severity_to_score,
 )
+from rumil.settings import override_settings
 
 
 def _make_report_with_findings(findings: list[dict]) -> str:
@@ -509,3 +510,205 @@ def test_severity_parsing_maps_to_score(severity_str: str, expected_score: float
         evidence="e",
     )
     assert severity_to_score(finding.severity) == expected_score
+
+
+async def _run_qc_with_report(
+    run_db: DB,
+    question_id: str,
+    report_text: str,
+    mocker,
+) -> str:
+    spec = EvalAgentSpec(
+        name="quality_control",
+        display_name="Quality Control",
+        prompt_file="run-eval-quality-control.md",
+    )
+
+    @dataclass
+    class _FakeResult:
+        all_assistant_text: list[str]
+
+    mocker.patch(
+        "rumil.run_eval.runner.run_sdk_agent",
+        return_value=_FakeResult(all_assistant_text=[report_text]),
+    )
+    mocker.patch(
+        "rumil.run_eval.runner.explore_page_impl",
+        return_value="graph context",
+    )
+    _, call = await run_eval_runner.evaluate_run_with_agent(
+        spec,
+        run_id=run_db.run_id,
+        question_id=question_id,
+        parent_db=run_db,
+        broadcaster=None,
+    )
+    return call.id
+
+
+async def _make_claim(run_db: DB, headline: str) -> Page:
+    claim = Page(
+        page_type=PageType.CLAIM,
+        layer=PageLayer.SQUIDGY,
+        workspace=Workspace.RESEARCH,
+        headline=headline,
+        content=f"content of {headline}",
+    )
+    await run_db.save_page(claim)
+    return claim
+
+
+async def test_qc_moderate_and_critical_findings_enqueue_cascade_suggestions(run_db, mocker):
+    """Moderate + critical findings with page_ids each produce a CASCADE_REVIEW
+    suggestion pointing at the flagged page. Low severity is skipped."""
+    question = Page(
+        page_type=PageType.QUESTION,
+        layer=PageLayer.SQUIDGY,
+        workspace=Workspace.RESEARCH,
+        headline="q",
+        content="c",
+    )
+    await run_db.save_page(question)
+    pg1 = await _make_claim(run_db, "critical claim")
+    pg_low = await _make_claim(run_db, "low-severity claim")
+    pg2 = await _make_claim(run_db, "moderate claim A")
+    pg3 = await _make_claim(run_db, "moderate claim B")
+
+    report_text = _make_report_with_findings(
+        [
+            {
+                "kind": "factual_error",
+                "page_ids": [pg1.id],
+                "severity": "critical",
+                "evidence": "RAND 68 GW mis-cited as additional",
+                "suggested_fix": "correct to total",
+            },
+            {
+                "kind": "nitpick",
+                "page_ids": [pg_low.id],
+                "severity": "low",
+                "evidence": "minor",
+            },
+            {
+                "kind": "broken_citation",
+                "page_ids": [pg2.id, pg3.id],
+                "severity": "moderate",
+                "evidence": "cites unrelated",
+            },
+        ]
+    )
+    qc_call_id = await _run_qc_with_report(run_db, question.id, report_text, mocker)
+
+    pending = await run_db.get_pending_suggestions()
+    cascade = [s for s in pending if s.suggestion_type == SuggestionType.CASCADE_REVIEW]
+    assert len(cascade) == 3
+
+    by_target = {s.target_page_id: s for s in cascade}
+    assert set(by_target) == {pg1.id, pg2.id, pg3.id}
+
+    assert by_target[pg1.id].payload["severity"] == "critical"
+    assert by_target[pg1.id].payload["kind"] == "factual_error"
+    assert by_target[pg1.id].payload["qc_call_id"] == qc_call_id
+    assert by_target[pg1.id].payload["suggested_fix"] == "correct to total"
+
+    assert by_target[pg2.id].payload["severity"] == "moderate"
+    assert by_target[pg3.id].payload["severity"] == "moderate"
+
+    low_targets = [s for s in cascade if s.payload.get("severity") == "low"]
+    assert low_targets == []
+
+
+async def test_qc_finding_without_page_ids_is_skipped(run_db, mocker):
+    """A finding flagged at the run level (no anchor page) produces no
+    cascade suggestion — the cascade needs a target to route to."""
+    question = Page(
+        page_type=PageType.QUESTION,
+        layer=PageLayer.SQUIDGY,
+        workspace=Workspace.RESEARCH,
+        headline="q",
+        content="c",
+    )
+    await run_db.save_page(question)
+
+    report_text = _make_report_with_findings(
+        [
+            {
+                "kind": "run_level_process_issue",
+                "page_ids": [],
+                "severity": "critical",
+                "evidence": "orchestrator did not reconcile duplicates",
+            }
+        ]
+    )
+    await _run_qc_with_report(run_db, question.id, report_text, mocker)
+
+    pending = await run_db.get_pending_suggestions()
+    cascade = [s for s in pending if s.suggestion_type == SuggestionType.CASCADE_REVIEW]
+    assert cascade == []
+
+
+async def test_qc_cascade_enqueue_can_be_disabled(run_db, mocker):
+    """When ``qc_enqueue_cascade`` is False, no cascade suggestions are
+    written no matter how bad the findings are."""
+    question = Page(
+        page_type=PageType.QUESTION,
+        layer=PageLayer.SQUIDGY,
+        workspace=Workspace.RESEARCH,
+        headline="q",
+        content="c",
+    )
+    await run_db.save_page(question)
+    pg1 = await _make_claim(run_db, "flagged claim")
+
+    report_text = _make_report_with_findings(
+        [
+            {
+                "kind": "factual_error",
+                "page_ids": [pg1.id],
+                "severity": "critical",
+                "evidence": "x",
+            }
+        ]
+    )
+
+    with override_settings(qc_enqueue_cascade=False):
+        await _run_qc_with_report(run_db, question.id, report_text, mocker)
+
+    pending = await run_db.get_pending_suggestions()
+    cascade = [s for s in pending if s.suggestion_type == SuggestionType.CASCADE_REVIEW]
+    assert cascade == []
+
+
+async def test_qc_cascade_suggestions_expose_payload_shape(run_db, mocker):
+    """The payload carries every field the cascade review call needs to
+    know why it was triggered."""
+    question = Page(
+        page_type=PageType.QUESTION,
+        layer=PageLayer.SQUIDGY,
+        workspace=Workspace.RESEARCH,
+        headline="q",
+        content="c",
+    )
+    await run_db.save_page(question)
+    alpha = await _make_claim(run_db, "alpha claim")
+
+    report_text = _make_report_with_findings(
+        [
+            {
+                "kind": "overconfident_claim",
+                "page_ids": [alpha.id],
+                "severity": "moderate",
+                "evidence": "credence 9 but only one source",
+                "suggested_fix": "drop credence to 6",
+            }
+        ]
+    )
+    qc_call_id = await _run_qc_with_report(run_db, question.id, report_text, mocker)
+
+    pending = await run_db.get_pending_suggestions()
+    cascade = [s for s in pending if s.suggestion_type == SuggestionType.CASCADE_REVIEW]
+    assert len(cascade) == 1
+    s = cascade[0]
+    assert s.target_page_id == alpha.id
+    assert set(s.payload) >= {"kind", "severity", "evidence", "suggested_fix", "qc_call_id"}
+    assert s.payload["qc_call_id"] == qc_call_id

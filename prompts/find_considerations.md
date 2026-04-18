@@ -28,6 +28,14 @@ In abstract mode, look for:
 - Counterarguments or complications to existing considerations
 - Second-order effects or indirect considerations
 
+## Headline discipline
+
+A claim's headline must be **no stronger than the weakest caveat in its body**. If the body says "may", "around", "primarily", "in most cases", or "based on OpenAI's 2024 data", the headline cannot say "is", "exactly", "solely", "always", or "across frontier labs". When you've qualified in the body, qualify in the headline first.
+
+Quantitative headlines must match the body's source precision: if the body cites one lab's data, the headline cannot generalize to "frontier labs" unless multiple independent sources converge; if the body says "estimated 6-12 months", the headline cannot say "~18 months"; if the body says "additional" vs "total", the headline must pick the same word.
+
+If a strong primary source exists but you're citing a weak one, that's a sign to update your search before claiming.
+
 ## What to Produce
 
 Produce **up to 3 new considerations**, prioritising importance and novelty. Do not duplicate existing considerations.

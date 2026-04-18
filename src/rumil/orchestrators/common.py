@@ -51,6 +51,8 @@ from rumil.models import (
 from rumil.question_triage import auto_triage_and_save
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
+from rumil.tracing.trace_events import ErrorEvent
+from rumil.tracing.tracer import get_trace
 
 log = logging.getLogger(__name__)
 
@@ -347,6 +349,75 @@ class PrioritizationResult:
     dispatch_sequences: Sequence[Sequence[Dispatch]]
     call_id: str | None = None
     children: Sequence[tuple["BaseOrchestrator", str]] = ()
+
+
+async def check_triage_before_run(db: DB, question_id: str) -> bool:
+    """Return True if the orchestrator should proceed, False if it should abort.
+
+    Reads ``question.extra['triage']`` (written by ``auto_triage_and_save``).
+    Aborts when:
+      * ``is_duplicate`` is True and ``duplicate_of`` is set — the question is
+        already covered by a prior investigation.
+      * ``fertility_score`` is below ``settings.orchestrator_respect_triage_min_fertility``
+        — the question is not worth investing in.
+
+    Respects ``settings.orchestrator_ignore_triage`` as a global escape hatch.
+    Logs a human-readable abort reason and returns False when aborting.
+    Returns True when there is no triage payload (backward compat) or when
+    the payload says the question is worth running.
+    """
+    settings = get_settings()
+    if settings.orchestrator_ignore_triage:
+        return True
+
+    question = await db.get_page(question_id)
+    if question is None:
+        return True
+    triage = (question.extra or {}).get("triage")
+    if not isinstance(triage, dict):
+        return True
+
+    is_duplicate = bool(triage.get("is_duplicate"))
+    duplicate_of = triage.get("duplicate_of")
+    if is_duplicate and duplicate_of:
+        msg = (
+            f"Orchestrator aborting: question {question_id[:8]} triaged as duplicate "
+            f"of {str(duplicate_of)[:8]}. "
+            "Override with `orchestrator_ignore_triage=true`."
+        )
+        log.info(msg)
+        print(msg)
+        trace = get_trace()
+        if trace:
+            await trace.record(
+                ErrorEvent(
+                    phase="triage_gate",
+                    message=msg,
+                )
+            )
+        return False
+
+    fertility = triage.get("fertility_score")
+    threshold = settings.orchestrator_respect_triage_min_fertility
+    if isinstance(fertility, int) and fertility < threshold:
+        msg = (
+            f"Orchestrator aborting: question {question_id[:8]} triaged with "
+            f"fertility {fertility} (min {threshold}). "
+            "Override with `orchestrator_ignore_triage=true`."
+        )
+        log.info(msg)
+        print(msg)
+        trace = get_trace()
+        if trace:
+            await trace.record(
+                ErrorEvent(
+                    phase="triage_gate",
+                    message=msg,
+                )
+            )
+        return False
+
+    return True
 
 
 async def create_root_question(

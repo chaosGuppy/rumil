@@ -20,6 +20,10 @@ You are performing a **Web Research** call — your job is to search the web for
 - **Prefer primary sources** over secondary reporting when available.
 - **Aim for 2-5 high-quality claims** rather than many low-quality ones.
 
+## Source quality preference
+
+When primary literature exists (peer-reviewed papers on arXiv / OpenReview / journal sites, original reports from labs or government agencies, direct data sources), cite it instead of aggregator or summary sites. Examples of aggregators to AVOID when primary is available: aimultiple.com, medium.com, substack essays without their own research, news articles that summarize a paper you could cite directly, and Wikipedia where a better source is cited in the Wikipedia article itself. When the primary source isn't accessible, cite the aggregator with an explicit note of the provenance chain: "per aimultiple.com, summarizing Ho et al. 2024". When a claim rests on several weak sources rather than one strong one, say so explicitly rather than picking the most convenient.
+
 ## What Not To Do
 
 - Do not summarise entire articles as single claims. Extract specific findings.

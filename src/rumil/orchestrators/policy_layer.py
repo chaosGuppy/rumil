@@ -22,6 +22,7 @@ from rumil.models import CallType, Page, Suggestion, SuggestionStatus, Suggestio
 from rumil.orchestrators.base import BaseOrchestrator
 from rumil.orchestrators.common import (
     assess_question,
+    check_triage_before_run,
     create_view_for_question,
     find_considerations_until_done,
     update_view_for_question,
@@ -450,6 +451,8 @@ class PolicyOrchestrator(BaseOrchestrator):
                 binder(db)
 
     async def run(self, root_question_id: str) -> None:
+        if not await check_triage_before_run(self.db, root_question_id):
+            return
         await self._setup()
         try:
             iteration = 0

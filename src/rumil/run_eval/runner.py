@@ -12,7 +12,7 @@ from claude_agent_sdk import tool as sdk_tool
 from rumil.database import DB
 from rumil.evaluate.explore import explore_page_impl
 from rumil.llm import Tool, text_call
-from rumil.models import Call, CallStatus, CallType
+from rumil.models import Call, CallStatus, CallType, Suggestion, SuggestionType
 from rumil.run_eval.agents import EVAL_AGENTS, EvalAgentSpec
 from rumil.run_eval.baselines import (
     SingleCallBaselineResult,
@@ -21,6 +21,7 @@ from rumil.run_eval.baselines import (
 )
 from rumil.run_eval.quality_control import (
     QualityControlFinding,
+    Severity,
     cap_findings,
     format_findings_markdown,
     parse_findings_from_report,
@@ -136,6 +137,58 @@ async def _record_qc_findings_reputation(
                 "suggested_fix": finding.suggested_fix,
             },
         )
+
+
+async def _enqueue_qc_cascade_suggestions(
+    parent_db: DB,
+    *,
+    findings: Sequence[QualityControlFinding],
+    call_id: str,
+) -> None:
+    """Write a cascade_review Suggestion per page flagged by a moderate/critical finding.
+
+    The cascade orchestrator / CascadeReviewPolicy consume pending
+    ``CASCADE_REVIEW`` suggestions and re-assess the flagged page. Without
+    this step, QC findings are recorded as reputation events but never
+    drive remediation — the bug surfaced by the wave-7 eval.
+
+    Low-severity findings are skipped (signal-to-noise) and findings with
+    no ``page_ids`` anchor are skipped (we need a target page to route
+    the cascade to). Writes are best-effort: failures are logged and
+    swallowed so they never break the QC reputation pipeline.
+    """
+    if not get_settings().qc_enqueue_cascade:
+        return
+    for finding in findings:
+        if finding.severity == Severity.LOW:
+            continue
+        if not finding.page_ids:
+            continue
+        payload = {
+            "kind": finding.kind,
+            "severity": finding.severity.value,
+            "evidence": finding.evidence,
+            "suggested_fix": finding.suggested_fix,
+            "qc_call_id": call_id,
+        }
+        for page_id in finding.page_ids:
+            suggestion = Suggestion(
+                project_id=parent_db.project_id or "",
+                run_id=parent_db.run_id,
+                suggestion_type=SuggestionType.CASCADE_REVIEW,
+                target_page_id=page_id,
+                source_page_id=None,
+                payload=payload,
+                staged=parent_db.staged,
+            )
+            try:
+                await parent_db.save_suggestion(suggestion)
+            except Exception:
+                log.exception(
+                    "QC cascade suggestion save failed for page %s (qc_call=%s)",
+                    page_id,
+                    call_id,
+                )
 
 
 def build_system_prompt(
@@ -299,6 +352,19 @@ async def evaluate_run_with_agent(
             except Exception:
                 log.exception(
                     "QC findings hook failed for run %s",
+                    run_id,
+                )
+            try:
+                raw_findings = parse_findings_from_report(report_text)
+                findings = cap_findings(raw_findings)
+                await _enqueue_qc_cascade_suggestions(
+                    parent_db,
+                    findings=findings,
+                    call_id=call.id,
+                )
+            except Exception:
+                log.exception(
+                    "QC cascade-suggestion enqueue failed for run %s",
                     run_id,
                 )
     except Exception:

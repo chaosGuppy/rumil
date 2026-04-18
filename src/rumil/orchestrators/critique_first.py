@@ -46,6 +46,7 @@ from rumil.models import CallType, Page
 from rumil.orchestrators.base import BaseOrchestrator
 from rumil.orchestrators.common import (
     assess_question,
+    check_triage_before_run,
     create_view_for_question,
     find_considerations_until_done,
     update_view_for_question,
@@ -78,6 +79,8 @@ class CritiqueFirstOrchestrator(BaseOrchestrator):
         self._barren_scout_rounds: int = 0
 
     async def run(self, root_question_id: str) -> None:
+        if not await check_triage_before_run(self.db, root_question_id):
+            return
         own_db = await self.db.fork()
         self.db = own_db
         await self._setup()

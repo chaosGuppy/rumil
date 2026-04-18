@@ -44,6 +44,7 @@ from rumil.models import Page
 from rumil.orchestrators.base import BaseOrchestrator
 from rumil.orchestrators.common import (
     assess_question,
+    check_triage_before_run,
     count_sources_for_question,
     create_view_for_question,
     find_considerations_until_done,
@@ -107,6 +108,8 @@ class SourceFirstOrchestrator(BaseOrchestrator):
         return remaining
 
     async def run(self, root_question_id: str) -> None:
+        if not await check_triage_before_run(self.db, root_question_id):
+            return
         await self._setup()
         try:
             iteration = 0

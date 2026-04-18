@@ -37,6 +37,10 @@ If the source raises an important question not yet in the workspace, create it.
 
 If the source proposes or strongly implies a candidate answer to a workspace question — even one you think is probably wrong — register it as a hypothesis. This is worth doing because engaging with it seriously might yield useful insights, even if the hypothesis is ultimately rejected.
 
+## Source quality preference
+
+When the document itself points to primary literature (peer-reviewed papers on arXiv / OpenReview / journal sites, original reports from labs or government agencies, direct data sources), prefer extracting claims that can later cite the primary source rather than the aggregator. If you're ingesting an aggregator (e.g. aimultiple.com, a Medium post, a substack essay without its own research, or a news article summarizing a paper), record the provenance chain in the claim's content — e.g. "per aimultiple.com, summarizing Ho et al. 2024" — so a later reader can trace back to the real evidence. When a finding rests on several weak sources rather than one strong one, say so explicitly rather than picking the most convenient.
+
 ## Quality Bar
 
 - **Attribution is required.** Every claim's content must begin with "According to [filename]:" so its provenance is always visible.

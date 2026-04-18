@@ -21,6 +21,12 @@ If the View is empty or has no items, say so plainly in the artifact rather than
 - If two items tension with each other, surface the tension. Don't pick a side the View hasn't picked.
 - Cite the specific View items your claims rest on by their short page ID (the 8-character prefix you'll see in the context). Put these IDs in the `key_claims` field of your output so the persistence layer can link them.
 
+## Headline discipline
+
+Every headline, executive summary, section title, and scenario name must be **no stronger than the weakest caveat in the body it summarises**. If the body says "may", "around", "primarily", "in most cases", or "based on OpenAI's 2024 data", the headline cannot say "is", "exactly", "solely", "always", or "across frontier labs". When you've qualified in the body, qualify in the headline first.
+
+Quantitative headlines must match the body's source precision: if the underlying View item cites one lab's data, don't generalize to "frontier labs" in the summary; if the item says "estimated 6-12 months", don't write "~18 months"; if the item says "additional" vs "total", use the same word. When you pull a View item into a headline or summary, inherit its hedges — don't sharpen them out to make the artifact read more crisply.
+
 ## Shape
 
 The caller will tell you which shape to produce. The shape name is passed as a variable: `{shape}`. Follow the shape-specific guidance below:

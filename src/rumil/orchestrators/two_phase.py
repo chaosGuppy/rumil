@@ -33,6 +33,7 @@ from rumil.orchestrators.common import (
     ClaimScore,
     PrioritizationResult,
     SubquestionScore,
+    check_triage_before_run,
     compute_priority_score,
     create_view_for_question,
     score_items_sequentially,
@@ -122,6 +123,8 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         return p_call.id
 
     async def run(self, root_question_id: str) -> None:
+        if not await check_triage_before_run(self.db, root_question_id):
+            return
         own_db = await self.db.fork()
         self.db = own_db
         await self._setup()

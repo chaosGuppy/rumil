@@ -104,6 +104,11 @@ class Settings(BaseSettings):
     question_triage_neighbor_threshold: float = _capture_field(default=0.5)
     question_triage_auto_duplicate_threshold: float = _capture_field(default=0.85)
 
+    orchestrator_ignore_triage: bool = _capture_field(default=False)
+    orchestrator_respect_triage_min_fertility: int = _capture_field(default=2)
+
+    qc_enqueue_cascade: bool = _capture_field(default=True)
+
     max_db_retries: int = _capture_field(default=60)
     max_api_retries: int = _capture_field(default=60)
     max_api_retries_429: int | None = _capture_field(default=None)
@@ -140,6 +145,8 @@ class Settings(BaseSettings):
     cascade_credence_delta_threshold: int = _capture_field(default=2)
     cascade_robustness_delta_threshold: int = _capture_field(default=1)
     cascade_importance_delta_threshold: int = _capture_field(default=2)
+
+    dedupe_page_links: bool = _capture_field(default=True)
 
     @property
     def is_test_mode(self) -> bool:

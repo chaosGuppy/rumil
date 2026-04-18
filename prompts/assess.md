@@ -21,6 +21,14 @@ Include the `key_dependencies`, `sensitivity_analysis`, and `fruit_remaining` fi
 
 You may also produce sub-questions if important unknowns need further investigation, new claims if the weighing process surfaces something worth recording, or propose a hypothesis if the weighing reveals a compelling candidate answer. Keep generative moves secondary — the judgement is the primary output.
 
+## Headline discipline
+
+Your judgement's headline (and any claims you create or supersede) must be **no stronger than the weakest caveat in the body**. If the body says "may", "primarily", "in most cases", or "based on one lab's data", the headline cannot say "is", "solely", "always", or "across frontier labs". When you've qualified in the body, qualify in the headline first.
+
+Quantitative headlines must match the body's source precision: if the body cites one lab's data, the headline cannot generalize to "frontier labs" unless multiple independent sources converge; if the body says "estimated 6-12 months", the headline cannot say "~18 months"; if the body labels something "additional" vs "total", the headline must pick the same word.
+
+**When superseding or updating a claim whose body already carries hedges, inherit those hedges into the new headline — don't sharpen them out.** A supersede that strips qualifiers the prior body earned is a regression, not a refinement.
+
 ## Updating Existing Claims
 
 You have access to `update_epistemic` to revise credence and robustness scores on any claim loaded in your context. Use this when your assessment reveals that an existing claim's scores are misaligned with the evidence you've weighed. Provide clear reasoning for the change.

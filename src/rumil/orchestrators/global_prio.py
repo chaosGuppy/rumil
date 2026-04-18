@@ -58,7 +58,7 @@ from rumil.models import (
 from rumil.moves.base import MoveState
 from rumil.moves.registry import MOVES
 from rumil.orchestrators.base import BaseOrchestrator
-from rumil.orchestrators.common import assess_question
+from rumil.orchestrators.common import assess_question, check_triage_before_run
 from rumil.orchestrators.experimental import ExperimentalOrchestrator
 from rumil.orchestrators.two_phase import TwoPhaseOrchestrator
 from rumil.settings import get_settings
@@ -388,6 +388,8 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
         self._turn_count: int = 0
 
     async def run(self, root_question_id: str) -> None:
+        if not await check_triage_before_run(self.db, root_question_id):
+            return
         own_db = await self.db.fork()
         self.db = own_db
         await self._setup()

@@ -1144,6 +1144,17 @@ class DB:
             link.to_page_id[:8],
             link.link_type.value,
         )
+        if get_settings().dedupe_page_links:
+            existing = await self._find_duplicate_link(link)
+            if existing is not None:
+                log.debug(
+                    "save_link: dedup, existing link %s matches (from=%s to=%s type=%s)",
+                    existing.id,
+                    link.from_page_id[:8],
+                    link.to_page_id[:8],
+                    link.link_type.value,
+                )
+                return
         await self._execute(
             self.client.table("page_links").upsert(
                 {
@@ -1165,6 +1176,32 @@ class DB:
                 }
             )
         )
+
+    async def _find_duplicate_link(self, link: PageLink) -> PageLink | None:
+        """Return an existing link with the same (from, to, link_type) if one is
+        already visible to this DB handle, else None.
+
+        Respects staged-run visibility: a staged run sees baseline + own-run
+        rows; a baseline run sees only baseline. This means staged and
+        baseline dedup within their own views independently (a staged run
+        can add the "same" link that baseline already has, but will see
+        baseline's copy via the staged filter and skip — which is the
+        correct behavior since dedup applies per visible view).
+        """
+        query = (
+            self.client.table("page_links")
+            .select("*")
+            .eq("from_page_id", link.from_page_id)
+            .eq("to_page_id", link.to_page_id)
+            .eq("link_type", link.link_type.value)
+            .limit(1)
+        )
+        query = self._staged_filter(query)
+        rows = _rows(await self._execute(query))
+        if not rows:
+            return None
+        applied = await self._apply_link_events([_row_to_link(rows[0])])
+        return applied[0] if applied else None
 
     async def get_link(self, link_id: str) -> PageLink | None:
         query = self.client.table("page_links").select("*").eq("id", link_id)

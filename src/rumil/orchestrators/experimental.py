@@ -31,6 +31,7 @@ from rumil.orchestrators.common import (
     PrioritizationResult,
     SubquestionScore,
     assess_question,
+    check_triage_before_run,
     score_items_sequentially,
 )
 from rumil.settings import get_settings
@@ -119,6 +120,8 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         return p_call.id
 
     async def run(self, root_question_id: str) -> None:
+        if not await check_triage_before_run(self.db, root_question_id):
+            return
         own_db = await self.db.fork()
         self.db = own_db
         await self._setup()

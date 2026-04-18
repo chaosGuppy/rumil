@@ -4,13 +4,14 @@ import logging
 
 from pydantic import BaseModel, Field
 
-from rumil.calls.common import mark_call_completed, prepare_tools, run_agent_loop
+from rumil.calls.common import prepare_tools, run_agent_loop
 from rumil.calls.stages import (
     CallInfra,
     CallRunner,
     ClosingReviewer,
     ContextBuilder,
     ContextResult,
+    ReviewResult,
     UpdateResult,
     WorkspaceUpdater,
 )
@@ -209,11 +210,12 @@ class LinkerClosingReviewer(ClosingReviewer):
         infra: CallInfra,
         context: ContextResult,
         creation: UpdateResult,
-    ) -> None:
+    ) -> ReviewResult:
         if not creation.messages:
-            infra.call.review_json = {"remaining_linkable_questions": 0}
-            await mark_call_completed(infra.call, infra.db, "Linker complete (no messages).")
-            return
+            return ReviewResult(
+                summary="Linker complete (no messages).",
+                review_json={"remaining_linkable_questions": 0},
+            )
 
         system_prompt = build_linker_prompt(get_settings().scope_subquestion_linker_max_rounds)
         tools = [
@@ -252,15 +254,13 @@ class LinkerClosingReviewer(ClosingReviewer):
                 reasoning,
             )
 
-        infra.call.review_json = {
-            "remaining_linkable_questions": remaining,
-            "brief_reasoning": reasoning,
-        }
         await infra.trace.record_strict(ReviewCompleteEvent(remaining_fruit=remaining))
-        await mark_call_completed(
-            infra.call,
-            infra.db,
-            f"Linker complete. Estimated {remaining} remaining linkable question(s).",
+        return ReviewResult(
+            summary=f"Linker complete. Estimated {remaining} remaining linkable question(s).",
+            review_json={
+                "remaining_linkable_questions": remaining,
+                "brief_reasoning": reasoning,
+            },
         )
 
 

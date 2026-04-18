@@ -11,12 +11,17 @@ from rumil.calls.common import (
     ReviewResponse,
     format_moves_for_review,
     log_page_ratings,
-    mark_call_completed,
     prepare_tools,
     run_closing_review,
     save_page_abstracts,
 )
-from rumil.calls.stages import CallInfra, ClosingReviewer, ContextResult, UpdateResult
+from rumil.calls.stages import (
+    CallInfra,
+    ClosingReviewer,
+    ContextResult,
+    ReviewResult,
+    UpdateResult,
+)
 from rumil.context import format_page
 from rumil.llm import (
     LLMExchangeMetadata,
@@ -43,7 +48,7 @@ class StandardClosingReview(ClosingReviewer):
         infra: CallInfra,
         context: ContextResult,
         creation: UpdateResult,
-    ) -> None:
+    ) -> ReviewResult:
         review_context = format_moves_for_review(creation.moves)
         review = await run_closing_review(
             infra.call,
@@ -66,10 +71,9 @@ class StandardClosingReview(ClosingReviewer):
                     confidence=review.get("confidence_in_output"),
                 )
             )
-        infra.call.review_json = review or {}
 
         summary = self._result_summary(creation)
-        await mark_call_completed(infra.call, infra.db, summary)
+        return ReviewResult(summary=summary, review_json=review or {})
 
     def _result_summary(self, creation: UpdateResult) -> str:
         return (
@@ -90,7 +94,7 @@ class ViewClosingReview(StandardClosingReview):
         infra: CallInfra,
         context: ContextResult,
         creation: UpdateResult,
-    ) -> None:
+    ) -> ReviewResult:
         items = await infra.db.get_view_items(self._view_id, min_importance=4)
         if items:
             item_lines: list[str] = []
@@ -139,7 +143,7 @@ class ViewClosingReview(StandardClosingReview):
                 len(summary),
             )
 
-        await super().closing_review(infra, context, creation)
+        return await super().closing_review(infra, context, creation)
 
     def _result_summary(self, creation: UpdateResult) -> str:
         return f"View created. {len(creation.created_page_ids)} items."
@@ -304,15 +308,13 @@ class SinglePhaseScoutReview(ClosingReviewer):
         infra: CallInfra,
         context: ContextResult,
         creation: UpdateResult,
-    ) -> None:
+    ) -> ReviewResult:
         if not creation.messages:
-            infra.call.review_json = {}
             summary = (
                 f"Scout session complete. {creation.rounds_completed} rounds, "
                 f"{len(creation.created_page_ids)} pages created."
             )
-            await mark_call_completed(infra.call, infra.db, summary)
-            return
+            return ReviewResult(summary=summary, review_json={})
 
         assert creation.last_fruit_score is not None
         loaded_summaries = await _collect_all_loaded_summaries(
@@ -333,7 +335,6 @@ class SinglePhaseScoutReview(ClosingReviewer):
             loaded_summaries,
         )
 
-        infra.call.review_json = review_data
         await infra.trace.record_strict(
             ReviewCompleteEvent(
                 remaining_fruit=creation.last_fruit_score,
@@ -345,4 +346,4 @@ class SinglePhaseScoutReview(ClosingReviewer):
             f"Scout session complete. {creation.rounds_completed} rounds, "
             f"{len(creation.created_page_ids)} pages created."
         )
-        await mark_call_completed(infra.call, infra.db, summary)
+        return ReviewResult(summary=summary, review_json=review_data)

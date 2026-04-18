@@ -6,7 +6,7 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from rumil.available_moves import get_moves_for_call
 from rumil.calls.common import mark_call_completed
@@ -55,6 +55,15 @@ class UpdateResult:
     rounds_completed: int = 0
 
 
+@dataclass(frozen=True)
+class ReviewResult:
+    """Output of the closing-review stage."""
+
+    summary: str
+    review_json: dict[str, Any] = field(default_factory=dict)
+    messages: Sequence[str] = field(default_factory=list)
+
+
 class ContextBuilder(ABC):
     @abstractmethod
     async def build_context(self, infra: CallInfra) -> ContextResult: ...
@@ -76,7 +85,7 @@ class ClosingReviewer(ABC):
         infra: CallInfra,
         context: ContextResult,
         creation: UpdateResult,
-    ) -> None: ...
+    ) -> ReviewResult: ...
 
 
 class CallRunner(ABC):
@@ -114,6 +123,7 @@ class CallRunner(ABC):
         self._fruit_threshold = fruit_threshold
         self.context_result: ContextResult | None = None
         self.update_result: UpdateResult | None = None
+        self.review_result: ReviewResult | None = None
         call.call_params = {
             **(call.call_params or {}),
             "max_rounds": max_rounds,
@@ -202,10 +212,16 @@ class CallRunner(ABC):
                     await self.infra.trace.flush_page_loads()
                     return
 
-                await self.closing_reviewer.closing_review(
+                self.review_result = await self.closing_reviewer.closing_review(
                     self.infra,
                     self.context_result,
                     self.update_result,
+                )
+                self.infra.call.review_json = dict(self.review_result.review_json)
+                await mark_call_completed(
+                    self.infra.call,
+                    self.infra.db,
+                    self.review_result.summary,
                 )
                 await self.infra.trace.flush_page_loads()
             except Exception as e:

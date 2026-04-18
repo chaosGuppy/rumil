@@ -5,6 +5,7 @@ Budget is tracked here; prioritization and review calls are free.
 
 from rumil.database import DB
 from rumil.orchestrators.base import BaseOrchestrator
+from rumil.orchestrators.cascade import CascadeOrchestrator
 from rumil.orchestrators.claim_investigation import ClaimInvestigationOrchestrator
 from rumil.orchestrators.common import (
     PRIORITIZATION_MOVES,
@@ -50,6 +51,8 @@ def Orchestrator(db: DB, broadcaster: Broadcaster | None = None) -> BaseOrchestr
         orch = DistillFirstOrchestrator(db, broadcaster)
     elif variant == "critique_first":
         orch = CritiqueFirstOrchestrator(db, broadcaster)
+    elif variant == "cascade":
+        orch = CascadeOrchestrator(db, broadcaster)
     else:
         raise ValueError(f"Unknown prioritizer_variant: {variant}")
 
@@ -61,6 +64,7 @@ def Orchestrator(db: DB, broadcaster: Broadcaster | None = None) -> BaseOrchestr
 __all__ = [
     "PRIORITIZATION_MOVES",
     "BaseOrchestrator",
+    "CascadeOrchestrator",
     "ClaimInvestigationOrchestrator",
     "ClaimScore",
     "ClaimScoringResult",

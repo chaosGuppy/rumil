@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from rumil.database import DB
-from rumil.models import CallType, Page
+from rumil.models import CallType, Page, SuggestionType
 from rumil.orchestrators.base import BaseOrchestrator
 from rumil.orchestrators.common import (
     assess_question,
@@ -230,6 +230,49 @@ class SparseQuestionPolicy(Policy):
         )
 
 
+class CascadeReviewPolicy(Policy):
+    """Dispatch assess when a pending CASCADE_REVIEW suggestion exists.
+
+    The substrate side: ``check_cascades`` emits ``CASCADE_REVIEW``
+    suggestions whenever a page's credence / robustness / importance
+    crosses its threshold. This policy is the consumer: on each tick it
+    pops the newest pending cascade and asks the orchestrator to assess
+    the target page.
+
+    Compose-friendly: put it high in the priority list (e.g. after
+    BudgetPolicy but before SparseQuestionPolicy / ViewHealthPolicy) to
+    let fresh reputation-signal propagation pre-empt normal research
+    cadence. Returns None when no pending cascade exists, so downstream
+    policies run as usual.
+
+    QuestionState is a pure snapshot and doesn't carry a DB handle, so
+    this policy accepts the DB in its constructor. Policies that don't
+    need DB access stay ergonomic; ones that do (like this one) opt in.
+    """
+
+    name = "cascade_review"
+
+    def __init__(self, db: DB) -> None:
+        self._db = db
+        self._processed_targets: set[str] = set()
+
+    async def decide(self, state: QuestionState) -> Intent | None:
+        pending = await self._db.get_pending_suggestions()
+        cascade_pending = [s for s in pending if s.suggestion_type == SuggestionType.CASCADE_REVIEW]
+        if not cascade_pending:
+            return None
+        cascade_pending.sort(key=lambda s: s.created_at, reverse=True)
+        for s in cascade_pending:
+            if s.target_page_id in self._processed_targets:
+                continue
+            self._processed_targets.add(s.target_page_id)
+            return DispatchCall(
+                call_type=CallType.ASSESS,
+                kwargs={"question_id": s.target_page_id},
+            )
+        return None
+
+
 class ViewHealthPolicy(Policy):
     """Dispatch assess to fill missing credence/importance scores.
 
@@ -422,6 +465,7 @@ def two_phase_like_policies() -> Sequence[Policy]:
 
 __all__ = [
     "BudgetPolicy",
+    "CascadeReviewPolicy",
     "DispatchCall",
     "Intent",
     "Policy",

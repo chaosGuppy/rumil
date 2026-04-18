@@ -5,24 +5,36 @@ from collections.abc import Sequence
 
 from rumil.database import DB
 from rumil.models import Suggestion, SuggestionType
+from rumil.settings import get_settings
 
 log = logging.getLogger(__name__)
 
 CASCADE_FIELDS = {"credence", "robustness", "importance"}
-CASCADE_THRESHOLD = 2
+
+
+def _threshold_for(field: str) -> int:
+    """Per-field threshold, pulled from settings so ops can tune these live."""
+    settings = get_settings()
+    if field == "credence":
+        return settings.cascade_credence_delta_threshold
+    if field == "robustness":
+        return settings.cascade_robustness_delta_threshold
+    if field == "importance":
+        return settings.cascade_importance_delta_threshold
+    return 2
 
 
 def _significant_changes(
     changes: dict[str, tuple[object, object]],
 ) -> dict[str, tuple[object, object]]:
-    """Filter to changes that cross the cascade threshold."""
+    """Filter to changes that cross the per-field cascade threshold."""
     significant: dict[str, tuple[object, object]] = {}
     for field, (old, new) in changes.items():
         if field not in CASCADE_FIELDS:
             continue
         if not isinstance(old, int) or not isinstance(new, int):
             continue
-        if abs(new - old) >= CASCADE_THRESHOLD:
+        if abs(new - old) >= _threshold_for(field):
             significant[field] = (old, new)
     return significant
 

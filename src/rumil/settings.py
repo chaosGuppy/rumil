@@ -135,6 +135,10 @@ class Settings(BaseSettings):
     single_call_baseline_model: str = _capture_field(default="claude-opus-4-7")
     single_call_baseline_max_claims: int = _capture_field(default=30)
 
+    cascade_credence_delta_threshold: int = _capture_field(default=2)
+    cascade_robustness_delta_threshold: int = _capture_field(default=1)
+    cascade_importance_delta_threshold: int = _capture_field(default=2)
+
     @property
     def is_test_mode(self) -> bool:
         return bool(self.rumil_test_mode)

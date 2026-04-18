@@ -1,6 +1,7 @@
 """CREATE_QUESTION move: create a research question."""
 
 import logging
+from collections.abc import Sequence
 
 from pydantic import Field
 
@@ -32,7 +33,7 @@ class CreateQuestionPayload(CreatePagePayload):
 
 async def _link_existing_to_parents(
     existing_id: str,
-    link_specs: list[ChildQuestionLinkFields],
+    link_specs: Sequence[ChildQuestionLinkFields],
     db: DB,
 ) -> int:
     """Link an existing question as a child of each parent in *link_specs*.

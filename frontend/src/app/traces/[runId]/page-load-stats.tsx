@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { PageLoadStatsOut, PageLoadEventOut } from "@/api/types.gen";
-import { API_BASE } from "@/lib/api-base";
+import { CLIENT_API_BASE } from "@/api-config";
 
 const DETAIL_ORDER = ["content", "abstract", "headline"];
 
@@ -41,6 +41,24 @@ type GroupRow = {
   total: number;
   uniquePages: Set<string>;
 };
+
+function QuestionTagValue({
+  shortId,
+  headline,
+}: {
+  shortId: string;
+  headline: string | undefined;
+}) {
+  if (!headline) {
+    return <span className="pls-question-id-only">{shortId}</span>;
+  }
+  return (
+    <span className="pls-question-value">
+      <span className="pls-question-headline">{headline}</span>
+      <span className="pls-question-short">{shortId}</span>
+    </span>
+  );
+}
 
 function aggregate(
   events: PageLoadEventOut[],
@@ -84,7 +102,7 @@ export function PageLoadStats({ runId }: { runId: string }) {
   const [activeTags, setActiveTags] = useState<string[]>(["call_type"]);
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/runs/${runId}/page-load-stats`)
+    fetch(`${CLIENT_API_BASE}/api/runs/${runId}/page-load-stats`)
       .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then(setStats)
       .catch(() => setError(true));
@@ -200,13 +218,28 @@ export function PageLoadStats({ runId }: { runId: string }) {
                 {activeTags.length === 0 ? (
                   <td className="pls-call-type">&mdash;</td>
                 ) : (
-                  activeTags.map((t) => (
-                    <td key={t} className="pls-call-type">
-                      {row.tagValues[t] || (
-                        <span className="pls-tag-empty">&empty;</span>
-                      )}
-                    </td>
-                  ))
+                  activeTags.map((t) => {
+                    const raw = row.tagValues[t];
+                    return (
+                      <td
+                        key={t}
+                        className={`pls-call-type ${t === "question" ? "pls-call-type-question" : ""}`}
+                      >
+                        {raw ? (
+                          t === "question" ? (
+                            <QuestionTagValue
+                              shortId={raw}
+                              headline={stats.question_headlines[raw]}
+                            />
+                          ) : (
+                            raw
+                          )
+                        ) : (
+                          <span className="pls-tag-empty">&empty;</span>
+                        )}
+                      </td>
+                    );
+                  })
                 )}
                 {details.map((d) => (
                   <Cell

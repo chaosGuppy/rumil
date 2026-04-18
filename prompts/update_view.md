@@ -27,7 +27,7 @@ These items were proposed by other calls but have not yet been scored. For each 
 
 * **importance** (1-5): How core is this item to the View?
 * **section**: Which section best fits this item's role?
-* **robustness** (optional): Override if the current score looks wrong
+* **robustness** (optional): Override if the current score looks wrong. If you set this, you must also provide **robustness_reasoning** — per the preamble rubric, explain where the uncertainty sits and how reducible it is.
 
 Do not enforce importance caps at this stage — just score each item on its merits.
 
@@ -47,7 +47,7 @@ Err on the side of flagging items for review. It is better to review an item tha
 For each item in this batch, choose one action:
 
 * **keep**: The item is fine as-is after closer inspection. No changes.
-* **adjust**: The item's scores or section assignment need updating. Provide the new values and brief reasoning.
+* **adjust**: The item's scores or section assignment need updating. Provide the new values and brief reasoning. If you change the robustness score, you must also provide `new_robustness_reasoning` explaining where the uncertainty stems from and how reducible it is.
 * **supersede**: The item should be replaced with a new version. Provide a new headline, content, robustness, robustness_reasoning, importance, and section. The old item will be superseded and the new one linked to the View.
 
 When superseding, write the replacement item as you would a fresh View item: a clear headline, content with an epistemic gloss explaining the robustness score, and careful scoring. Provide `robustness_reasoning` per the preamble rubric — where the uncertainty sits and how reducible it is.

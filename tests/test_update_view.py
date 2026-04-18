@@ -350,6 +350,7 @@ async def test_apply_item_score_updates_robustness(
         importance=4,
         section="live_hypotheses",
         robustness=4,
+        robustness_reasoning="Cross-checked against two cited sources; would firm up with a third.",
     )
 
     await updater._apply_item_score(tmp_db, score, target_page, target_link)
@@ -357,6 +358,9 @@ async def test_apply_item_score_updates_robustness(
     updated_page = await tmp_db.get_page(target.id)
     assert updated_page is not None
     assert updated_page.robustness == 4
+    assert updated_page.robustness_reasoning == (
+        "Cross-checked against two cited sources; would firm up with a third."
+    )
     assert updated_page.credence is None
 
 
@@ -436,6 +440,7 @@ async def test_apply_item_review_adjust(tmp_db, view_setup, call_infra):
         new_importance=5,
         new_section="confident_views",
         new_robustness=4,
+        new_robustness_reasoning="Deep-review batch confirmed the citations cover the main failure modes.",
     )
     changed = await updater._apply_item_review(
         call_infra, review, target.id, target_page, target_link
@@ -454,6 +459,90 @@ async def test_apply_item_review_adjust(tmp_db, view_setup, call_infra):
     page = await tmp_db.get_page(target.id)
     assert page is not None
     assert page.robustness == 4
+    assert page.robustness_reasoning == (
+        "Deep-review batch confirmed the citations cover the main failure modes."
+    )
+
+
+def test_unscored_item_score_requires_reasoning_with_robustness():
+    """Pydantic validator: setting robustness without reasoning must fail."""
+    with pytest.raises(Exception, match="robustness_reasoning is required"):
+        UnscoredItemScore(
+            item_id="abcdef12",
+            importance=3,
+            section="key_evidence",
+            robustness=4,
+        )
+
+
+def test_item_review_requires_reasoning_when_new_robustness_set():
+    """Pydantic validator: adjusting robustness without reasoning must fail."""
+    with pytest.raises(Exception, match="new_robustness_reasoning is required"):
+        ItemReview(
+            item_id="abcdef12",
+            action="adjust",
+            new_robustness=3,
+        )
+
+
+async def test_apply_item_score_records_mutation_event(tmp_db, view_setup):
+    """Robustness updates via _apply_item_score must land as set_robustness mutation events."""
+    _, v, items = view_setup
+    updater = UpdateViewWorkspaceUpdater(v.id, CallType.UPDATE_VIEW)
+
+    target = items[0]
+    view_items = await tmp_db.get_view_items(v.id)
+    target_page, target_link = next((p, l) for p, l in view_items if p.id == target.id)
+    score = UnscoredItemScore(
+        item_id=target.id[:8],
+        importance=4,
+        section="live_hypotheses",
+        robustness=5,
+        robustness_reasoning="Strongly corroborated by the cited benchmark runs.",
+    )
+
+    await updater._apply_item_score(tmp_db, score, target_page, target_link)
+
+    events = (
+        await tmp_db._execute(
+            tmp_db.client.table("mutation_events")
+            .select("event_type, payload")
+            .eq("target_id", target.id)
+            .eq("event_type", "set_robustness")
+        )
+    ).data
+    assert len(events) == 1
+    assert events[0]["payload"]["value"] == 5
+    assert "benchmark" in events[0]["payload"]["reasoning"]
+
+
+async def test_apply_item_review_adjust_records_mutation_event(tmp_db, view_setup, call_infra):
+    """Robustness adjustments via _apply_item_review must land as set_robustness mutation events."""
+    _, v, items = view_setup
+    updater = UpdateViewWorkspaceUpdater(v.id, CallType.UPDATE_VIEW)
+
+    target = items[1]
+    view_items = await tmp_db.get_view_items(v.id)
+    target_page, target_link = next((p, l) for p, l in view_items if p.id == target.id)
+    review = ItemReview(
+        item_id=target.id[:8],
+        action="adjust",
+        new_robustness=2,
+        new_robustness_reasoning="Re-reading the citation shows it was overstated.",
+    )
+    await updater._apply_item_review(call_infra, review, target.id, target_page, target_link)
+
+    events = (
+        await tmp_db._execute(
+            tmp_db.client.table("mutation_events")
+            .select("event_type, payload")
+            .eq("target_id", target.id)
+            .eq("event_type", "set_robustness")
+        )
+    ).data
+    assert len(events) == 1
+    assert events[0]["payload"]["value"] == 2
+    assert "overstated" in events[0]["payload"]["reasoning"]
 
 
 async def test_apply_item_review_supersede(tmp_db, view_setup, call_infra):

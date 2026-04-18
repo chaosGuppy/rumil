@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Literal
 
 import pydantic
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from rumil.calls.closing_reviewers import ViewClosingReview
 from rumil.calls.stages import (
@@ -61,6 +61,19 @@ class UnscoredItemScore(BaseModel):
     robustness: int | None = Field(
         default=None, description="1-5 robustness override (omit to keep current)"
     )
+    robustness_reasoning: str | None = Field(
+        default=None,
+        description=(
+            "Where uncertainty in this item stems from and how reducible it is. "
+            "Required whenever robustness is set."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _robustness_requires_reasoning(self) -> "UnscoredItemScore":
+        if self.robustness is not None and not (self.robustness_reasoning or "").strip():
+            raise ValueError("robustness_reasoning is required when robustness is set")
+        return self
 
 
 class TriageFlag(BaseModel):
@@ -84,6 +97,12 @@ class ItemReview(BaseModel):
     new_headline: str | None = None
     new_content: str | None = None
     reasoning: str = ""
+
+    @model_validator(mode="after")
+    def _new_robustness_requires_reasoning(self) -> "ItemReview":
+        if self.new_robustness is not None and not (self.new_robustness_reasoning or "").strip():
+            raise ValueError("new_robustness_reasoning is required when new_robustness is set")
+        return self
 
 
 class ProposedItem(BaseModel):
@@ -777,8 +796,11 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
         await db.save_link(link)
 
         if score.robustness is not None:
-            page.robustness = score.robustness
-            await db.save_page(page)
+            await db.update_epistemic_score(
+                page.id,
+                robustness=score.robustness,
+                robustness_reasoning=score.robustness_reasoning,
+            )
 
         return True
 
@@ -803,10 +825,11 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
                 await infra.db.save_link(link)
 
             if review.new_robustness is not None:
-                page.robustness = review.new_robustness
-                if review.new_robustness_reasoning:
-                    page.robustness_reasoning = review.new_robustness_reasoning
-                await infra.db.save_page(page)
+                await infra.db.update_epistemic_score(
+                    page.id,
+                    robustness=review.new_robustness,
+                    robustness_reasoning=review.new_robustness_reasoning,
+                )
             return True
 
         if review.action == "supersede":

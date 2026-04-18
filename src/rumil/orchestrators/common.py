@@ -531,26 +531,32 @@ async def assess_question(
     call_id: str | None = None,
     sequence_id: str | None = None,
     sequence_position: int | None = None,
+    summarise: bool = True,
 ) -> str | None:
     """Run one Assess call on a question. Returns call ID, or None if no budget.
 
-    When ``sequence_id`` is provided, the summarise call is placed at
-    ``sequence_position`` and the assess call at ``sequence_position + 1``.
-    Callers should account for two positions being consumed.
+    When ``summarise`` is True (the default), a summarise call runs first;
+    with ``sequence_id`` provided it is placed at ``sequence_position`` and
+    the assess call at ``sequence_position + 1`` — callers should account for
+    two positions being consumed. When ``summarise`` is False, the summarise
+    step is skipped and the assess call sits at ``sequence_position``.
     """
     log.info("assess_question: question=%s", question_id[:8])
     if not await _consume_budget(db, force=force):
         return None
 
-    await summarize_question(
-        question_id,
-        db,
-        parent_call_id=parent_call_id,
-        sequence_id=sequence_id,
-        sequence_position=sequence_position,
-    )
+    if summarise:
+        await summarize_question(
+            question_id,
+            db,
+            parent_call_id=parent_call_id,
+            sequence_id=sequence_id,
+            sequence_position=sequence_position,
+        )
+        assess_position = sequence_position + 1 if sequence_position is not None else None
+    else:
+        assess_position = sequence_position
 
-    assess_position = sequence_position + 1 if sequence_position is not None else None
     call = await db.create_call(
         CallType.ASSESS,
         scope_page_id=question_id,

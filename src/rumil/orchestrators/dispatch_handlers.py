@@ -157,6 +157,7 @@ async def _handle_assess(ctx: DispatchContext, payload: BaseDispatchPayload) -> 
         call_id=ctx.call_id,
         sequence_id=ctx.sequence_id,
         sequence_position=ctx.sequence_position,
+        summarise=ctx.orchestrator.summarise_before_assess,
     )
 
 

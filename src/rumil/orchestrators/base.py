@@ -32,6 +32,8 @@ log = logging.getLogger(__name__)
 
 
 class BaseOrchestrator(ABC):
+    summarise_before_assess: bool = True
+
     def __init__(self, db: DB, broadcaster: Broadcaster | None = None):
         self.db = db
         self.broadcaster: Broadcaster | None = broadcaster
@@ -177,7 +179,7 @@ class BaseOrchestrator(ABC):
                 sequence_position=seq_pos if is_multi_step else None,
             )
             if isinstance(dispatch.payload, AssessDispatchPayload):
-                seq_pos += 2
+                seq_pos += 2 if self.summarise_before_assess else 1
             else:
                 seq_pos += 1
             executed = True

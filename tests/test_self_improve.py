@@ -310,9 +310,7 @@ async def test_list_pages_for_call_returns_created_pages(
         [scout_call],
         tmp_db,
     )
-    out = await _get_tool(tools, "list_pages_for_call").fn(
-        {"call_id": scout_call.id[:8]}
-    )
+    out = await _get_tool(tools, "list_pages_for_call").fn({"call_id": scout_call.id[:8]})
     assert "A discovered claim" in out
     assert claim.id[:8] in out
     assert "C7" in out
@@ -458,9 +456,7 @@ async def test_read_repo_file_reads_real_file(tmp_db, question_page):
 
 async def test_read_repo_file_reads_prompt_file(tmp_db, question_page):
     tools = _build_tools(question_page.id, [(question_page, 0)], [], tmp_db)
-    out = await _get_tool(tools, "read_repo_file").fn(
-        {"path": "prompts/self_improve.md"}
-    )
+    out = await _get_tool(tools, "read_repo_file").fn({"path": "prompts/self_improve.md"})
     assert "rumil" in out.lower()
 
 
@@ -481,9 +477,7 @@ async def test_read_repo_file_missing_file_returns_error(
     question_page,
 ):
     tools = _build_tools(question_page.id, [(question_page, 0)], [], tmp_db)
-    out = await _get_tool(tools, "read_repo_file").fn(
-        {"path": "zzz_does_not_exist_xyz.md"}
-    )
+    out = await _get_tool(tools, "read_repo_file").fn({"path": "zzz_does_not_exist_xyz.md"})
     assert "does not exist" in out.lower()
 
 

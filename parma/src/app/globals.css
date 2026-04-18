@@ -4199,6 +4199,8 @@ details[open] > .article-supplementary-toggle::before {
   font-family: var(--font-mono-stack);
   font-size: 11px;
   letter-spacing: 0.02em;
+}
+
 .sources-domain-label {
   display: flex;
   align-items: baseline;

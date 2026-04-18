@@ -100,6 +100,26 @@ async def test_list_chat_conversations_orders_by_updated_at_desc(tmp_db, project
     assert ids_in_order[0] == c1.id
 
 
+async def test_list_chat_conversations_filters_by_question_id(tmp_db, project_id):
+    c_a = await tmp_db.create_chat_conversation(
+        project_id=project_id, question_id="q-alpha", title="alpha chat"
+    )
+    c_b = await tmp_db.create_chat_conversation(
+        project_id=project_id, question_id="q-beta", title="beta chat"
+    )
+
+    alpha_only = await tmp_db.list_chat_conversations(project_id=project_id, question_id="q-alpha")
+    assert [c.id for c in alpha_only] == [c_a.id]
+
+    beta_only = await tmp_db.list_chat_conversations(project_id=project_id, question_id="q-beta")
+    assert [c.id for c in beta_only] == [c_b.id]
+
+    no_filter = await tmp_db.list_chat_conversations(project_id=project_id)
+    no_filter_ids = {c.id for c in no_filter}
+    assert c_a.id in no_filter_ids
+    assert c_b.id in no_filter_ids
+
+
 async def test_soft_delete_hides_conversation_from_list_and_get(tmp_db, conversation):
     await tmp_db.soft_delete_chat_conversation(conversation.id)
 

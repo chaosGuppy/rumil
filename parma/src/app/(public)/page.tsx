@@ -17,6 +17,7 @@ import {
   useInspectPanel,
 } from "@/components/InspectPanelContext";
 import {
+  fetchProjects,
   fetchProjectsSummary,
   fetchRootQuestions,
   fetchQuestionView,
@@ -545,11 +546,74 @@ function QuestionViewPage({
 function AppContent() {
   const searchParams = useSearchParams();
   const questionParam = searchParams.get("q");
+  const projectParam = searchParams.get("project");
 
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [questions, setQuestions] = useState<Page[] | null>(null);
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(questionParam);
   const [loadingQuestions, setLoadingQuestions] = useState(false);
+  // Distinct from loadingQuestions: true while we're resolving the
+  // ?project=<id-or-name> URL param on cold load, so we don't flash the
+  // landing page before the hydrate effect settles.
+  const [hydratingFromUrl, setHydratingFromUrl] = useState<boolean>(
+    Boolean(projectParam),
+  );
+
+  // Cold-load hydration from searchParams. Without this, any deep link
+  // (`?project=...&q=...&view=...`) would mount with `selectedProject=null`
+  // and bounce to the project browser. Deep links must render directly.
+  const hydratedProjectRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!projectParam) {
+      setHydratingFromUrl(false);
+      return;
+    }
+    if (hydratedProjectRef.current === projectParam) return;
+    hydratedProjectRef.current = projectParam;
+    let cancelled = false;
+    setHydratingFromUrl(true);
+    (async () => {
+      try {
+        const projects = await fetchProjects();
+        if (cancelled) return;
+        // Accept either a project id (the shape we write into the URL) or a
+        // project name (the shape `--workspace` uses in API/CLI contexts).
+        // This makes links robust to whichever form the caller had.
+        const match = projects.find(
+          (p) => p.id === projectParam || p.name === projectParam,
+        );
+        if (!match) {
+          setHydratingFromUrl(false);
+          return;
+        }
+        setSelectedProject(match);
+        if (questionParam) {
+          setSelectedQuestionId(questionParam);
+          setHydratingFromUrl(false);
+          return;
+        }
+        // No question param yet — defer to the existing load-questions
+        // effect below to populate the picker.
+        setLoadingQuestions(true);
+        const qs = await fetchRootQuestions(match.id);
+        if (cancelled) return;
+        setQuestions(qs);
+        if (qs.length === 1) {
+          setSelectedQuestionId(qs[0].id);
+        }
+      } catch {
+        /* leave state untouched; falls through to landing */
+      } finally {
+        if (!cancelled) {
+          setLoadingQuestions(false);
+          setHydratingFromUrl(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectParam, questionParam]);
 
   const handleSelectProject = useCallback((project: Project) => {
     setSelectedProject(project);
@@ -603,6 +667,9 @@ function AppContent() {
   }, [selectedProject]);
 
   if (!selectedProject) {
+    if (hydratingFromUrl) {
+      return <div className="view-loading">Loading research...</div>;
+    }
     return <ProjectBrowser onSelectProject={handleSelectProject} />;
   }
 

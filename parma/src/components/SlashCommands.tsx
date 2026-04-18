@@ -70,6 +70,52 @@ export const COMMANDS: SlashCommand[] = [
 
 const MODEL_COMMAND_NAMES = new Set(["sonnet", "opus", "haiku"]);
 
+const RECENT_STORAGE_KEY = "parma.slash.recent";
+const RECENT_MAX = 8;
+
+// Most-recent-first queue of slash command names, persisted in localStorage
+// so the ordering survives reloads. The dropdown pins these to the top of
+// the filtered list; the full alphabetical list still renders below.
+export function loadRecentCommands(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(RECENT_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((x): x is string => typeof x === "string").slice(0, RECENT_MAX);
+  } catch {
+    return [];
+  }
+}
+
+export function recordRecentCommand(name: string): void {
+  if (typeof window === "undefined") return;
+  const normalized = name.replace(/^\//, "").toLowerCase();
+  if (!normalized) return;
+  try {
+    const current = loadRecentCommands().filter((n) => n !== normalized);
+    const next = [normalized, ...current].slice(0, RECENT_MAX);
+    window.localStorage.setItem(RECENT_STORAGE_KEY, JSON.stringify(next));
+    window.dispatchEvent(new CustomEvent("parma:slash-recent-updated"));
+  } catch {
+    /* localStorage may be unavailable; non-fatal */
+  }
+}
+
+function useRecentCommands(): string[] {
+  const [recent, setRecent] = useState<string[]>([]);
+  useEffect(() => {
+    setRecent(loadRecentCommands());
+    function onUpdate() {
+      setRecent(loadRecentCommands());
+    }
+    window.addEventListener("parma:slash-recent-updated", onUpdate);
+    return () => window.removeEventListener("parma:slash-recent-updated", onUpdate);
+  }, []);
+  return recent;
+}
+
 interface SlashCommandDropdownProps {
   input: string;
   cursorPosition: number;
@@ -89,13 +135,35 @@ export function SlashCommandDropdown({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  const recent = useRecentCommands();
+
   const slashPrefix = visible && input.startsWith("/")
     ? input.slice(1).split(" ")[0].toLowerCase()
     : "";
 
-  const filtered = visible
-    ? COMMANDS.filter((cmd) => cmd.name.startsWith(slashPrefix))
-    : [];
+  // Two-section ordering: recently-used commands (most-recent first), then
+  // the remaining commands alphabetically. Both halves share the same
+  // prefix filter so typing narrows the union.
+  const { filtered, recentSet } = visible
+    ? (() => {
+        const prefix = slashPrefix;
+        const matching = COMMANDS.filter((cmd) => cmd.name.startsWith(prefix));
+        const recentOrdered: SlashCommand[] = [];
+        const seen = new Set<string>();
+        for (const name of recent) {
+          const cmd = matching.find((c) => c.name === name);
+          if (cmd && !seen.has(cmd.name)) {
+            recentOrdered.push(cmd);
+            seen.add(cmd.name);
+          }
+        }
+        const rest = matching.filter((c) => !seen.has(c.name));
+        return {
+          filtered: [...recentOrdered, ...rest],
+          recentSet: seen,
+        };
+      })()
+    : { filtered: [] as SlashCommand[], recentSet: new Set<string>() };
 
   useEffect(() => {
     setSelectedIndex(0);
@@ -129,34 +197,48 @@ export function SlashCommandDropdown({
 
   if (!visible || filtered.length === 0) return null;
 
+  const recentCount = recentSet.size;
+  const hasRecentSection = recentCount > 0 && recentCount < filtered.length;
+
   return (
     <div ref={containerRef} className="slash-dropdown">
+      {hasRecentSection && (
+        <div className="slash-section-label">Recently used</div>
+      )}
       {filtered.map((cmd, i) => {
         const isActiveModel =
           MODEL_COMMAND_NAMES.has(cmd.name) && cmd.name === activeModel;
+        const isRecent = recentSet.has(cmd.name);
+        const showAllLabel = hasRecentSection && i === recentCount;
         return (
-          <button
-            key={cmd.name}
-            className={[
-              "slash-item",
-              i === selectedIndex ? "slash-item-active" : "",
-              isActiveModel ? "slash-item-current" : "",
-            ]
-              .filter(Boolean)
-              .join(" ")}
-            onClick={() => onSelect(cmd)}
-            onMouseEnter={() => setSelectedIndex(i)}
-            aria-current={isActiveModel ? "true" : undefined}
-          >
-            <div className="slash-item-header">
-              <span className="slash-item-name">/{cmd.name}</span>
-              {cmd.args && <span className="slash-item-args">{cmd.args}</span>}
-              {isActiveModel && (
-                <span className="slash-item-current-tag">(current)</span>
-              )}
-            </div>
-            <div className="slash-item-desc">{cmd.description}</div>
-          </button>
+          <div key={cmd.name}>
+            {showAllLabel && <div className="slash-section-label">All commands</div>}
+            <button
+              className={[
+                "slash-item",
+                i === selectedIndex ? "slash-item-active" : "",
+                isActiveModel ? "slash-item-current" : "",
+                isRecent ? "slash-item-recent" : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+              onClick={() => onSelect(cmd)}
+              onMouseEnter={() => setSelectedIndex(i)}
+              aria-current={isActiveModel ? "true" : undefined}
+            >
+              <div className="slash-item-header">
+                <span className="slash-item-name">/{cmd.name}</span>
+                {cmd.args && <span className="slash-item-args">{cmd.args}</span>}
+                {isActiveModel && (
+                  <span className="slash-item-current-tag">(current)</span>
+                )}
+                {isRecent && !isActiveModel && (
+                  <span className="slash-item-recent-tag">recent</span>
+                )}
+              </div>
+              <div className="slash-item-desc">{cmd.description}</div>
+            </button>
+          </div>
         );
       })}
       <div className="slash-hint">

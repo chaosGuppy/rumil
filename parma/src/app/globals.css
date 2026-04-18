@@ -818,6 +818,25 @@ body {
   padding-left: 8px;
 }
 
+.slash-item-recent-tag {
+  font-family: var(--font-mono-stack);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+  margin-left: auto;
+  padding-left: 8px;
+}
+
+.slash-section-label {
+  padding: 6px 14px 2px;
+  font-family: var(--font-mono-stack);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+}
+
 .slash-item-header {
   display: flex;
   align-items: baseline;
@@ -927,6 +946,60 @@ body {
   font-family: var(--font-mono-stack);
   font-size: 11px;
   letter-spacing: 0.04em;
+}
+
+/* tool-use indicators inside the chat transcript */
+.chat-tool-running,
+.chat-tool-done {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+
+.chat-tool-running {
+  color: var(--fg-muted);
+}
+
+.chat-tool-done {
+  color: var(--fg-dim);
+}
+
+.chat-tool-dot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 1.2s ease-in-out infinite;
+  flex: 0 0 auto;
+}
+
+.chat-tool-check {
+  color: var(--node-claim);
+  font-size: 11px;
+}
+
+.chat-tool-name {
+  color: var(--fg-muted);
+  font-weight: 500;
+}
+
+.chat-tool-status {
+  color: var(--accent);
+  opacity: 0.85;
+}
+
+.chat-tool-result {
+  color: var(--fg-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
 }
 
 /* workspace browser */

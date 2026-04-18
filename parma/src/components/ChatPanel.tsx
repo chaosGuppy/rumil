@@ -9,10 +9,12 @@ import {
   getChatConversation,
   renameChatConversation,
   deleteChatConversation,
+  fetchPageByShortId,
 } from "@/lib/api";
 import type { ChatToolUse, ChatConversationSummary } from "@/lib/api";
-import { SlashCommandDropdown, useSlashCommands } from "./SlashCommands";
+import { SlashCommandDropdown, useSlashCommands, recordRecentCommand } from "./SlashCommands";
 import { processChildren } from "./NodeRefLink";
+import { useInspectPanel } from "./InspectPanelContext";
 
 type MessageBlock =
   | { type: "text"; content: string }
@@ -94,11 +96,37 @@ function formatTime(date: Date): string {
   });
 }
 
+// "Searching…" verb tailored to the tool name. Non-committal for unknown
+// tools so we don't lie about what's happening.
+function runningVerb(name: string): string {
+  if (name.includes("search")) return "searching";
+  if (name.includes("inspect") || name.includes("page")) return "loading";
+  if (name.includes("dispatch") || name.includes("orchestrat")) return "dispatching";
+  if (name.includes("ingest")) return "ingesting";
+  if (name.includes("create_question") || name.includes("ask")) return "adding";
+  return "running";
+}
+
 function ToolBlock({ tu }: { tu: ChatToolUse }) {
+  const isRunning = !tu.result;
+  if (isRunning) {
+    return (
+      <div className="chat-tool-running">
+        <span className="chat-tool-dot" aria-hidden="true" />
+        <span className="chat-tool-name">{tu.name}</span>
+        <span className="chat-tool-status">{`${runningVerb(tu.name)}\u2026`}</span>
+      </div>
+    );
+  }
   return (
-    <div style={{ padding: "2px 0" }}>
-      {tu.result ? "\u2713" : "\u27F3"} {tu.name}
-      {tu.result ? ` \u2014 ${tu.result.slice(0, 80)}` : " \u2026"}
+    <div className="chat-tool-done">
+      <span className="chat-tool-check" aria-hidden="true">{"\u2713"}</span>
+      <span className="chat-tool-name">{tu.name}</span>
+      {tu.result && (
+        <span className="chat-tool-result">
+          {` \u2014 ${tu.result.slice(0, 80)}`}
+        </span>
+      )}
     </div>
   );
 }
@@ -207,6 +235,17 @@ export function ChatPanel({
       "Ask me about this view \u2014 I can explain the reasoning behind claims, surface tensions between findings, or discuss what the research might be missing. Or use `/` for slash commands.",
     timestamp: new Date(),
   };
+  const { openInspect } = useInspectPanel();
+  // Final node-ref handler — prefer the prop (parent may scroll the view too)
+  // but always fall back to the global inspect panel so clicks never no-op.
+  const handleNodeRef = useCallback(
+    (id: string) => {
+      if (onNodeRef) onNodeRef(id);
+      else openInspect(id);
+    },
+    [onNodeRef, openInspect],
+  );
+
   const [messages, setMessages] = useState<Message[]>([initialAssistantMessage]);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [conversations, setConversations] = useState<ChatConversationSummary[]>([]);
@@ -228,6 +267,44 @@ export function ChatPanel({
   useEffect(() => {
     if (isOpen) refreshConversations();
   }, [isOpen, refreshConversations]);
+
+  // Auto-bind the chat to the most-recent conversation scoped to this
+  // (project, question). Runs once per (project, question) change. Does NOT
+  // fire on view-mode switches (view mode is not in the dep list), which is
+  // why this correctly preserves transcript when Alice toggles panes.
+  const loadedForKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!projectId || !questionId) return;
+    const key = `${projectId}::${questionId}`;
+    if (loadedForKeyRef.current === key) return;
+    loadedForKeyRef.current = key;
+    let cancelled = false;
+    (async () => {
+      try {
+        const items = await listChatConversations(projectId, questionId);
+        if (cancelled) return;
+        if (items.length === 0) {
+          // No prior conversation for this question — keep the initial
+          // greeting and let the first message auto-create the row.
+          setConversationId(null);
+          setMessages([initialAssistantMessage]);
+          return;
+        }
+        const latest = items[0]; // backend already orders by updated_at desc
+        const detail = await getChatConversation(latest.id);
+        if (cancelled) return;
+        const ui = persistedMessagesToUi(detail.messages);
+        setConversationId(latest.id);
+        setMessages(ui.length ? ui : [initialAssistantMessage]);
+      } catch {
+        /* API may be unavailable; leave state untouched */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, questionId]);
 
   const handleNewChat = useCallback(() => {
     setConversationId(null);
@@ -345,8 +422,85 @@ export function ChatPanel({
 
     if (trimmed === "/review") {
       setInput("");
+      recordRecentCommand("review");
       onShowReview?.();
       return;
+    }
+
+    if (trimmed.startsWith("/inspect")) {
+      const arg = trimmed.slice("/inspect".length).trim();
+      const match = arg.match(/\b([0-9a-f]{8})\b/i);
+      setInput("");
+      recordRecentCommand("inspect");
+      if (!arg) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `sys-${Date.now()}`,
+            role: "assistant",
+            content: "Usage: `/inspect <page_id>` — e.g. `/inspect f8a1b2c3`.",
+            timestamp: new Date(),
+          },
+        ]);
+        return;
+      }
+      if (!match) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `sys-${Date.now()}`,
+            role: "assistant",
+            content:
+              `No valid short id in \`${arg}\`. Expected an 8-character hex id (e.g. \`f8a1b2c3\`).`,
+            timestamp: new Date(),
+          },
+        ]);
+        return;
+      }
+      const shortId = match[1].toLowerCase();
+      try {
+        const page = await fetchPageByShortId(shortId);
+        if (page) {
+          openInspect(shortId);
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `sys-${Date.now()}`,
+              role: "assistant",
+              content: `Opened inspect panel for ${shortId}.`,
+              timestamp: new Date(),
+            },
+          ]);
+        } else {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `sys-${Date.now()}`,
+              role: "assistant",
+              content:
+                `No page found for \`${shortId}\`. It may be in a staged run you don\u2019t have visibility into, or the id may be mistyped.`,
+              timestamp: new Date(),
+            },
+          ]);
+        }
+      } catch (e) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `sys-${Date.now()}`,
+            role: "assistant",
+            content:
+              `Failed to resolve \`${shortId}\`: ${e instanceof Error ? e.message : "unknown error"}.`,
+            timestamp: new Date(),
+          },
+        ]);
+      }
+      return;
+    }
+
+    if (trimmed.startsWith("/")) {
+      const cmdName = trimmed.slice(1).split(/\s+/)[0]?.toLowerCase();
+      if (cmdName) recordRecentCommand(cmdName);
     }
 
     const userMsg: Message = {
@@ -479,7 +633,7 @@ export function ChatPanel({
     } finally {
       setIsLoading(false);
     }
-  }, [input, isLoading, messages, questionId, onMessageSent, onNodeRef, workspace, onShowReview, conversationId, model, refreshConversations]);
+  }, [input, isLoading, messages, questionId, onMessageSent, onNodeRef, workspace, onShowReview, conversationId, model, refreshConversations, openInspect]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -652,7 +806,7 @@ export function ChatPanel({
 
           <div className="chat-messages">
             {messages.map((msg) => (
-              <MessageEntry key={msg.id} message={msg} onNodeRef={onNodeRef} />
+              <MessageEntry key={msg.id} message={msg} onNodeRef={handleNodeRef} />
             ))}
             {isFreshChat && (
               <div className="chat-starter-chips" role="group" aria-label="Starter prompts">

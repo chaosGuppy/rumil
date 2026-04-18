@@ -281,7 +281,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             effective_remaining = total_remaining if total_remaining is not None else budget
             if effective_remaining < MIN_EXPERIMENTAL_INITIAL_PRIO_BUDGET:
                 await self._cancel_initial_call(
-                    f"Budget too low for initial prioritization "
+                    "Budget too low for initial prioritization "
                     f"({effective_remaining} < {MIN_EXPERIMENTAL_INITIAL_PRIO_BUDGET}); "
                     "proceeding straight to main-phase."
                 )

@@ -325,6 +325,7 @@ class ABEvalReportOut(BaseModel):
     question_headline: str = ""
     overall_assessment: str
     overall_assessment_call_id: str = ""
+    eval_run_id: str = ""
     dimension_reports: list[ABEvalDimensionOut]
     config_a: dict = {}
     config_b: dict = {}

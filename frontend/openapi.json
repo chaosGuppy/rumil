@@ -1908,6 +1908,165 @@
         }
       }
     },
+    "/api/annotations": {
+      "post": {
+        "summary": "Create Annotation",
+        "description": "Record a human-authored annotation.\n\nGeneral-purpose annotation surface (doc 28 MVP). Accepts any of the four\nMVP annotation types (``span``, ``counterfactual_tool_use``, ``flag``,\n``endorsement``) and writes a row with ``author_type='human'``.\n\nThis endpoint is allowed for the friendly-user password as well as the\nadmin password \u2014 annotation is the whole point of letting friendly users\nweigh in. ``author_id`` is derived from the request (client IP for now;\nswap for session id once that exists).\n\nAlso records a mirrored reputation_events row (``source='human_feedback'``,\n``dimension=<annotation_type>``, ``score=1.0``) behind a non-fatal try\nso a transient reputation-events failure doesn't drop the annotation.",
+        "operationId": "create_annotation_api_annotations_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnnotationCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnotationCreateOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/pages/{page_id}/annotations": {
+      "get": {
+        "summary": "List Page Annotations",
+        "description": "List annotations targeting a given page.",
+        "operationId": "list_page_annotations_api_pages__page_id__annotations_get",
+        "parameters": [
+          {
+            "name": "page_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Page Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AnnotationEvent"
+                  },
+                  "title": "Response List Page Annotations Api Pages  Page Id  Annotations Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/calls/{call_id}/annotations": {
+      "get": {
+        "summary": "List Call Annotations",
+        "description": "List annotations targeting a given call.",
+        "operationId": "list_call_annotations_api_calls__call_id__annotations_get",
+        "parameters": [
+          {
+            "name": "call_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Call Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AnnotationEvent"
+                  },
+                  "title": "Response List Call Annotations Api Calls  Call Id  Annotations Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/chat": {
       "post": {
         "summary": "Chat",
@@ -2778,6 +2937,274 @@
           "user_message"
         ],
         "title": "AgentStartedEventOut"
+      },
+      "AnnotationCreateOut": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "annotation_id": {
+            "type": "string",
+            "title": "Annotation Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ok",
+          "annotation_id"
+        ],
+        "title": "AnnotationCreateOut"
+      },
+      "AnnotationCreateRequest": {
+        "properties": {
+          "annotation_type": {
+            "type": "string",
+            "pattern": "^(span|counterfactual_tool_use|flag|endorsement)$",
+            "title": "Annotation Type"
+          },
+          "target_page_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Page Id"
+          },
+          "target_call_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Call Id"
+          },
+          "target_event_seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Event Seq"
+          },
+          "span_start": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Span Start"
+          },
+          "span_end": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Span End"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "note": {
+            "type": "string",
+            "title": "Note",
+            "default": ""
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Payload"
+          },
+          "extra": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Extra"
+          }
+        },
+        "type": "object",
+        "required": [
+          "annotation_type"
+        ],
+        "title": "AnnotationCreateRequest"
+      },
+      "AnnotationEvent": {
+        "properties": {
+          "annotation_type": {
+            "type": "string",
+            "title": "Annotation Type"
+          },
+          "author_type": {
+            "type": "string",
+            "title": "Author Type"
+          },
+          "author_id": {
+            "type": "string",
+            "title": "Author Id"
+          },
+          "target_page_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Page Id"
+          },
+          "target_call_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Call Id"
+          },
+          "target_event_seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Event Seq"
+          },
+          "span_start": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Span Start"
+          },
+          "span_end": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Span End"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "note": {
+            "type": "string",
+            "title": "Note",
+            "default": ""
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Payload"
+          },
+          "extra": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Extra"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "staged": {
+            "type": "boolean",
+            "title": "Staged",
+            "default": false
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "annotation_type",
+          "author_type",
+          "author_id",
+          "target_page_id",
+          "target_call_id",
+          "target_event_seq",
+          "span_start",
+          "span_end",
+          "category",
+          "note",
+          "payload",
+          "extra",
+          "run_id",
+          "project_id",
+          "staged",
+          "id",
+          "created_at"
+        ],
+        "title": "AnnotationEvent",
+        "description": "One append-only annotation signal.\n\nThe annotation substrate is one events table for human- and model-authored\nfeedback on pages, spans, calls, and specific trace events. Never collapse\nat write time; consumers aggregate at query time. See\nmarketplace-thread/28-annotation-primitives.md.\n\n``annotation_type`` is a string rather than an enum so new kinds can be\nadded without a migration. The MVP uses: ``span``, ``counterfactual``,\n``flag``, ``endorsement``. ``category`` is a coarse bucket (e.g.\n``factual_error``, ``missing_consideration``, ``tool_choice``) set\nper-annotation; ``payload`` carries annotation-type-specific extras."
       },
       "AppConfigOut": {
         "properties": {

@@ -215,6 +215,161 @@ export type AgentStartedEventOut = {
 };
 
 /**
+ * AnnotationCreateOut
+ */
+export type AnnotationCreateOut = {
+    /**
+     * Ok
+     */
+    ok: boolean;
+    /**
+     * Annotation Id
+     */
+    annotation_id: string;
+};
+
+/**
+ * AnnotationCreateRequest
+ */
+export type AnnotationCreateRequest = {
+    /**
+     * Annotation Type
+     */
+    annotation_type: string;
+    /**
+     * Target Page Id
+     */
+    target_page_id?: string | null;
+    /**
+     * Target Call Id
+     */
+    target_call_id?: string | null;
+    /**
+     * Target Event Seq
+     */
+    target_event_seq?: number | null;
+    /**
+     * Span Start
+     */
+    span_start?: number | null;
+    /**
+     * Span End
+     */
+    span_end?: number | null;
+    /**
+     * Category
+     */
+    category?: string | null;
+    /**
+     * Note
+     */
+    note?: string;
+    /**
+     * Payload
+     */
+    payload?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Extra
+     */
+    extra?: {
+        [key: string]: unknown;
+    };
+};
+
+/**
+ * AnnotationEvent
+ *
+ * One append-only annotation signal.
+ *
+ * The annotation substrate is one events table for human- and model-authored
+ * feedback on pages, spans, calls, and specific trace events. Never collapse
+ * at write time; consumers aggregate at query time. See
+ * marketplace-thread/28-annotation-primitives.md.
+ *
+ * ``annotation_type`` is a string rather than an enum so new kinds can be
+ * added without a migration. The MVP uses: ``span``, ``counterfactual``,
+ * ``flag``, ``endorsement``. ``category`` is a coarse bucket (e.g.
+ * ``factual_error``, ``missing_consideration``, ``tool_choice``) set
+ * per-annotation; ``payload`` carries annotation-type-specific extras.
+ */
+export type AnnotationEvent = {
+    /**
+     * Annotation Type
+     */
+    annotation_type: string;
+    /**
+     * Author Type
+     */
+    author_type: string;
+    /**
+     * Author Id
+     */
+    author_id: string;
+    /**
+     * Target Page Id
+     */
+    target_page_id: string | null;
+    /**
+     * Target Call Id
+     */
+    target_call_id: string | null;
+    /**
+     * Target Event Seq
+     */
+    target_event_seq: number | null;
+    /**
+     * Span Start
+     */
+    span_start: number | null;
+    /**
+     * Span End
+     */
+    span_end: number | null;
+    /**
+     * Category
+     */
+    category: string | null;
+    /**
+     * Note
+     */
+    note: string;
+    /**
+     * Payload
+     */
+    payload: {
+        [key: string]: unknown;
+    };
+    /**
+     * Extra
+     */
+    extra: {
+        [key: string]: unknown;
+    };
+    /**
+     * Run Id
+     */
+    run_id: string | null;
+    /**
+     * Project Id
+     */
+    project_id: string | null;
+    /**
+     * Staged
+     */
+    staged: boolean;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Created At
+     */
+    created_at: string;
+};
+
+/**
  * AppConfigOut
  */
 export type AppConfigOut = {
@@ -3722,6 +3877,110 @@ export type RecordViewItemReadApiViewItemsItemIdReadPostResponses = {
 };
 
 export type RecordViewItemReadApiViewItemsItemIdReadPostResponse = RecordViewItemReadApiViewItemsItemIdReadPostResponses[keyof RecordViewItemReadApiViewItemsItemIdReadPostResponses];
+
+export type CreateAnnotationApiAnnotationsPostData = {
+    body: AnnotationCreateRequest;
+    path?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/annotations';
+};
+
+export type CreateAnnotationApiAnnotationsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateAnnotationApiAnnotationsPostError = CreateAnnotationApiAnnotationsPostErrors[keyof CreateAnnotationApiAnnotationsPostErrors];
+
+export type CreateAnnotationApiAnnotationsPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: AnnotationCreateOut;
+};
+
+export type CreateAnnotationApiAnnotationsPostResponse = CreateAnnotationApiAnnotationsPostResponses[keyof CreateAnnotationApiAnnotationsPostResponses];
+
+export type ListPageAnnotationsApiPagesPageIdAnnotationsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Page Id
+         */
+        page_id: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/pages/{page_id}/annotations';
+};
+
+export type ListPageAnnotationsApiPagesPageIdAnnotationsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListPageAnnotationsApiPagesPageIdAnnotationsGetError = ListPageAnnotationsApiPagesPageIdAnnotationsGetErrors[keyof ListPageAnnotationsApiPagesPageIdAnnotationsGetErrors];
+
+export type ListPageAnnotationsApiPagesPageIdAnnotationsGetResponses = {
+    /**
+     * Response List Page Annotations Api Pages  Page Id  Annotations Get
+     *
+     * Successful Response
+     */
+    200: Array<AnnotationEvent>;
+};
+
+export type ListPageAnnotationsApiPagesPageIdAnnotationsGetResponse = ListPageAnnotationsApiPagesPageIdAnnotationsGetResponses[keyof ListPageAnnotationsApiPagesPageIdAnnotationsGetResponses];
+
+export type ListCallAnnotationsApiCallsCallIdAnnotationsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Call Id
+         */
+        call_id: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/calls/{call_id}/annotations';
+};
+
+export type ListCallAnnotationsApiCallsCallIdAnnotationsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListCallAnnotationsApiCallsCallIdAnnotationsGetError = ListCallAnnotationsApiCallsCallIdAnnotationsGetErrors[keyof ListCallAnnotationsApiCallsCallIdAnnotationsGetErrors];
+
+export type ListCallAnnotationsApiCallsCallIdAnnotationsGetResponses = {
+    /**
+     * Response List Call Annotations Api Calls  Call Id  Annotations Get
+     *
+     * Successful Response
+     */
+    200: Array<AnnotationEvent>;
+};
+
+export type ListCallAnnotationsApiCallsCallIdAnnotationsGetResponse = ListCallAnnotationsApiCallsCallIdAnnotationsGetResponses[keyof ListCallAnnotationsApiCallsCallIdAnnotationsGetResponses];
 
 export type ChatApiChatPostData = {
     body: ChatRequest;

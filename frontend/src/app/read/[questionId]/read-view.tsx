@@ -202,7 +202,7 @@ export function ReadView({
 
   const closeDialog = () => setDialog(null);
 
-  const submitFlag = async (e: React.FormEvent<HTMLFormElement>) => {
+  const submitFlag = async (e: React.SyntheticEvent) => {
     e.preventDefault();
     if (!dialog) return;
     setDialog({ ...dialog, submitting: true, error: null });

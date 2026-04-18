@@ -304,7 +304,9 @@ def get_moves_for_call(call_type: CallType) -> Sequence[MoveType]:
 
     When ``settings.enable_flag_issue`` is True, appends ``MoveType.FLAG_ISSUE``
     to any non-empty preset list so meta-feedback is available from every call
-    where the model has tool-use rights.
+    where the model has tool-use rights. When ``settings.enable_annotation_moves``
+    is True, also appends ``ANNOTATE_SPAN`` and ``ANNOTATE_ALTERNATIVE`` — off
+    by default so existing orchestrators keep their current tool surface.
     """
     settings = get_settings()
     preset = PRESETS.get(settings.available_moves)
@@ -319,6 +321,16 @@ def get_moves_for_call(call_type: CallType) -> Sequence[MoveType]:
             f"Preset {settings.available_moves!r} has no entry for call type "
             f"{call_type.value!r}. Add an entry to the preset in available_moves.py."
         )
-    if settings.enable_flag_issue and moves and MoveType.FLAG_ISSUE not in moves:
-        return [*moves, MoveType.FLAG_ISSUE]
+    if not moves:
+        return moves
+    extras: list[MoveType] = []
+    if settings.enable_flag_issue and MoveType.FLAG_ISSUE not in moves:
+        extras.append(MoveType.FLAG_ISSUE)
+    if settings.enable_annotation_moves:
+        if MoveType.ANNOTATE_SPAN not in moves:
+            extras.append(MoveType.ANNOTATE_SPAN)
+        if MoveType.ANNOTATE_ALTERNATIVE not in moves:
+            extras.append(MoveType.ANNOTATE_ALTERNATIVE)
+    if extras:
+        return [*moves, *extras]
     return moves

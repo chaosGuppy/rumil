@@ -70,6 +70,7 @@ class Settings(BaseSettings):
     enable_adversarial_review: bool = _capture_field(default=False)
     adversarial_review_credence_threshold: int = _capture_field(default=6)
     enable_flag_issue: bool = _capture_field(default=False)
+    enable_annotation_moves: bool = _capture_field(default=False)
 
     evaluate_content_hops: int = _capture_field(default=0)
     evaluate_abstract_hops: int = _capture_field(default=1)

@@ -504,3 +504,26 @@ class AppConfigOut(BaseModel):
     model_config = ConfigDict(json_schema_extra=_all_fields_required)
 
     enable_flag_issue: bool
+
+
+class AnnotationCreateRequest(BaseModel):
+    annotation_type: Annotated[
+        str,
+        Field(pattern="^(span|counterfactual_tool_use|flag|endorsement)$"),
+    ]
+    target_page_id: str | None = None
+    target_call_id: str | None = None
+    target_event_seq: int | None = None
+    span_start: int | None = None
+    span_end: int | None = None
+    category: str | None = None
+    note: str = ""
+    payload: dict = Field(default_factory=dict)
+    extra: dict = Field(default_factory=dict)
+
+
+class AnnotationCreateOut(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    ok: bool
+    annotation_id: str

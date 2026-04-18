@@ -1,6 +1,8 @@
 """Move registry: collects all MoveDefs."""
 
 from rumil.models import MoveType
+from rumil.moves.annotate_alternative import MOVE as _annotate_alternative
+from rumil.moves.annotate_span import MOVE as _annotate_span
 from rumil.moves.base import MoveDef
 from rumil.moves.change_link_role import MOVE as _change_link_role
 from rumil.moves.create_claim import MOVE as _create_claim
@@ -46,5 +48,7 @@ MOVES: dict[MoveType, MoveDef] = {
         _update_epistemic,
         _create_view_item,
         _propose_view_item,
+        _annotate_span,
+        _annotate_alternative,
     ]
 }

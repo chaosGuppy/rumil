@@ -22,6 +22,7 @@ from tenacity import (
 )
 
 from rumil.models import (
+    AnnotationEvent,
     Call,
     CallSequence,
     CallStatus,
@@ -2305,6 +2306,122 @@ class DB:
         result.sort(key=lambda b: (b["source"], b["dimension"], b["orchestrator"] or ""))
         return result
 
+    async def record_annotation(
+        self,
+        *,
+        annotation_type: str,
+        author_type: str,
+        author_id: str,
+        target_page_id: str | None = None,
+        target_call_id: str | None = None,
+        target_event_seq: int | None = None,
+        span_start: int | None = None,
+        span_end: int | None = None,
+        category: str | None = None,
+        note: str = "",
+        payload: dict | None = None,
+        extra: dict | None = None,
+    ) -> AnnotationEvent:
+        """Append a raw annotation signal.
+
+        Mirrors ``record_reputation_event``: ``staged=self.staged`` and
+        ``run_id=self.run_id`` at write time so staged runs are isolated from
+        baseline readers (see "Staged Runs and the Mutation Log" in
+        CLAUDE.md). Never aggregate or collapse at this layer — consumers
+        group at query time.
+
+        Returns the constructed ``AnnotationEvent`` so callers can inspect
+        the ``id`` (useful for mirroring into ``reputation_events`` or
+        returning from an HTTP handler).
+        """
+        ev = AnnotationEvent(
+            annotation_type=annotation_type,
+            author_type=author_type,
+            author_id=author_id,
+            target_page_id=target_page_id,
+            target_call_id=target_call_id,
+            target_event_seq=target_event_seq,
+            span_start=span_start,
+            span_end=span_end,
+            category=category,
+            note=note,
+            payload=payload or {},
+            extra=extra or {},
+            run_id=self.run_id,
+            project_id=self.project_id,
+            staged=self.staged,
+        )
+        row: dict[str, Any] = {
+            "id": ev.id,
+            "project_id": ev.project_id,
+            "run_id": ev.run_id,
+            "annotation_type": ev.annotation_type,
+            "author_type": ev.author_type,
+            "author_id": ev.author_id,
+            "target_page_id": ev.target_page_id,
+            "target_call_id": ev.target_call_id,
+            "target_event_seq": ev.target_event_seq,
+            "span_start": ev.span_start,
+            "span_end": ev.span_end,
+            "category": ev.category,
+            "note": ev.note,
+            "payload": ev.payload,
+            "extra": ev.extra,
+            "staged": ev.staged,
+            "created_at": ev.created_at.isoformat(),
+        }
+        await self._execute(self.client.table("annotation_events").insert(row))
+        return ev
+
+    async def get_annotations(
+        self,
+        *,
+        target_page_id: str | None = None,
+        target_call_id: str | None = None,
+        author_type: str | None = None,
+        annotation_type: str | None = None,
+    ) -> list[AnnotationEvent]:
+        """Fetch annotations, respecting the staged-visibility rule.
+
+        Staged DBs see baseline (staged=false) rows plus their own run_id
+        rows. Non-staged DBs see only baseline rows. Filters compose.
+        """
+        query = self.client.table("annotation_events").select("*")
+        if self.project_id:
+            query = query.eq("project_id", self.project_id)
+        if target_page_id is not None:
+            query = query.eq("target_page_id", target_page_id)
+        if target_call_id is not None:
+            query = query.eq("target_call_id", target_call_id)
+        if author_type is not None:
+            query = query.eq("author_type", author_type)
+        if annotation_type is not None:
+            query = query.eq("annotation_type", annotation_type)
+        query = self._staged_filter(query)
+        rows = _rows(await self._execute(query))
+        return [
+            AnnotationEvent(
+                id=r["id"],
+                project_id=r.get("project_id"),
+                run_id=r.get("run_id"),
+                annotation_type=r["annotation_type"],
+                author_type=r["author_type"],
+                author_id=r["author_id"],
+                target_page_id=r.get("target_page_id"),
+                target_call_id=r.get("target_call_id"),
+                target_event_seq=r.get("target_event_seq"),
+                span_start=r.get("span_start"),
+                span_end=r.get("span_end"),
+                category=r.get("category"),
+                note=r.get("note") or "",
+                payload=r.get("payload") or {},
+                extra=r.get("extra") or {},
+                staged=r.get("staged", False),
+                created_at=datetime.fromisoformat(r["created_at"]),
+            )
+            for r in rows
+        ]
+
     async def save_epistemic_score(
         self,
         page_id: str,
@@ -2823,6 +2940,7 @@ class DB:
             "call_llm_exchanges",
             "page_format_events",
             "reputation_events",
+            "annotation_events",
         ):
             await self._execute(
                 self.client.table(table).update({"staged": True}).eq("run_id", run_id)
@@ -2933,6 +3051,7 @@ class DB:
             "call_llm_exchanges",
             "page_format_events",
             "reputation_events",
+            "annotation_events",
         ):
             await self._execute(
                 self.client.table(table).update({"staged": False}).eq("run_id", run_id)
@@ -3168,6 +3287,7 @@ class DB:
             "epistemic_scores",
             "page_links",
             "reputation_events",
+            "annotation_events",
         ]:
             await self._execute(self.client.table(table).delete().eq("run_id", self.run_id))
         # Null out sequence_id FK before deleting sequences and calls

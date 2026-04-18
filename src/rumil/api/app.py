@@ -33,6 +33,8 @@ from rumil.api.schemas import (
     ABEvalDimensionSummaryOut,
     ABEvalReportListItemOut,
     ABEvalReportOut,
+    AnnotationCreateOut,
+    AnnotationCreateRequest,
     AppConfigOut,
     CallNodeOut,
     CallSummary,
@@ -61,6 +63,7 @@ from rumil.api.schemas import (
 )
 from rumil.database import DB, _row_to_call, _rows
 from rumil.models import (
+    AnnotationEvent,
     Call,
     ChatMessageRole,
     LinkType,
@@ -118,6 +121,8 @@ def _is_friendly_user_path(method: str, path: str) -> bool:
         if path.startswith("/api/view-items/") and (
             path.endswith("/flag") or path.endswith("/read")
         ):
+            return True
+        if path == "/api/annotations":
             return True
     if method == "DELETE":
         if path.startswith("/api/view-items/flags/"):
@@ -1010,6 +1015,131 @@ async def record_view_item_read(
     )
 
     return ViewItemReadOut(ok=True, page_id=resolved)
+
+
+@app.post("/api/annotations", response_model=AnnotationCreateOut)
+async def create_annotation(
+    request: AnnotationCreateRequest,
+    http_request: Request,
+    db: DB = Depends(_get_db),
+):
+    """Record a human-authored annotation.
+
+    General-purpose annotation surface (doc 28 MVP). Accepts any of the four
+    MVP annotation types (``span``, ``counterfactual_tool_use``, ``flag``,
+    ``endorsement``) and writes a row with ``author_type='human'``.
+
+    This endpoint is allowed for the friendly-user password as well as the
+    admin password — annotation is the whole point of letting friendly users
+    weigh in. ``author_id`` is derived from the request (client IP for now;
+    swap for session id once that exists).
+
+    Also records a mirrored reputation_events row (``source='human_feedback'``,
+    ``dimension=<annotation_type>``, ``score=1.0``) behind a non-fatal try
+    so a transient reputation-events failure doesn't drop the annotation.
+    """
+    project_id: str | None = None
+    if request.target_page_id:
+        resolved_page = await db.resolve_page_id(request.target_page_id) or request.target_page_id
+        page = await db.get_page(resolved_page)
+        if page is None:
+            raise HTTPException(
+                status_code=404, detail=f"target_page_id {request.target_page_id} not found"
+            )
+        target_page = resolved_page
+        project_id = page.project_id
+    else:
+        target_page = None
+
+    target_call = request.target_call_id
+    if target_call:
+        call_rows = _rows(
+            await db.client.table("calls").select("project_id").eq("id", target_call).execute()
+        )
+        if not call_rows:
+            raise HTTPException(status_code=404, detail=f"target_call_id {target_call} not found")
+        project_id = project_id or call_rows[0].get("project_id")
+
+    if project_id and not db.project_id:
+        db.project_id = project_id
+
+    await db.create_run(
+        name="human-annotation",
+        question_id=None,
+        config={"origin": "human-annotation"},
+    )
+
+    client_host = http_request.client.host if http_request.client else "unknown"
+    ev = await db.record_annotation(
+        annotation_type=request.annotation_type,
+        author_type="human",
+        author_id=f"http:{client_host}",
+        target_page_id=target_page,
+        target_call_id=target_call,
+        target_event_seq=request.target_event_seq,
+        span_start=request.span_start,
+        span_end=request.span_end,
+        category=request.category,
+        note=request.note,
+        payload=request.payload,
+        extra=request.extra,
+    )
+
+    try:
+        await db.record_reputation_event(
+            source="human_feedback",
+            dimension=request.annotation_type,
+            score=1.0,
+            source_call_id=target_call,
+            extra={
+                "annotation_id": ev.id,
+                "target_page_id": target_page,
+                "target_call_id": target_call,
+                "category": request.category,
+            },
+        )
+    except Exception:
+        log.exception("Failed to mirror annotation into reputation_events (non-fatal)")
+
+    log.info(
+        "Annotation recorded: type=%s target_page=%s target_call=%s",
+        request.annotation_type,
+        (target_page or "-")[:8],
+        (target_call or "-")[:8],
+    )
+    return AnnotationCreateOut(ok=True, annotation_id=ev.id)
+
+
+@app.get("/api/pages/{page_id}/annotations", response_model=list[AnnotationEvent])
+async def list_page_annotations(
+    page_id: str,
+    db: DB = Depends(_get_db),
+):
+    """List annotations targeting a given page."""
+    resolved = await db.resolve_page_id(page_id) or page_id
+    page = await db.get_page(resolved)
+    if page is None:
+        raise HTTPException(status_code=404, detail=f"Page {page_id} not found")
+    if page.project_id and not db.project_id:
+        db.project_id = page.project_id
+    return await db.get_annotations(target_page_id=resolved)
+
+
+@app.get("/api/calls/{call_id}/annotations", response_model=list[AnnotationEvent])
+async def list_call_annotations(
+    call_id: str,
+    db: DB = Depends(_get_db),
+):
+    """List annotations targeting a given call."""
+    call_rows = _rows(
+        await db.client.table("calls").select("project_id").eq("id", call_id).execute()
+    )
+    if not call_rows:
+        raise HTTPException(status_code=404, detail=f"Call {call_id} not found")
+    project_id = call_rows[0].get("project_id")
+    if project_id and not db.project_id:
+        db.project_id = project_id
+    return await db.get_annotations(target_call_id=call_id)
 
 
 @app.post("/api/chat", response_model=ChatResponse)

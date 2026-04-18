@@ -161,6 +161,8 @@ class MoveType(str, Enum):
     UPDATE_EPISTEMIC = "UPDATE_EPISTEMIC"
     CREATE_VIEW_ITEM = "CREATE_VIEW_ITEM"
     PROPOSE_VIEW_ITEM = "PROPOSE_VIEW_ITEM"
+    ANNOTATE_SPAN = "ANNOTATE_SPAN"
+    ANNOTATE_ALTERNATIVE = "ANNOTATE_ALTERNATIVE"
 
 
 class CallStage(str, Enum):
@@ -485,6 +487,41 @@ class ReputationEvent(BaseModel):
     task_shape: dict | None = None
     source_call_id: str | None = None
     extra: dict = Field(default_factory=dict)
+    staged: bool = False
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class AnnotationEvent(BaseModel):
+    """One append-only annotation signal.
+
+    The annotation substrate is one events table for human- and model-authored
+    feedback on pages, spans, calls, and specific trace events. Never collapse
+    at write time; consumers aggregate at query time. See
+    marketplace-thread/28-annotation-primitives.md.
+
+    ``annotation_type`` is a string rather than an enum so new kinds can be
+    added without a migration. The MVP uses: ``span``, ``counterfactual``,
+    ``flag``, ``endorsement``. ``category`` is a coarse bucket (e.g.
+    ``factual_error``, ``missing_consideration``, ``tool_choice``) set
+    per-annotation; ``payload`` carries annotation-type-specific extras.
+    """
+
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+    annotation_type: str
+    author_type: str
+    author_id: str
+    target_page_id: str | None = None
+    target_call_id: str | None = None
+    target_event_seq: int | None = None
+    span_start: int | None = None
+    span_end: int | None = None
+    category: str | None = None
+    note: str = ""
+    payload: dict = Field(default_factory=dict)
+    extra: dict = Field(default_factory=dict)
+    run_id: str | None = None
+    project_id: str | None = None
     staged: bool = False
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

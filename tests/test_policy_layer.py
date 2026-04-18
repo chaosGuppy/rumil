@@ -90,6 +90,7 @@ def _make_db(
     db = MagicMock()
     db.run_id = str(uuid.uuid4())
     db.project_id = str(uuid.uuid4())
+    db.get_page = AsyncMock(return_value=None)
     db.get_considerations_for_question = AsyncMock(return_value=considerations or [])
     db.get_child_questions = AsyncMock(return_value=children or [])
     db.get_view_for_question = AsyncMock(return_value=view)

@@ -1161,7 +1161,10 @@ class DB:
         )
         if get_settings().dedupe_page_links:
             existing = await self._find_duplicate_link(link)
-            if existing is not None:
+            # Only skip when the duplicate is a *different* row — otherwise
+            # we'd block the legitimate case of re-saving an existing link
+            # to update its importance/section/etc.
+            if existing is not None and existing.id != link.id:
                 log.debug(
                     "save_link: dedup, existing link %s matches (from=%s to=%s type=%s)",
                     existing.id,

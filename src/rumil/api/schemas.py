@@ -112,6 +112,32 @@ class CreateProjectOut(BaseModel):
     created: bool
 
 
+class UpdateProjectRequest(BaseModel):
+    """PATCH /api/projects/{id} body.
+
+    All fields optional — callers send only what they want to change. ``name``
+    is trimmed server-side and validated for length; ``hidden`` is a straight
+    boolean flag that removes the workspace from the default public list.
+    """
+
+    name: Annotated[
+        str | None,
+        Field(default=None, min_length=1, max_length=_PROJECT_NAME_MAX),
+    ] = None
+    hidden: bool | None = None
+
+
+class UpdateRunRequest(BaseModel):
+    """PATCH /api/runs/{run_id} body.
+
+    Runs only surface the ``hidden`` toggle today — a hidden run is filtered
+    out of the RunPicker by default but still readable via a show-hidden
+    affordance.
+    """
+
+    hidden: bool | None = None
+
+
 # Cap the headline around the "10-15 words, 20-word ceiling" guidance that
 # HEADLINE_DESCRIPTION in moves/base.py uses for LLM-created questions —
 # 300 chars leaves plenty of slack for humans without letting the column grow
@@ -372,6 +398,7 @@ class RunListItemOut(BaseModel):
     config: dict | None = None
     question_summary: str | None = None
     staged: bool = False
+    hidden: bool = False
 
 
 class PaginatedPagesOut(BaseModel):

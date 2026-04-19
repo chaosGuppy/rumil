@@ -52,9 +52,64 @@ export async function createProject(
 
 // Landing-page summary: one row per project with question/claim/call counts
 // and last_activity_at, computed server-side by the list_projects_summary
-// RPC in a single SQL query.
-export async function fetchProjectsSummary(): Promise<ProjectSummary[]> {
-  const res = await fetch(`${API_BASE}/api/projects/summary`);
+// RPC in a single SQL query. Pass `includeHidden` to surface soft-deleted
+// workspaces (the landing "show hidden" toggle).
+export async function fetchProjectsSummary(
+  includeHidden: boolean = false,
+): Promise<ProjectSummary[]> {
+  const qs = includeHidden ? "?include_hidden=true" : "";
+  const res = await fetch(`${API_BASE}/api/projects/summary${qs}`);
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  return res.json();
+}
+
+// PATCH a workspace: flip `hidden` and/or rename. Both fields are optional
+// but at least one must be supplied server-side (422 otherwise). 409 on a
+// name collision with another workspace; the caller should surface the
+// detail inline so the user can retry with a different name.
+export async function updateProject(
+  projectId: string,
+  patch: { hidden?: boolean; name?: string },
+): Promise<Project> {
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) {
+    let detail: string | null = null;
+    try {
+      const body = await res.json();
+      if (typeof body?.detail === "string") {
+        detail = body.detail;
+      } else if (Array.isArray(body?.detail) && body.detail[0]?.msg) {
+        detail = String(body.detail[0].msg);
+      }
+    } catch {
+      // non-JSON body
+    }
+    const err = new Error(detail ?? `API error: ${res.status}`) as Error & {
+      status?: number;
+    };
+    err.status = res.status;
+    throw err;
+  }
+  return res.json();
+}
+
+// PATCH a run's hidden flag. Returns the refreshed hidden value so the
+// RunPicker can update its row without a full refetch. 404 if the run
+// doesn't exist (shouldn't happen — the UI only surfaces runs it already
+// has in hand).
+export async function updateRunHidden(
+  runId: string,
+  hidden: boolean,
+): Promise<{ run_id: string; hidden: boolean }> {
+  const res = await fetch(`${API_BASE}/api/runs/${runId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ hidden }),
+  });
   if (!res.ok) throw new Error(`API error: ${res.status}`);
   return res.json();
 }
@@ -518,6 +573,7 @@ export interface RunListItem {
   config: Record<string, unknown> | null;
   question_summary: string | null;
   staged: boolean;
+  hidden: boolean;
 }
 
 export async function fetchProjectRuns(

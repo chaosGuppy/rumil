@@ -681,6 +681,57 @@ class DB:
             for r in rows
         ]
 
+    async def get_project(self, project_id: str) -> Project | None:
+        """Return a single project row by id, or None if absent."""
+        rows = _rows(
+            await self._execute(self.client.table("projects").select("*").eq("id", project_id))
+        )
+        if not rows:
+            return None
+        r = rows[0]
+        return Project(
+            id=r["id"],
+            name=r["name"],
+            created_at=datetime.fromisoformat(r["created_at"]),
+            hidden=r.get("hidden", False),
+        )
+
+    async def update_project(
+        self,
+        project_id: str,
+        *,
+        name: str | None = None,
+        hidden: bool | None = None,
+    ) -> Project | None:
+        """Patch a project's name and/or hidden flag. Returns the refreshed row.
+
+        Caller is responsible for trimming ``name`` and checking for collisions;
+        this helper only issues the UPDATE. Returns ``None`` if the project
+        doesn't exist (callers should surface 404).
+        """
+        update: dict[str, Any] = {}
+        if name is not None:
+            update["name"] = name
+        if hidden is not None:
+            update["hidden"] = hidden
+        if not update:
+            return await self.get_project(project_id)
+        await self._execute(self.client.table("projects").update(update).eq("id", project_id))
+        return await self.get_project(project_id)
+
+    async def update_run_hidden(self, run_id: str, hidden: bool) -> dict[str, Any] | None:
+        """Flip the ``hidden`` flag on a run. Returns the refreshed run row or
+        ``None`` if the run doesn't exist.
+
+        The RunPicker in the parma UI filters hidden runs out by default; this
+        is a soft delete affordance for smoke tests, failed experiments, etc.
+        No mutation event is recorded because visibility of run rows is not
+        part of the staged-runs model (runs own events, they don't participate
+        in them).
+        """
+        await self._execute(self.client.table("runs").update({"hidden": hidden}).eq("id", run_id))
+        return await self.get_run(run_id)
+
     async def save_page(self, page: Page) -> None:
         log.debug(
             "save_page: id=%s, type=%s, headline=%s",
@@ -3323,7 +3374,7 @@ class DB:
         run_rows = _rows(
             await self._execute(
                 self.client.table("runs")
-                .select("id, name, question_id, config, created_at, staged")
+                .select("id, name, question_id, config, created_at, staged, hidden")
                 .eq("project_id", project_id)
                 .order("created_at", desc=True)
                 .limit(limit * 2)
@@ -3363,6 +3414,7 @@ class DB:
                     "config": row.get("config", {}),
                     "question_summary": page.headline if page else None,
                     "staged": row.get("staged", False),
+                    "hidden": row.get("hidden", False),
                 }
             )
             seen_run_ids.add(row["id"])

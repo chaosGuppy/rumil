@@ -122,6 +122,14 @@ export interface AdversarialVerdictSummary {
   page_created_at: string;
 }
 
+// Mirrors SearchResultOut / SearchResultsOut in src/rumil/api/schemas.py.
+// Produced by GET /api/projects/{project_id}/search (ILIKE across headline
+// and content, case-insensitive, project-scoped).
+export interface SearchResult {
+  page: Page;
+  snippet: string;
+}
+
 // Mirrors ProjectSummaryOut in src/rumil/api/schemas.py. Produced by the
 // list_projects_summary RPC in a single SQL call.
 export interface ProjectSummary {

@@ -63,6 +63,8 @@ from rumil.api.schemas import (
     SearchResultOut,
     SearchResultsOut,
     TraceEventOut,
+    UpdateProjectRequest,
+    UpdateRunRequest,
     ViewItemFlagDeleteOut,
     ViewItemFlagOut,
     ViewItemFlagRequest,
@@ -276,13 +278,19 @@ async def create_project(
 
 
 @app.get("/api/projects/summary", response_model=list[ProjectSummaryOut])
-async def list_projects_summary(db: DB = Depends(_get_db)):
+async def list_projects_summary(
+    include_hidden: bool = False,
+    db: DB = Depends(_get_db),
+):
     """Per-project summary for the public landing page.
 
     One SQL call produces every project's question_count, claim_count,
     call_count, and last_activity_at. Consumed by the parma landing grid.
+    ``include_hidden`` is off by default; the parma "show hidden" toggle
+    passes ``?include_hidden=true`` to surface soft-deleted workspaces
+    (rendered greyed).
     """
-    rows = await db.list_projects_summary(include_hidden=False)
+    rows = await db.list_projects_summary(include_hidden=include_hidden)
     return [
         ProjectSummaryOut(
             id=row["project_id"],
@@ -312,9 +320,90 @@ async def get_project(project_id: str, db: DB = Depends(_get_db)):
     )
 
 
+@app.patch("/api/projects/{project_id}", response_model=Project)
+async def update_project(
+    project_id: str,
+    request: UpdateProjectRequest,
+    db: DB = Depends(_get_db),
+):
+    """Update a workspace's hidden flag and/or name.
+
+    Accepts any subset of ``{hidden, name}``. At least one field must be
+    supplied (422 if neither is present). ``name`` is trimmed server-side;
+    empty-after-trim is rejected (422) and a collision with another project's
+    name returns 409. Renaming to the same name is a no-op (200).
+
+    Backs Feature 1 (hide workspace) and Feature 3 (rename workspace) in the
+    parma hygiene landing-pad.
+    """
+    if request.hidden is None and request.name is None:
+        raise HTTPException(
+            status_code=422,
+            detail="At least one of 'hidden' or 'name' must be provided.",
+        )
+
+    existing = await db.get_project(project_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    trimmed_name: str | None = None
+    if request.name is not None:
+        trimmed_name = request.name.strip()
+        if not trimmed_name:
+            raise HTTPException(
+                status_code=422,
+                detail="Workspace name must not be empty or whitespace-only.",
+            )
+        if trimmed_name != existing.name:
+            collision_rows = _rows(
+                await db.client.table("projects").select("id").eq("name", trimmed_name).execute()
+            )
+            if any(r["id"] != project_id for r in collision_rows):
+                raise HTTPException(
+                    status_code=409,
+                    detail=(f"A workspace named '{trimmed_name}' already exists."),
+                )
+
+    refreshed = await db.update_project(
+        project_id,
+        name=trimmed_name,
+        hidden=request.hidden,
+    )
+    assert refreshed is not None
+    return refreshed
+
+
 @app.get("/api/projects/{project_id}/runs", response_model=list[RunListItemOut])
 async def list_project_runs(project_id: str, db: DB = Depends(_get_db)):
     return await db.list_runs_for_project(project_id)
+
+
+@app.patch("/api/runs/{run_id}")
+async def update_run(
+    run_id: str,
+    request: UpdateRunRequest,
+    db: DB = Depends(_get_db),
+):
+    """Update a run's hidden flag.
+
+    Today the only patchable field is ``hidden`` — a soft-delete for the
+    run picker so noise runs (smoke tests, failed experiments) don't clutter
+    the list. 422 if the request body is empty. 404 if the run doesn't exist.
+    """
+    if request.hidden is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Body must include 'hidden'.",
+        )
+    existing = await db.get_run(run_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    refreshed = await db.update_run_hidden(run_id, request.hidden)
+    assert refreshed is not None
+    return {
+        "run_id": run_id,
+        "hidden": refreshed.get("hidden", False),
+    }
 
 
 def _extract_snippet(content: str, query: str, window: int = 200) -> str:

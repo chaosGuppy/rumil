@@ -160,11 +160,11 @@ def test_capabilities_endpoint_returns_registry_content() -> None:
     from rumil.api.app import get_capabilities
 
     caps = asyncio.run(get_capabilities())
-    variants = {o["variant"] for o in caps["orchestrators"]}
+    variants = {o.variant for o in caps.orchestrators}
     assert variants == set(ORCHESTRATORS)
 
-    eval_names = {e["name"] for e in caps["eval_types"]}
+    eval_names = {e.name for e in caps.eval_types}
     assert eval_names == set(EVALUATION_TYPES)
 
-    pipeline_names = {p["name"] for p in caps["grounding_pipelines"]}
+    pipeline_names = {p.name for p in caps.grounding_pipelines}
     assert pipeline_names == set(GROUNDING_PIPELINES)

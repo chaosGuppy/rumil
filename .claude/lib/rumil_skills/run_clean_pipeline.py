@@ -28,7 +28,7 @@ import asyncio
 import logging
 import sys
 
-from rumil.clean.grounding import run_grounding_feedback
+from rumil.dispatch import dispatch_grounding_pipeline
 from rumil.models import CallStatus, CallType
 
 from ._format import print_event, print_trace, truncate
@@ -113,25 +113,17 @@ async def main() -> None:
         )
         print_trace(db.run_id)
 
-        if args.pipeline == "grounding":
-            print_event("→", f"running grounding pipeline (from_stage={args.from_stage})")
-            result = await run_grounding_feedback(
-                call.scope_page_id,
-                evaluation_text,
-                db,
-                from_stage=args.from_stage,
-            )
-        else:  # feedback
-            # Lazy import — run_feedback_update has a heavier import tree.
-            from rumil.clean.feedback import run_feedback_update
-
-            print_event("→", f"running feedback pipeline (from_stage={args.from_stage})")
-            result = await run_feedback_update(
-                call.scope_page_id,
-                evaluation_text,
-                db,
-                from_stage=args.from_stage,
-            )
+        print_event(
+            "→",
+            f"running {args.pipeline} pipeline (from_stage={args.from_stage})",
+        )
+        result = await dispatch_grounding_pipeline(
+            args.pipeline,
+            call.scope_page_id,
+            evaluation_text,
+            db,
+            from_stage=args.from_stage,
+        )
 
         print_event("✓", f"done: pipeline call {result.id[:8]}")
         if result.result_summary:

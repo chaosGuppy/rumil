@@ -3700,6 +3700,107 @@ class DB:
         rows = _rows(await self._execute(query))
         return [_row_to_chat_message(r) for r in rows]
 
+    async def branch_chat_conversation(
+        self,
+        source_conversation_id: str,
+        at_seq: int,
+        title: str | None = None,
+    ) -> ChatConversation:
+        """Branch a conversation at `at_seq`, copying messages 0..at_seq into a new convo.
+
+        The source conversation is left untouched — branching is non-destructive,
+        the whole point is to preserve the original thread while forking a new
+        one from a chosen point. Returns the newly-created conversation.
+
+        Raises:
+            ValueError: if the source conversation does not exist, or if
+                `at_seq` is negative, or if no message in the source has a
+                seq <= at_seq (i.e. the branch point is before any message).
+        """
+        source = await self.get_chat_conversation(source_conversation_id)
+        if source is None:
+            raise ValueError(f"source conversation {source_conversation_id} not found")
+        if at_seq < 0:
+            raise ValueError(f"at_seq must be >= 0, got {at_seq}")
+
+        messages = await self.list_chat_messages(source_conversation_id)
+        if not messages:
+            raise ValueError(
+                f"at_seq={at_seq} does not correspond to any message in "
+                f"conversation {source_conversation_id}"
+            )
+        max_seq = messages[-1].seq
+        if at_seq > max_seq:
+            # Reject out-of-range branch points. Clients specify a message
+            # explicitly, so "branch at seq 999" when the last seq is 7 is
+            # almost certainly a bug (stale UI state, off-by-one, etc.).
+            # Fail loud rather than silently cloning the whole conversation.
+            raise ValueError(
+                f"at_seq={at_seq} does not correspond to any message in "
+                f"conversation {source_conversation_id} (max seq is {max_seq})"
+            )
+        to_copy = [m for m in messages if m.seq <= at_seq]
+        if not to_copy:
+            raise ValueError(
+                f"at_seq={at_seq} does not correspond to any message in "
+                f"conversation {source_conversation_id}"
+            )
+
+        effective_seq = to_copy[-1].seq
+        derived_title = title or f"branch of {source.title or '(untitled)'} @ msg {effective_seq}"
+
+        new_conv = ChatConversation(
+            project_id=source.project_id,
+            question_id=source.question_id,
+            title=derived_title,
+            staged=self.staged,
+            run_id=self.run_id if self.staged else None,
+            parent_conversation_id=source.id,
+            branched_at_seq=effective_seq,
+        )
+        await self._execute(
+            self.client.table("chat_conversations").insert(
+                {
+                    "id": new_conv.id,
+                    "project_id": new_conv.project_id,
+                    "question_id": new_conv.question_id,
+                    "title": new_conv.title,
+                    "created_at": new_conv.created_at.isoformat(),
+                    "updated_at": new_conv.updated_at.isoformat(),
+                    "staged": new_conv.staged,
+                    "run_id": new_conv.run_id,
+                    "parent_conversation_id": new_conv.parent_conversation_id,
+                    "branched_at_seq": new_conv.branched_at_seq,
+                }
+            )
+        )
+
+        # Bulk-insert copies of the messages. We deliberately allocate fresh
+        # primary keys (so the new rows are independent of the source) but
+        # preserve role/content/seq/question_id — the UI relies on seq to
+        # render chronological order, and on question_id for the off-question
+        # tags. ts is set to now() so the new conversation's activity reflects
+        # when the branch happened, not when the original was written.
+        now_iso = datetime.now(UTC).isoformat()
+        new_rows = [
+            {
+                "id": str(uuid.uuid4()),
+                "conversation_id": new_conv.id,
+                "role": m.role.value,
+                "content": m.content,
+                "seq": m.seq,
+                "ts": now_iso,
+                "staged": new_conv.staged,
+                "run_id": new_conv.run_id,
+                "question_id": m.question_id,
+            }
+            for m in to_copy
+        ]
+        if new_rows:
+            await self._execute(self.client.table("chat_messages").insert(new_rows))
+
+        return new_conv
+
 
 def _row_to_chat_conversation(row: dict[str, Any]) -> ChatConversation:
     return ChatConversation(
@@ -3712,6 +3813,8 @@ def _row_to_chat_conversation(row: dict[str, Any]) -> ChatConversation:
         deleted_at=row.get("deleted_at"),
         staged=row.get("staged", False),
         run_id=row.get("run_id"),
+        parent_conversation_id=row.get("parent_conversation_id"),
+        branched_at_seq=row.get("branched_at_seq"),
     )
 
 

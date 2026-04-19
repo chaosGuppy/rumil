@@ -414,6 +414,9 @@ export interface ChatConversationSummary {
   title: string;
   created_at: string;
   updated_at: string;
+  // Branching metadata. Null on original, non-branched conversations.
+  parent_conversation_id?: string | null;
+  branched_at_seq?: number | null;
 }
 
 export interface ChatConversationDetail extends ChatConversationSummary {
@@ -486,6 +489,38 @@ export async function deleteChatConversation(conversationId: string): Promise<vo
     method: "DELETE",
   });
   if (!res.ok) throw new Error(`API error: ${res.status}`);
+}
+
+/**
+ * Branch a conversation at a specific message seq, creating a new
+ * conversation seeded with messages 0..atSeq. The parent conversation
+ * is preserved intact — branching is non-destructive.
+ *
+ * Returns the new conversation in detail shape (includes the copied
+ * messages) so the caller can swap the active conversation and render
+ * the truncated transcript without a second round trip.
+ */
+export async function branchChatConversation(
+  conversationId: string,
+  atSeq: number,
+  title?: string,
+): Promise<ChatConversationDetail> {
+  const res = await fetch(
+    `${API_BASE}/api/chat/conversations/${conversationId}/branch`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        at_seq: atSeq,
+        title: title ?? null,
+      }),
+    },
+  );
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    throw new Error(`branch failed (${res.status}): ${errText}`);
+  }
+  return res.json();
 }
 
 // Trace-related types. Mirror subsets of the API schemas (CallSummary,

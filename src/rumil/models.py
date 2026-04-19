@@ -545,6 +545,13 @@ class ChatConversation(BaseModel):
     deleted_at: datetime | None = None
     staged: bool = False
     run_id: str | None = None
+    # Branching metadata. `parent_conversation_id` is the source conversation
+    # this was branched from (null for original, non-branched conversations);
+    # `branched_at_seq` is the highest `chat_messages.seq` value that was copied
+    # over from the parent. See
+    # supabase/migrations/20260419023712_chat_conversation_branch_fields.sql.
+    parent_conversation_id: str | None = None
+    branched_at_seq: int | None = None
 
 
 class ChatMessage(BaseModel):

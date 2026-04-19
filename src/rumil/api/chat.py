@@ -8,6 +8,7 @@ dispatch — the same capabilities as the CC skills layer, exposed via HTTP.
 import asyncio
 import json
 import logging
+import time
 import uuid
 from collections.abc import AsyncIterator, Callable, Sequence
 from datetime import UTC, datetime, timedelta
@@ -99,6 +100,11 @@ class ConversationListItem(BaseModel):
     title: str
     created_at: str
     updated_at: str
+    # Branching metadata. Null for original, non-branched conversations.
+    # Surfaced in the list so the sidebar can prefix branches with a "↪"
+    # marker without having to fetch each conversation individually.
+    parent_conversation_id: str | None = None
+    branched_at_seq: int | None = None
 
 
 class ConversationDetail(BaseModel):
@@ -109,6 +115,8 @@ class ConversationDetail(BaseModel):
     created_at: str
     updated_at: str
     messages: list[dict[str, Any]]
+    parent_conversation_id: str | None = None
+    branched_at_seq: int | None = None
 
 
 class CreateConversationRequest(BaseModel):
@@ -120,6 +128,20 @@ class CreateConversationRequest(BaseModel):
 
 class UpdateConversationRequest(BaseModel):
     title: str
+
+
+class BranchConversationRequest(BaseModel):
+    """Body for POST /api/chat/conversations/{id}/branch.
+
+    Copies every message in the source conversation where seq <= at_seq
+    into a brand-new conversation, linked via parent_conversation_id.
+    The source is untouched.
+    """
+
+    at_seq: int
+    # Optional title override. If omitted, the backend auto-generates one
+    # in the form "branch of <parent title> @ msg <seq>".
+    title: str | None = None
 
 
 def _derive_title(first_user_message: str) -> str:
@@ -1686,7 +1708,117 @@ async def _execute_tool(
         }
         return json.dumps(payload)
 
+    if name == "set_view":
+        return await _execute_set_view(tool_input, db)
+
     return f"Unknown tool: {name}"
+
+
+async def _resolve_run_id(db: DB, run_id: str) -> str | None:
+    """Resolve a run ID to a full UUID. Accepts full UUIDs or 8-char prefixes.
+
+    Scoped to the active project when one is set, so the same short prefix
+    in two projects doesn't collide.
+    """
+    if not run_id:
+        return None
+    query = db.client.table("runs").select("id").eq("id", run_id)
+    if db.project_id:
+        query = query.eq("project_id", db.project_id)
+    rows = (await db._execute(query)).data or []
+    if rows:
+        return rows[0]["id"]
+    if len(run_id) <= 8:
+        query = db.client.table("runs").select("id").like("id", f"{run_id}%")
+        if db.project_id:
+            query = query.eq("project_id", db.project_id)
+        rows = (await db._execute(query)).data or []
+        if len(rows) == 1:
+            return rows[0]["id"]
+    return None
+
+
+async def _execute_set_view(tool_input: dict[str, Any], db: DB) -> str:
+    """Build a navigation directive for the frontend.
+
+    Returns a JSON string containing either `__navigate__` (on success) or
+    `error` (on validation failure). The frontend parses tool_use_result
+    payloads looking for `__navigate__` and calls its onNavigate callback.
+    """
+    view = tool_input.get("view")
+    if not isinstance(view, str) or view not in _VALID_VIEW_MODES:
+        return json.dumps(
+            {
+                "error": (
+                    f"Invalid view '{view}'. Must be one of: "
+                    + ", ".join(sorted(_VALID_VIEW_MODES))
+                )
+            }
+        )
+
+    run_id_in = tool_input.get("run_id")
+    call_id_in = tool_input.get("call_id")
+    question_id_in = tool_input.get("question_id")
+    panes_in = tool_input.get("panes")
+
+    if view == "trace" and not run_id_in:
+        return json.dumps({"error": "view='trace' requires a run_id (short or full UUID)."})
+
+    full_run_id: str | None = None
+    run_id_short: str | None = None
+    if run_id_in:
+        full_run_id = await _resolve_run_id(db, run_id_in)
+        if not full_run_id:
+            return json.dumps({"error": f"Run '{run_id_in}' not found."})
+        run_id_short = full_run_id[:8]
+
+    full_call_id: str | None = None
+    call_id_short: str | None = None
+    if call_id_in:
+        full_call_id = await db.resolve_call_id(call_id_in)
+        if not full_call_id:
+            return json.dumps({"error": f"Call '{call_id_in}' not found."})
+        call_id_short = full_call_id[:8]
+
+    full_question_id: str | None = None
+    question_id_short: str | None = None
+    if question_id_in:
+        full_question_id = await db.resolve_page_id(question_id_in)
+        if not full_question_id:
+            return json.dumps({"error": f"Question '{question_id_in}' not found."})
+        question_id_short = full_question_id[:8]
+
+    normalized_panes: list[str] = []
+    if panes_in is not None:
+        if not isinstance(panes_in, list):
+            return json.dumps({"error": "panes must be a list of short IDs."})
+        for raw in panes_in:
+            if not isinstance(raw, str):
+                return json.dumps({"error": f"Invalid pane entry: {raw!r}"})
+            normalized = raw.strip().lower()
+            if len(normalized) > 8:
+                normalized = normalized[:8]
+            if len(normalized) != 8 or any(c not in "0123456789abcdef" for c in normalized):
+                return json.dumps({"error": f"Invalid pane '{raw}': expected 8-char hex short ID."})
+            normalized_panes.append(normalized)
+
+    if view == "trace":
+        assert run_id_short is not None
+        message = f"Navigating to trace view for run {run_id_short}…"
+    else:
+        message = f"Switching to {view} view."
+
+    directive: dict[str, Any] = {
+        "view": view,
+        "run_id": full_run_id,
+        "run_id_short": run_id_short,
+        "call_id": full_call_id,
+        "call_id_short": call_id_short,
+        "question_id": full_question_id,
+        "question_id_short": question_id_short,
+        "panes": normalized_panes,
+    }
+    return json.dumps({"__navigate__": directive, "message": message})
 
 
 def _pick_call_type(total_pages: int, missing_credence: int, step: int) -> str:

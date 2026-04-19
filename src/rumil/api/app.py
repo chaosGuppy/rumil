@@ -19,6 +19,7 @@ from pydantic import BaseModel, TypeAdapter, ValidationError
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from rumil.api.chat import (
+    BranchConversationRequest,
     ChatRequest,
     ChatResponse,
     ConversationDetail,
@@ -1778,6 +1779,8 @@ async def list_chat_conversations(
             title=c.title,
             created_at=c.created_at.isoformat(),
             updated_at=c.updated_at.isoformat(),
+            parent_conversation_id=c.parent_conversation_id,
+            branched_at_seq=c.branched_at_seq,
         )
         for c in conversations
     ]
@@ -1813,6 +1816,8 @@ async def get_chat_conversation(
             }
             for m in messages
         ],
+        parent_conversation_id=conv.parent_conversation_id,
+        branched_at_seq=conv.branched_at_seq,
     )
 
 
@@ -1848,6 +1853,8 @@ async def create_chat_conversation(
         title=conv.title,
         created_at=conv.created_at.isoformat(),
         updated_at=conv.updated_at.isoformat(),
+        parent_conversation_id=conv.parent_conversation_id,
+        branched_at_seq=conv.branched_at_seq,
     )
 
 
@@ -1873,6 +1880,8 @@ async def update_chat_conversation(
         title=refreshed.title,
         created_at=refreshed.created_at.isoformat(),
         updated_at=refreshed.updated_at.isoformat(),
+        parent_conversation_id=refreshed.parent_conversation_id,
+        branched_at_seq=refreshed.branched_at_seq,
     )
 
 
@@ -1886,6 +1895,59 @@ async def delete_chat_conversation(
         raise HTTPException(status_code=404, detail="Conversation not found")
     await db.soft_delete_chat_conversation(conversation_id)
     return {"ok": True, "id": conversation_id}
+
+
+@app.post(
+    "/api/chat/conversations/{conversation_id}/branch",
+    response_model=ConversationDetail,
+)
+async def branch_chat_conversation(
+    conversation_id: str,
+    request: BranchConversationRequest,
+    db: DB = Depends(_get_db),
+):
+    """Fork a conversation at message `at_seq` into a new one.
+
+    Copies every message with seq <= at_seq from the source into a new
+    conversation, tags the new conversation with parent_conversation_id +
+    branched_at_seq, and returns the new conversation (detail-shaped, so
+    the frontend has the copied messages ready without a second round trip).
+    The parent conversation is NOT modified — branching is additive.
+    """
+    existing = await db.get_chat_conversation(conversation_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    try:
+        new_conv = await db.branch_chat_conversation(
+            source_conversation_id=conversation_id,
+            at_seq=request.at_seq,
+            title=request.title,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    messages = await db.list_chat_messages(new_conv.id)
+    return ConversationDetail(
+        id=new_conv.id,
+        project_id=new_conv.project_id,
+        question_id=new_conv.question_id,
+        title=new_conv.title,
+        created_at=new_conv.created_at.isoformat(),
+        updated_at=new_conv.updated_at.isoformat(),
+        messages=[
+            {
+                "id": m.id,
+                "role": m.role.value,
+                "content": m.content,
+                "seq": m.seq,
+                "ts": m.ts.isoformat(),
+                "question_id": m.question_id,
+            }
+            for m in messages
+        ],
+        parent_conversation_id=new_conv.parent_conversation_id,
+        branched_at_seq=new_conv.branched_at_seq,
+    )
 
 
 @app.get(

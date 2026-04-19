@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useLayoutEffect } from "react";
+import { createPortal } from "react-dom";
 
 interface CredenceBadgeProps {
   credence: number | null;
@@ -90,14 +91,59 @@ function formatTitle(
   return parts.join(" · ");
 }
 
-function BadgeLegend({ onClose }: { onClose: () => void }) {
+const POPOVER_WIDTH = 280;
+const POPOVER_GAP = 6;
+const VIEWPORT_MARGIN = 8;
+
+function BadgeLegend({
+  triggerEl,
+  onClose,
+}: {
+  triggerEl: HTMLElement;
+  onClose: () => void;
+}) {
   const popoverRef = useRef<HTMLDivElement>(null);
+  const [coords, setCoords] = useState<{ top: number; left: number } | null>(
+    null,
+  );
+
+  useLayoutEffect(() => {
+    function update() {
+      const rect = triggerEl.getBoundingClientRect();
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const popoverH = popoverRef.current?.offsetHeight ?? 0;
+      let left = rect.right - POPOVER_WIDTH;
+      if (left < VIEWPORT_MARGIN) left = VIEWPORT_MARGIN;
+      if (left + POPOVER_WIDTH > vw - VIEWPORT_MARGIN) {
+        left = vw - VIEWPORT_MARGIN - POPOVER_WIDTH;
+      }
+      let top = rect.bottom + POPOVER_GAP;
+      if (popoverH > 0 && top + popoverH > vh - VIEWPORT_MARGIN) {
+        const aboveTop = rect.top - POPOVER_GAP - popoverH;
+        if (aboveTop >= VIEWPORT_MARGIN) top = aboveTop;
+      }
+      setCoords({ top, left });
+    }
+    update();
+    const ro = new ResizeObserver(update);
+    if (popoverRef.current) ro.observe(popoverRef.current);
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, [triggerEl]);
 
   useEffect(() => {
     function onDocClick(e: MouseEvent) {
+      const target = e.target as Node;
       if (
         popoverRef.current &&
-        !popoverRef.current.contains(e.target as Node)
+        !popoverRef.current.contains(target) &&
+        !triggerEl.contains(target)
       ) {
         onClose();
       }
@@ -111,15 +157,20 @@ function BadgeLegend({ onClose }: { onClose: () => void }) {
       document.removeEventListener("mousedown", onDocClick);
       document.removeEventListener("keydown", onEsc);
     };
-  }, [onClose]);
+  }, [onClose, triggerEl]);
 
-  return (
+  return createPortal(
     <div
       ref={popoverRef}
       className="credence-legend-popover"
       role="dialog"
       aria-label="Epistemic badge legend"
       onClick={(e) => e.stopPropagation()}
+      style={{
+        top: coords?.top ?? 0,
+        left: coords?.left ?? 0,
+        visibility: coords ? "visible" : "hidden",
+      }}
     >
       <div className="credence-legend-section">
         <div className="credence-legend-heading">
@@ -153,12 +204,14 @@ function BadgeLegend({ onClose }: { onClose: () => void }) {
           ))}
         </ul>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
 export function CredenceBadge({ credence, robustness }: CredenceBadgeProps) {
   const [legendOpen, setLegendOpen] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement>(null);
 
   if (credence === null && robustness === null) return null;
 
@@ -196,6 +249,7 @@ export function CredenceBadge({ credence, robustness }: CredenceBadgeProps) {
       )}
       <span className="credence-help-wrapper">
         <button
+          ref={buttonRef}
           type="button"
           className="credence-help-btn"
           aria-label="Show epistemic scale legend"
@@ -207,7 +261,12 @@ export function CredenceBadge({ credence, robustness }: CredenceBadgeProps) {
         >
           ?
         </button>
-        {legendOpen && <BadgeLegend onClose={() => setLegendOpen(false)} />}
+        {legendOpen && buttonRef.current && (
+          <BadgeLegend
+            triggerEl={buttonRef.current}
+            onClose={() => setLegendOpen(false)}
+          />
+        )}
       </span>
     </span>
   );

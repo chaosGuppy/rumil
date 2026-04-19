@@ -34,6 +34,7 @@ from rumil.context import build_embedding_based_context
 from rumil.database import DB
 from rumil.embeddings import embed_query, search_pages_by_vector
 from rumil.models import (
+    Call,
     CallType,
     ChatConversation,
     ChatMessage,
@@ -1706,19 +1707,23 @@ async def _run_dispatch(
     params: dict[str, Any],
     on_progress: Callable[[str], Any] | None = None,
 ) -> str:
-    """Run a single call inline with progress updates."""
+    """Run a single call inline with progress updates.
+
+    Broad try/except around construction AND run so the chat never loses
+    a tool_result — if the runner fails to construct (e.g. required kwargs
+    missing), we still return an error string to Claude, which then
+    continues the conversation instead of 400'ing on the next turn.
+    """
     question_id = params["question_id"]
     headline = params.get("headline", question_id[:8])
     call_type_str = params["call_type"]
-
-    ct, cls = _CALL_TYPE_MAP[call_type_str]
-    call = await db.create_call(ct, scope_page_id=question_id)
-    runner = cls(question_id, call, db)
-
-    if on_progress:
-        on_progress(f"Running {call_type_str} on '{headline[:40]}'...")
-
+    call = None
     try:
+        ct, cls = _CALL_TYPE_MAP[call_type_str]
+        call = await db.create_call(ct, scope_page_id=question_id)
+        runner = _build_runner(cls, call_type_str, question_id, call, db)
+        if on_progress:
+            on_progress(f"Running {call_type_str} on '{headline[:40]}'...")
         await runner.run()
         if on_progress:
             on_progress(f"{call_type_str} call {call.id[:8]} completed")
@@ -1727,8 +1732,33 @@ async def _run_dispatch(
             f"Refresh the view to see new findings."
         )
     except Exception as e:
-        log.exception("Dispatch call %s failed", call.id[:8])
-        return f"{call_type_str} call {call.id[:8]} failed: {e}"
+        call_ref = call.id[:8] if call else "(pre-create)"
+        log.exception("Dispatch call %s failed", call_ref)
+        return f"{call_type_str} call {call_ref} failed: {e}"
+
+
+def _build_runner(
+    cls: type[CallRunner],
+    call_type_str: str,
+    question_id: str,
+    call: Call,
+    db: DB,
+) -> CallRunner:
+    """Construct a CallRunner with the right keyword args per call type.
+
+    FindConsiderationsCall requires max_rounds + fruit_threshold. Other
+    call types take no required kwargs, so we just pass positional args.
+    Defaults mirror common.find_considerations_until_done's shape.
+    """
+    if cls is FindConsiderationsCall:
+        return cls(
+            question_id,
+            call,
+            db,
+            max_rounds=4,
+            fruit_threshold=4,
+        )
+    return cls(question_id, call, db)
 
 
 async def _run_research(

@@ -871,3 +871,192 @@ async def test_build_research_tree_shows_run_ids(tmp_db, seeded_graph):
 
     on = await build_research_tree(root.id, tmp_db, max_depth=2, show_run_ids=True)
     assert f"run={tmp_db.run_id[:8]}" in on
+
+
+async def test_get_recent_activity_tool_registered():
+    names = {t["name"] for t in TOOLS}
+    assert "get_recent_activity" in names
+
+
+async def test_get_recent_activity_happy_path(tmp_db, seeded_graph):
+    import json
+
+    root = seeded_graph["root"]
+    await tmp_db._execute(
+        tmp_db.client.table("runs")
+        .update({"config": {"orchestrator": "two_phase"}, "question_id": root.id})
+        .eq("id", tmp_db.run_id)
+    )
+
+    call = Call(
+        call_type=CallType.FIND_CONSIDERATIONS,
+        workspace=Workspace.RESEARCH,
+        scope_page_id=root.id,
+        status=CallStatus.COMPLETE,
+        cost_usd=0.42,
+    )
+    await tmp_db.save_call(call)
+
+    result = await _execute_tool("get_recent_activity", {}, tmp_db)
+    payload = json.loads(result)
+
+    assert payload["window_hours"] == 24
+    assert payload["scope_question_id"] is None
+
+    run_ids = {r["run_id"] for r in payload["recent_runs"]}
+    assert tmp_db.run_id[:8] in run_ids
+    matching_run = next(r for r in payload["recent_runs"] if r["run_id"] == tmp_db.run_id[:8])
+    assert matching_run["orchestrator"] == "two_phase"
+    assert matching_run["cost_usd"] == pytest.approx(0.42)
+    assert matching_run["question_summary"] == root.headline
+    assert matching_run["staged"] is False
+
+    page_ids = {p["page_id"] for p in payload["recent_pages"]}
+    assert root.id[:8] in page_ids
+    assert seeded_graph["strong"].id[:8] in page_ids
+
+    dispatch_ids = {d["call_id"] for d in payload["recent_dispatches"]}
+    assert call.id[:8] in dispatch_ids
+    matching_dispatch = next(d for d in payload["recent_dispatches"] if d["call_id"] == call.id[:8])
+    assert matching_dispatch["call_type"] == "find_considerations"
+    assert matching_dispatch["scope_page_id"] == root.id[:8]
+
+
+async def test_get_recent_activity_question_scope_filters(tmp_db, seeded_graph):
+    import json
+    import uuid
+
+    root = seeded_graph["root"]
+    await tmp_db._execute(
+        tmp_db.client.table("runs")
+        .update({"question_id": root.id, "config": {"orchestrator": "two_phase"}})
+        .eq("id", tmp_db.run_id)
+    )
+
+    other_root = Page(
+        page_type=PageType.QUESTION,
+        layer=PageLayer.SQUIDGY,
+        workspace=Workspace.RESEARCH,
+        headline="Unrelated question about foo",
+        content="Unrelated question about foo",
+    )
+    await tmp_db.save_page(other_root)
+
+    other_run_id = str(uuid.uuid4())
+    other_db = await DB.create(run_id=other_run_id)
+    other_db.project_id = tmp_db.project_id
+    try:
+        await other_db.create_run(
+            name="other", question_id=other_root.id, config={"orchestrator": "claim_investigation"}
+        )
+        other_page = Page(
+            page_type=PageType.CLAIM,
+            layer=PageLayer.SQUIDGY,
+            workspace=Workspace.RESEARCH,
+            headline="Claim from unrelated run",
+            content="Claim from unrelated run",
+            run_id=other_run_id,
+        )
+        await other_db.save_page(other_page)
+        other_call = Call(
+            call_type=CallType.ASSESS,
+            workspace=Workspace.RESEARCH,
+            scope_page_id=other_root.id,
+            status=CallStatus.COMPLETE,
+            cost_usd=0.01,
+        )
+        await other_db.save_call(other_call)
+
+        result = await _execute_tool(
+            "get_recent_activity",
+            {"question_id": root.id[:8]},
+            tmp_db,
+        )
+        payload = json.loads(result)
+
+        assert payload["scope_question_id"] == root.id[:8]
+
+        run_ids = {r["run_id"] for r in payload["recent_runs"]}
+        assert tmp_db.run_id[:8] in run_ids
+        assert other_run_id[:8] not in run_ids
+
+        page_ids = {p["page_id"] for p in payload["recent_pages"]}
+        assert other_page.id[:8] not in page_ids
+
+        dispatch_ids = {d["call_id"] for d in payload["recent_dispatches"]}
+        assert other_call.id[:8] not in dispatch_ids
+    finally:
+        await other_db.delete_run_data(delete_project=False)
+        await other_db.close()
+
+
+async def test_get_recent_activity_time_window_excludes_old(tmp_db, seeded_graph):
+    import json
+
+    root = seeded_graph["root"]
+    old_ts = (datetime.now(UTC) - timedelta(hours=48)).isoformat()
+    await tmp_db._execute(
+        tmp_db.client.table("runs")
+        .update({"created_at": old_ts, "config": {"orchestrator": "two_phase"}})
+        .eq("id", tmp_db.run_id)
+    )
+
+    old_call = Call(
+        call_type=CallType.FIND_CONSIDERATIONS,
+        workspace=Workspace.RESEARCH,
+        scope_page_id=root.id,
+        status=CallStatus.COMPLETE,
+        cost_usd=0.10,
+    )
+    await tmp_db.save_call(old_call)
+    await tmp_db._execute(
+        tmp_db.client.table("calls").update({"created_at": old_ts}).eq("id", old_call.id)
+    )
+
+    await tmp_db._execute(
+        tmp_db.client.table("pages").update({"created_at": old_ts}).eq("id", root.id)
+    )
+
+    result = await _execute_tool("get_recent_activity", {"hours": 24}, tmp_db)
+    payload = json.loads(result)
+
+    run_ids = {r["run_id"] for r in payload["recent_runs"]}
+    assert tmp_db.run_id[:8] not in run_ids
+
+    dispatch_ids = {d["call_id"] for d in payload["recent_dispatches"]}
+    assert old_call.id[:8] not in dispatch_ids
+
+    page_ids = {p["page_id"] for p in payload["recent_pages"]}
+    assert root.id[:8] not in page_ids
+
+
+async def test_get_recent_activity_respects_limit(tmp_db, seeded_graph):
+    import json
+
+    root = seeded_graph["root"]
+
+    for _ in range(8):
+        c = Call(
+            call_type=CallType.FIND_CONSIDERATIONS,
+            workspace=Workspace.RESEARCH,
+            scope_page_id=root.id,
+            status=CallStatus.COMPLETE,
+            cost_usd=0.01,
+        )
+        await tmp_db.save_call(c)
+
+    result = await _execute_tool("get_recent_activity", {"limit": 3}, tmp_db)
+    payload = json.loads(result)
+
+    assert len(payload["recent_dispatches"]) <= 3
+    assert len(payload["recent_pages"]) <= 3
+    assert len(payload["recent_runs"]) <= 3
+
+
+async def test_get_recent_activity_unknown_question(tmp_db):
+    result = await _execute_tool(
+        "get_recent_activity",
+        {"question_id": "deadbeef"},
+        tmp_db,
+    )
+    assert "not found" in result

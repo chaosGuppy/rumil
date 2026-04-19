@@ -10,7 +10,7 @@ import json
 import logging
 import uuid
 from collections.abc import AsyncIterator, Callable, Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -718,6 +718,37 @@ TOOLS: list[dict[str, Any]] = [
                 },
             },
             "required": ["page_id_a", "page_id_b"],
+        },
+    },
+    {
+        "name": "get_recent_activity",
+        "description": (
+            "Workspace-level recent activity — recent runs, newly-created "
+            "pages, and recent call dispatches in a time window. Use to "
+            "answer 'what happened recently in this workspace' or to "
+            "ground the conversation in what research has actually been "
+            "produced. Optionally scope to a specific question."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "question_id": {
+                    "type": "string",
+                    "description": (
+                        "Optional short ID of a question. If set, scope to "
+                        "runs whose question_id matches, pages from those "
+                        "runs, and calls scoped to the question."
+                    ),
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max items per sub-list (default 10, max 50)",
+                },
+                "hours": {
+                    "type": "integer",
+                    "description": "Time window in hours (default 24, max 720)",
+                },
+            },
         },
     },
 ]
@@ -1523,6 +1554,136 @@ async def _execute_tool(
         call = await db.create_call(CallType.CHAT_DIRECT, scope_page_id=None)
         result = await move_def.execute(payload, call, db)
         return f"Duplicate reported ({a_short} <-> {b_short}): {result.message}"
+
+    if name == "get_recent_activity":
+        qid_short = tool_input.get("question_id")
+        limit = max(1, min(int(tool_input.get("limit", 10)), 50))
+        hours = max(1, min(int(tool_input.get("hours", 24)), 720))
+        cutoff = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
+
+        full_qid: str | None = None
+        if qid_short:
+            full_qid = await db.resolve_page_id(qid_short)
+            if not full_qid:
+                return f"Question '{qid_short}' not found."
+
+        runs_query = (
+            db.client.table("runs")
+            .select("id, name, question_id, config, created_at, staged")
+            .gte("created_at", cutoff)
+            .order("created_at", desc=True)
+            .limit(limit)
+        )
+        if db.project_id:
+            runs_query = runs_query.eq("project_id", db.project_id)
+        if full_qid:
+            runs_query = runs_query.eq("question_id", full_qid)
+        run_rows = (await db._execute(runs_query)).data or []
+
+        cost_query = db.client.table("calls").select("run_id, cost_usd").gte("created_at", cutoff)
+        if db.project_id:
+            cost_query = cost_query.eq("project_id", db.project_id)
+        run_ids_in_window = [r["id"] for r in run_rows]
+        if run_ids_in_window:
+            cost_query = cost_query.in_("run_id", run_ids_in_window)
+        cost_rows = (await db._execute(cost_query)).data or []
+        cost_by_run: dict[str, float] = {}
+        for row in cost_rows:
+            rid = row.get("run_id")
+            if not rid:
+                continue
+            cost_by_run[rid] = cost_by_run.get(rid, 0.0) + float(row.get("cost_usd") or 0.0)
+
+        question_page_ids = [r["question_id"] for r in run_rows if r.get("question_id")]
+        question_pages = (
+            await db.get_pages_by_ids(list(set(question_page_ids))) if question_page_ids else {}
+        )
+        recent_runs: list[dict[str, Any]] = []
+        for r in run_rows:
+            config = r.get("config") or {}
+            if not isinstance(config, dict):
+                config = {}
+            qid = r.get("question_id")
+            q_page = question_pages.get(qid) if qid else None
+            recent_runs.append(
+                {
+                    "run_id": str(r["id"])[:8],
+                    "name": r.get("name") or "",
+                    "orchestrator": config.get("orchestrator"),
+                    "cost_usd": round(cost_by_run.get(r["id"], 0.0), 4),
+                    "created_at": r.get("created_at"),
+                    "staged": bool(r.get("staged")),
+                    "question_summary": q_page.headline if q_page else None,
+                }
+            )
+
+        pages_query = (
+            db.client.table("pages")
+            .select("id, page_type, headline, created_at, run_id, is_superseded")
+            .gte("created_at", cutoff)
+            .order("created_at", desc=True)
+            .limit(limit * 4)
+        )
+        if db.project_id:
+            pages_query = pages_query.eq("project_id", db.project_id)
+        pages_query = db._staged_filter(pages_query)
+        if full_qid:
+            scoped_runs_query = db.client.table("runs").select("id").eq("question_id", full_qid)
+            if db.project_id:
+                scoped_runs_query = scoped_runs_query.eq("project_id", db.project_id)
+            scoped_run_rows = (await db._execute(scoped_runs_query)).data or []
+            scoped_run_ids = [row["id"] for row in scoped_run_rows]
+            if scoped_run_ids:
+                pages_query = pages_query.in_("run_id", scoped_run_ids)
+            else:
+                pages_query = pages_query.eq("run_id", "__none__")
+        page_rows = (await db._execute(pages_query)).data or []
+        recent_pages: list[dict[str, Any]] = []
+        for p in page_rows:
+            if p.get("is_superseded"):
+                continue
+            recent_pages.append(
+                {
+                    "page_id": str(p["id"])[:8],
+                    "page_type": p.get("page_type"),
+                    "headline": p.get("headline") or "",
+                    "created_at": p.get("created_at"),
+                    "run_id": str(p["run_id"])[:8] if p.get("run_id") else None,
+                }
+            )
+            if len(recent_pages) >= limit:
+                break
+
+        calls_query = (
+            db.client.table("calls")
+            .select("id, call_type, scope_page_id, created_at")
+            .gte("created_at", cutoff)
+            .order("created_at", desc=True)
+            .limit(limit)
+        )
+        if db.project_id:
+            calls_query = calls_query.eq("project_id", db.project_id)
+        if full_qid:
+            calls_query = calls_query.eq("scope_page_id", full_qid)
+        call_rows = (await db._execute(calls_query)).data or []
+        recent_dispatches = [
+            {
+                "call_id": str(c["id"])[:8],
+                "call_type": c.get("call_type"),
+                "scope_page_id": (str(c["scope_page_id"])[:8] if c.get("scope_page_id") else None),
+                "created_at": c.get("created_at"),
+            }
+            for c in call_rows
+        ]
+
+        payload = {
+            "window_hours": hours,
+            "scope_question_id": full_qid[:8] if full_qid else None,
+            "recent_runs": recent_runs,
+            "recent_pages": recent_pages,
+            "recent_dispatches": recent_dispatches,
+        }
+        return json.dumps(payload)
 
     return f"Unknown tool: {name}"
 

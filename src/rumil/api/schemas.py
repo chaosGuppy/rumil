@@ -61,6 +61,48 @@ class PageCountsOut(BaseModel):
     judgements: int
 
 
+class ViewItemOut(BaseModel):
+    """One item inside a QuestionView section — a page plus the links that
+    connect it to the question (or the surrounding question subgraph)."""
+
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    page: Page
+    links: list[PageLink]
+    section: str
+
+
+class ViewSectionOut(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    name: str
+    description: str
+    items: list[ViewItemOut]
+
+
+class ViewHealthOut(BaseModel):
+    """Aggregate health signals on a QuestionView — how much research exists
+    and where the obvious gaps are."""
+
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    total_pages: int
+    missing_credence: int
+    missing_importance: int
+    child_questions_without_judgements: int
+    max_depth: int
+
+
+class QuestionViewOut(BaseModel):
+    """Response model for GET /api/questions/{id}/view."""
+
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    question: Page
+    sections: list[ViewSectionOut]
+    health: ViewHealthOut
+
+
 class ProjectSummaryOut(BaseModel):
     """Per-project summary row for the public landing page.
 

@@ -56,6 +56,7 @@ from rumil.api.schemas import (
     ProjectStatsOut,
     ProjectSummaryOut,
     QuestionStatsOut,
+    QuestionViewOut,
     RealtimeConfigOut,
     RefineIterationOut,
     RefineIterationVerdictOut,
@@ -71,11 +72,14 @@ from rumil.api.schemas import (
     TraceEventOut,
     UpdateProjectRequest,
     UpdateRunRequest,
+    ViewHealthOut,
     ViewItemFlagDeleteOut,
     ViewItemFlagOut,
     ViewItemFlagRequest,
+    ViewItemOut,
     ViewItemReadOut,
     ViewItemReadRequest,
+    ViewSectionOut,
 )
 from rumil.calls.adversarial_review import AdversarialVerdict, is_verdict_expired
 from rumil.database import DB, _row_to_call, _rows
@@ -1792,7 +1796,7 @@ async def _apply_suggestion(db: DB, suggestion: Suggestion) -> dict:
     return {"action": "unknown"}
 
 
-@app.get("/api/questions/{question_id}/view")
+@app.get("/api/questions/{question_id}/view", response_model=QuestionViewOut)
 async def get_question_view(
     question_id: str,
     importance_threshold: int = 3,
@@ -1808,31 +1812,27 @@ async def get_question_view(
             f"Page {question_id} is not a question page; cannot build a view",
         )
     view = await build_view(db, resolved, importance_threshold=importance_threshold)
-    return {
-        "question": view.question,
-        "sections": [
-            {
-                "name": s.name,
-                "description": s.description,
-                "items": [
-                    {
-                        "page": item.page,
-                        "links": item.links,
-                        "section": item.section,
-                    }
+    return QuestionViewOut(
+        question=view.question,
+        sections=[
+            ViewSectionOut(
+                name=s.name,
+                description=s.description,
+                items=[
+                    ViewItemOut(page=item.page, links=item.links, section=item.section)
                     for item in s.items
                 ],
-            }
+            )
             for s in view.sections
         ],
-        "health": {
-            "total_pages": view.health.total_pages,
-            "missing_credence": view.health.missing_credence,
-            "missing_importance": view.health.missing_importance,
-            "child_questions_without_judgements": view.health.child_questions_without_judgements,
-            "max_depth": view.health.max_depth,
-        },
-    }
+        health=ViewHealthOut(
+            total_pages=view.health.total_pages,
+            missing_credence=view.health.missing_credence,
+            missing_importance=view.health.missing_importance,
+            child_questions_without_judgements=view.health.child_questions_without_judgements,
+            max_depth=view.health.max_depth,
+        ),
+    )
 
 
 @app.get("/api/config", response_model=AppConfigOut)

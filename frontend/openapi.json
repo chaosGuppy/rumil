@@ -2733,7 +2733,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionViewOut"
+                }
               }
             }
           },
@@ -7165,6 +7167,31 @@
         ],
         "title": "QuestionStatsOut"
       },
+      "QuestionViewOut": {
+        "properties": {
+          "question": {
+            "$ref": "#/components/schemas/Page"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/ViewSectionOut"
+            },
+            "type": "array",
+            "title": "Sections"
+          },
+          "health": {
+            "$ref": "#/components/schemas/ViewHealthOut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "question",
+          "sections",
+          "health"
+        ],
+        "title": "QuestionViewOut",
+        "description": "Response model for GET /api/questions/{id}/view."
+      },
       "RealtimeConfigOut": {
         "properties": {
           "url": {
@@ -8556,6 +8583,40 @@
         ],
         "title": "ViewCreatedEventOut"
       },
+      "ViewHealthOut": {
+        "properties": {
+          "total_pages": {
+            "type": "integer",
+            "title": "Total Pages"
+          },
+          "missing_credence": {
+            "type": "integer",
+            "title": "Missing Credence"
+          },
+          "missing_importance": {
+            "type": "integer",
+            "title": "Missing Importance"
+          },
+          "child_questions_without_judgements": {
+            "type": "integer",
+            "title": "Child Questions Without Judgements"
+          },
+          "max_depth": {
+            "type": "integer",
+            "title": "Max Depth"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_pages",
+          "missing_credence",
+          "missing_importance",
+          "child_questions_without_judgements",
+          "max_depth"
+        ],
+        "title": "ViewHealthOut",
+        "description": "Aggregate health signals on a QuestionView \u2014 how much research exists\nand where the obvious gaps are."
+      },
       "ViewItemFlagDeleteOut": {
         "properties": {
           "ok": {
@@ -8621,6 +8682,32 @@
         ],
         "title": "ViewItemFlagRequest"
       },
+      "ViewItemOut": {
+        "properties": {
+          "page": {
+            "$ref": "#/components/schemas/Page"
+          },
+          "links": {
+            "items": {
+              "$ref": "#/components/schemas/PageLink"
+            },
+            "type": "array",
+            "title": "Links"
+          },
+          "section": {
+            "type": "string",
+            "title": "Section"
+          }
+        },
+        "type": "object",
+        "required": [
+          "page",
+          "links",
+          "section"
+        ],
+        "title": "ViewItemOut",
+        "description": "One item inside a QuestionView section \u2014 a page plus the links that\nconnect it to the question (or the surrounding question subgraph)."
+      },
       "ViewItemReadOut": {
         "properties": {
           "ok": {
@@ -8649,6 +8736,32 @@
         },
         "type": "object",
         "title": "ViewItemReadRequest"
+      },
+      "ViewSectionOut": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ViewItemOut"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "description",
+          "items"
+        ],
+        "title": "ViewSectionOut"
       },
       "WarningEventOut": {
         "properties": {

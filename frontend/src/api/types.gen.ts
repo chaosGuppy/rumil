@@ -2067,6 +2067,20 @@ export type QuestionStatsOut = {
 };
 
 /**
+ * QuestionViewOut
+ *
+ * Response model for GET /api/questions/{id}/view.
+ */
+export type QuestionViewOut = {
+    question: Page;
+    /**
+     * Sections
+     */
+    sections: Array<ViewSectionOut>;
+    health: ViewHealthOut;
+};
+
+/**
  * RealtimeConfigOut
  */
 export type RealtimeConfigOut = {
@@ -3003,6 +3017,35 @@ export type ViewCreatedEventOut = {
 };
 
 /**
+ * ViewHealthOut
+ *
+ * Aggregate health signals on a QuestionView — how much research exists
+ * and where the obvious gaps are.
+ */
+export type ViewHealthOut = {
+    /**
+     * Total Pages
+     */
+    total_pages: number;
+    /**
+     * Missing Credence
+     */
+    missing_credence: number;
+    /**
+     * Missing Importance
+     */
+    missing_importance: number;
+    /**
+     * Child Questions Without Judgements
+     */
+    child_questions_without_judgements: number;
+    /**
+     * Max Depth
+     */
+    max_depth: number;
+};
+
+/**
  * ViewItemFlagDeleteOut
  */
 export type ViewItemFlagDeleteOut = {
@@ -3053,6 +3096,24 @@ export type ViewItemFlagRequest = {
 };
 
 /**
+ * ViewItemOut
+ *
+ * One item inside a QuestionView section — a page plus the links that
+ * connect it to the question (or the surrounding question subgraph).
+ */
+export type ViewItemOut = {
+    page: Page;
+    /**
+     * Links
+     */
+    links: Array<PageLink>;
+    /**
+     * Section
+     */
+    section: string;
+};
+
+/**
  * ViewItemReadOut
  */
 export type ViewItemReadOut = {
@@ -3074,6 +3135,24 @@ export type ViewItemReadRequest = {
      * Seconds
      */
     seconds?: number;
+};
+
+/**
+ * ViewSectionOut
+ */
+export type ViewSectionOut = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Description
+     */
+    description: string;
+    /**
+     * Items
+     */
+    items: Array<ViewItemOut>;
 };
 
 /**
@@ -4881,8 +4960,10 @@ export type GetQuestionViewApiQuestionsQuestionIdViewGetResponses = {
     /**
      * Successful Response
      */
-    200: unknown;
+    200: QuestionViewOut;
 };
+
+export type GetQuestionViewApiQuestionsQuestionIdViewGetResponse = GetQuestionViewApiQuestionsQuestionIdViewGetResponses[keyof GetQuestionViewApiQuestionsQuestionIdViewGetResponses];
 
 export type GetAppConfigApiConfigGetData = {
     body?: never;

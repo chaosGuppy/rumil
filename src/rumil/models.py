@@ -31,6 +31,12 @@ class PageType(str, Enum):
     VIEW_ITEM = "view_item"
     VIEW_META = "view_meta"
     ARTIFACT = "artifact"
+    # Model-authored UI fragment: an HTML/CSS/JS blob rendered in a
+    # sandboxed iframe as a custom content-area renderer for a question.
+    # See planning/inlay-ui.md. Phase 1 (MVP) is hand-authored via
+    # scripts/create_inlay.py; phase 2 is chat authoring; phase 3 is
+    # orchestrator dispatch (AuthorInlayCall).
+    INLAY = "inlay"
 
 
 class PageDetail(str, Enum):
@@ -92,6 +98,12 @@ class CallType(str, Enum):
     # (not a rumil-internal call with carefully scoped prompt). Never
     # dispatchable from prioritization — only created by .claude/ skills.
     CLAUDE_CODE_DIRECT = "claude_code_direct"
+    # Reserved for Phase 3. Orchestrator-dispatched call that generates an
+    # Inlay page (model-authored HTML/CSS/JS for a question's custom view).
+    # Not implemented in the MVP — the enum is reserved here so data
+    # written by phase 1 (hand-authored) and phase 2 (chat) can round-trip
+    # through the same CallType namespace without future migrations.
+    AUTHOR_INLAY = "author_inlay"
 
 
 # The subset of CallTypes that prioritization can dispatch.
@@ -139,6 +151,7 @@ class LinkType(str, Enum):
     VIEW_ITEM = "view_item"  # view -> view_item: item belongs to this view
     VIEW_OF = "view_of"  # view -> question: this view covers this question
     META_FOR = "meta_for"  # view_meta -> view_item or view: meta annotation
+    INLAY_OF = "inlay_of"  # inlay -> question (or project): inlay renders this target
 
 
 class MoveType(str, Enum):

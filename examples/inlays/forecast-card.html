@@ -1,0 +1,588 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Forecast card</title>
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; img-src data:; frame-ancestors *"
+    />
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: var(--rumil-bg, #fafaf7);
+        --fg: var(--rumil-fg, #161613);
+        --fg-dim: var(--rumil-fg-dim, #686862);
+        --accent: var(--rumil-accent, #c9683a);
+        --accent-weak: var(--rumil-accent-weak, rgba(201, 104, 58, 0.12));
+        --rule: var(--rumil-rule, rgba(22, 22, 19, 0.12));
+        --card: var(--rumil-card, #ffffff);
+        --supports: #3f7d20;
+        --opposes: #9b3a2a;
+        --neutral: #6b6b65;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: var(--rumil-bg, #17171a);
+          --fg: var(--rumil-fg, #f0ede6);
+          --fg-dim: var(--rumil-fg-dim, #9a9a92);
+          --accent: var(--rumil-accent, #e08962);
+          --accent-weak: var(--rumil-accent-weak, rgba(224, 137, 98, 0.18));
+          --rule: var(--rumil-rule, rgba(240, 237, 230, 0.15));
+          --card: var(--rumil-card, #1f1f22);
+          --supports: #7fbd5a;
+          --opposes: #e28670;
+          --neutral: #a0a099;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family:
+          "Inter",
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          sans-serif;
+        font-size: 15px;
+        line-height: 1.5;
+      }
+      main {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 28px 32px 48px;
+      }
+      .eyebrow {
+        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+        font-size: 11px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--fg-dim);
+      }
+      h1 {
+        font-family: "Fraunces", Georgia, serif;
+        font-weight: 500;
+        font-size: clamp(26px, 3.4vw, 38px);
+        line-height: 1.15;
+        margin: 6px 0 14px;
+        letter-spacing: -0.01em;
+      }
+      .abstract {
+        color: var(--fg-dim);
+        font-size: 16px;
+        line-height: 1.55;
+        max-width: 58ch;
+        margin: 0 0 28px;
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--rule);
+        border-radius: 10px;
+        padding: 20px 22px;
+        margin: 18px 0;
+      }
+      .card-title {
+        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--fg-dim);
+        margin: 0 0 14px;
+      }
+      .bar-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        column-gap: 14px;
+        row-gap: 6px;
+        align-items: center;
+        margin: 10px 0;
+      }
+      .bar-headline {
+        font-size: 14px;
+        color: var(--fg);
+        line-height: 1.35;
+        min-width: 0;
+      }
+      .bar-headline button {
+        all: unset;
+        cursor: pointer;
+        text-decoration: underline;
+        text-decoration-color: var(--rule);
+        text-underline-offset: 3px;
+      }
+      .bar-headline button:hover {
+        text-decoration-color: var(--accent);
+        color: var(--accent);
+      }
+      .bar-meta {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: var(--fg-dim);
+        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+        font-size: 11px;
+        white-space: nowrap;
+      }
+      .bar-track {
+        grid-column: 1 / -1;
+        height: 6px;
+        background: var(--rule);
+        border-radius: 3px;
+        overflow: hidden;
+        position: relative;
+      }
+      .bar-fill {
+        height: 100%;
+        border-radius: 3px;
+        background: var(--accent);
+        transition: width 320ms ease-out;
+      }
+      .bar-fill.supports {
+        background: var(--supports);
+      }
+      .bar-fill.opposes {
+        background: var(--opposes);
+      }
+      .bar-fill.neutral {
+        background: var(--neutral);
+      }
+      .chip-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 4px;
+      }
+      .chip {
+        all: unset;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 3px 9px;
+        border-radius: 999px;
+        border: 1px solid var(--rule);
+        background: transparent;
+        color: var(--fg-dim);
+        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+        font-size: 10px;
+        letter-spacing: 0.04em;
+      }
+      .chip:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+        background: var(--accent-weak);
+      }
+      .chip-id {
+        opacity: 0.6;
+      }
+      .summary {
+        display: flex;
+        gap: 18px;
+        flex-wrap: wrap;
+        margin: 4px 0 18px;
+      }
+      .stat {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .stat-label {
+        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--fg-dim);
+      }
+      .stat-value {
+        font-family: "Fraunces", Georgia, serif;
+        font-size: 24px;
+        font-weight: 500;
+      }
+      .actions {
+        display: flex;
+        gap: 10px;
+        margin-top: 20px;
+        flex-wrap: wrap;
+      }
+      .btn {
+        all: unset;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 14px;
+        border-radius: 6px;
+        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+        font-size: 12px;
+        letter-spacing: 0.04em;
+      }
+      .btn.primary {
+        background: var(--accent);
+        color: #fff;
+      }
+      .btn.primary:hover {
+        filter: brightness(1.06);
+      }
+      .btn.ghost {
+        border: 1px solid var(--rule);
+        color: var(--fg);
+      }
+      .btn.ghost:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .empty {
+        color: var(--fg-dim);
+        font-style: italic;
+        padding: 8px 0;
+      }
+      .child-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+      .child-item {
+        padding: 10px 0;
+        border-top: 1px solid var(--rule);
+      }
+      .child-item:first-child {
+        border-top: none;
+      }
+      .child-item button {
+        all: unset;
+        cursor: pointer;
+        color: var(--fg);
+      }
+      .child-item button:hover {
+        color: var(--accent);
+      }
+      .footer-note {
+        margin-top: 32px;
+        padding-top: 14px;
+        border-top: 1px solid var(--rule);
+        color: var(--fg-dim);
+        font-size: 12px;
+        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      }
+      .loading {
+        color: var(--fg-dim);
+        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+        font-size: 12px;
+        padding: 60px 0;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <main id="root">
+      <div class="loading">waiting for host init…</div>
+    </main>
+    <script>
+      (function () {
+        "use strict";
+
+        // This iframe runs with sandbox="allow-scripts" but no
+        // allow-same-origin, so window.parent exists but has opaque origin
+        // from our side. Outbound postMessage targets "*" (we have no
+        // origin to compare) — the host validates the payload before
+        // doing anything with it, per the v1 protocol in
+        // planning/inlay-ui.md.
+        var TYPE_PREFIX = "rumil.inlay.v1:";
+        var initState = null;
+
+        function post(type, payload) {
+          var message = Object.assign({ type: TYPE_PREFIX + type }, payload || {});
+          try {
+            window.parent.postMessage(message, "*");
+          } catch (e) {
+            console.warn("[inlay] postMessage failed", e);
+          }
+        }
+
+        function sendResize() {
+          var height = document.documentElement.scrollHeight;
+          post("resize", { height: height });
+        }
+
+        function probability(credence) {
+          if (credence == null) return null;
+          var map = { 1: 0.05, 2: 0.15, 3: 0.3, 4: 0.4, 5: 0.5, 6: 0.6, 7: 0.7, 8: 0.85, 9: 0.95 };
+          return map[credence] ?? 0.5;
+        }
+
+        function pct(p) {
+          if (p == null) return "–";
+          return Math.round(p * 100) + "%";
+        }
+
+        function direction(link) {
+          if (!link) return "neutral";
+          if (link.direction === "supports") return "supports";
+          if (link.direction === "opposes") return "opposes";
+          return "neutral";
+        }
+
+        function escapeHtml(str) {
+          if (str == null) return "";
+          return String(str)
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+            .replaceAll('"', "&quot;")
+            .replaceAll("'", "&#39;");
+        }
+
+        function shortId(pid) {
+          if (!pid) return "";
+          return pid.slice(0, 8);
+        }
+
+        function render(state) {
+          var root = document.getElementById("root");
+          var q = state.target || {};
+          var view = state.view || { sections: [] };
+          var children = state.child_questions || [];
+
+          var allItems = [];
+          (view.sections || []).forEach(function (section) {
+            (section.items || []).forEach(function (item) {
+              allItems.push({
+                page: item.page,
+                links: item.links || [],
+                section: section.name,
+              });
+            });
+          });
+          allItems.sort(function (a, b) {
+            var ai = (a.links[0] && a.links[0].importance) || 0;
+            var bi = (b.links[0] && b.links[0].importance) || 0;
+            return bi - ai;
+          });
+          var top = allItems.slice(0, 6);
+
+          var credencePages = allItems.filter(function (it) {
+            return it.page && it.page.credence != null;
+          });
+          var avgProb = null;
+          if (credencePages.length) {
+            var total = credencePages.reduce(function (acc, it) {
+              return acc + probability(it.page.credence);
+            }, 0);
+            avgProb = total / credencePages.length;
+          }
+
+          var html = [];
+          html.push(
+            '<div class="eyebrow">forecast card · inlay preview</div>',
+            "<h1>" + escapeHtml(q.headline || "Untitled question") + "</h1>",
+          );
+          if (q.abstract) {
+            html.push('<p class="abstract">' + escapeHtml(q.abstract) + "</p>");
+          }
+
+          html.push('<div class="summary">');
+          html.push(
+            '<div class="stat"><span class="stat-label">weighted credence</span>',
+            '<span class="stat-value">' + pct(avgProb) + "</span></div>",
+          );
+          html.push(
+            '<div class="stat"><span class="stat-label">considerations</span>',
+            '<span class="stat-value">' + allItems.length + "</span></div>",
+          );
+          html.push(
+            '<div class="stat"><span class="stat-label">sub-questions</span>',
+            '<span class="stat-value">' + children.length + "</span></div>",
+          );
+          html.push("</div>");
+
+          html.push(
+            '<section class="card">',
+            '<h2 class="card-title">top considerations (by importance)</h2>',
+          );
+          if (!top.length) {
+            html.push(
+              '<p class="empty">No scored considerations yet. ',
+              "Run find_considerations to populate this view.</p>",
+            );
+          } else {
+            top.forEach(function (item) {
+              var page = item.page || {};
+              var link = item.links[0];
+              var prob = probability(page.credence);
+              var dir = direction(link);
+              var importance = (link && link.importance) || 0;
+              var refs = (item.links || []).slice(0, 3);
+              html.push('<div class="bar-row">');
+              html.push(
+                '<div class="bar-headline"><button data-inspect="' +
+                  escapeHtml(shortId(page.id)) +
+                  '">' +
+                  escapeHtml(page.headline || "(untitled)") +
+                  "</button></div>",
+              );
+              html.push('<div class="bar-meta">');
+              html.push("<span>imp " + importance + "</span>");
+              html.push("<span>cred " + (page.credence || "–") + "</span>");
+              html.push("<span>" + pct(prob) + "</span>");
+              html.push("</div>");
+              html.push(
+                '<div class="bar-track">',
+                '<div class="bar-fill ' +
+                  dir +
+                  '" style="width:' +
+                  (prob == null ? 20 : Math.round(prob * 100)) +
+                  '%"></div>',
+                "</div>",
+              );
+              if (refs.length) {
+                html.push('<div class="chip-row">');
+                refs.forEach(function (l) {
+                  var target = l.to_page_id || l.from_page_id;
+                  html.push(
+                    '<button class="chip" data-inspect="' +
+                      escapeHtml(shortId(target)) +
+                      '"><span>' +
+                      escapeHtml(l.link_type || "link") +
+                      '</span><span class="chip-id">' +
+                      escapeHtml(shortId(target)) +
+                      "</span></button>",
+                  );
+                });
+                html.push("</div>");
+              }
+              html.push("</div>");
+            });
+          }
+          html.push("</section>");
+
+          html.push(
+            '<section class="card">',
+            '<h2 class="card-title">sub-questions</h2>',
+          );
+          if (!children.length) {
+            html.push('<p class="empty">No sub-questions have been created yet.</p>');
+          } else {
+            html.push('<ul class="child-list">');
+            children.slice(0, 6).forEach(function (child) {
+              html.push(
+                '<li class="child-item">',
+                '<button data-navigate="' +
+                  escapeHtml(shortId(child.id)) +
+                  '">' +
+                  escapeHtml(child.headline || "(untitled)") +
+                  "</button>",
+                "</li>",
+              );
+            });
+            html.push("</ul>");
+          }
+          html.push("</section>");
+
+          html.push('<div class="actions">');
+          html.push(
+            '<button class="btn primary" data-action="chat">',
+            "ask about this question →",
+            "</button>",
+          );
+          html.push(
+            '<button class="btn ghost" data-action="flag">',
+            "flag something off",
+            "</button>",
+          );
+          html.push("</div>");
+
+          html.push(
+            '<div class="footer-note">',
+            "authored inlay · rumil.inlay.v1 · ",
+            (state.user && state.user.email) || "anonymous",
+            "</div>",
+          );
+
+          root.innerHTML = html.join("");
+
+          root.querySelectorAll("[data-inspect]").forEach(function (btn) {
+            btn.addEventListener("click", function (e) {
+              e.stopPropagation();
+              var id = btn.getAttribute("data-inspect");
+              if (id) post("open_inspect", { page_id: id });
+            });
+          });
+          root.querySelectorAll("[data-navigate]").forEach(function (btn) {
+            btn.addEventListener("click", function (e) {
+              e.stopPropagation();
+              var id = btn.getAttribute("data-navigate");
+              if (id) post("navigate", { page_id: id });
+            });
+          });
+          root.querySelectorAll('[data-action="chat"]').forEach(function (btn) {
+            btn.addEventListener("click", function () {
+              post("open_chat", {
+                question_id: q.id ? shortId(q.id) : undefined,
+                prompt:
+                  "Walk me through the top considerations on this question — " +
+                  "which are load-bearing, which look weak?",
+              });
+            });
+          });
+          root.querySelectorAll('[data-action="flag"]').forEach(function (btn) {
+            btn.addEventListener("click", function () {
+              if (!q.id) return;
+              post("flag_page", {
+                page_id: shortId(q.id),
+                reason: "Inlay flag: something looks off with this question.",
+              });
+            });
+          });
+
+          requestAnimationFrame(sendResize);
+        }
+
+        window.addEventListener("message", function (event) {
+          var data = event.data;
+          if (!data || typeof data !== "object") return;
+          if (typeof data.type !== "string") return;
+          if (!data.type.startsWith(TYPE_PREFIX)) return;
+          var kind = data.type.slice(TYPE_PREFIX.length);
+          if (kind === "init") {
+            initState = data;
+            try {
+              render(initState);
+            } catch (e) {
+              console.error("[inlay] render failed", e);
+              document.getElementById("root").innerHTML =
+                '<div class="loading">Inlay failed to render. See console.</div>';
+            }
+          }
+        });
+
+        window.addEventListener("load", function () {
+          post("ready");
+          // Belt-and-braces: re-measure after fonts/images settle.
+          setTimeout(sendResize, 120);
+          setTimeout(sendResize, 400);
+        });
+
+        // Track post-render layout shifts (e.g. font loading) so the host
+        // iframe doesn't end up too short or too tall.
+        if (typeof ResizeObserver !== "undefined") {
+          try {
+            var ro = new ResizeObserver(function () {
+              sendResize();
+            });
+            ro.observe(document.documentElement);
+          } catch (e) {
+            /* optional */
+          }
+        }
+      })();
+    </script>
+  </body>
+</html>

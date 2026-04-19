@@ -1336,6 +1336,35 @@ class DB:
                 return page
         return None
 
+    async def get_inlays_for_question(self, question_id: str) -> list[Page]:
+        """Return active (non-superseded) INLAY pages bound to a question.
+
+        Inlays are model-authored UI fragments that replace the stock
+        content area for a question. See planning/inlay-ui.md. Issues two
+        round trips (links + pages) regardless of how many inlays the
+        question has.
+        """
+        query = (
+            self.client.table("page_links")
+            .select(_LINK_COLUMNS)
+            .eq("to_page_id", question_id)
+            .eq("link_type", LinkType.INLAY_OF.value)
+        )
+        query = self._staged_filter(query)
+        rows = _rows(await self._execute(query))
+        links = await self._apply_link_events([_row_to_link(r) for r in rows])
+        if not links:
+            return []
+        inlay_ids = [link.from_page_id for link in links]
+        pages = await self.get_pages_by_ids(inlay_ids)
+        active: list[Page] = []
+        for inlay_id in inlay_ids:
+            page = pages.get(inlay_id)
+            if page and page.page_type == PageType.INLAY and not page.is_superseded:
+                active.append(page)
+        active.sort(key=lambda p: p.created_at, reverse=True)
+        return active
+
     async def get_views_for_questions(
         self,
         question_ids: Sequence[str],

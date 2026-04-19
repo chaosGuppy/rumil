@@ -79,8 +79,18 @@ class SpecCallRunner(CallRunner):
         )
 
     def task_description(self) -> str:
-        """Default task description — specs with custom wording can override via runner_factory."""
-        return self.spec.description
+        """Default task description: ``spec.description`` + question ID.
+
+        Matches the convention used by the imperative call-type subclasses
+        (every ``task_description`` ends with ``Question ID: ``<id>```).
+        Specs whose instructions must diverge from this format use
+        ``runner_factory`` to supply a custom runner.
+        """
+        base = self.spec.description.rstrip()
+        qid = self.infra.question_id if hasattr(self, "infra") and self.infra else None
+        if not qid:
+            return base
+        return f"{base}\n\nQuestion ID: `{qid}`"
 
     def _make_context_builder(self) -> ContextBuilder:
         return _build_stage(
@@ -114,8 +124,8 @@ class SpecCallRunner(CallRunner):
         return StageBuildCtx(
             call_type=self.spec.call_type,
             question_id=self.infra.question_id if hasattr(self, "infra") else None,
-            task_description=self.spec.description,
-            available_moves=get_moves_for_call(self.spec.call_type),
+            task_description=self.task_description(),
+            available_moves=_resolve_allowed_moves(self.spec.allowed_moves, self.spec.call_type),
             source_page=self._stage_ctx_extras.get("source_page"),
             extras=self._stage_ctx_extras,
         )

@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Fragment,
   useCallback,
   useEffect,
   useMemo,
@@ -40,7 +41,7 @@ import {
   type KeyRenderHint,
 } from "@/lib/tool-call-format";
 import { useInspectPanel } from "./InspectPanelContext";
-import { isPromoteEvent } from "./NodeRefLink";
+import { isPromoteEvent, NODE_ID_RE } from "./NodeRefLink";
 
 // TraceView — the TRACE view mode.
 //
@@ -207,6 +208,13 @@ function RunPicker({
     );
   }
 
+  // Same-minute + same-name runs are indistinguishable by default. Group
+  // them, compute config diffs across the group, and hand each row a
+  // disambiguator (a list of distinguishing key:value chips, or a fallback
+  // "#N of M" ordinal if configs are identical). Computed once per visible
+  // list so rows just look up their own entry.
+  const disambiguatorsByRunId = computeRunRowDisambiguators(visible);
+
   return (
     <div className="trace-pick">
       <div className="trace-pick-head">
@@ -313,12 +321,23 @@ function RunPicker({
                 {r.question_summary && (
                   <div className="trace-pick-row-q">{r.question_summary}</div>
                 )}
+                <RunRowResolvedQuestion run={r} />
                 <div className="trace-pick-row-meta">
                   <span>{r.run_id!.slice(0, 8)}</span>
                   <span>·</span>
                   <span>{formatWhen(r.created_at)}</span>
                   {discriminators.map((d) => (
                     <span key={d.key} className="trace-pick-row-meta-chip" title={d.title}>
+                      {d.label}
+                    </span>
+                  ))}
+                  <RunRowResolvedModelChip run={r} />
+                  {(disambiguatorsByRunId.get(r.run_id!) ?? []).map((d) => (
+                    <span
+                      key={`disamb-${d.key}`}
+                      className="trace-pick-row-meta-chip trace-pick-row-disamb"
+                      title={d.title}
+                    >
                       {d.label}
                     </span>
                   ))}
@@ -371,38 +390,92 @@ function RunPicker({
   );
 }
 
-// Render a run's display label in the picker. When the backend name is
-// generic ("chat" for ad-hoc chat-dispatched runs), lazily fetch the run's
-// trace tree and substitute the primary call_type so the list is scannable.
-// Runs with a substantive name (e.g. "continue (api): ...") pass through
-// unchanged to avoid the N+1 fetch cost. Failures fall back to the original
-// name silently.
-function RunRowLabel({ run }: { run: RunListItem }) {
+// Resolved-from-tree details surfaced for generic runs ("chat",
+// find_considerations, ...) so their rows read like the orchestrator rows
+// (which already get name/question/model from run.config). We pull:
+//  - call_type (from the root call in the tree)
+//  - question headline (fall back to the root call's scope_page_summary
+//    when the run has no question_id)
+//  - model (from tree.config or the first llm_exchange event on the root)
+// All optional — any fetch failure drops back to the plain name.
+interface RunRowResolved {
+  callType: string;
+  question: string | null;
+  model: string | null;
+}
+
+// Module-level cache so RunRowLabel + RunRowResolvedQuestion +
+// RunRowResolvedModelChip share one outstanding promise per run. Each row
+// calls the hook up to 3 times; without this the picker would triple-fetch.
+const runRowResolveCache = new Map<string, Promise<RunRowResolved | null>>();
+
+function resolveRunRow(runId: string): Promise<RunRowResolved | null> {
+  const cached = runRowResolveCache.get(runId);
+  if (cached) return cached;
+  const promise = (async () => {
+    try {
+      const tree = await fetchRunTraceTree(runId);
+      const root =
+        tree.calls.find((c) => !c.call.parent_call_id) ?? tree.calls[0];
+      if (!root) return null;
+      const question =
+        tree.question?.headline ?? root.scope_page_summary ?? null;
+      const configModel =
+        tree.config && typeof tree.config["model"] === "string"
+          ? (tree.config["model"] as string)
+          : null;
+      let model = configModel;
+      if (!model) {
+        try {
+          const events = await fetchCallEvents(root.call.id);
+          model = modelFromEvents(events);
+        } catch {
+          // silent — model chip is nice-to-have
+        }
+      }
+      return {
+        callType: root.call.call_type,
+        question,
+        model,
+      };
+    } catch {
+      return null;
+    }
+  })();
+  runRowResolveCache.set(runId, promise);
+  return promise;
+}
+
+// Shared lazy-fetch hook so RunRowLabel and RunRowExtras stay aligned on
+// one outstanding request per row.
+function useResolvedRunRow(run: RunListItem): RunRowResolved | null {
   const baseName = run.name || "";
   const isGeneric = baseName === "" || baseName === "chat";
-  const [resolved, setResolved] = useState<string | null>(null);
+  const [resolved, setResolved] = useState<RunRowResolved | null>(null);
   const runId = run.run_id;
 
   useEffect(() => {
     if (!isGeneric || !runId) return;
     let cancelled = false;
-    fetchRunTraceTree(runId)
-      .then((tree) => {
-        if (cancelled) return;
-        const root =
-          tree.calls.find((c) => !c.call.parent_call_id) ?? tree.calls[0];
-        if (root) setResolved(root.call.call_type);
-      })
-      .catch(() => {
-        // Silent — the row will fall back to the generic name.
-      });
+    resolveRunRow(runId).then((r) => {
+      if (!cancelled && r) setResolved(r);
+    });
     return () => {
       cancelled = true;
     };
   }, [isGeneric, runId]);
 
+  return resolved;
+}
+
+function RunRowLabel({ run }: { run: RunListItem }) {
+  const baseName = run.name || "";
+  const isGeneric = baseName === "" || baseName === "chat";
+  const resolved = useResolvedRunRow(run);
+  const runId = run.run_id;
+
   const label =
-    resolved ??
+    resolved?.callType ??
     (baseName || (runId ? runId.slice(0, 8) : "(unknown)"));
   const isSubstituted = isGeneric && resolved !== null;
 
@@ -411,11 +484,39 @@ function RunRowLabel({ run }: { run: RunListItem }) {
       className={`trace-pick-row-name ${isSubstituted ? "is-resolved" : ""}`}
       title={
         isSubstituted && baseName
-          ? `${baseName} — primary call: ${resolved}`
+          ? `${baseName} — primary call: ${resolved?.callType}`
           : undefined
       }
     >
       {label}
+    </span>
+  );
+}
+
+// Surface resolved question (if the run had no question_summary) and model
+// for generic runs. Parity with orchestrator rows — those already get a
+// headline via run.question_summary and a model chip via
+// extractRunDiscriminators(run.config).
+function RunRowResolvedQuestion({ run }: { run: RunListItem }) {
+  const resolved = useResolvedRunRow(run);
+  if (!resolved?.question) return null;
+  if (run.question_summary) return null;
+  return <div className="trace-pick-row-q">{resolved.question}</div>;
+}
+
+function RunRowResolvedModelChip({ run }: { run: RunListItem }) {
+  const resolved = useResolvedRunRow(run);
+  // Only render when the base config didn't already supply a model chip —
+  // otherwise extractRunDiscriminators() above is doing the job.
+  const baseHasModel =
+    run.config && typeof run.config["model"] === "string" && run.config["model"];
+  if (!resolved?.model || baseHasModel) return null;
+  return (
+    <span
+      className="trace-pick-row-meta-chip"
+      title={`model: ${resolved.model}`}
+    >
+      {shortenModel(resolved.model)}
     </span>
   );
 }
@@ -458,6 +559,82 @@ function extractRunDiscriminators(
       key: "commit",
       label: `git ${commit.slice(0, 7)}`,
       title: `git_commit: ${commit}`,
+    });
+  }
+  return out;
+}
+
+// Given a list of rows in display order, return a map from run_id to the
+// disambiguating chips that should appear after the baseline discriminators.
+// Rule: rows that share (minute, name) form a group. Within a group:
+//  - If any config key takes more than one distinct value across the group,
+//    emit one chip per differing key (label = "key=value").
+//  - Otherwise fall back to a "#N / M" ordinal (stable by creation order).
+// Group size 1 → no disambiguation.
+function computeRunRowDisambiguators(
+  rows: RunListItem[],
+): Map<string, Array<{ key: string; label: string; title: string }>> {
+  const out = new Map<string, Array<{ key: string; label: string; title: string }>>();
+  const groups = new Map<string, RunListItem[]>();
+  for (const r of rows) {
+    if (!r.run_id) continue;
+    const minute = r.created_at.slice(0, 16);
+    const key = `${minute}|${r.name || ""}`;
+    const list = groups.get(key) ?? [];
+    list.push(r);
+    groups.set(key, list);
+  }
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    // Collect all config keys that appear in any member.
+    const keys = new Set<string>();
+    for (const r of group) {
+      for (const k of Object.keys(r.config ?? {})) keys.add(k);
+    }
+    const diffKeys: string[] = [];
+    for (const k of keys) {
+      const seen = new Set<string>();
+      for (const r of group) {
+        const v = (r.config ?? {})[k];
+        seen.add(
+          typeof v === "object" && v !== null ? JSON.stringify(v) : String(v),
+        );
+        if (seen.size > 1) break;
+      }
+      if (seen.size > 1) diffKeys.push(k);
+    }
+    // Sort oldest-first so the ordinal reads in creation order regardless
+    // of how the parent sorted.
+    const ordered = [...group].sort(
+      (a, b) =>
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+    );
+    ordered.forEach((r, idx) => {
+      const chips: Array<{ key: string; label: string; title: string }> = [];
+      if (diffKeys.length > 0) {
+        for (const k of diffKeys) {
+          const raw = (r.config ?? {})[k];
+          const label =
+            typeof raw === "object" && raw !== null
+              ? `${k}=${truncate(JSON.stringify(raw), 24)}`
+              : `${k}=${truncate(String(raw), 24)}`;
+          chips.push({
+            key: k,
+            label,
+            title: `config diff within this same-minute group: ${k}`,
+          });
+        }
+      } else {
+        chips.push({
+          key: "ordinal",
+          label: `#${idx + 1}/${ordered.length}`,
+          title: (
+            `#${idx + 1} of ${ordered.length} same-minute runs with the same `
+            + "name and identical config"
+          ),
+        });
+      }
+      out.set(r.run_id!, chips);
     });
   }
   return out;
@@ -545,6 +722,7 @@ function TraceRunView({
           <CallDetail
             callId={selectedCallId}
             tree={tree}
+            onSelectCall={setSelectedCallId}
           />
         ) : (
           <div className="trace-empty-detail">
@@ -789,6 +967,7 @@ function TraceConfigDetails({
   const [open, setOpen] = useState(false);
   if (!config || Object.keys(config).length === 0) return null;
   const entryCount = Object.keys(config).length;
+  const groups = groupConfigKeys(config);
   return (
     <details
       className="trace-head-config"
@@ -799,10 +978,110 @@ function TraceConfigDetails({
         {open ? "hide" : "show"} full config ({entryCount} fields)
       </summary>
       <div className="trace-head-config-body">
-        <ToolCallArgs input={config} />
+        {groups.map((g) => (
+          <div key={g.name} className="trace-head-config-group">
+            <div className="trace-head-config-group-title">{g.name}</div>
+            <ToolCallArgs input={g.entries} />
+          </div>
+        ))}
       </div>
     </details>
   );
+}
+
+// Group a flat config dict into themed sections so 76-field dumps don't
+// read as a wall. Themes are prefix- or keyword-based and intentionally
+// coarse — anything that doesn't match a known theme falls into "other".
+// Preserves the within-group insertion order via Object.fromEntries over
+// entries filtered in definition order.
+function groupConfigKeys(
+  config: Record<string, unknown>,
+): Array<{ name: string; entries: Record<string, unknown> }> {
+  const rules: Array<{ name: string; match: (k: string) => boolean }> = [
+    {
+      name: "model",
+      match: (k) => k === "model" || k.startsWith("model_") || k.startsWith("llm_"),
+    },
+    {
+      name: "orchestrator",
+      match: (k) =>
+        k === "orchestrator"
+        || k.startsWith("orchestrator_")
+        || k === "prioritizer_variant"
+        || k.startsWith("prioritizer_")
+        || k.startsWith("two_phase_")
+        || k.startsWith("claim_investigation_"),
+    },
+    {
+      name: "available_moves",
+      match: (k) => k === "available_moves" || k.startsWith("moves_"),
+    },
+    {
+      name: "available_calls",
+      match: (k) =>
+        k === "assess_call_variant"
+        || k.startsWith("call_")
+        || k.startsWith("dispatch_")
+        || k.endsWith("_call_variant"),
+    },
+    {
+      name: "scoring",
+      match: (k) =>
+        k.startsWith("score_")
+        || k.includes("scoring")
+        || k.startsWith("credence_")
+        || k.startsWith("importance_")
+        || k.startsWith("robustness_"),
+    },
+    {
+      name: "context",
+      match: (k) =>
+        k.startsWith("context_")
+        || k.includes("char_budget")
+        || k.includes("char_fraction")
+        || k.startsWith("embedding_")
+        || k.startsWith("full_page_")
+        || k.startsWith("summary_page_")
+        || k.startsWith("distillation_page_"),
+    },
+    {
+      name: "budget",
+      match: (k) => k === "budget" || k.startsWith("budget_") || k.includes("max_rounds"),
+    },
+    {
+      name: "environment",
+      match: (k) =>
+        k === "git_commit"
+        || k === "origin"
+        || k === "workspace"
+        || k === "project"
+        || k === "smoke_test"
+        || k.startsWith("env_"),
+    },
+  ];
+  const out: Array<{ name: string; entries: Record<string, unknown> }> = [];
+  const seen = new Set<string>();
+  for (const rule of rules) {
+    const entries: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(config)) {
+      if (seen.has(k)) continue;
+      if (rule.match(k)) {
+        entries[k] = v;
+        seen.add(k);
+      }
+    }
+    if (Object.keys(entries).length > 0) {
+      out.push({ name: rule.name, entries });
+    }
+  }
+  const rest: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(config)) {
+    if (!seen.has(k)) rest[k] = v;
+  }
+  if (Object.keys(rest).length > 0) {
+    out.push({ name: "other", entries: rest });
+  }
+  return out;
 }
 
 // Node shape we build locally. Tree is materialized once per run load.
@@ -942,9 +1221,11 @@ function CallTreeNode({
 function CallDetail({
   callId,
   tree,
+  onSelectCall,
 }: {
   callId: string;
   tree: RunTraceTree;
+  onSelectCall: (id: string) => void;
 }) {
   const node = useMemo(
     () => tree.calls.find((c) => c.call.id === callId) ?? null,
@@ -1012,6 +1293,18 @@ function CallDetail({
           <h1 className="trace-detail-scope">{node.scope_page_summary}</h1>
         )}
         <dl className="trace-detail-meta">
+          {call.parent_call_id && (
+            <MetaRow
+              label="dispatched by"
+              value={
+                <DispatchedByLink
+                  parentCallId={call.parent_call_id}
+                  tree={tree}
+                  onSelectCall={onSelectCall}
+                />
+              }
+            />
+          )}
           {call.scope_page_id && (
             <MetaRow
               label="scope"
@@ -1100,6 +1393,42 @@ function MetaRow({
   );
 }
 
+// A clickable short-id for the parent call. Switches the detail pane to
+// the parent when clicked so sub-dispatches (scouts, claim-investigations)
+// have an in-view backlink instead of relying on the sidebar indent alone.
+// If the parent isn't in the loaded tree (shouldn't happen — all calls on
+// a run share the tree), we still render the short id but the button is
+// inert.
+function DispatchedByLink({
+  parentCallId,
+  tree,
+  onSelectCall,
+}: {
+  parentCallId: string;
+  tree: RunTraceTree;
+  onSelectCall: (id: string) => void;
+}) {
+  const parent = tree.calls.find((c) => c.call.id === parentCallId);
+  const shortId = parentCallId.slice(0, 8);
+  const typeHint = parent ? parent.call.call_type : "parent";
+  return (
+    <button
+      type="button"
+      className="trace-detail-parent-btn"
+      onClick={() => onSelectCall(parentCallId)}
+      disabled={!parent}
+      title={
+        parent
+          ? `Jump to ${typeHint} ${shortId}`
+          : `parent call ${shortId} not in this run's loaded tree`
+      }
+    >
+      <span className="trace-detail-parent-type">{typeHint}</span>
+      <span className="trace-detail-mono">{shortId}</span>
+    </button>
+  );
+}
+
 // Event family coloring. We read event.event (the discriminator) and bucket
 // into a small set of families: context, mutation (moves/pages/links),
 // dispatch, llm, error, other. Each family maps to an existing CSS var.
@@ -1155,9 +1484,10 @@ function EventRow({ event, index }: { event: TraceEvent; index: number }) {
       </button>
       {open && (
         <div className="trace-event-body">
-          <pre className="trace-code trace-code-tight">
-            {prettyJson(omitShell(event))}
-          </pre>
+          <JsonWithNodeRefs
+            text={prettyJson(omitShell(event))}
+            className="trace-code trace-code-tight"
+          />
         </div>
       )}
     </li>
@@ -1223,17 +1553,35 @@ function ExchangeList({
   exchanges: LLMExchangeSummary[];
   exchangeEventsById: Record<string, TraceEvent>;
 }) {
+  // Surface an inline "ROUND N" caption whenever the round changes so
+  // multi-round scout loops visually group instead of reading as a flat
+  // 30-row list. Null rounds (single-pass calls) get no caption — the
+  // list is one block and the header already conveys that.
   return (
     <ul className="trace-exchange-list">
-      {exchanges.map((x, i) => (
-        <ExchangeRow
-          key={x.id}
-          summary={x}
-          isFirst={i === 0}
-          index={i}
-          event={exchangeEventsById[x.id]}
-        />
-      ))}
+      {exchanges.map((x, i) => {
+        const prev = i > 0 ? exchanges[i - 1] : null;
+        const showDivider =
+          x.round != null && (prev == null || prev.round !== x.round);
+        return (
+          <Fragment key={x.id}>
+            {showDivider && (
+              <li
+                className="trace-exchange-round-divider"
+                aria-hidden
+              >
+                ROUND {x.round}
+              </li>
+            )}
+            <ExchangeRow
+              summary={x}
+              isFirst={i === 0}
+              index={i}
+              event={exchangeEventsById[x.id]}
+            />
+          </Fragment>
+        );
+      })}
     </ul>
   );
 }
@@ -1391,7 +1739,12 @@ function ExchangeDetail({
               {" "}
               <span
                 className="trace-ex-header-cache"
-                title="cache_read_input_tokens"
+                title={
+                  "Cache-read tokens (input tokens served from an "
+                  + "existing cache-control block — ~90% discount vs "
+                  + "uncached input). Anthropic field: "
+                  + "cache_read_input_tokens."
+                }
               >
                 (cache: {formatTokenCount(cacheRead)})
               </span>
@@ -1402,7 +1755,12 @@ function ExchangeDetail({
               {" "}
               <span
                 className="trace-ex-header-cache"
-                title="cache_creation_input_tokens"
+                title={
+                  "Cache-write tokens (new cache-control blocks written "
+                  + "this turn — ~25% premium over uncached input, but "
+                  + "subsequent turns pay the cache-read rate). "
+                  + "Anthropic field: cache_creation_input_tokens."
+                }
               >
                 (cache-w: {formatTokenCount(cacheCreate)})
               </span>
@@ -1460,9 +1818,10 @@ function ExchangeDetail({
             label={`conversation history (${detail.user_messages.length})`}
             defaultOpen={false}
           >
-            <pre className="trace-code">
-              {prettyJson(detail.user_messages)}
-            </pre>
+            <JsonWithNodeRefs
+              text={prettyJson(detail.user_messages)}
+              className="trace-code"
+            />
           </Collapsible>
         )}
       </div>
@@ -1529,7 +1888,13 @@ function ToolCallBlock({
                 {formatPreviewValue(previewValue)}
               </span>
               {Object.keys(call.input as Record<string, unknown>).length > 1 && (
-                <span className="tc-preview-more">
+                <span
+                  className="tc-preview-more"
+                  title={
+                    `+${Object.keys(call.input as Record<string, unknown>).length - 1}`
+                    + " more argument keys on this tool call (expand to see them)"
+                  }
+                >
                   {", +"}
                   {Object.keys(call.input as Record<string, unknown>).length - 1}
                 </span>
@@ -1555,11 +1920,14 @@ function ToolCallBlock({
       {expanded && (
         <div className="tc-body">
           {rawMode || !inputIsDict ? (
-            <pre className="trace-code trace-code-tight">
-              {typeof call.input === "string"
-                ? call.input
-                : prettyJson(call.input)}
-            </pre>
+            <JsonWithNodeRefs
+              text={
+                typeof call.input === "string"
+                  ? call.input
+                  : prettyJson(call.input)
+              }
+              className="trace-code trace-code-tight"
+            />
           ) : (
             <ToolCallArgs input={call.input as Record<string, unknown>} />
           )}
@@ -1717,9 +2085,59 @@ function ToolCallArgValue({
   }
 
   if (typeof value === "string") {
-    return <span className="tc-string">{value}</span>;
+    return (
+      <span className="tc-string">
+        <InlineTextWithNodeRefs text={value} />
+      </span>
+    );
   }
   return <span className="tc-scalar">{String(value)}</span>;
+}
+
+// Inline variant of TextWithNodeRefs that doesn't require an onNodeRef
+// prop — it pulls openInspect / promoteToPane directly from the inspect
+// panel context. Used wherever tool-call args render a plain string that
+// might contain embedded 8-hex short-ids.
+function InlineTextWithNodeRefs({ text }: { text: string }) {
+  const { openInspect, promoteToPane } = useInspectPanel();
+  const parts: ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  const re = new RegExp(NODE_ID_RE);
+  while ((match = re.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(text.slice(lastIndex, match.index));
+    }
+    const id = match[1];
+    parts.push(
+      <button
+        key={`${match.index}-${id}`}
+        type="button"
+        className="node-ref-link"
+        onMouseDown={(e) => {
+          if (isPromoteEvent(e)) e.preventDefault();
+        }}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (isPromoteEvent(e)) {
+            e.preventDefault();
+            promoteToPane(id);
+          } else {
+            openInspect(id);
+          }
+        }}
+        title={`Click to inspect · alt/cmd-click to pin as pane · ${id}`}
+      >
+        {id}
+      </button>,
+    );
+    lastIndex = re.lastIndex;
+  }
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex));
+  }
+  if (parts.length === 0) return <>{text}</>;
+  return <>{parts}</>;
 }
 
 // Long-text renderer with pre-wrap and optional "show more" above 2000
@@ -1732,7 +2150,9 @@ function LongTextValue({ text }: { text: string }) {
   const shown = !tooLong || expanded ? text : text.slice(0, LIMIT) + "\u2026";
   return (
     <div className="tc-longtext-wrap">
-      <div className="tc-longtext">{shown}</div>
+      <div className="tc-longtext">
+        <InlineTextWithNodeRefs text={shown} />
+      </div>
       {tooLong && (
         <button
           type="button"
@@ -1928,6 +2348,57 @@ function prettyJson(obj: unknown): string {
   } catch {
     return String(obj);
   }
+}
+
+// Render a text blob (usually pretty-printed JSON) with any 8-char hex
+// short-ids wrapped as clickable NodeRefLink buttons. Click → openInspect,
+// alt/cmd-click → promoteToPane. Mirrors the pattern in NodeRefLink.tsx's
+// TextWithNodeRefs but renders inside a <pre> so whitespace/indent survives.
+function JsonWithNodeRefs({
+  text,
+  className,
+}: {
+  text: string;
+  className?: string;
+}) {
+  const { openInspect, promoteToPane } = useInspectPanel();
+  const parts: ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  const re = new RegExp(NODE_ID_RE);
+  while ((match = re.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(text.slice(lastIndex, match.index));
+    }
+    const id = match[1];
+    parts.push(
+      <button
+        key={`${match.index}-${id}`}
+        type="button"
+        className="node-ref-link"
+        onMouseDown={(e) => {
+          if (isPromoteEvent(e)) e.preventDefault();
+        }}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (isPromoteEvent(e)) {
+            e.preventDefault();
+            promoteToPane(id);
+          } else {
+            openInspect(id);
+          }
+        }}
+        title={`Click to inspect · alt/cmd-click to pin as pane · ${id}`}
+      >
+        {id}
+      </button>,
+    );
+    lastIndex = re.lastIndex;
+  }
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex));
+  }
+  return <pre className={className}>{parts}</pre>;
 }
 
 // Strip the trace-envelope shell (event, ts, call_id) when rendering the

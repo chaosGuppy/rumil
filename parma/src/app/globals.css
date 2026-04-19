@@ -428,15 +428,16 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 13px;
-  height: 13px;
+  width: 14px;
+  height: 14px;
   padding: 0;
-  border: 1px solid var(--border);
+  border: 1px solid var(--fg-muted);
   border-radius: 50%;
   background: transparent;
-  color: var(--fg-dim);
+  color: var(--fg-muted);
   font-family: var(--font-mono-stack);
-  font-size: 9px;
+  font-size: 10px;
+  font-weight: 500;
   line-height: 1;
   cursor: help;
   transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
@@ -2399,6 +2400,17 @@ body {
   font-size: 10px;
   color: var(--fg-dim);
   letter-spacing: 0.04em;
+}
+
+/*
+  Inline-citation affordance hint sitting below the health line. Reuses
+  .pane-kicker's dim uppercase mono treatment; override the default
+  margin-bottom so it doesn't push the first section away, and add a
+  small top margin to separate from .article-date above.
+*/
+.article-ref-legend {
+  margin-top: 6px;
+  margin-bottom: 0;
 }
 
 .article-section { margin-bottom: 16px; }
@@ -6471,8 +6483,12 @@ mark.ann-mark.ann-mark-dispute:hover {
   font-size: 9px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--node-uncertainty);
-  background: var(--node-uncertainty-bg);
+  /* Deliberately different from the peach orchestrator chip so STAGED
+   * reads as "mode", not as "one more config chip". Uses the judgement
+   * token (wine) which is the other reserved accent in the palette. */
+  color: var(--node-judgement);
+  background: var(--node-judgement-bg);
+  border: 1px solid var(--node-judgement);
   padding: 1px 5px;
   border-radius: 2px;
 }
@@ -6598,6 +6614,19 @@ mark.ann-mark.ann-mark-dispute:hover {
   border-radius: 2px;
   max-height: 40vh;
   overflow-y: auto;
+}
+.trace-head-config-group + .trace-head-config-group {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+}
+.trace-head-config-group-title {
+  font-family: var(--font-mono-stack);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+  margin-bottom: 4px;
 }
 
 .trace-head-spend {
@@ -6851,6 +6880,37 @@ mark.ann-mark.ann-mark-dispute:hover {
   color: var(--fg);
 }
 
+/* DISPATCHED BY breadcrumb — clickable button that switches the detail
+ * pane to the parent call. Deliberately low-key so it doesn't steal
+ * attention from the headline row. */
+.trace-detail-parent-btn {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 2px 6px;
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+}
+.trace-detail-parent-btn:hover:not(:disabled) {
+  color: var(--fg);
+  border-color: var(--border-strong);
+}
+.trace-detail-parent-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.trace-detail-parent-type {
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  color: var(--fg-dim);
+}
+
 .trace-detail-section {
   margin-top: 32px;
 }
@@ -6976,6 +7036,26 @@ mark.ann-mark.ann-mark-dispute:hover {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+/* Inline caption between exchange rows when the round changes — thin
+ * dim rule + label so multi-round scout loops read as grouped blocks
+ * rather than a flat list. */
+.trace-exchange-round-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono-stack);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+  margin: 6px 2px 0 2px;
+}
+.trace-exchange-round-divider::after {
+  content: "";
+  flex: 1;
+  border-top: 1px dashed var(--border);
 }
 
 .trace-exchange {
@@ -7517,8 +7597,11 @@ mark.ann-mark.ann-mark-dispute:hover {
   font-size: 9px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--node-uncertainty);
-  background: var(--node-uncertainty-bg);
+  /* Same contrast bump as .trace-head-staged — the staged marker is
+   * "mode", not a config chip. */
+  color: var(--node-judgement);
+  background: var(--node-judgement-bg);
+  border: 1px solid var(--node-judgement);
   padding: 1px 5px;
   border-radius: 2px;
 }
@@ -7548,6 +7631,13 @@ mark.ann-mark.ann-mark-dispute:hover {
   color: var(--fg-muted);
   font-size: 9px;
   letter-spacing: 0.02em;
+}
+/* Disambiguator chips — emitted when two same-minute same-name runs
+ * would otherwise be indistinguishable. Dashed border signals "this
+ * chip is pointing at a difference", not a primary config fact. */
+.trace-pick-row-disamb {
+  border-style: dashed;
+  color: var(--fg);
 }
 
 /* run-picker hygiene: show-hidden toggle + per-row hide button. Visual

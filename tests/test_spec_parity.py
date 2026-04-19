@@ -9,10 +9,22 @@ from __future__ import annotations
 import pytest
 
 from rumil.calls import spec_registry  # noqa: F401  (side-effect)
-from rumil.calls.call_registry import CALL_RUNNER_CLASSES
+from rumil.calls.call_registry import ASSESS_CALL_CLASSES, CALL_RUNNER_CLASSES
 from rumil.calls.spec import SPECS, SpecKey
 from rumil.calls.spec_runner import SpecCallRunner
 from rumil.models import Call, CallStatus, CallType, Workspace
+
+
+def _legacy_class_for(call_type: CallType, variant: str):
+    """Return the imperative CallRunner subclass for a (call_type, variant).
+
+    ``ASSESS`` is the one call type with multiple legacy variants
+    (AssessCall vs BigAssessCall); other call types have a single entry
+    in ``CALL_RUNNER_CLASSES`` keyed by ``CallType``.
+    """
+    if call_type == CallType.ASSESS:
+        return ASSESS_CALL_CLASSES.get(variant)
+    return CALL_RUNNER_CLASSES.get(call_type)
 
 
 def _spec_keys() -> list[SpecKey]:
@@ -25,9 +37,9 @@ def _spec_keys() -> list[SpecKey]:
 async def spec_and_legacy(request, tmp_db, question_page):
     param: tuple[CallType, str] = request.param
     call_type, variant = param
-    legacy_cls = CALL_RUNNER_CLASSES.get(call_type)
+    legacy_cls = _legacy_class_for(call_type, variant)
     if legacy_cls is None:
-        pytest.skip(f"no legacy class for {call_type.value}")
+        pytest.skip(f"no legacy class for {call_type.value} variant={variant!r}")
 
     call = Call(
         call_type=call_type,

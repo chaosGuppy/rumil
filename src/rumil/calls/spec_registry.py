@@ -13,8 +13,8 @@ is tracked in the master plan.
 from __future__ import annotations
 
 from rumil.calls.closing_reviewers import SinglePhaseScoutReview, StandardClosingReview
-from rumil.calls.context_builders import EmbeddingContext
-from rumil.calls.page_creators import MultiRoundLoop
+from rumil.calls.context_builders import BigAssessContext, EmbeddingContext
+from rumil.calls.page_creators import MultiRoundLoop, SimpleAgentLoop
 from rumil.calls.spec import (
     CallSpec,
     FromCallParam,
@@ -31,8 +31,32 @@ from rumil.models import CallType, FindConsiderationsMode, PageType
 
 @register_context_builder("embedding")
 def _embedding_context(ctx: StageBuildCtx, cfg: dict) -> EmbeddingContext:
-    """Embedding-based context builder; uses ctx.call_type verbatim."""
-    return EmbeddingContext(ctx.call_type)
+    """Embedding-based context builder; uses ctx.call_type verbatim.
+
+    Config options:
+    - ``require_judgement_for_questions: bool`` (default False) — used by
+      ``assess`` to require an existing judgement before considering a
+      subquestion "covered".
+    """
+    return EmbeddingContext(
+        ctx.call_type,
+        require_judgement_for_questions=bool(cfg.get("require_judgement_for_questions", False)),
+    )
+
+
+@register_context_builder("big_assess")
+def _big_assess_context(ctx: StageBuildCtx, cfg: dict) -> BigAssessContext:
+    """BigAssessContext — freshens connected pages before assembling context."""
+    return BigAssessContext(ctx.call_type)
+
+
+@register_workspace_updater("simple_agent_loop")
+def _simple_agent_loop(ctx: StageBuildCtx, cfg: dict) -> SimpleAgentLoop:
+    """Single-pass agent loop; pulls optional ``prompt_name`` from config."""
+    kwargs: dict = {"available_moves": list(ctx.available_moves)}
+    if cfg.get("prompt_name"):
+        kwargs["prompt_name"] = cfg["prompt_name"]
+    return SimpleAgentLoop(ctx.call_type, ctx.task_description, **kwargs)
 
 
 @register_workspace_updater("multi_round_loop")
@@ -371,5 +395,65 @@ register_spec(
             "and note which stories it helps discriminate between."
         ),
         scope=PageType.CLAIM,
+    )
+)
+
+
+register_spec(
+    CallSpec(
+        call_type=CallType.ASSESS,
+        description=(
+            "Assess a question: synthesise considerations, weigh evidence "
+            "on multiple sides, and commit to a judgement with structured "
+            "confidence."
+        ),
+        task_template=(
+            "Assess this question and render a judgement.\n\n"
+            "Question ID: `{scope_id}`\n\n"
+            "Synthesise the considerations, weigh evidence on multiple sides, "
+            "and produce a judgement with structured confidence. "
+            "Even if uncertain, commit to a position."
+        ),
+        prompt_id="assess",
+        context_builder=StageRef(
+            id="embedding",
+            config={"require_judgement_for_questions": True},
+        ),
+        workspace_updater=StageRef(id="simple_agent_loop"),
+        closing_reviewer=StageRef(id="standard_review"),
+        allowed_moves=PresetKey(""),
+        scope_page_type=PageType.QUESTION,
+        emits_page_types=frozenset({PageType.JUDGEMENT, PageType.CLAIM}),
+        estimated_budget_cost=2,
+    )
+)
+
+
+register_spec(
+    CallSpec(
+        call_type=CallType.ASSESS,
+        variant="big",
+        description=(
+            "Big-assess variant: freshens connected pages (resolves "
+            "supersessions, reassesses stale deps, seeks higher-quality "
+            "replacements via embedding search) before producing the "
+            "judgement."
+        ),
+        task_template=(
+            "Assess this question and render a judgement.\n\n"
+            "Question ID: `{scope_id}`\n\n"
+            "Follow the instructions in the system prompt."
+        ),
+        prompt_id="big_assess",
+        context_builder=StageRef(id="big_assess"),
+        workspace_updater=StageRef(
+            id="simple_agent_loop",
+            config={"prompt_name": "big_assess"},
+        ),
+        closing_reviewer=StageRef(id="standard_review"),
+        allowed_moves=PresetKey(""),
+        scope_page_type=PageType.QUESTION,
+        emits_page_types=frozenset({PageType.JUDGEMENT, PageType.CLAIM}),
+        estimated_budget_cost=3,
     )
 )

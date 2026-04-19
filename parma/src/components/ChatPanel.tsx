@@ -212,11 +212,19 @@ function runningVerb(name: string): string {
 function ToolBlock({ tu }: { tu: ChatToolUse }) {
   const isRunning = !tu.result;
   if (isRunning) {
+    // Backend streams orchestrator_progress SSE events into tu.input._progress
+    // for long-running dispatches (find_considerations / research / etc.).
+    // Show it verbatim when present so the user sees step-by-step progress
+    // instead of an inscrutable spinner.
+    const progress =
+      typeof tu.input?._progress === "string" ? tu.input._progress : null;
     return (
       <div className="chat-tool-running">
         <span className="chat-tool-dot" aria-hidden="true" />
         <span className="chat-tool-name">{tu.name}</span>
-        <span className="chat-tool-status">{`${runningVerb(tu.name)}\u2026`}</span>
+        <span className="chat-tool-status">
+          {progress ? `\u2014 ${progress}` : `${runningVerb(tu.name)}\u2026`}
+        </span>
       </div>
     );
   }

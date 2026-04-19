@@ -869,7 +869,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         Best-effort: any failure is logged and swallowed. Dispatches run
         in the background so prioritization isn't blocked.
         """
-        from rumil.eval_feedback import LAZY_EVAL_DIMENSIONS
+        from rumil.eval_feedback import LAZY_EVAL_DIMENSIONS, select_lazy_eval_targets
 
         settings = get_settings()
         if not settings.lazy_eval_enabled:
@@ -902,15 +902,19 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             log.exception("lazy_eval: get_eval_summary_for_pages failed")
             return
 
-        uncovered = [
-            pid
-            for pid in candidates
-            if not any(
-                (existing.get(pid) or {}).get(d) and (existing.get(pid) or {})[d].count > 0
-                for d in LAZY_EVAL_DIMENSIONS
-            )
-        ]
+        uncovered = select_lazy_eval_targets(
+            candidates,
+            summaries=existing,
+            dimensions=LAZY_EVAL_DIMENSIONS,
+            per_round_cap=per_round,
+            already_evaluated_this_run=used,
+            per_run_cap=per_run,
+        )
 
+        # Threshold fire: only dispatch when enough uncovered targets
+        # justify the eval's fixed overhead. The selector already caps at
+        # per_round, so reaching that cap means we have at least per_round
+        # uncovered targets worth evaluating.
         if len(uncovered) < per_round:
             return
 

@@ -291,3 +291,69 @@ async def test_continue_question_success_spawns_task(api_client, mocker):
     assert data["budget"] == 7
     assert len(data["run_id"]) > 0
     create_task_spy.assert_called_once()
+
+
+async def test_ab_eval_same_run_returns_400(api_client, mocker):
+    """Cannot compare a run against itself."""
+    get_run_spy = mocker.patch.object(DB, "get_run")
+    create_task_spy = mocker.patch("rumil.api.app.asyncio.create_task")
+
+    resp = await api_client.post(
+        "/api/ab-evals",
+        json={"run_id_a": "same", "run_id_b": "same"},
+    )
+    assert resp.status_code == 400
+    get_run_spy.assert_not_called()
+    create_task_spy.assert_not_called()
+
+
+async def test_ab_eval_missing_run_a_returns_404(api_client, mocker):
+    """POST /api/ab-evals 404s if run_id_a doesn't exist."""
+    mocker.patch.object(DB, "get_run", return_value=None)
+    create_task_spy = mocker.patch("rumil.api.app.asyncio.create_task")
+
+    resp = await api_client.post(
+        "/api/ab-evals",
+        json={"run_id_a": "missing", "run_id_b": "r2"},
+    )
+    assert resp.status_code == 404
+    create_task_spy.assert_not_called()
+
+
+async def test_ab_eval_missing_run_b_returns_404(api_client, mocker):
+    """404 if run_id_b doesn't exist (run_id_a does)."""
+    calls = []
+
+    async def fake_get_run(self, run_id: str):
+        calls.append(run_id)
+        return {"id": run_id, "project_id": "proj"} if run_id == "r_a" else None
+
+    mocker.patch.object(DB, "get_run", fake_get_run)
+    create_task_spy = mocker.patch("rumil.api.app.asyncio.create_task")
+
+    resp = await api_client.post(
+        "/api/ab-evals",
+        json={"run_id_a": "r_a", "run_id_b": "r_missing"},
+    )
+    assert resp.status_code == 404
+    assert calls == ["r_a", "r_missing"]
+    create_task_spy.assert_not_called()
+
+
+async def test_ab_eval_success_spawns_task(api_client, mocker):
+    """Happy path: 202 and a background task is scheduled."""
+
+    async def fake_get_run(self, run_id: str):
+        return {"id": run_id, "project_id": "proj"}
+
+    mocker.patch.object(DB, "get_run", fake_get_run)
+    create_task_spy = mocker.patch("rumil.api.app.asyncio.create_task")
+
+    resp = await api_client.post(
+        "/api/ab-evals",
+        json={"run_id_a": "r_a", "run_id_b": "r_b"},
+    )
+    assert resp.status_code == 202
+    data = resp.json()
+    assert data == {"run_id_a": "r_a", "run_id_b": "r_b", "status": "started"}
+    create_task_spy.assert_called_once()

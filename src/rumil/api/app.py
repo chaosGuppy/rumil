@@ -896,6 +896,11 @@ class ContinueQuestionIn(BaseModel):
     budget: int = 10
 
 
+class ABEvalIn(BaseModel):
+    run_id_a: str
+    run_id_b: str
+
+
 @app.post("/api/questions/{question_id}/continue", status_code=202)
 async def post_continue_question(
     question_id: str,
@@ -1014,6 +1019,44 @@ async def list_ab_evals(db: DB = Depends(_get_db)):
             )
         )
     return results
+
+
+@app.post("/api/ab-evals", status_code=202)
+async def post_ab_eval(body: ABEvalIn, db: DB = Depends(_get_db)):
+    """Kick off an AB eval comparing two runs as a background task.
+
+    Returns an eval_run_id (the run_id used for the eval itself). The
+    final ``ab_eval_report`` id is only known when the eval completes,
+    so clients should poll /api/ab-evals and filter by run_id_a/b to
+    find the finished report.
+    """
+    if body.run_id_a == body.run_id_b:
+        raise HTTPException(status_code=400, detail="run_id_a and run_id_b must differ")
+
+    run_a = await db.get_run(body.run_id_a)
+    if not run_a:
+        raise HTTPException(status_code=404, detail=f"Run {body.run_id_a} not found")
+    run_b = await db.get_run(body.run_id_b)
+    if not run_b:
+        raise HTTPException(status_code=404, detail=f"Run {body.run_id_b} not found")
+
+    project_id = run_a.get("project_id") or run_b.get("project_id") or ""
+
+    asyncio.create_task(
+        _run_background(
+            f"ab_eval a={body.run_id_a[:8]} b={body.run_id_b[:8]}",
+            _run_ab_eval_background(
+                run_id_a=body.run_id_a,
+                run_id_b=body.run_id_b,
+                project_id=project_id,
+            ),
+        )
+    )
+    return {
+        "run_id_a": body.run_id_a,
+        "run_id_b": body.run_id_b,
+        "status": "started",
+    }
 
 
 @app.get(

@@ -52,7 +52,7 @@ from rumil.models import (
 from rumil.moves.registry import MOVES
 from rumil.pricing import usd_from_usage
 from rumil.scraper import scrape_url
-from rumil.settings import get_settings
+from rumil.settings import get_settings, override_settings
 from rumil.summary import build_research_tree
 from rumil.views import View, build_view
 
@@ -296,17 +296,14 @@ TOOLS: list[dict[str, Any]] = [
             "and COSTS REAL MONEY. Confirm with the user before calling. "
             "The call runs in the background — results appear in the view. "
             "Available call types: find-considerations, assess, web-research, "
-            "scout-subquestions, scout-hypotheses, scout-estimates, scout-analogies.\n\n"
-            "Effort is controlled by `max_rounds` — the number of agent-loop "
-            f"iterations the call runs (default {DEFAULT_DISPATCH_MAX_ROUNDS}, "
-            f"min {MIN_DISPATCH_MAX_ROUNDS}, max {MAX_DISPATCH_MAX_ROUNDS}). "
-            "Each round lets the model produce pages and call moves; more "
-            "rounds = broader exploration but linearly more cost. Bump it "
-            "when the user asks for deeper investigation, or leave the default "
-            "for a normal pass.\n\n"
-            "The model is fixed to the server's default — per-call model "
-            "overrides aren't supported from chat. If the user wants haiku "
-            "vs opus for A/B, they need to run `main.py --model` from the CLI."
+            "scout-subquestions, scout-hypotheses, scout-estimates, scout-analogies. "
+            "Effort is controlled by `max_rounds` (default "
+            f"{DEFAULT_DISPATCH_MAX_ROUNDS}, min {MIN_DISPATCH_MAX_ROUNDS}, max "
+            f"{MAX_DISPATCH_MAX_ROUNDS}) — each round lets the model produce "
+            "pages and call moves; more rounds = broader exploration but linearly "
+            "more cost. `model` optionally overrides the default model for this "
+            "single call (haiku/sonnet/opus) — haiku for a cheap first pass, opus "
+            "for a high-quality final pass."
         ),
         "input_schema": {
             "type": "object",
@@ -335,6 +332,15 @@ TOOLS: list[dict[str, Any]] = [
                     "description": (
                         f"Agent-loop rounds (default {DEFAULT_DISPATCH_MAX_ROUNDS}). "
                         "Higher = deeper investigation, more cost."
+                    ),
+                },
+                "model": {
+                    "type": "string",
+                    "enum": ["haiku", "sonnet", "opus"],
+                    "description": (
+                        "Override the default model for this single call. "
+                        "Use haiku for a cheap first pass; opus for a high-quality "
+                        "final pass."
                     ),
                 },
             },
@@ -1262,6 +1268,8 @@ async def _execute_tool(
             MIN_DISPATCH_MAX_ROUNDS,
             min(int(raw_rounds), MAX_DISPATCH_MAX_ROUNDS),
         )
+        model_short = tool_input.get("model")
+        model_full = MODEL_MAP[model_short] if model_short in MODEL_MAP else None
         return json.dumps(
             {
                 "__async_dispatch__": True,
@@ -1269,6 +1277,7 @@ async def _execute_tool(
                 "headline": headline,
                 "call_type": call_type_str,
                 "max_rounds": max_rounds,
+                "model": model_full,
             }
         )
 
@@ -2053,6 +2062,7 @@ async def _run_dispatch(
     headline = params.get("headline", question_id[:8])
     call_type_str = params["call_type"]
     max_rounds = params.get("max_rounds", DEFAULT_DISPATCH_MAX_ROUNDS)
+    model = params.get("model")
     call = None
     try:
         ct, cls = _CALL_TYPE_MAP[call_type_str]
@@ -2060,7 +2070,11 @@ async def _run_dispatch(
         runner = _build_runner(cls, call_type_str, question_id, call, db, max_rounds)
         if on_progress:
             on_progress(f"Running {call_type_str} on '{headline[:40]}'...")
-        await runner.run()
+        if model:
+            with override_settings(rumil_model_override=model):
+                await runner.run()
+        else:
+            await runner.run()
         if on_progress:
             on_progress(f"{call_type_str} call {call.id[:8]} completed")
         return (

@@ -1240,3 +1240,109 @@ async def test_set_view_invalid_view_mode(tmp_db):
 
     assert "error" in payload
     assert "Invalid view" in payload["error"]
+
+
+async def test_dispatch_call_tool_schema_includes_model_enum():
+    dispatch_tool = next(t for t in TOOLS if t["name"] == "dispatch_call")
+    props = dispatch_tool["input_schema"]["properties"]
+    assert "model" in props
+    assert props["model"]["type"] == "string"
+    assert props["model"]["enum"] == ["haiku", "sonnet", "opus"]
+
+
+async def test_run_dispatch_applies_model_override(tmp_db, seeded_graph, mocker):
+    from rumil.api.chat import _run_dispatch
+    from rumil.settings import get_settings
+
+    root = seeded_graph["root"]
+    captured: dict[str, str] = {}
+
+    async def fake_run(self):
+        captured["model"] = get_settings().model
+
+    mocker.patch("rumil.calls.FindConsiderationsCall.run", fake_run)
+
+    result = await _run_dispatch(
+        tmp_db,
+        {
+            "question_id": root.id,
+            "headline": root.headline,
+            "call_type": "find-considerations",
+            "max_rounds": 1,
+            "model": "claude-opus-4-6",
+        },
+    )
+
+    assert "completed" in result
+    assert captured["model"] == "claude-opus-4-6"
+
+
+async def test_run_dispatch_without_model_uses_default(tmp_db, seeded_graph, mocker):
+    from rumil.api.chat import _run_dispatch
+    from rumil.settings import get_settings
+
+    root = seeded_graph["root"]
+    default_model = get_settings().model
+    captured: dict[str, str] = {}
+
+    async def fake_run(self):
+        captured["model"] = get_settings().model
+
+    mocker.patch("rumil.calls.FindConsiderationsCall.run", fake_run)
+
+    await _run_dispatch(
+        tmp_db,
+        {
+            "question_id": root.id,
+            "headline": root.headline,
+            "call_type": "find-considerations",
+            "max_rounds": 1,
+            "model": None,
+        },
+    )
+
+    assert captured["model"] == default_model
+
+
+async def test_execute_tool_dispatch_envelope_forwards_validated_model(tmp_db, seeded_graph):
+    import json
+
+    from rumil.api.chat import MODEL_MAP
+
+    root = seeded_graph["root"]
+
+    result = await _execute_tool(
+        "dispatch_call",
+        {
+            "question_id": root.id[:8],
+            "call_type": "find-considerations",
+            "model": "haiku",
+        },
+        tmp_db,
+        scope_question_id=root.id,
+    )
+    payload = json.loads(result)
+
+    assert payload["__async_dispatch__"] is True
+    assert payload["model"] == MODEL_MAP["haiku"]
+
+
+async def test_execute_tool_dispatch_envelope_drops_unknown_model(tmp_db, seeded_graph):
+    import json
+
+    root = seeded_graph["root"]
+
+    result = await _execute_tool(
+        "dispatch_call",
+        {
+            "question_id": root.id[:8],
+            "call_type": "find-considerations",
+            "model": "bogus",
+        },
+        tmp_db,
+        scope_question_id=root.id,
+    )
+    payload = json.loads(result)
+
+    assert payload["__async_dispatch__"] is True
+    assert payload["model"] is None

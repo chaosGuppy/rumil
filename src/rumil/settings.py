@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     rumil_test_mode: str = ""
     rumil_smoke_test: str = ""
+    rumil_model_override: str = ""
     force_twophase_recurse: bool = False
     use_prod_db: str = ""
     tracing_enabled: bool = True
@@ -163,6 +164,8 @@ class Settings(BaseSettings):
 
     @property
     def model(self) -> str:
+        if self.rumil_model_override:
+            return self.rumil_model_override
         return (
             "claude-haiku-4-5-20251001"
             if self.is_test_mode or self.is_smoke_test

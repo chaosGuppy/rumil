@@ -258,7 +258,11 @@ async def run(args: argparse.Namespace) -> None:
     )
 
     print(f"Running {args.call_type} on {question_id[:8]}...")
-    await run_call(args, db, question_id)
+    from rumil.run_executor import RunExecutor
+
+    executor = RunExecutor(db)
+    async with executor.tracked_scope(db.run_id):
+        await run_call(args, db, question_id)
     print("\nDone.")
 
 

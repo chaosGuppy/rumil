@@ -70,7 +70,7 @@ Do NOT add "allow all" policies. If you need non-service-role access, add target
 
 ## Architecture
 
-**Entry point:** `main.py` — CLI arg parsing, dispatches to command functions. A pending refactor promotes `Run` to a real control plane in `src/rumil/run_executor/` (not yet created); schema lives in the `20260419102100_run_executor_schema` migration (`runs.status/started_at/finished_at/cost_usd_cents/paused_at/cancel_reason`, plus `call_costs` and `run_checkpoints` tables). Nothing in the Python code writes to those columns yet — the schema is additive and safe, but any follow-up work should start populating `runs.status` transitions + `call_costs` rows as the first shippable slice.
+**Entry point:** `main.py` — CLI arg parsing, dispatches to command functions. A pending refactor promotes `Run` to a real control plane in `src/rumil/run_executor/`; schema lives in the `20260419102100_run_executor_schema` migration (`runs.status/started_at/finished_at/cost_usd_cents/paused_at/cancel_reason`, plus `call_costs` and `run_checkpoints` tables). Today `RunExecutor` exposes only `.status(run_id) -> RunView | None`; `start` / `pause` / `resume` / `cancel` / `wait_until_settled` / `events` raise `NotImplementedError` and land in later phases. The active dispatch path (`main.py`'s six cmd_* scaffolds, `scripts/run_call.py`, `api/app.py`'s `_run_background*` family) is unchanged and still owns writes.
 
 **Single-call runner** (`scripts/run_call.py`): Runs one call type against the local database. Supports `--workspace`, `--smoke-test`, `--ab` (A/B testing with `.a.env`/`.b.env`), `--name`, and `--up-to-stage` (truncate the call lifecycle after `build_context` or `update_workspace`). Runs are recorded in the `runs` table with captured config.
 

@@ -1,17 +1,19 @@
 # Plan Workspace Updates
 
-You are updating a research workspace with new web research findings. Your job has two phases:
+You're applying web research findings to a workspace. The work splits into two phases.
 
 ## Phase 1: Update directly-affected claims
 
-For each claim that is **directly affected** by the web research findings, spawn a `claim-updater` subagent. You should update **all** directly-affected claims — these do not count against your budget.
+For every claim that's **directly affected** by the findings, spawn a `claim-updater` subagent. You update *all* of them — directly-affected claims don't count against your budget.
 
-Use `explore_page` to navigate the workspace graph and identify which claims are directly affected by the findings.
+A claim is directly affected when the findings contradict, refine, or bolster its specific content. Transitively affected claims (wrong only because they lean on another affected claim) are not your concern in this phase — they'll be handled separately.
 
-When spawning each subagent, your prompt to it **must** include:
+Use `explore_page` to navigate the workspace graph and identify which claims the findings directly bear on.
 
-1. The claim's page ID (8-char short ID)
-2. The **full text** of the relevant web research findings, including all source URLs — the subagent cannot see your conversation, so it needs everything in the prompt you give it
-3. Any specific guidance on how the claim should be updated
+Each subagent prompt must include:
 
-The subagent will use `create_claim` with the old claim's ID in `supersedes` and the source URLs in `source_urls` to create a properly grounded replacement.
+1. The claim's page ID (8-char short ID).
+2. The **full text** of the relevant findings, with source URLs. The subagent can't see your conversation — everything it needs has to be in the prompt you write.
+3. Specific guidance on how the claim should be updated, if the direction isn't obvious from the findings.
+
+The subagent uses `create_claim` with the old claim's ID in `supersedes` and the URLs in `source_urls` to produce a properly grounded replacement.

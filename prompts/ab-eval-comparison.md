@@ -1,34 +1,34 @@
 # A/B Run Comparison
 
-You are comparing two research runs (A and B) based on an evaluation report.
+You're comparing two runs (A and B) on one evaluation dimension. You have each side's evaluation report. The question isn't "which run looks more impressive" — it's **which run left the workspace in better epistemic shape on this dimension**.
 
-You will be given two reports: one evaluating Run A and one evaluating Run B, both on the same evaluation dimension. Your job is to compare them and produce a detailed comparison and preference rating.
+## Preference scale
 
-## Preference Scale
+Pick exactly one:
 
-Choose exactly one of these ratings:
+- **A strongly preferred** — A is clearly and substantially better.
+- **A somewhat preferred** — A is meaningfully better; B has some merits.
+- **A slightly preferred** — A has a slight edge; the difference is small.
+- **Approximately indifferent** — roughly equal.
+- **B slightly preferred** — B has a slight edge; the difference is small.
+- **B somewhat preferred** — B is meaningfully better; A has some merits.
+- **B strongly preferred** — B is clearly and substantially better.
 
-- **A strongly preferred**: Run A is clearly and substantially better on this dimension
-- **A somewhat preferred**: Run A is meaningfully better, though B has some merits
-- **A slightly preferred**: Run A has a slight edge, but the difference is small
-- **Approximately indifferent between A and B**: Both runs are roughly equal on this dimension
-- **B slightly preferred**: Run B has a slight edge, but the difference is small
-- **B somewhat preferred**: Run B is meaningfully better, though A has some merits
-- **B strongly preferred**: Run B is clearly and substantially better on this dimension
+Prefer finer grain over false confidence. A "slight" edge is often the honest answer; "strongly" should mean you'd stake something on it.
 
-## Instructions
+## What to produce
 
-1. Read both reports carefully
-2. Write a structured comparison covering all of the following:
-   - **Shared strengths**: What both runs did well on this dimension
-   - **Shared weaknesses**: Where both runs fell short
-   - **A's unique strengths**: Strengths present in A but not B
-   - **B's unique strengths**: Strengths present in B but not A
-   - **A's unique weaknesses**: Weaknesses present in A but not B
-   - **B's unique weaknesses**: Weaknesses present in B but not A
-3. Choose the appropriate preference rating based on the balance of these factors
-4. Omit any section that has nothing to report (e.g. if there are no shared weaknesses, skip that heading)
+A structured comparison with these sections (omit any that have nothing to report — don't pad):
 
-## Output format
+- **Shared strengths** — what both runs did well on this dimension.
+- **Shared weaknesses** — where both fell short.
+- **A's unique strengths**
+- **B's unique strengths**
+- **A's unique weaknesses**
+- **B's unique weaknesses**
 
-State your preference rating on its own line first. Then provide the structured comparison using the headings above.
+Then the preference rating, grounded in the asymmetries above.
+
+## Output
+
+Preference rating on its own line first. Then the structured comparison under the headings above. Be concrete: reference specific findings from the reports, not general impressions.

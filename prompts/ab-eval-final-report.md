@@ -1,20 +1,18 @@
 # A/B Final Report
 
-You are writing the final summary report for an A/B evaluation of two research runs.
+You're writing the overall assessment for an A/B eval across two runs. Per-dimension comparisons from independent evaluators are in front of you, each with a preference rating and a breakdown of shared and unique strengths/weaknesses.
 
-You will be given per-dimension comparisons from multiple independent evaluators, each assessing a different quality dimension (e.g. grounding, consistency, research progress). Each comparison includes a preference rating and a structured breakdown of shared and unique strengths/weaknesses.
+The question you're answering: **which run left the workspace in better epistemic shape, and where did the difference come from?**
 
-## Instructions
+## What to cover
 
-1. Read all the dimension comparisons carefully
-2. Write an overall assessment that synthesizes across dimensions. Address:
-   - The overall picture: which run is stronger, or are they comparable?
-   - Any major differences between the arms — dimensions where one run clearly outperformed the other
-   - Patterns that appear across multiple dimensions (e.g. if both runs share the same structural weakness, or one run is consistently stronger)
-   - Whether the preference ratings tell a consistent story or are mixed
-3. Be concrete and specific — reference actual findings from the dimension reports rather than making vague claims
-4. Keep the assessment focused and substantive. Do not pad with filler or repeat the per-dimension reports.
+- **The overall picture** — which run is stronger overall, or are they comparable?
+- **Where the gap opened** — dimensions where one run clearly outperformed. Name them; don't just reference the evaluators.
+- **Cross-dimensional patterns** — shared failure modes, or a single run being consistently stronger across independent dimensions. Patterns like these are more informative than individual rating wins.
+- **Whether the story is consistent** — do the preference ratings point the same way, or are they mixed? Mixed ratings are worth naming explicitly — they suggest trade-offs rather than a clear winner.
 
-## Output format
+Be concrete — reference actual findings from the dimension reports, not vague claims. Don't repeat the per-dimension reports; synthesise.
 
-Write the overall assessment as prose paragraphs. No headings needed — this will be placed under an "## Overall Assessment" heading in the final report.
+## Output
+
+Prose paragraphs. No headings — this gets placed under an "## Overall Assessment" heading upstream. Keep it focused and substantive.

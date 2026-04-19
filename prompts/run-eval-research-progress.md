@@ -1,40 +1,26 @@
 # Run Evaluation: Research Progress
 
-You are evaluating a research run for the amount of genuine **research progress** it achieved.
+Did this run actually move understanding forward, or did it just add pages?
 
-## What you are evaluating
+The distinction matters. A run can produce a lot of content and leave the workspace no better off — restating what was already known, spreading effort thinly across obvious angles, generating fluent text about surface-level observations. A run genuinely *progresses* when a careful reader of the workspace before and after would say "oh, now I see something I didn't see before."
 
-You are looking at a research workspace where a run has added new pages and links. Items marked `[ADDED BY THIS RUN]` were created by the run being evaluated. Focus your evaluation on these items -- the rest of the workspace is pre-existing context.
+## What to look for
 
-## Your task
-
-Assess the following dimensions:
-
-1. **Breakthroughs**: Were there moments where the analysis understood something in a new, clearer light? Did the run reframe a problem in a way that made it more tractable? Did it identify a key insight that changes how we should think about the question?
-
-2. **Key information uncovered**: Did the run surface crucial pieces of information -- data points, precedents, mechanisms, or dynamics -- that were not present in the workspace before and that materially affect the analysis?
-
-3. **Substantial updates**: To what extent did the run produce findings that should substantially update our view on the question? Were there claims or judgements with high credence and robustness that moved the needle?
-
-4. **Depth vs breadth**: Were the depth and breadth of investigation appropriate? Did the run go deep where it mattered, or spread itself thin? Conversely, did it tunnel too narrowly into one subtopic while neglecting important angles? Is the allocation of depth proportional to the importance of each subtopic?
-
-5. **Advancing beyond the obvious**: Did the run go beyond surface-level observations that anyone could make? Did it produce analysis that reflects genuine intellectual work rather than restating common knowledge or the question's own framing?
+1. **Breakthroughs** — moments where the analysis understood something in a new, clearer light. A reframing that made the question more tractable. An insight that changes how you'd approach the rest of the question.
+2. **Key information** — data points, precedents, mechanisms, or dynamics that weren't in the workspace before and that materially affect the analysis.
+3. **Substantial updates** — findings that should actually move credences on the parent question. High-robustness claims that change what the top judgement would say.
+4. **Depth vs breadth** — was effort allocated proportionally? Deep where it mattered, broad where it didn't? Or tunneled narrowly while leaving important angles bare, or spread thin across obvious ones?
+5. **Beyond the obvious** — did the analysis go past what anyone could have said by reading the question? Or does it mostly restate the framing?
 
 ## How to work
 
-1. Use `explore_subgraph` to navigate the workspace graph, starting from the root question. Use `load_page` to read the full content of individual pages — pass multiple IDs in `page_ids` to fetch several pages in one call rather than looping
-2. Examine the claims, judgements, and subquestions marked `[ADDED BY THIS RUN]`
-3. Assess whether each major output represents genuine progress or is relatively obvious
-4. Look for moments where the analysis took a non-obvious turn that paid off
-5. Consider the overall trajectory: did the run make the workspace significantly more knowledgeable?
+Map the run's outputs. Ask of each major item: *would a careful reader encountering this for the first time actually update?* Progress that any thoughtful person would produce on first read is not progress — it's table stakes.
 
-## Output format
+## Output
 
-Produce a structured evaluation report with:
-
-- **Summary**: 2-3 sentence overview of research progress
-- **Breakthroughs**: Specific moments of genuine insight or reframing
-- **Key findings**: The most valuable pieces of information or analysis added
-- **Missed opportunities**: Areas where deeper investigation would have been valuable
-- **Surface-level outputs**: Examples of content that did not advance understanding
-- **Overall assessment**: A paragraph synthesizing your evaluation
+- **Summary** — 2–3 sentences.
+- **Breakthroughs** — specific moments of insight or reframing (page IDs).
+- **Key findings** — most valuable pieces of information or analysis added.
+- **Missed opportunities** — where deeper investigation would have paid off.
+- **Surface-level outputs** — content that added pages without adding understanding.
+- **Overall** — one paragraph synthesising whether this run left the workspace meaningfully wiser.

@@ -1,38 +1,25 @@
 # Run Evaluation: Grounding & Factual Correctness
 
-You are evaluating a research run for the quality of its **grounding and factual correctness**.
+The question: when this run's claims could have been grounded in a source, were they? And when they were grounded, is the citation honest?
 
-## What you are evaluating
+Thin grounding isn't automatically a failure — some claims are structural or analytical and don't call for an external source. But a factual claim that *could* be grounded and isn't, or one that cites a source that doesn't actually support it, is a real defect. Focus your attention on load-bearing claims; a weak citation on a throwaway claim matters less than a weak citation on a claim the top judgement rests on.
 
-You are looking at a research workspace where a run has added new pages and links. Items marked `[ADDED BY THIS RUN]` were created by the run being evaluated. Focus your evaluation on these items -- the rest of the workspace is pre-existing context.
+## What to look for
 
-## Your task
-
-Assess the following dimensions:
-
-1. **Source backing**: To what extent are claims that could be backed up by sources actually backed up? Are citations present where they should be? Do the cited sources actually support what they are cited for?
-
-2. **Factual accuracy**: Are the factual claims made by this run correct? Use WebSearch to verify specific factual claims against external sources when you can. Focus on claims that are load-bearing for the analysis.
-
-3. **Specificity of evidence**: Does the run make vague appeals to evidence ("studies show", "experts agree") without pinning down what specifically supports the claim? Or does it get specific?
-
-4. **Misrepresentation**: Are any sources or facts misrepresented, taken out of context, or selectively cited in a way that distorts the picture?
+1. **Source backing** — for claims that should be externally grounded, are they? Do the cited sources actually support what they're cited for, or does the citation break on inspection?
+2. **Factual accuracy** — are specific factual assertions correct? Use WebSearch to verify load-bearing ones when you can.
+3. **Evidence specificity** — vague appeals ("studies show", "experts agree") that never pin down what they rest on. These read as grounded but aren't.
+4. **Misrepresentation** — sources cited in a way that distorts what they actually say, via cherry-picking, context-stripping, or paraphrase drift.
 
 ## How to work
 
-1. Use `explore_subgraph` to navigate the workspace graph, starting from the root question. Use `load_page` to read the full content of individual pages — pass multiple IDs in `page_ids` to fetch several pages in one call rather than looping
-2. Identify claims marked `[ADDED BY THIS RUN]`
-3. For factual claims that are load-bearing, verify them using WebSearch where possible
-4. Assess source quality and citation accuracy
-5. Note both strengths and weaknesses
+Find `[ADDED BY THIS RUN]` claims with `explore_subgraph`. For load-bearing factual claims, open the cited sources and verify the citation holds. For high-stakes external facts, verify via WebSearch.
 
-## Output format
+## Output
 
-Produce a structured evaluation report with:
-
-- **Summary**: 2-3 sentence overview of grounding quality
-- **Strengths**: What this run did well in terms of grounding
-- **Weaknesses**: Specific examples of poor grounding, missing sources, or factual errors
-- **Verified claims**: Claims you checked and found correct
-- **Problematic claims**: Claims you found unsupported, incorrect, or misleadingly cited
-- **Overall assessment**: A paragraph synthesizing your evaluation
+- **Summary** — 2–3 sentences on grounding quality overall.
+- **Strengths** — what the run did well (solid sourcing on the things that mattered).
+- **Weaknesses** — poor grounding, missing sources, factual errors — each with page IDs.
+- **Verified claims** — claims you checked and found sound.
+- **Problematic claims** — unsupported, incorrect, or misleadingly cited.
+- **Overall** — one paragraph.

@@ -251,39 +251,37 @@ function RunPicker({
     }
   }, []);
 
-  const persistActiveCallTypes = useCallback(
-    (updater: (prev: Set<string>) => Set<string>) => {
-      setActiveCallTypes((prev) => {
-        const next = updater(prev);
-        if (typeof window !== "undefined") {
-          window.localStorage.setItem(
-            RUN_PICKER_FILTER_STORAGE_KEY,
-            JSON.stringify([...next]),
-          );
-        }
-        return next;
-      });
-    },
-    [],
-  );
+  // Sync active filter to localStorage in an effect — strict mode invokes
+  // updater functions twice, so a setItem inside the updater would write
+  // twice per change. Skip the first run since loadRunPickerFilter() seeds
+  // state from this same key.
+  const filterHydratedRef = useRef(false);
+  useEffect(() => {
+    if (!filterHydratedRef.current) {
+      filterHydratedRef.current = true;
+      return;
+    }
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(
+      RUN_PICKER_FILTER_STORAGE_KEY,
+      JSON.stringify([...activeCallTypes]),
+    );
+  }, [activeCallTypes]);
 
-  const handleToggleCallType = useCallback(
-    (callType: string) => {
-      persistActiveCallTypes((prev) => {
-        const next = new Set(prev);
-        if (next.has(callType)) next.delete(callType);
-        else next.add(callType);
-        return next;
-      });
-    },
-    [persistActiveCallTypes],
-  );
+  const handleToggleCallType = useCallback((callType: string) => {
+    setActiveCallTypes((prev) => {
+      const next = new Set(prev);
+      if (next.has(callType)) next.delete(callType);
+      else next.add(callType);
+      return next;
+    });
+  }, []);
 
   const handleClearFilters = useCallback(() => {
     setQuery("");
     setDebouncedQuery("");
-    persistActiveCallTypes(() => new Set());
-  }, [persistActiveCallTypes]);
+    setActiveCallTypes(new Set());
+  }, []);
 
   // Prefetch resolutions for generic rows so the chip filter populates
   // with real call_types (instead of just the handful we know synchronously

@@ -382,11 +382,25 @@ function QuestionViewPage({
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
-  const { openInspect, registerTraceHandler } = useInspectPanel();
+  const { openInspect, closeInspect, openShortId, registerTraceHandler } =
+    useInspectPanel();
 
   const verticalRef = useRef<VerticalViewHandle>(null);
   const [chatOpen, setChatOpen] = useState(false);
-  const toggleChat = useCallback(() => setChatOpen((v) => !v), []);
+  // ux-review-wave7 #7: chat panel and inspect panel both dock to the
+  // right edge and collide. Make them mutually exclusive — opening one
+  // closes the other.
+  const toggleChat = useCallback(() => {
+    setChatOpen((v) => {
+      const next = !v;
+      if (next) closeInspect();
+      return next;
+    });
+  }, [closeInspect]);
+
+  useEffect(() => {
+    if (openShortId) setChatOpen(false);
+  }, [openShortId]);
   const [view, setView] = useState<QuestionView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);

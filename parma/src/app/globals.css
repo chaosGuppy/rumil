@@ -6612,8 +6612,6 @@ mark.ann-mark.ann-mark-dispute:hover {
   background: var(--bg-pane);
   border: 1px solid var(--border);
   border-radius: 2px;
-  max-height: 40vh;
-  overflow-y: auto;
 }
 .trace-head-config-group + .trace-head-config-group {
   margin-top: 12px;
@@ -6948,6 +6946,141 @@ mark.ann-mark.ann-mark-dispute:hover {
   margin: 4px 0;
 }
 
+/* context-diff panel — added/dropped page sets between a call and its
+ * DISPATCHED BY parent. Two columns side-by-side on wide viewports,
+ * stacked on narrow ones. Tone matches the rest of trace-detail:
+ * monospace, low-key borders, color carried by left-edge marker. */
+.ctx-diff-shared {
+  margin-left: auto;
+  font-family: var(--font-mono-stack);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--fg-dim);
+  text-transform: none;
+}
+.ctx-diff-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 18px;
+}
+@media (min-width: 920px) {
+  .ctx-diff-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+  }
+}
+.ctx-diff-col {
+  border-left: 2px solid var(--border);
+  padding: 4px 0 4px 12px;
+}
+.ctx-diff-col-added {
+  border-left-color: var(--node-claim);
+}
+.ctx-diff-col-dropped {
+  border-left-color: var(--node-uncertainty);
+}
+.ctx-diff-col-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--font-mono-stack);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  margin-bottom: 8px;
+}
+.ctx-diff-marker {
+  font-size: 13px;
+  line-height: 1;
+  font-weight: 600;
+}
+.ctx-diff-col-added .ctx-diff-marker {
+  color: var(--node-claim);
+}
+.ctx-diff-col-dropped .ctx-diff-marker {
+  color: var(--node-uncertainty);
+}
+.ctx-diff-col-label {
+  color: var(--fg);
+}
+.ctx-diff-col-count {
+  margin-left: auto;
+  color: var(--fg-dim);
+}
+.ctx-diff-empty {
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+  color: var(--fg-dim);
+  font-style: italic;
+}
+.ctx-diff-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ctx-diff-row {
+  display: grid;
+  grid-template-columns: 64px auto 1fr auto;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 6px 4px 2px;
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+  border-radius: 2px;
+  transition: background 0.1s;
+}
+.ctx-diff-row:hover {
+  background: var(--active-0);
+}
+.ctx-diff-id {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--fg);
+  text-align: left;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 2px;
+}
+.ctx-diff-id:hover {
+  text-decoration-color: var(--fg);
+}
+.ctx-diff-headline {
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ctx-diff-pending {
+  color: var(--fg-dim);
+  font-style: italic;
+}
+.ctx-diff-type-pending {
+  color: var(--fg-dim);
+}
+.ctx-diff-bucket {
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+  padding: 1px 5px;
+  border-radius: 2px;
+  border: 1px solid var(--border);
+}
+.ctx-diff-bucket-working {
+  color: var(--fg-muted);
+  border-color: var(--border-strong);
+}
+.ctx-diff-bucket-preloaded {
+  color: var(--fg-dim);
+}
+
 /* event timeline */
 .trace-event-list {
   list-style: none;
@@ -7016,6 +7149,94 @@ mark.ann-mark.ann-mark-dispute:hover {
 }
 .trace-event-body {
   padding: 6px 0 10px 0;
+}
+
+/* Per-tier grouping for context_built event bodies — surfaces the
+ * full / abstract / summary / distillation tiers that the embedding context
+ * builder collapses into a flat working_context_page_ids list. Renders
+ * before the JSON dump and any clickable-page list a sibling renderer
+ * may add. */
+.trace-context-tiers {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  background: var(--bg-subtle, rgba(0, 0, 0, 0.025));
+  border-left: 2px solid var(--accent-dim, var(--fg-dim));
+  border-radius: 2px;
+}
+.trace-context-tier {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+}
+.trace-context-tier-label {
+  color: var(--fg-muted);
+  font-size: 11px;
+  font-variant: small-caps;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+  min-width: 110px;
+}
+.trace-context-tier-ids {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+}
+
+/* Context-built page list: one row per page with short-id chip, type badge,
+ * and headline. Used both standalone (no tier data) and nested inside each
+ * tier group. */
+.trace-context-page-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+}
+.trace-context-page-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.35;
+}
+.trace-context-page-type {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 2px;
+  font-size: 10px;
+  font-variant: small-caps;
+  letter-spacing: 0.04em;
+  color: var(--fg-muted);
+  background: var(--bg-subtle, rgba(0, 0, 0, 0.04));
+  flex-shrink: 0;
+}
+.trace-context-page-headline {
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+}
+.trace-context-raw-toggle {
+  margin-top: 8px;
+  padding: 2px 6px;
+  background: transparent;
+  border: 1px solid var(--border-dim, var(--fg-dim));
+  border-radius: 2px;
+  color: var(--fg-muted);
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.trace-context-raw-toggle:hover {
+  color: var(--fg);
+  border-color: var(--accent-dim, var(--accent));
 }
 
 .trace-caret {
@@ -7607,10 +7828,24 @@ mark.ann-mark.ann-mark-dispute:hover {
 }
 .trace-pick-row-q {
   font-family: var(--font-body-stack);
-  font-size: 14px;
+  font-size: 12px;
   font-style: italic;
+  color: var(--fg-muted);
+  line-height: 1.35;
+}
+/* Orchestrator chip pulled up into the head row so it reads like a primary
+ * fact about the run instead of a quiet meta chip. Used for refine_artifact,
+ * claim_investigation, two_phase, etc. — the question summary is typically
+ * constant per question page, so the orchestrator is the real discriminator. */
+.trace-pick-row-orchestrator {
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 2px;
   color: var(--fg);
-  line-height: 1.4;
+  background: var(--bg-pane);
+  border: 1px solid var(--border);
+  letter-spacing: 0.02em;
 }
 .trace-pick-row-meta {
   display: flex;

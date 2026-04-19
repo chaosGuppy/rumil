@@ -8,6 +8,13 @@ import { useInspectPanel } from "./InspectPanelContext";
 // are not word characters. The capture group is the id.
 export const NODE_ID_RE = /\b([0-9a-f]{8})\b/g;
 
+// Either a bare 8-char short id or a full UUID. Used in JSON-flavored
+// renderers (trace events, tool-call args) where rumil persists IDs as
+// full UUIDs. Capture group is always the 8-char short id, matched text
+// (match[0]) is the full hit so we can preserve the original layout.
+export const UUID_OR_SHORT_RE =
+  /\b([0-9a-f]{8})(?:-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?\b/g;
+
 // Plain click → `onNodeRef` (typically drawer). Alt/cmd/ctrl click →
 // promote the ref onto the active view's pane stack (if one has registered
 // a handler) and close the drawer. Alt is preferred over Shift because

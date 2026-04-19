@@ -17,6 +17,7 @@ import {
   fetchCallEvents,
   fetchCallLLMExchanges,
   fetchLLMExchange,
+  fetchPagesByIds,
   fetchRunSpend,
   fetchRunTraceTree,
   fetchProjectRuns,
@@ -40,8 +41,9 @@ import {
   shortenId,
   type KeyRenderHint,
 } from "@/lib/tool-call-format";
+import { ContextDiffPanel } from "./ContextDiffPanel";
 import { useInspectPanel } from "./InspectPanelContext";
-import { isPromoteEvent, NODE_ID_RE } from "./NodeRefLink";
+import { isPromoteEvent, UUID_OR_SHORT_RE } from "./NodeRefLink";
 
 // TraceView — the TRACE view mode.
 //
@@ -60,6 +62,10 @@ export interface TraceViewProps {
   // Called when the user picks a run from the no-run picker. Parent
   // bumps the URL via router.replace and rerenders with runId set.
   onSelectRun: (runId: string) => void;
+  // Called whenever the selected call changes (click in the tree, jump
+  // from DISPATCHED BY, etc.). Parent can use this to keep the URL in
+  // sync so a specific call is deep-linkable and survives navigation.
+  onSelectedCallChange?: (callId: string | null) => void;
 }
 
 export function TraceView(props: TraceViewProps) {
@@ -77,6 +83,7 @@ export function TraceView(props: TraceViewProps) {
       runId={props.runId}
       projectId={props.projectId}
       initialCallId={props.initialCallId}
+      onSelectedCallChange={props.onSelectedCallChange}
     />
   );
 }
@@ -542,6 +549,17 @@ function RunPicker({
                 </button>
                 <div className="trace-pick-row-head">
                   <RunRowLabel run={r} />
+                  {discriminators
+                    .filter((d) => d.key === "orchestrator")
+                    .map((d) => (
+                      <span
+                        key={d.key}
+                        className="trace-pick-row-orchestrator"
+                        title={d.title}
+                      >
+                        {d.label}
+                      </span>
+                    ))}
                   {r.staged && <span className="trace-pick-row-staged">staged</span>}
                   {r.hidden && (
                     <span className="trace-pick-row-hidden">hidden</span>
@@ -555,11 +573,13 @@ function RunPicker({
                   <span>{r.run_id!.slice(0, 8)}</span>
                   <span>·</span>
                   <span>{formatWhen(r.created_at)}</span>
-                  {discriminators.map((d) => (
-                    <span key={d.key} className="trace-pick-row-meta-chip" title={d.title}>
-                      {d.label}
-                    </span>
-                  ))}
+                  {discriminators
+                    .filter((d) => d.key !== "orchestrator")
+                    .map((d) => (
+                      <span key={d.key} className="trace-pick-row-meta-chip" title={d.title}>
+                        {d.label}
+                      </span>
+                    ))}
                   <RunRowResolvedModelChip run={r} />
                   {(disambiguatorsByRunId.get(r.run_id!) ?? []).map((d) => (
                     <span
@@ -908,16 +928,28 @@ function TraceRunView({
   runId,
   projectId,
   initialCallId,
+  onSelectedCallChange,
 }: {
   runId: string;
   projectId: string;
   initialCallId?: string | null;
+  onSelectedCallChange?: (callId: string | null) => void;
 }) {
   const [tree, setTree] = useState<RunTraceTree | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [selectedCallId, setSelectedCallId] = useState<string | null>(
+  const [selectedCallId, setSelectedCallIdState] = useState<string | null>(
     initialCallId ?? null,
+  );
+  const setSelectedCallId = useCallback(
+    (value: React.SetStateAction<string | null>) => {
+      setSelectedCallIdState((prev) => {
+        const next = typeof value === "function" ? value(prev) : value;
+        if (next !== prev && onSelectedCallChange) onSelectedCallChange(next);
+        return next;
+      });
+    },
+    [onSelectedCallChange],
   );
 
   const refreshTree = useCallback(() => {
@@ -1572,11 +1604,7 @@ function CallDetail({
           {call.scope_page_id && (
             <MetaRow
               label="scope"
-              value={
-                <span className="trace-detail-mono">
-                  {call.scope_page_id.slice(0, 8)}
-                </span>
-              }
+              value={<NodeRefChip pageId={call.scope_page_id} />}
             />
           )}
           <MetaRow label="created" value={formatWhen(call.created_at)} />
@@ -1599,6 +1627,11 @@ function CallDetail({
           )}
         </dl>
       </section>
+
+      <ContextDiffPanel
+        parentCallId={call.parent_call_id}
+        callEvents={events}
+      />
 
       <section className="trace-detail-section">
         <h2 className="trace-detail-section-title">
@@ -1654,6 +1687,35 @@ function MetaRow({
       <dt className="trace-meta-label">{label}</dt>
       <dd className="trace-meta-value">{value}</dd>
     </div>
+  );
+}
+
+// Clickable short-id chip for any page reference. Click → inspect drawer,
+// alt/cmd-click → pin as pane. Accepts a short id or a full UUID and
+// always displays the 8-char short form.
+function NodeRefChip({ pageId }: { pageId: string }) {
+  const { openInspect, promoteToPane } = useInspectPanel();
+  const shortId = shortenId(pageId);
+  return (
+    <button
+      type="button"
+      className="node-ref-link trace-detail-mono"
+      onMouseDown={(e) => {
+        if (isPromoteEvent(e)) e.preventDefault();
+      }}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (isPromoteEvent(e)) {
+          e.preventDefault();
+          promoteToPane(shortId);
+        } else {
+          openInspect(shortId);
+        }
+      }}
+      title={`Click to inspect · alt/cmd-click to pin as pane · ${shortId}`}
+    >
+      {shortId}
+    </button>
   );
 }
 
@@ -1746,15 +1808,208 @@ function EventRow({ event, index }: { event: TraceEvent; index: number }) {
         <span className="trace-event-ts">{formatClockTime(event.ts)}</span>
         <span className={`trace-caret ${open ? "open" : ""}`}>›</span>
       </button>
-      {open && (
-        <div className="trace-event-body">
-          <JsonWithNodeRefs
-            text={prettyJson(omitShell(event))}
-            className="trace-code trace-code-tight"
-          />
-        </div>
-      )}
+      {open && <EventBody event={event} />}
     </li>
+  );
+}
+
+function EventBody({ event }: { event: TraceEvent }) {
+  if (event.event === "context_built") {
+    return <ContextBuiltBody event={event} />;
+  }
+  return (
+    <div className="trace-event-body">
+      <JsonWithNodeRefs
+        text={prettyJson(omitShell(event))}
+        className="trace-code trace-code-tight"
+      />
+    </div>
+  );
+}
+
+// Specialized body for context_built: tier breakdown + clickable page list
+// with type + headline up top, raw JSON behind a toggle. The list is the
+// primary view since "what was actually in this context" is the question
+// the operator is trying to answer.
+function ContextBuiltBody({ event }: { event: TraceEvent }) {
+  const [showRaw, setShowRaw] = useState(false);
+  const tiers = readPageIdTiers(event);
+  const working = (event.working_context_page_ids as unknown[] | undefined) ?? [];
+  const preloaded = (event.preloaded_page_ids as unknown[] | undefined) ?? [];
+  const allIds = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          [...working, ...preloaded].filter(
+            (x): x is string => typeof x === "string",
+          ),
+        ),
+      ),
+    [working, preloaded],
+  );
+  const [pages, setPages] = useState<Record<string, FetchedPage> | null>(null);
+  useEffect(() => {
+    if (allIds.length === 0) {
+      setPages({});
+      return;
+    }
+    let cancelled = false;
+    fetchPagesByIds(allIds)
+      .then((p) => {
+        if (!cancelled) setPages(p as Record<string, FetchedPage>);
+      })
+      .catch(() => {
+        if (!cancelled) setPages({});
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [allIds]);
+  return (
+    <div className="trace-event-body">
+      {tiers ? (
+        <ContextTierBreakdown tiers={tiers} pages={pages} />
+      ) : (
+        <ContextPageList ids={allIds} pages={pages} />
+      )}
+      <button
+        type="button"
+        className="trace-context-raw-toggle"
+        onClick={() => setShowRaw((v) => !v)}
+        aria-expanded={showRaw}
+      >
+        {showRaw ? "hide raw JSON" : "show raw JSON"}
+      </button>
+      {showRaw && (
+        <JsonWithNodeRefs
+          text={prettyJson(omitShell(event))}
+          className="trace-code trace-code-tight"
+        />
+      )}
+    </div>
+  );
+}
+
+interface FetchedPage {
+  id: string;
+  page_type: string;
+  headline: string;
+}
+
+function ContextPageList({
+  ids,
+  pages,
+}: {
+  ids: string[];
+  pages: Record<string, FetchedPage> | null;
+}) {
+  if (ids.length === 0) {
+    return <div className="trace-detail-dim">no pages in context</div>;
+  }
+  return (
+    <div className="trace-context-page-list">
+      {ids.map((id) => (
+        <ContextPageRow key={id} id={id} page={pages?.[id]} />
+      ))}
+    </div>
+  );
+}
+
+function ContextPageRow({
+  id,
+  page,
+}: {
+  id: string;
+  page: FetchedPage | undefined;
+}) {
+  return (
+    <div className="trace-context-page-row">
+      <NodeRefChip pageId={id} />
+      {page && (
+        <span className={`trace-context-page-type node-${page.page_type}`}>
+          {page.page_type}
+        </span>
+      )}
+      {page && (
+        <span className="trace-context-page-headline" title={page.headline}>
+          {page.headline}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// Context tier ordering — most-detailed first so readers see distillation
+// (heaviest, most-load-bearing) before they scan down to summary.
+const TIER_ORDER = ["distillation", "full", "abstract", "summary"] as const;
+type TierName = (typeof TIER_ORDER)[number];
+
+// Read the page_id_tiers map off a context_built event. Returns null when
+// the field is missing (older trace_json rows) or empty so callers can skip
+// the breakdown UI entirely. The map is page_id -> tier name; we invert it
+// into tier -> [page_ids] for grouped rendering.
+function readPageIdTiers(event: TraceEvent): Record<TierName, string[]> | null {
+  const raw = event.page_id_tiers;
+  if (!raw || typeof raw !== "object") return null;
+  const grouped: Record<TierName, string[]> = {
+    distillation: [],
+    full: [],
+    abstract: [],
+    summary: [],
+  };
+  let any = false;
+  for (const [pid, tier] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof tier !== "string") continue;
+    if ((TIER_ORDER as readonly string[]).includes(tier)) {
+      grouped[tier as TierName].push(pid);
+      any = true;
+    }
+  }
+  return any ? grouped : null;
+}
+
+// Render the tier counts as "12 full / 8 summary / 3 distillation". Used in
+// the event summary line so researchers immediately see whether a claim was
+// likely summarized away.
+function formatTierCounts(tiers: Record<TierName, string[]>): string {
+  const parts: string[] = [];
+  for (const tier of TIER_ORDER) {
+    const n = tiers[tier].length;
+    if (n > 0) parts.push(`${n} ${tier}`);
+  }
+  return parts.join(" / ");
+}
+
+// Expanded-body component: groups page IDs by tier so a researcher can see
+// exactly which pages were rendered at which detail level. Each row pairs
+// the short id with page type + headline when the caller has resolved page
+// metadata, so the operator doesn't have to click through to identify each.
+function ContextTierBreakdown({
+  tiers,
+  pages,
+}: {
+  tiers: Record<TierName, string[]>;
+  pages: Record<string, FetchedPage> | null;
+}) {
+  return (
+    <div className="trace-context-tiers">
+      {TIER_ORDER.map((tier) => {
+        const ids = tiers[tier];
+        if (ids.length === 0) return null;
+        return (
+          <div key={tier} className="trace-context-tier">
+            <div className="trace-context-tier-label">
+              {tier} ({ids.length})
+            </div>
+            <div className="trace-context-page-list">
+              {ids.map((id) => (
+                <ContextPageRow key={id} id={id} page={pages?.[id]} />
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -1765,7 +2020,10 @@ function eventSummary(event: TraceEvent): string {
     case "context_built": {
       const n = (event.working_context_page_ids as unknown[] | undefined)?.length ?? 0;
       const m = (event.preloaded_page_ids as unknown[] | undefined)?.length ?? 0;
-      return `${n + m} pages in context`;
+      const tiers = readPageIdTiers(event);
+      const breakdown = tiers ? formatTierCounts(tiers) : "";
+      const base = `${n + m} pages in context`;
+      return breakdown ? `${base} · ${breakdown}` : base;
     }
     case "moves_executed": {
       const moves = (event.moves as unknown[] | undefined) ?? [];
@@ -2117,13 +2375,36 @@ function ToolCallBlock({
   const [rawMode, setRawMode] = useState(!inputIsDict);
 
   const family = classifyToolName(call.name);
-  const previewKey = inputIsDict
-    ? pickPreviewKey(call.input as Record<string, unknown>)
+  const inputDict = inputIsDict
+    ? (call.input as Record<string, unknown>)
+    : null;
+  // Collect every page-ref arg so the preview can surface them inline.
+  // Reviewers skimming for "which pages did this tool touch" shouldn't have
+  // to expand each call one at a time.
+  const refEntries: Array<{ key: string; value: string }> = [];
+  if (inputDict) {
+    for (const [k, v] of Object.entries(inputDict)) {
+      if (KEY_HINTS[k] === "ref" && typeof v === "string") {
+        refEntries.push({ key: k, value: v });
+      } else if (Array.isArray(v) && v.every((x) => typeof x === "string")) {
+        // page_ids: ["..."] style — only surface if the key itself looks
+        // like a ref collection (ends with `_ids`).
+        if (/_ids$/.test(k)) {
+          for (const id of v as string[]) refEntries.push({ key: k, value: id });
+        }
+      }
+    }
+  }
+  const previewKey = inputDict && refEntries.length === 0
+    ? pickPreviewKey(inputDict)
     : null;
   const previewValue =
-    inputIsDict && previewKey
-      ? (call.input as Record<string, unknown>)[previewKey]
-      : undefined;
+    inputDict && previewKey ? inputDict[previewKey] : undefined;
+  const extraKeys = inputDict
+    ? Object.keys(inputDict).filter(
+        (k) => !refEntries.some((e) => e.key === k) && k !== previewKey,
+      )
+    : [];
 
   const toggleExpanded = useCallback(() => setExpanded((v) => !v), []);
   const toggleRaw = useCallback((e: MouseEvent) => {
@@ -2143,7 +2424,35 @@ function ToolCallBlock({
         >
           <span className={`tc-caret ${expanded ? "open" : ""}`}>›</span>
           <span className="tc-name">{call.name}</span>
-          {!expanded && previewKey && (
+          {!expanded && refEntries.length > 0 && (
+            <span className="tc-preview">
+              <span className="tc-preview-brace">{"{ "}</span>
+              {refEntries.map((e, i) => (
+                <Fragment key={`${e.key}-${i}`}>
+                  {i > 0 && <span className="tc-preview-sep">, </span>}
+                  <span className="tc-preview-key">{e.key}</span>
+                  <span className="tc-preview-colon">: </span>
+                  <span className="tc-preview-value">
+                    <NodeRefChip pageId={e.value} />
+                  </span>
+                </Fragment>
+              ))}
+              {extraKeys.length > 0 && (
+                <span
+                  className="tc-preview-more"
+                  title={
+                    `${extraKeys.length} other argument key${extraKeys.length > 1 ? "s" : ""}: `
+                    + extraKeys.join(", ")
+                  }
+                >
+                  {", +"}
+                  {extraKeys.length}
+                </span>
+              )}
+              <span className="tc-preview-brace">{" }"}</span>
+            </span>
+          )}
+          {!expanded && refEntries.length === 0 && previewKey && (
             <span className="tc-preview">
               <span className="tc-preview-brace">{"{ "}</span>
               <span className="tc-preview-key">{previewKey}</span>
@@ -2151,22 +2460,22 @@ function ToolCallBlock({
               <span className="tc-preview-value">
                 {formatPreviewValue(previewValue)}
               </span>
-              {Object.keys(call.input as Record<string, unknown>).length > 1 && (
+              {extraKeys.length > 0 && (
                 <span
                   className="tc-preview-more"
                   title={
-                    `+${Object.keys(call.input as Record<string, unknown>).length - 1}`
+                    `+${extraKeys.length}`
                     + " more argument keys on this tool call (expand to see them)"
                   }
                 >
                   {", +"}
-                  {Object.keys(call.input as Record<string, unknown>).length - 1}
+                  {extraKeys.length}
                 </span>
               )}
               <span className="tc-preview-brace">{" }"}</span>
             </span>
           )}
-          {!expanded && !previewKey && inputIsDict && (
+          {!expanded && !previewKey && refEntries.length === 0 && inputIsDict && (
             <span className="tc-preview tc-preview-empty">{"{ }"}</span>
           )}
         </button>
@@ -2367,15 +2676,16 @@ function InlineTextWithNodeRefs({ text }: { text: string }) {
   const parts: ReactNode[] = [];
   let lastIndex = 0;
   let match: RegExpExecArray | null;
-  const re = new RegExp(NODE_ID_RE);
+  const re = new RegExp(UUID_OR_SHORT_RE);
   while ((match = re.exec(text)) !== null) {
     if (match.index > lastIndex) {
       parts.push(text.slice(lastIndex, match.index));
     }
-    const id = match[1];
+    const shortId = match[1];
+    const matched = match[0];
     parts.push(
       <button
-        key={`${match.index}-${id}`}
+        key={`${match.index}-${shortId}`}
         type="button"
         className="node-ref-link"
         onMouseDown={(e) => {
@@ -2385,14 +2695,14 @@ function InlineTextWithNodeRefs({ text }: { text: string }) {
           e.stopPropagation();
           if (isPromoteEvent(e)) {
             e.preventDefault();
-            promoteToPane(id);
+            promoteToPane(shortId);
           } else {
-            openInspect(id);
+            openInspect(shortId);
           }
         }}
-        title={`Click to inspect · alt/cmd-click to pin as pane · ${id}`}
+        title={`Click to inspect · alt/cmd-click to pin as pane · ${shortId}`}
       >
-        {id}
+        {matched}
       </button>,
     );
     lastIndex = re.lastIndex;
@@ -2629,15 +2939,16 @@ function JsonWithNodeRefs({
   const parts: ReactNode[] = [];
   let lastIndex = 0;
   let match: RegExpExecArray | null;
-  const re = new RegExp(NODE_ID_RE);
+  const re = new RegExp(UUID_OR_SHORT_RE);
   while ((match = re.exec(text)) !== null) {
     if (match.index > lastIndex) {
       parts.push(text.slice(lastIndex, match.index));
     }
-    const id = match[1];
+    const shortId = match[1];
+    const matched = match[0];
     parts.push(
       <button
-        key={`${match.index}-${id}`}
+        key={`${match.index}-${shortId}`}
         type="button"
         className="node-ref-link"
         onMouseDown={(e) => {
@@ -2647,14 +2958,14 @@ function JsonWithNodeRefs({
           e.stopPropagation();
           if (isPromoteEvent(e)) {
             e.preventDefault();
-            promoteToPane(id);
+            promoteToPane(shortId);
           } else {
-            openInspect(id);
+            openInspect(shortId);
           }
         }}
-        title={`Click to inspect · alt/cmd-click to pin as pane · ${id}`}
+        title={`Click to inspect · alt/cmd-click to pin as pane · ${shortId}`}
       >
-        {id}
+        {matched}
       </button>,
     );
     lastIndex = re.lastIndex;

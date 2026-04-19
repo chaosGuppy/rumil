@@ -22,15 +22,10 @@ from pydantic import BaseModel
 
 from rumil.available_moves import get_moves_for_call
 from rumil.calls import (
-    ASSESS_CALL_CLASSES,
     FindConsiderationsCall,
     IngestCall,
-    ScoutAnalogiesCall,
-    ScoutEstimatesCall,
-    ScoutHypothesesCall,
-    ScoutSubquestionsCall,
-    WebResearchCall,
 )
+from rumil.calls.call_registry import CALL_RUNNER_CLASSES, get_call_runner_class
 from rumil.calls.stages import CallRunner
 from rumil.context import build_embedding_based_context
 from rumil.database import DB
@@ -994,14 +989,20 @@ TOOLS: list[dict[str, Any]] = [
 
 _VALID_VIEW_MODES = {"panes", "article", "vertical", "sections", "sources", "trace"}
 
+_CHAT_EXPOSED_CALL_TYPES: tuple[CallType, ...] = (
+    CallType.FIND_CONSIDERATIONS,
+    CallType.ASSESS,
+    CallType.WEB_RESEARCH,
+    CallType.SCOUT_SUBQUESTIONS,
+    CallType.SCOUT_HYPOTHESES,
+    CallType.SCOUT_ESTIMATES,
+    CallType.SCOUT_ANALOGIES,
+)
+
 _CALL_TYPE_MAP: dict[str, tuple[CallType, type[CallRunner]]] = {
-    "find-considerations": (CallType.FIND_CONSIDERATIONS, FindConsiderationsCall),
-    "assess": (CallType.ASSESS, ASSESS_CALL_CLASSES["default"]),
-    "web-research": (CallType.WEB_RESEARCH, WebResearchCall),
-    "scout-subquestions": (CallType.SCOUT_SUBQUESTIONS, ScoutSubquestionsCall),
-    "scout-hypotheses": (CallType.SCOUT_HYPOTHESES, ScoutHypothesesCall),
-    "scout-estimates": (CallType.SCOUT_ESTIMATES, ScoutEstimatesCall),
-    "scout-analogies": (CallType.SCOUT_ANALOGIES, ScoutAnalogiesCall),
+    ct.value.replace("_", "-"): (ct, get_call_runner_class(ct))
+    for ct in _CHAT_EXPOSED_CALL_TYPES
+    if ct in CALL_RUNNER_CLASSES
 }
 
 _CALL_TYPE_CATALOG_INFO: list[tuple[str, CallType, str, str]] = [
@@ -2851,7 +2852,11 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
     )
     project, _ = await db.get_or_create_project(request.workspace)
     db.project_id = project.id
-    await db.create_run(name="chat", question_id=None, config={"origin": "chat"})
+    await db.create_run(
+        name="chat",
+        question_id=None,
+        config={**settings.capture_config(), "origin": "chat"},
+    )
     await db.init_budget(CHAT_RUN_BUDGET)
 
     async def run_turn() -> ChatResponse:
@@ -3047,7 +3052,11 @@ async def handle_chat_stream(request: ChatRequest) -> StreamingResponse:
     )
     project, _ = await db.get_or_create_project(request.workspace)
     db.project_id = project.id
-    await db.create_run(name="chat", question_id=None, config={"origin": "chat"})
+    await db.create_run(
+        name="chat",
+        question_id=None,
+        config={**settings.capture_config(), "origin": "chat"},
+    )
     await db.init_budget(CHAT_RUN_BUDGET)
 
     full_id = await db.resolve_page_id(request.question_id) if request.question_id else None

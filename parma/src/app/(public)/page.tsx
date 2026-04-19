@@ -135,12 +135,17 @@ function InlineRename({
   variant,
   title,
   className,
+  trigger = "click",
 }: {
   value: string;
   onCommit: (next: string) => Promise<void>;
   variant: "card" | "switcher";
   title?: string;
   className?: string;
+  // "click" = single click enters edit mode (switcher default). "dblclick" =
+  // double-click enters edit mode and single clicks bubble up, so the
+  // parent can treat the label as an open-the-thing affordance (card).
+  trigger?: "click" | "dblclick";
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -189,24 +194,44 @@ function InlineRename({
   }, [draft, value, onCommit]);
 
   if (!editing) {
+    const useDblClick = trigger === "dblclick";
     return (
       <span
         className={`inline-rename inline-rename-${variant} ${className ?? ""}`}
-        title={title ?? "Click to rename"}
-        onClick={(e) => {
-          e.stopPropagation();
-          setEditing(true);
-        }}
+        title={title ?? (useDblClick ? "Double-click to rename" : "Click to rename")}
+        onClick={
+          useDblClick
+            ? undefined
+            : (e) => {
+                e.stopPropagation();
+                setEditing(true);
+              }
+        }
+        onDoubleClick={
+          useDblClick
+            ? (e) => {
+                e.stopPropagation();
+                setEditing(true);
+              }
+            : undefined
+        }
         onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
+          // Keyboard shortcut for rename lives on the card root, not here —
+          // we don't want Enter on a focused name to both open the card (via
+          // the card's own handler) and enter edit mode.
+          if (!useDblClick && (e.key === "Enter" || e.key === " ")) {
             e.preventDefault();
             e.stopPropagation();
             setEditing(true);
           }
         }}
-        role="textbox"
-        aria-label={`${value} (click to rename)`}
-        tabIndex={0}
+        role={useDblClick ? undefined : "textbox"}
+        aria-label={
+          useDblClick
+            ? `${value} (double-click to rename)`
+            : `${value} (click to rename)`
+        }
+        tabIndex={useDblClick ? -1 : 0}
       >
         {value}
       </span>
@@ -551,7 +576,7 @@ function ProjectBrowser({
     <div className="landing">
       <header className="landing-header">
         <div className="landing-header-inner">
-          <h1 className="landing-title">Research</h1>
+          <h1 className="landing-title">Projects</h1>
           <p className="landing-subtitle">
             An index of investigations. Each project is a living graph of
             questions, claims, and the calls that produced them.
@@ -681,7 +706,8 @@ function ProjectBrowser({
                       value={p.name}
                       onCommit={(next) => handleRenameCard(p.id, next)}
                       variant="card"
-                      title="Click to rename workspace"
+                      title="Double-click to rename workspace"
+                      trigger="dblclick"
                     />
                   </div>
                   <div className="landing-card-badges">
@@ -1182,6 +1208,19 @@ function QuestionViewPage({
     [searchParams, router, pathname],
   );
 
+  const setTraceCall = useCallback(
+    (callId: string | null) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (callId) {
+        params.set("call_id", callId);
+      } else {
+        params.delete("call_id");
+      }
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    },
+    [searchParams, router, pathname],
+  );
+
   // Chat-triggered navigation. The backend `set_view` tool emits a
   // NavigateDirective inside tool_use_result payloads; ChatPanel parses
   // those and calls onNavigate. We translate the directive into the same
@@ -1379,6 +1418,7 @@ const refreshView = useCallback(() => {
               projectId={project.id}
               initialCallId={traceCallId}
               onSelectRun={setTraceRun}
+              onSelectedCallChange={setTraceCall}
             />
           )}
         </div>

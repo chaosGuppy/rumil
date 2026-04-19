@@ -696,7 +696,9 @@ function ProjectBrowser({
 
                 <dl className="landing-card-stats">
                   <div className="landing-stat">
-                    <dt>questions</dt>
+                    <dt title="Includes root questions and sub-questions">
+                      questions (incl. sub)
+                    </dt>
                     <dd>{p.question_count}</dd>
                   </div>
                   <div className="landing-stat">
@@ -935,24 +937,34 @@ function QuestionPicker({
       )}
 
       <div className="browser-list">
-        {questions.map((q) => (
-          <button
-            key={q.id}
-            className="browser-card"
-            onClick={() => onSelect(q)}
-          >
-            <div className="browser-card-name">{q.headline}</div>
-            <div className="browser-card-stats">
-              {q.id.slice(0, 8)}
-              {" · "}
-              {new Date(q.created_at).toLocaleDateString("en-US", {
-                year: "numeric",
-                month: "short",
-                day: "numeric",
-              })}
-            </div>
-          </button>
-        ))}
+        {questions.map((q) => {
+          // Disambiguate same-titled root questions: show the short id plus a
+          // relative timestamp (precise timestamp in the tooltip) so two
+          // "wave7-smoke" style duplicates don't look identical in the picker.
+          const createdAbsolute = new Date(q.created_at).toLocaleString("en-US", {
+            year: "numeric",
+            month: "short",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+          return (
+            <button
+              key={q.id}
+              className="browser-card"
+              onClick={() => onSelect(q)}
+            >
+              <div className="browser-card-name">{q.headline}</div>
+              <div className="browser-card-stats">
+                <span className="browser-card-id">{q.id.slice(0, 8)}</span>
+                {" · "}
+                <span title={createdAbsolute}>
+                  created {formatRelative(q.created_at)}
+                </span>
+              </div>
+            </button>
+          );
+        })}
       </div>
     </div>
   );

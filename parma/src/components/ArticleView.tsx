@@ -227,6 +227,16 @@ export function ArticleView({
               {view.health.total_pages} pages · depth {view.health.max_depth}
               {view.health.missing_credence > 0 && ` · ${view.health.missing_credence} missing credence`}
             </div>
+            {/*
+              Citation affordance hint. Inline refs like [77d295eb] are
+              clickable (inspect) / cmd-clickable (pin-as-pane) with a
+              title-attr tooltip — but hover-only tooltips make the
+              affordance invisible to new readers. One-line visible legend
+              styled with the same dim mono treatment as other meta chrome.
+            */}
+            <div className="article-ref-legend pane-kicker">
+              click a ref to inspect · ⌘-click to pin as pane
+            </div>
           </header>
 
           {view.sections.map((section, i) => (

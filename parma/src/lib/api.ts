@@ -16,6 +16,40 @@ export async function fetchProjects(): Promise<Project[]> {
   return projects.filter((p) => !p.hidden);
 }
 
+export interface CreateProjectResult {
+  project: Project;
+  // Server-side flag: true if a new row was inserted, false if a workspace
+  // with the same name already existed and was returned unchanged. The
+  // landing modal surfaces the latter with a subtle "already exists" hint.
+  created: boolean;
+}
+
+export async function createProject(
+  name: string,
+): Promise<CreateProjectResult> {
+  const res = await fetch(`${API_BASE}/api/projects`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) {
+    // Try to lift the FastAPI error detail; fall back to generic message.
+    let detail: string | null = null;
+    try {
+      const body = await res.json();
+      if (typeof body?.detail === "string") {
+        detail = body.detail;
+      } else if (Array.isArray(body?.detail) && body.detail[0]?.msg) {
+        detail = String(body.detail[0].msg);
+      }
+    } catch {
+      // ignore — res.json() may fail on empty bodies
+    }
+    throw new Error(detail ?? `API error: ${res.status}`);
+  }
+  return res.json();
+}
+
 // Landing-page summary: one row per project with question/claim/call counts
 // and last_activity_at, computed server-side by the list_projects_summary
 // RPC in a single SQL query.

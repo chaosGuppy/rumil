@@ -12,6 +12,10 @@ import { SuggestionReview } from "@/components/SuggestionReview";
 import { SourcesView } from "@/components/SourcesView";
 import { SectionsView } from "@/components/SectionsView";
 import { SourceDrawer } from "@/components/SourceDrawer";
+import {
+  SearchPalette,
+  useSearchPaletteShortcut,
+} from "@/components/SearchPalette";
 import { TraceView } from "@/components/TraceView";
 import { ConceptProvider } from "@/components/ConceptContext";
 import { AnnotationProvider } from "@/components/AnnotationContext";
@@ -20,6 +24,7 @@ import {
   useInspectPanel,
 } from "@/components/InspectPanelContext";
 import {
+  createProject,
   fetchProjects,
   fetchProjectsSummary,
   fetchRootQuestions,
@@ -146,15 +151,113 @@ function ViewModeSwitcher({
   );
 }
 
+function NewWorkspaceModal({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: (project: Project, created: boolean) => void;
+}) {
+  const [name, setName] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !submitting) onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, submitting]);
+
+  const submit = useCallback(async () => {
+    const trimmed = name.trim();
+    if (!trimmed || submitting) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const result = await createProject(trimmed);
+      onCreated(result.project, result.created);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not create workspace");
+      setSubmitting(false);
+    }
+  }, [name, submitting, onCreated]);
+
+  const disabled = !name.trim() || submitting;
+
+  return (
+    <div
+      className="workspace-modal-backdrop"
+      onMouseDown={(e) => {
+        // Only close if the mousedown started on the backdrop itself —
+        // otherwise a drag-release from the input into the backdrop would
+        // swallow the modal mid-edit.
+        if (e.target === e.currentTarget && !submitting) onClose();
+      }}
+    >
+      <div className="workspace-modal" role="dialog" aria-label="New workspace">
+        <div className="workspace-modal-label">New workspace</div>
+        <input
+          ref={inputRef}
+          className="workspace-modal-input"
+          type="text"
+          value={name}
+          placeholder="workspace-name"
+          maxLength={80}
+          disabled={submitting}
+          onChange={(e) => {
+            setName(e.target.value);
+            if (error) setError(null);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              submit();
+            }
+          }}
+        />
+        {error && <div className="workspace-modal-error">{error}</div>}
+        <div className="workspace-modal-actions">
+          <button
+            type="button"
+            className="workspace-modal-cancel"
+            onClick={onClose}
+            disabled={submitting}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="workspace-modal-submit"
+            onClick={submit}
+            disabled={disabled}
+          >
+            {submitting ? "Creating..." : "Create"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ProjectBrowser({
   onSelectProject,
 }: {
   onSelectProject: (project: Project) => void;
 }) {
+  const router = useRouter();
   const [rows, setRows] = useState<ProjectSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showTest, setShowTest] = useState(false);
   const [sort, setSort] = useState<SortMode>("newest");
+  const [modalOpen, setModalOpen] = useState(false);
+  const [collisionHint, setCollisionHint] = useState<string | null>(null);
 
   useDocumentTitle(["projects"]);
 
@@ -251,7 +354,23 @@ function ProjectBrowser({
               )}
             </span>
           </label>
+
+          <button
+            type="button"
+            className="landing-new-btn"
+            onClick={() => {
+              setCollisionHint(null);
+              setModalOpen(true);
+            }}
+          >
+            + new workspace
+          </button>
         </div>
+        {collisionHint && (
+          <div className="landing-hint" role="status">
+            Workspace <code>{collisionHint}</code> already existed — showing it.
+          </div>
+        )}
       </header>
 
       {projects.length === 0 ? (
@@ -309,6 +428,20 @@ function ProjectBrowser({
             );
           })}
         </div>
+      )}
+      {modalOpen && (
+        <NewWorkspaceModal
+          onClose={() => setModalOpen(false)}
+          onCreated={(project, created) => {
+            setModalOpen(false);
+            setCollisionHint(created ? null : project.name);
+            // Deliberate navigation — use push so the browser back button
+            // returns the user to the landing. The AppContent hydration
+            // effect picks up ?project= and routes into the question picker
+            // (or straight into a single-question workspace).
+            router.push(`?project=${encodeURIComponent(project.id)}`);
+          }}
+        />
       )}
     </div>
   );
@@ -391,6 +524,7 @@ function QuestionViewPage({
 
   const verticalRef = useRef<VerticalViewHandle>(null);
   const [chatOpen, setChatOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useSearchPaletteShortcut();
   // ux-review-wave7 #7: chat panel and inspect panel both dock to the
   // right edge and collide. Make them mutually exclusive — opening one
   // closes the other.
@@ -426,6 +560,10 @@ function QuestionViewPage({
   const rawView = searchParams.get("view") ?? "panes";
   const viewMode: ViewMode = isViewMode(rawView) ? rawView : "panes";
   const traceRunId = searchParams.get("run_id");
+  const openPaneIds = (searchParams.get("panes") ?? "")
+    .split(".")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
   const traceCallId = searchParams.get("call_id");
 
   // Remember the view the user was in before jumping into TRACE mode.
@@ -637,10 +775,29 @@ function QuestionViewPage({
         onShowReview={() => setShowReview(true)}
         workspace={project.name}
         projectId={project.id}
+        openRunId={traceRunId ?? undefined}
+        openPageIds={openPaneIds}
       />
       <SourceDrawer
         source={drawerSource}
         onClose={() => setDrawerSource(null)}
+      />
+      <SearchPalette
+        projectId={project.id}
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        onOpenPage={(page) => {
+          // Inspect panel takes a short id — the first 8 chars of the full
+          // page id, which is what openInspect/resolve_page_id expects.
+          openInspect(page.id.slice(0, 8));
+        }}
+        onOpenQuestion={(page) => {
+          // Navigate to the question view for this project.
+          const params = new URLSearchParams();
+          params.set("project", project.id);
+          params.set("q", page.id);
+          router.push(`?${params.toString()}`);
+        }}
       />
       </div>
     </ConceptProvider>

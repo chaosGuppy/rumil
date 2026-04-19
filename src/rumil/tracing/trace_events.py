@@ -305,6 +305,29 @@ class UpdateViewPhaseCompletedEvent(BaseModel):
     items_removed: int = 0
 
 
+class NudgeSummaryItem(BaseModel):
+    """Summary of one nudge that fired at a safe point.
+
+    Emitted under ``NudgeAppliedEvent`` so the trace UI can show which
+    human-authored nudges influenced this orchestrator tick / call, what
+    they did, and whether any hard filters removed dispatch candidates.
+    """
+
+    nudge_id: str
+    kind: str
+    author_kind: str = ""
+    hard: bool = False
+    soft_text: str | None = None
+    effect: str = ""
+
+
+class NudgeAppliedEvent(BaseModel):
+    event: Literal["nudge_applied"] = "nudge_applied"
+    phase: str = ""
+    applied: list[NudgeSummaryItem] = []
+    filtered_dispatch_count: int = 0
+
+
 TraceEvent = Annotated[
     ContextBuiltEvent
     | MovesExecutedEvent
@@ -334,6 +357,7 @@ TraceEvent = Annotated[
     | ViewCreatedEvent
     | PhaseSkippedEvent
     | GlobalPhaseCompletedEvent
-    | UpdateViewPhaseCompletedEvent,
+    | UpdateViewPhaseCompletedEvent
+    | NudgeAppliedEvent,
     Field(discriminator="event"),
 ]

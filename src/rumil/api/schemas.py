@@ -29,6 +29,7 @@ from rumil.tracing.trace_events import (
     LLMExchangeEvent,
     LoadPageEvent,
     MovesExecutedEvent,
+    NudgeAppliedEvent,
     PhaseSkippedEvent,
     ReassessTriggeredEvent,
     RenderQuestionSubgraphEvent,
@@ -481,6 +482,10 @@ class UpdateViewPhaseCompletedEventOut(UpdateViewPhaseCompletedEvent, _TraceEnve
     pass
 
 
+class NudgeAppliedEventOut(NudgeAppliedEvent, _TraceEnvelopeMixin):
+    pass
+
+
 TraceEventOut = Annotated[
     ContextBuiltEventOut
     | MovesExecutedEventOut
@@ -510,7 +515,8 @@ TraceEventOut = Annotated[
     | ViewCreatedEventOut
     | PhaseSkippedEventOut
     | GlobalPhaseCompletedEventOut
-    | UpdateViewPhaseCompletedEventOut,
+    | UpdateViewPhaseCompletedEventOut
+    | NudgeAppliedEventOut,
     Field(discriminator="event"),
 ]
 

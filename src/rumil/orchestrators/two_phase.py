@@ -28,9 +28,15 @@ from rumil.models import (
     Call,
     CallType,
     Dispatch,
+    NudgeKind,
     RecurseClaimDispatchPayload,
     RecurseDispatchPayload,
     Workspace,
+)
+from rumil.nudges import (
+    build_applied_event,
+    consume_one_shot,
+    filter_dispatch_sequences,
 )
 from rumil.orchestrators.base import BaseOrchestrator
 from rumil.orchestrators.common import (
@@ -197,6 +203,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                     total_remaining=effective,
                     last_call=last_call,
                 )
+                result = await self._apply_nudges_to_batch(result)
                 if not result.dispatch_sequences and not result.children:
                     break
 
@@ -383,6 +390,47 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             call,
             self.db,
             "Initial prioritization skipped — question already has a judgement or view.",
+        )
+
+    async def _apply_nudges_to_batch(
+        self,
+        result: PrioritizationResult,
+    ) -> PrioritizationResult:
+        """Apply active hard nudges to prioritization output before dispatch.
+
+        Loads active nudges for the run, filters dispatch candidates by
+        ``constrain_dispatch`` hard bans, emits a ``NudgeAppliedEvent`` for
+        the call's trace, and marks fired one-shot nudges consumed. Soft
+        nudges and context injection are handled at per-call context build.
+        """
+        nudges = await self.db.nudges.get_active_for_run(self.db.run_id)
+        if not nudges:
+            return result
+
+        filtered_sequences, fired_hard, dropped = filter_dispatch_sequences(
+            result.dispatch_sequences, nudges
+        )
+        pause_nudges = [n for n in nudges if n.kind == NudgeKind.PAUSE]
+        if not fired_hard and not pause_nudges:
+            return result
+
+        if result.call_id is not None:
+            trace = CallTrace(result.call_id, self.db, broadcaster=self.broadcaster)
+            await trace.record(
+                build_applied_event(
+                    phase="orchestrator_dispatch",
+                    fired_hard=fired_hard,
+                    fired_soft=pause_nudges,
+                    dropped_count=dropped,
+                )
+            )
+
+        await consume_one_shot(self.db, fired_hard)
+
+        return PrioritizationResult(
+            dispatch_sequences=filtered_sequences,
+            call_id=result.call_id,
+            children=result.children,
         )
 
     async def _get_next_batch(

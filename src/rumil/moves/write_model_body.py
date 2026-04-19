@@ -68,12 +68,15 @@ async def execute(payload: WriteModelBodyPayload, call: Call, db: DB) -> MoveRes
         )
 
     await db.update_page_content(resolved_id, payload.content)
-    await db.save_epistemic_score(
-        page_id=resolved_id,
-        call_id=call.id,
-        credence=page.credence if page.credence is not None else 5,
-        robustness=payload.robustness,
-        reasoning=payload.robustness_reasoning,
+    await db._execute(
+        db.client.table("pages")
+        .update(
+            {
+                "robustness": payload.robustness,
+                "robustness_reasoning": payload.robustness_reasoning,
+            }
+        )
+        .eq("id", resolved_id)
     )
     log.info(
         "Model body written: %s (%d chars, robustness=%d)",

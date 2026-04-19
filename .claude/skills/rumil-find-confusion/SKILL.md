@@ -7,6 +7,15 @@ argument-hint: "[--limit N] [--deep [--deep-limit K] [--model ...]] [--force-res
 
 # rumil-find-confusion
 
+> **Under the hood:** this skill calls `rumil_skills.find_confusion`.
+> Heuristic and structural modes are read-only DB queries (`calls` and
+> `call_llm_exchanges` tables plus `rumil_skills.scan.scan_all` which
+> walks the page graph via `DB.get_links_*` helpers) — no rumil dispatch
+> function is involved. Deep mode layers on a meta LLM call via
+> `rumil_skills.llm_helpers.meta_structured_call` to produce a
+> `ConfusionVerdict`, cached in `.claude/state/rumil-scan-log.json`. No
+> API endpoint; this is a pure analysis skill.
+
 Triages recent calls in the active workspace, surfacing ones that look
 off. Three modes:
 

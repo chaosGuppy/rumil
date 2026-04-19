@@ -7,6 +7,13 @@ argument-hint: "<file_or_url> [--save] [--summary] [--full] [--workspace name]"
 
 # rumil-read
 
+> **Under the hood:** this skill calls `rumil_skills.read_source`, which
+> uses `rumil.scraper.scrape_url` and `rumil.sources.read_file_content`
+> for default/`--summary` modes (no DB). `--save` delegates to
+> `rumil.sources.create_source_page` — the same function
+> `rumil-ingest` and `main.py --ingest` call to mint Source pages. No
+> dispatch function or API endpoint is involved.
+
 Load a source — file, URL, or PDF — into the conversation. This is the
 **view-only lane**: the default mode opens no DB connection, makes no LLM
 call, and does not mutate the workspace. It's for "let me look at this."

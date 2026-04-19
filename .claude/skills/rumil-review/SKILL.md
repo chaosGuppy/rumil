@@ -6,6 +6,16 @@ argument-hint: "<question_id>"
 
 # rumil-review
 
+> **Under the hood:** this skill calls
+> `rumil_skills.gather_review_context`, which loads the question
+> subtree via `rumil.summary.build_research_tree`, runs
+> `rumil_skills.scan.scan_all` for structural/rating/review-signal
+> findings, and reads recent calls from the `calls` and
+> `call_llm_exchanges` tables directly. Read-only; the punch list is
+> produced by the Claude Code model itself from this loaded context —
+> no rumil dispatch function is involved. Follow-up acts (if any)
+> happen via `/rumil-clean` or `/rumil-dispatch`.
+
 Loads a full review context for one question: its subtree, shape
 diagnostics (structural health, rating distributions, self-reported
 call signals), every recent call that targeted it (with compact trace

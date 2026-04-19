@@ -6,6 +6,19 @@ argument-hint: "<question_id> | --pipeline grounding|feedback <eval_call_id>"
 
 # rumil-clean
 
+> **Under the hood:** Mode A (pipeline) calls
+> `rumil_skills.run_clean_pipeline`, which invokes
+> `rumil.clean.grounding.run_grounding_feedback` or
+> `rumil.clean.feedback.run_feedback_update` directly (the same pipeline
+> runners registered in `rumil.evaluate.registry.GROUNDING_PIPELINES`,
+> which back the shared `rumil.dispatch.dispatch_grounding_pipeline`
+> function and the `POST /api/calls/{call_id}/ground` + `POST
+> /api/calls/{call_id}/feedback` endpoints — main.py's `--ground` /
+> `--feedback` flags are the CLI equivalents). Mode B (interactive) is
+> cc-mediated and applies individual moves via `rumil_skills.apply_move`
+> onto a `CLAUDE_CODE_DIRECT` envelope call; no dispatch function is
+> involved.
+
 Turns a review into applied fixes, safely. There's a fast lane and a
 careful lane.
 

@@ -7,6 +7,12 @@ argument-hint: "<question_id> [--depth N] [--no-neighbors] [--no-calls]"
 
 # rumil-show
 
+> **Under the hood:** this skill calls `rumil_skills.show_question`,
+> which combines `rumil.summary.build_research_tree` (subtree),
+> `rumil.context.build_embedding_based_context` (workspace neighbors —
+> same builder used by real rumil calls), and a direct `calls`-table
+> read for recent calls. Read-only; no dispatch function involved.
+
 Renders a full picture of one question: its subtree (sub-questions, claims,
 judgements), the most relevant pages from the rest of the workspace
 (embedding-based), and the most recent calls that have targeted it.

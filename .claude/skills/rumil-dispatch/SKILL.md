@@ -7,6 +7,16 @@ argument-hint: "<call_type> <question_id> [--budget N] [--smoke-test]"
 
 # rumil-dispatch
 
+> **Under the hood:** this skill calls `rumil_skills.dispatch_call`,
+> which instantiates the appropriate `rumil.calls.*Call` subclass
+> (`FindConsiderationsCall`, `AssessCall` / `BigAssessCall` keyed by
+> `ASSESS_CALL_CLASSES`, `WebResearchCall`, `CreateViewCall`, or a
+> `Scout*Call` from its internal `_SCOUT_MAP`) and runs it via
+> `CallRunner.run()` directly. It bypasses `dispatch_orchestrator` /
+> `/api/questions/{id}/continue` because those fire a whole orchestrator
+> loop — this skill fires exactly one call. Equivalent to a single
+> iteration of what `scripts/run_call.py` does.
+
 Fires one rumil call and streams terse progress into the conversation.
 This is the **rumil-mediated lane**: the call is a standard rumil call
 with its own context-building and prompts — Claude Code is just the

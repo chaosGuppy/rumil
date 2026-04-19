@@ -7,6 +7,13 @@ argument-hint: "<query> [--full] [--limit N]"
 
 # rumil-search
 
+> **Under the hood:** this skill calls `rumil_skills.search_workspace`.
+> Default mode uses `rumil.embeddings.search_pages` (which calls the
+> `match_pages` RPC defined in the migrations). `--full` delegates to
+> `rumil.context.build_embedding_based_context` — the same multi-tier
+> context builder used inside real rumil calls like `find_considerations`.
+> Read-only; no API endpoint.
+
 Free-text semantic search across the active workspace.
 
 ## Modes

@@ -7,6 +7,12 @@ argument-hint: "<run_id> [--full] [--only llm_exchange] [--last-n N]"
 
 # rumil-load-run
 
+> **Under the hood:** this skill calls `rumil_skills.load_run`, which
+> issues direct reads against the `calls` and `runs` tables (grouping by
+> `run_id`). Same data the frontend `/traces/<run_id>` view consumes
+> via `GET /api/runs/{run_id}/trace-tree`. Read-only — no dispatch
+> function involved.
+
 Loads every call that shares a `run_id` — the anchor the frontend uses for
 `/traces/<run_id>`. Resolves short (8-char) or full run IDs.
 

@@ -7,6 +7,14 @@ argument-hint: "<file_or_url> --for <question_id> [--budget N] [--smoke-test] | 
 
 # rumil-ingest
 
+> **Under the hood:** this skill calls `rumil_skills.ingest_source`,
+> which uses `rumil.sources.create_source_page` to mint or reuse the
+> `PageType.SOURCE` page and then invokes
+> `rumil.orchestrators.ingest_until_done` to drive INGEST calls until
+> remaining fruit drops below threshold. `ingest_until_done` is the
+> same loop `main.py --ingest` and the `source_first` orchestrator use;
+> there is no dedicated dispatch function or API endpoint for ingest.
+
 Turn a source (file, URL, or previously-saved Source page) into
 considerations on a target question. `--for` is **required** — if you
 don't have a question to extract against, you want `rumil-read --save`

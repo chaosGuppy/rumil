@@ -7,6 +7,12 @@ argument-hint: "<page_id> [--no-links] [--content-limit N]"
 
 # rumil-page
 
+> **Under the hood:** this skill calls `rumil_skills.show_page`, which
+> hits `DB.get_page`, `DB.get_links_from`, `DB.get_links_to`, and
+> `DB.get_pages_by_ids` for link target resolution. Same data the
+> frontend page view and the `GET /api/pages/{page_id}` endpoint consume.
+> Read-only — no dispatch function involved.
+
 Single-page inspector. Takes a full or short (8-char) page ID and
 dumps everything a reviewer typically needs:
 

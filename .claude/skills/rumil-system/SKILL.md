@@ -6,6 +6,14 @@ user-invocable: false
 
 # rumil-system — working with rumil from Claude Code
 
+> **Under the hood:** this skill is pure background knowledge —
+> it loads no scripts and wraps no dispatch function. It points at the
+> other rumil-* skills and shared infrastructure: the central dispatch
+> functions in `rumil.dispatch` (`dispatch_orchestrator`,
+> `dispatch_evaluation`, `dispatch_grounding_pipeline`) and the
+> `GET /api/capabilities` endpoint which surfaces every orchestrator /
+> eval-type / call-type registered on the server.
+
 Rumil is an LLM-powered research workspace in this repo. Users pose
 questions; rumil investigates them by dispatching structured calls that
 produce pages (claims, questions, judgements, concepts, views) linked

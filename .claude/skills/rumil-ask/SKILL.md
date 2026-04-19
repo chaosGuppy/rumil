@@ -7,6 +7,14 @@ argument-hint: "<headline> [--parent <qid>] [--abstract \"...\"] [--content \"..
 
 # rumil-ask
 
+> **Under the hood:** this skill calls `rumil_skills.ask_question`, which
+> writes a new `PageType.QUESTION` row via `DB.save_page` and embeds it
+> via `rumil.embeddings.embed_and_store_page`, then records a
+> `MovesExecutedEvent` on the active `CLAUDE_CODE_DIRECT` envelope call
+> (same cc-mediated lane that `apply_move CREATE_QUESTION` uses). No
+> dispatch function is involved — creating a question does not run any
+> research calls.
+
 Adds a new research question to the active rumil workspace. This is the
 **cc-mediated lane** for question creation: the new page is owned by the
 current CC session's `CLAUDE_CODE_DIRECT` envelope Call, so the trace makes

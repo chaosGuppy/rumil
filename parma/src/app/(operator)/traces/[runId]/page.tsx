@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { TraceDetail } from "@/components/operator/TraceDetail";
 import { fetchRunDetail } from "@/lib/operator-api";
+import { useDocumentTitle } from "@/lib/useDocumentTitle";
 import type { RunDetail } from "@/lib/operator-types";
 
 export default function TraceDetailPage() {
@@ -12,6 +13,18 @@ export default function TraceDetailPage() {
   const [run, setRun] = useState<RunDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Fall back through the most descriptive field we have. `description` is
+  // the operator-surfaced run summary; `scope_node_headline` is the
+  // targeted question; short id is always available.
+  const titleHeadline =
+    run?.description ??
+    run?.scope_node_headline ??
+    (runId ? `run ${runId.slice(0, 8)}` : null);
+  useDocumentTitle(
+    ["trace", titleHeadline, run?.workspace_name],
+    "Rumil operator",
+  );
 
   useEffect(() => {
     fetchRunDetail(runId)

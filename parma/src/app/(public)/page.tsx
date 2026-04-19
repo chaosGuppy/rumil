@@ -25,6 +25,7 @@ import {
   fetchRootQuestions,
   fetchQuestionView,
 } from "@/lib/api";
+import { useDocumentTitle } from "@/lib/useDocumentTitle";
 import type { QuestionView, Page, Project, ProjectSummary } from "@/lib/types";
 
 const TEST_PROJECT_PATTERN = /^(test|scratch|smoke|tmp|scratchpad|skyblue-scratch|test-scratch)([-_].*)?$/i;
@@ -154,6 +155,8 @@ function ProjectBrowser({
   const [error, setError] = useState<string | null>(null);
   const [showTest, setShowTest] = useState(false);
   const [sort, setSort] = useState<SortMode>("newest");
+
+  useDocumentTitle(["projects"]);
 
   // Hydrate UI preferences from localStorage. Deferred to an effect so the
   // first render matches the server and we don't flash-unhydrate.
@@ -322,6 +325,7 @@ function QuestionPicker({
   onSelect: (question: Page) => void;
   onBack: () => void;
 }) {
+  useDocumentTitle([project.name]);
   return (
     <div className="browser">
       <div className="browser-header">
@@ -511,6 +515,18 @@ function QuestionViewPage({
       cancelled = true;
     };
   }, [refreshKey, questionId]);
+
+  // Browser-tab title. TRACE view uses the short run id (the full run name
+  // isn't plumbed up from TraceView — short id is a fine fallback that
+  // matches the header chip users already see). Other views use the
+  // question headline so a user with N tabs open can tell them apart.
+  const titleHeadline =
+    viewMode === "trace"
+      ? traceRunId
+        ? `run ${traceRunId.slice(0, 8)}`
+        : null
+      : (view?.question.headline ?? null);
+  useDocumentTitle([viewMode, titleHeadline, project.name]);
 
   if (error) {
     return (

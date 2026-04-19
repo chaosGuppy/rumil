@@ -3,12 +3,15 @@
 import { useEffect, useState } from "react";
 import { TraceList } from "@/components/operator/TraceList";
 import { fetchRuns } from "@/lib/operator-api";
+import { useDocumentTitle } from "@/lib/useDocumentTitle";
 import type { RunSummary } from "@/lib/operator-types";
 
 export default function TracesPage() {
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  useDocumentTitle(["traces"], "Rumil operator");
 
   useEffect(() => {
     fetchRuns({ limit: 100 })

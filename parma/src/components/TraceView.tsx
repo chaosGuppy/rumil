@@ -15,12 +15,14 @@ import {
   fetchCallEvents,
   fetchCallLLMExchanges,
   fetchLLMExchange,
+  fetchRunSpend,
   fetchRunTraceTree,
   fetchProjectRuns,
   updateRunHidden,
   type LLMExchangeDetail,
   type LLMExchangeSummary,
   type RunListItem,
+  type RunSpend,
   type RunTraceTree,
   type TraceCallNode,
   type TraceEvent,
@@ -440,11 +442,111 @@ function TraceHeader({
           ))}
         </div>
       )}
+      <TraceSpendDetails runId={tree.run_id} />
       <TraceConfigDetails config={tree.config} />
       <div className="trace-head-project" title={projectId}>
         {projectId.slice(0, 8)} · project
       </div>
     </header>
+  );
+}
+
+function formatSpendDuration(ms: number): string {
+  // Compact duration for the spend breakdown rows — sub-second: "230ms";
+  // seconds: "4.2s"; minutes: "1m12s". Aggregations are always >0 when
+  // shown (callers guard against the zero case).
+  if (ms < 1000) return `${ms}ms`;
+  const secs = ms / 1000;
+  if (secs < 60) return `${secs.toFixed(1)}s`;
+  const m = Math.floor(secs / 60);
+  const s = Math.round(secs - m * 60);
+  return s === 0 ? `${m}m` : `${m}m${s}s`;
+}
+
+function TraceSpendDetails({ runId }: { runId: string }) {
+  const [open, setOpen] = useState(false);
+  const [spend, setSpend] = useState<RunSpend | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Lazy-load the breakdown the first time the disclosure opens — the
+    // default-collapsed state means we don't pay for it on header render,
+    // which matters when flipping quickly between runs.
+    if (!open || spend !== null || error !== null) return;
+    let cancelled = false;
+    fetchRunSpend(runId)
+      .then((s) => {
+        if (!cancelled) setSpend(s);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e?.message ?? "failed to load spend");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, runId, spend, error]);
+
+  const maxCost = useMemo(() => {
+    if (!spend) return 0;
+    return spend.by_call_type.reduce((m, r) => Math.max(m, r.cost_usd), 0);
+  }, [spend]);
+
+  return (
+    <details
+      className="trace-head-spend"
+      open={open}
+      onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}
+    >
+      <summary className="trace-head-spend-summary">
+        {open ? "hide" : "show"} spend breakdown
+      </summary>
+      <div className="trace-head-spend-body">
+        {error && <div className="trace-head-spend-error">{error}</div>}
+        {!error && !spend && (
+          <div className="trace-head-spend-loading">loading…</div>
+        )}
+        {spend && spend.by_call_type.length === 0 && (
+          <div className="trace-head-spend-empty">no calls recorded</div>
+        )}
+        {spend && spend.by_call_type.length > 0 && (
+          <ul className="trace-head-spend-list">
+            {spend.by_call_type.map((row) => {
+              const pct =
+                maxCost > 0 ? Math.max(2, (row.cost_usd / maxCost) * 100) : 0;
+              return (
+                <li key={row.call_type} className="trace-head-spend-row">
+                  <div className="trace-head-spend-row-top">
+                    <span className="trace-head-spend-label">
+                      <span className="trace-head-spend-count">
+                        {row.count}×
+                      </span>
+                      <span className="trace-head-spend-type">
+                        {row.call_type}
+                      </span>
+                    </span>
+                    <span className="trace-head-spend-values">
+                      <span className="trace-head-spend-cost">
+                        ${row.cost_usd.toFixed(4)}
+                      </span>
+                      {row.duration_ms > 0 && (
+                        <span className="trace-head-spend-dur">
+                          · {formatSpendDuration(row.duration_ms)}
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                  <div
+                    className="trace-head-spend-bar"
+                    style={{ width: `${pct}%` }}
+                    aria-hidden
+                  />
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    </details>
   );
 }
 

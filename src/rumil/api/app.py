@@ -59,6 +59,8 @@ from rumil.api.schemas import (
     ReputationBucketOut,
     ReputationSummaryOut,
     RunListItemOut,
+    RunSpendByCallTypeOut,
+    RunSpendOut,
     RunSummaryOut,
     RunTraceTreeOut,
     SearchResultOut,
@@ -926,6 +928,54 @@ async def get_run_trace_tree(run_id: str, db: DB = Depends(_get_db)):
         cost_usd=total_cost if total_cost > 0 else None,
         staged=is_staged,
         config=run_config,
+    )
+
+
+@app.get("/api/runs/{run_id}/spend", response_model=RunSpendOut)
+async def get_run_spend(run_id: str, db: DB = Depends(_get_db)):
+    """Per-call-type spend breakdown for a run.
+
+    Aggregates ``cost_usd`` and ``completed_at - created_at`` across the
+    run's calls in Python — the row count per run is always small (tens,
+    not thousands), so a GROUP BY trip round is unnecessary. Calls that
+    haven't completed yet contribute 0 duration. Returned rows are sorted
+    descending by ``cost_usd`` so the biggest spenders surface first.
+    """
+    run = await db.get_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    calls = await db.get_calls_for_run(run_id)
+
+    totals_cost: dict[str, float] = {}
+    totals_duration: dict[str, int] = {}
+    counts: dict[str, int] = {}
+    for c in calls:
+        key = c.call_type.value
+        counts[key] = counts.get(key, 0) + 1
+        totals_cost[key] = totals_cost.get(key, 0.0) + (c.cost_usd or 0.0)
+        if c.completed_at is not None:
+            delta_ms = int((c.completed_at - c.created_at).total_seconds() * 1000)
+            if delta_ms > 0:
+                totals_duration[key] = totals_duration.get(key, 0) + delta_ms
+
+    rows = [
+        RunSpendByCallTypeOut(
+            call_type=ct,
+            count=counts[ct],
+            cost_usd=round(totals_cost.get(ct, 0.0), 6),
+            duration_ms=totals_duration.get(ct, 0),
+        )
+        for ct in counts
+    ]
+    rows.sort(key=lambda r: (-r.cost_usd, r.call_type))
+
+    return RunSpendOut(
+        run_id=run_id,
+        run_id_short=run_id[:8],
+        total_cost_usd=round(sum(r.cost_usd for r in rows), 6),
+        total_duration_ms=sum(r.duration_ms for r in rows),
+        total_calls=len(calls),
+        by_call_type=rows,
     )
 
 

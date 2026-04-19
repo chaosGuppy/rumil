@@ -401,6 +401,36 @@ class RunListItemOut(BaseModel):
     hidden: bool = False
 
 
+class RunSpendByCallTypeOut(BaseModel):
+    """One row of the per-call-type spend breakdown for a run."""
+
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    call_type: str
+    count: int
+    cost_usd: float
+    duration_ms: int
+
+
+class RunSpendOut(BaseModel):
+    """Aggregate spend for a single run, broken down by call_type.
+
+    ``total_duration_ms`` sums ``completed_at - created_at`` across the run's
+    calls (only counting calls that have actually completed); ``cost_usd``
+    sums ``cost_usd`` across all calls. The ``by_call_type`` list is sorted
+    descending by ``cost_usd``.
+    """
+
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    run_id: str
+    run_id_short: str
+    total_cost_usd: float
+    total_duration_ms: int
+    total_calls: int
+    by_call_type: list[RunSpendByCallTypeOut]
+
+
 class PaginatedPagesOut(BaseModel):
     model_config = ConfigDict(json_schema_extra=_all_fields_required)
     items: Sequence[Page]

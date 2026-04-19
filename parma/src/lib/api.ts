@@ -632,6 +632,28 @@ export async function fetchRunTraceTree(runId: string): Promise<RunTraceTree> {
   return res.json();
 }
 
+export interface RunSpendByCallType {
+  call_type: string;
+  count: number;
+  cost_usd: number;
+  duration_ms: number;
+}
+
+export interface RunSpend {
+  run_id: string;
+  run_id_short: string;
+  total_cost_usd: number;
+  total_duration_ms: number;
+  total_calls: number;
+  by_call_type: RunSpendByCallType[];
+}
+
+export async function fetchRunSpend(runId: string): Promise<RunSpend> {
+  const res = await fetch(`${API_BASE}/api/runs/${runId}/spend`);
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  return res.json();
+}
+
 export async function fetchCallEvents(callId: string): Promise<TraceEvent[]> {
   const res = await fetch(`${API_BASE}/api/calls/${callId}/events`);
   if (!res.ok) throw new Error(`API error: ${res.status}`);

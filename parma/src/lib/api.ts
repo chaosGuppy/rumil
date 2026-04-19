@@ -349,6 +349,7 @@ export async function streamChatMessage(
   conversationId?: string,
   openRunId?: string,
   openPageIds?: string[],
+  viewMode?: string,
 ): Promise<void> {
   const res = await fetch(`${API_BASE}/api/chat/stream`, {
     method: "POST",
@@ -361,6 +362,7 @@ export async function streamChatMessage(
       conversation_id: conversationId ?? null,
       open_run_id: openRunId ?? null,
       open_page_ids: openPageIds ?? [],
+      view_mode: viewMode ?? null,
     }),
   });
   if (!res.ok) throw new Error(`API error: ${res.status}`);

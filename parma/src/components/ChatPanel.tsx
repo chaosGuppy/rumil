@@ -42,6 +42,7 @@ interface ChatPanelProps {
   projectId?: string;
   openRunId?: string;
   openPageIds?: string[];
+  viewMode?: string;
 }
 
 function contentToText(content: unknown): string {
@@ -323,6 +324,7 @@ export function ChatPanel({
   projectId,
   openRunId,
   openPageIds,
+  viewMode,
 }: ChatPanelProps) {
   const initialAssistantMessage: Message = {
     id: "initial",
@@ -742,7 +744,7 @@ export function ChatPanel({
           }
           updateMsg();
         }
-      }, workspace, model, conversationId ?? undefined, openRunId, openPageIds);
+      }, workspace, model, conversationId ?? undefined, openRunId, openPageIds, viewMode);
 
       setMessages((prev) =>
         prev.map((m) =>

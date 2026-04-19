@@ -1220,6 +1220,7 @@ function QuestionViewPage({
         projectId={project.id}
         openRunId={traceRunId ?? undefined}
         openPageIds={openPaneIds}
+        viewMode={viewMode}
       />
       <SourceDrawer
         source={drawerSource}

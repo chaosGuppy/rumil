@@ -72,6 +72,7 @@ class ChatRequest(BaseModel):
     conversation_id: str | None = None
     open_run_id: str | None = None
     open_page_ids: list[str] = []
+    view_mode: str | None = None
 
 
 class ToolUseInfo(BaseModel):
@@ -1671,13 +1672,17 @@ async def _build_ui_state_block(
     db: DB,
     open_run_id: str | None,
     open_page_ids: Sequence[str],
+    view_mode: str | None = None,
 ) -> str:
     """Render a short 'Currently open in UI' block for the system prompt.
 
-    Returns '' if neither field yields resolvable context. Degrades
-    gracefully when run or pages are missing.
+    Returns '' if no field yields resolvable context. Degrades gracefully
+    when run or pages are missing.
     """
     lines: list[str] = []
+
+    if view_mode:
+        lines.append(f"- View mode: {view_mode}")
 
     if open_run_id:
         full_run_id: str | None = None
@@ -1882,7 +1887,7 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
         system_prompt = (PROMPTS_DIR / "api_chat.md").read_text(encoding="utf-8")
         context_scope_id = full_id or ""
         context_text = await build_chat_context(full_id, db) if full_id else "(no question scope)"
-        ui_block = await _build_ui_state_block(db, request.open_run_id, request.open_page_ids)
+        ui_block = await _build_ui_state_block(db, request.open_run_id, request.open_page_ids, request.view_mode)
         preamble = f"{ui_block}\n\n" if ui_block else ""
         full_system = f"{system_prompt}\n\n---\n\n{preamble}{context_text}"
 
@@ -2036,7 +2041,7 @@ async def handle_chat_stream(request: ChatRequest) -> StreamingResponse:
 
     system_prompt = (PROMPTS_DIR / "api_chat.md").read_text(encoding="utf-8")
     context_text = await build_chat_context(full_id, db) if full_id else "(no question scope)"
-    ui_block = await _build_ui_state_block(db, request.open_run_id, request.open_page_ids)
+    ui_block = await _build_ui_state_block(db, request.open_run_id, request.open_page_ids, request.view_mode)
     preamble = f"{ui_block}\n\n" if ui_block else ""
     full_system = f"{system_prompt}\n\n---\n\n{preamble}{context_text}"
     model_id = MODEL_MAP.get(request.model, MODEL_MAP["sonnet"])

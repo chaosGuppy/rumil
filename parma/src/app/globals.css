@@ -6535,25 +6535,31 @@ mark.ann-mark.ann-mark-dispute:hover {
 }
 
 .tc-nested {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
   padding: 4px 6px;
   background: var(--active-0);
   border-radius: 2px;
 }
-.tc-nested-row {
+
+.tc-array-objects {
   display: flex;
-  gap: 8px;
-  font-size: 10.5px;
+  flex-direction: column;
+  gap: 6px;
 }
-.tc-nested-key {
-  color: var(--fg-muted);
-  min-width: 80px;
+.tc-array-item-card {
+  position: relative;
+  padding: 6px 8px 6px 22px;
+  background: var(--active-0);
+  border-left: 2px solid var(--border);
+  border-radius: 2px;
 }
-.tc-nested-value {
-  color: var(--fg);
-  word-break: break-word;
+.tc-array-item-index {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  color: var(--fg-dim);
+  font-size: 10px;
+  font-family: var(--font-mono-stack, monospace);
+  letter-spacing: 0.02em;
 }
 
 .trace-ex-messages {

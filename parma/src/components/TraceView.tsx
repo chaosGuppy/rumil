@@ -1048,14 +1048,20 @@ function ToolCallArgValue({
     return <span className="tc-muted">{String(value)}</span>;
   }
 
-  // Nested objects: one level of labeled rows, then JSON for deeper. Arrays
-  // of primitives render inline; arrays of objects fall through to JSON.
+  // Nested objects recurse through ToolCallArgs so inner fields get the
+  // same hint-based styling (refs become clickable, longtext preserves
+  // newlines, etc.) instead of being flattened to a preview string.
+  // Arrays of primitives render inline; arrays of objects render as a
+  // stack of indented sub-blocks with item numbers.
   if (value && typeof value === "object") {
     if (Array.isArray(value)) {
+      if (value.length === 0) {
+        return <span className="tc-muted">[]</span>;
+      }
       const allPrimitive = value.every(
         (v) => v === null || ["string", "number", "boolean"].includes(typeof v),
       );
-      if (allPrimitive && value.length > 0) {
+      if (allPrimitive) {
         return (
           <div className="tc-array">
             {value.map((item, i) => (
@@ -1072,30 +1078,27 @@ function ToolCallArgValue({
         );
       }
       return (
-        <pre className="trace-code trace-code-tight">{prettyJson(value)}</pre>
+        <div className="tc-array-objects">
+          {value.map((item, i) => (
+            <div key={i} className="tc-array-item-card">
+              <div className="tc-array-item-index">#{i + 1}</div>
+              {item && typeof item === "object" && !Array.isArray(item) ? (
+                <ToolCallArgs input={item as Record<string, unknown>} />
+              ) : (
+                <ToolCallArgValue hint="default" value={item} />
+              )}
+            </div>
+          ))}
+        </div>
       );
     }
     const nested = value as Record<string, unknown>;
-    const nestedEntries = Object.entries(nested);
-    const hasDeepNesting = nestedEntries.some(
-      ([, v]) =>
-        v !== null &&
-        typeof v === "object" &&
-        Object.keys(v as object).length > 0,
-    );
-    if (hasDeepNesting) {
-      return (
-        <pre className="trace-code trace-code-tight">{prettyJson(value)}</pre>
-      );
+    if (Object.keys(nested).length === 0) {
+      return <span className="tc-muted">{"{}"}</span>;
     }
     return (
       <div className="tc-nested">
-        {nestedEntries.map(([k, v]) => (
-          <div key={k} className="tc-nested-row">
-            <span className="tc-nested-key">{k}</span>
-            <span className="tc-nested-value">{formatPreviewValue(v)}</span>
-          </div>
-        ))}
+        <ToolCallArgs input={nested} />
       </div>
     );
   }

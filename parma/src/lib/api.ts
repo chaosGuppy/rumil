@@ -225,6 +225,21 @@ export async function fetchQuestionView(
   return res.json();
 }
 
+// Fetch active (non-superseded) INLAY pages bound to a question via
+// INLAY_OF links. Returns an empty list for questions that have no
+// inlays yet (the common case). The frontend picks one based on
+// localStorage selection (see InlayFrame.tsx) — the backend is
+// agnostic to which one is "selected" for a given user.
+export async function fetchInlaysForQuestion(
+  questionId: string,
+): Promise<Page[]> {
+  const res = await fetch(
+    `${API_BASE}/api/questions/${questionId}/inlays`,
+  );
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  return res.json();
+}
+
 export interface ProjectStats {
   pages_total: number;
   pages_by_type: Record<string, number>;

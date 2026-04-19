@@ -12,6 +12,12 @@ import { SuggestionReview } from "@/components/SuggestionReview";
 import { SourcesView } from "@/components/SourcesView";
 import { SectionsView } from "@/components/SectionsView";
 import { SourceDrawer } from "@/components/SourceDrawer";
+import { InlayFrame } from "@/components/InlayFrame";
+import {
+  InlaySelector,
+  STOCK_SENTINEL,
+  inlayStorageKey,
+} from "@/components/InlaySelector";
 import {
   SearchPalette,
   useSearchPaletteShortcut,
@@ -1168,6 +1174,44 @@ function QuestionViewPage({
   const [showReview, setShowReview] = useState(false);
   const [drawerSource, setDrawerSource] = useState<Page | null>(null);
   const [continueOpen, setContinueOpen] = useState(false);
+  // Inlay selection: `null` = not yet loaded, `{inlays, selected}` once
+  // the selector finishes its fetch. `selected` is the resolved Page
+  // or null when the user picked "stock" / the stored id no longer
+  // exists. Persists across view-mode switches but is cleared when the
+  // question changes.
+  const [inlayState, setInlayState] = useState<{
+    inlays: Page[];
+    selected: Page | null;
+  } | null>(null);
+  const handleInlayLoaded = useCallback(
+    (inlays: Page[], selected: Page | null) => {
+      setInlayState({ inlays, selected });
+    },
+    [],
+  );
+  // Listen for cross-component selection events so the selector and
+  // InlayFrame stay in sync without prop drilling. Keyed per question
+  // so opening a second tab with a different question doesn't cross
+  // its wires.
+  useEffect(() => {
+    function onSelection(e: Event) {
+      const detail = (e as CustomEvent).detail;
+      if (!detail || detail.questionId !== questionId) return;
+      if (typeof window === "undefined") return;
+      const value = window.localStorage.getItem(inlayStorageKey(questionId));
+      setInlayState((prev) => {
+        if (!prev) return prev;
+        if (!value || value === STOCK_SENTINEL) {
+          return { ...prev, selected: null };
+        }
+        const match = prev.inlays.find((p) => p.id === value) ?? null;
+        return { ...prev, selected: match };
+      });
+    }
+    window.addEventListener("rumil:inlay:selection", onSelection);
+    return () =>
+      window.removeEventListener("rumil:inlay:selection", onSelection);
+  }, [questionId]);
 
   // When a node ref is clicked in chat: open the inspect panel AND nudge the
   // view to scroll to the matching card if one is visible. The inspect
@@ -1382,6 +1426,12 @@ const refreshView = useCallback(() => {
                     </button>
                   </>
                 )}
+                {viewMode === "article" && (
+                  <InlaySelector
+                    questionId={questionId}
+                    onLoaded={handleInlayLoaded}
+                  />
+                )}
                 <span className="view-switcher-continue-sep" />
                 <button
                   type="button"
@@ -1402,14 +1452,20 @@ const refreshView = useCallback(() => {
               onOpenSource={setDrawerSource}
             />
           )}
-          {viewMode === "article" && (
+          {viewMode === "article" && inlayState?.selected ? (
+            <InlayFrame
+              inlay={inlayState.selected}
+              view={view}
+              project={{ id: project.id, name: project.name }}
+            />
+          ) : viewMode === "article" ? (
             <ArticleView
               view={view}
               focusNodeId={focusNodeId}
               onFocusHandled={() => setFocusNodeId(null)}
               onOpenSource={setDrawerSource}
             />
-          )}
+          ) : null}
           {viewMode === "vertical" && (
             <VerticalView
               ref={verticalRef}

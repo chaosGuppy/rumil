@@ -665,7 +665,7 @@ export type CallSummary = {
 /**
  * CallType
  */
-export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'ab_eval' | 'ab_eval_comparison' | 'ab_eval_summary' | 'run_eval' | 'single_call_baseline' | 'create_view' | 'global_prioritization' | 'update_view' | 'chat_direct' | 'adversarial_review' | 'explore_tension' | 'draft_artifact' | 'claude_code_direct';
+export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'ab_eval' | 'ab_eval_comparison' | 'ab_eval_summary' | 'run_eval' | 'single_call_baseline' | 'create_view' | 'global_prioritization' | 'update_view' | 'chat_direct' | 'adversarial_review' | 'explore_tension' | 'draft_artifact' | 'claude_code_direct' | 'author_inlay';
 
 /**
  * CallTypeFruitScoreItem
@@ -1692,7 +1692,7 @@ export type LinkSubquestionsCompleteEventOut = {
 /**
  * LinkType
  */
-export type LinkType = 'consideration' | 'child_question' | 'supersedes' | 'related' | 'answers' | 'variant' | 'summarizes' | 'cites' | 'depends_on' | 'view_item' | 'view_of' | 'meta_for';
+export type LinkType = 'consideration' | 'child_question' | 'supersedes' | 'related' | 'answers' | 'variant' | 'summarizes' | 'cites' | 'depends_on' | 'view_item' | 'view_of' | 'meta_for' | 'inlay_of';
 
 /**
  * LinkedPageOut
@@ -2084,7 +2084,7 @@ export type PageRef = {
 /**
  * PageType
  */
-export type PageType = 'source' | 'claim' | 'question' | 'judgement' | 'wiki' | 'view' | 'view_item' | 'view_meta' | 'artifact';
+export type PageType = 'source' | 'claim' | 'question' | 'judgement' | 'wiki' | 'view' | 'view_item' | 'view_meta' | 'artifact' | 'inlay';
 
 /**
  * PaginatedPagesOut
@@ -5294,6 +5294,43 @@ export type GetQuestionViewApiQuestionsQuestionIdViewGetResponses = {
 };
 
 export type GetQuestionViewApiQuestionsQuestionIdViewGetResponse = GetQuestionViewApiQuestionsQuestionIdViewGetResponses[keyof GetQuestionViewApiQuestionsQuestionIdViewGetResponses];
+
+export type GetQuestionInlaysApiQuestionsQuestionIdInlaysGetData = {
+    body?: never;
+    path: {
+        /**
+         * Question Id
+         */
+        question_id: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/questions/{question_id}/inlays';
+};
+
+export type GetQuestionInlaysApiQuestionsQuestionIdInlaysGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetQuestionInlaysApiQuestionsQuestionIdInlaysGetError = GetQuestionInlaysApiQuestionsQuestionIdInlaysGetErrors[keyof GetQuestionInlaysApiQuestionsQuestionIdInlaysGetErrors];
+
+export type GetQuestionInlaysApiQuestionsQuestionIdInlaysGetResponses = {
+    /**
+     * Response Get Question Inlays Api Questions  Question Id  Inlays Get
+     *
+     * Successful Response
+     */
+    200: Array<Page>;
+};
+
+export type GetQuestionInlaysApiQuestionsQuestionIdInlaysGetResponse = GetQuestionInlaysApiQuestionsQuestionIdInlaysGetResponses[keyof GetQuestionInlaysApiQuestionsQuestionIdInlaysGetResponses];
 
 export type GetAppConfigApiConfigGetData = {
     body?: never;

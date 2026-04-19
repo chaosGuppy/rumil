@@ -1894,6 +1894,32 @@ async def get_question_view(
     )
 
 
+@app.get("/api/questions/{question_id}/inlays", response_model=list[Page])
+async def get_question_inlays(
+    question_id: str,
+    db: DB = Depends(_get_db),
+):
+    """Return active INLAY pages bound to a question via INLAY_OF links.
+
+    Inlays are model-authored HTML/CSS/JS fragments rendered in a
+    sandboxed iframe as the question's content area when the user has
+    one selected (selection is client-side in localStorage, not server
+    state). The endpoint returns every non-superseded inlay; the
+    frontend picks one based on localStorage. Empty list is the common
+    case (most questions have no inlays).
+    """
+    resolved = await db.resolve_page_id(question_id)
+    if not resolved:
+        raise HTTPException(404, f"Question {question_id} not found")
+    page = await db.get_page(resolved)
+    if not page or page.page_type != PageType.QUESTION:
+        raise HTTPException(
+            404,
+            f"Page {question_id} is not a question page; cannot have inlays",
+        )
+    return await db.get_inlays_for_question(resolved)
+
+
 @app.get("/api/config", response_model=AppConfigOut)
 async def get_app_config():
     """Expose feature flags needed by the frontend.

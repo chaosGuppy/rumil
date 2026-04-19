@@ -12,6 +12,7 @@ const TYPE_COLORS: Record<PageType, string> = {
   view_item: "var(--node-context)",
   view_meta: "var(--node-context)",
   artifact: "var(--node-claim)",
+  inlay: "var(--node-context)",
 };
 
 export function NodeTypeLabel({ type }: { type: PageType }) {

@@ -2835,6 +2835,60 @@
         }
       }
     },
+    "/api/questions/{question_id}/inlays": {
+      "get": {
+        "summary": "Get Question Inlays",
+        "description": "Return active INLAY pages bound to a question via INLAY_OF links.\n\nInlays are model-authored HTML/CSS/JS fragments rendered in a\nsandboxed iframe as the question's content area when the user has\none selected (selection is client-side in localStorage, not server\nstate). The endpoint returns every non-superseded inlay; the\nfrontend picks one based on localStorage. Empty list is the common\ncase (most questions have no inlays).",
+        "operationId": "get_question_inlays_api_questions__question_id__inlays_get",
+        "parameters": [
+          {
+            "name": "question_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Question Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Page"
+                  },
+                  "title": "Response Get Question Inlays Api Questions  Question Id  Inlays Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/config": {
       "get": {
         "summary": "Get App Config",
@@ -4934,7 +4988,8 @@
           "adversarial_review",
           "explore_tension",
           "draft_artifact",
-          "claude_code_direct"
+          "claude_code_direct",
+          "author_inlay"
         ],
         "title": "CallType"
       },
@@ -6607,7 +6662,8 @@
           "depends_on",
           "view_item",
           "view_of",
-          "meta_for"
+          "meta_for",
+          "inlay_of"
         ],
         "title": "LinkType"
       },
@@ -7280,7 +7336,8 @@
           "view",
           "view_item",
           "view_meta",
-          "artifact"
+          "artifact",
+          "inlay"
         ],
         "title": "PageType"
       },

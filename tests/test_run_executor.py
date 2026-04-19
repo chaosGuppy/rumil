@@ -1,19 +1,48 @@
-"""RunExecutor read + write helpers cover the status-transition surface
-that dispatch paths opt into while the full executor.start() refactor
-is pending.
-"""
+"""RunExecutor read + write helpers + the start/cancel/wait control plane."""
 
 from __future__ import annotations
 
+import asyncio
+from decimal import Decimal
+
+import pytest
 import pytest_asyncio
 
 from rumil.run_executor import RunExecutor, RunStatus
+from rumil.run_executor.executor import _ACTIVE_RUNS, _KIND_HANDLERS
 
 
 @pytest_asyncio.fixture
 async def run_db(tmp_db):
     await tmp_db.create_run(name="executor-transitions", question_id=None, config={})
     return tmp_db
+
+
+@pytest.fixture
+def fake_handler(mocker):
+    """Install a fake 'orchestrator' handler for the duration of a test.
+
+    Returns a dict the test can mutate to control handler behavior:
+    ``raise_exc`` — an exception to raise; ``sleep`` — seconds to sleep;
+    ``called_with`` — populated with (spec, db) on invocation.
+    """
+    state: dict = {"called_with": None, "raise_exc": None, "sleep": 0.0}
+    original = _KIND_HANDLERS.get("orchestrator")
+
+    async def _fake(spec, db):
+        state["called_with"] = (spec, db)
+        if state["sleep"]:
+            await asyncio.sleep(state["sleep"])
+        if state["raise_exc"] is not None:
+            raise state["raise_exc"]
+
+    _KIND_HANDLERS["orchestrator"] = _fake
+    yield state
+    if original is None:
+        _KIND_HANDLERS.pop("orchestrator", None)
+    else:
+        _KIND_HANDLERS["orchestrator"] = original
+    _ACTIVE_RUNS.clear()
 
 
 async def test_status_returns_none_for_unknown_run(tmp_db):
@@ -134,8 +163,6 @@ async def test_tracked_scope_marks_complete_on_success(run_db):
 
 
 async def test_tracked_scope_marks_failed_on_exception(run_db):
-    import pytest
-
     ex = RunExecutor(run_db)
     with pytest.raises(RuntimeError, match="boom"):
         async with ex.tracked_scope(run_db.run_id):
@@ -146,3 +173,191 @@ async def test_tracked_scope_marks_failed_on_exception(run_db):
     assert view.cancel_reason is not None
     assert "RuntimeError" in view.cancel_reason
     assert "boom" in view.cancel_reason
+
+
+async def test_tracked_scope_marks_cancelled_on_cancellation(run_db):
+    ex = RunExecutor(run_db)
+    with pytest.raises(asyncio.CancelledError):
+        async with ex.tracked_scope(run_db.run_id):
+            raise asyncio.CancelledError()
+    view = await ex.status(run_db.run_id)
+    assert view is not None
+    assert view.status == RunStatus.CANCELLED
+
+
+async def test_start_spawns_handler_and_transitions_to_complete(tmp_db, fake_handler):
+    from rumil.run_executor import RunSpec
+
+    ex = RunExecutor(tmp_db)
+    spec = RunSpec(
+        kind="orchestrator",
+        project_id=tmp_db.project_id,
+        question_id="00000000-0000-0000-0000-000000000001",
+        name="start-test",
+    )
+    run_id = await ex.start(spec)
+    view = await ex.wait_until_settled(run_id, timeout=5.0)
+
+    assert view is not None
+    assert view.status == RunStatus.COMPLETE
+    assert view.started_at is not None
+    assert view.finished_at is not None
+    assert fake_handler["called_with"] is not None
+    called_spec, called_db = fake_handler["called_with"]
+    assert called_spec.name == "start-test"
+    assert called_db is tmp_db
+
+
+async def test_start_refuses_second_handler_on_same_run(tmp_db, fake_handler):
+    from rumil.run_executor import RunSpec
+
+    fake_handler["sleep"] = 0.3
+    ex = RunExecutor(tmp_db)
+    spec = RunSpec(
+        kind="orchestrator",
+        project_id=tmp_db.project_id,
+        question_id="00000000-0000-0000-0000-000000000002",
+    )
+    await ex.start(spec)
+    with pytest.raises(ValueError, match="already has an in-flight task"):
+        await ex.start(spec)
+    await ex.wait_until_settled(tmp_db.run_id, timeout=5.0)
+
+
+async def test_start_raises_failure_for_unknown_handler(tmp_db):
+    from rumil.run_executor import RunSpec
+
+    ex = RunExecutor(tmp_db)
+    spec = RunSpec(
+        kind="ingest",
+        project_id=tmp_db.project_id,
+        question_id="00000000-0000-0000-0000-000000000003",
+    )
+    with pytest.raises(ValueError, match="No handler registered"):
+        await ex.start(spec)
+
+
+async def test_cancel_running_task_transitions_to_cancelled(tmp_db, fake_handler):
+    from rumil.run_executor import RunSpec
+
+    fake_handler["sleep"] = 10.0
+    ex = RunExecutor(tmp_db)
+    spec = RunSpec(
+        kind="orchestrator",
+        project_id=tmp_db.project_id,
+        question_id="00000000-0000-0000-0000-000000000004",
+    )
+    run_id = await ex.start(spec)
+    # give tracked_scope time to mark_started before we cancel
+    await asyncio.sleep(0.05)
+    await ex.cancel(run_id, reason="user cancelled")
+    view = await ex.wait_until_settled(run_id, timeout=5.0)
+
+    assert view is not None
+    assert view.status == RunStatus.CANCELLED
+    assert view.cancel_reason == "user cancelled"
+
+
+async def test_cancel_unknown_run_marks_cancelled_directly(run_db):
+    ex = RunExecutor(run_db)
+    await ex.cancel(run_db.run_id, reason="external cleanup")
+    view = await ex.status(run_db.run_id)
+    assert view is not None
+    assert view.status == RunStatus.CANCELLED
+    assert view.cancel_reason == "external cleanup"
+
+
+async def test_start_handler_failure_transitions_to_failed(tmp_db, fake_handler):
+    from rumil.run_executor import RunSpec
+
+    fake_handler["raise_exc"] = RuntimeError("handler kaboom")
+    ex = RunExecutor(tmp_db)
+    spec = RunSpec(
+        kind="orchestrator",
+        project_id=tmp_db.project_id,
+        question_id="00000000-0000-0000-0000-000000000005",
+    )
+    run_id = await ex.start(spec)
+    view = await ex.wait_until_settled(run_id, timeout=5.0)
+
+    assert view is not None
+    assert view.status == RunStatus.FAILED
+    assert view.cancel_reason is not None
+    assert "handler kaboom" in view.cancel_reason
+
+
+async def test_wait_until_settled_returns_current_view_on_timeout(tmp_db, fake_handler):
+    from rumil.run_executor import RunSpec
+
+    fake_handler["sleep"] = 10.0
+    ex = RunExecutor(tmp_db)
+    spec = RunSpec(
+        kind="orchestrator",
+        project_id=tmp_db.project_id,
+        question_id="00000000-0000-0000-0000-000000000006",
+    )
+    run_id = await ex.start(spec)
+    await asyncio.sleep(0.05)
+    view = await ex.wait_until_settled(run_id, timeout=0.1)
+    assert view is not None
+    assert view.status == RunStatus.RUNNING
+    # clean up the lingering task
+    await ex.cancel(run_id, reason="timeout-test cleanup")
+    await ex.wait_until_settled(run_id, timeout=5.0)
+
+
+async def test_sum_call_costs_returns_zero_when_no_rows(run_db):
+    ex = RunExecutor(run_db)
+    assert await ex.sum_call_costs(run_db.run_id) == 0
+
+
+async def test_sum_call_costs_sums_rows(run_db):
+    for usd in ("0.10", "1.25", "0.05"):
+        await run_db._execute(
+            run_db.client.table("call_costs").insert(
+                {
+                    "run_id": run_db.run_id,
+                    "call_id": "00000000-0000-0000-0000-000000000000",
+                    "call_type": "assess",
+                    "usd": usd,
+                }
+            )
+        )
+    ex = RunExecutor(run_db)
+    assert await ex.sum_call_costs(run_db.run_id) == 140  # $1.40 → 140 cents
+
+
+async def test_would_exceed_budget_false_without_cap(run_db):
+    ex = RunExecutor(run_db)
+    assert await ex.would_exceed_budget(run_db.run_id) is False
+
+
+async def test_would_exceed_budget_trips_when_spend_reaches_cap(tmp_db, fake_handler):
+    from rumil.run_executor import RunSpec
+
+    fake_handler["sleep"] = 10.0
+    ex = RunExecutor(tmp_db)
+    spec = RunSpec(
+        kind="orchestrator",
+        project_id=tmp_db.project_id,
+        question_id="00000000-0000-0000-0000-000000000007",
+        budget_usd=Decimal("1.00"),
+    )
+    run_id = await ex.start(spec)
+    await asyncio.sleep(0.05)
+    assert await ex.would_exceed_budget(run_id) is False
+
+    await tmp_db._execute(
+        tmp_db.client.table("call_costs").insert(
+            {
+                "run_id": run_id,
+                "call_id": "00000000-0000-0000-0000-000000000000",
+                "call_type": "assess",
+                "usd": "1.50",
+            }
+        )
+    )
+    assert await ex.would_exceed_budget(run_id) is True
+
+    await ex.cancel(run_id, reason="budget-test cleanup")
+    await ex.wait_until_settled(run_id, timeout=5.0)

@@ -16,7 +16,12 @@ The exported surface is deliberately small and stable so callers
 imperative path is retired.
 """
 
-from rumil.run_executor.executor import RunExecutor
+# Side-effect import: installs the default handlers for the four
+# canonical RunSpec.kinds (orchestrator / evaluation / single_call /
+# grounding_pipeline). Callers who ``from rumil.run_executor import
+# RunExecutor`` get the handlers pre-registered.
+from rumil.run_executor import handlers as handlers
+from rumil.run_executor.executor import RunExecutor, register_handler
 from rumil.run_executor.run_spec import RunSpec
 from rumil.run_executor.run_state import RunStatus, RunView
 
@@ -25,4 +30,5 @@ __all__ = [
     "RunSpec",
     "RunStatus",
     "RunView",
+    "register_handler",
 ]

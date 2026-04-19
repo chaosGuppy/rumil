@@ -1,51 +1,130 @@
-"""RunExecutor: read-only today, full control plane in future phases.
+"""RunExecutor: control-plane entry point for long-running runs.
 
-Phase 2 exposes ``status(run_id)`` only. Everything else
-(``start`` / ``pause`` / ``resume`` / ``cancel`` / ``wait_until_settled``
-/ ``events``) is stubbed with NotImplementedError so callers can write
-against the contract while the imperative dispatch path still owns
-writes.
+Today the executor owns:
+
+- ``status(run_id)`` — read the enriched ``RunView``
+- ``mark_started/complete/failed/cancelled`` — direct status transitions
+- ``create_run_from_spec`` + ``tracked_scope`` — additive scaffolding that
+  dispatch paths can opt into without full migration
+- ``start(spec)`` — full integrated path: creates the run row, looks up a
+  handler for ``spec.kind``, spawns the handler as an asyncio.Task wrapped
+  in ``tracked_scope``, and registers it in a process-global task table so
+  cancel / wait can find it.
+- ``cancel(run_id, reason)`` — marks cancelled and cancels the task if we
+  own one
+- ``wait_until_settled(run_id, timeout)`` — waits on the task (if known)
+  and returns the final ``RunView``
+- ``sum_call_costs(run_id)`` + ``would_exceed_budget(run_id)`` — dollar
+  circuit-breaker helpers that callers can poll before dispatching more
+  calls
+
+Still pending:
+
+- ``pause`` / ``resume`` — requires orchestrator cooperation (checking
+  a paused flag between dispatches)
+- ``events(run_id)`` — requires a broker / per-run queue
+- ``run_checkpoints`` consumption — orchestrators write them today via
+  no-op stubs; resume reads them in a follow-up phase.
+
+``_ACTIVE_RUNS`` is module-level so that a ``RunExecutor(db_a)`` created
+in the API layer can cancel / wait on a run started in the CLI layer by a
+different ``RunExecutor(db_b)``. Each process owns its own copy; runs in
+another worker aren't reachable (that's the cross-process layer).
 """
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+import asyncio
+import logging
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
-from rumil.run_executor.run_spec import RunSpec
+from rumil.run_executor.run_spec import RunKind, RunSpec
 from rumil.run_executor.run_state import RunStatus, RunView
 
 if TYPE_CHECKING:
     from rumil.database import DB
 
 
-class RunExecutor:
-    """Read-only façade over the ``runs`` table for now.
+log = logging.getLogger(__name__)
 
-    A future phase turns this into a process-wide singleton that owns
-    ``dict[run_id, _RunTask]``, a global max-concurrent-runs semaphore,
-    and per-run ``InflightLimiter`` + ``BudgetGate``. Today the class
-    is stateless; instances are cheap to construct.
+
+RunHandler = Callable[[RunSpec, "DB"], Awaitable[None]]
+
+
+@dataclass
+class _RunTask:
+    """Process-local record of an in-flight run.
+
+    ``task`` is the asyncio.Task running the handler inside
+    ``tracked_scope``. ``cancel_reason`` is set by ``cancel()`` before
+    ``task.cancel()`` so the tracked_scope exception handler can emit
+    the right reason. ``cost_cap_usd_cents`` is the per-run dollar
+    ceiling callers snapshot at ``start()`` time.
     """
+
+    task: asyncio.Task[Any]
+    cost_cap_usd_cents: int | None = None
+    cancel_reason: str | None = None
+    started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+
+
+_ACTIVE_RUNS: dict[str, _RunTask] = {}
+
+_KIND_HANDLERS: dict[RunKind, RunHandler] = {}
+
+
+def register_handler(kind: RunKind) -> Callable[[RunHandler], RunHandler]:
+    """Register a coroutine as the handler for a RunSpec.kind.
+
+    Handlers take ``(spec, db)`` and run the dispatch to completion. They
+    are invoked inside ``RunExecutor.tracked_scope`` so they don't need
+    to transition status themselves.
+    """
+
+    def deco(fn: RunHandler) -> RunHandler:
+        if kind in _KIND_HANDLERS:
+            raise ValueError(f"run handler already registered for kind={kind!r}")
+        _KIND_HANDLERS[kind] = fn
+        return fn
+
+    return deco
+
+
+def _get_handler(kind: RunKind) -> RunHandler:
+    handler = _KIND_HANDLERS.get(kind)
+    if handler is None:
+        raise ValueError(
+            f"No handler registered for RunSpec.kind={kind!r}. "
+            f"Known: {sorted(_KIND_HANDLERS)}. "
+            f"Import rumil.run_executor.handlers to install the defaults."
+        )
+    return handler
+
+
+class _ExecutorCancelled(Exception):
+    """Marker wrapped by ``tracked_scope`` so cancel → mark_cancelled."""
+
+
+class RunExecutor:
+    """Control-plane entry point for managing runs in this process."""
 
     def __init__(self, db: DB) -> None:
         self._db = db
 
     async def status(self, run_id: str) -> RunView | None:
-        """Return the current RunView for ``run_id``, or None if absent.
-
-        Reads the run row plus its config. Live counters
-        (``in_flight_calls``, ``spent_usd_live``) default to zero /
-        None; they come online when Phase 3 tracks in-process state.
-        """
+        """Return the current RunView for ``run_id``, or None if absent."""
         row = await self._db.get_run(run_id)
         if row is None:
             return None
         created_at = _parse_ts(row.get("created_at")) or datetime.fromtimestamp(0)
         cost_cents = row.get("cost_usd_cents") or 0
+        entry = _ACTIVE_RUNS.get(row["id"])
+        in_flight = 1 if entry is not None and not entry.task.done() else 0
         return RunView(
             run_id=row["id"],
             project_id=row.get("project_id") or "",
@@ -61,17 +140,11 @@ class RunExecutor:
             staged=bool(row.get("staged", False)),
             hidden=bool(row.get("hidden", False)),
             config=row.get("config") or {},
+            in_flight_calls=in_flight,
         )
 
     async def mark_started(self, run_id: str) -> None:
-        """Transition a run from pending to running and stamp started_at.
-
-        Opt-in for dispatch paths (main.py cmd_*, scripts/run_call.py,
-        api/app.py _run_background*) that want their runs to show up
-        live in the status-aware UI while the full executor.start()
-        refactor is still pending. Safe to call more than once — the
-        update only fires when status is still ``pending``.
-        """
+        """Transition a run from pending to running and stamp started_at."""
         await self._db._execute(
             self._db.client.table("runs")
             .update(
@@ -90,7 +163,6 @@ class RunExecutor:
         *,
         cost_usd_cents: int | None = None,
     ) -> None:
-        """Transition a run to complete + stamp finished_at (+ optional cost)."""
         update: dict[str, Any] = {
             "status": RunStatus.COMPLETE.value,
             "finished_at": datetime.now(UTC).isoformat(),
@@ -100,7 +172,6 @@ class RunExecutor:
         await self._db._execute(self._db.client.table("runs").update(update).eq("id", run_id))
 
     async def mark_failed(self, run_id: str, *, reason: str | None = None) -> None:
-        """Transition a run to failed + stamp finished_at."""
         update: dict[str, Any] = {
             "status": RunStatus.FAILED.value,
             "finished_at": datetime.now(UTC).isoformat(),
@@ -110,7 +181,6 @@ class RunExecutor:
         await self._db._execute(self._db.client.table("runs").update(update).eq("id", run_id))
 
     async def mark_cancelled(self, run_id: str, *, reason: str = "") -> None:
-        """Transition a run to cancelled + stamp finished_at + cancel_reason."""
         await self._db._execute(
             self._db.client.table("runs")
             .update(
@@ -131,15 +201,9 @@ class RunExecutor:
     ) -> str:
         """Create the runs row + init budget from a RunSpec.
 
-        Returns the run_id (always ``self._db.run_id``). Intended as the
-        unified replacement for main.py's six cmd_* scaffolds and
-        scripts/run_call.py's manual init. Callers then dispatch via
-        their existing handler (dispatch_orchestrator / run_call / etc.)
-        inside ``tracked_scope(run_id)`` for lifecycle tracking.
-
-        Status stays at ``pending`` until ``tracked_scope`` transitions
-        it. That lets the DB row exist for inspection + broadcasting
-        before the actual dispatch kicks off.
+        Returns ``self._db.run_id``. Status stays at ``pending`` until
+        ``tracked_scope`` transitions it (or ``start()`` does the same
+        via its wrapper task).
         """
         if spec.staged and not self._db.staged:
             raise ValueError(
@@ -164,62 +228,173 @@ class RunExecutor:
 
     @asynccontextmanager
     async def tracked_scope(self, run_id: str) -> AsyncIterator[None]:
-        """Context manager that marks a run started/complete/failed.
+        """Context manager that marks a run started/complete/failed/cancelled.
 
-        Usage::
-
-            async with executor.tracked_scope(db.run_id):
-                await dispatch_orchestrator(...)
-
-        On enter: ``pending → running`` + stamps ``started_at``.
-        On clean exit: ``running → complete`` + stamps ``finished_at``.
-        On exception: ``running → failed`` with the exception's type+message
-        as ``cancel_reason``, then re-raises.
-
-        Idempotent-safe: ``mark_started`` only transitions pending rows, so
-        wrapping a run twice won't stomp a second ``started_at``. The
-        complete/failed branch unconditionally sets ``finished_at`` — the
-        last scope to exit wins, which matches how async callers nest.
+        On enter: ``pending → running`` (idempotent — only transitions
+        pending rows). On clean exit: ``running → complete``. On
+        ``asyncio.CancelledError``: ``running → cancelled`` with the
+        cancel_reason previously stashed by ``cancel()`` on the
+        ``_ACTIVE_RUNS`` entry (or the exception message if no entry).
+        On other exceptions: ``running → failed`` with the exception's
+        type+message. In all three exception cases the exception
+        propagates so callers can observe it.
         """
         await self.mark_started(run_id)
         try:
             yield
+        except asyncio.CancelledError:
+            entry = _ACTIVE_RUNS.get(run_id)
+            reason = (entry.cancel_reason if entry is not None else None) or "cancelled"
+            try:
+                await self.mark_cancelled(run_id, reason=reason[:500])
+            except Exception:
+                log.exception("tracked_scope: mark_cancelled failed")
+            raise
         except BaseException as exc:
             reason = f"{type(exc).__name__}: {exc}"[:500]
             try:
                 await self.mark_failed(run_id, reason=reason)
             except Exception:
-                pass
+                log.exception("tracked_scope: mark_failed failed")
             raise
         else:
             try:
                 await self.mark_complete(run_id)
             except Exception:
-                pass
+                log.exception("tracked_scope: mark_complete failed")
 
-    async def start(self, spec: RunSpec) -> str:  # pragma: no cover
-        raise NotImplementedError(
-            "RunExecutor.start() (fully managed: create + track + dispatch) "
-            "lands in a later phase. Today callers invoke "
-            "create_run_from_spec + tracked_scope + their own dispatcher."
+    async def start(self, spec: RunSpec) -> str:
+        """Integrated path: create run + spawn handler + track lifecycle.
+
+        Returns the run_id (always ``self._db.run_id``). The handler for
+        ``spec.kind`` is looked up from the registry — callers must have
+        imported ``rumil.run_executor.handlers`` (or registered their own)
+        before calling. The handler runs as an asyncio.Task inside
+        ``tracked_scope``; ``_ACTIVE_RUNS`` tracks the task so
+        ``cancel()`` and ``wait_until_settled()`` can reach it.
+
+        Idempotent only on the DB row, not on the task: if a run_id is
+        already registered, raises ValueError to avoid leaking handlers.
+        """
+        handler = _get_handler(spec.kind)
+        if self._db.run_id in _ACTIVE_RUNS:
+            raise ValueError(
+                f"RunExecutor.start: run_id {self._db.run_id[:8]} already has an "
+                f"in-flight task — refusing to spawn a second handler"
+            )
+        await self.create_run_from_spec(spec)
+
+        run_id = self._db.run_id
+        db = self._db
+
+        async def _wrapped() -> None:
+            async with self.tracked_scope(run_id):
+                await handler(spec, db)
+
+        task = asyncio.create_task(_wrapped(), name=f"run-{run_id[:8]}")
+        entry = _RunTask(
+            task=task,
+            cost_cap_usd_cents=_usd_to_cents(spec.budget_usd),
         )
+        _ACTIVE_RUNS[run_id] = entry
 
-    async def pause(self, run_id: str) -> None:  # pragma: no cover
-        raise NotImplementedError("RunExecutor.pause() lands in Phase 4.")
+        def _cleanup(_: asyncio.Task[Any]) -> None:
+            _ACTIVE_RUNS.pop(run_id, None)
 
-    async def resume(self, run_id: str) -> None:  # pragma: no cover
-        raise NotImplementedError("RunExecutor.resume() lands in Phase 4.")
+        task.add_done_callback(_cleanup)
+        return run_id
 
-    async def cancel(self, run_id: str, *, reason: str = "") -> None:  # pragma: no cover
-        raise NotImplementedError("RunExecutor.cancel() lands in Phase 4.")
+    async def cancel(self, run_id: str, *, reason: str = "") -> None:
+        """Cancel an in-flight run.
+
+        If we own a task for this run_id, stash the reason and
+        ``task.cancel()``. The task's ``tracked_scope`` wrapper will
+        catch ``CancelledError`` and mark the run as cancelled with the
+        stashed reason.
+
+        If we don't own a task (external run, already-settled run),
+        fall back to directly marking the DB row cancelled — useful for
+        cleaning up status when a worker crashed mid-run.
+        """
+        entry = _ACTIVE_RUNS.get(run_id)
+        if entry is None:
+            await self.mark_cancelled(run_id, reason=reason or "cancelled externally")
+            return
+        entry.cancel_reason = reason or "cancelled"
+        entry.task.cancel()
 
     async def wait_until_settled(
-        self, run_id: str, timeout: float | None = None
-    ) -> RunView:  # pragma: no cover
-        raise NotImplementedError("RunExecutor.wait_until_settled() lands in Phase 4.")
+        self,
+        run_id: str,
+        timeout: float | None = None,
+    ) -> RunView | None:
+        """Wait for an in-flight run to settle, then return its RunView.
+
+        Uses ``asyncio.shield`` so cancelling the caller doesn't propagate
+        into the handler. If ``timeout`` elapses, returns the current
+        (still-running) view rather than raising. If no task is registered
+        for this run_id (external run, already-settled), returns the
+        current view immediately.
+        """
+        entry = _ACTIVE_RUNS.get(run_id)
+        if entry is not None and not entry.task.done():
+            try:
+                await asyncio.wait_for(asyncio.shield(entry.task), timeout=timeout)
+            except TimeoutError:
+                pass
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                # Handler errors are already recorded via tracked_scope;
+                # don't re-raise them here.
+                pass
+        return await self.status(run_id)
+
+    async def pause(self, run_id: str) -> None:  # pragma: no cover
+        raise NotImplementedError("pause lands with orchestrator cooperation.")
+
+    async def resume(self, run_id: str) -> None:  # pragma: no cover
+        raise NotImplementedError("resume lands with orchestrator cooperation.")
 
     def events(self, run_id: str) -> AsyncIterator[Any]:  # pragma: no cover
-        raise NotImplementedError("RunExecutor.events() lands in Phase 4.")
+        raise NotImplementedError("events lands with a broker / per-run queue.")
+
+    async def sum_call_costs(self, run_id: str) -> int:
+        """Sum ``call_costs.usd`` for a run, in cents.
+
+        Source of truth for the dollar circuit breaker. Issues one
+        query. Zero-cost when a run has no calls yet.
+        """
+        result = await self._db._execute(
+            self._db.client.table("call_costs").select("usd").eq("run_id", run_id)
+        )
+        total_usd = 0.0
+        for row in result.data or []:
+            try:
+                total_usd += float(row.get("usd") or 0.0)
+            except (TypeError, ValueError):
+                continue
+        return int(round(total_usd * 100))
+
+    async def would_exceed_budget(self, run_id: str) -> bool:
+        """Returns True when spend has reached (or exceeded) the run's cap.
+
+        ``budget_usd`` is pinned per-run at ``start()`` time from the
+        ``RunSpec`` and stashed on the ``_ACTIVE_RUNS`` entry. Runs
+        started without a cap (or runs not tracked in this process)
+        never trip — no false positives.
+        """
+        entry = _ACTIVE_RUNS.get(run_id)
+        if entry is None or entry.cost_cap_usd_cents is None:
+            return False
+        spent = await self.sum_call_costs(run_id)
+        return spent >= entry.cost_cap_usd_cents
+
+
+def _usd_to_cents(value: Decimal | None) -> int | None:
+    if value is None:
+        return None
+    return int((value * Decimal(100)).to_integral_value())
 
 
 def _parse_ts(value: Any) -> datetime | None:

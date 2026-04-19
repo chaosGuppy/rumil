@@ -12,9 +12,17 @@ is tracked in the master plan.
 
 from __future__ import annotations
 
-from rumil.calls.closing_reviewers import SinglePhaseScoutReview, StandardClosingReview
-from rumil.calls.context_builders import BigAssessContext, EmbeddingContext
-from rumil.calls.page_creators import MultiRoundLoop, SimpleAgentLoop
+from rumil.calls.closing_reviewers import (
+    SinglePhaseScoutReview,
+    StandardClosingReview,
+    WebResearchClosingReview,
+)
+from rumil.calls.context_builders import (
+    BigAssessContext,
+    EmbeddingContext,
+    WebResearchEmbeddingContext,
+)
+from rumil.calls.page_creators import MultiRoundLoop, SimpleAgentLoop, WebResearchLoop
 from rumil.calls.spec import (
     CallSpec,
     FromCallParam,
@@ -50,6 +58,12 @@ def _big_assess_context(ctx: StageBuildCtx, cfg: dict) -> BigAssessContext:
     return BigAssessContext(ctx.call_type)
 
 
+@register_context_builder("web_research_embedding")
+def _web_research_embedding_context(ctx: StageBuildCtx, cfg: dict) -> WebResearchEmbeddingContext:
+    """WebResearchEmbeddingContext — no args, used by web_research."""
+    return WebResearchEmbeddingContext()
+
+
 @register_workspace_updater("simple_agent_loop")
 def _simple_agent_loop(ctx: StageBuildCtx, cfg: dict) -> SimpleAgentLoop:
     """Single-pass agent loop; pulls optional ``prompt_name`` from config."""
@@ -68,6 +82,25 @@ def _multi_round_loop(ctx: StageBuildCtx, cfg: dict) -> MultiRoundLoop:
         available_moves=list(ctx.available_moves),
         call_type=ctx.call_type,
         task_description=ctx.task_description,
+    )
+
+
+@register_workspace_updater("web_research_loop")
+def _web_research_loop(ctx: StageBuildCtx, cfg: dict) -> WebResearchLoop:
+    """WebResearchLoop — server-tool-driven web search + claim creation.
+
+    ``allowed_domains`` is pulled from stage ctx extras (populated by the
+    SpecCallRunner caller when a dispatch scopes web search to a domain
+    list). When absent, the loop runs unrestricted — matching the
+    imperative ``WebResearchCall.__init__(... allowed_domains=None)``
+    default.
+    """
+    allowed_domains = None
+    if ctx.extras is not None:
+        allowed_domains = ctx.extras.get("allowed_domains")
+    return WebResearchLoop(
+        allowed_domains=allowed_domains,
+        available_moves=list(ctx.available_moves),
     )
 
 
@@ -106,6 +139,25 @@ def _standard_review(ctx: StageBuildCtx, cfg: dict) -> StandardClosingReview:
 def _single_phase_scout_review(ctx: StageBuildCtx, cfg: dict) -> SinglePhaseScoutReview:
     """SinglePhaseScoutReview — no args, used by find_considerations."""
     return SinglePhaseScoutReview()
+
+
+@register_closing_reviewer("web_research_review")
+def _web_research_review(ctx: StageBuildCtx, cfg: dict) -> WebResearchClosingReview:
+    """WebResearchClosingReview — passes ``page_creator=None``.
+
+    The imperative ``WebResearchCall._make_closing_reviewer`` threads the
+    already-instantiated ``WebResearchLoop`` into the reviewer so its
+    ``_result_summary`` can report the number of sources cited. The spec
+    runner builds stages in isolation and has no way to hand the
+    workspace_updater to the reviewer factory (that would require a
+    SpecCallRunner change). Parity (type + moves + description) still
+    holds; only the source-count substring in the completion summary
+    degrades to "0 sources cited" under spec-based dispatch. When we flip
+    ``CallType.WEB_RESEARCH`` to spec dispatch, add a ``StageBuildCtx``
+    hook (or set an attribute on the reviewer post-hoc) to close this
+    gap.
+    """
+    return WebResearchClosingReview(ctx.call_type, page_creator=None)
 
 
 def _boring_scout_spec(
@@ -457,3 +509,61 @@ register_spec(
         estimated_budget_cost=3,
     )
 )
+
+
+register_spec(
+    CallSpec(
+        call_type=CallType.WEB_RESEARCH,
+        description=(
+            "Search the web for evidence bearing on a question and create "
+            "source-grounded claims. Uses Anthropic's built-in web_search "
+            "server tool plus the standard claim/consideration moves."
+        ),
+        task_template=(
+            "Search the web for evidence relevant to this question and create "
+            "source-grounded claims.\n\n"
+            "Question ID (use this when linking considerations): "
+            "`{scope_id}`"
+        ),
+        prompt_id="web_research",
+        context_builder=StageRef(id="web_research_embedding"),
+        workspace_updater=StageRef(id="web_research_loop"),
+        closing_reviewer=StageRef(id="web_research_review"),
+        allowed_moves=PresetKey(""),
+        scope_page_type=PageType.QUESTION,
+        emits_page_types=frozenset({PageType.CLAIM, PageType.SOURCE}),
+        estimated_budget_cost=5,
+    )
+)
+
+
+# ---------------------------------------------------------------------------
+# Deferred: call types that don't cleanly fit the StageRef + task_template
+# contract yet. Converting them requires either a SpecCallRunner extension
+# or a runner_factory escape hatch (both out of scope for this pass).
+#
+# - ``CallType.INGEST`` (``IngestCall``): task description weaves the
+#   source page ID into the body (``Source page ID: `{source_page_id}```),
+#   which ``task_template``'s ``{scope_id}``-only substitution can't
+#   express. ``IngestEmbeddingContext`` also takes a required ``Page``
+#   and ``IngestClosingReview`` a filename — both derived from the source
+#   page handed to ``IngestCall.__init__``. The parity-test fixture
+#   instantiates legacy classes with only ``(question_id, call, db)``, so
+#   legacy construction itself would need a ``source_page`` branch there.
+#
+# - ``CallType.CREATE_VIEW`` (``CreateViewCall``): overrides
+#   ``_run_stages`` to create the View page (and superseded-view link)
+#   before any stage runs, then rebuilds workspace_updater/closing_reviewer
+#   with the new ``view_id``. Its ``task_description`` also interpolates
+#   live ``settings.view_importance_*_cap`` values that don't fit a static
+#   ``task_template``. This is the canonical ``runner_factory`` case.
+#
+# Convert these when SpecCallRunner gains support for:
+#   (a) multi-variable task templates (``{scope_id}`` + call-specific
+#       extras like ``{source_page_id}`` / ``{view_id}``),
+#   (b) a pre-stage hook for runner-level setup (create_view's view page),
+#   (c) a post-stage hook so closing reviewers can reference the built
+#       workspace_updater (web_research's source-count summary currently
+#       degrades to "0 sources cited" under spec dispatch — see the
+#       ``web_research_review`` factory above).
+# ---------------------------------------------------------------------------

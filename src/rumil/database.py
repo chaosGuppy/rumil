@@ -62,87 +62,12 @@ from supabase import AsyncClient, acreate_client
 log = logging.getLogger(__name__)
 
 
-class EvalSummary:
-    """Lightweight numeric summary of reputation events for one subject+dimension.
-
-    Kept as a plain class (not a pydantic model) because it's purely a
-    query-time aggregate — callers consume ``mean`` / ``count`` / ``latest``
-    and do not persist instances.
-    """
-
-    __slots__ = ("count", "dimension", "latest", "mean")
-
-    def __init__(self, *, dimension: str, mean: float, count: int, latest: float) -> None:
-        self.dimension = dimension
-        self.mean = mean
-        self.count = count
-        self.latest = latest
-
-    def __repr__(self) -> str:
-        return (
-            f"EvalSummary(dimension={self.dimension!r}, mean={self.mean:.3f}, "
-            f"count={self.count}, latest={self.latest:.3f})"
-        )
-
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, EvalSummary):
-            return NotImplemented
-        return (
-            self.dimension == other.dimension
-            and self.count == other.count
-            and self.mean == other.mean
-            and self.latest == other.latest
-        )
-
-
-def _aggregate_eval_rows_by_subject(
-    rows: Sequence[dict[str, Any]],
-    *,
-    subject_key: str,
-) -> dict[str, dict[str, EvalSummary]]:
-    """Group reputation_events rows by (subject_id, dimension).
-
-    Rows must carry ``extra[subject_key]`` — otherwise they're skipped,
-    not an error (the index filter already constrains to rows with
-    ``extra ? 'subject_*_id'``).
-    """
-    buckets: dict[tuple[str, str], dict[str, Any]] = {}
-    for r in rows:
-        extra = r.get("extra") or {}
-        subject = extra.get(subject_key)
-        if not subject:
-            continue
-        dim = r["dimension"]
-        score = float(r["score"])
-        created_at = r.get("created_at") or ""
-        key = (subject, dim)
-        bucket = buckets.get(key)
-        if bucket is None:
-            buckets[key] = {
-                "sum_score": score,
-                "count": 1,
-                "latest_score": score,
-                "latest_at": created_at,
-            }
-        else:
-            bucket["sum_score"] += score
-            bucket["count"] += 1
-            if created_at > bucket["latest_at"]:
-                bucket["latest_at"] = created_at
-                bucket["latest_score"] = score
-
-    result: dict[str, dict[str, EvalSummary]] = {}
-    for (subject, dim), b in buckets.items():
-        n = b["count"]
-        summary = EvalSummary(
-            dimension=dim,
-            mean=b["sum_score"] / n,
-            count=n,
-            latest=b["latest_score"],
-        )
-        result.setdefault(subject, {})[dim] = summary
-    return result
-
+from rumil.db.eval_summary import (
+    EvalSummary,
+)
+from rumil.db.eval_summary import (
+    aggregate_eval_rows_by_subject as _aggregate_eval_rows_by_subject,
+)
 
 _DB_RETRYABLE_EXCEPTIONS = (
     httpx.ConnectTimeout,
@@ -210,6 +135,7 @@ class DB:
         staged: bool = False,
         snapshot_ts: datetime | None = None,
     ):
+        from rumil.db.annotation_store import AnnotationStore
         from rumil.db.call_store import CallStore
         from rumil.db.project_store import ProjectStore
         from rumil.db.run_store import RunStore
@@ -227,6 +153,7 @@ class DB:
         self.projects = ProjectStore(self)
         self.runs = RunStore(self)
         self.calls = CallStore(self)
+        self.annotations = AnnotationStore(self)
 
     @classmethod
     async def create(
@@ -1899,20 +1826,7 @@ class DB:
         score: int,
         note: str = "",
     ) -> None:
-        await self._execute(
-            self.client.table("page_ratings").insert(
-                {
-                    "id": str(uuid.uuid4()),
-                    "page_id": page_id,
-                    "call_id": call_id,
-                    "score": score,
-                    "note": note,
-                    "created_at": datetime.now(UTC).isoformat(),
-                    "run_id": self.run_id,
-                    "staged": self.staged,
-                }
-            )
-        )
+        return await self.annotations.save_page_rating(page_id, call_id, score, note=note)
 
     async def save_page_flag(
         self,
@@ -1923,21 +1837,13 @@ class DB:
         page_id_a: str | None = None,
         page_id_b: str | None = None,
     ) -> None:
-        await self._execute(
-            self.client.table("page_flags").insert(
-                {
-                    "id": str(uuid.uuid4()),
-                    "flag_type": flag_type,
-                    "call_id": call_id,
-                    "page_id": page_id,
-                    "page_id_a": page_id_a,
-                    "page_id_b": page_id_b,
-                    "note": note,
-                    "created_at": datetime.now(UTC).isoformat(),
-                    "run_id": self.run_id,
-                    "staged": self.staged,
-                }
-            )
+        return await self.annotations.save_page_flag(
+            flag_type,
+            call_id=call_id,
+            note=note,
+            page_id=page_id,
+            page_id_a=page_id_a,
+            page_id_b=page_id_b,
         )
 
     async def record_reputation_event(
@@ -1951,28 +1857,15 @@ class DB:
         source_call_id: str | None = None,
         extra: dict | None = None,
     ) -> None:
-        """Append a raw reputation signal for this run.
-
-        Writes staged=self.staged and run_id=self.run_id so staged runs are
-        isolated from baseline readers (see "Staged Runs and the Mutation
-        Log" in CLAUDE.md). Never aggregate or normalize at this layer —
-        callers keep each (source, dimension) raw.
-        """
-        row: dict[str, Any] = {
-            "id": str(uuid.uuid4()),
-            "run_id": self.run_id,
-            "project_id": self.project_id,
-            "source": source,
-            "dimension": dimension,
-            "score": score,
-            "orchestrator": orchestrator,
-            "task_shape": task_shape,
-            "source_call_id": source_call_id,
-            "extra": extra or {},
-            "staged": self.staged,
-            "created_at": datetime.now(UTC).isoformat(),
-        }
-        await self._execute(self.client.table("reputation_events").insert(row))
+        return await self.annotations.record_reputation_event(
+            source=source,
+            dimension=dimension,
+            score=score,
+            orchestrator=orchestrator,
+            task_shape=task_shape,
+            source_call_id=source_call_id,
+            extra=extra,
+        )
 
     async def get_reputation_events(
         self,
@@ -1982,41 +1875,12 @@ class DB:
         dimension: str | None = None,
         orchestrator: str | None = None,
     ) -> list[ReputationEvent]:
-        """Fetch reputation events, respecting the staged-visibility rule.
-
-        Staged DBs see baseline (staged=false) events plus their own
-        run_id's events. Non-staged DBs see only baseline events.
-        """
-        query = self.client.table("reputation_events").select("*")
-        if self.project_id:
-            query = query.eq("project_id", self.project_id)
-        if run_id is not None:
-            query = query.eq("run_id", run_id)
-        if source is not None:
-            query = query.eq("source", source)
-        if dimension is not None:
-            query = query.eq("dimension", dimension)
-        if orchestrator is not None:
-            query = query.eq("orchestrator", orchestrator)
-        query = self._staged_filter(query)
-        rows = _rows(await self._execute(query))
-        return [
-            ReputationEvent(
-                id=r["id"],
-                run_id=r["run_id"],
-                project_id=r["project_id"],
-                source=r["source"],
-                dimension=r["dimension"],
-                score=r["score"],
-                orchestrator=r.get("orchestrator"),
-                task_shape=r.get("task_shape"),
-                source_call_id=r.get("source_call_id"),
-                extra=r.get("extra") or {},
-                staged=r.get("staged", False),
-                created_at=datetime.fromisoformat(r["created_at"]),
-            )
-            for r in rows
-        ]
+        return await self.annotations.get_reputation_events(
+            run_id=run_id,
+            source=source,
+            dimension=dimension,
+            orchestrator=orchestrator,
+        )
 
     async def get_reputation_summary(
         self,
@@ -2026,127 +1890,26 @@ class DB:
         source: str | None = None,
         dimension: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Group reputation events by (source, dimension, orchestrator).
-
-        Returns a list of dicts with keys: source, dimension, orchestrator,
-        n_events, mean_score, min_score, max_score, latest_at. Sources are
-        never collapsed — each (source, dimension, orchestrator) triple is a
-        separate bucket. Respects staging via the same visibility rule as
-        ``get_reputation_events``.
-
-        Grouping happens in Python over the filtered event set. This is
-        simple and sufficient for dashboard-scale event counts; a SQL-level
-        aggregate would need a new RPC that reproduces the staged-visibility
-        logic (see "Staged Runs and the Mutation Log" in CLAUDE.md).
-        """
-        query = self.client.table("reputation_events").select("*").eq("project_id", project_id)
-        if orchestrator is not None:
-            query = query.eq("orchestrator", orchestrator)
-        if source is not None:
-            query = query.eq("source", source)
-        if dimension is not None:
-            query = query.eq("dimension", dimension)
-        query = self._staged_filter(query)
-        rows = _rows(await self._execute(query))
-
-        buckets: dict[tuple[str, str, str | None], dict[str, Any]] = {}
-        for r in rows:
-            key = (r["source"], r["dimension"], r.get("orchestrator"))
-            score = float(r["score"])
-            created_at = r["created_at"]
-            bucket = buckets.get(key)
-            if bucket is None:
-                buckets[key] = {
-                    "source": r["source"],
-                    "dimension": r["dimension"],
-                    "orchestrator": r.get("orchestrator"),
-                    "n_events": 1,
-                    "sum_score": score,
-                    "min_score": score,
-                    "max_score": score,
-                    "latest_at": created_at,
-                }
-            else:
-                bucket["n_events"] += 1
-                bucket["sum_score"] += score
-                bucket["min_score"] = min(bucket["min_score"], score)
-                bucket["max_score"] = max(bucket["max_score"], score)
-                if created_at > bucket["latest_at"]:
-                    bucket["latest_at"] = created_at
-
-        result: list[dict[str, Any]] = []
-        for b in buckets.values():
-            n = b["n_events"]
-            result.append(
-                {
-                    "source": b["source"],
-                    "dimension": b["dimension"],
-                    "orchestrator": b["orchestrator"],
-                    "n_events": n,
-                    "mean_score": b["sum_score"] / n,
-                    "min_score": b["min_score"],
-                    "max_score": b["max_score"],
-                    "latest_at": b["latest_at"],
-                }
-            )
-        result.sort(key=lambda b: (b["source"], b["dimension"], b["orchestrator"] or ""))
-        return result
+        return await self.annotations.get_reputation_summary(
+            project_id,
+            orchestrator=orchestrator,
+            source=source,
+            dimension=dimension,
+        )
 
     async def get_eval_summary_for_pages(
         self,
         page_ids: Sequence[str],
         dimensions: Sequence[str],
     ) -> dict[str, dict[str, "EvalSummary"]]:
-        """Batched eval summary per page per dimension.
-
-        Returns ``{page_id: {dimension: EvalSummary}}``. Issues one query
-        that filters by ``extra->>'subject_page_id' IN (...)`` and the
-        requested dimensions. Uses the ``idx_rep_subject_page_id`` partial
-        expression index from the ``eval_feedback_indexes`` migration.
-
-        Respects the staged-visibility rule — filters project, applies
-        ``_staged_filter``. Pages with no events for a given dimension are
-        absent from that page's inner dict. Pages with no events at all
-        are absent from the outer dict.
-        """
-        if not page_ids or not dimensions:
-            return {}
-        query = (
-            self.client.table("reputation_events")
-            .select("dimension,score,created_at,extra")
-            .in_("extra->>subject_page_id", list(page_ids))
-            .in_("dimension", list(dimensions))
-        )
-        if self.project_id:
-            query = query.eq("project_id", self.project_id)
-        query = self._staged_filter(query)
-        rows = _rows(await self._execute(query))
-        return _aggregate_eval_rows_by_subject(rows, subject_key="subject_page_id")
+        return await self.annotations.get_eval_summary_for_pages(page_ids, dimensions)
 
     async def get_eval_summary_for_calls(
         self,
         call_ids: Sequence[str],
         dimensions: Sequence[str],
     ) -> dict[str, dict[str, "EvalSummary"]]:
-        """Batched eval summary per call per dimension.
-
-        Parallel to ``get_eval_summary_for_pages`` but keyed on
-        ``extra->>'subject_call_id'``. Used by the confusion-scan
-        surfacing path.
-        """
-        if not call_ids or not dimensions:
-            return {}
-        query = (
-            self.client.table("reputation_events")
-            .select("dimension,score,created_at,extra")
-            .in_("extra->>subject_call_id", list(call_ids))
-            .in_("dimension", list(dimensions))
-        )
-        if self.project_id:
-            query = query.eq("project_id", self.project_id)
-        query = self._staged_filter(query)
-        rows = _rows(await self._execute(query))
-        return _aggregate_eval_rows_by_subject(rows, subject_key="subject_call_id")
+        return await self.annotations.get_eval_summary_for_calls(call_ids, dimensions)
 
     async def record_annotation(
         self,
@@ -2164,19 +1927,7 @@ class DB:
         payload: dict | None = None,
         extra: dict | None = None,
     ) -> AnnotationEvent:
-        """Append a raw annotation signal.
-
-        Mirrors ``record_reputation_event``: ``staged=self.staged`` and
-        ``run_id=self.run_id`` at write time so staged runs are isolated from
-        baseline readers (see "Staged Runs and the Mutation Log" in
-        CLAUDE.md). Never aggregate or collapse at this layer — consumers
-        group at query time.
-
-        Returns the constructed ``AnnotationEvent`` so callers can inspect
-        the ``id`` (useful for mirroring into ``reputation_events`` or
-        returning from an HTTP handler).
-        """
-        ev = AnnotationEvent(
+        return await self.annotations.record_annotation(
             annotation_type=annotation_type,
             author_type=author_type,
             author_id=author_id,
@@ -2187,33 +1938,9 @@ class DB:
             span_end=span_end,
             category=category,
             note=note,
-            payload=payload or {},
-            extra=extra or {},
-            run_id=self.run_id,
-            project_id=self.project_id,
-            staged=self.staged,
+            payload=payload,
+            extra=extra,
         )
-        row: dict[str, Any] = {
-            "id": ev.id,
-            "project_id": ev.project_id,
-            "run_id": ev.run_id,
-            "annotation_type": ev.annotation_type,
-            "author_type": ev.author_type,
-            "author_id": ev.author_id,
-            "target_page_id": ev.target_page_id,
-            "target_call_id": ev.target_call_id,
-            "target_event_seq": ev.target_event_seq,
-            "span_start": ev.span_start,
-            "span_end": ev.span_end,
-            "category": ev.category,
-            "note": ev.note,
-            "payload": ev.payload,
-            "extra": ev.extra,
-            "staged": ev.staged,
-            "created_at": ev.created_at.isoformat(),
-        }
-        await self._execute(self.client.table("annotation_events").insert(row))
-        return ev
 
     async def get_annotations(
         self,
@@ -2223,55 +1950,18 @@ class DB:
         author_type: str | None = None,
         annotation_type: str | None = None,
     ) -> list[AnnotationEvent]:
-        """Fetch annotations, respecting the staged-visibility rule.
-
-        Staged DBs see baseline (staged=false) rows plus their own run_id
-        rows. Non-staged DBs see only baseline rows. Filters compose.
-        """
-        query = self.client.table("annotation_events").select("*")
-        if self.project_id:
-            query = query.eq("project_id", self.project_id)
-        if target_page_id is not None:
-            query = query.eq("target_page_id", target_page_id)
-        if target_call_id is not None:
-            query = query.eq("target_call_id", target_call_id)
-        if author_type is not None:
-            query = query.eq("author_type", author_type)
-        if annotation_type is not None:
-            query = query.eq("annotation_type", annotation_type)
-        query = self._staged_filter(query)
-        rows = _rows(await self._execute(query))
-        return [_row_to_annotation_event(r) for r in rows]
+        return await self.annotations.get_annotations(
+            target_page_id=target_page_id,
+            target_call_id=target_call_id,
+            author_type=author_type,
+            annotation_type=annotation_type,
+        )
 
     async def get_annotations_by_target_pages(
         self,
         page_ids: Sequence[str],
     ) -> dict[str, list[AnnotationEvent]]:
-        """Batched annotation fetch: one query for many target pages.
-
-        Returns a dict keyed by every input page_id — pages with no matching
-        annotations map to an empty list. Respects the staged-visibility
-        rule via ``_staged_filter`` (same semantics as ``get_annotations``).
-
-        This replaces N parallel per-page fetches from parma's view
-        rendering; the single ``in_()`` query keeps us at O(1) round trips.
-        """
-        result: dict[str, list[AnnotationEvent]] = {pid: [] for pid in page_ids}
-        if not page_ids:
-            return result
-        query = (
-            self.client.table("annotation_events").select("*").in_("target_page_id", list(page_ids))
-        )
-        if self.project_id:
-            query = query.eq("project_id", self.project_id)
-        query = self._staged_filter(query)
-        rows = _rows(await self._execute(query))
-        for r in rows:
-            pid = r.get("target_page_id")
-            if pid is None or pid not in result:
-                continue
-            result[pid].append(_row_to_annotation_event(r))
-        return result
+        return await self.annotations.get_annotations_by_target_pages(page_ids)
 
     async def save_epistemic_score(
         self,
@@ -2282,146 +1972,26 @@ class DB:
         reasoning: str = "",
         source_page_id: str | None = None,
     ) -> None:
-        """Persist credence and/or robustness updates via mutation events.
-
-        The ``epistemic_scores`` table was folded into ``mutation_events`` in
-        migration ``20260418152516_fold_epistemic_scores_into_mutation_events``.
-        Each score is now recorded as a ``set_credence`` or ``set_robustness``
-        event, and non-staged runs also dual-write the score + reasoning
-        directly onto the ``pages`` row so other readers see the update
-        immediately. Supply at least one of ``credence`` / ``robustness``.
-        """
-        if credence is None and robustness is None:
-            raise ValueError("save_epistemic_score requires at least one of credence or robustness")
-        existing = await self.get_page(page_id)
-        old_credence = existing.credence if existing else None
-        old_robustness = existing.robustness if existing else None
-        old_credence_reasoning = existing.credence_reasoning if existing else None
-        old_robustness_reasoning = existing.robustness_reasoning if existing else None
-        page_updates: dict[str, Any] = {}
-        if credence is not None:
-            payload: dict[str, Any] = {
-                "value": int(credence),
-                "reasoning": reasoning,
-                "call_id": call_id,
-                "old_value": old_credence,
-                "old_reasoning": old_credence_reasoning,
-            }
-            if source_page_id is not None:
-                payload["source_page_id"] = source_page_id
-            await self.record_mutation_event("set_credence", page_id, payload)
-            page_updates["credence"] = int(credence)
-            page_updates["credence_reasoning"] = reasoning
-        if robustness is not None:
-            payload = {
-                "value": int(robustness),
-                "reasoning": reasoning,
-                "call_id": call_id,
-                "old_value": old_robustness,
-                "old_reasoning": old_robustness_reasoning,
-            }
-            if source_page_id is not None:
-                payload["source_page_id"] = source_page_id
-            await self.record_mutation_event("set_robustness", page_id, payload)
-            page_updates["robustness"] = int(robustness)
-            page_updates["robustness_reasoning"] = reasoning
-        if page_updates and not self.staged:
-            await self._execute(self.client.table("pages").update(page_updates).eq("id", page_id))
+        return await self.annotations.save_epistemic_score(
+            page_id,
+            call_id,
+            credence=credence,
+            robustness=robustness,
+            reasoning=reasoning,
+            source_page_id=source_page_id,
+        )
 
     async def save_page_format_events(self, call_id: str, events: Sequence[dict[str, Any]]) -> None:
-        """Batch-insert page-format tracking events."""
-        if not events:
-            return
-        rows = [
-            {
-                "id": str(uuid.uuid4()),
-                "page_id": e["page_id"],
-                "detail": e["detail"],
-                "call_id": call_id,
-                "run_id": self.run_id,
-                "staged": self.staged,
-                "tags": e.get("tags", {}),
-            }
-            for e in events
-        ]
-        await self._execute(self.client.table("page_format_events").insert(rows))
+        return await self.annotations.save_page_format_events(call_id, events)
 
     async def get_page_format_events_for_run(self, run_id: str) -> Sequence[dict[str, Any]]:
-        """Fetch all page-format events for a run, with call_type from calls."""
-        rows = _rows(
-            await self._execute(
-                self.client.table("page_format_events")
-                .select("page_id,detail,call_id,tags")
-                .eq("run_id", run_id)
-            )
-        )
-        if not rows:
-            return []
-        call_ids = list({r["call_id"] for r in rows})
-        call_rows = _rows(
-            await self._execute(
-                self.client.table("calls").select("id,call_type").in_("id", call_ids)
-            )
-        )
-        call_type_map = {r["id"]: r["call_type"] for r in call_rows}
-        for r in rows:
-            r["call_type"] = call_type_map.get(r["call_id"], "unknown")
-        return rows
+        return await self.annotations.get_page_format_events_for_run(run_id)
 
     async def get_epistemic_score_source(
         self,
         page_id: str,
     ) -> tuple[dict[str, Any] | None, Page | None]:
-        """Return the latest epistemic score entry and its source judgement (if any).
-
-        After the ``epistemic_scores`` table was folded into ``mutation_events``,
-        we reconstruct a score row from the most recent ``set_credence`` /
-        ``set_robustness`` events emitted by this run. Returns
-        ``(score_row, judgement_page)`` where either or both may be ``None``.
-        The ``score_row`` mirrors the legacy shape ``{credence, robustness,
-        call_id, reasoning, source_page_id}``.
-        """
-        rows = _rows(
-            await self._execute(
-                self.client.table("mutation_events")
-                .select("event_type, payload, created_at")
-                .eq("target_id", page_id)
-                .eq("run_id", self.run_id)
-                .in_("event_type", ["set_credence", "set_robustness"])
-                .order("created_at", desc=True)
-            )
-        )
-        if not rows:
-            return None, None
-        latest_credence = next((r for r in rows if r["event_type"] == "set_credence"), None)
-        latest_robustness = next((r for r in rows if r["event_type"] == "set_robustness"), None)
-        latest = rows[0]
-        payload = latest.get("payload") or {}
-        credence_payload = (latest_credence or {}).get("payload") or {}
-        robustness_payload = (latest_robustness or {}).get("payload") or {}
-        score_row: dict[str, Any] = {
-            "credence": credence_payload.get("value"),
-            "robustness": robustness_payload.get("value"),
-            "call_id": payload.get("call_id"),
-            "reasoning": payload.get("reasoning", ""),
-            "source_page_id": payload.get("source_page_id"),
-        }
-        call_id = payload.get("call_id")
-        if not call_id:
-            return score_row, None
-        judgement_rows = _rows(
-            await self._execute(
-                self.client.table("pages")
-                .select("*")
-                .eq("provenance_call_id", call_id)
-                .eq("page_type", PageType.JUDGEMENT.value)
-                .eq("is_superseded", False)
-                .order("created_at", desc=True)
-                .limit(1)
-            )
-        )
-        judgement = _row_to_page(judgement_rows[0]) if judgement_rows else None
-        return score_row, judgement
+        return await self.annotations.get_epistemic_score_source(page_id)
 
     async def get_latest_judgement_for_call(
         self,

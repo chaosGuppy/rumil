@@ -15,7 +15,9 @@ Modules:
   stats RPCs.
 """
 
+from rumil.db.annotation_store import AnnotationStore
 from rumil.db.call_store import CallStore
+from rumil.db.eval_summary import EvalSummary, aggregate_eval_rows_by_subject
 from rumil.db.mutation_log import MutationState
 from rumil.db.project_store import ProjectStore
 from rumil.db.row_helpers import (
@@ -35,7 +37,9 @@ from rumil.db.run_store import RunStore
 __all__ = [
     "_LINK_COLUMNS",
     "_SLIM_PAGE_COLUMNS",
+    "AnnotationStore",
     "CallStore",
+    "EvalSummary",
     "MutationState",
     "ProjectStore",
     "RunStore",
@@ -47,4 +51,5 @@ __all__ = [
     "_row_to_page",
     "_row_to_suggestion",
     "_rows",
+    "aggregate_eval_rows_by_subject",
 ]

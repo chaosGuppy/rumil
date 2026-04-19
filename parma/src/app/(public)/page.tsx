@@ -32,6 +32,7 @@ import {
   fetchQuestionView,
   updateProject,
 } from "@/lib/api";
+import type { NavigateDirective } from "@/lib/api";
 import { useDocumentTitle } from "@/lib/useDocumentTitle";
 import type { QuestionView, Page, Project, ProjectSummary } from "@/lib/types";
 
@@ -1045,6 +1046,45 @@ function QuestionViewPage({
     [searchParams, router, pathname],
   );
 
+  // Chat-triggered navigation. The backend `set_view` tool emits a
+  // NavigateDirective inside tool_use_result payloads; ChatPanel parses
+  // those and calls onNavigate. We translate the directive into the same
+  // URL shape as setViewMode/setTraceRun and preserve params the directive
+  // does not touch (e.g. `project`, `q`, `chat`).
+  const applyNavigate = useCallback(
+    (d: NavigateDirective) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (d.view === "panes") {
+        params.delete("view");
+      } else {
+        params.set("view", d.view);
+      }
+      if (d.view === "trace") {
+        if (d.run_id_short || d.run_id) {
+          params.set("run_id", d.run_id_short ?? d.run_id!);
+        }
+        if (d.call_id_short || d.call_id) {
+          params.set("call_id", d.call_id_short ?? d.call_id!);
+        } else {
+          params.delete("call_id");
+        }
+      } else {
+        // Non-trace views: drop trace-specific params so the URL is clean.
+        params.delete("run_id");
+        params.delete("call_id");
+      }
+      if (d.panes && d.panes.length > 0) {
+        params.set("panes", d.panes.join("."));
+      }
+      if (d.question_id_short || d.question_id) {
+        params.set("q", d.question_id_short ?? d.question_id!);
+      }
+      const query = params.toString();
+      router.push(`${pathname}${query ? `?${query}` : ""}`, { scroll: false });
+    },
+    [searchParams, router, pathname],
+  );
+
 // Register a trace-jump handler so provenance chips anywhere in the tree
   // can call openTrace(runId, callId) and land here with trace mode
   // activated. We re-register whenever the deps change; the ref inside the
@@ -1210,6 +1250,7 @@ const refreshView = useCallback(() => {
         openCallId={traceCallId ?? undefined}
         drawerPageId={openShortId ?? undefined}
         reviewOpen={showReview}
+        onNavigate={applyNavigate}
       />
       <SourceDrawer
         source={drawerSource}

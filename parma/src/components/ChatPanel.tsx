@@ -12,7 +12,7 @@ import {
   branchChatConversation,
   fetchPageByShortId,
 } from "@/lib/api";
-import type { ChatToolUse, ChatConversationSummary, ChatTurnCosts } from "@/lib/api";
+import type { ChatToolUse, ChatConversationSummary, ChatTurnCosts, NavigateDirective } from "@/lib/api";
 import { SlashCommandDropdown, useSlashCommands, recordRecentCommand, COMMANDS } from "./SlashCommands";
 import { processChildren } from "./NodeRefLink";
 import { useInspectPanel } from "./InspectPanelContext";
@@ -58,6 +58,10 @@ interface ChatPanelProps {
   drawerPageId?: string;
   activeSection?: string;
   reviewOpen?: boolean;
+  // Invoked when a `tool_use_result` event carries a `__navigate__` directive
+  // (emitted by the backend `set_view` tool). Hosts should update their URL
+  // params to match the directive; see `applyNavigate` in page.tsx.
+  onNavigate?: (directive: NavigateDirective) => void;
 }
 
 function contentToText(content: unknown): string {
@@ -418,6 +422,7 @@ export function ChatPanel({
   drawerPageId,
   activeSection,
   reviewOpen,
+  onNavigate,
 }: ChatPanelProps) {
   const initialAssistantMessage: Message = {
     id: "initial",
@@ -931,6 +936,20 @@ export function ChatPanel({
           updateMsg();
           if (name === "create_question" || name === "dispatch_call") {
             onMessageSent?.();
+          }
+          // set_view (and any other tool that wants to move the UI) can
+          // return a JSON payload with a `__navigate__` directive. Parse
+          // each tool result defensively — non-JSON or unrelated tools
+          // are the common case, so parse failures silently no-op.
+          if (onNavigate && typeof result === "string" && result.includes("__navigate__")) {
+            try {
+              const parsed = JSON.parse(result) as { __navigate__?: NavigateDirective };
+              if (parsed?.__navigate__ && typeof parsed.__navigate__.view === "string") {
+                onNavigate(parsed.__navigate__);
+              }
+            } catch {
+              /* not JSON — ignore */
+            }
           }
         } else if (event.type === "orchestrator_progress") {
           const msg = event.data.message as string;

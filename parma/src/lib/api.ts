@@ -340,6 +340,28 @@ export interface ChatTurnCosts {
   research_by_call_type: Record<string, number>;
 }
 
+/**
+ * Navigation directive emitted by the backend `set_view` tool.
+ *
+ * The backend wraps this in a JSON payload inside the `tool_use_result`
+ * event (keyed on `__navigate__`). The chat panel parses each tool_result
+ * result string, and when it finds this shape, invokes `onNavigate`
+ * so the host page can update the URL.
+ *
+ * All IDs are resolved full UUIDs (or null). `*_short` fields are the
+ * 8-char prefixes used in URLs.
+ */
+export interface NavigateDirective {
+  view: string;
+  run_id?: string | null;
+  run_id_short?: string | null;
+  call_id?: string | null;
+  call_id_short?: string | null;
+  question_id?: string | null;
+  question_id_short?: string | null;
+  panes?: string[];
+}
+
 export interface ChatUiSnapshot {
   viewMode?: string;
   openRunId?: string;

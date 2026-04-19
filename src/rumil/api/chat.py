@@ -774,7 +774,61 @@ TOOLS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "name": "set_view",
+        "description": (
+            "Navigate the user's UI to a specific view. Use after dispatching "
+            "a call the user will want to watch (say 'let me take you to the "
+            "trace' and call set_view with view='trace' and the new run_id), "
+            "or when a discussion is easier to have in a specific view mode. "
+            "Use sparingly — only when there's a clear user benefit."
+        ),
+        "input_schema": {
+            "type": "object",
+            "required": ["view"],
+            "properties": {
+                "view": {
+                    "type": "string",
+                    "enum": [
+                        "panes",
+                        "article",
+                        "vertical",
+                        "sections",
+                        "sources",
+                        "trace",
+                    ],
+                    "description": "The view mode to switch to.",
+                },
+                "run_id": {
+                    "type": "string",
+                    "description": (
+                        "Run ID (8-char short or full UUID). Required when view is 'trace'."
+                    ),
+                },
+                "call_id": {
+                    "type": "string",
+                    "description": (
+                        "Optional call ID (8-char short or full UUID) to focus within trace."
+                    ),
+                },
+                "question_id": {
+                    "type": "string",
+                    "description": (
+                        "Optional question ID (short or full UUID). "
+                        "If set, navigation also switches to this question."
+                    ),
+                },
+                "panes": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": ("Optional list of 8-char short IDs to pin as panes."),
+                },
+            },
+        },
+    },
 ]
+
+_VALID_VIEW_MODES = {"panes", "article", "vertical", "sections", "sources", "trace"}
 
 _CALL_TYPE_MAP: dict[str, tuple[CallType, type[CallRunner]]] = {
     "find-considerations": (CallType.FIND_CONSIDERATIONS, FindConsiderationsCall),
@@ -1093,42 +1147,15 @@ async def _execute_tool(
     if name == "ingest_source":
         url = tool_input["url"]
         target_short = tool_input.get("target_question_id")
-        scraped = await scrape_url(url)
-        if not scraped:
-            return f"Failed to fetch URL: {url}"
-        source_page = Page(
-            page_type=PageType.SOURCE,
-            layer=PageLayer.SQUIDGY,
-            workspace=Workspace.RESEARCH,
-            headline=scraped.title or url,
-            content=scraped.content,
-            extra={"url": url},
-            project_id=db.project_id,
+        headline = tool_input.get("headline") or url
+        return json.dumps(
+            {
+                "__async_ingest__": True,
+                "url": url,
+                "target_question_id": target_short,
+                "headline": headline,
+            }
         )
-        await db.save_page(source_page)
-        result_parts = [f"Created source page {source_page.id[:8]}: {scraped.title or url}"]
-        if target_short:
-            full_id = await db.resolve_page_id(target_short)
-            if full_id:
-                call = await db.create_call(CallType.INGEST, scope_page_id=full_id)
-                runner = IngestCall(source_page, full_id, call, db)
-
-                async def _run_ingest() -> None:
-                    try:
-                        await runner.run()
-                    except Exception:
-                        log.exception("Ingest call %s failed", call.id[:8])
-
-                asyncio.create_task(_run_ingest())
-                result_parts.append(
-                    f"Dispatched ingest extraction call {call.id[:8]} "
-                    f"targeting question {target_short}."
-                )
-            else:
-                result_parts.append(
-                    f"Target question '{target_short}' not found \u2014 source saved but no extraction."
-                )
-        return "\n".join(result_parts)
 
     if name == "get_considerations":
         qid_short = tool_input.get("question_id") or scope_question_id[:8]
@@ -1834,6 +1861,36 @@ def _pick_call_type(total_pages: int, missing_credence: int, step: int) -> str:
     return "scout-subquestions"
 
 
+async def _execute_tool_timed(
+    name: str,
+    tool_input: dict[str, Any],
+    db: DB,
+    scope_question_id: str = "",
+) -> str:
+    """Call _execute_tool, logging client-disconnect cancellations with timing.
+
+    Wraps the single tool-dispatch site so operators can spot slow tools that
+    the user gave up on — e.g. a 499 after 8s on an ingest_source URL fetch.
+    Re-raises CancelledError so the request terminates cleanly.
+    """
+    t0 = time.monotonic()
+    try:
+        return await _execute_tool(name, tool_input, db, scope_question_id)
+    except asyncio.CancelledError:
+        elapsed_ms = (time.monotonic() - t0) * 1000
+        log.warning(
+            "Tool %s cancelled mid-execution (elapsed %.0fms, likely client disconnect)",
+            name,
+            elapsed_ms,
+            extra={
+                "tool_name": name,
+                "elapsed_ms": elapsed_ms,
+                "tool_input": tool_input,
+            },
+        )
+        raise
+
+
 async def _run_dispatch(
     db: DB,
     params: dict[str, Any],
@@ -1944,9 +2001,74 @@ async def _run_research(
     )
 
 
+async def _run_ingest(
+    db: DB,
+    params: dict[str, Any],
+    on_progress: Callable[[str], Any] | None = None,
+) -> str:
+    """Scrape a URL, save it as a source page, and run an ingest call.
+
+    Mirrors _run_dispatch/_run_research: broad try/except so the chat never
+    loses a tool_result. Returns a human-readable string — never raises.
+    """
+    url = params["url"]
+    target_short = params.get("target_question_id")
+    headline = params.get("headline") or url
+    try:
+        if on_progress:
+            on_progress(f"Scraping {url[:60]}...")
+        scraped = await scrape_url(url)
+        if not scraped:
+            return f"Failed to fetch URL: {url}"
+
+        if on_progress:
+            on_progress(f"Saving source page for '{(scraped.title or url)[:40]}'...")
+        source_page = Page(
+            page_type=PageType.SOURCE,
+            layer=PageLayer.SQUIDGY,
+            workspace=Workspace.RESEARCH,
+            headline=scraped.title or url,
+            content=scraped.content,
+            extra={"url": url},
+            project_id=db.project_id,
+        )
+        await db.save_page(source_page)
+        result_parts = [f"Created source page {source_page.id[:8]}: {scraped.title or url}"]
+
+        if not target_short:
+            return "\n".join(result_parts)
+
+        full_id = await db.resolve_page_id(target_short)
+        if not full_id:
+            result_parts.append(
+                f"Target question '{target_short}' not found \u2014 source saved but no extraction."
+            )
+            return "\n".join(result_parts)
+
+        if on_progress:
+            on_progress(f"Extracting citations for '{headline[:40]}'...")
+        call = await db.create_call(CallType.INGEST, scope_page_id=full_id)
+        runner = IngestCall(source_page, full_id, call, db)
+        try:
+            await runner.run()
+            result_parts.append(
+                f"Ingest extraction call {call.id[:8]} on '{headline[:40]}' completed."
+            )
+            if on_progress:
+                on_progress(f"Ingest call {call.id[:8]} completed")
+        except Exception as e:
+            log.exception("Ingest call %s failed", call.id[:8])
+            result_parts.append(f"Ingest call {call.id[:8]} failed: {e}")
+        return "\n".join(result_parts)
+    except Exception as e:
+        log.exception("Ingest for %s failed before runner", url)
+        return f"Ingest for {url} failed: {e}"
+
+
 _ASYNC_HANDLERS: dict[str, Callable[..., Any]] = {
     "__async_dispatch__": _run_dispatch,
     "__async_research__": _run_research,
+    "__async_ingest__": _run_ingest,
 }
 
 
@@ -2322,7 +2444,7 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
 
             tool_results = []
             for tc in tool_calls:
-                result_str = await _execute_tool(tc.name, tc.input, db, context_scope_id)
+                result_str = await _execute_tool_timed(tc.name, tc.input, db, context_scope_id)
                 result_str = await _resolve_async(result_str, db)
                 tool_uses_log.append(
                     ToolUseInfo(
@@ -2491,7 +2613,7 @@ async def handle_chat_stream(request: ChatRequest) -> StreamingResponse:
 
                 tool_results = []
                 for tc in tool_calls:
-                    result_str = await _execute_tool(tc.name, tc.input, db, context_scope_id)
+                    result_str = await _execute_tool_timed(tc.name, tc.input, db, context_scope_id)
                     has_async = any(f'"{s}"' in result_str for s in _ASYNC_HANDLERS)
                     if has_async:
                         progress_q: asyncio.Queue[str] = asyncio.Queue()

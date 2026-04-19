@@ -1060,3 +1060,183 @@ async def test_get_recent_activity_unknown_question(tmp_db):
         tmp_db,
     )
     assert "not found" in result
+
+
+async def test_set_view_tool_registered():
+    names = {t["name"] for t in TOOLS}
+    assert "set_view" in names
+
+
+@pytest.mark.parametrize(
+    "view",
+    ("panes", "article", "vertical", "sections", "sources"),
+)
+async def test_set_view_happy_path_non_trace(tmp_db, view):
+    import json
+
+    result = await _execute_tool("set_view", {"view": view}, tmp_db)
+    payload = json.loads(result)
+
+    assert "__navigate__" in payload
+    assert payload["__navigate__"]["view"] == view
+    assert "message" in payload
+    assert view in payload["message"]
+
+
+async def test_set_view_trace_requires_run_id(tmp_db):
+    import json
+
+    result = await _execute_tool("set_view", {"view": "trace"}, tmp_db)
+    payload = json.loads(result)
+
+    assert "error" in payload
+    assert "run_id" in payload["error"]
+    assert "__navigate__" not in payload
+
+
+async def test_set_view_trace_resolves_short_run_id(tmp_db, seeded_graph):
+    import json
+
+    result = await _execute_tool(
+        "set_view",
+        {"view": "trace", "run_id": tmp_db.run_id[:8]},
+        tmp_db,
+    )
+    payload = json.loads(result)
+
+    assert payload["__navigate__"]["view"] == "trace"
+    assert payload["__navigate__"]["run_id"] == tmp_db.run_id
+    assert payload["__navigate__"]["run_id_short"] == tmp_db.run_id[:8]
+    assert tmp_db.run_id[:8] in payload["message"]
+
+
+async def test_set_view_trace_accepts_full_run_id(tmp_db, seeded_graph):
+    import json
+
+    result = await _execute_tool(
+        "set_view",
+        {"view": "trace", "run_id": tmp_db.run_id},
+        tmp_db,
+    )
+    payload = json.loads(result)
+
+    assert payload["__navigate__"]["run_id"] == tmp_db.run_id
+
+
+async def test_set_view_unknown_run_id_returns_error(tmp_db):
+    import json
+
+    result = await _execute_tool(
+        "set_view",
+        {"view": "trace", "run_id": "deadbeef"},
+        tmp_db,
+    )
+    payload = json.loads(result)
+
+    assert "error" in payload
+    assert "not found" in payload["error"]
+
+
+async def test_set_view_resolves_call_id(tmp_db, seeded_graph):
+    import json
+
+    root = seeded_graph["root"]
+    call = Call(
+        call_type=CallType.ASSESS,
+        workspace=Workspace.RESEARCH,
+        scope_page_id=root.id,
+        status=CallStatus.COMPLETE,
+        cost_usd=0.02,
+    )
+    await tmp_db.save_call(call)
+
+    result = await _execute_tool(
+        "set_view",
+        {
+            "view": "trace",
+            "run_id": tmp_db.run_id[:8],
+            "call_id": call.id[:8],
+        },
+        tmp_db,
+    )
+    payload = json.loads(result)
+
+    assert payload["__navigate__"]["call_id"] == call.id
+    assert payload["__navigate__"]["call_id_short"] == call.id[:8]
+
+
+async def test_set_view_unknown_call_id_returns_error(tmp_db, seeded_graph):
+    import json
+
+    result = await _execute_tool(
+        "set_view",
+        {
+            "view": "trace",
+            "run_id": tmp_db.run_id[:8],
+            "call_id": "deadbeef",
+        },
+        tmp_db,
+    )
+    payload = json.loads(result)
+
+    assert "error" in payload
+    assert "not found" in payload["error"]
+
+
+async def test_set_view_resolves_question_id(tmp_db, seeded_graph):
+    import json
+
+    root = seeded_graph["root"]
+
+    result = await _execute_tool(
+        "set_view",
+        {"view": "panes", "question_id": root.id[:8]},
+        tmp_db,
+    )
+    payload = json.loads(result)
+
+    assert payload["__navigate__"]["question_id"] == root.id
+    assert payload["__navigate__"]["question_id_short"] == root.id[:8]
+
+
+async def test_set_view_normalizes_panes(tmp_db, seeded_graph):
+    import json
+
+    strong = seeded_graph["strong"]
+    weak = seeded_graph["weak"]
+
+    result = await _execute_tool(
+        "set_view",
+        {
+            "view": "panes",
+            "panes": [strong.id[:8].upper(), f"  {weak.id[:8]}  "],
+        },
+        tmp_db,
+    )
+    payload = json.loads(result)
+
+    assert payload["__navigate__"]["panes"] == [strong.id[:8], weak.id[:8]]
+
+
+async def test_set_view_rejects_invalid_pane(tmp_db):
+    import json
+
+    result = await _execute_tool(
+        "set_view",
+        {"view": "panes", "panes": ["notahex!"]},
+        tmp_db,
+    )
+    payload = json.loads(result)
+
+    assert "error" in payload
+    assert "Invalid pane" in payload["error"]
+
+
+async def test_set_view_invalid_view_mode(tmp_db):
+    import json
+
+    result = await _execute_tool("set_view", {"view": "nonsense"}, tmp_db)
+    payload = json.loads(result)
+
+    assert "error" in payload
+    assert "Invalid view" in payload["error"]

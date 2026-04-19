@@ -6,7 +6,7 @@ import pytest
 
 from rumil.database import DB
 from rumil.llm import StructuredCallResult
-from rumil.models import Page, PageLayer, PageType, Workspace
+from rumil.models import Page, PageLayer, PageType, SuggestionType, Workspace
 from rumil.question_triage import (
     TriageVerdict,
     _fetch_neighbors,
@@ -132,6 +132,77 @@ async def test_auto_triage_and_save_writes_extra(tmp_db, mocker):
     assert stored.extra["triage"]["fertility_score"] == 4
     assert stored.extra["triage"]["is_duplicate"] is False
     assert "triaged_at" in stored.extra["triage"]
+
+
+async def test_auto_triage_emits_merge_duplicate_suggestion(tmp_db, mocker):
+    """When triage flags a duplicate, a MERGE_DUPLICATE suggestion lands in
+    the queue so the parma SuggestionReview surface can pick it up.
+    """
+    original = _question("How often do AI startups go bankrupt in year 2?")
+    await tmp_db.save_page(original)
+    duplicate = _question("What is the base rate for AI firms failing in year 2?")
+    await tmp_db.save_page(duplicate)
+
+    _mock_embedding_search(mocker, neighbors=[(original, 0.93)])
+    _mock_structured_call(
+        mocker,
+        _verdict(
+            fertility_score=1,
+            is_duplicate=True,
+            duplicate_of=original.id,
+            reasoning="Same question reworded.",
+        ),
+    )
+
+    with override_settings(rumil_test_mode="1", enable_question_triage=True):
+        await auto_triage_and_save(tmp_db, duplicate.id, parent_id=None)
+
+    pending = await tmp_db.get_pending_suggestions(target_page_id=duplicate.id)
+    merge_suggestions = [s for s in pending if s.suggestion_type == SuggestionType.MERGE_DUPLICATE]
+    assert len(merge_suggestions) == 1
+    suggestion = merge_suggestions[0]
+    assert suggestion.target_page_id == duplicate.id
+    assert suggestion.source_page_id == original.id
+    assert suggestion.payload["keep_node_id"] == original.id
+    assert suggestion.payload["supersede_node_id"] == duplicate.id
+
+
+async def test_auto_triage_no_suggestion_when_not_duplicate(tmp_db, mocker):
+    page = _question("A novel question")
+    await tmp_db.save_page(page)
+
+    _mock_embedding_search(mocker, neighbors=[])
+    _mock_structured_call(mocker, _verdict(fertility_score=4))
+
+    with override_settings(rumil_test_mode="1", enable_question_triage=True):
+        await auto_triage_and_save(tmp_db, page.id, parent_id=None)
+
+    pending = await tmp_db.get_pending_suggestions(target_page_id=page.id)
+    assert pending == []
+
+
+async def test_auto_triage_merge_duplicate_is_idempotent(tmp_db, mocker):
+    """Re-triaging the same duplicate question must not stack up multiple
+    MERGE_DUPLICATE suggestions for the same keep/supersede pair.
+    """
+    original = _question("Original question")
+    await tmp_db.save_page(original)
+    duplicate = _question("Duplicate question")
+    await tmp_db.save_page(duplicate)
+
+    _mock_embedding_search(mocker, neighbors=[(original, 0.93)])
+    _mock_structured_call(
+        mocker,
+        _verdict(is_duplicate=True, duplicate_of=original.id, fertility_score=1),
+    )
+
+    with override_settings(rumil_test_mode="1", enable_question_triage=True):
+        await auto_triage_and_save(tmp_db, duplicate.id, parent_id=None)
+        await auto_triage_and_save(tmp_db, duplicate.id, parent_id=None)
+
+    pending = await tmp_db.get_pending_suggestions(target_page_id=duplicate.id)
+    merge_suggestions = [s for s in pending if s.suggestion_type == SuggestionType.MERGE_DUPLICATE]
+    assert len(merge_suggestions) == 1
 
 
 async def test_auto_triage_swallows_llm_failures(tmp_db, mocker):

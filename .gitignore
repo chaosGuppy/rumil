@@ -8,6 +8,7 @@ frontend/package-lock.json
 .claude/settings.local.json
 .claude/state/
 .claude/worktrees/
+.claude/scheduled_tasks.lock
 *.swp
 next-env.d.ts
 tsconfig.tsbuildinfo

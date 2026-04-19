@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 
 from rumil.embeddings import embed_query, search_pages_by_vector
 from rumil.llm import structured_call
-from rumil.models import Page, PageType, Workspace
+from rumil.models import Page, PageType, Suggestion, SuggestionType, Workspace
 from rumil.settings import get_settings
 
 if TYPE_CHECKING:
@@ -260,6 +260,12 @@ async def auto_triage_and_save(
             exc_info=True,
         )
         return None
+    if verdict.is_duplicate and verdict.duplicate_of:
+        await _emit_merge_duplicate_suggestion(
+            db,
+            duplicate_id=question_id,
+            keep_id=verdict.duplicate_of,
+        )
     log.info(
         "question_triage saved: page=%s fertility=%d duplicate=%s",
         question_id[:8],
@@ -267,3 +273,53 @@ async def auto_triage_and_save(
         verdict.is_duplicate,
     )
     return payload
+
+
+async def _emit_merge_duplicate_suggestion(
+    db: "DB",
+    *,
+    duplicate_id: str,
+    keep_id: str,
+) -> None:
+    """Insert a MERGE_DUPLICATE suggestion when triage flags a duplicate.
+
+    Wires the existing parma SuggestionReview surface to triage's verdict
+    so an operator can confirm the merge with one click instead of having
+    to spot the duplicate manually. Idempotent — skipped if a pending
+    suggestion already exists for the same target/keep pair.
+    """
+    try:
+        keep_page = await db.get_page(keep_id)
+        if keep_page is None:
+            log.info("MERGE_DUPLICATE skipped: duplicate_of %s not found", keep_id[:8])
+            return
+        existing = await db.get_pending_suggestions(target_page_id=duplicate_id)
+        for s in existing:
+            if (
+                s.suggestion_type == SuggestionType.MERGE_DUPLICATE
+                and s.payload.get("keep_node_id") == keep_id
+            ):
+                return
+        suggestion = Suggestion(
+            suggestion_type=SuggestionType.MERGE_DUPLICATE,
+            target_page_id=duplicate_id,
+            source_page_id=keep_id,
+            payload={
+                "keep_node_id": keep_id,
+                "supersede_node_id": duplicate_id,
+                "reason": "auto_triage: is_duplicate verdict",
+            },
+        )
+        await db.save_suggestion(suggestion)
+        log.info(
+            "MERGE_DUPLICATE suggestion emitted: duplicate=%s keep=%s",
+            duplicate_id[:8],
+            keep_id[:8],
+        )
+    except Exception:
+        log.warning(
+            "Emitting MERGE_DUPLICATE suggestion failed for %s -> %s",
+            duplicate_id[:8],
+            keep_id[:8],
+            exc_info=True,
+        )

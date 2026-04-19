@@ -172,9 +172,17 @@ function extractRunDiscriminators(
 ): Array<{ key: string; label: string; title: string }> {
   if (!config) return [];
   const out: Array<{ key: string; label: string; title: string }> = [];
-  const orchestrator = config["orchestrator"];
-  if (typeof orchestrator === "string" && orchestrator) {
-    out.push({ key: "orchestrator", label: orchestrator, title: `orchestrator: ${orchestrator}` });
+  // capture_config() stores the factory-selected variant under
+  // `prioritizer_variant`; older runs / custom entrypoints may use
+  // `orchestrator`. Try both, prefer explicit `orchestrator`.
+  const orchestratorRaw =
+    (config["orchestrator"] as unknown) ?? (config["prioritizer_variant"] as unknown);
+  if (typeof orchestratorRaw === "string" && orchestratorRaw) {
+    out.push({
+      key: "orchestrator",
+      label: `orch: ${orchestratorRaw}`,
+      title: `orchestrator: ${orchestratorRaw}`,
+    });
   }
   const model = config["model"];
   if (typeof model === "string" && model) {
@@ -187,7 +195,11 @@ function extractRunDiscriminators(
   }
   const commit = config["git_commit"];
   if (typeof commit === "string" && commit) {
-    out.push({ key: "commit", label: commit.slice(0, 7), title: `git_commit: ${commit}` });
+    out.push({
+      key: "commit",
+      label: `git ${commit.slice(0, 7)}`,
+      title: `git_commit: ${commit}`,
+    });
   }
   return out;
 }

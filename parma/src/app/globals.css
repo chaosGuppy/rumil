@@ -5962,6 +5962,8 @@ mark.ann-mark.ann-mark-dispute:hover {
   background: var(--bg-pane);
   border: 1px solid var(--border);
   border-radius: 2px;
+  max-height: 40vh;
+  overflow-y: auto;
 }
 
 /* call tree on the left */

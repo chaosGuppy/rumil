@@ -9,9 +9,15 @@ import {
   getChatConversation,
   renameChatConversation,
   deleteChatConversation,
+  branchChatConversation,
   fetchPageByShortId,
 } from "@/lib/api";
-import type { ChatToolUse, ChatConversationSummary, ChatTurnCosts } from "@/lib/api";
+import type {
+  ChatToolUse,
+  ChatConversationSummary,
+  ChatTurnCosts,
+  NavigateDirective,
+} from "@/lib/api";
 import { SlashCommandDropdown, useSlashCommands, recordRecentCommand, COMMANDS } from "./SlashCommands";
 import { processChildren } from "./NodeRefLink";
 import { useInspectPanel } from "./InspectPanelContext";
@@ -33,6 +39,11 @@ interface Message {
   // "(on question: <headline>)" tag so the user can see the context shifted.
   // `null` means "no question scope" (landing-page chat).
   questionId?: string | null;
+  // The persisted `chat_messages.seq` value for this message, if any. Needed
+  // for the "branch from here" action — the backend branches on seq, not on
+  // message id. Absent for the ephemeral greeting/system messages and for
+  // in-flight assistant messages that haven't been saved yet.
+  seq?: number;
 }
 
 interface ChatPanelProps {
@@ -52,6 +63,11 @@ interface ChatPanelProps {
   drawerPageId?: string;
   activeSection?: string;
   reviewOpen?: boolean;
+  // Called when the chat model invokes the `set_view` tool. The chat stream
+  // emits a dedicated `navigate` SSE event carrying the directive; we also
+  // fall back to parsing `tool_use_result` for the same `__navigate__`
+  // payload so the handler fires even if the SSE event is missed.
+  onNavigate?: (directive: NavigateDirective) => void;
 }
 
 function contentToText(content: unknown): string {
@@ -74,6 +90,7 @@ function persistedMessagesToUi(
         content: contentToText(m.content),
         timestamp: new Date(m.ts),
         questionId: m.question_id ?? null,
+        seq: m.seq,
       });
     } else if (m.role === "assistant") {
       const blocksIn = (m.content?.blocks ?? []) as Array<{ type: string; text?: string; name?: string; input?: Record<string, unknown> }>;
@@ -110,6 +127,7 @@ function persistedMessagesToUi(
         blocks,
         costs,
         questionId: m.question_id ?? null,
+        seq: m.seq,
       });
     }
   }
@@ -265,14 +283,22 @@ function MessageEntry({
   onNodeRef,
   currentQuestionId,
   headlineFor,
+  onBranch,
 }: {
   message: Message;
   onNodeRef?: (id: string) => void;
   currentQuestionId?: string;
   headlineFor?: (qid: string) => string | undefined;
+  // Called with the message's seq when the user clicks the "branch from here"
+  // affordance. Absent => no branching UI (e.g. for the ephemeral greeting,
+  // which has no persisted seq).
+  onBranch?: (seq: number) => void;
 }) {
+  const [hovered, setHovered] = useState(false);
   const isUser = message.role === "user";
   const blocks = message.blocks;
+  const canBranch =
+    typeof message.seq === "number" && !message.loading && !!onBranch;
 
   // Surface "this turn was asked against a different question" so the
   // user sees the context shifted when browsing across questions in a
@@ -288,21 +314,43 @@ function MessageEntry({
     offQuestion && headlineFor ? headlineFor(offQuestion) : undefined;
 
   return (
-    <div style={{ padding: "12px 0", borderBottom: "1px solid var(--border)" }}>
-      <div style={{
-        display: "flex", alignItems: "baseline", gap: "8px", marginBottom: "4px",
-      }}>
-        <span style={{
-          fontFamily: "var(--font-mono-stack)", fontSize: "10px",
-          letterSpacing: "0.06em", textTransform: "uppercase",
-          color: isUser ? "var(--accent)" : "var(--node-claim)", fontWeight: 500,
-        }}>
+    <div
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        padding: "12px 0",
+        borderBottom: "1px solid var(--border)",
+        position: "relative",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "baseline",
+          gap: "8px",
+          marginBottom: "4px",
+        }}
+      >
+        <span
+          style={{
+            fontFamily: "var(--font-mono-stack)",
+            fontSize: "10px",
+            letterSpacing: "0.06em",
+            textTransform: "uppercase",
+            color: isUser ? "var(--accent)" : "var(--node-claim)",
+            fontWeight: 500,
+          }}
+        >
           {isUser ? "You" : "Rumil"}
         </span>
-        <span style={{
-          fontFamily: "var(--font-mono-stack)", fontSize: "9px",
-          color: "var(--fg-dim)", letterSpacing: "0.02em",
-        }}>
+        <span
+          style={{
+            fontFamily: "var(--font-mono-stack)",
+            fontSize: "9px",
+            color: "var(--fg-dim)",
+            letterSpacing: "0.02em",
+          }}
+        >
           {formatTime(message.timestamp)}
         </span>
         {offQuestion && (
@@ -322,6 +370,22 @@ function MessageEntry({
           >
             {`(on question: ${offHeadline ?? offQuestion.slice(0, 8)})`}
           </span>
+        )}
+        <span style={{ flex: 1 }} />
+        {canBranch && (
+          <button
+            type="button"
+            onClick={() => onBranch!(message.seq!)}
+            title="Branch from this message — copies messages up to and including this one into a new conversation"
+            className="chat-branch-btn"
+            style={{
+              opacity: hovered ? 1 : 0,
+              transition: "opacity 0.1s",
+              pointerEvents: hovered ? "auto" : "none",
+            }}
+          >
+            {"\u21AA branch"}
+          </button>
         )}
       </div>
 
@@ -383,6 +447,7 @@ export function ChatPanel({
   drawerPageId,
   activeSection,
   reviewOpen,
+  onNavigate,
 }: ChatPanelProps) {
   const initialAssistantMessage: Message = {
     id: "initial",
@@ -406,6 +471,13 @@ export function ChatPanel({
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [conversations, setConversations] = useState<ChatConversationSummary[]>([]);
   const [showSidebar, setShowSidebar] = useState(false);
+  // If the currently-active conversation is a branch, this holds the
+  // parent_conversation_id + branched_at_seq so the header can render a
+  // "branched from <parent title> @ msg N" badge. Null otherwise.
+  const [branchedFrom, setBranchedFrom] = useState<{
+    parentId: string;
+    atSeq: number | null;
+  } | null>(null);
   const [input, setInput] = useState("");
   // Cache full question_id → headline for off-question message tags. We
   // lazily populate via fetchPageByShortId the first time we see an unknown
@@ -498,6 +570,7 @@ export function ChatPanel({
           // greeting and let the first message auto-create the row.
           setConversationId(null);
           setMessages([initialAssistantMessage]);
+          setBranchedFrom(null);
           return;
         }
         const latest = items[0]; // backend already orders by updated_at desc
@@ -506,8 +579,20 @@ export function ChatPanel({
         const ui = persistedMessagesToUi(detail.messages);
         setConversationId(latest.id);
         setMessages(ui.length ? ui : [initialAssistantMessage]);
-      } catch {
-        /* API may be unavailable; leave state untouched */
+        setBranchedFrom(
+          detail.parent_conversation_id
+            ? {
+                parentId: detail.parent_conversation_id,
+                atSeq: detail.branched_at_seq ?? null,
+              }
+            : null,
+        );
+      } catch (err) {
+        // Don't clobber the in-memory transcript on API failure — the user
+        // may still type a message successfully — but surface the cause so
+        // a silently-missed migration or stale backend is debuggable from
+        // the console instead of invisible.
+        console.warn("ChatPanel: failed to auto-load recent conversation", err);
       }
     })();
     return () => {
@@ -519,6 +604,7 @@ export function ChatPanel({
   const handleNewChat = useCallback(() => {
     setConversationId(null);
     setMessages([initialAssistantMessage]);
+    setBranchedFrom(null);
     setShowSidebar(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -529,6 +615,14 @@ export function ChatPanel({
       const uiMessages = persistedMessagesToUi(detail.messages);
       setMessages(uiMessages.length ? uiMessages : [initialAssistantMessage]);
       setConversationId(id);
+      setBranchedFrom(
+        detail.parent_conversation_id
+          ? {
+              parentId: detail.parent_conversation_id,
+              atSeq: detail.branched_at_seq ?? null,
+            }
+          : null,
+      );
       setShowSidebar(false);
     } catch (e) {
       console.error("Failed to load conversation", e);
@@ -557,6 +651,65 @@ export function ChatPanel({
       console.error("Failed to delete", e);
     }
   }, [conversationId, handleNewChat, refreshConversations]);
+
+  // Branch the currently-active conversation at the given seq. Creates a
+  // fresh conversation seeded with messages 0..atSeq (server-side copy),
+  // then switches the active conversation to the new one and re-renders
+  // the (now-truncated) transcript.
+  //
+  // UI state pin: branching ONLY swaps conversation content. Open panes,
+  // view mode, drawer state, reviewOpen, etc. are NOT re-applied — the
+  // user re-anchors their workspace however they want from the branch
+  // point. This is deliberate: branching is about "start fresh here",
+  // not "restore state to here".
+  const handleBranchFromMessage = useCallback(
+    async (atSeq: number) => {
+      if (!conversationId) return;
+      if (
+        typeof window !== "undefined" &&
+        !window.confirm(
+          "Branch from this point? The current conversation is preserved; " +
+            "you'll continue in a new branch seeded with everything up to " +
+            "and including this message.",
+        )
+      ) {
+        return;
+      }
+      try {
+        const detail = await branchChatConversation(conversationId, atSeq);
+        const uiMessages = persistedMessagesToUi(detail.messages);
+        setConversationId(detail.id);
+        setMessages(uiMessages.length ? uiMessages : [initialAssistantMessage]);
+        setBranchedFrom(
+          detail.parent_conversation_id
+            ? {
+                parentId: detail.parent_conversation_id,
+                atSeq: detail.branched_at_seq ?? null,
+              }
+            : null,
+        );
+        await refreshConversations();
+      } catch (e) {
+        console.error("Failed to branch conversation", e);
+        if (typeof window !== "undefined") {
+          window.alert(
+            `Branch failed: ${e instanceof Error ? e.message : "unknown error"}`,
+          );
+        }
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [conversationId, refreshConversations],
+  );
+
+  // Look up a conversation's title from the current list (used by the
+  // "branched from <parent>" badge). Returns undefined if not in the list
+  // — e.g. the parent was soft-deleted, in which case the badge falls
+  // back to the short parent id.
+  const parentTitleFor = useCallback(
+    (parentId: string) => conversations.find((c) => c.id === parentId)?.title,
+    [conversations],
+  );
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -828,6 +981,25 @@ export function ChatPanel({
           if (name === "create_question" || name === "dispatch_call") {
             onMessageSent?.();
           }
+          // Tool results may carry a navigation directive in their JSON body
+          // (the `set_view` tool writes `{"__navigate__": {...}, "message": ...}`).
+          // We ALSO get a dedicated `navigate` SSE event — this fallback path
+          // is defensive in case the dedicated event is dropped or the
+          // truncated JSON still parses here first.
+          if (onNavigate && result && result.includes("__navigate__")) {
+            try {
+              const parsed = JSON.parse(result);
+              if (parsed && typeof parsed === "object" && parsed.__navigate__) {
+                onNavigate(parsed.__navigate__ as NavigateDirective);
+              }
+            } catch {
+              /* truncated or malformed JSON — rely on dedicated navigate event */
+            }
+          }
+        } else if (event.type === "navigate") {
+          if (onNavigate) {
+            onNavigate(event.data as unknown as NavigateDirective);
+          }
         } else if (event.type === "orchestrator_progress") {
           const msg = event.data.message as string;
           const lastIdx = currentBlocks.length - 1;
@@ -890,7 +1062,7 @@ export function ChatPanel({
     } finally {
       setIsLoading(false);
     }
-  }, [input, isLoading, messages, questionId, onMessageSent, onNodeRef, workspace, onShowReview, conversationId, model, refreshConversations, openInspect, openRunId, openPageIds, viewMode, openCallId, drawerPageId, activeSection, reviewOpen]);
+  }, [input, isLoading, messages, questionId, onMessageSent, onNodeRef, workspace, onShowReview, conversationId, model, refreshConversations, openInspect, openRunId, openPageIds, viewMode, openCallId, drawerPageId, activeSection, reviewOpen, onNavigate]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -956,6 +1128,23 @@ export function ChatPanel({
               >
                 {questionHeadline}
               </div>
+              {branchedFrom && (
+                <button
+                  type="button"
+                  className="chat-branched-badge"
+                  onClick={() => handleLoadConversation(branchedFrom.parentId)}
+                  title="Jump back to the parent conversation"
+                >
+                  {`\u21AA branched from ${
+                    parentTitleFor(branchedFrom.parentId) ??
+                    branchedFrom.parentId.slice(0, 8)
+                  }${
+                    branchedFrom.atSeq !== null
+                      ? ` @ msg ${branchedFrom.atSeq}`
+                      : ""
+                  }`}
+                </button>
+              )}
             </div>
             <button
               onClick={() => setShowSidebar((s) => !s)}
@@ -1025,8 +1214,16 @@ export function ChatPanel({
                         whiteSpace: "nowrap",
                         padding: "2px 0",
                       }}
-                      title={c.title}
+                      title={
+                        c.parent_conversation_id
+                          ? `branched conversation — ${c.title}`
+                          : c.title
+                      }
                     >
+                      {/* Simpler than nested sidebar: branches are siblings
+                          with a leading "↪" so they read as "forked from
+                          something earlier". Keeps the flat list legible. */}
+                      {c.parent_conversation_id ? "\u21AA " : ""}
                       {c.title || "(untitled)"}
                     </button>
                     <button
@@ -1069,6 +1266,7 @@ export function ChatPanel({
                 onNodeRef={handleNodeRef}
                 currentQuestionId={questionId || undefined}
                 headlineFor={headlineFor}
+                onBranch={handleBranchFromMessage}
               />
             ))}
             {isFreshChat && (

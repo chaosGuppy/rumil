@@ -12,6 +12,7 @@ Public surface:
 """
 
 from rumil.nudges.consumer import (
+    apply_soft_nudges_to_context,
     build_applied_event,
     consume_one_shot,
     filter_dispatch_sequences,
@@ -19,6 +20,7 @@ from rumil.nudges.consumer import (
 )
 
 __all__ = [
+    "apply_soft_nudges_to_context",
     "build_applied_event",
     "consume_one_shot",
     "filter_dispatch_sequences",

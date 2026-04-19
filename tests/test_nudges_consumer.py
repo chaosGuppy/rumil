@@ -19,6 +19,7 @@ from rumil.models import (
     ScoutSubquestionsDispatchPayload,
 )
 from rumil.nudges import (
+    apply_soft_nudges_to_context,
     build_applied_event,
     consume_one_shot,
     filter_dispatch_sequences,
@@ -190,6 +191,74 @@ def test_build_applied_event_shape():
     assert len(event.applied) == 2
     assert event.applied[0].effect == "hard_filter"
     assert event.applied[1].effect == "context_injection"
+
+
+async def test_apply_soft_nudges_prepends_steering_and_marks_applied(db_with_run):
+    n = await db_with_run.nudges.create_nudge(
+        run_id=db_with_run.run_id,
+        kind=NudgeKind.INJECT_NOTE,
+        durability=NudgeDurability.ONE_SHOT,
+        author_kind=NudgeAuthorKind.HUMAN,
+        soft_text="focus on the economic angle",
+    )
+    new_text, applied = await apply_soft_nudges_to_context(
+        db_with_run,
+        call_type="assess",
+        question_id="q1",
+        context_text="existing context",
+    )
+    assert "Human steering" in new_text
+    assert "economic angle" in new_text
+    assert new_text.endswith("existing context")
+    assert [a.id for a in applied] == [n.id]
+
+
+async def test_apply_soft_nudges_ignores_hard(db_with_run):
+    await db_with_run.nudges.create_nudge(
+        run_id=db_with_run.run_id,
+        kind=NudgeKind.CONSTRAIN_DISPATCH,
+        durability=NudgeDurability.ONE_SHOT,
+        author_kind=NudgeAuthorKind.HUMAN,
+        scope=NudgeScope(call_types=["assess"]),
+        hard=True,
+    )
+    new_text, applied = await apply_soft_nudges_to_context(
+        db_with_run,
+        call_type="assess",
+        question_id="q1",
+        context_text="ctx",
+    )
+    assert new_text == "ctx"
+    assert applied == []
+
+
+async def test_apply_soft_nudges_respects_call_type_scope(db_with_run):
+    await db_with_run.nudges.create_nudge(
+        run_id=db_with_run.run_id,
+        kind=NudgeKind.INJECT_NOTE,
+        durability=NudgeDurability.ONE_SHOT,
+        author_kind=NudgeAuthorKind.HUMAN,
+        scope=NudgeScope(call_types=["web_research"]),
+        soft_text="web-specific note",
+    )
+    # Different call type — should not apply
+    new_text, applied = await apply_soft_nudges_to_context(
+        db_with_run,
+        call_type="assess",
+        question_id="q1",
+        context_text="ctx",
+    )
+    assert new_text == "ctx"
+    assert applied == []
+
+    new_text, applied = await apply_soft_nudges_to_context(
+        db_with_run,
+        call_type="web_research",
+        question_id="q1",
+        context_text="ctx",
+    )
+    assert "web-specific note" in new_text
+    assert len(applied) == 1
 
 
 async def test_consume_one_shot_flips_status(db_with_run):

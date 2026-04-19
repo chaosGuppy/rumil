@@ -14,6 +14,11 @@ from rumil.calls.confusion_scan import emit_confusion_scan_for_call
 from rumil.database import DB
 from rumil.models import Call, CallStage, CallStatus, CallType, Dispatch, Move, MoveType
 from rumil.moves.base import MoveState
+from rumil.nudges import (
+    apply_soft_nudges_to_context,
+    build_applied_event,
+    consume_one_shot,
+)
 from rumil.tracing.page_load_tracking import page_track_scope
 from rumil.tracing.trace_events import ErrorEvent
 from rumil.tracing.tracer import CallTrace, reset_trace, set_trace
@@ -163,6 +168,40 @@ class CallRunner(ABC):
     @abstractmethod
     def task_description(self) -> str: ...
 
+    async def _inject_steering_nudges(self) -> None:
+        """Prepend any matching soft nudges into the just-built context.
+
+        Emits a NudgeAppliedEvent to the trace and flips fired one-shot
+        nudges to consumed. Hard nudges are the orchestrator's job and
+        are intentionally ignored here.
+        """
+        if self.context_result is None:
+            return
+        new_text, applied = await apply_soft_nudges_to_context(
+            self.infra.db,
+            call_type=self.infra.call.call_type.value,
+            question_id=self.infra.question_id,
+            context_text=self.context_result.context_text,
+        )
+        if not applied:
+            return
+        self.context_result = ContextResult(
+            context_text=new_text,
+            working_page_ids=self.context_result.working_page_ids,
+            preloaded_ids=self.context_result.preloaded_ids,
+            phase1_ids=self.context_result.phase1_ids,
+            messages=self.context_result.messages,
+        )
+        await self.infra.trace.record(
+            build_applied_event(
+                phase="call_context_build",
+                fired_hard=[],
+                fired_soft=applied,
+                dropped_count=0,
+            )
+        )
+        await consume_one_shot(self.infra.db, applied)
+
     async def run(self) -> None:
         call_db = await self.infra.db.fork()
         self.infra.db = call_db
@@ -191,6 +230,7 @@ class CallRunner(ABC):
                 )
 
                 self.context_result = await self.context_builder.build_context(self.infra)
+                await self._inject_steering_nudges()
                 if self.up_to_stage == CallStage.BUILD_CONTEXT:
                     await mark_call_completed(
                         self.infra.call,

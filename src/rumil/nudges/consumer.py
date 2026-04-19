@@ -152,3 +152,33 @@ async def consume_one_shot(db: DB, nudges: Sequence[RunNudge]) -> None:
     for n in nudges:
         if n.durability == NudgeDurability.ONE_SHOT:
             await db.nudges.mark_consumed(n.id)
+
+
+async def apply_soft_nudges_to_context(
+    db: DB,
+    *,
+    call_type: str,
+    question_id: str | None,
+    context_text: str,
+) -> tuple[str, list[RunNudge]]:
+    """Prepend a "Human steering" block to ``context_text`` when matching
+    soft nudges are active for this call.
+
+    Returns ``(new_context_text, applied_nudges)``. ``applied_nudges`` is
+    the list of nudges that fired — the caller is responsible for emitting
+    a ``NudgeAppliedEvent`` and calling ``consume_one_shot``. Hard nudges
+    are intentionally ignored here (the orchestrator applies them).
+    """
+    question_ids: list[str] | None = [question_id] if question_id else None
+    nudges = await db.nudges.get_active_for_run(
+        db.run_id,
+        call_type=call_type,
+        question_ids=question_ids,
+    )
+    applied = [n for n in nudges if not n.hard and n.soft_text]
+    if not applied:
+        return context_text, []
+    steering = render_steering_context(applied)
+    if not steering:
+        return context_text, []
+    return steering + "\n\n" + context_text, applied

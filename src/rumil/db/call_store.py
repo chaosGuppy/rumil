@@ -14,7 +14,9 @@ here because the query is semantically "what did this call produce?" —
 keeping it next to the call lifecycle rather than in PageStore.
 """
 
+import hashlib
 import logging
+import re
 import uuid
 from collections.abc import Sequence
 from datetime import UTC, datetime
@@ -28,6 +30,26 @@ if TYPE_CHECKING:
 
 
 log = logging.getLogger(__name__)
+
+
+_DATE_SUFFIX_RE = re.compile(r"\n\nIMPORTANT: Today's date is \d{4}-\d{2}-\d{2}\n?$")
+
+
+def _strip_date_suffix(prompt: str) -> str:
+    """Remove the daily date suffix appended by ``_with_date_suffix`` in llm.py.
+
+    Hashing must be stable across days, so strip the suffix before computing
+    the content hash. If the suffix isn't present (legacy prompts, odd
+    whitespace), the original string is returned.
+    """
+    return _DATE_SUFFIX_RE.sub("", prompt)
+
+
+def _hash_prompt_content(content: str) -> str:
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+_PROMPT_HASH_UPSERT_CACHE: set[str] = set()
 
 
 class CallStore:
@@ -405,8 +427,33 @@ class CallStore:
         cache_creation_input_tokens: int | None = None,
         cache_read_input_tokens: int | None = None,
         user_messages: Sequence[dict] | None = None,
+        prompt_name: str = "composite",
     ) -> str:
         exchange_id = str(uuid.uuid4())
+        composite_hash: str | None = None
+        if system_prompt:
+            pre_suffix = _strip_date_suffix(system_prompt)
+            hash_candidate = _hash_prompt_content(pre_suffix)
+            composite_hash = hash_candidate
+            if hash_candidate not in _PROMPT_HASH_UPSERT_CACHE:
+                try:
+                    await self._db._execute(
+                        self.client.rpc(
+                            "upsert_prompt_version",
+                            {
+                                "p_hash": hash_candidate,
+                                "p_name": prompt_name,
+                                "p_content": pre_suffix,
+                                "p_kind": "composite",
+                            },
+                        )
+                    )
+                    _PROMPT_HASH_UPSERT_CACHE.add(hash_candidate)
+                except Exception as e:
+                    log.warning(
+                        "upsert_prompt_version failed (hash=%s): %s", hash_candidate[:12], e
+                    )
+                    composite_hash = None
         row: dict[str, Any] = {
             "id": exchange_id,
             "call_id": call_id,
@@ -424,6 +471,7 @@ class CallStore:
             "duration_ms": duration_ms,
             "cache_creation_input_tokens": cache_creation_input_tokens,
             "cache_read_input_tokens": cache_read_input_tokens,
+            "composite_prompt_hash": composite_hash,
         }
         if user_messages is not None:
             row["user_messages"] = user_messages

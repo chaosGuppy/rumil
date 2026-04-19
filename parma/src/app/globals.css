@@ -1718,6 +1718,79 @@ body {
   border-radius: 2px;
 }
 
+.landing-card-badges {
+  display: inline-flex;
+  gap: 6px;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.landing-card-hidden-badge {
+  flex-shrink: 0;
+  font-family: var(--font-mono-stack);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  background: var(--bg);
+  border: 1px dashed var(--border-strong);
+  padding: 2px 7px;
+  border-radius: 2px;
+}
+
+/* Per-card hide affordance. Sits in the top-right corner, only reveals on
+ * card hover (or when the card is hidden, so the user can find the unhide
+ * button without hunting). Absolutely positioned so it doesn't disturb the
+ * card's grid flow. */
+.landing-card-hide {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: var(--bg-pane);
+  font-family: var(--font-mono-stack);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.1s, border-color 0.1s, background 0.1s;
+}
+.landing-card:hover .landing-card-hide,
+.landing-card-hide:focus-visible {
+  opacity: 1;
+}
+.landing-card-hide:hover {
+  color: var(--fg);
+  border-color: var(--fg);
+}
+.landing-card-hide:disabled {
+  cursor: progress;
+  opacity: 0.4;
+}
+.landing-card.is-hidden-project .landing-card-hide {
+  opacity: 1;
+}
+
+/* Hidden workspaces are still clickable (the user chose to reveal them)
+ * but visually de-emphasised. Stronger dimming than is-empty to make the
+ * difference obvious; a dashed border hints at the soft-deleted status. */
+.landing-card.is-hidden-project {
+  opacity: 0.5;
+  border-style: dashed;
+  background: transparent;
+}
+.landing-card.is-hidden-project:hover {
+  opacity: 0.85;
+}
+.landing-card.is-busy {
+  pointer-events: none;
+  opacity: 0.4;
+}
+
 .landing-card-stats {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

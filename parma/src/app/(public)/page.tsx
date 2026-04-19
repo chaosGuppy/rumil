@@ -30,6 +30,7 @@ import {
   fetchProjectsSummary,
   fetchRootQuestions,
   fetchQuestionView,
+  updateProject,
 } from "@/lib/api";
 import { useDocumentTitle } from "@/lib/useDocumentTitle";
 import type { QuestionView, Page, Project, ProjectSummary } from "@/lib/types";
@@ -65,11 +66,17 @@ function sortProjects(rows: ProjectSummary[], mode: SortMode): ProjectSummary[] 
 }
 
 const SHOW_TEST_STORAGE_KEY = "parma:showTestProjects";
+const SHOW_HIDDEN_STORAGE_KEY = "parma:showHiddenProjects";
 const SORT_STORAGE_KEY = "parma:projectSort";
 
 function loadShowTest(): boolean {
   if (typeof window === "undefined") return false;
   return window.localStorage.getItem(SHOW_TEST_STORAGE_KEY) === "1";
+}
+
+function loadShowHidden(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.localStorage.getItem(SHOW_HIDDEN_STORAGE_KEY) === "1";
 }
 
 function loadSort(): SortMode {
@@ -256,9 +263,14 @@ function ProjectBrowser({
   const [rows, setRows] = useState<ProjectSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showTest, setShowTest] = useState(false);
+  const [showHidden, setShowHidden] = useState(false);
   const [sort, setSort] = useState<SortMode>("newest");
   const [modalOpen, setModalOpen] = useState(false);
   const [collisionHint, setCollisionHint] = useState<string | null>(null);
+  // Local optimistic state for per-card hide/unhide + rename. We mutate
+  // `rows` in place on success so the grid reflects the change without a
+  // full refetch.
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   useDocumentTitle(["projects"]);
 
@@ -266,19 +278,30 @@ function ProjectBrowser({
   // first render matches the server and we don't flash-unhydrate.
   useEffect(() => {
     setShowTest(loadShowTest());
+    setShowHidden(loadShowHidden());
     setSort(loadSort());
   }, []);
 
   useEffect(() => {
-    fetchProjectsSummary()
+    // Refetch whenever the show-hidden toggle flips — the backend decides
+    // whether to include hidden rows so the summary stats stay authoritative
+    // instead of living in two places.
+    fetchProjectsSummary(showHidden)
       .then(setRows)
       .catch((e) => setError(e?.message ?? "failed"));
-  }, []);
+  }, [showHidden]);
 
   const persistShowTest = useCallback((next: boolean) => {
     setShowTest(next);
     if (typeof window !== "undefined") {
       window.localStorage.setItem(SHOW_TEST_STORAGE_KEY, next ? "1" : "0");
+    }
+  }, []);
+
+  const persistShowHidden = useCallback((next: boolean) => {
+    setShowHidden(next);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(SHOW_HIDDEN_STORAGE_KEY, next ? "1" : "0");
     }
   }, []);
 
@@ -288,6 +311,34 @@ function ProjectBrowser({
       window.localStorage.setItem(SORT_STORAGE_KEY, next);
     }
   }, []);
+
+  const handleToggleHidden = useCallback(
+    async (project: ProjectSummary) => {
+      if (busyId) return;
+      setBusyId(project.id);
+      try {
+        const next = !project.hidden;
+        const updated = await updateProject(project.id, { hidden: next });
+        setRows((prev) => {
+          if (!prev) return prev;
+          // When hiding and the toggle is off, drop the row entirely so it
+          // vanishes from the grid. When unhiding, keep it in place — the
+          // user just unhid it, they probably want to still see it.
+          if (next && !showHidden) {
+            return prev.filter((r) => r.id !== project.id);
+          }
+          return prev.map((r) =>
+            r.id === project.id ? { ...r, hidden: updated.hidden } : r,
+          );
+        });
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Could not update workspace");
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [busyId, showHidden],
+  );
 
   const filtered = useMemo(() => {
     if (!rows) return null;
@@ -299,6 +350,14 @@ function ProjectBrowser({
     if (!rows) return 0;
     return showTest ? 0 : rows.filter((r) => isTestProject(r.name)).length;
   }, [rows, showTest]);
+
+  // Count of hidden rows currently in `rows` — only meaningful when
+  // showHidden=true (otherwise the backend filters them out and the count
+  // is always zero). Used to hint "(N)" next to the toggle when visible.
+  const visibleHiddenCount = useMemo(() => {
+    if (!rows) return 0;
+    return rows.filter((r) => r.hidden).length;
+  }, [rows]);
 
   if (!rows && !error) {
     return <div className="browser-loading">Loading projects...</div>;
@@ -356,6 +415,20 @@ function ProjectBrowser({
             </span>
           </label>
 
+          <label className="landing-toggle">
+            <input
+              type="checkbox"
+              checked={showHidden}
+              onChange={(e) => persistShowHidden(e.target.checked)}
+            />
+            <span>
+              show hidden
+              {showHidden && visibleHiddenCount > 0 && (
+                <em className="landing-toggle-hint">({visibleHiddenCount})</em>
+              )}
+            </span>
+          </label>
+
           <button
             type="button"
             className="landing-new-btn"
@@ -387,24 +460,59 @@ function ProjectBrowser({
               p.question_count === 0 &&
               p.claim_count === 0 &&
               p.call_count === 0;
+            const classes = [
+              "landing-card",
+              empty ? "is-empty" : "",
+              p.hidden ? "is-hidden-project" : "",
+              busyId === p.id ? "is-busy" : "",
+            ]
+              .filter(Boolean)
+              .join(" ");
+            const openProject = () =>
+              onSelectProject({
+                id: p.id,
+                name: p.name,
+                created_at: p.created_at,
+                hidden: p.hidden,
+              });
             return (
-              <button
+              <div
                 key={p.id}
-                className={`landing-card ${empty ? "is-empty" : ""}`}
-                onClick={() =>
-                  onSelectProject({
-                    id: p.id,
-                    name: p.name,
-                    created_at: p.created_at,
-                    hidden: p.hidden,
-                  })
-                }
+                role="button"
+                tabIndex={0}
+                className={classes}
+                onClick={openProject}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    openProject();
+                  }
+                }}
               >
+                <button
+                  type="button"
+                  className="landing-card-hide"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleToggleHidden(p);
+                  }}
+                  title={p.hidden ? "Unhide workspace" : "Hide workspace"}
+                  aria-label={p.hidden ? "Unhide workspace" : "Hide workspace"}
+                  disabled={busyId === p.id}
+                >
+                  {p.hidden ? "unhide" : "hide"}
+                </button>
+
                 <div className="landing-card-top">
                   <div className="landing-card-name">{p.name}</div>
-                  {empty && (
-                    <span className="landing-card-empty-badge">empty</span>
-                  )}
+                  <div className="landing-card-badges">
+                    {p.hidden && (
+                      <span className="landing-card-hidden-badge">hidden</span>
+                    )}
+                    {empty && (
+                      <span className="landing-card-empty-badge">empty</span>
+                    )}
+                  </div>
                 </div>
 
                 <dl className="landing-card-stats">
@@ -425,7 +533,7 @@ function ProjectBrowser({
                 <div className="landing-card-foot">
                   <span>last activity {formatRelative(p.last_activity_at)}</span>
                 </div>
-              </button>
+              </div>
             );
           })}
         </div>

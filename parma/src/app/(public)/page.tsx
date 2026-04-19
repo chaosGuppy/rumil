@@ -24,6 +24,7 @@ import {
   useInspectPanel,
 } from "@/components/InspectPanelContext";
 import {
+  continueResearch,
   createProject,
   createRootQuestion,
   fetchProjects,
@@ -948,6 +949,119 @@ function QuestionPicker({
   );
 }
 
+// Modal for kicking off a new orchestrator run on the current question.
+// Default budget of 5 keeps smoke-test costs predictable; cap at 20 matches
+// the CLI convention (anything bigger should be explicit). On submit we
+// POST /continue, receive a run_id, and hand off to the parent via
+// onLaunched — the parent navigates to the trace.
+function ContinueResearchModal({
+  questionId,
+  onClose,
+  onLaunched,
+}: {
+  questionId: string;
+  onClose: () => void;
+  onLaunched: (runId: string) => void;
+}) {
+  const [budget, setBudget] = useState<number>(5);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !submitting) onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, submitting]);
+
+  const submit = useCallback(async () => {
+    if (submitting) return;
+    if (!Number.isFinite(budget) || budget < 1 || budget > 20) {
+      setError("Budget must be between 1 and 20.");
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      const res = await continueResearch(questionId, budget);
+      onLaunched(res.run_id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not start run");
+      setSubmitting(false);
+    }
+  }, [budget, submitting, questionId, onLaunched]);
+
+  return (
+    <div
+      className="workspace-modal-backdrop"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget && !submitting) onClose();
+      }}
+    >
+      <div className="workspace-modal" role="dialog" aria-label="Continue research">
+        <div className="workspace-modal-label">Continue research</div>
+        <div className="continue-modal-hint">
+          Kick off an orchestrator run against this question. The trace will
+          open so you can watch it happen.
+        </div>
+        <label className="continue-modal-field">
+          <span className="continue-modal-field-label">budget</span>
+          <input
+            ref={inputRef}
+            type="number"
+            min={1}
+            max={20}
+            step={1}
+            value={budget}
+            disabled={submitting}
+            onChange={(e) => {
+              // Empty input → NaN; we keep the current value so the user
+              // can clear + retype without the field snapping to 0.
+              const n = e.target.value === "" ? NaN : Number(e.target.value);
+              setBudget(n);
+              if (error) setError(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                submit();
+              }
+            }}
+            className="workspace-modal-input continue-modal-input"
+          />
+          <span className="continue-modal-field-hint">calls · max 20</span>
+        </label>
+        {error && <div className="workspace-modal-error">{error}</div>}
+        <div className="workspace-modal-actions">
+          <button
+            type="button"
+            className="workspace-modal-cancel"
+            onClick={onClose}
+            disabled={submitting}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="workspace-modal-submit"
+            onClick={submit}
+            disabled={submitting}
+          >
+            {submitting ? "Starting..." : "Start run"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function QuestionViewPage({
   project,
   questionId,
@@ -988,6 +1102,7 @@ function QuestionViewPage({
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
   const [showReview, setShowReview] = useState(false);
   const [drawerSource, setDrawerSource] = useState<Page | null>(null);
+  const [continueOpen, setContinueOpen] = useState(false);
 
   // When a node ref is clicked in chat: open the inspect panel AND nudge the
   // view to scroll to the matching card if one is visible. The inspect
@@ -1170,23 +1285,36 @@ const refreshView = useCallback(() => {
             onBack={onBack}
             label={project.name}
             onRename={onRenameProject}
-            extra={viewMode === "vertical" ? (
+            extra={
               <>
-                <span className="view-switcher-sep" />
+                {viewMode === "vertical" && (
+                  <>
+                    <span className="view-switcher-sep" />
+                    <button
+                      className="view-switcher-btn"
+                      onClick={() => verticalRef.current?.expandAll()}
+                    >
+                      expand
+                    </button>
+                    <button
+                      className="view-switcher-btn"
+                      onClick={() => verticalRef.current?.collapseAll()}
+                    >
+                      collapse
+                    </button>
+                  </>
+                )}
+                <span className="view-switcher-continue-sep" />
                 <button
-                  className="view-switcher-btn"
-                  onClick={() => verticalRef.current?.expandAll()}
+                  type="button"
+                  className="view-switcher-continue"
+                  onClick={() => setContinueOpen(true)}
+                  title="Kick off a new orchestrator run against this question"
                 >
-                  expand
-                </button>
-                <button
-                  className="view-switcher-btn"
-                  onClick={() => verticalRef.current?.collapseAll()}
-                >
-                  collapse
+                  continue research…
                 </button>
               </>
-            ) : undefined}
+            }
           />
           {viewMode === "panes" && (
             <StackedPanes
@@ -1273,6 +1401,17 @@ const refreshView = useCallback(() => {
           router.push(`?${params.toString()}`);
         }}
       />
+      {continueOpen && (
+        <ContinueResearchModal
+          questionId={questionId}
+          onClose={() => setContinueOpen(false)}
+          onLaunched={(runId) => {
+            setContinueOpen(false);
+            // Navigate to trace mode so the user watches the run unfold.
+            setTraceRun(runId);
+          }}
+        />
+      )}
       </div>
     </ConceptProvider>
   );

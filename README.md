@@ -86,6 +86,15 @@ uv run python main.py "Your question here" --budget 20 --summary
 # Generate a multi-section research report
 uv run python main.py --report QUESTION_ID
 
+# Self-improvement: analyse how an investigation went and get rumil
+# code/prompt improvement suggestions. Read-only; inspects the run plus
+# rumil's own source via LLM tools, then writes a markdown analysis to
+# pages/self-improvement/.
+uv run python main.py --self-improve QUESTION_ID
+
+# Investigate and self-improve in one command (analyses the just-finished run)
+uv run python main.py "Your question here" --budget 20 --self-improve
+
 # Evaluate the judgement quality for a question
 uv run python main.py --evaluate QUESTION_ID
 

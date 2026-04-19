@@ -40,6 +40,7 @@ from rumil.orchestrators import Orchestrator, create_root_question
 from rumil.report import generate_report, save_report
 from rumil.run_eval import run_run_eval
 from rumil.run_eval.agents import EVAL_AGENTS, EvalAgentSpec
+from rumil.self_improve import run_self_improvement, save_self_improvement
 from rumil.settings import Settings, _settings_var, get_settings
 from rumil.sources import create_source_page, run_ingest_calls
 from rumil.summary import generate_summary, save_summary
@@ -484,6 +485,34 @@ async def cmd_summary(
     print(f"\n---\nSummary saved to: {path}")
 
 
+async def cmd_self_improve(question_id: str, db: DB) -> None:
+    question = await db.get_page(question_id)
+    if not question:
+        resolved = await db.resolve_page_id(question_id)
+        if resolved:
+            question = await db.get_page(resolved)
+    if not question:
+        print(f"Error: question '{question_id}' not found. Run --list to see existing questions.")
+        sys.exit(1)
+
+    if question.project_id and question.project_id != db.project_id:
+        db.project_id = question.project_id
+
+    print(f"\nSelf-improvement analysis for: {question.headline[:80]}")
+    print(
+        "(Uses one or more LLM calls with read-only tools, "
+        "does not count against research budget)\n"
+    )
+
+    text = await run_self_improvement(question.id, db)
+    if not text.strip():
+        print("No analysis produced.")
+        return
+    path = save_self_improvement(text, question.headline)
+    print(text)
+    print(f"\n---\nSelf-improvement analysis saved to: {path}")
+
+
 async def cmd_report(
     question_id: str,
     db: DB,
@@ -859,6 +888,20 @@ async def async_main():
         help="Generate a multi-section research report for a question",
     )
     parser.add_argument(
+        "--self-improve",
+        dest="self_improve_id",
+        metavar="QUESTION_ID",
+        nargs="?",
+        const="__auto__",
+        help=(
+            "Analyse how a completed investigation went and suggest "
+            "rumil code/prompt improvements. Read-only. Pass a "
+            "QUESTION_ID to analyse an existing investigation, or "
+            "combine with a new question to auto-analyse after "
+            "investigation completes."
+        ),
+    )
+    parser.add_argument(
         "--max-depth",
         type=int,
         default=4,
@@ -1220,6 +1263,8 @@ async def async_main():
             db,
             max_depth=args.max_depth,
         )
+    elif args.self_improve_id and args.self_improve_id != "__auto__":
+        await cmd_self_improve(args.self_improve_id, db)
     elif args.continue_id:
         await cmd_continue(
             args.continue_id,
@@ -1236,6 +1281,7 @@ async def async_main():
     elif args.question:
         q = parse_question_input(args.question)
         do_summary = args.summary_id == "__auto__"
+        do_self_improve = args.self_improve_id == "__auto__"
         question_id = await cmd_new(
             q,
             args.budget,
@@ -1251,6 +1297,8 @@ async def async_main():
                 max_depth=args.max_depth,
                 summary_cutoff=args.summarize_after_depth,
             )
+        if do_self_improve:
+            await cmd_self_improve(question_id, db)
     else:
         parser.print_help()
 

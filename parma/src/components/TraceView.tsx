@@ -54,9 +54,6 @@ export interface TraceViewProps {
   // Called when the user picks a run from the no-run picker. Parent
   // bumps the URL via router.replace and rerenders with runId set.
   onSelectRun: (runId: string) => void;
-  // Called by the "back to view" link: parent switches back to the
-  // previous view mode (panes, article, etc).
-  onBack?: () => void;
 }
 
 export function TraceView(props: TraceViewProps) {
@@ -74,7 +71,6 @@ export function TraceView(props: TraceViewProps) {
       runId={props.runId}
       projectId={props.projectId}
       initialCallId={props.initialCallId}
-      onBack={props.onBack}
     />
   );
 }
@@ -315,12 +311,10 @@ function TraceRunView({
   runId,
   projectId,
   initialCallId,
-  onBack,
 }: {
   runId: string;
   projectId: string;
   initialCallId?: string | null;
-  onBack?: () => void;
 }) {
   const [tree, setTree] = useState<RunTraceTree | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -375,7 +369,6 @@ function TraceRunView({
         <TraceHeader
           tree={tree}
           projectId={projectId}
-          onBack={onBack}
         />
         <div className="trace-tree-scroll">
           <CallTree
@@ -404,11 +397,9 @@ function TraceRunView({
 function TraceHeader({
   tree,
   projectId,
-  onBack,
 }: {
   tree: RunTraceTree;
   projectId: string;
-  onBack?: () => void;
 }) {
   // Surface the most useful run-level context at the top: question
   // headline (if present), short run id, total cost, staged flag. This
@@ -419,11 +410,6 @@ function TraceHeader({
   return (
     <header className="trace-head">
       <div className="trace-head-row">
-        {onBack && (
-          <button className="trace-head-back" onClick={onBack} title="Back">
-            ← back
-          </button>
-        )}
         <span className="trace-head-label">trace</span>
         <span className="trace-head-run-id" title={tree.run_id}>
           {shortRunId}

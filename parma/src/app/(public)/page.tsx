@@ -1008,11 +1008,6 @@ function QuestionViewPage({
     .filter(Boolean);
   const traceCallId = searchParams.get("call_id");
 
-  // Remember the view the user was in before jumping into TRACE mode.
-  // When they hit "back" on the trace head, we restore it. Falls back to
-  // "panes" if we've never seen them use another mode.
-  const [previousView, setPreviousView] = useState<ViewMode>("panes");
-
   const setViewMode = useCallback(
     (mode: ViewMode) => {
       const params = new URLSearchParams(searchParams.toString());
@@ -1022,7 +1017,11 @@ function QuestionViewPage({
         params.set("view", mode);
       }
       // Trace-mode params make no sense outside trace mode.
-      if (mode !== "trace") {
+      // ALSO: clicking "trace" while already on a specific run should
+      // return to the trace index (RunPicker) rather than stay on the
+      // same run — mirrors the "click tab you're on to go to its home"
+      // convention.
+      if (mode !== "trace" || viewMode === "trace") {
         params.delete("run_id");
         params.delete("call_id");
       }
@@ -1032,16 +1031,8 @@ function QuestionViewPage({
         scroll: false,
       });
     },
-    [searchParams, router, pathname],
+    [searchParams, router, pathname, viewMode],
   );
-
-  // Remember previous view whenever the user switches INTO trace mode so
-  // the back button can restore it.
-  useEffect(() => {
-    if (viewMode !== "trace") {
-      setPreviousView(viewMode);
-    }
-  }, [viewMode]);
 
   const setTraceRun = useCallback(
     (runId: string) => {
@@ -1054,11 +1045,7 @@ function QuestionViewPage({
     [searchParams, router, pathname],
   );
 
-  const backFromTrace = useCallback(() => {
-    setViewMode(previousView);
-  }, [previousView, setViewMode]);
-
-  // Register a trace-jump handler so provenance chips anywhere in the tree
+// Register a trace-jump handler so provenance chips anywhere in the tree
   // can call openTrace(runId, callId) and land here with trace mode
   // activated. We re-register whenever the deps change; the ref inside the
   // provider always holds the latest closure.
@@ -1203,7 +1190,6 @@ function QuestionViewPage({
               projectId={project.id}
               initialCallId={traceCallId}
               onSelectRun={setTraceRun}
-              onBack={backFromTrace}
             />
           )}
         </div>

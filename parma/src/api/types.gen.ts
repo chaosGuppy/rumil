@@ -179,6 +179,28 @@ export type AbEvalReportOut = {
 };
 
 /**
+ * ABEvalStartedOut
+ *
+ * POST /api/ab-evals response. The actual ab_eval_report id is only
+ * known when the background eval completes; callers poll
+ * /api/ab-evals and filter by run_id_a/b until the report appears.
+ */
+export type AbEvalStartedOut = {
+    /**
+     * Run Id A
+     */
+    run_id_a: string;
+    /**
+     * Run Id B
+     */
+    run_id_b: string;
+    /**
+     * Status
+     */
+    status: string;
+};
+
+/**
  * AdversarialVerdictSummaryOut
  *
  * Summary of a single adversarial-review verdict targeting a page.
@@ -875,6 +897,26 @@ export type ContinueQuestionIn = {
 };
 
 /**
+ * ContinueQuestionOut
+ *
+ * POST /api/questions/{id}/continue response.
+ */
+export type ContinueQuestionOut = {
+    /**
+     * Run Id
+     */
+    run_id: string;
+    /**
+     * Question Id
+     */
+    question_id: string;
+    /**
+     * Budget
+     */
+    budget: number;
+};
+
+/**
  * ConversationDetail
  */
 export type ConversationDetail = {
@@ -1153,6 +1195,26 @@ export type EvaluateQuestionIn = {
 };
 
 /**
+ * EvaluateQuestionOut
+ *
+ * POST /api/questions/{id}/evaluate response.
+ */
+export type EvaluateQuestionOut = {
+    /**
+     * Run Id
+     */
+    run_id: string;
+    /**
+     * Question Id
+     */
+    question_id: string;
+    /**
+     * Eval Type
+     */
+    eval_type: string;
+};
+
+/**
  * EvaluationCompleteEventOut
  */
 export type EvaluationCompleteEventOut = {
@@ -1228,6 +1290,33 @@ export type GlobalPhaseCompletedEventOut = {
      * Outcome
      */
     outcome: string;
+};
+
+/**
+ * GroundCallOut
+ *
+ * POST /api/calls/{id}/ground and /api/calls/{id}/feedback response.
+ *
+ * ``pipeline`` is ``"grounding"`` or ``"feedback"`` — the two grounding
+ * pipelines registered in rumil.evaluate.registry.
+ */
+export type GroundCallOut = {
+    /**
+     * Run Id
+     */
+    run_id: string;
+    /**
+     * Source Call Id
+     */
+    source_call_id: string;
+    /**
+     * Pipeline
+     */
+    pipeline: string;
+    /**
+     * From Stage
+     */
+    from_stage: number;
 };
 
 /**
@@ -2584,6 +2673,24 @@ export type SearchResultsOut = {
      * Results
      */
     results: Array<SearchResultOut>;
+};
+
+/**
+ * StageRunOut
+ *
+ * POST /api/runs/{run_id}/stage and .../commit response.
+ *
+ * ``staged`` is True after /stage, False after /commit.
+ */
+export type StageRunOut = {
+    /**
+     * Run Id
+     */
+    run_id: string;
+    /**
+     * Staged
+     */
+    staged: boolean;
 };
 
 /**
@@ -4369,8 +4476,10 @@ export type PostContinueQuestionApiQuestionsQuestionIdContinuePostResponses = {
     /**
      * Successful Response
      */
-    202: unknown;
+    202: ContinueQuestionOut;
 };
+
+export type PostContinueQuestionApiQuestionsQuestionIdContinuePostResponse = PostContinueQuestionApiQuestionsQuestionIdContinuePostResponses[keyof PostContinueQuestionApiQuestionsQuestionIdContinuePostResponses];
 
 export type PostEvaluateQuestionApiQuestionsQuestionIdEvaluatePostData = {
     body: EvaluateQuestionIn;
@@ -4402,8 +4511,10 @@ export type PostEvaluateQuestionApiQuestionsQuestionIdEvaluatePostResponses = {
     /**
      * Successful Response
      */
-    202: unknown;
+    202: EvaluateQuestionOut;
 };
+
+export type PostEvaluateQuestionApiQuestionsQuestionIdEvaluatePostResponse = PostEvaluateQuestionApiQuestionsQuestionIdEvaluatePostResponses[keyof PostEvaluateQuestionApiQuestionsQuestionIdEvaluatePostResponses];
 
 export type PostGroundCallApiCallsCallIdGroundPostData = {
     body: GroundEvaluationIn;
@@ -4435,8 +4546,10 @@ export type PostGroundCallApiCallsCallIdGroundPostResponses = {
     /**
      * Successful Response
      */
-    202: unknown;
+    202: GroundCallOut;
 };
+
+export type PostGroundCallApiCallsCallIdGroundPostResponse = PostGroundCallApiCallsCallIdGroundPostResponses[keyof PostGroundCallApiCallsCallIdGroundPostResponses];
 
 export type PostFeedbackCallApiCallsCallIdFeedbackPostData = {
     body: GroundEvaluationIn;
@@ -4468,8 +4581,10 @@ export type PostFeedbackCallApiCallsCallIdFeedbackPostResponses = {
     /**
      * Successful Response
      */
-    202: unknown;
+    202: GroundCallOut;
 };
+
+export type PostFeedbackCallApiCallsCallIdFeedbackPostResponse = PostFeedbackCallApiCallsCallIdFeedbackPostResponses[keyof PostFeedbackCallApiCallsCallIdFeedbackPostResponses];
 
 export type PostStageRunApiRunsRunIdStagePostData = {
     body?: never;
@@ -4501,8 +4616,10 @@ export type PostStageRunApiRunsRunIdStagePostResponses = {
     /**
      * Successful Response
      */
-    200: unknown;
+    200: StageRunOut;
 };
+
+export type PostStageRunApiRunsRunIdStagePostResponse = PostStageRunApiRunsRunIdStagePostResponses[keyof PostStageRunApiRunsRunIdStagePostResponses];
 
 export type PostCommitRunApiRunsRunIdCommitPostData = {
     body?: never;
@@ -4534,8 +4651,10 @@ export type PostCommitRunApiRunsRunIdCommitPostResponses = {
     /**
      * Successful Response
      */
-    200: unknown;
+    200: StageRunOut;
 };
+
+export type PostCommitRunApiRunsRunIdCommitPostResponse = PostCommitRunApiRunsRunIdCommitPostResponses[keyof PostCommitRunApiRunsRunIdCommitPostResponses];
 
 export type GetCallEventsApiCallsCallIdEventsGetData = {
     body?: never;
@@ -4689,8 +4808,10 @@ export type PostAbEvalApiAbEvalsPostResponses = {
     /**
      * Successful Response
      */
-    202: unknown;
+    202: AbEvalStartedOut;
 };
+
+export type PostAbEvalApiAbEvalsPostResponse = PostAbEvalApiAbEvalsPostResponses[keyof PostAbEvalApiAbEvalsPostResponses];
 
 export type GetAbEvalApiAbEvalsEvalIdGetData = {
     body?: never;

@@ -104,6 +104,71 @@ class QuestionViewOut(BaseModel):
     health: ViewHealthOut
 
 
+# Background-task launcher responses. Each POST that kicks off an async
+# run returns 202 with a run_id the caller uses to open /traces/{run_id}.
+# Giving them real response models means frontends and skills consume
+# typed fields instead of `unknown`.
+
+
+class ContinueQuestionOut(BaseModel):
+    """POST /api/questions/{id}/continue response."""
+
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    run_id: str
+    question_id: str
+    budget: int
+
+
+class EvaluateQuestionOut(BaseModel):
+    """POST /api/questions/{id}/evaluate response."""
+
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    run_id: str
+    question_id: str
+    eval_type: str
+
+
+class GroundCallOut(BaseModel):
+    """POST /api/calls/{id}/ground and /api/calls/{id}/feedback response.
+
+    ``pipeline`` is ``"grounding"`` or ``"feedback"`` — the two grounding
+    pipelines registered in rumil.evaluate.registry.
+    """
+
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    run_id: str
+    source_call_id: str
+    pipeline: str
+    from_stage: int
+
+
+class StageRunOut(BaseModel):
+    """POST /api/runs/{run_id}/stage and .../commit response.
+
+    ``staged`` is True after /stage, False after /commit.
+    """
+
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    run_id: str
+    staged: bool
+
+
+class ABEvalStartedOut(BaseModel):
+    """POST /api/ab-evals response. The actual ab_eval_report id is only
+    known when the background eval completes; callers poll
+    /api/ab-evals and filter by run_id_a/b until the report appears."""
+
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    run_id_a: str
+    run_id_b: str
+    status: str
+
+
 class ProjectSummaryOut(BaseModel):
     """Per-project summary row for the public landing page.
 

@@ -1794,7 +1794,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ContinueQuestionOut"
+                }
               }
             }
           },
@@ -1852,7 +1854,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluateQuestionOut"
+                }
               }
             }
           },
@@ -1910,7 +1914,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/GroundCallOut"
+                }
               }
             }
           },
@@ -1968,7 +1974,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/GroundCallOut"
+                }
               }
             }
           },
@@ -2016,7 +2024,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/StageRunOut"
+                }
               }
             }
           },
@@ -2064,7 +2074,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/StageRunOut"
+                }
               }
             }
           },
@@ -2330,7 +2342,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ABEvalStartedOut"
+                }
               }
             }
           },
@@ -3977,6 +3991,30 @@
         ],
         "title": "ABEvalReportOut"
       },
+      "ABEvalStartedOut": {
+        "properties": {
+          "run_id_a": {
+            "type": "string",
+            "title": "Run Id A"
+          },
+          "run_id_b": {
+            "type": "string",
+            "title": "Run Id B"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id_a",
+          "run_id_b",
+          "status"
+        ],
+        "title": "ABEvalStartedOut",
+        "description": "POST /api/ab-evals response. The actual ab_eval_report id is only\nknown when the background eval completes; callers poll\n/api/ab-evals and filter by run_id_a/b until the report appears."
+      },
       "AdversarialVerdictSummaryOut": {
         "properties": {
           "verdict_page_id": {
@@ -5197,6 +5235,30 @@
         "type": "object",
         "title": "ContinueQuestionIn"
       },
+      "ContinueQuestionOut": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "question_id": {
+            "type": "string",
+            "title": "Question Id"
+          },
+          "budget": {
+            "type": "integer",
+            "title": "Budget"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "question_id",
+          "budget"
+        ],
+        "title": "ContinueQuestionOut",
+        "description": "POST /api/questions/{id}/continue response."
+      },
       "ConversationDetail": {
         "properties": {
           "id": {
@@ -5619,6 +5681,30 @@
         "type": "object",
         "title": "EvaluateQuestionIn"
       },
+      "EvaluateQuestionOut": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "question_id": {
+            "type": "string",
+            "title": "Question Id"
+          },
+          "eval_type": {
+            "type": "string",
+            "title": "Eval Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "question_id",
+          "eval_type"
+        ],
+        "title": "EvaluateQuestionOut",
+        "description": "POST /api/questions/{id}/evaluate response."
+      },
       "EvaluationCompleteEventOut": {
         "properties": {
           "ts": {
@@ -5728,6 +5814,35 @@
           "outcome"
         ],
         "title": "GlobalPhaseCompletedEventOut"
+      },
+      "GroundCallOut": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "source_call_id": {
+            "type": "string",
+            "title": "Source Call Id"
+          },
+          "pipeline": {
+            "type": "string",
+            "title": "Pipeline"
+          },
+          "from_stage": {
+            "type": "integer",
+            "title": "From Stage"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "source_call_id",
+          "pipeline",
+          "from_stage"
+        ],
+        "title": "GroundCallOut",
+        "description": "POST /api/calls/{id}/ground and /api/calls/{id}/feedback response.\n\n``pipeline`` is ``\"grounding\"`` or ``\"feedback\"`` \u2014 the two grounding\npipelines registered in rumil.evaluate.registry."
       },
       "GroundEvaluationIn": {
         "properties": {
@@ -7951,6 +8066,25 @@
           "results"
         ],
         "title": "SearchResultsOut"
+      },
+      "StageRunOut": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "staged": {
+            "type": "boolean",
+            "title": "Staged"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "staged"
+        ],
+        "title": "StageRunOut",
+        "description": "POST /api/runs/{run_id}/stage and .../commit response.\n\n``staged`` is True after /stage, False after /commit."
       },
       "SubagentCompletedEventOut": {
         "properties": {

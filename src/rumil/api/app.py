@@ -35,15 +35,19 @@ from rumil.api.schemas import (
     ABEvalDimensionSummaryOut,
     ABEvalReportListItemOut,
     ABEvalReportOut,
+    ABEvalStartedOut,
     AdversarialVerdictSummaryOut,
     AnnotationCreateOut,
     AnnotationCreateRequest,
     AppConfigOut,
     CallNodeOut,
     CallSummary,
+    ContinueQuestionOut,
     CreateProjectOut,
     CreateProjectRequest,
     CreateRootQuestionRequest,
+    EvaluateQuestionOut,
+    GroundCallOut,
     LinkedPageOut,
     LLMExchangeOut,
     LLMExchangeSummaryOut,
@@ -69,6 +73,7 @@ from rumil.api.schemas import (
     RunTraceTreeOut,
     SearchResultOut,
     SearchResultsOut,
+    StageRunOut,
     TraceEventOut,
     UpdateProjectRequest,
     UpdateRunRequest,
@@ -1235,12 +1240,16 @@ async def get_capabilities() -> dict:
     }
 
 
-@app.post("/api/questions/{question_id}/continue", status_code=202)
+@app.post(
+    "/api/questions/{question_id}/continue",
+    status_code=202,
+    response_model=ContinueQuestionOut,
+)
 async def post_continue_question(
     question_id: str,
     body: ContinueQuestionIn,
     db: DB = Depends(_get_db),
-):
+) -> ContinueQuestionOut:
     """Fire a background orchestrator run on an existing question.
 
     Returns the new run_id immediately; client can navigate to
@@ -1275,7 +1284,7 @@ async def post_continue_question(
     )
     _track_background(task)
 
-    return {"run_id": new_run_id, "question_id": question_id, "budget": body.budget}
+    return ContinueQuestionOut(run_id=new_run_id, question_id=question_id, budget=body.budget)
 
 
 async def _run_evaluation_background(
@@ -1344,12 +1353,16 @@ class GroundEvaluationIn(BaseModel):
     from_stage: int = 1
 
 
-@app.post("/api/questions/{question_id}/evaluate", status_code=202)
+@app.post(
+    "/api/questions/{question_id}/evaluate",
+    status_code=202,
+    response_model=EvaluateQuestionOut,
+)
 async def post_evaluate_question(
     question_id: str,
     body: EvaluateQuestionIn,
     db: DB = Depends(_get_db),
-):
+) -> EvaluateQuestionOut:
     """Fire a background evaluation run on an existing question.
 
     Returns the new run_id immediately; client can navigate to
@@ -1386,11 +1399,7 @@ async def post_evaluate_question(
     )
     _track_background(task)
 
-    return {
-        "run_id": new_run_id,
-        "question_id": question_id,
-        "eval_type": body.eval_type,
-    }
+    return EvaluateQuestionOut(run_id=new_run_id, question_id=question_id, eval_type=body.eval_type)
 
 
 async def _launch_grounding_pipeline(
@@ -1398,7 +1407,7 @@ async def _launch_grounding_pipeline(
     call_id: str,
     from_stage: int,
     db: DB,
-) -> dict:
+) -> GroundCallOut:
     """Shared body for /ground and /feedback: validate + launch background task."""
     from rumil.evaluate.registry import get_grounding_pipeline_spec
     from rumil.models import CallType
@@ -1451,36 +1460,44 @@ async def _launch_grounding_pipeline(
     )
     _track_background(task)
 
-    return {
-        "run_id": new_run_id,
-        "source_call_id": call_id,
-        "pipeline": pipeline,
-        "from_stage": from_stage,
-    }
+    return GroundCallOut(
+        run_id=new_run_id,
+        source_call_id=call_id,
+        pipeline=pipeline,
+        from_stage=from_stage,
+    )
 
 
-@app.post("/api/calls/{call_id}/ground", status_code=202)
+@app.post(
+    "/api/calls/{call_id}/ground",
+    status_code=202,
+    response_model=GroundCallOut,
+)
 async def post_ground_call(
     call_id: str,
     body: GroundEvaluationIn,
     db: DB = Depends(_get_db),
-):
+) -> GroundCallOut:
     """Run the grounding-feedback pipeline on an existing evaluation call."""
     return await _launch_grounding_pipeline("grounding", call_id, body.from_stage, db)
 
 
-@app.post("/api/calls/{call_id}/feedback", status_code=202)
+@app.post(
+    "/api/calls/{call_id}/feedback",
+    status_code=202,
+    response_model=GroundCallOut,
+)
 async def post_feedback_call(
     call_id: str,
     body: GroundEvaluationIn,
     db: DB = Depends(_get_db),
-):
+) -> GroundCallOut:
     """Run the feedback-update pipeline on an existing evaluation call."""
     return await _launch_grounding_pipeline("feedback", call_id, body.from_stage, db)
 
 
-@app.post("/api/runs/{run_id}/stage", status_code=200)
-async def post_stage_run(run_id: str, db: DB = Depends(_get_db)):
+@app.post("/api/runs/{run_id}/stage", status_code=200, response_model=StageRunOut)
+async def post_stage_run(run_id: str, db: DB = Depends(_get_db)) -> StageRunOut:
     """Retroactively stage a completed non-staged run.
 
     Flips the run's rows to staged=true and reverts direct mutations from
@@ -1492,11 +1509,11 @@ async def post_stage_run(run_id: str, db: DB = Depends(_get_db)):
     if run.get("staged"):
         raise HTTPException(status_code=409, detail="Run is already staged")
     await db.stage_run(run_id)
-    return {"run_id": run_id, "staged": True}
+    return StageRunOut(run_id=run_id, staged=True)
 
 
-@app.post("/api/runs/{run_id}/commit", status_code=200)
-async def post_commit_run(run_id: str, db: DB = Depends(_get_db)):
+@app.post("/api/runs/{run_id}/commit", status_code=200, response_model=StageRunOut)
+async def post_commit_run(run_id: str, db: DB = Depends(_get_db)) -> StageRunOut:
     """Commit a staged run, making its effects visible to all readers."""
     run = await db.get_run(run_id)
     if not run:
@@ -1504,7 +1521,7 @@ async def post_commit_run(run_id: str, db: DB = Depends(_get_db)):
     if not run.get("staged"):
         raise HTTPException(status_code=409, detail="Run is not staged")
     await db.commit_staged_run(run_id)
-    return {"run_id": run_id, "staged": False}
+    return StageRunOut(run_id=run_id, staged=False)
 
 
 @app.get("/api/calls/{call_id}/events", response_model=list[TraceEventOut])
@@ -1557,8 +1574,8 @@ async def list_ab_evals(db: DB = Depends(_get_db)):
     return results
 
 
-@app.post("/api/ab-evals", status_code=202)
-async def post_ab_eval(body: ABEvalIn, db: DB = Depends(_get_db)):
+@app.post("/api/ab-evals", status_code=202, response_model=ABEvalStartedOut)
+async def post_ab_eval(body: ABEvalIn, db: DB = Depends(_get_db)) -> ABEvalStartedOut:
     """Kick off an AB eval comparing two runs as a background task.
 
     Returns an eval_run_id (the run_id used for the eval itself). The
@@ -1589,11 +1606,11 @@ async def post_ab_eval(body: ABEvalIn, db: DB = Depends(_get_db)):
         )
     )
     _track_background(task)
-    return {
-        "run_id_a": body.run_id_a,
-        "run_id_b": body.run_id_b,
-        "status": "started",
-    }
+    return ABEvalStartedOut(
+        run_id_a=body.run_id_a,
+        run_id_b=body.run_id_b,
+        status="started",
+    )
 
 
 @app.get(

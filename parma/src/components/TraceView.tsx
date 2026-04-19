@@ -226,8 +226,11 @@ function RunPicker({
                   className="trace-pick-row-hide"
                   onClick={(e) => {
                     e.stopPropagation();
+                    e.preventDefault();
                     handleToggleHidden(r);
                   }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => e.stopPropagation()}
                   disabled={busy}
                   title={r.hidden ? "Unhide run" : "Hide run"}
                   aria-label={r.hidden ? "Unhide run" : "Hide run"}

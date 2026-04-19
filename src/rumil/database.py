@@ -4,7 +4,6 @@ Supabase database layer for the research workspace.
 
 import asyncio
 import logging
-import time
 import uuid
 from collections.abc import Sequence
 from datetime import UTC, datetime
@@ -139,6 +138,7 @@ class DB:
         from rumil.db.call_store import CallStore
         from rumil.db.chat_store import ChatStore
         from rumil.db.link_store import LinkStore
+        from rumil.db.mutation_log import MutationLog
         from rumil.db.page_store import PageStore
         from rumil.db.project_store import ProjectStore
         from rumil.db.run_store import RunStore
@@ -150,8 +150,7 @@ class DB:
         self.snapshot_ts = snapshot_ts
         self._semaphore = asyncio.Semaphore(get_settings().db_max_concurrent_queries)
         self._prod: bool = False
-        self._mutation_cache: MutationState | None = None
-        self._mutation_cache_ts: float = 0.0
+        self.mutation_log = MutationLog(self)
         self.overlay = StagedOverlay(self)
         self.projects = ProjectStore(self)
         self.runs = RunStore(self)
@@ -244,249 +243,19 @@ class DB:
             return await query.execute()
 
     def _staged_filter(self, query: Any) -> Any:
-        """Apply staged-run visibility filter to a query.
-
-        Staged runs see baseline (staged=false) + their own rows. When a
-        ``snapshot_ts`` is pinned, baseline rows must additionally have been
-        created at or before that instant — rows committed by other runs
-        after the snapshot are invisible. Own-run rows are always visible
-        regardless of timestamp. Non-staged runs see only baseline rows.
-        """
-        if self.staged:
-            if self.snapshot_ts is not None:
-                ts = self.snapshot_ts.isoformat()
-                return query.or_(
-                    f"and(staged.eq.false,created_at.lte.{ts}),run_id.eq.{self.run_id}"
-                )
-            return query.or_(f"staged.eq.false,run_id.eq.{self.run_id}")
-        return query.eq("staged", False)
-
-    _MUTATION_CACHE_TTL_S = 5.0
+        return self.mutation_log.staged_filter(query)
 
     async def _load_mutation_state(self) -> MutationState:
-        """Fetch and cache mutation events visible to this staged run.
-
-        Own-run events are always forwarded onto the view. When a
-        ``snapshot_ts`` is pinned, events committed by *other* runs are
-        split two ways:
-
-        - Events with ``created_at <= snapshot_ts`` are forwarded normally —
-          the staged run saw the baseline mutation happen within its
-          snapshot.
-        - Events with ``created_at > snapshot_ts`` (other runs' writes after
-          the fork) are recorded as *unapply* entries: the base table was
-          dual-written and now shows post-snapshot state, but this staged
-          run must not observe those mutations. ``_apply_page_events`` /
-          ``_apply_link_events`` use the unapply set to roll the base-table
-          values back to their pre-mutation values on read.
-
-        Without a snapshot, only own-run events are included (matching
-        pre-fork behavior).
-        """
-        now = time.monotonic()
-        if (
-            self._mutation_cache is not None
-            and now - self._mutation_cache_ts < self._MUTATION_CACHE_TTL_S
-        ):
-            return self._mutation_cache
-        if not self.staged:
-            self._mutation_cache = MutationState()
-            self._mutation_cache_ts = now
-            return self._mutation_cache
-        own_rows = _rows(
-            await self._execute(
-                self.client.table("mutation_events")
-                .select("event_type, target_id, payload, created_at, run_id")
-                .eq("run_id", self.run_id)
-                .order("created_at")
-            )
-        )
-        baseline_rows: list[dict[str, Any]] = []
-        post_snapshot_rows: list[dict[str, Any]] = []
-        if self.snapshot_ts is not None:
-            ts = self.snapshot_ts.isoformat()
-            baseline_rows = _rows(
-                await self._execute(
-                    self.client.table("mutation_events")
-                    .select("event_type, target_id, payload, created_at, run_id")
-                    .neq("run_id", self.run_id)
-                    .lte("created_at", ts)
-                    .order("created_at")
-                )
-            )
-            post_snapshot_rows = _rows(
-                await self._execute(
-                    self.client.table("mutation_events")
-                    .select("event_type, target_id, payload, created_at, run_id")
-                    .neq("run_id", self.run_id)
-                    .gt("created_at", ts)
-                    .order("created_at")
-                )
-            )
-        combined = sorted(
-            [*baseline_rows, *own_rows],
-            key=lambda r: r.get("created_at") or "",
-        )
-        state = MutationState()
-        for row in combined:
-            et = row["event_type"]
-            tid = row["target_id"]
-            payload = row.get("payload") or {}
-            if et == "supersede_page":
-                state.superseded_pages[tid] = payload.get("new_page_id", "")
-            elif et == "delete_link":
-                state.deleted_links.add(tid)
-            elif et == "change_link_role":
-                state.link_role_overrides[tid] = LinkRole(payload["new_role"])
-            elif et == "update_page_content":
-                state.page_content_overrides[tid] = payload.get("new_content", "")
-            elif et == "set_credence":
-                state.credence_overrides[tid] = (
-                    payload.get("value"),
-                    payload.get("reasoning"),
-                )
-            elif et == "set_robustness":
-                state.robustness_overrides[tid] = (
-                    payload.get("value"),
-                    payload.get("reasoning"),
-                )
-        # Post-snapshot baseline events: record how to undo them on read.
-        # We iterate oldest-first so that the *earliest* post-snapshot
-        # mutation wins for unapply_update_content — its ``old_content`` is
-        # the pre-snapshot value. Same logic for role overrides.
-        post_sorted = sorted(
-            post_snapshot_rows,
-            key=lambda r: r.get("created_at") or "",
-        )
-        for row in post_sorted:
-            et = row["event_type"]
-            tid = row["target_id"]
-            payload = row.get("payload") or {}
-            if et == "supersede_page":
-                # Only mark as "unapply" if this is not already superseded
-                # in the pre-snapshot view.
-                if tid not in state.superseded_pages:
-                    state.unapply_supersessions.add(tid)
-            elif et == "update_page_content":
-                if (
-                    tid not in state.page_content_overrides
-                    and tid not in state.unapply_update_content
-                ):
-                    state.unapply_update_content[tid] = payload.get("old_content", "")
-            elif et == "change_link_role":
-                if tid not in state.link_role_overrides and tid not in state.unapply_role_overrides:
-                    old_role = payload.get("old_role")
-                    if old_role:
-                        state.unapply_role_overrides[tid] = LinkRole(old_role)
-            elif et == "set_credence":
-                if tid not in state.credence_overrides and tid not in state.unapply_credence:
-                    if "old_value" in payload:
-                        state.unapply_credence[tid] = (
-                            payload.get("old_value"),
-                            payload.get("old_reasoning"),
-                        )
-            elif et == "set_robustness":
-                if tid not in state.robustness_overrides and tid not in state.unapply_robustness:
-                    if "old_value" in payload:
-                        state.unapply_robustness[tid] = (
-                            payload.get("old_value"),
-                            payload.get("old_reasoning"),
-                        )
-            # Note: baseline delete_link events after snapshot physically
-            # remove the row from page_links (non-staged deletes DELETE FROM).
-            # Restoring them on read would require reinserting from the
-            # event payload; see CLAUDE.md on deletion semantics. For now,
-            # deletions landing after the snapshot are visible to the
-            # staged run — a deviation from pure fork-at-snapshot, flagged
-            # as a known gap.
-        self._mutation_cache = state
-        self._mutation_cache_ts = now
-        return state
+        return await self.mutation_log.load_state()
 
     def _invalidate_mutation_cache(self) -> None:
-        self._mutation_cache = None
-        self._mutation_cache_ts = 0.0
+        self.mutation_log.invalidate_cache()
 
     async def _apply_page_events(self, pages: Sequence[Page]) -> list[Page]:
-        """Overlay mutation events onto a batch of pages.
-
-        Applies both forward overlays (supersessions/content updates this
-        run should see) and unapply overlays (baseline mutations committed
-        after this run's snapshot that the base table reflects but this
-        run should not).
-        """
-        state = await self._load_mutation_state()
-        has_any = (
-            state.superseded_pages
-            or state.page_content_overrides
-            or state.unapply_supersessions
-            or state.unapply_update_content
-            or state.credence_overrides
-            or state.robustness_overrides
-            or state.unapply_credence
-            or state.unapply_robustness
-        )
-        if not has_any:
-            return list(pages)
-        result: list[Page] = []
-        for p in pages:
-            updates: dict = {}
-            if p.id in state.superseded_pages:
-                updates["is_superseded"] = True
-                updates["superseded_by"] = state.superseded_pages[p.id]
-            elif p.id in state.unapply_supersessions and p.is_superseded:
-                updates["is_superseded"] = False
-                updates["superseded_by"] = None
-            if p.id in state.page_content_overrides:
-                updates["content"] = state.page_content_overrides[p.id]
-            elif p.id in state.unapply_update_content:
-                updates["content"] = state.unapply_update_content[p.id]
-            if p.id in state.credence_overrides:
-                value, reasoning = state.credence_overrides[p.id]
-                updates["credence"] = value
-                updates["credence_reasoning"] = reasoning
-            elif p.id in state.unapply_credence:
-                value, reasoning = state.unapply_credence[p.id]
-                updates["credence"] = value
-                updates["credence_reasoning"] = reasoning
-            if p.id in state.robustness_overrides:
-                value, reasoning = state.robustness_overrides[p.id]
-                updates["robustness"] = value
-                updates["robustness_reasoning"] = reasoning
-            elif p.id in state.unapply_robustness:
-                value, reasoning = state.unapply_robustness[p.id]
-                updates["robustness"] = value
-                updates["robustness_reasoning"] = reasoning
-            if updates:
-                p = p.model_copy(update=updates)
-            result.append(p)
-        return result
+        return await self.mutation_log.apply_page_events(pages)
 
     async def _apply_link_events(self, links: Sequence[PageLink]) -> list[PageLink]:
-        """Overlay mutation events onto a batch of links.
-
-        Applies forward overlays (deletes and role changes this run saw)
-        and unapply overlays for role changes that landed after this run's
-        snapshot.
-        """
-        state = await self._load_mutation_state()
-        has_any = state.deleted_links or state.link_role_overrides or state.unapply_role_overrides
-        if not has_any:
-            return list(links)
-        result: list[PageLink] = []
-        for link in links:
-            if link.id in state.deleted_links:
-                continue
-            if link.id in state.link_role_overrides:
-                link = link.model_copy(
-                    update={"role": state.link_role_overrides[link.id]},
-                )
-            elif link.id in state.unapply_role_overrides:
-                link = link.model_copy(
-                    update={"role": state.unapply_role_overrides[link.id]},
-                )
-            result.append(link)
-        return result
+        return await self.mutation_log.apply_link_events(links)
 
     async def record_mutation_event(
         self,
@@ -494,19 +263,7 @@ class DB:
         target_id: str,
         payload: dict,
     ) -> None:
-        """Record a mutation event for undo/staging support."""
-        await self._execute(
-            self.client.table("mutation_events").insert(
-                {
-                    "id": str(uuid.uuid4()),
-                    "run_id": self.run_id,
-                    "event_type": event_type,
-                    "target_id": target_id,
-                    "payload": payload,
-                }
-            )
-        )
-        self._invalidate_mutation_cache()
+        return await self.mutation_log.record(event_type, target_id, payload)
 
     async def get_or_create_project(self, name: str) -> tuple[Project, bool]:
         return await self.projects.get_or_create_project(name)

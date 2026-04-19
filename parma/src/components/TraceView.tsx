@@ -296,6 +296,7 @@ function TraceHeader({
   // replaces the cross-app jump — Brian never has to guess which run he's
   // looking at.
   const shortRunId = tree.run_id.slice(0, 8);
+  const discriminators = extractRunDiscriminators(tree.config);
   return (
     <header className="trace-head">
       <div className="trace-head-row">
@@ -321,10 +322,48 @@ function TraceHeader({
           </span>
         </div>
       )}
+      {discriminators.length > 0 && (
+        <div className="trace-head-chips">
+          {discriminators.map((d) => (
+            <span
+              key={d.key}
+              className={`trace-head-chip trace-head-chip-${d.key}`}
+              title={d.title}
+            >
+              {d.label}
+            </span>
+          ))}
+        </div>
+      )}
+      <TraceConfigDetails config={tree.config} />
       <div className="trace-head-project" title={projectId}>
         {projectId.slice(0, 8)} · project
       </div>
     </header>
+  );
+}
+
+function TraceConfigDetails({
+  config,
+}: {
+  config: Record<string, unknown> | null;
+}) {
+  const [open, setOpen] = useState(false);
+  if (!config || Object.keys(config).length === 0) return null;
+  const entryCount = Object.keys(config).length;
+  return (
+    <details
+      className="trace-head-config"
+      open={open}
+      onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}
+    >
+      <summary className="trace-head-config-summary">
+        {open ? "hide" : "show"} full config ({entryCount} fields)
+      </summary>
+      <div className="trace-head-config-body">
+        <ToolCallArgs input={config} />
+      </div>
+    </details>
   );
 }
 

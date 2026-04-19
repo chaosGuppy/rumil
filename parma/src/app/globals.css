@@ -5912,6 +5912,58 @@ mark.ann-mark.ann-mark-dispute:hover {
   margin-top: 6px;
 }
 
+.trace-head-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  margin-top: 8px;
+}
+.trace-head-chip {
+  font-family: var(--font-mono-stack);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  padding: 2px 6px;
+  border-radius: 2px;
+  border: 1px solid var(--border);
+  color: var(--fg-muted);
+  background: var(--bg-pane);
+}
+.trace-head-chip-orchestrator {
+  color: var(--fg);
+  border-color: var(--node-judgement, var(--border));
+}
+.trace-head-chip-model {
+  color: var(--fg-muted);
+}
+.trace-head-chip-moves {
+  color: var(--fg-muted);
+}
+.trace-head-chip-commit {
+  color: var(--fg-dim);
+}
+
+.trace-head-config {
+  margin-top: 8px;
+}
+.trace-head-config-summary {
+  font-family: var(--font-mono-stack);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  color: var(--fg-dim);
+  cursor: pointer;
+  user-select: none;
+}
+.trace-head-config-summary:hover {
+  color: var(--fg-muted);
+}
+.trace-head-config-body {
+  margin-top: 6px;
+  padding: 8px 10px;
+  background: var(--bg-pane);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+}
+
 /* call tree on the left */
 .trace-tree {
   list-style: none;

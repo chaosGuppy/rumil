@@ -27,7 +27,6 @@ from rumil.models import (
 from rumil.settings import get_settings
 
 DispatchValidator = Callable[[Dispatch], Dispatch | str]
-EffectValidator = Callable[["MoveEffect"], "MoveEffect | str"]
 
 log = logging.getLogger(__name__)
 
@@ -46,57 +45,6 @@ class MoveResult:
     trace_extra: dict[str, Any] = field(default_factory=dict)
 
 
-@dataclass(frozen=True)
-class MoveEntry:
-    """A single move's contribution to a MoveEffect."""
-
-    move: Move
-    primary_id: str | None = None
-    extra_ids: tuple[str, ...] = ()
-    trace_extra: dict[str, Any] = field(default_factory=dict)
-    dispatches: tuple[Dispatch, ...] = ()
-
-
-@dataclass(frozen=True)
-class MoveEffect:
-    """Accumulated effect of zero or more move executions.
-
-    Forms a monoid under ``+`` with :meth:`empty` as identity.
-    ``MoveState.apply`` folds an effect into the live state — routing every
-    mutation through a single place so batch validators can inspect the
-    composed effect before it lands, and so tests can assert on effect
-    values without touching a DB.
-    """
-
-    entries: tuple[MoveEntry, ...] = ()
-
-    @classmethod
-    def empty(cls) -> "MoveEffect":
-        return cls()
-
-    @classmethod
-    def from_result(cls, move: Move, result: MoveResult) -> "MoveEffect":
-        entry = MoveEntry(
-            move=move,
-            primary_id=result.created_page_id,
-            extra_ids=tuple(result.extra_created_ids or ()),
-            trace_extra=result.trace_extra,
-            dispatches=tuple(result.dispatches),
-        )
-        return cls(entries=(entry,))
-
-    def __add__(self, other: "MoveEffect") -> "MoveEffect":
-        return MoveEffect(entries=self.entries + other.entries)
-
-    @property
-    def primary_ids(self) -> tuple[str, ...]:
-        return tuple(e.primary_id for e in self.entries if e.primary_id)
-
-    @property
-    def dispatches(self) -> tuple[Dispatch, ...]:
-        return tuple(d for e in self.entries for d in e.dispatches)
-
-
 class MoveState:
     """Tracks what happened during a run_call."""
 
@@ -111,7 +59,6 @@ class MoveState:
         self.move_trace_extras: list[dict[str, Any]] = []
         self.dispatches: list[Dispatch] = []
         self._dispatch_validators: list[DispatchValidator] = []
-        self._effect_validators: list[EffectValidator] = []
         self._move_cursor: int = 0
 
     def record_dispatch(self, dispatch: Dispatch) -> str | None:
@@ -130,28 +77,6 @@ class MoveState:
             error = self.record_dispatch(d)
             if error:
                 log.warning("Dispatch rejected: %s", error)
-
-    def apply(self, effect: MoveEffect) -> str | None:
-        """Fold a MoveEffect into this state. Returns rejection reason if any
-        effect validator rejects; applies nothing on rejection."""
-        for validator in self._effect_validators:
-            result = validator(effect)
-            if isinstance(result, str):
-                return result
-            effect = result
-        for entry in effect.entries:
-            self.moves.append(entry.move)
-            if entry.dispatches:
-                self.record_dispatches(list(entry.dispatches))
-            entry_ids = list(entry.extra_ids)
-            if entry.primary_id:
-                entry_ids.insert(0, entry.primary_id)
-                self.created_page_ids.append(entry.primary_id)
-                self.last_created_id = entry.primary_id
-                self.context_page_ids.add(entry.primary_id)
-            self.move_created_ids.append(entry_ids)
-            self.move_trace_extras.append(dict(entry.trace_extra))
-        return None
 
     def take_new_moves(
         self,
@@ -203,14 +128,24 @@ class MoveDef(Generic[S]):
                 if check_result is not None:
                     return check_result.message
             result = await self.execute(validated, state.call, state.db)
-            move = Move(move_type=self.move_type, payload=validated)
-            effect = MoveEffect.from_result(move, result)
-            rejection = state.apply(effect)
-            if rejection is not None:
-                log.warning("Move %s rejected by effect validator: %s", self.name, rejection)
-                return f"Move rejected: {rejection}"
+            state.moves.append(Move(move_type=self.move_type, payload=validated))
+            if result.dispatches:
+                state.record_dispatches(result.dispatches)
+            move_page_ids: list[str] = []
             if result.created_page_id:
-                log.debug("Move %s created page: %s", self.name, result.created_page_id[:8])
+                state.created_page_ids.append(result.created_page_id)
+                state.last_created_id = result.created_page_id
+                state.context_page_ids.add(result.created_page_id)
+                move_page_ids.append(result.created_page_id)
+                log.debug(
+                    "Move %s created page: %s",
+                    self.name,
+                    result.created_page_id[:8],
+                )
+            if result.extra_created_ids:
+                move_page_ids.extend(result.extra_created_ids)
+            state.move_created_ids.append(move_page_ids)
+            state.move_trace_extras.append(result.trace_extra)
             if self.move_type == MoveType.LOAD_PAGE:
                 raw_pid = inp.get("page_id", "")
                 if raw_pid:
@@ -245,23 +180,17 @@ HEADLINE_DESCRIPTION = (
 
 
 class CreatePagePayload(BaseModel):
+    """Base payload shared by every create_* move.
+
+    Carries only fields that make sense for every page type, including
+    questions. Subclasses representing scored page types (claims, judgements,
+    view items, wikis, summaries) should inherit from ScoredPagePayload to
+    add the robustness fields.
+    """
+
     headline: str = Field(description=HEADLINE_DESCRIPTION)
     content: str = Field(
         description="Full explanation with reasoning. Be specific and substantive."
-    )
-    credence: int = Field(
-        5,
-        description=(
-            "1-9 credence scale. 1=virtually impossible, 5=genuinely uncertain, "
-            "9=completely uncontroversial. See preamble for full rubric."
-        ),
-    )
-    robustness: int = Field(
-        1,
-        description=(
-            "1-5 robustness scale. 1=wild guess, 3=considered view, "
-            "5=highly robust. See preamble for full rubric."
-        ),
     )
     workspace: str = Field("research", description="research or prioritization")
     supersedes: str | None = Field(
@@ -287,6 +216,27 @@ class CreatePagePayload(BaseModel):
         metadata that should be persisted on the page itself.
         """
         return {}
+
+
+class ScoredPagePayload(CreatePagePayload):
+    """Base for page types that carry a robustness score: claims,
+    judgements, view items, wikis, summaries. Questions do not inherit
+    from this — they have no robustness.
+    """
+
+    robustness: int = Field(
+        description=(
+            "1-5 robustness scale. 1=wild guess, 3=considered view, "
+            "5=highly robust. See preamble for full rubric."
+        ),
+    )
+    robustness_reasoning: str = Field(
+        description=(
+            "Where the remaining uncertainty stems from and how reducible "
+            "it is (e.g. 'would resolve with one clean benchmark run' vs "
+            "'inherent — depends on future human behaviour')."
+        ),
+    )
 
 
 def _resolve_workspace(ws: str) -> Workspace:
@@ -337,21 +287,32 @@ async def create_page(
     db: DB,
     page_type: PageType,
     layer: PageLayer,
+    credence: int | None = None,
+    credence_reasoning: str | None = None,
+    robustness: int | None = None,
+    robustness_reasoning: str | None = None,
 ) -> MoveResult:
-    """Create a page from payload, save to DB and file system."""
+    """Create a page from payload, save to DB and file system.
+
+    `credence` is only meaningful for CLAIM pages. `robustness` is meaningful
+    for every scored page type (claim, judgement, view item, wiki, summary);
+    questions leave both at None.
+    """
     workspace = _resolve_workspace(payload.workspace)
     extra = payload.page_extra_fields()
 
     fruit_remaining = getattr(payload, "fruit_remaining", None)
+    is_claim = page_type == PageType.CLAIM
     page = Page(
         page_type=page_type,
         layer=layer,
         workspace=workspace,
         content=payload.content,
         headline=payload.headline,
-        credence=None if page_type == PageType.QUESTION else payload.credence,
-        robustness=None if page_type == PageType.QUESTION else payload.robustness,
-        importance=getattr(payload, "importance", None),
+        credence=credence if is_claim else None,
+        credence_reasoning=credence_reasoning if is_claim else None,
+        robustness=robustness,
+        robustness_reasoning=robustness_reasoning,
         fruit_remaining=fruit_remaining,
         provenance_model=get_settings().model,
         provenance_call_type=call.call_type.value,

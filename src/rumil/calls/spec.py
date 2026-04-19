@@ -165,6 +165,16 @@ class CallSpec(BaseModel):
     variant: str = "default"
     description: str
 
+    task_template: str | None = None
+    """Full task-description template; ``{scope_id}`` is substituted.
+
+    When set, overrides the default "description + scope label" format
+    used by ``SpecCallRunner.task_description``. Use sparingly — only
+    when a call type's wording around the scope ID genuinely diverges
+    from the convention (e.g. ``find_considerations``'s "Question ID
+    (use this when linking considerations): ..." phrasing).
+    """
+
     prompt_id: str
     prompt_version: str | None = None
 

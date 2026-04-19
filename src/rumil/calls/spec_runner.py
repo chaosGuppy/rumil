@@ -85,11 +85,20 @@ class SpecCallRunner(CallRunner):
         every task_description ends with ``Question ID: `<id>``` (for
         question-scoped calls) or ``Claim ID: `<id>``` (for scout_c_*
         variants that operate on a claim). The label is selected from
-        ``spec.scope_page_type``. Specs whose instructions must diverge
-        from this format use ``runner_factory`` to supply a custom runner.
+        ``spec.scope_page_type``.
+
+        When ``spec.task_template`` is set, it overrides the default
+        format — ``{scope_id}`` is substituted with the id. Used by calls
+        whose scope-id phrasing diverges from the convention (e.g.
+        find_considerations).
         """
-        base = self.spec.description.rstrip()
         sid = self.infra.question_id if hasattr(self, "infra") and self.infra else None
+        if self.spec.task_template is not None:
+            template = self.spec.task_template
+            if sid:
+                return template.format(scope_id=sid)
+            return template
+        base = self.spec.description.rstrip()
         if not sid:
             return base
         from rumil.models import PageType

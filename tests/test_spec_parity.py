@@ -37,10 +37,17 @@ async def spec_and_legacy(request, tmp_db, question_page):
     )
     await tmp_db.save_call(call)
 
+    # Some legacy subclasses require extra kwargs (e.g. find_considerations
+    # requires max_rounds/fruit_threshold in __init__); feed the defaults
+    # that SpecCallRunner itself uses so the comparison is apples-to-apples.
+    extra_kwargs: dict = {}
+    if call_type == CallType.FIND_CONSIDERATIONS:
+        extra_kwargs = {"max_rounds": 5, "fruit_threshold": 4}
     legacy = legacy_cls(
         question_id=question_page.id,
         call=call,
         db=tmp_db,
+        **extra_kwargs,
     )
 
     spec = SPECS[(call_type, variant)]
@@ -71,4 +78,24 @@ async def test_allowed_moves_match(spec_and_legacy):
         f"{call_type.value}: legacy vs spec allowed-moves diverge\n"
         f"legacy_only: {set(legacy_moves) - set(spec_moves)}\n"
         f"spec_only:   {set(spec_moves) - set(legacy_moves)}"
+    )
+
+
+async def test_stage_types_match(spec_and_legacy):
+    """Spec-resolved stage types match the legacy subclass's stage types."""
+    call_type, legacy, spec_runner = spec_and_legacy
+    assert type(spec_runner.context_builder) is type(legacy.context_builder), (
+        f"{call_type.value}: context_builder types differ "
+        f"(legacy={type(legacy.context_builder).__name__}, "
+        f"spec={type(spec_runner.context_builder).__name__})"
+    )
+    assert type(spec_runner.workspace_updater) is type(legacy.workspace_updater), (
+        f"{call_type.value}: workspace_updater types differ "
+        f"(legacy={type(legacy.workspace_updater).__name__}, "
+        f"spec={type(spec_runner.workspace_updater).__name__})"
+    )
+    assert type(spec_runner.closing_reviewer) is type(legacy.closing_reviewer), (
+        f"{call_type.value}: closing_reviewer types differ "
+        f"(legacy={type(legacy.closing_reviewer).__name__}, "
+        f"spec={type(spec_runner.closing_reviewer).__name__})"
     )

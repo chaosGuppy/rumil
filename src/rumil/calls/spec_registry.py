@@ -12,7 +12,7 @@ is tracked in the master plan.
 
 from __future__ import annotations
 
-from rumil.calls.closing_reviewers import StandardClosingReview
+from rumil.calls.closing_reviewers import SinglePhaseScoutReview, StandardClosingReview
 from rumil.calls.context_builders import EmbeddingContext
 from rumil.calls.page_creators import MultiRoundLoop
 from rumil.calls.spec import (
@@ -26,7 +26,7 @@ from rumil.calls.spec import (
     register_spec,
     register_workspace_updater,
 )
-from rumil.models import CallType, PageType
+from rumil.models import CallType, FindConsiderationsMode, PageType
 
 
 @register_context_builder("embedding")
@@ -47,10 +47,41 @@ def _multi_round_loop(ctx: StageBuildCtx, cfg: dict) -> MultiRoundLoop:
     )
 
 
+@register_workspace_updater("multi_round_loop_with_mode")
+def _multi_round_loop_with_mode(ctx: StageBuildCtx, cfg: dict) -> MultiRoundLoop:
+    """Multi-round agent loop with a FindConsiderationsMode — matches
+    ``find_considerations``'s bespoke instantiation that defers task
+    wording to MultiRoundLoop's internal mode-dependent template.
+
+    Does NOT pass ``task_description`` so MultiRoundLoop builds one
+    itself from ``_resolve_round_mode`` + the mode-specific instruction
+    blocks (see page_creators.py). Passing the spec's description here
+    would override that behaviour.
+    """
+    mode_raw = cfg.get("mode", FindConsiderationsMode.ALTERNATE)
+    mode = (
+        mode_raw
+        if isinstance(mode_raw, FindConsiderationsMode)
+        else FindConsiderationsMode(mode_raw)
+    )
+    return MultiRoundLoop(
+        int(cfg.get("max_rounds", 5)),
+        int(cfg.get("fruit_threshold", 4)),
+        mode,
+        available_moves=list(ctx.available_moves),
+    )
+
+
 @register_closing_reviewer("standard_review")
 def _standard_review(ctx: StageBuildCtx, cfg: dict) -> StandardClosingReview:
     """Standard closing review; uses ctx.call_type verbatim."""
     return StandardClosingReview(ctx.call_type)
+
+
+@register_closing_reviewer("single_phase_scout_review")
+def _single_phase_scout_review(ctx: StageBuildCtx, cfg: dict) -> SinglePhaseScoutReview:
+    """SinglePhaseScoutReview — no args, used by find_considerations."""
+    return SinglePhaseScoutReview()
 
 
 def _boring_scout_spec(
@@ -294,6 +325,38 @@ register_spec(
         scope=PageType.CLAIM,
     )
 )
+
+register_spec(
+    CallSpec(
+        call_type=CallType.FIND_CONSIDERATIONS,
+        description=(
+            "Scout for missing considerations on a question — a parameterized "
+            "multi-round loop that alternates between concrete and abstract "
+            "modes by default."
+        ),
+        task_template=(
+            "Scout for missing considerations on this question.\n\n"
+            "Question ID (use this when linking considerations): "
+            "`{scope_id}`"
+        ),
+        prompt_id="find_considerations",
+        context_builder=StageRef(id="embedding"),
+        workspace_updater=StageRef(
+            id="multi_round_loop_with_mode",
+            config={
+                "max_rounds": FromCallParam("max_rounds", default=5),
+                "fruit_threshold": FromCallParam("fruit_threshold", default=4),
+                "mode": FromCallParam("mode", default=FindConsiderationsMode.ALTERNATE),
+            },
+        ),
+        closing_reviewer=StageRef(id="single_phase_scout_review"),
+        allowed_moves=PresetKey(""),
+        scope_page_type=PageType.QUESTION,
+        emits_page_types=frozenset({PageType.CLAIM, PageType.QUESTION}),
+        estimated_budget_cost=5,
+    )
+)
+
 
 register_spec(
     _boring_scout_spec(

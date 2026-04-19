@@ -134,6 +134,7 @@ class DB:
         staged: bool = False,
         snapshot_ts: datetime | None = None,
     ):
+        from rumil.alerts.store import AlertConfigStore
         from rumil.db.annotation_store import AnnotationStore
         from rumil.db.call_store import CallStore
         from rumil.db.chat_store import ChatStore
@@ -161,6 +162,7 @@ class DB:
         self.pages = PageStore(self)
         self.links = LinkStore(self)
         self.nudges = NudgeStore(self)
+        self.alert_configs = AlertConfigStore(self)
 
     @classmethod
     async def create(

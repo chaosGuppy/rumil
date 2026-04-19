@@ -629,6 +629,47 @@ class RunNudge(BaseModel):
     consumed_at: datetime | None = None
 
 
+class AlertKind(str, Enum):
+    COST_THRESHOLD = "cost_threshold"
+    STALL_TIMEOUT = "stall_timeout"
+    CONFUSION_SPIKE = "confusion_spike"
+
+
+class AlertSeverity(str, Enum):
+    INFO = "info"
+    WARN = "warn"
+    CRIT = "crit"
+
+
+class AlertConfig(BaseModel):
+    """A rule that turns run state into fired alerts at read / tick time."""
+
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    project_id: str | None = None
+    run_id: str | None = None
+    kind: AlertKind
+    params: dict = Field(default_factory=dict)
+    enabled: bool = True
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class FiredAlert(BaseModel):
+    """In-memory alert fired for a specific run on evaluator read.
+
+    Not persisted in v1 — consumers (parma dashboard, orchestrator tick
+    emitter) receive the list and decide what to display or forward.
+    """
+
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+    run_id: str
+    kind: AlertKind
+    severity: AlertSeverity = AlertSeverity.INFO
+    message: str
+    context: dict = Field(default_factory=dict)
+    source_config_id: str | None = None
+
+
 class ChatMessageRole(str, Enum):
     USER = "user"
     ASSISTANT = "assistant"

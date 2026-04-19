@@ -18,6 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, TypeAdapter, ValidationError
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from rumil.alerts import evaluate_alerts
 from rumil.api.chat import (
     BranchConversationRequest,
     ChatRequest,
@@ -96,10 +97,13 @@ from rumil.calls.adversarial_review import AdversarialVerdict, is_verdict_expire
 from rumil.database import DB, _row_to_call, _rows
 from rumil.embeddings import embed_and_store_page
 from rumil.models import (
+    AlertConfig,
+    AlertKind,
     AnnotationEvent,
     Call,
     CallType,
     ChatMessageRole,
+    FiredAlert,
     LinkType,
     NudgeAuthorKind,
     NudgeDurability,
@@ -1681,6 +1685,107 @@ async def post_commit_run(run_id: str, db: DB = Depends(_get_db)) -> StageRunOut
         raise HTTPException(status_code=409, detail="Run is not staged")
     await db.commit_staged_run(run_id)
     return StageRunOut(run_id=run_id, staged=False)
+
+
+class CreateNudgeIn(BaseModel):
+    kind: NudgeKind
+    durability: NudgeDurability
+    author_kind: NudgeAuthorKind = NudgeAuthorKind.HUMAN
+    author_note: str = ""
+    payload: dict = {}
+    scope: NudgeScope = NudgeScope()
+    soft_text: str | None = None
+    hard: bool = False
+
+
+@app.post("/api/runs/{run_id}/nudges", response_model=RunNudge, status_code=201)
+async def create_nudge(
+    run_id: str,
+    body: CreateNudgeIn,
+    db: DB = Depends(_get_db),
+) -> RunNudge:
+    existing = await db.get_run(run_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return await db.nudges.create_nudge(
+        run_id=run_id,
+        kind=body.kind,
+        durability=body.durability,
+        author_kind=body.author_kind,
+        author_note=body.author_note,
+        payload=body.payload,
+        scope=body.scope,
+        soft_text=body.soft_text,
+        hard=body.hard,
+    )
+
+
+@app.get("/api/runs/{run_id}/nudges", response_model=list[RunNudge])
+async def list_nudges(
+    run_id: str,
+    status: NudgeStatus | None = None,
+    db: DB = Depends(_get_db),
+) -> list[RunNudge]:
+    existing = await db.get_run(run_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return await db.nudges.list_nudges_for_run(run_id, status=status)
+
+
+@app.patch("/api/nudges/{nudge_id}/revoke", response_model=RunNudge)
+async def revoke_nudge(nudge_id: str, db: DB = Depends(_get_db)) -> RunNudge:
+    existing = await db.nudges.get_nudge(nudge_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="Nudge not found")
+    if existing.status != NudgeStatus.ACTIVE:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Nudge is {existing.status.value}, not active",
+        )
+    refreshed = await db.nudges.revoke_nudge(nudge_id)
+    assert refreshed is not None
+    return refreshed
+
+
+class CreateAlertConfigIn(BaseModel):
+    kind: AlertKind
+    params: dict = {}
+    project_id: str | None = None
+    run_id: str | None = None
+    enabled: bool = True
+
+
+@app.post("/api/alert-configs", response_model=AlertConfig, status_code=201)
+async def create_alert_config(
+    body: CreateAlertConfigIn,
+    db: DB = Depends(_get_db),
+) -> AlertConfig:
+    return await db.alert_configs.create(
+        kind=body.kind,
+        params=body.params,
+        project_id=body.project_id,
+        run_id=body.run_id,
+        enabled=body.enabled,
+    )
+
+
+@app.get("/api/alert-configs", response_model=list[AlertConfig])
+async def list_alert_configs(db: DB = Depends(_get_db)) -> list[AlertConfig]:
+    return await db.alert_configs.list_all()
+
+
+@app.delete("/api/alert-configs/{config_id}", status_code=204)
+async def delete_alert_config(config_id: str, db: DB = Depends(_get_db)) -> None:
+    await db.alert_configs.delete(config_id)
+
+
+@app.get("/api/runs/{run_id}/alerts", response_model=list[FiredAlert])
+async def get_run_alerts(run_id: str, db: DB = Depends(_get_db)) -> list[FiredAlert]:
+    existing = await db.get_run(run_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    project_id = existing.get("project_id") or None
+    return await evaluate_alerts(db, run_id, project_id=project_id)
 
 
 @app.get("/api/calls/{call_id}/events", response_model=list[TraceEventOut])

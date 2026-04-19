@@ -10,6 +10,7 @@ import json
 import logging
 import uuid
 from collections.abc import AsyncIterator, Callable, Sequence
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -1158,20 +1159,34 @@ async def _execute_tool(
         full_id = await db.resolve_page_id(qid_short)
         if not full_id:
             return f"Question '{qid_short}' not found."
-        calls = await db.get_root_calls_for_question(full_id)
-        calls = sorted(calls, key=lambda c: c.created_at, reverse=True)[:limit]
-        if not calls:
-            return f"No calls on {qid_short}."
-        lines = [f"{len(calls)} recent call(s) on {qid_short}:"]
-        for c in calls:
-            cost = f" ${c.cost_usd:.3f}" if c.cost_usd else ""
-            budget = f" budget={c.budget_used}/{c.budget_allocated or '?'}"
-            ts = c.created_at.strftime("%Y-%m-%d %H:%M")
-            lines.append(
-                f"  [{c.id[:8]}] {c.call_type.value} ({c.status.value}){cost}{budget} — {ts}"
+        rows = (
+            await db._execute(
+                db.client.table("calls")
+                .select(
+                    "id,call_type,status,created_at,budget_allocated,budget_used,"
+                    "cost_usd,result_summary"
+                )
+                .eq("scope_page_id", full_id)
+                .order("created_at", desc=True)
+                .limit(limit)
             )
-            if c.result_summary:
-                lines.append(f"    {c.result_summary[:200]}")
+        ).data or []
+        if not rows:
+            return f"No calls on {qid_short}."
+        lines = [f"{len(rows)} recent call(s) on {qid_short}:"]
+        for r in rows:
+            cost = f" ${r['cost_usd']:.3f}" if r.get("cost_usd") else ""
+            budget = f" budget={r.get('budget_used') or 0}/{r.get('budget_allocated') or '?'}"
+            ts_raw = r.get("created_at", "")
+            try:
+                ts = datetime.fromisoformat(ts_raw).strftime("%Y-%m-%d %H:%M")
+            except (TypeError, ValueError):
+                ts = str(ts_raw)[:16]
+            call_type = r.get("call_type") or "?"
+            status = r.get("status") or "?"
+            lines.append(f"  [{str(r['id'])[:8]}] {call_type} ({status}){cost}{budget} — {ts}")
+            if r.get("result_summary"):
+                lines.append(f"    {r['result_summary'][:200]}")
         return "\n".join(lines)
 
     if name == "get_call_trace":

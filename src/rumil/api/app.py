@@ -103,6 +103,16 @@ from rumil.views import View, build_view
 log = logging.getLogger(__name__)
 _trace_event_adapter = TypeAdapter(TraceEventOut)
 
+# Strong refs to fire-and-forget background tasks (orchestrator runs, AB
+# evals) so the event loop can't GC them mid-execution. Tasks deregister
+# themselves via add_done_callback.
+_live_background_tasks: set[asyncio.Task] = set()
+
+
+def _track_background(task: asyncio.Task) -> None:
+    _live_background_tasks.add(task)
+    task.add_done_callback(_live_background_tasks.discard)
+
 
 app = FastAPI(
     title="Rumil API",
@@ -545,10 +555,23 @@ async def list_pages_annotations_batch(
             detail=f"Too many ids: max {_ANNOTATIONS_BATCH_MAX} per call",
         )
     project_rows = _rows(
-        await db.client.table("pages").select("project_id").in_("id", page_ids).limit(1).execute()
+        await db.client.table("pages").select("project_id").in_("id", page_ids).execute()
     )
-    if project_rows and project_rows[0].get("project_id") and not db.project_id:
-        db.project_id = project_rows[0]["project_id"]
+    distinct_projects = {r["project_id"] for r in project_rows if r.get("project_id")}
+    if len(distinct_projects) > 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Batch contains pages from multiple projects",
+        )
+    if distinct_projects:
+        sole_project = next(iter(distinct_projects))
+        if db.project_id and db.project_id != sole_project:
+            raise HTTPException(
+                status_code=400,
+                detail="Batch pages don't match the requested project_id",
+            )
+        if not db.project_id:
+            db.project_id = sole_project
     return await db.get_annotations_by_target_pages(page_ids)
 
 
@@ -1184,7 +1207,7 @@ async def post_continue_question(
     new_run_id = str(uuid.uuid4())
     project_id = question.project_id or ""
 
-    asyncio.create_task(
+    task = asyncio.create_task(
         _run_background(
             f"continue question={question_id[:8]} run={new_run_id[:8]}",
             _run_continue_orchestrator(
@@ -1195,6 +1218,7 @@ async def post_continue_question(
             ),
         )
     )
+    _track_background(task)
 
     return {"run_id": new_run_id, "question_id": question_id, "budget": body.budget}
 
@@ -1298,7 +1322,7 @@ async def post_ab_eval(body: ABEvalIn, db: DB = Depends(_get_db)):
 
     project_id = run_a.get("project_id") or run_b.get("project_id") or ""
 
-    asyncio.create_task(
+    task = asyncio.create_task(
         _run_background(
             f"ab_eval a={body.run_id_a[:8]} b={body.run_id_b[:8]}",
             _run_ab_eval_background(
@@ -1308,6 +1332,7 @@ async def post_ab_eval(body: ABEvalIn, db: DB = Depends(_get_db)):
             ),
         )
     )
+    _track_background(task)
     return {
         "run_id_a": body.run_id_a,
         "run_id_b": body.run_id_b,

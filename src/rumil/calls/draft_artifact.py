@@ -264,6 +264,17 @@ async def _persist_artifact(
         full_id = item_page_ids_by_short.get(short[:8])
         if full_id is None:
             full_id = await db.resolve_page_id(short)
+            if full_id and db.project_id:
+                resolved_page = await db.get_page(full_id)
+                if resolved_page is None or resolved_page.project_id != db.project_id:
+                    log.info(
+                        "DraftArtifact: key_claim %r resolved to page %s outside "
+                        "project %s; skipping.",
+                        short,
+                        full_id[:8],
+                        db.project_id,
+                    )
+                    full_id = None
         if not full_id:
             log.info(
                 "DraftArtifact: key_claim %r did not resolve to a page; skipping.",

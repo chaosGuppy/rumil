@@ -66,7 +66,7 @@ MODEL_MAP: dict[str, str] = {
     "haiku": "claude-haiku-4-5-20251001",
 }
 
-CHAT_TURN_TIMEOUT_S = 120.0
+CHAT_TURN_TIMEOUT_S = 600.0
 
 CHAT_RUN_BUDGET = 50
 """Budget initialized for each chat turn's run.
@@ -2126,7 +2126,14 @@ async def _run_research(
 
         ct, cls = _CALL_TYPE_MAP[call_type_str]
         call = await db.create_call(ct, scope_page_id=question_id)
-        runner = cls(question_id, call, db)
+        runner = _build_runner(
+            cls,
+            call_type_str,
+            question_id,
+            call,
+            db,
+            max_rounds=DEFAULT_DISPATCH_MAX_ROUNDS,
+        )
         try:
             await runner.run()
             step_summaries.append(
@@ -2480,7 +2487,13 @@ async def _aggregate_turn_research_cost(
 
 
 async def handle_chat(request: ChatRequest) -> ChatResponse:
-    """Handle a chat request: build context, call LLM with tools, return response."""
+    """Handle a chat request: build context, call LLM with tools, return response.
+
+    Wraps the turn body in ``asyncio.wait_for(..., CHAT_TURN_TIMEOUT_S)`` so a
+    stuck round (hung upstream call, wedged tool) eventually returns an error
+    response instead of hanging the request indefinitely. Mirrors the stream
+    path's timeout behavior.
+    """
     settings = get_settings()
     db = await DB.create(
         run_id=str(uuid.uuid4()),
@@ -2491,7 +2504,7 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
     await db.create_run(name="chat", question_id=None, config={"origin": "chat"})
     await db.init_budget(CHAT_RUN_BUDGET)
 
-    try:
+    async def run_turn() -> ChatResponse:
         full_id = await db.resolve_page_id(request.question_id) if request.question_id else None
         if request.question_id and not full_id:
             conv_stub = await _ensure_conversation(db, request, None)
@@ -2622,6 +2635,27 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
             tool_uses=tool_uses_log,
             conversation_id=conv.id,
         )
+
+    try:
+        try:
+            return await asyncio.wait_for(run_turn(), timeout=CHAT_TURN_TIMEOUT_S)
+        except TimeoutError:
+            log.warning(
+                "chat turn hit CHAT_TURN_TIMEOUT_S (%ss); abandoning",
+                CHAT_TURN_TIMEOUT_S,
+            )
+            return ChatResponse(
+                response=f"Chat turn exceeded {CHAT_TURN_TIMEOUT_S:.0f}s and was abandoned.",
+                tool_uses=[],
+                conversation_id=request.conversation_id or "",
+            )
+        except Exception as e:
+            log.error("Chat error: %s", e, exc_info=True)
+            return ChatResponse(
+                response=f"Chat error: {e}",
+                tool_uses=[],
+                conversation_id=request.conversation_id or "",
+            )
     finally:
         await db.close()
 

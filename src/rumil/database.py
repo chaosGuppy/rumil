@@ -21,6 +21,20 @@ from tenacity import (
     wait_exponential,
 )
 
+# MutationState, _row_to_*, _rows, and the column constants now live in
+# rumil.db. They are re-exported here so existing callers that do
+# ``from rumil.database import _row_to_page`` (etc.) keep working.
+from rumil.db.mutation_log import MutationState as MutationState
+from rumil.db.row_helpers import _LINK_COLUMNS as _LINK_COLUMNS
+from rumil.db.row_helpers import _SLIM_PAGE_COLUMNS as _SLIM_PAGE_COLUMNS
+from rumil.db.row_helpers import _row_to_annotation_event as _row_to_annotation_event
+from rumil.db.row_helpers import _row_to_call as _row_to_call
+from rumil.db.row_helpers import _row_to_call_sequence as _row_to_call_sequence
+from rumil.db.row_helpers import _row_to_link as _row_to_link
+from rumil.db.row_helpers import _row_to_page as _row_to_page
+from rumil.db.row_helpers import _row_to_suggestion as _row_to_suggestion
+from rumil.db.row_helpers import _Rows as _Rows
+from rumil.db.row_helpers import _rows as _rows
 from rumil.models import (
     AnnotationEvent,
     Call,
@@ -30,34 +44,22 @@ from rumil.models import (
     ChatConversation,
     ChatMessage,
     ChatMessageRole,
-    ConsiderationDirection,
     LinkRole,
     LinkType,
     Page,
-    PageLayer,
     PageLink,
     PageType,
     Project,
     ReputationEvent,
     Suggestion,
     SuggestionStatus,
-    SuggestionType,
     Workspace,
 )
 from rumil.settings import get_settings
 from rumil.staged_overlay import StagedOverlay
 from supabase import AsyncClient, acreate_client
 
-# Supabase SDK types APIResponse.data as JSON | None, but table queries
-# always return list[dict]. We cast to this alias for clarity.
 log = logging.getLogger(__name__)
-
-_Rows = list[dict[str, Any]]
-
-
-def _rows(response: Any) -> _Rows:
-    """Extract rows from a Supabase API response with proper typing."""
-    return cast(_Rows, response.data) if response.data else []
 
 
 _DB_RETRYABLE_EXCEPTIONS = (
@@ -115,193 +117,6 @@ _db_retry = retry(
     before_sleep=_log_db_retry,
     reraise=True,
 )
-
-
-_LINK_COLUMNS = (
-    "id,from_page_id,to_page_id,link_type,direction,"
-    "strength,reasoning,role,importance,section,position,"
-    "impact_on_parent_question,created_at,run_id"
-)
-
-_SLIM_PAGE_COLUMNS = (
-    "id,page_type,layer,workspace,headline,abstract,"
-    "epistemic_status,epistemic_type,credence,robustness,importance,extra,is_superseded,"
-    "project_id,created_at,superseded_by,run_id"
-)
-
-
-def _row_to_page(row: dict[str, Any]) -> Page:
-    return Page(
-        id=row["id"],
-        page_type=PageType(row["page_type"]),
-        layer=PageLayer(row["layer"]),
-        workspace=Workspace(row["workspace"]),
-        content=row.get("content") or "",
-        headline=row["headline"],
-        project_id=row.get("project_id") or "",
-        epistemic_status=row.get("epistemic_status") or 0.0,
-        epistemic_type=row.get("epistemic_type") or "",
-        credence=row.get("credence"),
-        credence_reasoning=row.get("credence_reasoning"),
-        robustness=row.get("robustness"),
-        robustness_reasoning=row.get("robustness_reasoning"),
-        importance=row.get("importance"),
-        provenance_model=row.get("provenance_model") or "",
-        provenance_call_type=row.get("provenance_call_type") or "",
-        provenance_call_id=row.get("provenance_call_id") or "",
-        created_at=datetime.fromisoformat(row["created_at"]),
-        superseded_by=row.get("superseded_by"),
-        is_superseded=bool(row.get("is_superseded", False)),
-        extra=row.get("extra") or {},
-        abstract=row.get("abstract") or "",
-        fruit_remaining=row.get("fruit_remaining"),
-        sections=row.get("sections"),
-        meta_type=row.get("meta_type"),
-        run_id=row.get("run_id") or "",
-        task_shape=row.get("task_shape"),
-    )
-
-
-def _row_to_link(row: dict[str, Any]) -> PageLink:
-    return PageLink(
-        id=row["id"],
-        from_page_id=row["from_page_id"],
-        to_page_id=row["to_page_id"],
-        link_type=LinkType(row["link_type"]),
-        direction=(ConsiderationDirection(row["direction"]) if row["direction"] else None),
-        strength=row["strength"],
-        reasoning=row["reasoning"] or "",
-        role=LinkRole(row.get("role", "direct")),
-        importance=row.get("importance"),
-        section=row.get("section"),
-        position=row.get("position"),
-        impact_on_parent_question=row.get("impact_on_parent_question"),
-        created_at=datetime.fromisoformat(row["created_at"]),
-        run_id=row.get("run_id") or "",
-    )
-
-
-def _row_to_call(row: dict[str, Any]) -> Call:
-    return Call(
-        id=row["id"],
-        call_type=CallType(row["call_type"]),
-        workspace=Workspace(row["workspace"]),
-        project_id=row.get("project_id") or "",
-        status=CallStatus(row["status"]),
-        parent_call_id=row["parent_call_id"],
-        scope_page_id=row["scope_page_id"],
-        budget_allocated=row["budget_allocated"],
-        budget_used=row["budget_used"],
-        context_page_ids=row.get("context_page_ids") or [],
-        result_summary=row.get("result_summary") or "",
-        review_json=row.get("review_json") or {},
-        call_params=row.get("call_params"),
-        created_at=datetime.fromisoformat(row["created_at"]),
-        completed_at=(datetime.fromisoformat(row["completed_at"]) if row["completed_at"] else None),
-        sequence_id=row.get("sequence_id"),
-        sequence_position=row.get("sequence_position"),
-        cost_usd=row.get("cost_usd"),
-    )
-
-
-def _row_to_suggestion(row: dict[str, Any]) -> Suggestion:
-    return Suggestion(
-        id=str(row["id"]),
-        project_id=row.get("project_id") or "",
-        workspace=row.get("workspace") or "research",
-        run_id=row.get("run_id") or "",
-        suggestion_type=SuggestionType(row["suggestion_type"]),
-        target_page_id=row["target_page_id"],
-        source_page_id=row.get("source_page_id"),
-        payload=row.get("payload") or {},
-        status=SuggestionStatus(row["status"]),
-        created_at=datetime.fromisoformat(row["created_at"]),
-        reviewed_at=(
-            datetime.fromisoformat(row["reviewed_at"]) if row.get("reviewed_at") else None
-        ),
-        staged=bool(row.get("staged", False)),
-    )
-
-
-def _row_to_call_sequence(row: dict[str, Any]) -> CallSequence:
-    return CallSequence(
-        id=row["id"],
-        parent_call_id=row.get("parent_call_id"),
-        run_id=row.get("run_id", ""),
-        scope_question_id=row.get("scope_question_id"),
-        position_in_batch=row.get("position_in_batch", 0),
-        created_at=datetime.fromisoformat(row["created_at"]),
-    )
-
-
-def _row_to_annotation_event(row: dict[str, Any]) -> AnnotationEvent:
-    return AnnotationEvent(
-        id=row["id"],
-        project_id=row.get("project_id"),
-        run_id=row.get("run_id"),
-        annotation_type=row["annotation_type"],
-        author_type=row["author_type"],
-        author_id=row["author_id"],
-        target_page_id=row.get("target_page_id"),
-        target_call_id=row.get("target_call_id"),
-        target_event_seq=row.get("target_event_seq"),
-        span_start=row.get("span_start"),
-        span_end=row.get("span_end"),
-        category=row.get("category"),
-        note=row.get("note") or "",
-        payload=row.get("payload") or {},
-        extra=row.get("extra") or {},
-        staged=row.get("staged", False),
-        created_at=datetime.fromisoformat(row["created_at"]),
-    )
-
-
-class MutationState:
-    """Cached mutation events for a staged run, keyed by target_id.
-
-    The "forward" fields (``superseded_pages`` etc.) replay events *visible*
-    to the staged run — its own events plus baseline events up to
-    ``snapshot_ts``. The "unapply" fields undo baseline mutations that were
-    *written directly to the base tables* after the snapshot: the base
-    rows now reflect post-snapshot state that the staged run must not see,
-    and we use the mutation event log to revert them on read.
-    """
-
-    __slots__ = (
-        "credence_overrides",
-        "deleted_links",
-        "link_role_overrides",
-        "page_content_overrides",
-        "robustness_overrides",
-        "superseded_pages",
-        "unapply_credence",
-        "unapply_robustness",
-        "unapply_role_overrides",
-        "unapply_supersessions",
-        "unapply_update_content",
-    )
-
-    def __init__(self) -> None:
-        self.superseded_pages: dict[str, str] = {}
-        self.deleted_links: set[str] = set()
-        self.link_role_overrides: dict[str, LinkRole] = {}
-        self.page_content_overrides: dict[str, str] = {}
-        # page_id -> (value, reasoning) for latest set_credence/set_robustness.
-        self.credence_overrides: dict[str, tuple[int | None, str | None]] = {}
-        self.robustness_overrides: dict[str, tuple[int | None, str | None]] = {}
-        # Pages whose baseline row currently shows superseded/updated content
-        # but whose supersession/update event landed *after* snapshot_ts.
-        # On read, the staged run should see the pre-mutation state:
-        # is_superseded=False + original content from the event payload.
-        self.unapply_supersessions: set[str] = set()
-        self.unapply_update_content: dict[str, str] = {}
-        # Same shape as the forward overrides, but carrying the pre-mutation
-        # value to restore on read for post-snapshot baseline score events.
-        self.unapply_credence: dict[str, tuple[int | None, str | None]] = {}
-        self.unapply_robustness: dict[str, tuple[int | None, str | None]] = {}
-        # Links whose role was changed on the base table after the snapshot.
-        # Maps link_id -> the role value to restore (the event's old_role).
-        self.unapply_role_overrides: dict[str, LinkRole] = {}
 
 
 class DB:

@@ -43,6 +43,10 @@ interface ChatPanelProps {
   openRunId?: string;
   openPageIds?: string[];
   viewMode?: string;
+  openCallId?: string;
+  drawerPageId?: string;
+  activeSection?: string;
+  reviewOpen?: boolean;
 }
 
 function contentToText(content: unknown): string {
@@ -325,6 +329,10 @@ export function ChatPanel({
   openRunId,
   openPageIds,
   viewMode,
+  openCallId,
+  drawerPageId,
+  activeSection,
+  reviewOpen,
 }: ChatPanelProps) {
   const initialAssistantMessage: Message = {
     id: "initial",
@@ -744,7 +752,15 @@ export function ChatPanel({
           }
           updateMsg();
         }
-      }, workspace, model, conversationId ?? undefined, openRunId, openPageIds, viewMode);
+      }, workspace, model, conversationId ?? undefined, {
+        openRunId,
+        openPageIds,
+        viewMode,
+        openCallId,
+        drawerPageId,
+        activeSection,
+        reviewOpen,
+      });
 
       setMessages((prev) =>
         prev.map((m) =>
@@ -768,7 +784,7 @@ export function ChatPanel({
     } finally {
       setIsLoading(false);
     }
-  }, [input, isLoading, messages, questionId, onMessageSent, onNodeRef, workspace, onShowReview, conversationId, model, refreshConversations, openInspect, openRunId, openPageIds]);
+  }, [input, isLoading, messages, questionId, onMessageSent, onNodeRef, workspace, onShowReview, conversationId, model, refreshConversations, openInspect, openRunId, openPageIds, viewMode, openCallId, drawerPageId, activeSection, reviewOpen]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {

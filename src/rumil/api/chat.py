@@ -73,6 +73,10 @@ class ChatRequest(BaseModel):
     open_run_id: str | None = None
     open_page_ids: list[str] = []
     view_mode: str | None = None
+    open_call_id: str | None = None
+    drawer_page_id: str | None = None
+    active_section: str | None = None
+    review_open: bool = False
 
 
 class ToolUseInfo(BaseModel):
@@ -1673,6 +1677,10 @@ async def _build_ui_state_block(
     open_run_id: str | None,
     open_page_ids: Sequence[str],
     view_mode: str | None = None,
+    open_call_id: str | None = None,
+    drawer_page_id: str | None = None,
+    active_section: str | None = None,
+    review_open: bool = False,
 ) -> str:
     """Render a short 'Currently open in UI' block for the system prompt.
 
@@ -1705,6 +1713,21 @@ async def _build_ui_state_block(
         except Exception:
             log.debug("Failed to resolve open_run_id '%s'", open_run_id, exc_info=True)
 
+    if open_call_id:
+        lines.append(f"- Selected call in trace: {open_call_id[:8]}")
+
+    if drawer_page_id:
+        try:
+            resolved = await db.resolve_page_id(drawer_page_id)
+            page = await db.get_page(resolved) if resolved else None
+            if page:
+                headline = (page.headline or "")[:80]
+                lines.append(
+                    f'- Open in inspect drawer: {page.id[:8]} ({page.page_type.value}, "{headline}")'
+                )
+        except Exception:
+            log.debug("Failed to resolve drawer_page_id '%s'", drawer_page_id, exc_info=True)
+
     if open_page_ids:
         try:
             resolved = await db.resolve_page_ids(list(open_page_ids))
@@ -1718,10 +1741,16 @@ async def _build_ui_state_block(
                     headline = (page.headline or "")[:80]
                     rendered.append(f'  - {page.id[:8]} ({page.page_type.value}, "{headline}")')
             if rendered:
-                lines.append("- Open in inspect panel:")
+                lines.append("- Pinned panes:")
                 lines.extend(rendered)
         except Exception:
             log.debug("Failed to resolve open_page_ids %r", list(open_page_ids), exc_info=True)
+
+    if active_section:
+        lines.append(f"- Reading section: {active_section}")
+
+    if review_open:
+        lines.append("- Suggestion review modal is open")
 
     if not lines:
         return ""
@@ -1887,7 +1916,16 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
         system_prompt = (PROMPTS_DIR / "api_chat.md").read_text(encoding="utf-8")
         context_scope_id = full_id or ""
         context_text = await build_chat_context(full_id, db) if full_id else "(no question scope)"
-        ui_block = await _build_ui_state_block(db, request.open_run_id, request.open_page_ids, request.view_mode)
+        ui_block = await _build_ui_state_block(
+            db,
+            request.open_run_id,
+            request.open_page_ids,
+            request.view_mode,
+            request.open_call_id,
+            request.drawer_page_id,
+            request.active_section,
+            request.review_open,
+        )
         preamble = f"{ui_block}\n\n" if ui_block else ""
         full_system = f"{system_prompt}\n\n---\n\n{preamble}{context_text}"
 
@@ -2041,7 +2079,16 @@ async def handle_chat_stream(request: ChatRequest) -> StreamingResponse:
 
     system_prompt = (PROMPTS_DIR / "api_chat.md").read_text(encoding="utf-8")
     context_text = await build_chat_context(full_id, db) if full_id else "(no question scope)"
-    ui_block = await _build_ui_state_block(db, request.open_run_id, request.open_page_ids, request.view_mode)
+    ui_block = await _build_ui_state_block(
+        db,
+        request.open_run_id,
+        request.open_page_ids,
+        request.view_mode,
+        request.open_call_id,
+        request.drawer_page_id,
+        request.active_section,
+        request.review_open,
+    )
     preamble = f"{ui_block}\n\n" if ui_block else ""
     full_system = f"{system_prompt}\n\n---\n\n{preamble}{context_text}"
     model_id = MODEL_MAP.get(request.model, MODEL_MAP["sonnet"])

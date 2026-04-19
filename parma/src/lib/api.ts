@@ -340,6 +340,16 @@ export interface ChatTurnCosts {
   research_by_call_type: Record<string, number>;
 }
 
+export interface ChatUiSnapshot {
+  viewMode?: string;
+  openRunId?: string;
+  openCallId?: string;
+  openPageIds?: string[];
+  drawerPageId?: string;
+  activeSection?: string;
+  reviewOpen?: boolean;
+}
+
 export async function streamChatMessage(
   questionId: string,
   messages: { role: string; content: string }[],
@@ -347,9 +357,7 @@ export async function streamChatMessage(
   workspace: string = "default",
   model: string = "sonnet",
   conversationId?: string,
-  openRunId?: string,
-  openPageIds?: string[],
-  viewMode?: string,
+  ui?: ChatUiSnapshot,
 ): Promise<void> {
   const res = await fetch(`${API_BASE}/api/chat/stream`, {
     method: "POST",
@@ -360,9 +368,13 @@ export async function streamChatMessage(
       workspace,
       model,
       conversation_id: conversationId ?? null,
-      open_run_id: openRunId ?? null,
-      open_page_ids: openPageIds ?? [],
-      view_mode: viewMode ?? null,
+      open_run_id: ui?.openRunId ?? null,
+      open_page_ids: ui?.openPageIds ?? [],
+      view_mode: ui?.viewMode ?? null,
+      open_call_id: ui?.openCallId ?? null,
+      drawer_page_id: ui?.drawerPageId ?? null,
+      active_section: ui?.activeSection ?? null,
+      review_open: ui?.reviewOpen ?? false,
     }),
   });
   if (!res.ok) throw new Error(`API error: ${res.status}`);

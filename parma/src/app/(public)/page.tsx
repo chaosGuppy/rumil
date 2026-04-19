@@ -1221,6 +1221,9 @@ function QuestionViewPage({
         openRunId={traceRunId ?? undefined}
         openPageIds={openPaneIds}
         viewMode={viewMode}
+        openCallId={traceCallId ?? undefined}
+        drawerPageId={openShortId ?? undefined}
+        reviewOpen={showReview}
       />
       <SourceDrawer
         source={drawerSource}

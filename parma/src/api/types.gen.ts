@@ -35,15 +35,15 @@ export type AbEvalDimensionOut = {
     /**
      * Call Id A
      */
-    call_id_a?: string;
+    call_id_a: string;
     /**
      * Call Id B
      */
-    call_id_b?: string;
+    call_id_b: string;
     /**
      * Comparison Call Id
      */
-    comparison_call_id?: string;
+    comparison_call_id: string;
 };
 
 /**
@@ -97,19 +97,19 @@ export type AbEvalReportListItemOut = {
     /**
      * Question Id A
      */
-    question_id_a?: string;
+    question_id_a: string;
     /**
      * Question Id B
      */
-    question_id_b?: string;
+    question_id_b: string;
     /**
      * Question Headline
      */
-    question_headline?: string;
+    question_headline: string;
     /**
      * Overall Assessment Preview
      */
-    overall_assessment_preview?: string;
+    overall_assessment_preview: string;
     /**
      * Preferences
      */
@@ -139,15 +139,15 @@ export type AbEvalReportOut = {
     /**
      * Question Id A
      */
-    question_id_a?: string;
+    question_id_a: string;
     /**
      * Question Id B
      */
-    question_id_b?: string;
+    question_id_b: string;
     /**
      * Question Headline
      */
-    question_headline?: string;
+    question_headline: string;
     /**
      * Overall Assessment
      */
@@ -155,7 +155,7 @@ export type AbEvalReportOut = {
     /**
      * Overall Assessment Call Id
      */
-    overall_assessment_call_id?: string;
+    overall_assessment_call_id: string;
     /**
      * Dimension Reports
      */
@@ -163,13 +163,13 @@ export type AbEvalReportOut = {
     /**
      * Config A
      */
-    config_a?: {
+    config_a: {
         [key: string]: unknown;
     };
     /**
      * Config B
      */
-    config_b?: {
+    config_b: {
         [key: string]: unknown;
     };
     /**
@@ -587,15 +587,15 @@ export type CallNodeOut = {
     /**
      * Scope Page Summary
      */
-    scope_page_summary?: string | null;
+    scope_page_summary: string | null;
     /**
      * Warning Count
      */
-    warning_count?: number;
+    warning_count: number;
     /**
      * Error Count
      */
-    error_count?: number;
+    error_count: number;
 };
 
 /**
@@ -1573,7 +1573,7 @@ export type LlmExchangeOut = {
     /**
      * User Messages
      */
-    user_messages?: Array<{
+    user_messages: Array<{
         [key: string]: unknown;
     }> | null;
     /**
@@ -2715,7 +2715,7 @@ export type RunSummaryOut = {
     /**
      * Provenance Call Id
      */
-    provenance_call_id?: string;
+    provenance_call_id: string;
 };
 
 /**
@@ -2734,15 +2734,15 @@ export type RunTraceTreeOut = {
     /**
      * Cost Usd
      */
-    cost_usd?: number | null;
+    cost_usd: number | null;
     /**
      * Staged
      */
-    staged?: boolean;
+    staged: boolean;
     /**
      * Config
      */
-    config?: {
+    config: {
         [key: string]: unknown;
     };
 };

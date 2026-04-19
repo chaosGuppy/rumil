@@ -3886,7 +3886,10 @@
           "preference",
           "report_a",
           "report_b",
-          "comparison"
+          "comparison",
+          "call_id_a",
+          "call_id_b",
+          "comparison_call_id"
         ],
         "title": "ABEvalDimensionOut"
       },
@@ -3982,6 +3985,10 @@
           "id",
           "run_id_a",
           "run_id_b",
+          "question_id_a",
+          "question_id_b",
+          "question_headline",
+          "overall_assessment_preview",
           "preferences",
           "created_at"
         ],
@@ -4054,8 +4061,14 @@
           "id",
           "run_id_a",
           "run_id_b",
+          "question_id_a",
+          "question_id_b",
+          "question_headline",
           "overall_assessment",
+          "overall_assessment_call_id",
           "dimension_reports",
+          "config_a",
+          "config_b",
           "created_at"
         ],
         "title": "ABEvalReportOut"
@@ -4742,7 +4755,10 @@
         },
         "type": "object",
         "required": [
-          "call"
+          "call",
+          "scope_page_summary",
+          "warning_count",
+          "error_count"
         ],
         "title": "CallNodeOut"
       },
@@ -6420,6 +6436,7 @@
           "round",
           "system_prompt",
           "user_message",
+          "user_messages",
           "response_text",
           "tool_calls",
           "input_tokens",
@@ -8151,7 +8168,8 @@
         "type": "object",
         "required": [
           "run_id",
-          "created_at"
+          "created_at",
+          "provenance_call_id"
         ],
         "title": "RunSummaryOut"
       },
@@ -8205,7 +8223,10 @@
         "required": [
           "run_id",
           "question",
-          "calls"
+          "calls",
+          "cost_usd",
+          "staged",
+          "config"
         ],
         "title": "RunTraceTreeOut"
       },

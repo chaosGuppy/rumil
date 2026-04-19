@@ -510,6 +510,8 @@ class LLMExchangeSummaryOut(BaseModel):
 
 
 class LLMExchangeOut(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
     id: str
     call_id: str
     phase: str
@@ -546,6 +548,8 @@ class CallSummary(BaseModel):
 
 
 class CallNodeOut(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
     call: CallSummary
     scope_page_summary: str | None = None
     warning_count: int = 0
@@ -553,6 +557,8 @@ class CallNodeOut(BaseModel):
 
 
 class RunTraceTreeOut(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
     run_id: str
     question: Page | None
     calls: list[CallNodeOut]
@@ -562,6 +568,8 @@ class RunTraceTreeOut(BaseModel):
 
 
 class RunSummaryOut(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
     run_id: str
     created_at: str
     provenance_call_id: str = ""
@@ -678,6 +686,8 @@ class SearchResultsOut(BaseModel):
 
 
 class ABEvalDimensionOut(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
     name: str
     display_name: str
     preference: str
@@ -690,6 +700,8 @@ class ABEvalDimensionOut(BaseModel):
 
 
 class ABEvalReportOut(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
     id: str
     run_id_a: str
     run_id_b: str
@@ -711,6 +723,8 @@ class ABEvalDimensionSummaryOut(BaseModel):
 
 
 class ABEvalReportListItemOut(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
     id: str
     run_id_a: str
     run_id_b: str

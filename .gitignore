@@ -239,6 +239,7 @@ __marimo__/
 
 .a.env
 .b.env
+parma/.env.local
 
 # Decrypted secrets (encrypted version secrets.enc.yaml is safe to commit)
 deploy/chart/secrets.yaml

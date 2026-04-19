@@ -832,13 +832,17 @@ async def _flag_rows_for_page(db: DB, page_id: str) -> list[dict]:
     return result.data or []
 
 
-async def _epistemic_score_rows(db: DB, page_id: str) -> list[dict]:
-    result = await db._execute(
-        db.client.table("epistemic_scores")
-        .select("id,staged,run_id,credence,robustness")
-        .eq("page_id", page_id)
-    )
-    return result.data or []
+async def _page_score_from_db(db: DB, page_id: str) -> tuple[int | None, int | None]:
+    """Read the currently-visible credence/robustness for *page_id*.
+
+    Uses the regular page read path so staged-run overlays and
+    mutation-event replay are applied the same way they would be in
+    production code.
+    """
+    page = await db.get_page(page_id)
+    if page is None:
+        return None, None
+    return page.credence, page.robustness
 
 
 async def _format_event_rows(db: DB, call_id: str) -> list[dict]:
@@ -960,13 +964,11 @@ async def test_staged_epistemic_score_is_isolated(baseline_db, staged_db, observ
     await baseline_db.save_epistemic_score(page.id, baseline_call.id, credence=5, robustness=2)
     await staged_db.save_epistemic_score(page.id, staged_call.id, credence=8, robustness=4)
 
-    all_rows = await _epistemic_score_rows(observer_db, page.id)
-    observer_visible = _visible_to_observer(all_rows)
-    assert len(observer_visible) == 1
-    assert observer_visible[0]["credence"] == 5
+    observer_credence, observer_robustness = await _page_score_from_db(observer_db, page.id)
+    assert (observer_credence, observer_robustness) == (5, 2)
 
-    staged_visible = _visible_to_staged(all_rows, staged_db.run_id)
-    assert len(staged_visible) == 2
+    staged_credence, staged_robustness = await _page_score_from_db(staged_db, page.id)
+    assert (staged_credence, staged_robustness) == (8, 4)
 
 
 async def test_stage_run_hides_epistemic_scores_from_baseline(project_id):
@@ -979,13 +981,14 @@ async def test_stage_run_hides_epistemic_scores_from_baseline(project_id):
     call = await _make_call(run_db, page)
     await run_db.save_epistemic_score(page.id, call.id, credence=7, robustness=3)
 
-    pre_rows = await _epistemic_score_rows(observer, page.id)
-    assert len(_visible_to_observer(pre_rows)) == 1
+    pre_credence, pre_robustness = await _page_score_from_db(observer, page.id)
+    assert (pre_credence, pre_robustness) == (7, 3)
 
     await helper.stage_run(run_db.run_id)
 
-    post_rows = await _epistemic_score_rows(observer, page.id)
-    assert len(_visible_to_observer(post_rows)) == 0
+    post_credence, post_robustness = await _page_score_from_db(observer, page.id)
+    assert post_credence is None
+    assert post_robustness is None
 
     await run_db.delete_run_data()
     await helper.delete_run_data()

@@ -87,32 +87,37 @@ async def execute(payload: UpdateEpistemicPayload, call: Call, db: DB) -> MoveRe
         return MoveResult(f"Page {payload.page_id} not found.")
     if page.page_type == PageType.QUESTION:
         return MoveResult("Cannot update epistemic scores on a question page.")
+    if payload.credence is not None and page.page_type != PageType.CLAIM:
+        return MoveResult("Credence can only be set on claim pages.")
 
     old_credence = page.credence
     old_robustness = page.robustness
-    parts: list[str] = []
 
-    if payload.credence is not None and payload.robustness is not None:
-        source_page_id = await db.get_latest_judgement_for_call(call.id)
-        await db.save_epistemic_score(
-            page_id,
-            call.id,
-            payload.credence,
-            payload.robustness,
-            payload.reasoning,
-            source_page_id=source_page_id,
-        )
-        parts.append(f"C{payload.credence}/R{payload.robustness}")
-        log.info(
-            "Epistemic scores updated: page=%s C%d/R%d",
-            payload.page_id[:8],
-            payload.credence,
-            payload.robustness,
-        )
-
-    if not parts:
+    if payload.credence is None and payload.robustness is None:
         return MoveResult("No scores provided to update.")
 
+    source_page_id = await db.get_latest_judgement_for_call(call.id)
+    await db.save_epistemic_score(
+        page_id,
+        call.id,
+        credence=payload.credence,
+        robustness=payload.robustness,
+        reasoning=payload.reasoning,
+        source_page_id=source_page_id,
+    )
+    parts: list[str] = []
+    if payload.credence is not None:
+        parts.append(f"C{payload.credence}")
+    if payload.robustness is not None:
+        parts.append(f"R{payload.robustness}")
+    score_label = "/".join(parts)
+    log.info(
+        "Epistemic scores updated: page=%s %s",
+        payload.page_id[:8],
+        score_label,
+    )
+
+    message_parts: list[str] = [score_label]
     cascade_changes: dict[str, tuple[object, object]] = {}
     if payload.credence is not None and old_credence is not None:
         cascade_changes["credence"] = (old_credence, payload.credence)
@@ -126,9 +131,9 @@ async def execute(payload: UpdateEpistemicPayload, call: Call, db: DB) -> MoveRe
             call_id=call.id,
         )
         if suggestions:
-            parts.append(f"{len(suggestions)} cascade(s) flagged")
+            message_parts.append(f"{len(suggestions)} cascade(s) flagged")
 
-    return MoveResult(f"Updated {page_id[:8]}: {', '.join(parts)}")
+    return MoveResult(f"Updated {page_id[:8]}: {', '.join(message_parts)}")
 
 
 MOVE = MoveDef(

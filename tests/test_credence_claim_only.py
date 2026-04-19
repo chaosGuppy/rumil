@@ -6,11 +6,10 @@ credence" refactor:
 - the CREATE_JUDGEMENT payload no longer accepts a credence field
 - create_page() never persists credence on non-claim pages
 - update_epistemic rejects credence updates on non-claims but allows
-  robustness-only updates (currently xfail — requires the
-  epistemic_scores -> mutation_events migration to be wired through)
+  robustness-only updates (now that scores flow through mutation_events,
+  partial updates are supported).
 """
 
-import pytest
 import pytest_asyncio
 
 from rumil.models import (
@@ -164,15 +163,6 @@ async def test_create_claim_persists_credence(tmp_db, find_cons_call):
     assert page.robustness == 2
 
 
-@pytest.mark.xfail(
-    reason=(
-        "update_epistemic currently requires both credence and robustness "
-        "together because save_epistemic_score does. Partial-update support "
-        "needs the epistemic_scores -> mutation_events migration to be wired "
-        "through the app layer."
-    ),
-    strict=True,
-)
 async def test_update_epistemic_rejects_credence_on_judgement(tmp_db, assess_call, question_page):
     """Credence updates are claim-only; a judgement must be rejected."""
     judgement = Page(
@@ -197,15 +187,6 @@ async def test_update_epistemic_rejects_credence_on_judgement(tmp_db, assess_cal
     assert refreshed.credence is None
 
 
-@pytest.mark.xfail(
-    reason=(
-        "update_epistemic currently requires both credence and robustness "
-        "together because save_epistemic_score does. Partial-update support "
-        "needs the epistemic_scores -> mutation_events migration to be wired "
-        "through the app layer."
-    ),
-    strict=True,
-)
 async def test_update_epistemic_allows_robustness_on_judgement(tmp_db, assess_call, question_page):
     """Robustness-only updates on non-claim pages go through."""
     judgement = Page(

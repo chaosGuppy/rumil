@@ -70,7 +70,20 @@ Do NOT add "allow all" policies. If you need non-service-role access, add target
 
 ## Architecture
 
-**Entry point:** `main.py` — CLI arg parsing, dispatches to command functions. A pending refactor promotes `Run` to a real control plane in `src/rumil/run_executor/`; schema lives in the `20260419102100_run_executor_schema` migration (`runs.status/started_at/finished_at/cost_usd_cents/paused_at/cancel_reason`, plus `call_costs` and `run_checkpoints` tables). Today `RunExecutor` exposes only `.status(run_id) -> RunView | None`; `start` / `pause` / `resume` / `cancel` / `wait_until_settled` / `events` raise `NotImplementedError` and land in later phases. The active dispatch path (`main.py`'s six cmd_* scaffolds, `scripts/run_call.py`, `api/app.py`'s `_run_background*` family) is unchanged and still owns writes.
+**Entry point:** `main.py` — CLI arg parsing, dispatches to command functions. The `Run` control plane lives in `src/rumil/run_executor/` (schema: migration `20260419102100_run_executor_schema` — `runs.status/started_at/finished_at/cost_usd_cents/paused_at/cancel_reason`, `call_costs`, `run_checkpoints`). `RunExecutor` exposes:
+
+- `status(run_id)` → `RunView | None`
+- `start(spec)` → creates the run row, spawns the `spec.kind`'s handler as an `asyncio.Task` wrapped in `tracked_scope`, registers it in a process-global `_ACTIVE_RUNS` so other `RunExecutor` instances can reach it
+- `cancel(run_id, reason)` / `wait_until_settled(run_id, timeout)` — task-level control
+- `pause(run_id)` / `resume(run_id)` / `is_paused(run_id)` / `wait_while_paused(run_id)` — cooperative pausing at the DB level; handlers opt in by polling
+- `mark_started/complete/failed/cancelled` — direct status transitions (what `tracked_scope` uses internally)
+- `checkpoint(run_id, kind, payload)` / `latest_checkpoint` / `list_checkpoints` / `is_resumable(run_id)` — append-only checkpoint trail for orchestrators that want to write stage-boundary state for future resume
+- `sum_call_costs(run_id)` / `would_exceed_budget(run_id)` — dollar circuit breaker; orchestrators poll before dispatching to enforce `RunSpec.budget_usd`
+- `create_run_from_spec(spec)` + `tracked_scope(run_id)` — the lower-level primitives `start()` composes; callers not ready for the full integrated path use these directly (see `scripts/run_call.py`)
+
+Handlers for the four canonical `RunSpec.kind`s (`orchestrator`, `evaluation`, `single_call`, `grounding_pipeline`) are registered in `rumil.run_executor.handlers` and wrap the existing `dispatch_*` coroutines. Register custom kinds via `register_handler`.
+
+Not yet wired: `events(run_id)` raises NotImplementedError (needs a per-run broker). Orchestrators don't yet poll `is_paused` / `would_exceed_budget` / write checkpoints on their own — the surface is ready for when they do. `main.py`'s six cmd_* scaffolds and `api/app.py`'s `_run_background*` family still own their own dispatch; migrating them is opt-in (`scripts/run_call.py` already wraps its dispatch in `tracked_scope`).
 
 **Single-call runner** (`scripts/run_call.py`): Runs one call type against the local database. Supports `--workspace`, `--smoke-test`, `--ab` (A/B testing with `.a.env`/`.b.env`), `--name`, and `--up-to-stage` (truncate the call lifecycle after `build_context` or `update_workspace`). Runs are recorded in the `runs` table with captured config.
 

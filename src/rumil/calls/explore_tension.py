@@ -237,13 +237,15 @@ async def _run_scout(
 
 async def _render_scout_output(scout_call_id: str, db: DB, heading: str) -> str:
     """Render all pages a scout produced as markdown for the synthesizer."""
-    rows = await db._execute(
+    query = (
         db.client.table("pages")
         .select("id")
         .eq("provenance_call_id", scout_call_id)
         .eq("is_superseded", False)
         .order("created_at")
     )
+    # TODO: event-replay overlay (see CLAUDE.md staged-runs section)
+    rows = await db._execute(db._staged_filter(query))
     page_ids = [r["id"] for r in (rows.data or [])]
     if not page_ids:
         return f"## {heading}\n\n(no pages produced)\n"

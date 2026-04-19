@@ -768,7 +768,7 @@ async def adversarially_review_claim(
     if refreshed is None or refreshed.status != CallStatus.COMPLETE:
         return None
 
-    verdict_rows = await db._execute(
+    query = (
         db.client.table("pages")
         .select("extra")
         .eq("provenance_call_id", call.id)
@@ -777,6 +777,8 @@ async def adversarially_review_claim(
         .order("created_at", desc=True)
         .limit(1)
     )
+    # TODO: event-replay overlay (see CLAUDE.md staged-runs section)
+    verdict_rows = await db._execute(db._staged_filter(query))
     rows = verdict_rows.data or []
     if not rows:
         return None
@@ -795,6 +797,9 @@ async def has_adversarial_review(db: DB, target_page_id: str) -> bool:
     per ``is_verdict_expired``. An expired verdict returns False so the
     gate fires a fresh review.
     """
+    # TODO: staged-runs visibility — calls table has no `staged` column today,
+    # so `_staged_filter` cannot be applied here. See CLAUDE.md staged-runs
+    # section; a fuller fix requires extending the schema and event replay.
     rows = await db._execute(
         db.client.table("calls")
         .select("id")
@@ -807,7 +812,7 @@ async def has_adversarial_review(db: DB, target_page_id: str) -> bool:
     if not call_ids:
         return False
 
-    verdict_rows = await db._execute(
+    verdict_query = (
         db.client.table("pages")
         .select("extra")
         .in_("provenance_call_id", call_ids)
@@ -816,6 +821,8 @@ async def has_adversarial_review(db: DB, target_page_id: str) -> bool:
         .order("created_at", desc=True)
         .limit(1)
     )
+    # TODO: event-replay overlay (see CLAUDE.md staged-runs section)
+    verdict_rows = await db._execute(db._staged_filter(verdict_query))
     data = verdict_rows.data or []
     if not data:
         # Call completed but no verdict page materialised — treat as no review

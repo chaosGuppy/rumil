@@ -168,12 +168,10 @@ def test_every_dispatchable_call_type_has_a_runner_class() -> None:
         "Add entries to rumil.calls.call_registry.CALL_RUNNER_CLASSES."
     )
 
-    stray = set(CALL_RUNNER_CLASSES) - set(DISPATCHABLE_CALL_TYPES)
-    assert not stray, (
-        f"CALL_RUNNER_CLASSES has runners for non-dispatchable CallTypes: "
-        f"{sorted(ct.value for ct in stray)}. Either add to "
-        "DISPATCHABLE_CALL_TYPES or drop the runner entry."
-    )
+    # CALL_RUNNER_CLASSES is a superset — it may register runners for call
+    # types that prioritization can't dispatch (e.g. CREATE_VIEW, fired
+    # only by explicit skill/CLI paths). That's intentional; we only
+    # require the other direction.
 
 
 def test_every_trace_event_is_surfaced_or_suppressed() -> None:

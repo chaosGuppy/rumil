@@ -157,10 +157,6 @@ export type AbEvalReportOut = {
      */
     overall_assessment_call_id: string;
     /**
-     * Eval Run Id
-     */
-    eval_run_id?: string;
-    /**
      * Dimension Reports
      */
     dimension_reports: Array<AbEvalDimensionOut>;
@@ -665,7 +661,7 @@ export type CallSummary = {
 /**
  * CallType
  */
-export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'ab_eval' | 'ab_eval_comparison' | 'ab_eval_summary' | 'run_eval' | 'single_call_baseline' | 'create_view' | 'global_prioritization' | 'update_view' | 'chat_direct' | 'adversarial_review' | 'explore_tension' | 'draft_artifact' | 'claude_code_direct' | 'author_inlay';
+export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'ab_eval' | 'ab_eval_comparison' | 'ab_eval_summary' | 'run_eval' | 'single_call_baseline' | 'create_view' | 'global_prioritization' | 'update_view' | 'chat_direct' | 'adversarial_review' | 'explore_tension' | 'draft_artifact' | 'build_model' | 'claude_code_direct' | 'author_inlay';
 
 /**
  * CallTypeFruitScoreItem
@@ -725,18 +721,6 @@ export type CallsForQuestion = {
      * Total
      */
     total: number;
-    /**
-     * Child Questions
-     */
-    child_questions: number;
-    /**
-     * Considerations
-     */
-    considerations: number;
-    /**
-     * Judgements
-     */
-    judgements: number;
 };
 
 /**
@@ -1161,6 +1145,49 @@ export type DegreeCell = {
      * Avg In
      */
     avg_in: number;
+};
+
+/**
+ * DispatchCallIn
+ */
+export type DispatchCallIn = {
+    /**
+     * Call Type
+     */
+    call_type: string;
+    /**
+     * Max Rounds
+     */
+    max_rounds?: number;
+};
+
+/**
+ * DispatchCallOut
+ *
+ * POST /api/questions/{id}/dispatch response.
+ *
+ * Fires a single dispatchable call type (find_considerations, assess,
+ * scout_*, web_research, etc.) on the question in the background. The
+ * run_id is the fresh trace run — client navigates to /traces/{run_id}
+ * to watch.
+ */
+export type DispatchCallOut = {
+    /**
+     * Run Id
+     */
+    run_id: string;
+    /**
+     * Question Id
+     */
+    question_id: string;
+    /**
+     * Call Type
+     */
+    call_type: string;
+    /**
+     * Max Rounds
+     */
+    max_rounds: number;
 };
 
 /**
@@ -1692,7 +1719,7 @@ export type LinkSubquestionsCompleteEventOut = {
 /**
  * LinkType
  */
-export type LinkType = 'consideration' | 'child_question' | 'supersedes' | 'related' | 'answers' | 'variant' | 'summarizes' | 'cites' | 'depends_on' | 'view_item' | 'view_of' | 'meta_for' | 'inlay_of';
+export type LinkType = 'consideration' | 'child_question' | 'supersedes' | 'related' | 'answers' | 'variant' | 'summarizes' | 'cites' | 'depends_on' | 'view_item' | 'view_of' | 'meta_for' | 'model_of' | 'inlay_of';
 
 /**
  * LinkedPageOut
@@ -2059,12 +2086,6 @@ export type PageLoadStatsOut = {
      * Total Unique
      */
     total_unique: number;
-    /**
-     * Question Headlines
-     */
-    question_headlines: {
-        [key: string]: string;
-    };
 };
 
 /**
@@ -2084,7 +2105,7 @@ export type PageRef = {
 /**
  * PageType
  */
-export type PageType = 'source' | 'claim' | 'question' | 'judgement' | 'wiki' | 'view' | 'view_item' | 'view_meta' | 'artifact' | 'inlay';
+export type PageType = 'source' | 'claim' | 'question' | 'judgement' | 'wiki' | 'view' | 'view_item' | 'view_meta' | 'artifact' | 'model' | 'inlay';
 
 /**
  * PaginatedPagesOut
@@ -4724,6 +4745,41 @@ export type PostEvaluateQuestionApiQuestionsQuestionIdEvaluatePostResponses = {
 };
 
 export type PostEvaluateQuestionApiQuestionsQuestionIdEvaluatePostResponse = PostEvaluateQuestionApiQuestionsQuestionIdEvaluatePostResponses[keyof PostEvaluateQuestionApiQuestionsQuestionIdEvaluatePostResponses];
+
+export type PostDispatchCallApiQuestionsQuestionIdDispatchPostData = {
+    body: DispatchCallIn;
+    path: {
+        /**
+         * Question Id
+         */
+        question_id: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/questions/{question_id}/dispatch';
+};
+
+export type PostDispatchCallApiQuestionsQuestionIdDispatchPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PostDispatchCallApiQuestionsQuestionIdDispatchPostError = PostDispatchCallApiQuestionsQuestionIdDispatchPostErrors[keyof PostDispatchCallApiQuestionsQuestionIdDispatchPostErrors];
+
+export type PostDispatchCallApiQuestionsQuestionIdDispatchPostResponses = {
+    /**
+     * Successful Response
+     */
+    202: DispatchCallOut;
+};
+
+export type PostDispatchCallApiQuestionsQuestionIdDispatchPostResponse = PostDispatchCallApiQuestionsQuestionIdDispatchPostResponses[keyof PostDispatchCallApiQuestionsQuestionIdDispatchPostResponses];
 
 export type PostGroundCallApiCallsCallIdGroundPostData = {
     body: GroundEvaluationIn;

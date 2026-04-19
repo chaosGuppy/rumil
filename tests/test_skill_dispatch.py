@@ -109,35 +109,12 @@ async def test_dispatch_unknown_question_exits(monkeypatch, patch_make_db, capsy
 
 
 def test_dispatch_call_type_choices_coverage():
+    """CALL_TYPES exposes every runner registered in CALL_RUNNER_CLASSES,
+    via the underscore-to-dash CLI naming convention."""
+    from rumil.calls.call_registry import CALL_RUNNER_CLASSES
+
     assert "find-considerations" in dispatch_call.CALL_TYPES
     assert "assess" in dispatch_call.CALL_TYPES
     assert "web-research" in dispatch_call.CALL_TYPES
-    for scout_name in dispatch_call._SCOUT_MAP:
-        assert scout_name in dispatch_call.CALL_TYPES
-
-
-def test_tag_call_params_merges_existing():
-    from rumil.models import Call, CallType, Workspace
-
-    call = Call(
-        call_type=CallType.FIND_CONSIDERATIONS,
-        workspace=Workspace.RESEARCH,
-        call_params={"preexisting": "value"},
-    )
-    tagged = dispatch_call._tag_call_params(call, "rumil-dispatch")
-    assert tagged["origin"] == "claude-code"
-    assert tagged["skill"] == "rumil-dispatch"
-    assert tagged["preexisting"] == "value"
-
-
-def test_tag_call_params_handles_none():
-    from rumil.models import Call, CallType, Workspace
-
-    call = Call(
-        call_type=CallType.FIND_CONSIDERATIONS,
-        workspace=Workspace.RESEARCH,
-        call_params=None,
-    )
-    tagged = dispatch_call._tag_call_params(call, "rumil-dispatch")
-    assert tagged["origin"] == "claude-code"
-    assert tagged["skill"] == "rumil-dispatch"
+    for ct in CALL_RUNNER_CLASSES:
+        assert ct.value.replace("_", "-") in dispatch_call.CALL_TYPES

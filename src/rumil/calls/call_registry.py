@@ -18,6 +18,8 @@ is handled separately at call sites that care — see
 """
 
 from rumil.calls.assess import AssessCall, BigAssessCall
+from rumil.calls.build_model import BuildModelCall
+from rumil.calls.create_view import CreateViewCall
 from rumil.calls.find_considerations import FindConsiderationsCall
 from rumil.calls.scout_analogies import ScoutAnalogiesCall
 from rumil.calls.scout_c_cruxes import ScoutCCruxesCall
@@ -48,6 +50,8 @@ CALL_RUNNER_CLASSES: dict[CallType, type[CallRunner]] = {
     CallType.FIND_CONSIDERATIONS: FindConsiderationsCall,
     CallType.ASSESS: AssessCall,
     CallType.WEB_RESEARCH: WebResearchCall,
+    CallType.BUILD_MODEL: BuildModelCall,
+    CallType.CREATE_VIEW: CreateViewCall,
     CallType.SCOUT_SUBQUESTIONS: ScoutSubquestionsCall,
     CallType.SCOUT_ESTIMATES: ScoutEstimatesCall,
     CallType.SCOUT_HYPOTHESES: ScoutHypothesesCall,

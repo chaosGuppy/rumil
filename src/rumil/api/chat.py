@@ -2252,64 +2252,45 @@ async def _run_dispatch(
     params: dict[str, Any],
     on_progress: Callable[[str], Any] | None = None,
 ) -> str:
-    """Run a single call inline with progress updates.
+    """Run a single call inline via ``dispatch_single_call``.
 
-    Broad try/except around construction AND run so the chat never loses
-    a tool_result — if the runner fails to construct (e.g. required kwargs
-    missing), we still return an error string to Claude, which then
+    Broad try/except so the chat never loses a tool_result — a runner
+    construction failure still returns an error string to Claude, which
     continues the conversation instead of 400'ing on the next turn.
     """
+    from rumil.dispatch import dispatch_single_call
+
     question_id = params["question_id"]
     headline = params.get("headline", question_id[:8])
     call_type_str = params["call_type"]
     max_rounds = params.get("max_rounds", DEFAULT_DISPATCH_MAX_ROUNDS)
     model = params.get("model")
-    call = None
+
+    if call_type_str not in _CALL_TYPE_MAP:
+        return f"Unknown call type: {call_type_str}"
+    call_type, _cls = _CALL_TYPE_MAP[call_type_str]
+
+    extra: dict[str, Any] = {}
+    if call_type == CallType.FIND_CONSIDERATIONS:
+        extra["fruit_threshold"] = 4
+
     try:
-        ct, cls = _CALL_TYPE_MAP[call_type_str]
-        call = await db.create_call(ct, scope_page_id=question_id)
-        runner = _build_runner(cls, call_type_str, question_id, call, db, max_rounds)
-        if on_progress:
-            on_progress(f"Running {call_type_str} on '{headline[:40]}'...")
-        if model:
-            with override_settings(rumil_model_override=model):
-                await runner.run()
-        else:
-            await runner.run()
-        if on_progress:
-            on_progress(f"{call_type_str} call {call.id[:8]} completed")
+        call = await dispatch_single_call(
+            call_type,
+            question_id,
+            db,
+            max_rounds=max_rounds,
+            model=model,
+            on_progress=(lambda msg: on_progress(msg)) if on_progress else None,
+            extra_runner_kwargs=extra,
+        )
         return (
             f"{call_type_str} call {call.id[:8]} on '{headline[:40]}' completed. "
             f"Refresh the view to see new findings."
         )
     except Exception as e:
-        call_ref = call.id[:8] if call else "(pre-create)"
-        log.exception("Dispatch call %s failed", call_ref)
-        return f"{call_type_str} call {call_ref} failed: {e}"
-
-
-def _build_runner(
-    cls: type[CallRunner],
-    call_type_str: str,
-    question_id: str,
-    call: Call,
-    db: DB,
-    max_rounds: int = DEFAULT_DISPATCH_MAX_ROUNDS,
-) -> CallRunner:
-    """Construct a CallRunner with the right keyword args per call type.
-
-    FindConsiderationsCall requires max_rounds + fruit_threshold; other
-    call types accept max_rounds via CallRunner's default kwargs.
-    """
-    if cls is FindConsiderationsCall:
-        return cls(
-            question_id,
-            call,
-            db,
-            max_rounds=max_rounds,
-            fruit_threshold=4,
-        )
-    return cls(question_id, call, db, max_rounds=max_rounds)
+        log.exception("Dispatch call %s failed", call_type_str)
+        return f"{call_type_str} call failed: {e}"
 
 
 async def _run_orchestrate(

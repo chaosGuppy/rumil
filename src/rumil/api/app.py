@@ -48,6 +48,7 @@ from rumil.api.schemas import (
     CreateProjectOut,
     CreateProjectRequest,
     CreateRootQuestionRequest,
+    DispatchCallOut,
     EvaluateQuestionOut,
     EvaluationTypeSpecOut,
     GroundCallOut,
@@ -97,6 +98,7 @@ from rumil.embeddings import embed_and_store_page
 from rumil.models import (
     AnnotationEvent,
     Call,
+    CallType,
     ChatMessageRole,
     LinkType,
     Page,
@@ -1395,6 +1397,50 @@ class GroundEvaluationIn(BaseModel):
     from_stage: int = 1
 
 
+class DispatchCallIn(BaseModel):
+    call_type: str
+    max_rounds: int = 5
+
+
+async def _run_dispatch_background(
+    run_id: str,
+    call_type: CallType,
+    question_id: str,
+    project_id: str,
+    max_rounds: int,
+) -> None:
+    """Spin up a fresh DB for a single-call dispatch and run to completion."""
+    from rumil.dispatch import dispatch_single_call
+
+    prod = get_settings().is_prod_db
+    db = await DB.create(run_id=run_id, prod=prod, project_id=project_id)
+    try:
+        question = await db.get_page(question_id)
+        headline = question.headline if question else question_id[:8]
+        await db.create_run(
+            name=f"dispatch (api, {call_type.value}): {headline[:90]}",
+            question_id=question_id,
+            config=get_settings().capture_config(),
+        )
+        extra: dict[str, object] = {}
+        if call_type == CallType.FIND_CONSIDERATIONS:
+            from rumil.constants import DEFAULT_FRUIT_THRESHOLD
+            from rumil.models import FindConsiderationsMode
+
+            extra["fruit_threshold"] = DEFAULT_FRUIT_THRESHOLD
+            extra["mode"] = FindConsiderationsMode.ALTERNATE
+        await dispatch_single_call(
+            call_type,
+            question_id,
+            db,
+            max_rounds=max_rounds,
+            origin="api-dispatch",
+            extra_runner_kwargs=extra,
+        )
+    finally:
+        await db.close()
+
+
 @app.post(
     "/api/questions/{question_id}/evaluate",
     status_code=202,
@@ -1442,6 +1488,71 @@ async def post_evaluate_question(
     _track_background(task)
 
     return EvaluateQuestionOut(run_id=new_run_id, question_id=question_id, eval_type=body.eval_type)
+
+
+@app.post(
+    "/api/questions/{question_id}/dispatch",
+    status_code=202,
+    response_model=DispatchCallOut,
+)
+async def post_dispatch_call(
+    question_id: str,
+    body: DispatchCallIn,
+    db: DB = Depends(_get_db),
+) -> DispatchCallOut:
+    """Fire a single dispatchable call on a question in the background.
+
+    Symmetric with ``/continue`` (orchestrator) and ``/evaluate``
+    (evaluation agent) — but for one specific call type. Accepts the
+    dash-separated CLI name (``find-considerations``, ``scout-subquestions``,
+    ``web-research``, etc.) corresponding to any entry in
+    ``rumil.calls.call_registry.CALL_RUNNER_CLASSES``.
+    """
+    from rumil.calls.call_registry import CALL_RUNNER_CLASSES
+
+    question = await db.get_page(question_id)
+    if not question:
+        raise HTTPException(status_code=404, detail="Question not found")
+    if question.page_type != PageType.QUESTION:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Page {question_id} is a {question.page_type.value}, not a question",
+        )
+
+    cli_to_call_type = {ct.value.replace("_", "-"): ct for ct in CALL_RUNNER_CLASSES}
+    call_type = cli_to_call_type.get(body.call_type)
+    if call_type is None:
+        raise HTTPException(
+            status_code=400,
+            detail=(f"Unknown call_type {body.call_type!r}. Available: {sorted(cli_to_call_type)}"),
+        )
+
+    if body.max_rounds < 1:
+        raise HTTPException(status_code=400, detail="max_rounds must be >= 1")
+
+    new_run_id = str(uuid.uuid4())
+    project_id = question.project_id or ""
+
+    task = asyncio.create_task(
+        _run_background(
+            f"dispatch {body.call_type} question={question_id[:8]} run={new_run_id[:8]}",
+            _run_dispatch_background(
+                run_id=new_run_id,
+                call_type=call_type,
+                question_id=question_id,
+                project_id=project_id,
+                max_rounds=body.max_rounds,
+            ),
+        )
+    )
+    _track_background(task)
+
+    return DispatchCallOut(
+        run_id=new_run_id,
+        question_id=question_id,
+        call_type=body.call_type,
+        max_rounds=body.max_rounds,
+    )
 
 
 async def _launch_grounding_pipeline(

@@ -1942,6 +1942,66 @@
         }
       }
     },
+    "/api/questions/{question_id}/dispatch": {
+      "post": {
+        "summary": "Post Dispatch Call",
+        "description": "Fire a single dispatchable call on a question in the background.\n\nSymmetric with ``/continue`` (orchestrator) and ``/evaluate``\n(evaluation agent) \u2014 but for one specific call type. Accepts the\ndash-separated CLI name (``find-considerations``, ``scout-subquestions``,\n``web-research``, etc.) corresponding to any entry in\n``rumil.calls.call_registry.CALL_RUNNER_CLASSES``.",
+        "operationId": "post_dispatch_call_api_questions__question_id__dispatch_post",
+        "parameters": [
+          {
+            "name": "question_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Question Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DispatchCallIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DispatchCallOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/calls/{call_id}/ground": {
       "post": {
         "summary": "Post Ground Call",
@@ -4086,11 +4146,6 @@
             "title": "Overall Assessment Call Id",
             "default": ""
           },
-          "eval_run_id": {
-            "type": "string",
-            "title": "Eval Run Id",
-            "default": ""
-          },
           "dimension_reports": {
             "items": {
               "$ref": "#/components/schemas/ABEvalDimensionOut"
@@ -4988,6 +5043,7 @@
           "adversarial_review",
           "explore_tension",
           "draft_artifact",
+          "build_model",
           "claude_code_direct",
           "author_inlay"
         ],
@@ -5062,18 +5118,6 @@
           "total": {
             "type": "integer",
             "title": "Total"
-          },
-          "child_questions": {
-            "type": "integer",
-            "title": "Child Questions"
-          },
-          "considerations": {
-            "type": "integer",
-            "title": "Considerations"
-          },
-          "judgements": {
-            "type": "integer",
-            "title": "Judgements"
           }
         },
         "type": "object",
@@ -5081,10 +5125,7 @@
           "question_id",
           "headline",
           "by_type",
-          "total",
-          "child_questions",
-          "considerations",
-          "judgements"
+          "total"
         ],
         "title": "CallsForQuestion"
       },
@@ -5778,6 +5819,53 @@
           "avg_in"
         ],
         "title": "DegreeCell"
+      },
+      "DispatchCallIn": {
+        "properties": {
+          "call_type": {
+            "type": "string",
+            "title": "Call Type"
+          },
+          "max_rounds": {
+            "type": "integer",
+            "title": "Max Rounds",
+            "default": 5
+          }
+        },
+        "type": "object",
+        "required": [
+          "call_type"
+        ],
+        "title": "DispatchCallIn"
+      },
+      "DispatchCallOut": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "question_id": {
+            "type": "string",
+            "title": "Question Id"
+          },
+          "call_type": {
+            "type": "string",
+            "title": "Call Type"
+          },
+          "max_rounds": {
+            "type": "integer",
+            "title": "Max Rounds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "question_id",
+          "call_type",
+          "max_rounds"
+        ],
+        "title": "DispatchCallOut",
+        "description": "POST /api/questions/{id}/dispatch response.\n\nFires a single dispatchable call type (find_considerations, assess,\nscout_*, web_research, etc.) on the question in the background. The\nrun_id is the fresh trace run \u2014 client navigates to /traces/{run_id}\nto watch."
       },
       "DispatchExecutedEventOut": {
         "properties": {
@@ -6663,6 +6751,7 @@
           "view_item",
           "view_of",
           "meta_for",
+          "model_of",
           "inlay_of"
         ],
         "title": "LinkType"
@@ -7289,21 +7378,13 @@
           "total_unique": {
             "type": "integer",
             "title": "Total Unique"
-          },
-          "question_headlines": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "type": "object",
-            "title": "Question Headlines"
           }
         },
         "type": "object",
         "required": [
           "events",
           "total",
-          "total_unique",
-          "question_headlines"
+          "total_unique"
         ],
         "title": "PageLoadStatsOut"
       },
@@ -7337,6 +7418,7 @@
           "view_item",
           "view_meta",
           "artifact",
+          "model",
           "inlay"
         ],
         "title": "PageType"

@@ -130,6 +130,23 @@ class EvaluateQuestionOut(BaseModel):
     eval_type: str
 
 
+class DispatchCallOut(BaseModel):
+    """POST /api/questions/{id}/dispatch response.
+
+    Fires a single dispatchable call type (find_considerations, assess,
+    scout_*, web_research, etc.) on the question in the background. The
+    run_id is the fresh trace run — client navigates to /traces/{run_id}
+    to watch.
+    """
+
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    run_id: str
+    question_id: str
+    call_type: str
+    max_rounds: int
+
+
 class GroundCallOut(BaseModel):
     """POST /api/calls/{id}/ground and /api/calls/{id}/feedback response.
 

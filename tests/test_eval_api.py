@@ -326,3 +326,79 @@ async def test_continue_question_response_has_typed_fields(api_client, mocker):
     assert set(data.keys()) >= {"run_id", "question_id", "budget"}
     assert data["question_id"] == question.id
     assert data["budget"] == 3
+
+
+# POST /api/questions/{id}/dispatch ----------------------------------------
+
+
+async def test_dispatch_missing_question_returns_404(api_client, mocker):
+    mocker.patch.object(DB, "get_page", return_value=None)
+    create_task_spy = mocker.patch("rumil.api.app.asyncio.create_task")
+
+    resp = await api_client.post(
+        "/api/questions/does-not-exist/dispatch",
+        json={"call_type": "find-considerations"},
+    )
+    assert resp.status_code == 404
+    create_task_spy.assert_not_called()
+
+
+async def test_dispatch_non_question_returns_400(api_client, mocker):
+    claim = _fake_claim_page()
+    mocker.patch.object(DB, "get_page", return_value=claim)
+    create_task_spy = mocker.patch("rumil.api.app.asyncio.create_task")
+
+    resp = await api_client.post(
+        f"/api/questions/{claim.id}/dispatch",
+        json={"call_type": "find-considerations"},
+    )
+    assert resp.status_code == 400
+    create_task_spy.assert_not_called()
+
+
+async def test_dispatch_unknown_call_type_returns_400(api_client, mocker):
+    question = _fake_question_page()
+    mocker.patch.object(DB, "get_page", return_value=question)
+    create_task_spy = mocker.patch("rumil.api.app.asyncio.create_task")
+
+    resp = await api_client.post(
+        f"/api/questions/{question.id}/dispatch",
+        json={"call_type": "definitely-not-a-real-call-type"},
+    )
+    assert resp.status_code == 400
+    create_task_spy.assert_not_called()
+
+
+async def test_dispatch_bad_max_rounds_returns_400(api_client, mocker):
+    question = _fake_question_page()
+    mocker.patch.object(DB, "get_page", return_value=question)
+    create_task_spy = mocker.patch("rumil.api.app.asyncio.create_task")
+
+    resp = await api_client.post(
+        f"/api/questions/{question.id}/dispatch",
+        json={"call_type": "find-considerations", "max_rounds": 0},
+    )
+    assert resp.status_code == 400
+    create_task_spy.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "call_type",
+    ("find-considerations", "assess", "scout-subquestions", "web-research"),
+)
+async def test_dispatch_happy_path_returns_202(api_client, mocker, call_type):
+    question = _fake_question_page()
+    mocker.patch.object(DB, "get_page", return_value=question)
+    create_task_spy = mocker.patch("rumil.api.app.asyncio.create_task")
+
+    resp = await api_client.post(
+        f"/api/questions/{question.id}/dispatch",
+        json={"call_type": call_type, "max_rounds": 3},
+    )
+    assert resp.status_code == 202
+    data = resp.json()
+    assert data["question_id"] == question.id
+    assert data["call_type"] == call_type
+    assert data["max_rounds"] == 3
+    assert len(data["run_id"]) > 0
+    create_task_spy.assert_called_once()

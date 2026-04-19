@@ -27,77 +27,24 @@ import asyncio
 import logging
 import sys
 
-from rumil.calls.call_registry import ASSESS_CALL_CLASSES
-from rumil.calls.create_view import CreateViewCall
-from rumil.calls.find_considerations import FindConsiderationsCall
-from rumil.calls.scout_analogies import ScoutAnalogiesCall
-from rumil.calls.scout_c_cruxes import ScoutCCruxesCall
-from rumil.calls.scout_c_how_false import ScoutCHowFalseCall
-from rumil.calls.scout_c_how_true import ScoutCHowTrueCall
-from rumil.calls.scout_c_relevant_evidence import ScoutCRelevantEvidenceCall
-from rumil.calls.scout_c_robustify import ScoutCRobustifyCall
-from rumil.calls.scout_c_strengthen import ScoutCStrengthenCall
-from rumil.calls.scout_c_stress_test_cases import ScoutCStressTestCasesCall
-from rumil.calls.scout_deep_questions import ScoutDeepQuestionsCall
-from rumil.calls.scout_estimates import ScoutEstimatesCall
-from rumil.calls.scout_factchecks import ScoutFactchecksCall
-from rumil.calls.scout_hypotheses import ScoutHypothesesCall
-from rumil.calls.scout_paradigm_cases import ScoutParadigmCasesCall
-from rumil.calls.scout_subquestions import ScoutSubquestionsCall
-from rumil.calls.scout_web_questions import ScoutWebQuestionsCall
-from rumil.calls.stages import CallRunner
-from rumil.calls.web_research import WebResearchCall
+from rumil.calls.call_registry import CALL_RUNNER_CLASSES
 from rumil.constants import DEFAULT_FRUIT_THRESHOLD
 from rumil.database import DB
+from rumil.dispatch import dispatch_single_call
 from rumil.models import Call, CallType, FindConsiderationsMode
-from rumil.settings import get_settings
 
 from ._format import print_event, print_trace, truncate
 from ._runctx import make_db, open_run
 
-_SCOUT_MAP: dict[str, tuple[CallType, type[CallRunner]]] = {
-    "scout-subquestions": (CallType.SCOUT_SUBQUESTIONS, ScoutSubquestionsCall),
-    "scout-estimates": (CallType.SCOUT_ESTIMATES, ScoutEstimatesCall),
-    "scout-hypotheses": (CallType.SCOUT_HYPOTHESES, ScoutHypothesesCall),
-    "scout-analogies": (CallType.SCOUT_ANALOGIES, ScoutAnalogiesCall),
-    "scout-paradigm-cases": (CallType.SCOUT_PARADIGM_CASES, ScoutParadigmCasesCall),
-    "scout-factchecks": (CallType.SCOUT_FACTCHECKS, ScoutFactchecksCall),
-    "scout-web-questions": (CallType.SCOUT_WEB_QUESTIONS, ScoutWebQuestionsCall),
-    "scout-deep-questions": (CallType.SCOUT_DEEP_QUESTIONS, ScoutDeepQuestionsCall),
-    "scout-c-how-true": (CallType.SCOUT_C_HOW_TRUE, ScoutCHowTrueCall),
-    "scout-c-how-false": (CallType.SCOUT_C_HOW_FALSE, ScoutCHowFalseCall),
-    "scout-c-cruxes": (CallType.SCOUT_C_CRUXES, ScoutCCruxesCall),
-    "scout-c-relevant-evidence": (
-        CallType.SCOUT_C_RELEVANT_EVIDENCE,
-        ScoutCRelevantEvidenceCall,
-    ),
-    "scout-c-stress-test-cases": (
-        CallType.SCOUT_C_STRESS_TEST_CASES,
-        ScoutCStressTestCasesCall,
-    ),
-    "scout-c-robustify": (CallType.SCOUT_C_ROBUSTIFY, ScoutCRobustifyCall),
-    "scout-c-strengthen": (CallType.SCOUT_C_STRENGTHEN, ScoutCStrengthenCall),
+# Map skill-facing CLI name (dashes) → CallType enum. Every entry with a
+# registered runner in CALL_RUNNER_CLASSES is exposed.
+_CLI_NAME_TO_CALL_TYPE: dict[str, CallType] = {
+    ct.value.replace("_", "-"): ct for ct in CALL_RUNNER_CLASSES
 }
 
-CALL_TYPES = [
-    "find-considerations",
-    "assess",
-    "web-research",
-    "create-view",
-    *_SCOUT_MAP.keys(),
-]
+CALL_TYPES = sorted(_CLI_NAME_TO_CALL_TYPE.keys())
 
 DEFAULT_BUDGET = 3
-
-
-def _tag_call_params(call: Call, skill: str) -> dict:
-    """Origin metadata to merge into calls.call_params."""
-    existing = call.call_params or {}
-    return {
-        **existing,
-        "origin": "claude-code",
-        "skill": skill,
-    }
 
 
 async def _dispatch(
@@ -108,59 +55,27 @@ async def _dispatch(
     budget: int,
     max_rounds: int | None,
 ) -> Call:
-    """Create + run the appropriate CallRunner, returning the (saved) Call."""
-    settings = get_settings()
+    """Create + run the appropriate CallRunner via dispatch_single_call."""
+    call_type = _CLI_NAME_TO_CALL_TYPE.get(call_type_str)
+    if call_type is None:
+        raise ValueError(f"unknown call type: {call_type_str}")
 
-    if call_type_str == "find-considerations":
-        call = await db.create_call(CallType.FIND_CONSIDERATIONS, scope_page_id=question_id)
-        call.call_params = _tag_call_params(call, "rumil-dispatch")
-        await db.save_call(call)
-        runner = FindConsiderationsCall(
-            question_id,
-            call,
-            db,
-            max_rounds=max_rounds or 5,
-            fruit_threshold=DEFAULT_FRUIT_THRESHOLD,
-            mode=FindConsiderationsMode.ALTERNATE,
-        )
-        await runner.run()
-        return call
+    # FindConsiderations needs fruit_threshold + a specific mode; other
+    # runners accept max_rounds or nothing — dispatch_single_call filters
+    # against each runner's signature.
+    extra: dict[str, object] = {}
+    if call_type == CallType.FIND_CONSIDERATIONS:
+        extra["fruit_threshold"] = DEFAULT_FRUIT_THRESHOLD
+        extra["mode"] = FindConsiderationsMode.ALTERNATE
 
-    if call_type_str == "assess":
-        call = await db.create_call(CallType.ASSESS, scope_page_id=question_id)
-        call.call_params = _tag_call_params(call, "rumil-dispatch")
-        await db.save_call(call)
-        cls = ASSESS_CALL_CLASSES[settings.assess_call_variant]
-        runner = cls(question_id, call, db)
-        await runner.run()
-        return call
-
-    if call_type_str == "web-research":
-        call = await db.create_call(CallType.WEB_RESEARCH, scope_page_id=question_id)
-        call.call_params = _tag_call_params(call, "rumil-dispatch")
-        await db.save_call(call)
-        runner = WebResearchCall(question_id, call, db)
-        await runner.run()
-        return call
-
-    if call_type_str == "create-view":
-        call = await db.create_call(CallType.CREATE_VIEW, scope_page_id=question_id)
-        call.call_params = _tag_call_params(call, "rumil-dispatch")
-        await db.save_call(call)
-        runner = CreateViewCall(question_id, call, db)
-        await runner.run()
-        return call
-
-    if call_type_str in _SCOUT_MAP:
-        ct, cls = _SCOUT_MAP[call_type_str]
-        call = await db.create_call(ct, scope_page_id=question_id)
-        call.call_params = _tag_call_params(call, "rumil-dispatch")
-        await db.save_call(call)
-        runner = cls(question_id, call, db, max_rounds=max_rounds or 5)
-        await runner.run()
-        return call
-
-    raise ValueError(f"unknown call type: {call_type_str}")
+    return await dispatch_single_call(
+        call_type,
+        question_id,
+        db,
+        max_rounds=max_rounds or 5,
+        origin="rumil-dispatch",
+        extra_runner_kwargs=extra,
+    )
 
 
 async def main() -> None:

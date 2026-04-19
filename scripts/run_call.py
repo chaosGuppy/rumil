@@ -166,6 +166,39 @@ async def run_call(args: argparse.Namespace, db: DB, question_id: str) -> None:
         print(f"Unknown call type: {call_type}")
 
 
+async def _apply_pin_prompt_flags(flags: list[str], db: DB) -> None:
+    """Resolve NAME=HASH pairs against prompt_versions and install overrides."""
+    from rumil.llm import pin_prompt_content
+
+    for raw in flags:
+        if "=" not in raw:
+            raise SystemExit(f"--pin-prompt must be NAME=HASH; got {raw!r}")
+        name, hash_prefix = raw.split("=", 1)
+        name = name.strip()
+        hash_prefix = hash_prefix.strip()
+        if not name or not hash_prefix:
+            raise SystemExit(f"--pin-prompt must be NAME=HASH; got {raw!r}")
+        q = (
+            db.client.table("prompt_versions")
+            .select("hash,content")
+            .eq("name", name)
+            .like("hash", f"{hash_prefix}%")
+            .limit(2)
+        )
+        rows = list((await db._execute(q)).data or [])
+        if not rows:
+            raise SystemExit(
+                f"--pin-prompt: no prompt_versions row matches name={name!r} hash prefix={hash_prefix!r}"
+            )
+        if len(rows) > 1:
+            raise SystemExit(
+                f"--pin-prompt: ambiguous hash prefix {hash_prefix!r} for name={name!r} "
+                f"(matches at least {len(rows)} rows — disambiguate)"
+            )
+        pin_prompt_content(name, rows[0]["content"])
+        print(f"Pinned prompt name={name} hash={rows[0]['hash'][:12]}")
+
+
 async def run(args: argparse.Namespace) -> None:
     settings = get_settings()
     if args.available_moves is not None:
@@ -209,6 +242,9 @@ async def run(args: argparse.Namespace) -> None:
     else:
         print("Provide a question text or --question-id.")
         return
+
+    if args.pin_prompt:
+        await _apply_pin_prompt_flags(args.pin_prompt, db)
 
     print(f"Trace: {frontend}/traces/{db.run_id}\n")
     await db.init_budget(args.budget)
@@ -328,6 +364,18 @@ def main() -> None:
         choices=[s.value for s in CallStage if s != CallStage.CLOSING_REVIEW],
         default=None,
         help="Stop after this stage (default: run all stages)",
+    )
+    parser.add_argument(
+        "--pin-prompt",
+        action="append",
+        default=[],
+        metavar="NAME=HASH",
+        help=(
+            "Load prompt content for NAME from prompt_versions.content at the "
+            "given sha256 HASH instead of prompts/NAME.md. Use to replay an "
+            "experiment with a historical prompt version. Repeatable. "
+            "HASH may be a unique short prefix."
+        ),
     )
     args = parser.parse_args()
     asyncio.run(run(args))

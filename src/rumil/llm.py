@@ -151,7 +151,28 @@ _api_retry = retry(
 )
 
 
+_PROMPT_OVERRIDES: dict[str, str] = {}
+
+
+def pin_prompt_content(name: str, content: str) -> None:
+    """Pin a prompt's content for the rest of this process.
+
+    Subsequent ``_load_file(f"{name}.md")`` calls return ``content`` rather
+    than reading from ``prompts/``. Used by ``scripts/run_call.py
+    --pin-prompt`` to replay an experiment with a historical prompt
+    hash loaded from ``prompt_versions.content``.
+
+    The key is the *stem* (no ``.md``) so callers pinning
+    ``find_considerations`` override all call-type resolution for that
+    name, matching how the filesystem side keys off filename stems.
+    """
+    _PROMPT_OVERRIDES[name] = content
+
+
 def _load_file(name: str) -> str:
+    stem = name[:-3] if name.endswith(".md") else name
+    if stem in _PROMPT_OVERRIDES:
+        return _PROMPT_OVERRIDES[stem]
     path = PROMPTS_DIR / name
     if not path.exists():
         raise FileNotFoundError(f"Prompt file not found: {path}")

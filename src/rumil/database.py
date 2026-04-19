@@ -2914,8 +2914,21 @@ class DB:
         name: str,
         question_id: str | None,
         config: dict | None = None,
+        orchestrator: str | None = None,
     ) -> None:
-        """Insert a row in the runs table for this DB's run_id."""
+        """Insert a row in the runs table for this DB's run_id.
+
+        If *orchestrator* is provided, it is written into ``config["orchestrator"]``
+        so trace-UI consumers can display the canonical orchestrator name for
+        this entrypoint. Callers that bypass the factory-selected orchestrator
+        (e.g. ``RefineArtifactOrchestrator``, ``ClaimInvestigationOrchestrator``)
+        should pass this explicitly; ``settings.prioritizer_variant`` remains
+        captured separately via ``capture_config()`` and the frontend falls
+        back to it when ``orchestrator`` is absent.
+        """
+        final_config = dict(config) if config else {}
+        if orchestrator is not None:
+            final_config["orchestrator"] = orchestrator
         await self._execute(
             self.client.table("runs").insert(
                 {
@@ -2923,7 +2936,7 @@ class DB:
                     "name": name,
                     "project_id": self.project_id,
                     "question_id": question_id,
-                    "config": config or {},
+                    "config": final_config,
                     "staged": self.staged,
                 }
             )

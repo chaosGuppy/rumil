@@ -561,6 +561,7 @@ async def cmd_refine_artifact(
         name=name or f"refine-artifact ({shape}): {question.headline[:80]}",
         question_id=resolved_id,
         config=get_settings().capture_config(),
+        orchestrator="refine_artifact",
     )
 
     frontend = get_settings().frontend_url.rstrip("/")
@@ -678,6 +679,7 @@ async def cmd_new(
         name=name or q.headline,
         question_id=question_id,
         config=get_settings().capture_config(),
+        orchestrator=get_settings().prioritizer_variant,
     )
 
     frontend = get_settings().frontend_url.rstrip("/")
@@ -862,6 +864,7 @@ async def cmd_continue(
         name=name or f"continue: {question.headline[:100]}",
         question_id=question_id,
         config=get_settings().capture_config(),
+        orchestrator=get_settings().prioritizer_variant,
     )
 
     frontend = get_settings().frontend_url.rstrip("/")

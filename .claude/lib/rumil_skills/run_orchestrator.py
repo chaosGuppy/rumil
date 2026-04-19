@@ -125,6 +125,7 @@ async def main() -> None:
             skill="rumil-orchestrate",
             budget=args.budget,
             extra_config={"smoke_test": bool(args.smoke_test)},
+            orchestrator=variant,
         )
         print_trace(db.run_id)
 

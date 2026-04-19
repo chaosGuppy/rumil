@@ -157,11 +157,16 @@ async def open_run(
     skill: str,
     budget: int,
     extra_config: dict[str, Any] | None = None,
+    orchestrator: str | None = None,
 ) -> None:
     """Insert a ``runs`` row + budget, tagged with origin=claude-code.
 
     Call this once per skill invocation that dispatches real rumil work.
     After this returns, db.run_id is the anchor for the trace URL.
+
+    Pass *orchestrator* to record the canonical orchestrator name for this
+    entrypoint (e.g. ``"two_phase"``, ``"refine_artifact"``). The trace UI
+    prefers this over ``config["prioritizer_variant"]``.
     """
     await db.init_budget(budget)
     settings = get_settings()
@@ -180,6 +185,7 @@ async def open_run(
         name=name,
         question_id=question_id,
         config=config,
+        orchestrator=orchestrator,
     )
 
 

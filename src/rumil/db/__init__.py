@@ -19,6 +19,7 @@ from rumil.db.annotation_store import AnnotationStore
 from rumil.db.call_store import CallStore
 from rumil.db.chat_store import ChatStore
 from rumil.db.eval_summary import EvalSummary, aggregate_eval_rows_by_subject
+from rumil.db.link_store import LinkStore
 from rumil.db.mutation_log import MutationState
 from rumil.db.page_store import PageStore
 from rumil.db.project_store import ProjectStore
@@ -43,6 +44,7 @@ __all__ = [
     "CallStore",
     "ChatStore",
     "EvalSummary",
+    "LinkStore",
     "MutationState",
     "PageStore",
     "ProjectStore",

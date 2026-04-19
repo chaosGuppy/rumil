@@ -138,6 +138,7 @@ class DB:
         from rumil.db.annotation_store import AnnotationStore
         from rumil.db.call_store import CallStore
         from rumil.db.chat_store import ChatStore
+        from rumil.db.link_store import LinkStore
         from rumil.db.page_store import PageStore
         from rumil.db.project_store import ProjectStore
         from rumil.db.run_store import RunStore
@@ -158,6 +159,7 @@ class DB:
         self.annotations = AnnotationStore(self)
         self.chat = ChatStore(self)
         self.pages = PageStore(self)
+        self.links = LinkStore(self)
 
     @classmethod
     async def create(
@@ -632,586 +634,113 @@ class DB:
         return await self.pages.resolve_supersession_chains(page_ids, max_depth=max_depth)
 
     async def save_link(self, link: PageLink) -> None:
-        log.debug(
-            "save_link: %s -> %s, type=%s",
-            link.from_page_id[:8],
-            link.to_page_id[:8],
-            link.link_type.value,
-        )
-        if get_settings().dedupe_page_links:
-            existing = await self._find_duplicate_link(link)
-            # Only skip when the duplicate is a *different* row — otherwise
-            # we'd block the legitimate case of re-saving an existing link
-            # to update its importance/section/etc.
-            if existing is not None and existing.id != link.id:
-                log.debug(
-                    "save_link: dedup, existing link %s matches (from=%s to=%s type=%s)",
-                    existing.id,
-                    link.from_page_id[:8],
-                    link.to_page_id[:8],
-                    link.link_type.value,
-                )
-                return
-        await self._execute(
-            self.client.table("page_links").upsert(
-                {
-                    "id": link.id,
-                    "from_page_id": link.from_page_id,
-                    "to_page_id": link.to_page_id,
-                    "link_type": link.link_type.value,
-                    "direction": link.direction.value if link.direction else None,
-                    "strength": link.strength,
-                    "reasoning": link.reasoning,
-                    "role": link.role.value,
-                    "importance": link.importance,
-                    "section": link.section,
-                    "position": link.position,
-                    "impact_on_parent_question": link.impact_on_parent_question,
-                    "created_at": link.created_at.isoformat(),
-                    "run_id": self.run_id,
-                    "staged": self.staged,
-                }
-            )
-        )
+        return await self.links.save_link(link)
 
     async def _find_duplicate_link(self, link: PageLink) -> PageLink | None:
-        """Return an existing link with the same (from, to, link_type) if one is
-        already visible to this DB handle, else None.
-
-        Respects staged-run visibility: a staged run sees baseline + own-run
-        rows; a baseline run sees only baseline. This means staged and
-        baseline dedup within their own views independently (a staged run
-        can add the "same" link that baseline already has, but will see
-        baseline's copy via the staged filter and skip — which is the
-        correct behavior since dedup applies per visible view).
-        """
-        query = (
-            self.client.table("page_links")
-            .select("*")
-            .eq("from_page_id", link.from_page_id)
-            .eq("to_page_id", link.to_page_id)
-            .eq("link_type", link.link_type.value)
-            .limit(1)
-        )
-        query = self._staged_filter(query)
-        rows = _rows(await self._execute(query))
-        if not rows:
-            return None
-        applied = await self._apply_link_events([_row_to_link(rows[0])])
-        return applied[0] if applied else None
+        return await self.links._find_duplicate_link(link)
 
     async def get_link(self, link_id: str) -> PageLink | None:
-        query = self.client.table("page_links").select("*").eq("id", link_id)
-        query = self._staged_filter(query)
-        rows = _rows(await self._execute(query))
-        if not rows:
-            return None
-        links = await self._apply_link_events([_row_to_link(rows[0])])
-        return links[0] if links else None
+        return await self.links.get_link(link_id)
 
     async def get_links_to(self, page_id: str) -> list[PageLink]:
-        query = self.client.table("page_links").select("*").eq("to_page_id", page_id)
-        query = self._staged_filter(query)
-        rows = _rows(await self._execute(query))
-        return await self._apply_link_events([_row_to_link(r) for r in rows])
+        return await self.links.get_links_to(page_id)
 
     async def get_view_for_question(self, question_id: str) -> Page | None:
-        """Find the active (non-superseded) View page for a question."""
-        query = (
-            self.client.table("page_links")
-            .select(_LINK_COLUMNS)
-            .eq("to_page_id", question_id)
-            .eq("link_type", LinkType.VIEW_OF.value)
-        )
-        query = self._staged_filter(query)
-        rows = _rows(await self._execute(query))
-        links = await self._apply_link_events([_row_to_link(r) for r in rows])
-        if not links:
-            return None
-        view_ids = [link.from_page_id for link in links]
-        pages = await self.get_pages_by_ids(view_ids)
-        for view_id in view_ids:
-            page = pages.get(view_id)
-            if page and not page.is_superseded:
-                return page
-        return None
+        return await self.links.get_view_for_question(question_id)
 
     async def get_inlays_for_question(self, question_id: str) -> list[Page]:
-        """Return active (non-superseded) INLAY pages bound to a question.
-
-        Inlays are model-authored UI fragments that replace the stock
-        content area for a question. See planning/inlay-ui.md. Issues two
-        round trips (links + pages) regardless of how many inlays the
-        question has.
-        """
-        query = (
-            self.client.table("page_links")
-            .select(_LINK_COLUMNS)
-            .eq("to_page_id", question_id)
-            .eq("link_type", LinkType.INLAY_OF.value)
-        )
-        query = self._staged_filter(query)
-        rows = _rows(await self._execute(query))
-        links = await self._apply_link_events([_row_to_link(r) for r in rows])
-        if not links:
-            return []
-        inlay_ids = [link.from_page_id for link in links]
-        pages = await self.get_pages_by_ids(inlay_ids)
-        active: list[Page] = []
-        for inlay_id in inlay_ids:
-            page = pages.get(inlay_id)
-            if page and page.page_type == PageType.INLAY and not page.is_superseded:
-                active.append(page)
-        active.sort(key=lambda p: p.created_at, reverse=True)
-        return active
+        return await self.links.get_inlays_for_question(question_id)
 
     async def get_views_for_questions(
         self,
         question_ids: Sequence[str],
     ) -> dict[str, Page | None]:
-        """Bulk-fetch the active (non-superseded) View page for many questions.
-
-        Returns {question_id: view_page_or_None}. Issues two batched queries
-        (links + pages) regardless of input size.
-        """
-        result: dict[str, Page | None] = {qid: None for qid in question_ids}
-        if not question_ids:
-            return result
-        id_list = list(dict.fromkeys(question_ids))
-        links_by_target = await self.get_links_to_many(id_list)
-        view_from_ids: list[str] = []
-        view_links_by_question: dict[str, list[PageLink]] = {}
-        for qid in id_list:
-            qlinks = [l for l in links_by_target.get(qid, []) if l.link_type == LinkType.VIEW_OF]
-            if qlinks:
-                view_links_by_question[qid] = qlinks
-                view_from_ids.extend(l.from_page_id for l in qlinks)
-        if not view_from_ids:
-            return result
-        pages = await self.get_pages_by_ids(list(dict.fromkeys(view_from_ids)))
-        for qid, qlinks in view_links_by_question.items():
-            for link in qlinks:
-                page = pages.get(link.from_page_id)
-                if page and not page.is_superseded:
-                    result[qid] = page
-                    break
-        return result
+        return await self.links.get_views_for_questions(question_ids)
 
     async def get_view_items(
         self,
         view_id: str,
         min_importance: int | None = None,
     ) -> list[tuple[Page, PageLink]]:
-        """Get VIEW_ITEM pages linked to a View, with their link metadata.
-
-        Returns (page, link) tuples sorted by section order then position.
-        If *min_importance* is set, only items with importance >= that value
-        are returned.  Items with importance=NULL (unscored proposals) are
-        excluded when a minimum is specified.
-        """
-        links = await self.get_links_from(view_id)
-        item_links = [link for link in links if link.link_type == LinkType.VIEW_ITEM]
-        if min_importance is not None:
-            item_links = [
-                link
-                for link in item_links
-                if link.importance is not None and link.importance >= min_importance
-            ]
-        if not item_links:
-            return []
-        item_ids = [link.to_page_id for link in item_links]
-        pages_by_id = await self.get_pages_by_ids(item_ids)
-
-        view_page = await self.get_page(view_id)
-        section_order: dict[str, int] = {}
-        if view_page and view_page.sections:
-            section_order = {s: i for i, s in enumerate(view_page.sections)}
-
-        results: list[tuple[Page, PageLink]] = []
-        for link in item_links:
-            page = pages_by_id.get(link.to_page_id)
-            if page and not page.is_superseded:
-                results.append((page, link))
-        results.sort(
-            key=lambda pair: (
-                section_order.get(pair[1].section or "", 999),
-                pair[1].position or 0,
-            )
-        )
-        return results
+        return await self.links.get_view_items(view_id, min_importance=min_importance)
 
     async def get_links_from(self, page_id: str) -> list[PageLink]:
-        query = self.client.table("page_links").select("*").eq("from_page_id", page_id)
-        return await self.overlay.read_links(query)
+        return await self.links.get_links_from(page_id)
 
     async def get_links_from_many(
         self,
         page_ids: Sequence[str],
     ) -> dict[str, list[PageLink]]:
-        """Bulk-fetch outgoing links for many pages. Returns {page_id: [links]}."""
-        result: dict[str, list[PageLink]] = {pid: [] for pid in page_ids}
-        if not page_ids:
-            return result
-        id_list = list(dict.fromkeys(page_ids))
-        batch_size = 100
-        page_size = 2000
-        all_links: list[PageLink] = []
-        for start in range(0, len(id_list), batch_size):
-            batch = id_list[start : start + batch_size]
-            offset = 0
-            while True:
-                query = (
-                    self.client.table("page_links").select(_LINK_COLUMNS).in_("from_page_id", batch)
-                )
-                query = self._staged_filter(query)
-                rows = _rows(await self._execute(query.range(offset, offset + page_size - 1)))
-                all_links.extend(_row_to_link(r) for r in rows)
-                if len(rows) < page_size:
-                    break
-                offset += page_size
-        applied = await self._apply_link_events(all_links)
-        for link in applied:
-            result.setdefault(link.from_page_id, []).append(link)
-        return result
+        return await self.links.get_links_from_many(page_ids)
 
     async def get_links_to_many(
         self,
         page_ids: Sequence[str],
     ) -> dict[str, list[PageLink]]:
-        """Bulk-fetch incoming links for many pages. Returns {page_id: [links]}."""
-        result: dict[str, list[PageLink]] = {pid: [] for pid in page_ids}
-        if not page_ids:
-            return result
-        id_list = list(dict.fromkeys(page_ids))
-        batch_size = 100
-        page_size = 2000
-        all_links: list[PageLink] = []
-        for start in range(0, len(id_list), batch_size):
-            batch = id_list[start : start + batch_size]
-            offset = 0
-            while True:
-                query = (
-                    self.client.table("page_links").select(_LINK_COLUMNS).in_("to_page_id", batch)
-                )
-                query = self._staged_filter(query)
-                rows = _rows(await self._execute(query.range(offset, offset + page_size - 1)))
-                all_links.extend(_row_to_link(r) for r in rows)
-                if len(rows) < page_size:
-                    break
-                offset += page_size
-        applied = await self._apply_link_events(all_links)
-        for link in applied:
-            result.setdefault(link.to_page_id, []).append(link)
-        return result
+        return await self.links.get_links_to_many(page_ids)
 
     async def get_considerations_for_question(
         self,
         question_id: str,
     ) -> list[tuple[Page, PageLink]]:
-        """Return (claim_page, link) pairs for all considerations on a question."""
-        links = await self.get_links_to(question_id)
-        consideration_links = [l for l in links if l.link_type == LinkType.CONSIDERATION]
-        if not consideration_links:
-            return []
-        pages = await self.get_pages_by_ids([l.from_page_id for l in consideration_links])
-        return [
-            (pages[l.from_page_id], l)
-            for l in consideration_links
-            if l.from_page_id in pages and pages[l.from_page_id].is_active()
-        ]
+        return await self.links.get_considerations_for_question(question_id)
 
     async def get_considerations_for_questions(
         self,
         question_ids: Sequence[str],
     ) -> dict[str, list[tuple[Page, PageLink]]]:
-        """Bulk-fetch considerations for many questions. Returns {question_id: [(claim, link)]}."""
-        result: dict[str, list[tuple[Page, PageLink]]] = {qid: [] for qid in question_ids}
-        if not question_ids:
-            return result
-        id_list = list(dict.fromkeys(question_ids))
-        links_by_target = await self.get_links_to_many(id_list)
-        consideration_links: list[PageLink] = []
-        for qid in id_list:
-            for link in links_by_target.get(qid, []):
-                if link.link_type == LinkType.CONSIDERATION:
-                    consideration_links.append(link)
-        if not consideration_links:
-            return result
-        page_ids = list({l.from_page_id for l in consideration_links})
-        pages = await self.get_pages_by_ids(page_ids)
-        for link in consideration_links:
-            page = pages.get(link.from_page_id)
-            if page and page.is_active():
-                result[link.to_page_id].append((page, link))
-        return result
+        return await self.links.get_considerations_for_questions(question_ids)
 
     async def get_parent_question(self, question_id: str) -> Page | None:
-        """Return the parent question, or None if this is a root question."""
-        links = await self.get_links_to(question_id)
-        for link in links:
-            if link.link_type == LinkType.CHILD_QUESTION:
-                page = await self.get_page(link.from_page_id)
-                if page and page.is_active():
-                    return page
-        return None
+        return await self.links.get_parent_question(question_id)
 
     async def get_child_questions(self, parent_id: str) -> list[Page]:
-        """Return sub-questions of a question."""
-        links = await self.get_links_from(parent_id)
-        child_links = [l for l in links if l.link_type == LinkType.CHILD_QUESTION]
-        if not child_links:
-            return []
-        pages = await self.get_pages_by_ids([l.to_page_id for l in child_links])
-        return [
-            pages[l.to_page_id]
-            for l in child_links
-            if l.to_page_id in pages and pages[l.to_page_id].is_active()
-        ]
+        return await self.links.get_child_questions(parent_id)
 
     async def get_child_questions_with_links(
         self,
         parent_id: str,
     ) -> list[tuple[Page, PageLink]]:
-        """Return (child_page, link) pairs for sub-questions of a question."""
-        links = await self.get_links_from(parent_id)
-        child_links = [l for l in links if l.link_type == LinkType.CHILD_QUESTION]
-        if not child_links:
-            return []
-        pages = await self.get_pages_by_ids([l.to_page_id for l in child_links])
-        return [
-            (pages[l.to_page_id], l)
-            for l in child_links
-            if l.to_page_id in pages and pages[l.to_page_id].is_active()
-        ]
+        return await self.links.get_child_questions_with_links(parent_id)
 
     async def get_judgements_for_question(self, question_id: str) -> list[Page]:
-        links = await self.get_links_to(question_id)
-        judgement_links = [l for l in links if l.link_type == LinkType.ANSWERS]
-        if not judgement_links:
-            return []
-        pages = await self.get_pages_by_ids([l.from_page_id for l in judgement_links])
-        return [
-            pages[l.from_page_id]
-            for l in judgement_links
-            if l.from_page_id in pages
-            and pages[l.from_page_id].is_active()
-            and pages[l.from_page_id].page_type == PageType.JUDGEMENT
-        ]
+        return await self.links.get_judgements_for_question(question_id)
 
     async def get_judgements_for_questions(
         self,
         question_ids: Sequence[str],
     ) -> dict[str, list[Page]]:
-        """Bulk-fetch active judgements for many questions. Returns {question_id: [judgements]}.
-
-        Issues two batched queries (links + pages) regardless of input size.
-        """
-        result: dict[str, list[Page]] = {qid: [] for qid in question_ids}
-        if not question_ids:
-            return result
-        id_list = list(dict.fromkeys(question_ids))
-        batch_size = 100
-        page_size = 2000
-        all_links: list[PageLink] = []
-        for start in range(0, len(id_list), batch_size):
-            batch = id_list[start : start + batch_size]
-            offset = 0
-            while True:
-                query = (
-                    self.client.table("page_links")
-                    .select(_LINK_COLUMNS)
-                    .in_("to_page_id", batch)
-                    .eq("link_type", LinkType.ANSWERS.value)
-                )
-                query = self._staged_filter(query)
-                rows = _rows(await self._execute(query.range(offset, offset + page_size - 1)))
-                all_links.extend(_row_to_link(r) for r in rows)
-                if len(rows) < page_size:
-                    break
-                offset += page_size
-        applied = await self._apply_link_events(all_links)
-        from_ids = list({l.from_page_id for l in applied})
-        pages = await self.get_pages_by_ids(from_ids)
-        for link in applied:
-            page = pages.get(link.from_page_id)
-            if page is not None and page.is_active() and page.page_type == PageType.JUDGEMENT:
-                result.setdefault(link.to_page_id, []).append(page)
-        return result
+        return await self.links.get_judgements_for_questions(question_ids)
 
     async def get_tension_verdicts_for_question(self, question_id: str) -> list[Page]:
-        """Return active TensionVerdict judgement pages for a question.
-
-        TensionVerdicts are JUDGEMENT pages tagged with ``extra.tension_verdict``
-        and ``extra.tension_pair.question_id`` — produced by ExploreTension
-        calls. We filter by the question_id embedded in ``extra.tension_pair``
-        rather than by a graph link, since verdicts link to the two claims
-        (RELATED), not to the question.
-        """
-        query = (
-            self.client.table("pages")
-            .select("*")
-            .eq("page_type", PageType.JUDGEMENT.value)
-            .eq("is_superseded", False)
-            .eq("extra->tension_pair->>question_id", question_id)
-            .not_.is_("extra->tension_verdict", "null")
-        )
-        if self.project_id:
-            query = query.eq("project_id", self.project_id)
-        query = self._staged_filter(query)
-        rows = _rows(await self._execute(query.order("created_at", desc=True)))
-        pages = [_row_to_page(r) for r in rows]
-        pages = await self._apply_page_events(pages)
-        return [p for p in pages if p.is_active()]
+        return await self.links.get_tension_verdicts_for_question(question_id)
 
     async def get_dependents(
         self,
         page_id: str,
     ) -> list[tuple[Page, PageLink]]:
-        """Return (dependent_page, link) for all pages that depend on this one."""
-        links = await self.get_links_to(page_id)
-        dep_links = [l for l in links if l.link_type == LinkType.DEPENDS_ON]
-        if not dep_links:
-            return []
-        pages = await self.get_pages_by_ids([l.from_page_id for l in dep_links])
-        return [
-            (pages[l.from_page_id], l)
-            for l in dep_links
-            if l.from_page_id in pages and pages[l.from_page_id].is_active()
-        ]
+        return await self.links.get_dependents(page_id)
 
     async def get_dependencies(
         self,
         page_id: str,
     ) -> list[tuple[Page, PageLink]]:
-        """Return (dependency_page, link) for all pages this one depends on."""
-        links = await self.get_links_from(page_id)
-        dep_links = [l for l in links if l.link_type == LinkType.DEPENDS_ON]
-        if not dep_links:
-            return []
-        pages = await self.get_pages_by_ids([l.to_page_id for l in dep_links])
-        return [(pages[l.to_page_id], l) for l in dep_links if l.to_page_id in pages]
+        return await self.links.get_dependencies(page_id)
 
     async def get_stale_dependencies(self) -> list[tuple[PageLink, int | None]]:
-        """Return DEPENDS_ON links where the dependency has been superseded.
-
-        Returns (link, change_magnitude) pairs. change_magnitude comes from
-        the supersession mutation event if available, otherwise None.
-
-        Issues O(N_links / page_size) round trips to page through the
-        depends_on table, plus one batched lookup each for target pages and
-        supersession magnitudes — constant in the number of *stale* deps.
-        """
-        page_size = 1000
-        offset = 0
-        raw_rows: list[dict] = []
-        while True:
-            query = self.client.table("page_links").select("*").eq("link_type", "depends_on")
-            query = self._staged_filter(query)
-            rows = _rows(await self._execute(query.range(offset, offset + page_size - 1)))
-            raw_rows.extend(rows)
-            if len(rows) < page_size:
-                break
-            offset += page_size
-        links = await self._apply_link_events([_row_to_link(r) for r in raw_rows])
-        if not links:
-            return []
-
-        target_ids = list({l.to_page_id for l in links})
-        pages_by_id = await self.get_pages_by_ids(target_ids)
-        superseded_ids = [pid for pid, page in pages_by_id.items() if page.is_superseded]
-        magnitudes = await self._get_supersession_magnitudes_many(superseded_ids)
-
-        stale: list[tuple[PageLink, int | None]] = []
-        for link in links:
-            dep_page = pages_by_id.get(link.to_page_id)
-            if dep_page and dep_page.is_superseded:
-                stale.append((link, magnitudes.get(dep_page.id)))
-        return stale
+        return await self.links.get_stale_dependencies()
 
     async def get_dependency_counts(self) -> dict[str, int]:
-        """Return a map from page_id to how many pages depend on it, within the current project.
-
-        Scopes by intersecting link endpoints with the project's page IDs.
-        `page_links` has no `project_id` column, so we resolve project membership
-        via `pages`.
-        """
-        project_page_ids: set[str] | None = None
-        if self.project_id:
-            project_page_ids = set()
-            offset = 0
-            page_size = 1000
-            while True:
-                pages_query = (
-                    self.client.table("pages").select("id").eq("project_id", self.project_id)
-                )
-                pages_query = self._staged_filter(pages_query)
-                rows = _rows(await self._execute(pages_query.range(offset, offset + page_size - 1)))
-                project_page_ids.update(r["id"] for r in rows)
-                if len(rows) < page_size:
-                    break
-                offset += page_size
-
-        page_size = 1000
-        offset = 0
-        raw_link_rows: list[dict] = []
-        while True:
-            query = (
-                self.client.table("page_links")
-                .select(_LINK_COLUMNS)
-                .eq("link_type", LinkType.DEPENDS_ON.value)
-            )
-            query = self._staged_filter(query)
-            rows = _rows(await self._execute(query.range(offset, offset + page_size - 1)))
-            raw_link_rows.extend(rows)
-            if len(rows) < page_size:
-                break
-            offset += page_size
-        links = await self._apply_link_events([_row_to_link(r) for r in raw_link_rows])
-
-        counts: dict[str, int] = {}
-        for link in links:
-            if project_page_ids is not None and (
-                link.from_page_id not in project_page_ids or link.to_page_id not in project_page_ids
-            ):
-                continue
-            counts[link.to_page_id] = counts.get(link.to_page_id, 0) + 1
-        return counts
+        return await self.links.get_dependency_counts()
 
     async def _get_supersession_magnitude(self, page_id: str) -> int | None:
-        """Look up the change_magnitude from the supersession mutation event."""
-        result = await self._get_supersession_magnitudes_many([page_id])
-        return result.get(page_id)
+        return await self.links._get_supersession_magnitude(page_id)
 
     async def _get_supersession_magnitudes_many(
         self,
         page_ids: Sequence[str],
     ) -> dict[str, int | None]:
-        """Look up change_magnitude for many superseded pages in one query.
-
-        Returns a dict mapping page_id to the most-recent supersede_page
-        event's change_magnitude (or None if the event exists but carries
-        no magnitude). Pages without any supersede_page event are absent
-        from the result.
-        """
-        if not page_ids:
-            return {}
-        query = (
-            self.client.table("mutation_events")
-            .select("target_id, payload, created_at")
-            .in_("target_id", list(set(page_ids)))
-            .eq("event_type", "supersede_page")
-            .order("created_at", desc=True)
-        )
-        rows = _rows(await self._execute(query))
-        # Rows are ordered newest-first; keep only the first per target_id.
-        result: dict[str, int | None] = {}
-        for row in rows:
-            target = row["target_id"]
-            if target in result:
-                continue
-            payload = row.get("payload") or {}
-            result[target] = payload.get("change_magnitude")
-        return result
+        return await self.links._get_supersession_magnitudes_many(page_ids)
 
     async def create_call(
         self,
@@ -1286,119 +815,25 @@ class DB:
         from_page_id: str,
         to_page_id: str,
     ) -> list[PageLink]:
-        """Get all links from one page to another."""
-        query = (
-            self.client.table("page_links")
-            .select("*")
-            .eq("from_page_id", from_page_id)
-            .eq("to_page_id", to_page_id)
-        )
-        query = self._staged_filter(query)
-        rows = _rows(await self._execute(query))
-        return await self._apply_link_events([_row_to_link(r) for r in rows])
+        return await self.links.get_links_between(from_page_id, to_page_id)
 
     async def get_all_links(
         self,
         page_ids: set[str] | None = None,
     ) -> list[PageLink]:
-        """Bulk-fetch links, scoped to a set of page IDs if provided.
-
-        When *page_ids* is given, only links where at least one endpoint is in
-        the set are returned. This avoids fetching every link in the DB when the
-        caller already knows which pages matter.
-        """
-        if page_ids is not None:
-            return await self._get_links_for_pages(page_ids)
-        page_size = 2000
-        if self.project_id:
-            page_ids_query = self._staged_filter(
-                self.client.table("pages").select("id").eq("project_id", self.project_id)
-            )
-            page_ids_rows = _rows(await self._execute(page_ids_query.limit(50000)))
-            proj_page_ids = {r["id"] for r in page_ids_rows}
-            all_rows: list[dict[str, Any]] = []
-            offset = 0
-            while True:
-                query = self.client.table("page_links").select(_LINK_COLUMNS)
-                query = self._staged_filter(query)
-                rows = _rows(await self._execute(query.range(offset, offset + page_size - 1)))
-                all_rows.extend(rows)
-                if len(rows) < page_size:
-                    break
-                offset += page_size
-            links = [
-                _row_to_link(r)
-                for r in all_rows
-                if r["from_page_id"] in proj_page_ids or r["to_page_id"] in proj_page_ids
-            ]
-        else:
-            all_rows = []
-            offset = 0
-            while True:
-                query = self.client.table("page_links").select(_LINK_COLUMNS)
-                query = self._staged_filter(query)
-                rows = _rows(await self._execute(query.range(offset, offset + page_size - 1)))
-                all_rows.extend(rows)
-                if len(rows) < page_size:
-                    break
-                offset += page_size
-            links = [_row_to_link(r) for r in all_rows]
-        return await self._apply_link_events(links)
+        return await self.links.get_all_links(page_ids)
 
     async def _get_links_for_pages(
         self,
         page_ids: set[str],
     ) -> list[PageLink]:
-        """Fetch links where at least one endpoint is in *page_ids*.
-
-        Batches into chunks to stay within URL-length limits and paginates
-        within each batch to avoid PostgREST response-size failures.
-        """
-        all_links: dict[str, PageLink] = {}
-        id_list = list(page_ids)
-        batch_size = 100
-        page_size = 2000
-        for start in range(0, len(id_list), batch_size):
-            batch = id_list[start : start + batch_size]
-            for col in ("from_page_id", "to_page_id"):
-                offset = 0
-                while True:
-                    query = self.client.table("page_links").select(_LINK_COLUMNS).in_(col, batch)
-                    query = self._staged_filter(query)
-                    rows = _rows(await self._execute(query.range(offset, offset + page_size - 1)))
-                    for r in rows:
-                        link = _row_to_link(r)
-                        all_links[link.id] = link
-                    if len(rows) < page_size:
-                        break
-                    offset += page_size
-        return await self._apply_link_events(list(all_links.values()))
+        return await self.links._get_links_for_pages(page_ids)
 
     async def delete_link(self, link_id: str) -> None:
-        """Delete a page link by ID."""
-        rows = _rows(
-            await self._execute(
-                self._staged_filter(self.client.table("page_links").select("*").eq("id", link_id))
-            )
-        )
-        link_snapshot = rows[0] if rows else {}
-        await self.record_mutation_event("delete_link", link_id, link_snapshot)
-        if not self.staged:
-            await self._execute(self.client.table("page_links").delete().eq("id", link_id))
+        return await self.links.delete_link(link_id)
 
     async def update_link_role(self, link_id: str, role: LinkRole) -> None:
-        """Update a link's role."""
-        link = await self.get_link(link_id)
-        old_role = link.role.value if link else None
-        await self.record_mutation_event(
-            "change_link_role",
-            link_id,
-            {"new_role": role.value, "old_role": old_role},
-        )
-        if not self.staged:
-            await self._execute(
-                self.client.table("page_links").update({"role": role.value}).eq("id", link_id)
-            )
+        return await self.links.update_link_role(link_id, role)
 
     async def get_last_find_considerations_info(
         self,

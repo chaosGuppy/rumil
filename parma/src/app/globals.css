@@ -1791,6 +1791,87 @@ body {
   opacity: 0.4;
 }
 
+/* Inline rename — click-to-edit text affordance used on landing cards and
+ * inside the view switcher. Idle state sits flush with surrounding text
+ * so it doesn't shout "I'm editable" until the user hovers; the dotted
+ * underline on hover signals affordance without breaking the headline's
+ * typographic rhythm. */
+.inline-rename {
+  display: inline-block;
+  cursor: text;
+  border-radius: 2px;
+  transition: background 0.1s, box-shadow 0.1s;
+}
+.inline-rename:hover {
+  background: var(--active-0);
+  box-shadow: inset 0 -1px 0 var(--border-strong);
+}
+.inline-rename:focus-visible {
+  outline: none;
+  background: var(--active-0);
+  box-shadow: inset 0 -1px 0 var(--fg);
+}
+
+.inline-rename-editing {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+  background: transparent;
+  box-shadow: none;
+  cursor: text;
+}
+.inline-rename-editing:hover { background: transparent; }
+
+.inline-rename-input {
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--fg);
+  border-radius: 2px;
+  padding: 1px 6px;
+  min-width: 140px;
+  letter-spacing: inherit;
+}
+.inline-rename-input:focus {
+  outline: none;
+  border-color: var(--fg);
+  box-shadow: 0 0 0 2px var(--active-0);
+}
+
+.inline-rename-card .inline-rename-input {
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1.25;
+  letter-spacing: -0.005em;
+  width: 100%;
+  min-width: 0;
+}
+
+.inline-rename-switcher .inline-rename-input {
+  font-family: var(--font-mono-stack);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  padding: 0 4px;
+}
+
+.inline-rename-error {
+  font-family: var(--font-mono-stack);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  color: #c0392b;
+  padding: 2px 6px;
+  border-left: 2px solid #c0392b;
+  background: var(--bg-pane);
+}
+@media (prefers-color-scheme: dark) {
+  .inline-rename-error {
+    color: #f08672;
+    border-left-color: #f08672;
+  }
+}
+
 .landing-card-stats {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

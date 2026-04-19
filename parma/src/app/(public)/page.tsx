@@ -112,18 +112,154 @@ function isViewMode(v: string): v is ViewMode {
   return (VIEW_MODES as readonly string[]).includes(v);
 }
 
+// InlineRename — shared click-to-edit text field used for workspace rename.
+// - Idle: renders `children` wrapped in a span; clicking flips to edit mode.
+// - Edit: focused text input; Enter commits via `onCommit`, Esc reverts.
+// - A commit error (server 409, validation) is rendered inline below the
+//   input; the field stays open so the user can tweak and retry.
+//
+// `onCommit` must return a promise. Resolution closes the editor; rejection
+// stays open with the rejection message surfaced inline. `variant`
+// controls visual density — "card" fits the landing card's 20px headline,
+// "switcher" is the compact form used in the view switcher header.
+function InlineRename({
+  value,
+  onCommit,
+  variant,
+  title,
+  className,
+}: {
+  value: string;
+  onCommit: (next: string) => Promise<void>;
+  variant: "card" | "switcher";
+  title?: string;
+  className?: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing) {
+      setDraft(value);
+      setError(null);
+      // Defer focus so the input is mounted before we grab it.
+      requestAnimationFrame(() => {
+        inputRef.current?.focus();
+        inputRef.current?.select();
+      });
+    }
+  }, [editing, value]);
+
+  const cancel = useCallback(() => {
+    setEditing(false);
+    setDraft(value);
+    setError(null);
+  }, [value]);
+
+  const submit = useCallback(async () => {
+    const trimmed = draft.trim();
+    if (!trimmed) {
+      setError("Workspace name can't be empty.");
+      return;
+    }
+    if (trimmed === value) {
+      setEditing(false);
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      await onCommit(trimmed);
+      setEditing(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not rename");
+    } finally {
+      setSubmitting(false);
+    }
+  }, [draft, value, onCommit]);
+
+  if (!editing) {
+    return (
+      <span
+        className={`inline-rename inline-rename-${variant} ${className ?? ""}`}
+        title={title ?? "Click to rename"}
+        onClick={(e) => {
+          e.stopPropagation();
+          setEditing(true);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            e.stopPropagation();
+            setEditing(true);
+          }
+        }}
+        role="textbox"
+        aria-label={`${value} (click to rename)`}
+        tabIndex={0}
+      >
+        {value}
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className={`inline-rename inline-rename-editing inline-rename-${variant}`}
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.stopPropagation()}
+    >
+      <input
+        ref={inputRef}
+        type="text"
+        className="inline-rename-input"
+        value={draft}
+        maxLength={80}
+        disabled={submitting}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          if (error) setError(null);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            submit();
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            cancel();
+          }
+        }}
+        onBlur={() => {
+          // Only cancel on blur if no submit is in flight and the draft is
+          // unchanged — otherwise the user is mid-commit and we shouldn't
+          // swallow their edit.
+          if (!submitting && draft.trim() === value) {
+            cancel();
+          }
+        }}
+      />
+      {error && <span className="inline-rename-error">{error}</span>}
+    </span>
+  );
+}
+
 function ViewModeSwitcher({
   current,
   onChange,
   extra,
   onBack,
   label,
+  onRename,
 }: {
   current: ViewMode;
   onChange: (mode: ViewMode) => void;
   extra?: React.ReactNode;
   onBack?: () => void;
   label?: string;
+  onRename?: (next: string) => Promise<void>;
 }) {
   return (
     <div className="view-switcher">
@@ -139,7 +275,16 @@ function ViewModeSwitcher({
             </button>
             {label && (
               <span className="view-switcher-ws-name">
-                {label}
+                {onRename ? (
+                  <InlineRename
+                    value={label}
+                    onCommit={onRename}
+                    variant="switcher"
+                    title="Rename workspace"
+                  />
+                ) : (
+                  label
+                )}
               </span>
             )}
           </>
@@ -340,6 +485,23 @@ function ProjectBrowser({
     [busyId, showHidden],
   );
 
+  // Inline rename from the card. Throws on server error (422/409) so the
+  // InlineRename widget can render the message inline and stay open; on
+  // success we swap the name in the cached rows so subsequent renders
+  // don't fetch again.
+  const handleRenameCard = useCallback(
+    async (projectId: string, nextName: string) => {
+      const updated = await updateProject(projectId, { name: nextName });
+      setRows((prev) => {
+        if (!prev) return prev;
+        return prev.map((r) =>
+          r.id === projectId ? { ...r, name: updated.name } : r,
+        );
+      });
+    },
+    [],
+  );
+
   const filtered = useMemo(() => {
     if (!rows) return null;
     const live = showTest ? rows : rows.filter((r) => !isTestProject(r.name));
@@ -504,7 +666,14 @@ function ProjectBrowser({
                 </button>
 
                 <div className="landing-card-top">
-                  <div className="landing-card-name">{p.name}</div>
+                  <div className="landing-card-name">
+                    <InlineRename
+                      value={p.name}
+                      onCommit={(next) => handleRenameCard(p.id, next)}
+                      variant="card"
+                      title="Click to rename workspace"
+                    />
+                  </div>
                   <div className="landing-card-badges">
                     {p.hidden && (
                       <span className="landing-card-hidden-badge">hidden</span>
@@ -782,10 +951,12 @@ function QuestionViewPage({
   project,
   questionId,
   onBack,
+  onRenameProject,
 }: {
   project: Project;
   questionId: string;
   onBack: () => void;
+  onRenameProject?: (next: string) => Promise<void>;
 }) {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -971,6 +1142,7 @@ function QuestionViewPage({
             onChange={setViewMode}
             onBack={onBack}
             label={project.name}
+            onRename={onRenameProject}
             extra={viewMode === "vertical" ? (
               <>
                 <span className="view-switcher-sep" />
@@ -1208,6 +1380,23 @@ function AppContent() {
     [selectedProject],
   );
 
+  // Rename the currently-selected workspace. Throws on 409/422 so the
+  // inline-edit UI can surface the server error; on success we swap the
+  // project's name in local state so the view-switcher label updates
+  // without a round-trip.
+  const handleRenameProject = useCallback(
+    async (nextName: string) => {
+      if (!selectedProject) return;
+      const updated = await updateProject(selectedProject.id, {
+        name: nextName,
+      });
+      setSelectedProject((prev) =>
+        prev && prev.id === updated.id ? { ...prev, name: updated.name } : prev,
+      );
+    },
+    [selectedProject],
+  );
+
   if (!selectedProject) {
     // If the URL has ?project=X, always show loading until either the
     // hydration effect resolves the project or explicitly marks failure.
@@ -1229,6 +1418,7 @@ function AppContent() {
         project={selectedProject}
         questionId={selectedQuestionId}
         onBack={questions && questions.length > 1 ? handleBackToQuestions : handleBackToProjects}
+        onRenameProject={handleRenameProject}
       />
     );
   }

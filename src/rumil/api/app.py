@@ -1138,6 +1138,8 @@ async def _run_continue_orchestrator(
     budget: int,
 ) -> None:
     """Spin up a fresh DB for the orchestrator and run to completion."""
+    from rumil.dispatch import dispatch_orchestrator
+
     prod = get_settings().is_prod_db
     db = await DB.create(run_id=run_id, prod=prod, project_id=project_id)
     try:
@@ -1149,8 +1151,7 @@ async def _run_continue_orchestrator(
             question_id=question_id,
             config=get_settings().capture_config(),
         )
-        orch = Orchestrator(db)
-        await orch.run(question_id)
+        await dispatch_orchestrator(question_id, db)
     finally:
         await db.close()
 
@@ -1178,6 +1179,56 @@ class ContinueQuestionIn(BaseModel):
 class ABEvalIn(BaseModel):
     run_id_a: str
     run_id_b: str
+
+
+@app.get("/api/capabilities")
+async def get_capabilities() -> dict:
+    """Return the full set of orchestrators, eval types, call types, and
+    presets available on this server. Sourced entirely from the Python
+    registries so a new orchestrator/eval-type appears here the moment it's
+    registered — frontend pickers and skill docs can iterate this endpoint
+    rather than hard-coding lists."""
+    from rumil.available_calls import AVAILABLE_CALLS_PRESETS
+    from rumil.available_moves import PRESETS as MOVES_PRESETS
+    from rumil.evaluate.registry import EVALUATION_TYPES, GROUNDING_PIPELINES
+    from rumil.models import DISPATCHABLE_CALL_TYPES, CallType
+    from rumil.orchestrators.registry import ORCHESTRATORS
+
+    return {
+        "orchestrators": [
+            {
+                "variant": spec.variant,
+                "description": spec.description,
+                "stability": spec.stability,
+                "cost_band": spec.cost_band,
+                "exposed_in_chat": spec.exposed_in_chat,
+                "supports_global_prio": spec.supports_global_prio,
+            }
+            for spec in ORCHESTRATORS.values()
+        ],
+        "eval_types": [
+            {
+                "name": spec.name,
+                "description": spec.description,
+                "prompt_file": spec.prompt_file,
+                "investigator_prompt_file": spec.investigator_prompt_file,
+            }
+            for spec in EVALUATION_TYPES.values()
+        ],
+        "grounding_pipelines": [
+            {
+                "name": spec.name,
+                "description": spec.description,
+                "recommended_eval_type": spec.recommended_eval_type,
+            }
+            for spec in GROUNDING_PIPELINES.values()
+        ],
+        "call_types": [
+            {"value": ct.value, "dispatchable": ct in DISPATCHABLE_CALL_TYPES} for ct in CallType
+        ],
+        "available_calls_presets": sorted(AVAILABLE_CALLS_PRESETS.keys()),
+        "available_moves_presets": sorted(MOVES_PRESETS.keys()),
+    }
 
 
 @app.post("/api/questions/{question_id}/continue", status_code=202)
@@ -1221,6 +1272,207 @@ async def post_continue_question(
     _track_background(task)
 
     return {"run_id": new_run_id, "question_id": question_id, "budget": body.budget}
+
+
+async def _run_evaluation_background(
+    run_id: str,
+    question_id: str,
+    project_id: str,
+    eval_type: str,
+) -> None:
+    """Spin up a fresh DB for the evaluation and run to completion."""
+    from rumil.dispatch import dispatch_evaluation
+
+    prod = get_settings().is_prod_db
+    db = await DB.create(run_id=run_id, prod=prod, project_id=project_id)
+    try:
+        question = await db.get_page(question_id)
+        headline = question.headline if question else question_id[:8]
+        await db.create_run(
+            name=f"evaluate (api, {eval_type}): {headline[:90]}",
+            question_id=question_id,
+            config=get_settings().capture_config(),
+        )
+        await dispatch_evaluation(question_id, db, eval_type=eval_type)
+    finally:
+        await db.close()
+
+
+async def _run_grounding_background(
+    run_id: str,
+    pipeline: str,
+    question_id: str,
+    evaluation_text: str,
+    project_id: str,
+    from_stage: int,
+    prior_checkpoints: dict | None,
+) -> None:
+    """Spin up a fresh DB for a grounding/feedback pipeline run."""
+    from rumil.dispatch import dispatch_grounding_pipeline
+
+    prod = get_settings().is_prod_db
+    db = await DB.create(run_id=run_id, prod=prod, project_id=project_id)
+    try:
+        question = await db.get_page(question_id)
+        headline = question.headline if question else question_id[:8]
+        await db.create_run(
+            name=f"{pipeline} (api): {headline[:90]}",
+            question_id=question_id,
+            config=get_settings().capture_config(),
+        )
+        await dispatch_grounding_pipeline(
+            pipeline,
+            question_id,
+            evaluation_text,
+            db,
+            from_stage=from_stage,
+            prior_checkpoints=prior_checkpoints,
+        )
+    finally:
+        await db.close()
+
+
+class EvaluateQuestionIn(BaseModel):
+    eval_type: str = "default"
+
+
+class GroundEvaluationIn(BaseModel):
+    from_stage: int = 1
+
+
+@app.post("/api/questions/{question_id}/evaluate", status_code=202)
+async def post_evaluate_question(
+    question_id: str,
+    body: EvaluateQuestionIn,
+    db: DB = Depends(_get_db),
+):
+    """Fire a background evaluation run on an existing question.
+
+    Returns the new run_id immediately; client can navigate to
+    /traces/{run_id} to watch live.
+    """
+    from rumil.evaluate.registry import get_evaluation_type_spec
+
+    question = await db.get_page(question_id)
+    if not question:
+        raise HTTPException(status_code=404, detail="Question not found")
+    if question.page_type != PageType.QUESTION:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Page {question_id} is a {question.page_type.value}, not a question",
+        )
+    try:
+        get_evaluation_type_spec(body.eval_type)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    new_run_id = str(uuid.uuid4())
+    project_id = question.project_id or ""
+
+    task = asyncio.create_task(
+        _run_background(
+            f"evaluate question={question_id[:8]} run={new_run_id[:8]}",
+            _run_evaluation_background(
+                run_id=new_run_id,
+                question_id=question_id,
+                project_id=project_id,
+                eval_type=body.eval_type,
+            ),
+        )
+    )
+    _track_background(task)
+
+    return {
+        "run_id": new_run_id,
+        "question_id": question_id,
+        "eval_type": body.eval_type,
+    }
+
+
+async def _launch_grounding_pipeline(
+    pipeline: str,
+    call_id: str,
+    from_stage: int,
+    db: DB,
+) -> dict:
+    """Shared body for /ground and /feedback: validate + launch background task."""
+    from rumil.evaluate.registry import get_grounding_pipeline_spec
+    from rumil.models import CallType
+
+    try:
+        get_grounding_pipeline_spec(pipeline)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    eval_call = await db.get_call(call_id)
+    if not eval_call:
+        raise HTTPException(status_code=404, detail="Call not found")
+    if eval_call.call_type != CallType.EVALUATE:
+        raise HTTPException(
+            status_code=400,
+            detail=(f"Call {call_id[:8]} is a {eval_call.call_type.value}, not an EVALUATE call"),
+        )
+    evaluation_text = (eval_call.review_json or {}).get("evaluation", "")
+    if not evaluation_text:
+        raise HTTPException(
+            status_code=400,
+            detail="Evaluation call has no 'evaluation' text in review_json",
+        )
+
+    question_id = eval_call.scope_page_id
+    if not question_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Evaluation call has no scope_page_id — cannot run pipeline",
+        )
+    question = await db.get_page(question_id)
+    project_id = question.project_id if question else ""
+
+    prior_checkpoints = (eval_call.call_params or {}).get("checkpoints") if from_stage > 1 else None
+
+    new_run_id = str(uuid.uuid4())
+    task = asyncio.create_task(
+        _run_background(
+            f"{pipeline} eval={call_id[:8]} run={new_run_id[:8]}",
+            _run_grounding_background(
+                run_id=new_run_id,
+                pipeline=pipeline,
+                question_id=question_id,
+                evaluation_text=evaluation_text,
+                project_id=project_id or "",
+                from_stage=from_stage,
+                prior_checkpoints=prior_checkpoints,
+            ),
+        )
+    )
+    _track_background(task)
+
+    return {
+        "run_id": new_run_id,
+        "source_call_id": call_id,
+        "pipeline": pipeline,
+        "from_stage": from_stage,
+    }
+
+
+@app.post("/api/calls/{call_id}/ground", status_code=202)
+async def post_ground_call(
+    call_id: str,
+    body: GroundEvaluationIn,
+    db: DB = Depends(_get_db),
+):
+    """Run the grounding-feedback pipeline on an existing evaluation call."""
+    return await _launch_grounding_pipeline("grounding", call_id, body.from_stage, db)
+
+
+@app.post("/api/calls/{call_id}/feedback", status_code=202)
+async def post_feedback_call(
+    call_id: str,
+    body: GroundEvaluationIn,
+    db: DB = Depends(_get_db),
+):
+    """Run the feedback-update pipeline on an existing evaluation call."""
+    return await _launch_grounding_pipeline("feedback", call_id, body.from_stage, db)
 
 
 @app.post("/api/runs/{run_id}/stage", status_code=200)

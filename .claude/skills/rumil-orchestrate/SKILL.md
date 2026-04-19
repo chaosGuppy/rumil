@@ -2,8 +2,15 @@
 name: rumil-orchestrate
 description: Fire the rumil orchestrator against an existing question — a full multi-call research loop with a budget. This is the CC-initiated equivalent of `main.py --continue <qid> --budget N`. Use when the user wants real research done on a question, not just a single call. For one targeted call, use /rumil-dispatch instead. Budget defaults to 10; since that's not cheap, confirm with the user before firing if they didn't specify. Trigger when the user says things like "investigate this more", "run some research on this", "give Q# N calls of budget", or right after /rumil-ask when they want to immediately start investigating.
 allowed-tools: Bash
-argument-hint: "<question_id> [--budget N] [--orchestrator two_phase|experimental] [--global-prio|--no-global-prio] [--smoke-test]"
+argument-hint: "<question_id> [--budget N] [--orchestrator two_phase|experimental|worldview|distill_first|critique_first|cascade|source_first] [--global-prio|--no-global-prio] [--smoke-test]"
 ---
+
+> **Under the hood:** this skill, the CLI `main.py --continue`, the
+> `/api/questions/{id}/continue` endpoint, and the chat `orchestrate` tool
+> all route through the same `rumil.dispatch.dispatch_orchestrator` function,
+> which reads variants from the `rumil.orchestrators.registry.ORCHESTRATORS`
+> registry. Use `GET /api/capabilities` to see every variant available on a
+> given server.
 
 # rumil-orchestrate
 
@@ -16,22 +23,21 @@ the orchestrator decides the question is done.
 
 ## Which orchestrator
 
-Rumil ships two top-level research-loop orchestrators, selected via the
-`--orchestrator` flag (or, equivalently, the `prioritizer_variant`
-setting):
+Rumil ships several top-level research-loop orchestrators. The full set
+lives in `src/rumil/orchestrators/registry.py` and is exposed via
+`GET /api/capabilities` — the canonical list. Quick summary as of writing:
 
-- **`two_phase`** (default) — `TwoPhaseOrchestrator`. The production
-  loop: prioritizes sub-questions, dispatches per-call rounds, reviews
-  judgements. What `main.py --continue` runs unless the settings are
-  overridden.
-- **`experimental`** — `ExperimentalOrchestrator`. Alternate
-  prioritization / dispatch strategy. Use when the user is comparing
-  variants or explicitly asks for it.
+- **`two_phase`** (default, stable) — balanced breadth + deepening.
+- **`experimental`** — in-flight variants; currently mirrors two_phase.
+- **`worldview`** — cycles explore/evaluate modes; drains CASCADE_REVIEW.
+- **`distill_first`** — view-centric; summarizes before broad discovery.
+- **`critique_first`** — how-true/how-false scouts before find-considerations.
+- **`cascade`** — drains pending cascade assessments; low-cost follow-up.
+- **`source_first`** — web research / ingest before find-considerations.
 
-Not selectable here: `ClaimInvestigationOrchestrator` (a sub-orchestrator
-used *inside* two_phase for per-claim work) and `RobustifyOrchestrator`
-(the robustify call type, which is a `/rumil-dispatch robustify` concern,
-not a research loop).
+`refine_artifact` is registered but CLI-only (different run shape; not
+available via chat or this skill). `ClaimInvestigationOrchestrator` and
+`RobustifyOrchestrator` are sub-orchestrators, not research loops.
 
 The chosen variant is captured in `runs.config.prioritizer_variant` so
 later analyses can filter by orchestrator.

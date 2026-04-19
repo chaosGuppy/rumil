@@ -39,48 +39,29 @@ from rumil.orchestrators.refine_artifact import (
     RefineArtifactResult,
     RefineIteration,
 )
+from rumil.orchestrators.registry import (
+    ORCHESTRATORS,
+    OrchestratorSpec,
+    build_orchestrator,
+    get_orchestrator_spec,
+)
 from rumil.orchestrators.source_first import SourceFirstOrchestrator
 from rumil.orchestrators.two_phase import TwoPhaseOrchestrator
-from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
 
 
 def Orchestrator(db: DB, broadcaster: Broadcaster | None = None):
-    """Factory function: returns the appropriate orchestrator subclass.
+    """Factory function: returns an orchestrator from the registry.
 
+    Reads ``settings.prioritizer_variant`` and ``settings.enable_global_prio``.
     Returns ``BaseOrchestrator`` for most variants, or
-    ``RefineArtifactOrchestrator`` when ``prioritizer_variant='refine_artifact'``.
-    The latter shares the ``run(question_id)`` interface but is not a
-    ``BaseOrchestrator`` subclass — it composes existing calls rather than
-    driving prioritization.
+    ``RefineArtifactOrchestrator`` when the variant is ``refine_artifact``.
     """
-    settings = get_settings()
-    variant = settings.prioritizer_variant
-    if variant == "two_phase":
-        orch: BaseOrchestrator = TwoPhaseOrchestrator(db, broadcaster)
-    elif variant == "experimental":
-        orch = ExperimentalOrchestrator(db, broadcaster)
-    elif variant == "worldview":
-        orch = PolicyOrchestrator(db, worldview_policies(db), broadcaster)
-    elif variant == "distill_first":
-        orch = PolicyOrchestrator(db, distill_first_policies(), broadcaster)
-    elif variant == "critique_first":
-        orch = CritiqueFirstOrchestrator(db, broadcaster)
-    elif variant == "cascade":
-        orch = PolicyOrchestrator(db, cascade_policies(db), broadcaster)
-    elif variant == "source_first":
-        orch = SourceFirstOrchestrator(db, broadcaster)
-    elif variant == "refine_artifact":
-        return RefineArtifactOrchestrator(db, broadcaster)
-    else:
-        raise ValueError(f"Unknown prioritizer_variant: {variant}")
-
-    if settings.enable_global_prio:
-        return GlobalPrioOrchestrator(db, broadcaster)
-    return orch
+    return build_orchestrator(db, broadcaster)
 
 
 __all__ = [
+    "ORCHESTRATORS",
     "PRIORITIZATION_MOVES",
     "BaseOrchestrator",
     "ClaimInvestigationOrchestrator",
@@ -91,6 +72,7 @@ __all__ = [
     "FruitResult",
     "GlobalPrioOrchestrator",
     "Orchestrator",
+    "OrchestratorSpec",
     "PolicyOrchestrator",
     "PrioritizationResult",
     "RefineArtifactOrchestrator",
@@ -100,11 +82,13 @@ __all__ = [
     "SubquestionScoringResult",
     "TwoPhaseOrchestrator",
     "assess_question",
+    "build_orchestrator",
     "compute_priority_score",
     "create_root_question",
     "create_view_for_question",
     "distill_first_policies",
     "find_considerations_until_done",
+    "get_orchestrator_spec",
     "ingest_until_done",
     "score_items_sequentially",
     "update_view_for_question",

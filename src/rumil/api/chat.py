@@ -50,6 +50,7 @@ from rumil.models import (
     Workspace,
 )
 from rumil.moves.registry import MOVES
+from rumil.orchestrators import ORCHESTRATORS
 from rumil.pricing import usd_from_usage
 from rumil.scraper import scrape_url
 from rumil.settings import get_settings, override_settings
@@ -425,18 +426,98 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
-        "name": "start_research",
+        "name": "evaluate",
         "description": (
-            "Run a sequence of research calls on a question. This is NOT one of "
-            "rumil's main orchestrators — it's a chat-side heuristic loop: if the "
-            "question has few pages, start with find-considerations; otherwise "
-            "alternate find-considerations, assess, and scout-subquestions. "
-            "Only uses the call types exposed in dispatch_call; in particular it "
-            "never fires web-research, any scout other than scout-subquestions, "
-            "or the full orchestrators (two-phase, claim-investigation, global-prio, "
-            "robustify, source-first, critique-first, refine-artifact). For those, "
-            "the user needs to run main.py directly. More thorough than a single "
-            "dispatch_call, but not a substitute for a real orchestrator. "
+            "Run an evaluation agent on a question. Produces a markdown "
+            "report (stored in the call's review_json.evaluation). "
+            "eval_type controls which lens: 'default' checks falsifiable "
+            "grounding of claims, 'feedback' surfaces structural/framing "
+            "issues, 'grounding' is a legacy variant of default. "
+            "COSTS REAL MONEY. Confirm with user first. Not cheap; use "
+            "`get_evaluation` to re-read an existing eval rather than rerunning."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "question_id": {
+                    "type": "string",
+                    "description": "Short ID of the question to evaluate",
+                },
+                "eval_type": {
+                    "type": "string",
+                    "description": (
+                        "Evaluation lens: 'default' (falsifiable grounding), "
+                        "'feedback' (structural), or 'grounding' (legacy). "
+                        "Defaults to 'default'."
+                    ),
+                },
+            },
+            "required": ["question_id"],
+        },
+    },
+    {
+        "name": "ground_evaluation",
+        "description": (
+            "Apply a follow-up pipeline to an existing evaluation call. "
+            "'grounding' runs web research on the grounding gaps and applies "
+            "updates to the claims (best with eval_type='default' or 'grounding'). "
+            "'feedback' applies structural edits — split/merge/reframe — "
+            "recommended by a feedback evaluation (best with eval_type='feedback'). "
+            "COSTS REAL MONEY. Confirm first."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "eval_call_id": {
+                    "type": "string",
+                    "description": ("Short ID of the EVALUATE call to apply the pipeline to"),
+                },
+                "pipeline": {
+                    "type": "string",
+                    "description": (
+                        "'grounding' or 'feedback'. If omitted, defaults to 'grounding'."
+                    ),
+                },
+                "from_stage": {
+                    "type": "integer",
+                    "description": (
+                        "Resume from stage N of the pipeline (1-based). "
+                        "Defaults to 1 (start from the beginning)."
+                    ),
+                },
+            },
+            "required": ["eval_call_id"],
+        },
+    },
+    {
+        "name": "get_evaluation",
+        "description": (
+            "Read the evaluation text from an existing EVALUATE call. "
+            "Free / read-only — use this to inspect an eval without re-running. "
+            "Returns the markdown report and metadata (eval_type if known, "
+            "scope page, status)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "call_id": {
+                    "type": "string",
+                    "description": "Short ID of the EVALUATE call",
+                },
+            },
+            "required": ["call_id"],
+        },
+    },
+    {
+        "name": "orchestrate",
+        "description": (
+            "Run a real rumil orchestrator on a question. This is the same "
+            "machinery that `main.py --continue` and `/api/questions/{id}/continue` "
+            "use — a full multi-call research loop with prioritization, "
+            "broadcasting, and budget management. The exact strategy is "
+            "controlled by the `orchestrator` variant. Variants are listed in "
+            "the orchestrator catalog below. Creates a fresh run_id so the trace "
+            "appears cleanly at /traces/{run_id}. "
             "COSTS REAL MONEY proportional to budget. Confirm with the user first."
         ),
         "input_schema": {
@@ -448,7 +529,36 @@ TOOLS: list[dict[str, Any]] = [
                 },
                 "budget": {
                     "type": "integer",
-                    "description": "Max number of calls to run (default 3, max 10)",
+                    "description": "Max number of calls to run (default 3, max 20)",
+                },
+                "orchestrator": {
+                    "type": "string",
+                    "description": (
+                        "Which orchestrator variant to run. Omit to use the "
+                        "system default (two_phase). See the orchestrator "
+                        "catalog in the system prompt for tradeoffs."
+                    ),
+                },
+                "available_calls": {
+                    "type": "string",
+                    "description": (
+                        "Override the `available_calls` preset (e.g. 'simple', "
+                        "'multi-subquestion'). Omit to use the system default."
+                    ),
+                },
+                "available_moves": {
+                    "type": "string",
+                    "description": (
+                        "Override the `available_moves` preset. Omit to use the system default."
+                    ),
+                },
+                "enable_global_prio": {
+                    "type": "boolean",
+                    "description": (
+                        "Wrap the selected orchestrator in GlobalPrioOrchestrator, "
+                        "which spends a fraction of budget on workspace-wide "
+                        "prioritization. Defaults to the system setting."
+                    ),
                 },
             },
             "required": ["question_id"],
@@ -987,6 +1097,30 @@ def _build_call_type_catalog() -> str:
     return "\n".join(lines)
 
 
+def _build_orchestrator_catalog() -> str:
+    """Render a markdown catalog of orchestrator variants exposed to chat.
+
+    Sourced from ``rumil.orchestrators.registry.ORCHESTRATORS`` — new
+    variants appear automatically. Variants marked ``exposed_in_chat=False``
+    (e.g. ``refine_artifact``) are omitted; they remain CLI-only.
+    """
+    lines = [
+        "## Orchestrator catalog",
+        "",
+        (
+            "Variants you can pass to the `orchestrator` parameter of "
+            "`orchestrate`. Omit to use the system default."
+        ),
+        "",
+    ]
+    for variant, spec in sorted(ORCHESTRATORS.items()):
+        if not spec.exposed_in_chat:
+            continue
+        lines.append(f"- **{variant}** — cost: {spec.cost_band}, stability: {spec.stability}")
+        lines.append(f"  {spec.description}")
+    return "\n".join(lines)
+
+
 def _format_page(page: Page) -> str:
     parts = [
         f"[{page.id[:8]}] {page.page_type.value}: {page.headline}",
@@ -1281,9 +1415,17 @@ async def _execute_tool(
             }
         )
 
-    if name == "start_research":
+    if name == "orchestrate":
         qid_short = tool_input["question_id"]
-        budget = max(1, min(tool_input.get("budget", 3), 10))
+        budget = max(1, min(tool_input.get("budget", 3), 20))
+        variant = tool_input.get("orchestrator")
+        if variant is not None:
+            spec = ORCHESTRATORS.get(variant)
+            if spec is None or not spec.exposed_in_chat:
+                return (
+                    f"Unknown or CLI-only orchestrator variant: {variant!r}. "
+                    f"Available: {sorted(v for v, s in ORCHESTRATORS.items() if s.exposed_in_chat)}"
+                )
         full_id = await db.resolve_page_id(qid_short)
         if not full_id:
             return f"Question '{qid_short}' not found."
@@ -1292,10 +1434,14 @@ async def _execute_tool(
             return f"Question '{qid_short}' not found."
         return json.dumps(
             {
-                "__async_research__": True,
+                "__async_orchestrate__": True,
                 "question_id": full_id,
                 "headline": question.headline,
                 "budget": budget,
+                "orchestrator": variant,
+                "available_calls": tool_input.get("available_calls"),
+                "available_moves": tool_input.get("available_moves"),
+                "enable_global_prio": tool_input.get("enable_global_prio"),
             }
         )
 
@@ -1310,6 +1456,73 @@ async def _execute_tool(
                 "target_question_id": target_short,
                 "headline": headline,
             }
+        )
+
+    if name == "evaluate":
+        from rumil.evaluate.registry import EVALUATION_TYPES
+
+        qid_short = tool_input["question_id"]
+        eval_type = tool_input.get("eval_type", "default")
+        if eval_type not in EVALUATION_TYPES:
+            return f"Unknown eval_type: {eval_type!r}. Available: {sorted(EVALUATION_TYPES)}"
+        full_id = await db.resolve_page_id(qid_short)
+        if not full_id:
+            return f"Question '{qid_short}' not found."
+        question = await db.get_page(full_id)
+        if not question:
+            return f"Question '{qid_short}' not found."
+        return json.dumps(
+            {
+                "__async_evaluate__": True,
+                "question_id": full_id,
+                "headline": question.headline,
+                "eval_type": eval_type,
+            }
+        )
+
+    if name == "ground_evaluation":
+        from rumil.evaluate.registry import GROUNDING_PIPELINES
+
+        call_short = tool_input["eval_call_id"]
+        pipeline = tool_input.get("pipeline", "grounding")
+        from_stage = tool_input.get("from_stage", 1)
+        if pipeline not in GROUNDING_PIPELINES:
+            return f"Unknown pipeline: {pipeline!r}. Available: {sorted(GROUNDING_PIPELINES)}"
+        return json.dumps(
+            {
+                "__async_ground__": True,
+                "eval_call_id": call_short,
+                "pipeline": pipeline,
+                "from_stage": from_stage,
+            }
+        )
+
+    if name == "get_evaluation":
+        call_short = tool_input["call_id"]
+        full_id = await db.resolve_call_id(call_short)
+        if not full_id:
+            return f"Call '{call_short}' not found."
+        call = await db.get_call(full_id)
+        if not call:
+            return f"Call '{call_short}' not found."
+        if call.call_type != CallType.EVALUATE:
+            return (
+                f"Call {call.id[:8]} is a {call.call_type.value}, not an "
+                "EVALUATE call — no evaluation text to return."
+            )
+        evaluation_text = (call.review_json or {}).get("evaluation", "")
+        if not evaluation_text:
+            return (
+                f"Evaluation call {call.id[:8]} has no 'evaluation' field in "
+                f"review_json (status={call.status.value})."
+            )
+        scope = call.scope_page_id or ""
+        scope_short = scope[:8] if scope else "(none)"
+        eval_type = (call.call_params or {}).get("eval_type", "unknown")
+        return (
+            f"# Evaluation (call {call.id[:8]}, eval_type={eval_type}, "
+            f"scope={scope_short}, status={call.status.value})\n\n"
+            f"{evaluation_text}"
         )
 
     if name == "get_considerations":
@@ -2003,19 +2216,6 @@ async def _execute_set_view(tool_input: dict[str, Any], db: DB) -> str:
     return json.dumps({"__navigate__": directive, "message": message})
 
 
-def _pick_call_type(total_pages: int, missing_credence: int, step: int) -> str:
-    """Simple heuristic for what call to run next."""
-    if total_pages < 5:
-        return "find-considerations"
-    if step == 0 and missing_credence > 3:
-        return "assess"
-    if step % 3 == 0:
-        return "find-considerations"
-    if step % 3 == 1:
-        return "assess"
-    return "scout-subquestions"
-
-
 async def _execute_tool_timed(
     name: str,
     tool_input: dict[str, Any],
@@ -2111,62 +2311,67 @@ def _build_runner(
     return cls(question_id, call, db, max_rounds=max_rounds)
 
 
-async def _run_research(
+async def _run_orchestrate(
     db: DB,
     params: dict[str, Any],
     on_progress: Callable[[str], Any] | None = None,
 ) -> str:
-    """Run a multi-step research program on a single question."""
+    """Run a real rumil orchestrator via dispatch_orchestrator.
+
+    Creates a fresh DB + run_id so the trace shows up cleanly at
+    /traces/{run_id}, matching the CLI and /api/questions/{id}/continue
+    shape. Applies any per-call settings overrides (variant,
+    available_calls, available_moves, enable_global_prio) via
+    ``override_settings`` — they don't leak into the chat session.
+    """
+    from rumil.dispatch import dispatch_orchestrator
+
     question_id = params["question_id"]
     headline = params.get("headline", question_id[:8])
     budget = params.get("budget", 3)
+    variant = params.get("orchestrator")
+    available_calls = params.get("available_calls")
+    available_moves = params.get("available_moves")
+    enable_global_prio = params.get("enable_global_prio")
 
-    if on_progress:
-        on_progress(f"Starting {budget}-step research on '{headline[:40]}'...")
-
-    step_summaries: list[str] = []
-    for i in range(budget):
-        try:
-            view = await build_view(db, question_id)
-            call_type_str = _pick_call_type(
-                view.health.total_pages, view.health.missing_credence, i
-            )
-        except Exception:
-            call_type_str = "find-considerations"
-
-        if on_progress:
-            on_progress(f"Step {i + 1}/{budget}: {call_type_str} on '{headline[:30]}'...")
-
-        if call_type_str not in _CALL_TYPE_MAP:
-            step_summaries.append(f"  Step {i + 1}: unknown call type {call_type_str}")
-            continue
-
-        ct, cls = _CALL_TYPE_MAP[call_type_str]
-        call = await db.create_call(ct, scope_page_id=question_id)
-        runner = _build_runner(
-            cls,
-            call_type_str,
-            question_id,
-            call,
-            db,
-            max_rounds=DEFAULT_DISPATCH_MAX_ROUNDS,
-        )
-        try:
-            await runner.run()
-            step_summaries.append(
-                f"  Step {i + 1}: {call_type_str} \u2014 call {call.id[:8]} completed"
-            )
-            if on_progress:
-                on_progress(f"Step {i + 1} done: {call_type_str} call {call.id[:8]}")
-        except Exception as e:
-            step_summaries.append(f"  Step {i + 1}: {call_type_str} \u2014 error: {e}")
-            if on_progress:
-                on_progress(f"Step {i + 1} error: {e}")
-
-    return (
-        f"Research on '{headline[:40]}' completed ({len(step_summaries)}/{budget} steps):\n"
-        + "\n".join(step_summaries)
+    new_run_id = str(uuid.uuid4())
+    settings = get_settings()
+    new_db = await DB.create(
+        run_id=new_run_id,
+        prod=settings.is_prod_db,
+        project_id=db.project_id,
     )
+    try:
+        await new_db.init_budget(budget)
+        await new_db.create_run(
+            name=f"orchestrate (chat): {headline[:90]}",
+            question_id=question_id,
+            config=settings.capture_config(),
+        )
+        if on_progress:
+            on_progress(
+                f"Orchestrator run {new_run_id[:8]} started"
+                f" (variant={variant or settings.prioritizer_variant}, "
+                f"budget={budget}). Trace: /traces/{new_run_id}"
+            )
+        await dispatch_orchestrator(
+            question_id,
+            new_db,
+            variant=variant,
+            available_calls=available_calls,
+            available_moves=available_moves,
+            enable_global_prio=enable_global_prio,
+            on_progress=on_progress,
+        )
+        return (
+            f"Orchestrator run {new_run_id[:8]} on '{headline[:40]}' completed. "
+            f"Trace: /traces/{new_run_id}. Refresh the view to see new findings."
+        )
+    except Exception as e:
+        log.exception("Orchestrator run %s failed", new_run_id[:8])
+        return f"Orchestrator run {new_run_id[:8]} failed: {e}"
+    finally:
+        await new_db.close()
 
 
 async def _run_ingest(
@@ -2233,10 +2438,138 @@ async def _run_ingest(
         return f"Ingest for {url} failed: {e}"
 
 
+async def _run_evaluate(
+    db: DB,
+    params: dict[str, Any],
+    on_progress: Callable[[str], Any] | None = None,
+) -> str:
+    """Run an evaluation agent against a question via dispatch_evaluation.
+
+    Creates a fresh DB + run_id so the trace shows up cleanly at
+    /traces/{run_id}, matching /api/questions/{id}/evaluate.
+    """
+    from rumil.dispatch import dispatch_evaluation
+
+    question_id = params["question_id"]
+    headline = params.get("headline", question_id[:8])
+    eval_type = params.get("eval_type", "default")
+
+    new_run_id = str(uuid.uuid4())
+    settings = get_settings()
+    new_db = await DB.create(
+        run_id=new_run_id,
+        prod=settings.is_prod_db,
+        project_id=db.project_id,
+    )
+    try:
+        await new_db.create_run(
+            name=f"evaluate (chat, {eval_type}): {headline[:90]}",
+            question_id=question_id,
+            config=settings.capture_config(),
+        )
+        if on_progress:
+            on_progress(
+                f"Evaluation run {new_run_id[:8]} started "
+                f"(eval_type={eval_type}). Trace: /traces/{new_run_id}"
+            )
+        call = await dispatch_evaluation(
+            question_id, new_db, eval_type=eval_type, on_progress=on_progress
+        )
+        return (
+            f"Evaluation call {call.id[:8]} on '{headline[:40]}' completed "
+            f"(eval_type={eval_type}). Trace: /traces/{new_run_id}. Use "
+            f"`get_evaluation` with call_id={call.id[:8]} to read the report, "
+            f"or `ground_evaluation` to apply a follow-up pipeline."
+        )
+    except Exception as e:
+        log.exception("Evaluation run %s failed", new_run_id[:8])
+        return f"Evaluation run {new_run_id[:8]} failed: {e}"
+    finally:
+        await new_db.close()
+
+
+async def _run_ground(
+    db: DB,
+    params: dict[str, Any],
+    on_progress: Callable[[str], Any] | None = None,
+) -> str:
+    """Apply a grounding/feedback pipeline to an existing evaluation call."""
+    from rumil.dispatch import dispatch_grounding_pipeline
+    from rumil.models import CallType as _CallType
+
+    call_short = params["eval_call_id"]
+    pipeline = params.get("pipeline", "grounding")
+    from_stage = params.get("from_stage", 1)
+
+    eval_full_id = await db.resolve_call_id(call_short)
+    if not eval_full_id:
+        return f"Evaluation call '{call_short}' not found."
+    eval_call = await db.get_call(eval_full_id)
+    if not eval_call:
+        return f"Evaluation call '{call_short}' not found."
+    if eval_call.call_type != _CallType.EVALUATE:
+        return (
+            f"Call {eval_call.id[:8]} is a {eval_call.call_type.value}, not "
+            f"EVALUATE — cannot run grounding pipeline on it."
+        )
+    evaluation_text = (eval_call.review_json or {}).get("evaluation", "")
+    if not evaluation_text:
+        return (
+            f"Evaluation call {eval_call.id[:8]} has no 'evaluation' field in "
+            f"review_json (status={eval_call.status.value})."
+        )
+    question_id = eval_call.scope_page_id
+    if not question_id:
+        return f"Evaluation call {eval_call.id[:8]} has no scope_page_id."
+
+    prior_checkpoints = (eval_call.call_params or {}).get("checkpoints") if from_stage > 1 else None
+
+    new_run_id = str(uuid.uuid4())
+    settings = get_settings()
+    new_db = await DB.create(
+        run_id=new_run_id,
+        prod=settings.is_prod_db,
+        project_id=db.project_id,
+    )
+    try:
+        question = await new_db.get_page(question_id)
+        headline = question.headline if question else question_id[:8]
+        await new_db.create_run(
+            name=f"{pipeline} (chat): {headline[:90]}",
+            question_id=question_id,
+            config=settings.capture_config(),
+        )
+        if on_progress:
+            on_progress(
+                f"{pipeline} run {new_run_id[:8]} started from stage {from_stage}. "
+                f"Trace: /traces/{new_run_id}"
+            )
+        call = await dispatch_grounding_pipeline(
+            pipeline,
+            question_id,
+            evaluation_text,
+            new_db,
+            from_stage=from_stage,
+            prior_checkpoints=prior_checkpoints,
+            on_progress=on_progress,
+        )
+        return (
+            f"{pipeline} pipeline call {call.id[:8]} on '{headline[:40]}' "
+            f"completed. Trace: /traces/{new_run_id}. Refresh the view."
+        )
+    except Exception as e:
+        log.exception("%s run %s failed", pipeline, new_run_id[:8])
+        return f"{pipeline} run {new_run_id[:8]} failed: {e}"
+    finally:
+        await new_db.close()
+
+
 _ASYNC_HANDLERS: dict[str, Callable[..., Any]] = {
     "__async_dispatch__": _run_dispatch,
-    "__async_research__": _run_research,
+    "__async_orchestrate__": _run_orchestrate,
     "__async_ingest__": _run_ingest,
+    "__async_evaluate__": _run_evaluate,
+    "__async_ground__": _run_ground,
 }
 
 
@@ -2545,6 +2878,7 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
 
         system_prompt = (PROMPTS_DIR / "api_chat.md").read_text(encoding="utf-8")
         catalog = _build_call_type_catalog()
+        orchestrator_catalog = _build_orchestrator_catalog()
         context_scope_id = full_id or ""
         context_text = await build_chat_context(full_id, db) if full_id else "(no question scope)"
         ui_block = await _build_ui_state_block(
@@ -2558,7 +2892,10 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
             request.review_open,
         )
         preamble = f"{ui_block}\n\n" if ui_block else ""
-        full_system = f"{system_prompt}\n\n{catalog}\n\n---\n\n{preamble}{context_text}"
+        full_system = (
+            f"{system_prompt}\n\n{catalog}\n\n{orchestrator_catalog}"
+            f"\n\n---\n\n{preamble}{context_text}"
+        )
 
         model_id = MODEL_MAP.get(request.model, MODEL_MAP["sonnet"])
         client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
@@ -2734,6 +3071,7 @@ async def handle_chat_stream(request: ChatRequest) -> StreamingResponse:
 
     system_prompt = (PROMPTS_DIR / "api_chat.md").read_text(encoding="utf-8")
     catalog = _build_call_type_catalog()
+    orchestrator_catalog = _build_orchestrator_catalog()
     context_text = await build_chat_context(full_id, db) if full_id else "(no question scope)"
     ui_block = await _build_ui_state_block(
         db,

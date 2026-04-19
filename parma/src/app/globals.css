@@ -1963,6 +1963,19 @@ body {
 
 .article-section { margin-bottom: 16px; }
 
+/* ux-review-wave7 #9: brief amber decay on a section heading when the
+   user jumps to it via TOC click or deep-link fragment. ~1s — long
+   enough to confirm arrival, short enough not to linger. */
+.article-section-flash {
+  animation: article-section-flash 1s ease-out;
+}
+
+@keyframes article-section-flash {
+  0% { background: rgba(245, 196, 106, 0.22); }
+  60% { background: rgba(245, 196, 106, 0.12); }
+  100% { background: transparent; }
+}
+
 .article-divider {
   border: none;
   border-top: 1px solid var(--border);

@@ -149,9 +149,40 @@ export function ArticleView({
   }, [view]);
 
   const scrollToSection = useCallback((index: number) => {
-    document
-      .getElementById(`section-${index}`)
-      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    const id = `section-${index}`;
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    // ux-review-wave7 #9: add a URL fragment so the jump is shareable,
+    // and a brief target-flash animation so the user can see where they
+    // landed. replaceState avoids pushing history entries for every TOC
+    // click, and avoids Next's router re-syncing search params.
+    if (typeof window !== "undefined") {
+      const { pathname, search } = window.location;
+      window.history.replaceState(null, "", `${pathname}${search}#${id}`);
+    }
+    el.classList.remove("article-section-flash");
+    // Force a reflow so re-adding the class restarts the animation even
+    // if the same section is clicked twice.
+    void el.offsetWidth;
+    el.classList.add("article-section-flash");
+  }, []);
+
+  // On first mount: if the URL carries a section fragment (from a shared
+  // link), scroll there and flash it. We wait for the article DOM to
+  // mount via rAF — sections render synchronously once `view` is set, so
+  // this is just defence against layout timing.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const frag = window.location.hash.slice(1);
+    if (!frag || !/^section-\d+$/.test(frag)) return;
+    const raf = requestAnimationFrame(() => {
+      const el = document.getElementById(frag);
+      if (!el) return;
+      el.scrollIntoView({ behavior: "auto", block: "start" });
+      el.classList.add("article-section-flash");
+    });
+    return () => cancelAnimationFrame(raf);
   }, []);
 
   return (

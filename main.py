@@ -43,6 +43,10 @@ from rumil.models import (
     Workspace,
 )
 from rumil.orchestrators import Orchestrator, create_root_question
+from rumil.project_hygiene import (
+    DEFAULT_MIN_AGE_DAYS,
+    auto_hide_scratch_projects,
+)
 from rumil.question_triage import auto_triage_and_save
 from rumil.report import generate_report, save_report
 from rumil.run_eval import run_run_eval
@@ -656,6 +660,27 @@ async def cmd_list_workspaces(db: DB) -> None:
         print(f"{p.name:20}  {p.created_at.strftime('%Y-%m-%d %H:%M'):20}  {p.id}")
 
 
+async def cmd_auto_hide_scratch(db: DB, *, min_age_days: int, dry_run: bool) -> None:
+    candidates = await auto_hide_scratch_projects(db, min_age_days=min_age_days, dry_run=dry_run)
+    verb = "Would hide" if dry_run else "Hid"
+    print(
+        f"{verb} {len(candidates)} scratch workspace(s) (min_age_days={min_age_days}, zero claims)."
+    )
+    if not candidates:
+        return
+    print(f"\n{'Name':40}  {'Last activity':20}  ID")
+    print("-" * 90)
+    for c in candidates[:50]:
+        truncated = c.name if len(c.name) <= 40 else c.name[:37] + "..."
+        print(f"{truncated:40}  {c.last_activity_at.strftime('%Y-%m-%d %H:%M'):20}  {c.project_id}")
+    if len(candidates) > 50:
+        print(f"... and {len(candidates) - 50} more.")
+    if dry_run:
+        print("\nRe-run without --auto-hide-dry-run to apply.")
+    else:
+        print("\nUnhide individual workspaces from the parma landing page (toggle 'show hidden').")
+
+
 async def cmd_new(
     q: QuestionInput,
     budget: int | None,
@@ -1112,6 +1137,29 @@ async def async_main():
         help="List all project workspaces",
     )
     parser.add_argument(
+        "--auto-hide-scratch",
+        dest="auto_hide_scratch",
+        action="store_true",
+        help=(
+            "Hygiene pass: hide scratch workspaces (chat-persist-*, test-*, "
+            "*-scratch, *-smoke, *-test) older than --auto-hide-min-age-days "
+            "with zero claim pages. Reversible via the parma landing page."
+        ),
+    )
+    parser.add_argument(
+        "--auto-hide-min-age-days",
+        dest="auto_hide_min_age_days",
+        type=int,
+        default=DEFAULT_MIN_AGE_DAYS,
+        help=f"Min project age + idle time for --auto-hide-scratch (default: {DEFAULT_MIN_AGE_DAYS}).",
+    )
+    parser.add_argument(
+        "--auto-hide-dry-run",
+        dest="auto_hide_dry_run",
+        action="store_true",
+        help="Print what --auto-hide-scratch would hide without applying changes.",
+    )
+    parser.add_argument(
         "--batch",
         dest="batch_file",
         metavar="FILE",
@@ -1328,6 +1376,14 @@ async def async_main():
 
     if args.list_workspaces:
         await cmd_list_workspaces(db)
+        return
+
+    if args.auto_hide_scratch:
+        await cmd_auto_hide_scratch(
+            db,
+            min_age_days=args.auto_hide_min_age_days,
+            dry_run=args.auto_hide_dry_run,
+        )
         return
 
     project, _ = await db.get_or_create_project(args.workspace_name)

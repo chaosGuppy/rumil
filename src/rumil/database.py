@@ -719,6 +719,21 @@ class DB:
         await self._execute(self.client.table("projects").update(update).eq("id", project_id))
         return await self.get_project(project_id)
 
+    async def bulk_hide_projects(self, project_ids: Sequence[str]) -> int:
+        """Soft-hide many projects in one round trip. Returns count updated.
+
+        Mirrors ``update_project(hidden=True)`` but issues a single UPDATE
+        with ``in_(...)`` instead of one query per project. No mutation
+        event is recorded — the projects table doesn't participate in the
+        staged-runs model.
+        """
+        if not project_ids:
+            return 0
+        await self._execute(
+            self.client.table("projects").update({"hidden": True}).in_("id", list(project_ids))
+        )
+        return len(project_ids)
+
     async def update_run_hidden(self, run_id: str, hidden: bool) -> dict[str, Any] | None:
         """Flip the ``hidden`` flag on a run. Returns the refreshed run row or
         ``None`` if the run doesn't exist.

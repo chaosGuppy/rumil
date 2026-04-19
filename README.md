@@ -124,6 +124,12 @@ uv run python main.py "Your question here" --workspace my-project --budget 10
 # List all workspaces
 uv run python main.py --list-workspaces
 
+# Hygiene: hide stale scratch workspaces (chat-persist-*, test-*, *-scratch,
+# *-smoke, *-test) older than N days with zero claim pages. Reversible from
+# the parma landing page (toggle "show hidden", click unhide on the card).
+uv run python main.py --auto-hide-scratch --auto-hide-dry-run            # preview
+uv run python main.py --auto-hide-scratch --auto-hide-min-age-days 14    # apply (default)
+
 # List questions in a specific workspace
 uv run python main.py --list --workspace my-project
 

@@ -162,6 +162,31 @@ body {
   overflow-x: auto;
   overflow-y: hidden;
   scroll-snap-type: x proximity;
+  /* ux-review-wave7 #6: at laptop widths the 3-pane stack overflows with
+     no visible indicator (macOS auto-hides scrollbars by default).
+     Reserve a scrollbar gutter and style a thin always-visible track so
+     users see there's more to the right. */
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.pane-container::-webkit-scrollbar {
+  height: 10px;
+}
+
+.pane-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.pane-container::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 5px;
+  border: 2px solid var(--bg);
+}
+
+.pane-container::-webkit-scrollbar-thumb:hover {
+  background: var(--fg-dim);
 }
 
 .pane {

@@ -123,25 +123,41 @@ class SpecCallRunner(CallRunner):
         )
 
     def _make_closing_reviewer(self) -> ClosingReviewer:
+        # The closing reviewer is built AFTER the workspace updater, so we
+        # thread the in-progress ``self.workspace_updater`` through
+        # ctx.extras. Used by the web_research reviewer factory to get
+        # access to ``WebResearchLoop`` (needed so the completion summary
+        # can report "N sources cited" instead of 0).
         return _build_stage(
             self.spec.closing_reviewer,
             CLOSING_REVIEWERS,
             stage_name="closing_reviewer",
-            ctx=self._build_stage_ctx(),
+            ctx=self._build_stage_ctx(
+                extras_override={
+                    "workspace_updater": getattr(self, "workspace_updater", None),
+                },
+            ),
         )
 
     def _resolve_available_moves(self) -> Sequence[MoveType]:
         """Resolve spec.allowed_moves to a concrete list."""
         return _resolve_allowed_moves(self.spec.allowed_moves, self.spec.call_type)
 
-    def _build_stage_ctx(self) -> StageBuildCtx:
+    def _build_stage_ctx(
+        self,
+        *,
+        extras_override: dict[str, Any] | None = None,
+    ) -> StageBuildCtx:
+        extras = dict(self._stage_ctx_extras)
+        if extras_override:
+            extras.update(extras_override)
         return StageBuildCtx(
             call_type=self.spec.call_type,
             question_id=self.infra.question_id if hasattr(self, "infra") else None,
             task_description=self.task_description(),
             available_moves=_resolve_allowed_moves(self.spec.allowed_moves, self.spec.call_type),
-            source_page=self._stage_ctx_extras.get("source_page"),
-            extras=self._stage_ctx_extras,
+            source_page=extras.get("source_page"),
+            extras=extras,
         )
 
 

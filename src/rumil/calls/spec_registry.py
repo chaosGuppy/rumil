@@ -143,21 +143,19 @@ def _single_phase_scout_review(ctx: StageBuildCtx, cfg: dict) -> SinglePhaseScou
 
 @register_closing_reviewer("web_research_review")
 def _web_research_review(ctx: StageBuildCtx, cfg: dict) -> WebResearchClosingReview:
-    """WebResearchClosingReview — passes ``page_creator=None``.
+    """WebResearchClosingReview — threads the in-progress WebResearchLoop
+    in as ``page_creator`` so the completion summary reports the real
+    source count.
 
-    The imperative ``WebResearchCall._make_closing_reviewer`` threads the
-    already-instantiated ``WebResearchLoop`` into the reviewer so its
-    ``_result_summary`` can report the number of sources cited. The spec
-    runner builds stages in isolation and has no way to hand the
-    workspace_updater to the reviewer factory (that would require a
-    SpecCallRunner change). Parity (type + moves + description) still
-    holds; only the source-count substring in the completion summary
-    degrades to "0 sources cited" under spec-based dispatch. When we flip
-    ``CallType.WEB_RESEARCH`` to spec dispatch, add a ``StageBuildCtx``
-    hook (or set an attribute on the reviewer post-hoc) to close this
-    gap.
+    ``SpecCallRunner._make_closing_reviewer`` puts the already-built
+    workspace_updater under ``ctx.extras["workspace_updater"]`` (the
+    closing reviewer is built last in the stage order, so this always
+    resolves when this factory runs).
     """
-    return WebResearchClosingReview(ctx.call_type, page_creator=None)
+    updater = None
+    if ctx.extras is not None:
+        updater = ctx.extras.get("workspace_updater")
+    return WebResearchClosingReview(ctx.call_type, page_creator=updater)
 
 
 def _boring_scout_spec(

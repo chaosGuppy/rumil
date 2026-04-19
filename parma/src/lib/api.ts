@@ -5,6 +5,7 @@ import type {
   Page,
   PageLink,
   QuestionView,
+  SearchResult,
 } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -122,6 +123,20 @@ export async function fetchRootQuestions(
   );
   if (!res.ok) throw new Error(`API error: ${res.status}`);
   return res.json();
+}
+
+export async function searchWorkspace(
+  projectId: string,
+  query: string,
+  limit: number = 30,
+): Promise<SearchResult[]> {
+  const params = new URLSearchParams({ q: query, limit: String(limit) });
+  const res = await fetch(
+    `${API_BASE}/api/projects/${projectId}/search?${params.toString()}`,
+  );
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  const body = await res.json();
+  return body.results ?? [];
 }
 
 // Create a bare root question in a workspace. No research is triggered —

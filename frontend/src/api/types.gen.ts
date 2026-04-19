@@ -1143,6 +1143,16 @@ export type ErrorEventOut = {
 };
 
 /**
+ * EvaluateQuestionIn
+ */
+export type EvaluateQuestionIn = {
+    /**
+     * Eval Type
+     */
+    eval_type?: string;
+};
+
+/**
  * EvaluationCompleteEventOut
  */
 export type EvaluationCompleteEventOut = {
@@ -1218,6 +1228,16 @@ export type GlobalPhaseCompletedEventOut = {
      * Outcome
      */
     outcome: string;
+};
+
+/**
+ * GroundEvaluationIn
+ */
+export type GroundEvaluationIn = {
+    /**
+     * From Stage
+     */
+    from_stage?: number;
 };
 
 /**
@@ -4247,6 +4267,105 @@ export type PostContinueQuestionApiQuestionsQuestionIdContinuePostErrors = {
 export type PostContinueQuestionApiQuestionsQuestionIdContinuePostError = PostContinueQuestionApiQuestionsQuestionIdContinuePostErrors[keyof PostContinueQuestionApiQuestionsQuestionIdContinuePostErrors];
 
 export type PostContinueQuestionApiQuestionsQuestionIdContinuePostResponses = {
+    /**
+     * Successful Response
+     */
+    202: unknown;
+};
+
+export type PostEvaluateQuestionApiQuestionsQuestionIdEvaluatePostData = {
+    body: EvaluateQuestionIn;
+    path: {
+        /**
+         * Question Id
+         */
+        question_id: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/questions/{question_id}/evaluate';
+};
+
+export type PostEvaluateQuestionApiQuestionsQuestionIdEvaluatePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PostEvaluateQuestionApiQuestionsQuestionIdEvaluatePostError = PostEvaluateQuestionApiQuestionsQuestionIdEvaluatePostErrors[keyof PostEvaluateQuestionApiQuestionsQuestionIdEvaluatePostErrors];
+
+export type PostEvaluateQuestionApiQuestionsQuestionIdEvaluatePostResponses = {
+    /**
+     * Successful Response
+     */
+    202: unknown;
+};
+
+export type PostGroundCallApiCallsCallIdGroundPostData = {
+    body: GroundEvaluationIn;
+    path: {
+        /**
+         * Call Id
+         */
+        call_id: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/calls/{call_id}/ground';
+};
+
+export type PostGroundCallApiCallsCallIdGroundPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PostGroundCallApiCallsCallIdGroundPostError = PostGroundCallApiCallsCallIdGroundPostErrors[keyof PostGroundCallApiCallsCallIdGroundPostErrors];
+
+export type PostGroundCallApiCallsCallIdGroundPostResponses = {
+    /**
+     * Successful Response
+     */
+    202: unknown;
+};
+
+export type PostFeedbackCallApiCallsCallIdFeedbackPostData = {
+    body: GroundEvaluationIn;
+    path: {
+        /**
+         * Call Id
+         */
+        call_id: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/calls/{call_id}/feedback';
+};
+
+export type PostFeedbackCallApiCallsCallIdFeedbackPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PostFeedbackCallApiCallsCallIdFeedbackPostError = PostFeedbackCallApiCallsCallIdFeedbackPostErrors[keyof PostFeedbackCallApiCallsCallIdFeedbackPostErrors];
+
+export type PostFeedbackCallApiCallsCallIdFeedbackPostResponses = {
     /**
      * Successful Response
      */

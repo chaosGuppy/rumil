@@ -1790,6 +1790,180 @@
         }
       }
     },
+    "/api/questions/{question_id}/evaluate": {
+      "post": {
+        "summary": "Post Evaluate Question",
+        "description": "Fire a background evaluation run on an existing question.\n\nReturns the new run_id immediately; client can navigate to\n/traces/{run_id} to watch live.",
+        "operationId": "post_evaluate_question_api_questions__question_id__evaluate_post",
+        "parameters": [
+          {
+            "name": "question_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Question Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvaluateQuestionIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/calls/{call_id}/ground": {
+      "post": {
+        "summary": "Post Ground Call",
+        "description": "Run the grounding-feedback pipeline on an existing evaluation call.",
+        "operationId": "post_ground_call_api_calls__call_id__ground_post",
+        "parameters": [
+          {
+            "name": "call_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Call Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GroundEvaluationIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/calls/{call_id}/feedback": {
+      "post": {
+        "summary": "Post Feedback Call",
+        "description": "Run the feedback-update pipeline on an existing evaluation call.",
+        "operationId": "post_feedback_call_api_calls__call_id__feedback_post",
+        "parameters": [
+          {
+            "name": "call_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Call Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GroundEvaluationIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/runs/{run_id}/stage": {
       "post": {
         "summary": "Post Stage Run",
@@ -5406,6 +5580,17 @@
         ],
         "title": "ErrorEventOut"
       },
+      "EvaluateQuestionIn": {
+        "properties": {
+          "eval_type": {
+            "type": "string",
+            "title": "Eval Type",
+            "default": "default"
+          }
+        },
+        "type": "object",
+        "title": "EvaluateQuestionIn"
+      },
       "EvaluationCompleteEventOut": {
         "properties": {
           "ts": {
@@ -5515,6 +5700,17 @@
           "outcome"
         ],
         "title": "GlobalPhaseCompletedEventOut"
+      },
+      "GroundEvaluationIn": {
+        "properties": {
+          "from_stage": {
+            "type": "integer",
+            "title": "From Stage",
+            "default": 1
+          }
+        },
+        "type": "object",
+        "title": "GroundEvaluationIn"
       },
       "GroundingTasksGeneratedEventOut": {
         "properties": {

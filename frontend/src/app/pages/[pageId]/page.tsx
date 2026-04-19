@@ -492,12 +492,20 @@ export default async function PageDetailPage({
               <span className="superseded-tag">superseded</span>
             ) : null}
             {page.page_type === "question" && (
-              <Link
-                href={`/pages/${pageId}/stats${stagedRunId ? `?staged_run_id=${stagedRunId}` : ""}`}
-                className="page-stats-link"
-              >
-                Stats
-              </Link>
+              <>
+                <Link
+                  href={`/pages/${pageId}/stats${stagedRunId ? `?staged_run_id=${stagedRunId}` : ""}`}
+                  className="page-stats-link"
+                >
+                  Stats
+                </Link>
+                <Link
+                  href={`/pages/${pageId}/evaluations${stagedRunId ? `?staged_run_id=${stagedRunId}` : ""}`}
+                  className="page-stats-link page-evals-link"
+                >
+                  Evals
+                </Link>
+              </>
             )}
           </div>
           <h1 className="page-summary">{page.headline}</h1>
@@ -664,7 +672,6 @@ const styles = `
     margin-bottom: 0.75rem;
   }
   .page-stats-link {
-    margin-left: auto;
     font-family: var(--font-geist-mono), monospace;
     font-size: 0.65rem;
     letter-spacing: 0.08em;
@@ -674,6 +681,9 @@ const styles = `
     border: 1px solid var(--color-border);
     padding: 0.3rem 0.6rem;
     transition: all 0.12s ease;
+  }
+  .page-stats-link:first-of-type {
+    margin-left: auto;
   }
   .page-stats-link:hover {
     color: var(--color-foreground);

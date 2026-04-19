@@ -20,6 +20,7 @@ from anthropic.types import TextBlock, TextDelta, ToolUseBlock
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from rumil.available_moves import get_moves_for_call
 from rumil.calls import (
     ASSESS_CALL_CLASSES,
     FindConsiderationsCall,
@@ -379,10 +380,16 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "start_research",
         "description": (
-            "Start a sustained research program on a question. Runs multiple "
-            "research calls in sequence (find-considerations, assess, scouts) "
-            "automatically choosing the right type for each step based on the "
-            "question's state. More thorough than a single dispatch_call. "
+            "Run a sequence of research calls on a question. This is NOT one of "
+            "rumil's main orchestrators — it's a chat-side heuristic loop: if the "
+            "question has few pages, start with find-considerations; otherwise "
+            "alternate find-considerations, assess, and scout-subquestions. "
+            "Only uses the call types exposed in dispatch_call; in particular it "
+            "never fires web-research, any scout other than scout-subquestions, "
+            "or the full orchestrators (two-phase, claim-investigation, global-prio, "
+            "robustify, source-first, critique-first, refine-artifact). For those, "
+            "the user needs to run main.py directly. More thorough than a single "
+            "dispatch_call, but not a substitute for a real orchestrator. "
             "COSTS REAL MONEY proportional to budget. Confirm with the user first."
         ),
         "input_schema": {
@@ -839,6 +846,98 @@ _CALL_TYPE_MAP: dict[str, tuple[CallType, type[CallRunner]]] = {
     "scout-estimates": (CallType.SCOUT_ESTIMATES, ScoutEstimatesCall),
     "scout-analogies": (CallType.SCOUT_ANALOGIES, ScoutAnalogiesCall),
 }
+
+_CALL_TYPE_CATALOG_INFO: list[tuple[str, CallType, str, str]] = [
+    (
+        "find-considerations",
+        CallType.FIND_CONSIDERATIONS,
+        (
+            "Multi-round agent loop that surfaces new claims bearing on the "
+            "question. Reads existing considerations and workspace neighbors, "
+            "creates claims, links them, and may propose view items."
+        ),
+        "medium",
+    ),
+    (
+        "assess",
+        CallType.ASSESS,
+        (
+            "Reads existing considerations and fills in credence/robustness on "
+            "claims. Can create new claims/questions. Under the 'judge-on-assess' "
+            "preset it may also issue a judgement."
+        ),
+        "medium",
+    ),
+    (
+        "web-research",
+        CallType.WEB_RESEARCH,
+        (
+            "The only call type that reaches outside the workspace: searches the "
+            "live web via server-side tools and scrapes pages, then turns findings "
+            "into claims linked as considerations."
+        ),
+        "high (live web + scraping)",
+    ),
+    (
+        "scout-subquestions",
+        CallType.SCOUT_SUBQUESTIONS,
+        (
+            "Generates sub-questions that decompose the scope question (as scout "
+            "questions, not direct children by default)."
+        ),
+        "low",
+    ),
+    (
+        "scout-hypotheses",
+        CallType.SCOUT_HYPOTHESES,
+        ("Generates candidate answers / hypotheses as claims linked as considerations."),
+        "low",
+    ),
+    (
+        "scout-estimates",
+        CallType.SCOUT_ESTIMATES,
+        ("Generates quantitative estimates (e.g. Fermi-style numbers) relevant to the question."),
+        "low",
+    ),
+    (
+        "scout-analogies",
+        CallType.SCOUT_ANALOGIES,
+        (
+            "Surfaces analogous past cases or structurally similar situations "
+            "that bear on the question."
+        ),
+        "low",
+    ),
+]
+
+
+def _build_call_type_catalog() -> str:
+    """Render a markdown catalog of the research calls exposed to chat.
+
+    Move palettes are read from the active ``available_moves`` preset so this
+    stays in sync with settings; affordance blurbs and rough cost bands are
+    maintained inline in ``_CALL_TYPE_CATALOG_INFO``.
+    """
+    lines = [
+        "## Research call catalog",
+        "",
+        (
+            "The call types you can fire via `dispatch_call` (and that "
+            "`start_research` loops over a subset of). Move palettes below "
+            "reflect the active `available_moves` preset."
+        ),
+        "",
+    ]
+    for cli_name, call_type, affordance, cost in _CALL_TYPE_CATALOG_INFO:
+        try:
+            moves = get_moves_for_call(call_type)
+            move_names = ", ".join(m.value for m in moves) if moves else "(none)"
+        except ValueError as exc:
+            move_names = f"(no entry in active preset: {exc})"
+        lines.append(f"- **{cli_name}** — cost: {cost}")
+        lines.append(f"  {affordance}")
+        lines.append(f"  Moves: {move_names}")
+    return "\n".join(lines)
 
 
 def _format_page(page: Page) -> str:
@@ -2369,6 +2468,7 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
         await _persist_user_turn(db, conv, request, full_id)
 
         system_prompt = (PROMPTS_DIR / "api_chat.md").read_text(encoding="utf-8")
+        catalog = _build_call_type_catalog()
         context_scope_id = full_id or ""
         context_text = await build_chat_context(full_id, db) if full_id else "(no question scope)"
         ui_block = await _build_ui_state_block(
@@ -2382,7 +2482,7 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
             request.review_open,
         )
         preamble = f"{ui_block}\n\n" if ui_block else ""
-        full_system = f"{system_prompt}\n\n---\n\n{preamble}{context_text}"
+        full_system = f"{system_prompt}\n\n{catalog}\n\n---\n\n{preamble}{context_text}"
 
         model_id = MODEL_MAP.get(request.model, MODEL_MAP["sonnet"])
         client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
@@ -2535,6 +2635,7 @@ async def handle_chat_stream(request: ChatRequest) -> StreamingResponse:
     await _persist_user_turn(db, conv, request, full_id)
 
     system_prompt = (PROMPTS_DIR / "api_chat.md").read_text(encoding="utf-8")
+    catalog = _build_call_type_catalog()
     context_text = await build_chat_context(full_id, db) if full_id else "(no question scope)"
     ui_block = await _build_ui_state_block(
         db,
@@ -2547,7 +2648,7 @@ async def handle_chat_stream(request: ChatRequest) -> StreamingResponse:
         request.review_open,
     )
     preamble = f"{ui_block}\n\n" if ui_block else ""
-    full_system = f"{system_prompt}\n\n---\n\n{preamble}{context_text}"
+    full_system = f"{system_prompt}\n\n{catalog}\n\n---\n\n{preamble}{context_text}"
     model_id = MODEL_MAP.get(request.model, MODEL_MAP["sonnet"])
     client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
     context_scope_id = full_id or ""

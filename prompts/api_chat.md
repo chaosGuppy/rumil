@@ -67,8 +67,8 @@ Use these when the intent is clear from conversation and the edit is small. For 
 These fire rumil's full investigation pipeline. Expensive, slow, and side-effectful. Always confirm with the user before calling.
 
 - **`preview_run(question_id?)`** — cheap, instant. Returns health stats and a recommended call type. Use before `dispatch_call` to help the user decide.
-- **`dispatch_call(question_id, call_type)`** — fire one research call (find-considerations, assess, scout-*, web-research).
-- **`start_research(question_id, budget?)`** — multi-step research program; picks call types automatically. Confirm budget.
+- **`dispatch_call(question_id, call_type)`** — fire one research call (find-considerations, assess, scout-*, web-research). See the **Research call catalog** section (injected below this prompt) for each type's affordance, move palette, and rough cost band.
+- **`start_research(question_id, budget?)`** — a small chat-side heuristic loop over find-considerations / assess / scout-subquestions. **Not a rumil orchestrator**: it does not run two-phase, claim-investigation, global-prio, robustify, source-first, critique-first, or refine-artifact, and it never fires web-research or the other scouts. For those, the user needs to run `main.py` directly. Confirm budget.
 - **`ingest_source(url, target_question_id?)`** — fetch a URL, create a Source page, optionally run extraction into a target question.
 
 For cheap direct moves (`create_question`, `link_pages`, etc.), just act on clear intent. For research calls, explain what would happen and check first.

@@ -88,16 +88,24 @@ class SpecCallRunner(CallRunner):
         ``spec.scope_page_type``.
 
         When ``spec.task_template`` is set, it overrides the default
-        format — ``{scope_id}`` is substituted with the id. Used by calls
-        whose scope-id phrasing diverges from the convention (e.g.
-        find_considerations).
+        format. Substitutions available inside the template (any subset):
+
+        - ``{scope_id}`` — the question_id / claim_id for this call
+        - ``{source_page_id}`` — ``stage_ctx_extras["source_page"].id``
+          when a source page was passed (used by ingest)
+        - ``{settings.<name>}`` — attribute access on the active Settings
+          instance (e.g. ``{settings.ingest_num_claims}``)
         """
         sid = self.infra.question_id if hasattr(self, "infra") and self.infra else None
         if self.spec.task_template is not None:
-            template = self.spec.task_template
-            if sid:
-                return template.format(scope_id=sid)
-            return template
+            from rumil.settings import get_settings
+
+            source_page = self._stage_ctx_extras.get("source_page")
+            return self.spec.task_template.format(
+                scope_id=sid or "",
+                source_page_id=getattr(source_page, "id", "") if source_page else "",
+                settings=get_settings(),
+            )
         base = self.spec.description.rstrip()
         if not sid:
             return base

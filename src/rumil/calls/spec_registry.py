@@ -13,6 +13,7 @@ is tracked in the master plan.
 from __future__ import annotations
 
 from rumil.calls.closing_reviewers import (
+    IngestClosingReview,
     SinglePhaseScoutReview,
     StandardClosingReview,
     WebResearchClosingReview,
@@ -20,6 +21,7 @@ from rumil.calls.closing_reviewers import (
 from rumil.calls.context_builders import (
     BigAssessContext,
     EmbeddingContext,
+    IngestEmbeddingContext,
     WebResearchEmbeddingContext,
 )
 from rumil.calls.page_creators import MultiRoundLoop, SimpleAgentLoop, WebResearchLoop
@@ -62,6 +64,17 @@ def _big_assess_context(ctx: StageBuildCtx, cfg: dict) -> BigAssessContext:
 def _web_research_embedding_context(ctx: StageBuildCtx, cfg: dict) -> WebResearchEmbeddingContext:
     """WebResearchEmbeddingContext — no args, used by web_research."""
     return WebResearchEmbeddingContext()
+
+
+@register_context_builder("ingest_embedding")
+def _ingest_embedding_context(ctx: StageBuildCtx, cfg: dict) -> IngestEmbeddingContext:
+    """IngestEmbeddingContext — requires the source Page from ctx."""
+    if ctx.source_page is None:
+        raise ValueError(
+            "ingest_embedding context requires ctx.source_page; caller must pass "
+            "stage_ctx_extras={'source_page': <Page>} to SpecCallRunner"
+        )
+    return IngestEmbeddingContext(ctx.source_page)
 
 
 @register_workspace_updater("simple_agent_loop")
@@ -139,6 +152,23 @@ def _standard_review(ctx: StageBuildCtx, cfg: dict) -> StandardClosingReview:
 def _single_phase_scout_review(ctx: StageBuildCtx, cfg: dict) -> SinglePhaseScoutReview:
     """SinglePhaseScoutReview — no args, used by find_considerations."""
     return SinglePhaseScoutReview()
+
+
+@register_closing_reviewer("ingest_review")
+def _ingest_review(ctx: StageBuildCtx, cfg: dict) -> IngestClosingReview:
+    """IngestClosingReview — takes (call_type, filename). Filename comes
+    from ``ctx.source_page.extra["filename"]``, falling back to the
+    8-char source page id prefix — matches the imperative
+    ``IngestCall.__init__`` computation.
+    """
+    if ctx.source_page is None:
+        raise ValueError(
+            "ingest_review requires ctx.source_page; caller must pass "
+            "stage_ctx_extras={'source_page': <Page>} to SpecCallRunner"
+        )
+    extra = getattr(ctx.source_page, "extra", None) or {}
+    filename = extra.get("filename") or ctx.source_page.id[:8]
+    return IngestClosingReview(ctx.call_type, filename)
 
 
 @register_closing_reviewer("web_research_review")
@@ -535,33 +565,41 @@ register_spec(
 )
 
 
+register_spec(
+    CallSpec(
+        call_type=CallType.INGEST,
+        description=(
+            "Extract considerations from a source document for a question — "
+            "parameterized by the source page (passed via stage_ctx_extras) "
+            "and the ``settings.ingest_num_claims`` target."
+        ),
+        task_template=(
+            "Extract approximately {settings.ingest_num_claims} considerations "
+            "from the source document above for this question. Quality over "
+            "quantity — produce fewer if only fewer genuinely matter.\n\n"
+            "Question ID: `{scope_id}`\n"
+            "Source page ID: `{source_page_id}`"
+        ),
+        prompt_id="ingest",
+        context_builder=StageRef(id="ingest_embedding"),
+        workspace_updater=StageRef(id="simple_agent_loop"),
+        closing_reviewer=StageRef(id="ingest_review"),
+        allowed_moves=PresetKey(""),
+        scope_page_type=PageType.QUESTION,
+        emits_page_types=frozenset({PageType.CLAIM}),
+        estimated_budget_cost=2,
+    )
+)
+
+
 # ---------------------------------------------------------------------------
-# Deferred: call types that don't cleanly fit the StageRef + task_template
-# contract yet. Converting them requires either a SpecCallRunner extension
-# or a runner_factory escape hatch (both out of scope for this pass).
-#
-# - ``CallType.INGEST`` (``IngestCall``): task description weaves the
-#   source page ID into the body (``Source page ID: `{source_page_id}```),
-#   which ``task_template``'s ``{scope_id}``-only substitution can't
-#   express. ``IngestEmbeddingContext`` also takes a required ``Page``
-#   and ``IngestClosingReview`` a filename — both derived from the source
-#   page handed to ``IngestCall.__init__``. The parity-test fixture
-#   instantiates legacy classes with only ``(question_id, call, db)``, so
-#   legacy construction itself would need a ``source_page`` branch there.
+# Still deferred: call types that require a SpecCallRunner extension beyond
+# the current StageRef + task_template + stage_ctx_extras contract.
 #
 # - ``CallType.CREATE_VIEW`` (``CreateViewCall``): overrides
 #   ``_run_stages`` to create the View page (and superseded-view link)
 #   before any stage runs, then rebuilds workspace_updater/closing_reviewer
 #   with the new ``view_id``. Its ``task_description`` also interpolates
-#   live ``settings.view_importance_*_cap`` values that don't fit a static
-#   ``task_template``. This is the canonical ``runner_factory`` case.
-#
-# Convert these when SpecCallRunner gains support for:
-#   (a) multi-variable task templates (``{scope_id}`` + call-specific
-#       extras like ``{source_page_id}`` / ``{view_id}``),
-#   (b) a pre-stage hook for runner-level setup (create_view's view page),
-#   (c) a post-stage hook so closing reviewers can reference the built
-#       workspace_updater (web_research's source-count summary currently
-#       degrades to "0 sources cited" under spec dispatch — see the
-#       ``web_research_review`` factory above).
+#   live ``settings.view_importance_*_cap`` values. Needs a pre-stage hook
+#   for the runner-level View page setup.
 # ---------------------------------------------------------------------------

@@ -111,3 +111,52 @@ async def test_stage_types_match(spec_and_legacy):
         f"(legacy={type(legacy.closing_reviewer).__name__}, "
         f"spec={type(spec_runner.closing_reviewer).__name__})"
     )
+
+
+async def test_ingest_spec_parity_with_source_page(tmp_db, question_page):
+    """Ingest isn't in CALL_RUNNER_CLASSES (different dispatch path), so the
+    generic parity fixture skips it. Check spec↔legacy parity directly by
+    constructing both with a synthetic source page.
+    """
+    from rumil.calls.closing_reviewers import IngestClosingReview
+    from rumil.calls.context_builders import IngestEmbeddingContext
+    from rumil.calls.ingest import IngestCall
+    from rumil.calls.page_creators import SimpleAgentLoop
+    from rumil.models import Page, PageLayer, PageType, Workspace
+
+    source_page = Page(
+        page_type=PageType.SOURCE,
+        layer=PageLayer.SQUIDGY,
+        workspace=Workspace.RESEARCH,
+        content="source body",
+        headline="a source document",
+        extra={"filename": "sample.pdf"},
+    )
+    await tmp_db.save_page(source_page)
+
+    call = Call(
+        call_type=CallType.INGEST,
+        workspace=Workspace.RESEARCH,
+        scope_page_id=question_page.id,
+        status=CallStatus.PENDING,
+    )
+    await tmp_db.save_call(call)
+
+    legacy = IngestCall(source_page, question_page.id, call, tmp_db)
+
+    spec = SPECS[(CallType.INGEST, "default")]
+    spec_runner = SpecCallRunner(
+        spec,
+        question_id=question_page.id,
+        call=call,
+        db=tmp_db,
+        stage_ctx_extras={"source_page": source_page},
+    )
+
+    assert legacy.task_description().strip() == spec_runner.task_description().strip()
+    assert set(legacy._resolve_available_moves()) == set(spec_runner._resolve_available_moves())
+    assert isinstance(spec_runner.context_builder, IngestEmbeddingContext)
+    assert isinstance(spec_runner.workspace_updater, SimpleAgentLoop)
+    assert isinstance(spec_runner.closing_reviewer, IngestClosingReview)
+    # filename propagated from source page's extra
+    assert spec_runner.closing_reviewer._filename == "sample.pdf"

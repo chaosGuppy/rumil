@@ -164,6 +164,26 @@ async def test_mark_consumed_flips_status(db_with_run):
     assert consumed.consumed_at is not None
 
 
+async def test_stage_run_flips_nudge_staged_flag(project_id):
+    baseline = await DB.create(run_id=str(uuid.uuid4()), project_id=project_id)
+    await baseline.create_run(name="to-be-staged", question_id=None)
+    nudge = await _create(baseline, soft_text="pre-stage note")
+
+    await baseline.stage_run(baseline.run_id)
+
+    observer = await DB.create(run_id=str(uuid.uuid4()), project_id=project_id)
+    observer_list = await observer.nudges.list_nudges_for_run(baseline.run_id)
+    assert nudge.id not in {n.id for n in observer_list}
+
+    raw = await baseline._execute(
+        baseline.client.table("run_nudges").select("staged").eq("id", nudge.id)
+    )
+    assert raw.data and raw.data[0]["staged"] is True
+
+    await baseline._execute(baseline.client.table("run_nudges").delete().eq("id", nudge.id))
+    await baseline._execute(baseline.client.table("runs").delete().eq("id", baseline.run_id))
+
+
 async def test_staged_run_sees_own_and_baseline_nudges(project_id):
     baseline = await DB.create(run_id=str(uuid.uuid4()), project_id=project_id)
     await baseline.create_run(name="baseline-run", question_id=None)

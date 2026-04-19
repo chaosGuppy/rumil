@@ -972,6 +972,7 @@ class DB:
             "page_format_events",
             "reputation_events",
             "annotation_events",
+            "run_nudges",
         ):
             await self._execute(
                 self.client.table(table).update({"staged": True}).eq("run_id", run_id)
@@ -1108,6 +1109,7 @@ class DB:
             "page_format_events",
             "reputation_events",
             "annotation_events",
+            "run_nudges",
         ):
             await self._execute(
                 self.client.table(table).update({"staged": False}).eq("run_id", run_id)

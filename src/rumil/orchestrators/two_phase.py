@@ -43,6 +43,7 @@ from rumil.orchestrators.common import (
     score_items_sequentially,
     update_view_for_question,
 )
+from rumil.run_executor.executor import RunExecutor
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
 from rumil.tracing.trace_events import (
@@ -110,6 +111,8 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         self._parent_call_id: str | None = None
         self._sequence_id: str | None = None
         self._seq_position: int = 0
+        self._executor: RunExecutor = RunExecutor(db)
+        self._tick_iteration: int = 0
 
     def _effective_budget(self, global_remaining: int) -> int:
         if self._budget_cap is not None:
@@ -169,6 +172,15 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             self._seq_position = 0
         try:
             while True:
+                await self._executor.wait_while_paused(self.db.run_id, poll_interval=1.0)
+                if await self._executor.would_exceed_budget(self.db.run_id):
+                    log.info(
+                        "TwoPhaseOrchestrator: run_id=%s hit dollar budget cap — "
+                        "stopping before next dispatch batch.",
+                        self.db.run_id[:8],
+                    )
+                    break
+
                 remaining = await self.db.budget_remaining()
                 effective = self._effective_budget(remaining)
                 if effective <= 0:
@@ -268,11 +280,58 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                     if self._sequence_id is not None:
                         self._seq_position += 1
 
+                await self._emit_orchestrator_tick(
+                    root_question_id=root_question_id,
+                    last_result=result,
+                    post_batch_remaining=post_batch_remaining,
+                )
+
                 if last_call:
                     break
         finally:
             await self._teardown()
             await own_db.close()
+
+    async def _emit_orchestrator_tick(
+        self,
+        *,
+        root_question_id: str,
+        last_result: PrioritizationResult,
+        post_batch_remaining: int,
+    ) -> None:
+        """Write a cooperative checkpoint at the end of a dispatch batch.
+
+        Records per-batch state so a future resume can pick up from the
+        last known-good point. Only fires AFTER the batch commits — not
+        at the top of the iteration — so resuming reads only reach
+        ``orchestrator_tick`` rows whose corresponding dispatches
+        actually landed.
+
+        Best-effort: any exception writing the checkpoint is logged but
+        does not abort the run.
+        """
+        self._tick_iteration += 1
+        payload: dict = {
+            "iteration": self._tick_iteration,
+            "root_question_id": root_question_id,
+            "pending_dispatches": [
+                {
+                    "call_type": d.call_type.value,
+                    "question_id": d.payload.question_id,
+                }
+                for seq in last_result.dispatch_sequences
+                for d in seq
+            ],
+            "budget_remaining": post_batch_remaining,
+            "consumed": self._consumed,
+        }
+        try:
+            await self._executor.checkpoint(self.db.run_id, "orchestrator_tick", payload)
+        except Exception:
+            log.exception(
+                "TwoPhaseOrchestrator: checkpoint write failed for run_id=%s",
+                self.db.run_id[:8],
+            )
 
     async def _run_dispatch_sequence(
         self,

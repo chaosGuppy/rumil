@@ -16,12 +16,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from rumil.dispatch import (
-    dispatch_evaluation,
-    dispatch_grounding_pipeline,
-    dispatch_orchestrator,
-    dispatch_single_call,
-)
+# NOTE: ``rumil.dispatch`` is imported lazily *inside* each handler so
+# that loading ``rumil.run_executor`` (which includes these handlers via
+# the package __init__) doesn't transitively pull in
+# ``rumil.orchestrators``. The orchestrator modules in turn want to
+# ``import RunExecutor``; resolving that while the executor package is
+# mid-load triggers a circular import. Lazy per-call imports keep the
+# package-load graph a DAG.
 from rumil.models import CallType
 from rumil.run_executor.executor import register_handler
 from rumil.run_executor.run_spec import RunSpec
@@ -43,6 +44,8 @@ async def _handle_orchestrator(spec: RunSpec, db: DB) -> None:
     """``spec.question_id`` is required; optional payload keys: variant,
     available_calls, available_moves, enable_global_prio.
     """
+    from rumil.dispatch import dispatch_orchestrator
+
     if not spec.question_id:
         raise ValueError("RunSpec(kind='orchestrator') requires spec.question_id")
     payload = spec.payload
@@ -59,6 +62,8 @@ async def _handle_orchestrator(spec: RunSpec, db: DB) -> None:
 @register_handler("evaluation")
 async def _handle_evaluation(spec: RunSpec, db: DB) -> None:
     """``spec.question_id`` required; payload: eval_type (default "default")."""
+    from rumil.dispatch import dispatch_evaluation
+
     if not spec.question_id:
         raise ValueError("RunSpec(kind='evaluation') requires spec.question_id")
     await dispatch_evaluation(
@@ -74,6 +79,8 @@ async def _handle_single_call(spec: RunSpec, db: DB) -> None:
     ``spec.question_id`` required. Optional: max_rounds, model, origin,
     extra_runner_kwargs.
     """
+    from rumil.dispatch import dispatch_single_call
+
     if not spec.question_id:
         raise ValueError("RunSpec(kind='single_call') requires spec.question_id")
     call_type_raw = _require(spec.payload, "call_type", "single_call")
@@ -95,6 +102,8 @@ async def _handle_grounding_pipeline(spec: RunSpec, db: DB) -> None:
     from_stage (optional int, default 1), prior_checkpoints (optional dict).
     ``spec.question_id`` required.
     """
+    from rumil.dispatch import dispatch_grounding_pipeline
+
     if not spec.question_id:
         raise ValueError("RunSpec(kind='grounding_pipeline') requires spec.question_id")
     await dispatch_grounding_pipeline(

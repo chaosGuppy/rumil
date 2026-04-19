@@ -17,6 +17,7 @@ import {
   fetchLLMExchange,
   fetchRunTraceTree,
   fetchProjectRuns,
+  updateRunHidden,
   type LLMExchangeDetail,
   type LLMExchangeSummary,
   type RunListItem,
@@ -78,6 +79,16 @@ export function TraceView(props: TraceViewProps) {
   );
 }
 
+// Local storage for the RunPicker's show-hidden toggle. Per-project would
+// be nicer but a single global knob keeps the mental model simple — when
+// you're hunting for a smoke-test run you probably want them everywhere.
+const SHOW_HIDDEN_RUNS_STORAGE_KEY = "parma:showHiddenRuns";
+
+function loadShowHiddenRuns(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.localStorage.getItem(SHOW_HIDDEN_RUNS_STORAGE_KEY) === "1";
+}
+
 // When trace mode is entered without a run_id, show a list of recent runs
 // in the current project. This is a soft on-ramp — most users will land
 // in trace mode via a chip with a run already selected.
@@ -90,6 +101,12 @@ function RunPicker({
 }) {
   const [rows, setRows] = useState<RunListItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showHidden, setShowHidden] = useState(false);
+  const [busyRunId, setBusyRunId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setShowHidden(loadShowHiddenRuns());
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -105,11 +122,46 @@ function RunPicker({
     };
   }, [projectId]);
 
+  const persistShowHidden = useCallback((next: boolean) => {
+    setShowHidden(next);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(
+        SHOW_HIDDEN_RUNS_STORAGE_KEY,
+        next ? "1" : "0",
+      );
+    }
+  }, []);
+
+  const handleToggleHidden = useCallback(
+    async (run: RunListItem) => {
+      if (!run.run_id || busyRunId) return;
+      const nextHidden = !run.hidden;
+      setBusyRunId(run.run_id);
+      try {
+        await updateRunHidden(run.run_id, nextHidden);
+        setRows((prev) => {
+          if (!prev) return prev;
+          return prev.map((r) =>
+            r.run_id === run.run_id ? { ...r, hidden: nextHidden } : r,
+          );
+        });
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Could not update run");
+      } finally {
+        setBusyRunId(null);
+      }
+    },
+    [busyRunId],
+  );
+
   if (error) return <div className="trace-pick-error">Failed to load runs: {error}</div>;
   if (!rows) return <div className="trace-pick-loading">Loading runs...</div>;
 
-  const usable = rows.filter((r) => r.run_id);
-  if (usable.length === 0) {
+  const withRunId = rows.filter((r) => r.run_id);
+  const visible = showHidden ? withRunId : withRunId.filter((r) => !r.hidden);
+  const hiddenCount = withRunId.filter((r) => r.hidden).length;
+
+  if (withRunId.length === 0) {
     return (
       <div className="trace-pick-empty">
         No runs in this project yet. Dispatch a call first.
@@ -124,39 +176,91 @@ function RunPicker({
         <p className="trace-pick-sub">
           Pick a run to inspect. Most-recent first.
         </p>
+        {hiddenCount > 0 && (
+          <label className="trace-pick-toggle">
+            <input
+              type="checkbox"
+              checked={showHidden}
+              onChange={(e) => persistShowHidden(e.target.checked)}
+            />
+            <span>
+              show hidden
+              <em className="trace-pick-toggle-hint">({hiddenCount})</em>
+            </span>
+          </label>
+        )}
       </div>
-      <div className="trace-pick-list">
-        {usable.map((r) => {
-          const discriminators = extractRunDiscriminators(r.config);
-          return (
-            <button
-              key={r.run_id!}
-              className="trace-pick-row"
-              onClick={() => onSelect(r.run_id!)}
-            >
-              <div className="trace-pick-row-head">
-                <span className="trace-pick-row-name">
-                  {r.name || r.run_id!.slice(0, 8)}
-                </span>
-                {r.staged && <span className="trace-pick-row-staged">staged</span>}
-              </div>
-              {r.question_summary && (
-                <div className="trace-pick-row-q">{r.question_summary}</div>
-              )}
-              <div className="trace-pick-row-meta">
-                <span>{r.run_id!.slice(0, 8)}</span>
-                <span>·</span>
-                <span>{formatWhen(r.created_at)}</span>
-                {discriminators.map((d) => (
-                  <span key={d.key} className="trace-pick-row-meta-chip" title={d.title}>
-                    {d.label}
+      {visible.length === 0 ? (
+        <div className="trace-pick-empty-hidden">
+          All runs in this project are hidden. Toggle &quot;show hidden&quot;
+          to reveal them.
+        </div>
+      ) : (
+        <div className="trace-pick-list">
+          {visible.map((r) => {
+            const discriminators = extractRunDiscriminators(r.config);
+            const busy = busyRunId === r.run_id;
+            const rowClasses = [
+              "trace-pick-row",
+              r.hidden ? "is-hidden-run" : "",
+              busy ? "is-busy" : "",
+            ]
+              .filter(Boolean)
+              .join(" ");
+            return (
+              <div
+                key={r.run_id!}
+                role="button"
+                tabIndex={0}
+                className={rowClasses}
+                onClick={() => onSelect(r.run_id!)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onSelect(r.run_id!);
+                  }
+                }}
+              >
+                <button
+                  type="button"
+                  className="trace-pick-row-hide"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleToggleHidden(r);
+                  }}
+                  disabled={busy}
+                  title={r.hidden ? "Unhide run" : "Hide run"}
+                  aria-label={r.hidden ? "Unhide run" : "Hide run"}
+                >
+                  {r.hidden ? "unhide" : "hide"}
+                </button>
+                <div className="trace-pick-row-head">
+                  <span className="trace-pick-row-name">
+                    {r.name || r.run_id!.slice(0, 8)}
                   </span>
-                ))}
+                  {r.staged && <span className="trace-pick-row-staged">staged</span>}
+                  {r.hidden && (
+                    <span className="trace-pick-row-hidden">hidden</span>
+                  )}
+                </div>
+                {r.question_summary && (
+                  <div className="trace-pick-row-q">{r.question_summary}</div>
+                )}
+                <div className="trace-pick-row-meta">
+                  <span>{r.run_id!.slice(0, 8)}</span>
+                  <span>·</span>
+                  <span>{formatWhen(r.created_at)}</span>
+                  {discriminators.map((d) => (
+                    <span key={d.key} className="trace-pick-row-meta-chip" title={d.title}>
+                      {d.label}
+                    </span>
+                  ))}
+                </div>
               </div>
-            </button>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

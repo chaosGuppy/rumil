@@ -7055,6 +7055,103 @@ mark.ann-mark.ann-mark-dispute:hover {
   letter-spacing: 0.02em;
 }
 
+/* run-picker hygiene: show-hidden toggle + per-row hide button. Visual
+ * pattern mirrors landing-card.is-hidden-project so the two hygiene
+ * affordances feel like one feature. */
+.trace-pick-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  font-family: var(--font-mono-stack);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  cursor: pointer;
+  user-select: none;
+}
+.trace-pick-toggle input { accent-color: var(--fg); cursor: pointer; }
+.trace-pick-toggle-hint {
+  margin-left: 6px;
+  font-style: normal;
+  color: var(--fg-dim);
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+
+.trace-pick-row {
+  position: relative;
+}
+.trace-pick-row.is-hidden-run {
+  opacity: 0.55;
+  border-style: dashed;
+  background: transparent;
+}
+.trace-pick-row.is-hidden-run:hover {
+  opacity: 0.85;
+}
+.trace-pick-row.is-busy {
+  pointer-events: none;
+  opacity: 0.45;
+}
+
+.trace-pick-row-hidden {
+  font-family: var(--font-mono-stack);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  background: var(--bg);
+  border: 1px dashed var(--border-strong);
+  padding: 1px 5px;
+  border-radius: 2px;
+}
+
+.trace-pick-row-hide {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: var(--bg-pane);
+  font-family: var(--font-mono-stack);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.1s, border-color 0.1s;
+}
+.trace-pick-row:hover .trace-pick-row-hide,
+.trace-pick-row-hide:focus-visible {
+  opacity: 1;
+}
+.trace-pick-row-hide:hover {
+  color: var(--fg);
+  border-color: var(--fg);
+}
+.trace-pick-row-hide:disabled {
+  cursor: progress;
+  opacity: 0.4;
+}
+.trace-pick-row.is-hidden-run .trace-pick-row-hide {
+  opacity: 1;
+}
+
+.trace-pick-empty-hidden {
+  padding: 32px 16px;
+  text-align: center;
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--fg-muted);
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+}
+
 /* ---------- Search palette (⌘K) ---------- */
 
 .search-palette-backdrop {

@@ -38,9 +38,14 @@ import { useDocumentTitle } from "@/lib/useDocumentTitle";
 import type { QuestionView, Page, Project, ProjectSummary } from "@/lib/types";
 
 const TEST_PROJECT_PATTERN = /^(test|scratch|smoke|tmp|scratchpad|skyblue-scratch|test-scratch)([-_].*)?$/i;
+const CHAT_PERSIST_PATTERN = /^chat-persist-/;
 
 function isTestProject(name: string): boolean {
   return TEST_PROJECT_PATTERN.test(name);
+}
+
+function isChatPersistProject(name: string): boolean {
+  return CHAT_PERSIST_PATTERN.test(name);
 }
 
 type SortMode = "newest" | "oldest" | "alpha";
@@ -406,7 +411,6 @@ function ProjectBrowser({
 }: {
   onSelectProject: (project: Project) => void;
 }) {
-  const router = useRouter();
   const [rows, setRows] = useState<ProjectSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showTest, setShowTest] = useState(false);
@@ -506,13 +510,17 @@ function ProjectBrowser({
 
   const filtered = useMemo(() => {
     if (!rows) return null;
-    const live = showTest ? rows : rows.filter((r) => !isTestProject(r.name));
+    const withoutChatPersist = rows.filter((r) => !isChatPersistProject(r.name));
+    const live = showTest
+      ? withoutChatPersist
+      : withoutChatPersist.filter((r) => !isTestProject(r.name));
     return sortProjects(live, sort);
   }, [rows, showTest, sort]);
 
   const hiddenTestCount = useMemo(() => {
     if (!rows) return 0;
-    return showTest ? 0 : rows.filter((r) => isTestProject(r.name)).length;
+    const withoutChatPersist = rows.filter((r) => !isChatPersistProject(r.name));
+    return showTest ? 0 : withoutChatPersist.filter((r) => isTestProject(r.name)).length;
   }, [rows, showTest]);
 
   // Count of hidden rows currently in `rows` — only meaningful when
@@ -715,11 +723,12 @@ function ProjectBrowser({
           onCreated={(project, created) => {
             setModalOpen(false);
             setCollisionHint(created ? null : project.name);
-            // Deliberate navigation — use push so the browser back button
-            // returns the user to the landing. The AppContent hydration
-            // effect picks up ?project= and routes into the question picker
-            // (or straight into a single-question workspace).
-            router.push(`?project=${encodeURIComponent(project.id)}`);
+            // Route into the new workspace using the same path as clicking
+            // an existing card — this updates `selectedProject` directly
+            // and kicks off the question fetch, rather than relying on
+            // URL-param hydration (which doesn't fire reliably on a
+            // same-route push).
+            onSelectProject(project);
           }}
         />
       )}

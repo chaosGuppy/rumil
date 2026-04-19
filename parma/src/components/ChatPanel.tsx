@@ -661,10 +661,10 @@ export function ChatPanel({
         <button
           className="chat-toggle-strip"
           onClick={onToggle}
-          title="Open chat (\u2318/)"
+          title="Open chat (⌘/)"
         >
           <span className="chat-toggle-label">Chat</span>
-          <span className="chat-toggle-shortcut">\u2318/</span>
+          <span className="chat-toggle-shortcut">⌘/</span>
         </button>
       )}
 
@@ -719,7 +719,7 @@ export function ChatPanel({
             <button
               onClick={onToggle}
               className="chat-close-btn"
-              title="Close chat (\u2318/)"
+              title="Close chat (⌘/)"
             >
               close
             </button>

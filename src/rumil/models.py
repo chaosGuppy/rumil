@@ -571,6 +571,64 @@ class AnnotationEvent(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
+class NudgeKind(str, Enum):
+    CONSTRAIN_DISPATCH = "constrain_dispatch"
+    INJECT_NOTE = "inject_note"
+    REWRITE_GOAL = "rewrite_goal"
+    VETO_CALL = "veto_call"
+    REDO_CALL = "redo_call"
+    PAUSE = "pause"
+
+
+class NudgeDurability(str, Enum):
+    ONE_SHOT = "one_shot"
+    PERSISTENT = "persistent"
+
+
+class NudgeAuthorKind(str, Enum):
+    HUMAN = "human"
+    CLAUDE = "claude"
+    SYSTEM = "system"
+
+
+class NudgeStatus(str, Enum):
+    ACTIVE = "active"
+    EXPIRED = "expired"
+    REVOKED = "revoked"
+    CONSUMED = "consumed"
+
+
+class NudgeScope(BaseModel):
+    """Where a nudge applies. All fields optional; empty scope matches
+    everything on the run. Stored as JSONB on ``run_nudges.scope``."""
+
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+    call_types: list[str] | None = None
+    question_ids: list[str] | None = None
+    call_id: str | None = None
+    expires_at: datetime | None = None
+    expires_after_n_calls: int | None = None
+
+
+class RunNudge(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    run_id: str
+    author_kind: NudgeAuthorKind
+    author_note: str = ""
+    kind: NudgeKind
+    payload: dict = Field(default_factory=dict)
+    durability: NudgeDurability
+    scope: NudgeScope = Field(default_factory=NudgeScope)
+    soft_text: str | None = None
+    hard: bool = False
+    status: NudgeStatus = NudgeStatus.ACTIVE
+    staged: bool = False
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    revoked_at: datetime | None = None
+    consumed_at: datetime | None = None
+
+
 class ChatMessageRole(str, Enum):
     USER = "user"
     ASSISTANT = "assistant"

@@ -139,6 +139,7 @@ class DB:
         from rumil.db.chat_store import ChatStore
         from rumil.db.link_store import LinkStore
         from rumil.db.mutation_log import MutationLog
+        from rumil.db.nudge_store import NudgeStore
         from rumil.db.page_store import PageStore
         from rumil.db.project_store import ProjectStore
         from rumil.db.run_store import RunStore
@@ -159,6 +160,7 @@ class DB:
         self.chat = ChatStore(self)
         self.pages = PageStore(self)
         self.links = LinkStore(self)
+        self.nudges = NudgeStore(self)
 
     @classmethod
     async def create(

@@ -326,6 +326,51 @@ export type AgentStartedEventOut = {
 };
 
 /**
+ * AlertConfig
+ *
+ * A rule that turns run state into fired alerts at read / tick time.
+ */
+export type AlertConfig = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Project Id
+     */
+    project_id: string | null;
+    /**
+     * Run Id
+     */
+    run_id: string | null;
+    kind: AlertKind;
+    /**
+     * Params
+     */
+    params: {
+        [key: string]: unknown;
+    };
+    /**
+     * Enabled
+     */
+    enabled: boolean;
+    /**
+     * Created At
+     */
+    created_at: string;
+};
+
+/**
+ * AlertKind
+ */
+export type AlertKind = 'cost_threshold' | 'stall_timeout' | 'confusion_spike';
+
+/**
+ * AlertSeverity
+ */
+export type AlertSeverity = 'info' | 'warn' | 'crit';
+
+/**
  * AnnotationCreateOut
  */
 export type AnnotationCreateOut = {
@@ -1079,6 +1124,31 @@ export type ConversationListItem = {
 };
 
 /**
+ * CreateAlertConfigIn
+ */
+export type CreateAlertConfigIn = {
+    kind: AlertKind;
+    /**
+     * Params
+     */
+    params?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Project Id
+     */
+    project_id?: string | null;
+    /**
+     * Run Id
+     */
+    run_id?: string | null;
+    /**
+     * Enabled
+     */
+    enabled?: boolean;
+};
+
+/**
  * CreateConversationRequest
  */
 export type CreateConversationRequest = {
@@ -1098,6 +1168,34 @@ export type CreateConversationRequest = {
      * Title
      */
     title?: string | null;
+};
+
+/**
+ * CreateNudgeIn
+ */
+export type CreateNudgeIn = {
+    kind: NudgeKind;
+    durability: NudgeDurability;
+    author_kind?: NudgeAuthorKind;
+    /**
+     * Author Note
+     */
+    author_note?: string;
+    /**
+     * Payload
+     */
+    payload?: {
+        [key: string]: unknown;
+    };
+    scope?: NudgeScope;
+    /**
+     * Soft Text
+     */
+    soft_text?: string | null;
+    /**
+     * Hard
+     */
+    hard?: boolean;
 };
 
 /**
@@ -1439,6 +1537,37 @@ export type ExplorePageEventOut = {
      * Response
      */
     response: string;
+};
+
+/**
+ * FiredAlert
+ *
+ * In-memory alert fired for a specific run on evaluator read.
+ *
+ * Not persisted in v1 — consumers (parma dashboard, orchestrator tick
+ * emitter) receive the list and decide what to display or forward.
+ */
+export type FiredAlert = {
+    /**
+     * Run Id
+     */
+    run_id: string;
+    kind: AlertKind;
+    severity: AlertSeverity;
+    /**
+     * Message
+     */
+    message: string;
+    /**
+     * Context
+     */
+    context: {
+        [key: string]: unknown;
+    };
+    /**
+     * Source Config Id
+     */
+    source_config_id: string | null;
 };
 
 /**
@@ -1873,6 +2002,121 @@ export type MovesExecutedEventOut = {
      * Moves
      */
     moves: Array<MoveTraceItem>;
+};
+
+/**
+ * NudgeAppliedEventOut
+ */
+export type NudgeAppliedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'nudge_applied';
+    /**
+     * Phase
+     */
+    phase: string;
+    /**
+     * Applied
+     */
+    applied: Array<NudgeSummaryItem>;
+    /**
+     * Filtered Dispatch Count
+     */
+    filtered_dispatch_count: number;
+};
+
+/**
+ * NudgeAuthorKind
+ */
+export type NudgeAuthorKind = 'human' | 'claude' | 'system';
+
+/**
+ * NudgeDurability
+ */
+export type NudgeDurability = 'one_shot' | 'persistent';
+
+/**
+ * NudgeKind
+ */
+export type NudgeKind = 'constrain_dispatch' | 'inject_note' | 'rewrite_goal' | 'veto_call' | 'redo_call' | 'pause';
+
+/**
+ * NudgeScope
+ *
+ * Where a nudge applies. All fields optional; empty scope matches
+ * everything on the run. Stored as JSONB on ``run_nudges.scope``.
+ */
+export type NudgeScope = {
+    /**
+     * Call Types
+     */
+    call_types: Array<string> | null;
+    /**
+     * Question Ids
+     */
+    question_ids: Array<string> | null;
+    /**
+     * Call Id
+     */
+    call_id: string | null;
+    /**
+     * Expires At
+     */
+    expires_at: string | null;
+    /**
+     * Expires After N Calls
+     */
+    expires_after_n_calls: number | null;
+};
+
+/**
+ * NudgeStatus
+ */
+export type NudgeStatus = 'active' | 'expired' | 'revoked' | 'consumed';
+
+/**
+ * NudgeSummaryItem
+ *
+ * Summary of one nudge that fired at a safe point.
+ *
+ * Emitted under ``NudgeAppliedEvent`` so the trace UI can show which
+ * human-authored nudges influenced this orchestrator tick / call, what
+ * they did, and whether any hard filters removed dispatch candidates.
+ */
+export type NudgeSummaryItem = {
+    /**
+     * Nudge Id
+     */
+    nudge_id: string;
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * Author Kind
+     */
+    author_kind?: string;
+    /**
+     * Hard
+     */
+    hard?: boolean;
+    /**
+     * Soft Text
+     */
+    soft_text?: string | null;
+    /**
+     * Effect
+     */
+    effect?: string;
 };
 
 /**
@@ -2765,6 +3009,59 @@ export type RunListItemOut = {
      * Hidden
      */
     hidden: boolean;
+};
+
+/**
+ * RunNudge
+ */
+export type RunNudge = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Run Id
+     */
+    run_id: string;
+    author_kind: NudgeAuthorKind;
+    /**
+     * Author Note
+     */
+    author_note: string;
+    kind: NudgeKind;
+    /**
+     * Payload
+     */
+    payload: {
+        [key: string]: unknown;
+    };
+    durability: NudgeDurability;
+    scope: NudgeScope;
+    /**
+     * Soft Text
+     */
+    soft_text: string | null;
+    /**
+     * Hard
+     */
+    hard: boolean;
+    status: NudgeStatus;
+    /**
+     * Staged
+     */
+    staged: boolean;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Revoked At
+     */
+    revoked_at: string | null;
+    /**
+     * Consumed At
+     */
+    consumed_at: string | null;
 };
 
 /**
@@ -5002,6 +5299,251 @@ export type PostCommitRunApiRunsRunIdCommitPostResponses = {
 
 export type PostCommitRunApiRunsRunIdCommitPostResponse = PostCommitRunApiRunsRunIdCommitPostResponses[keyof PostCommitRunApiRunsRunIdCommitPostResponses];
 
+export type ListNudgesApiRunsRunIdNudgesGetData = {
+    body?: never;
+    path: {
+        /**
+         * Run Id
+         */
+        run_id: string;
+    };
+    query?: {
+        /**
+         * Status
+         */
+        status?: NudgeStatus | null;
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/runs/{run_id}/nudges';
+};
+
+export type ListNudgesApiRunsRunIdNudgesGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListNudgesApiRunsRunIdNudgesGetError = ListNudgesApiRunsRunIdNudgesGetErrors[keyof ListNudgesApiRunsRunIdNudgesGetErrors];
+
+export type ListNudgesApiRunsRunIdNudgesGetResponses = {
+    /**
+     * Response List Nudges Api Runs  Run Id  Nudges Get
+     *
+     * Successful Response
+     */
+    200: Array<RunNudge>;
+};
+
+export type ListNudgesApiRunsRunIdNudgesGetResponse = ListNudgesApiRunsRunIdNudgesGetResponses[keyof ListNudgesApiRunsRunIdNudgesGetResponses];
+
+export type CreateNudgeApiRunsRunIdNudgesPostData = {
+    body: CreateNudgeIn;
+    path: {
+        /**
+         * Run Id
+         */
+        run_id: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/runs/{run_id}/nudges';
+};
+
+export type CreateNudgeApiRunsRunIdNudgesPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateNudgeApiRunsRunIdNudgesPostError = CreateNudgeApiRunsRunIdNudgesPostErrors[keyof CreateNudgeApiRunsRunIdNudgesPostErrors];
+
+export type CreateNudgeApiRunsRunIdNudgesPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: RunNudge;
+};
+
+export type CreateNudgeApiRunsRunIdNudgesPostResponse = CreateNudgeApiRunsRunIdNudgesPostResponses[keyof CreateNudgeApiRunsRunIdNudgesPostResponses];
+
+export type RevokeNudgeApiNudgesNudgeIdRevokePatchData = {
+    body?: never;
+    path: {
+        /**
+         * Nudge Id
+         */
+        nudge_id: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/nudges/{nudge_id}/revoke';
+};
+
+export type RevokeNudgeApiNudgesNudgeIdRevokePatchErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RevokeNudgeApiNudgesNudgeIdRevokePatchError = RevokeNudgeApiNudgesNudgeIdRevokePatchErrors[keyof RevokeNudgeApiNudgesNudgeIdRevokePatchErrors];
+
+export type RevokeNudgeApiNudgesNudgeIdRevokePatchResponses = {
+    /**
+     * Successful Response
+     */
+    200: RunNudge;
+};
+
+export type RevokeNudgeApiNudgesNudgeIdRevokePatchResponse = RevokeNudgeApiNudgesNudgeIdRevokePatchResponses[keyof RevokeNudgeApiNudgesNudgeIdRevokePatchResponses];
+
+export type ListAlertConfigsApiAlertConfigsGetData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/alert-configs';
+};
+
+export type ListAlertConfigsApiAlertConfigsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListAlertConfigsApiAlertConfigsGetError = ListAlertConfigsApiAlertConfigsGetErrors[keyof ListAlertConfigsApiAlertConfigsGetErrors];
+
+export type ListAlertConfigsApiAlertConfigsGetResponses = {
+    /**
+     * Response List Alert Configs Api Alert Configs Get
+     *
+     * Successful Response
+     */
+    200: Array<AlertConfig>;
+};
+
+export type ListAlertConfigsApiAlertConfigsGetResponse = ListAlertConfigsApiAlertConfigsGetResponses[keyof ListAlertConfigsApiAlertConfigsGetResponses];
+
+export type CreateAlertConfigApiAlertConfigsPostData = {
+    body: CreateAlertConfigIn;
+    path?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/alert-configs';
+};
+
+export type CreateAlertConfigApiAlertConfigsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateAlertConfigApiAlertConfigsPostError = CreateAlertConfigApiAlertConfigsPostErrors[keyof CreateAlertConfigApiAlertConfigsPostErrors];
+
+export type CreateAlertConfigApiAlertConfigsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: AlertConfig;
+};
+
+export type CreateAlertConfigApiAlertConfigsPostResponse = CreateAlertConfigApiAlertConfigsPostResponses[keyof CreateAlertConfigApiAlertConfigsPostResponses];
+
+export type DeleteAlertConfigApiAlertConfigsConfigIdDeleteData = {
+    body?: never;
+    path: {
+        /**
+         * Config Id
+         */
+        config_id: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/alert-configs/{config_id}';
+};
+
+export type DeleteAlertConfigApiAlertConfigsConfigIdDeleteErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeleteAlertConfigApiAlertConfigsConfigIdDeleteError = DeleteAlertConfigApiAlertConfigsConfigIdDeleteErrors[keyof DeleteAlertConfigApiAlertConfigsConfigIdDeleteErrors];
+
+export type DeleteAlertConfigApiAlertConfigsConfigIdDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type DeleteAlertConfigApiAlertConfigsConfigIdDeleteResponse = DeleteAlertConfigApiAlertConfigsConfigIdDeleteResponses[keyof DeleteAlertConfigApiAlertConfigsConfigIdDeleteResponses];
+
+export type GetRunAlertsApiRunsRunIdAlertsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Run Id
+         */
+        run_id: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/runs/{run_id}/alerts';
+};
+
+export type GetRunAlertsApiRunsRunIdAlertsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetRunAlertsApiRunsRunIdAlertsGetError = GetRunAlertsApiRunsRunIdAlertsGetErrors[keyof GetRunAlertsApiRunsRunIdAlertsGetErrors];
+
+export type GetRunAlertsApiRunsRunIdAlertsGetResponses = {
+    /**
+     * Response Get Run Alerts Api Runs  Run Id  Alerts Get
+     *
+     * Successful Response
+     */
+    200: Array<FiredAlert>;
+};
+
+export type GetRunAlertsApiRunsRunIdAlertsGetResponse = GetRunAlertsApiRunsRunIdAlertsGetResponses[keyof GetRunAlertsApiRunsRunIdAlertsGetResponses];
+
 export type GetCallEventsApiCallsCallIdEventsGetData = {
     body?: never;
     path: {
@@ -5092,7 +5634,9 @@ export type GetCallEventsApiCallsCallIdEventsGetResponses = {
         event: 'global_phase_completed';
     } & GlobalPhaseCompletedEventOut) | ({
         event: 'update_view_phase_completed';
-    } & UpdateViewPhaseCompletedEventOut)>;
+    } & UpdateViewPhaseCompletedEventOut) | ({
+        event: 'nudge_applied';
+    } & NudgeAppliedEventOut)>;
 };
 
 export type GetCallEventsApiCallsCallIdEventsGetResponse = GetCallEventsApiCallsCallIdEventsGetResponses[keyof GetCallEventsApiCallsCallIdEventsGetResponses];

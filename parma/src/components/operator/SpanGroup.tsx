@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { useParams } from "next/navigation";
 import type { TraceEvent } from "@/lib/operator-types";
+import { createNudge } from "@/lib/api";
 import { CostBadge } from "./CostBadge";
 
 function formatDuration(ms: number): string {
@@ -44,10 +46,47 @@ export function SpanGroup({
 }) {
   const [expanded, setExpanded] = useState(true);
   const toggle = useCallback(() => setExpanded((v) => !v), []);
+  const params = useParams<{ runId: string }>();
+  const runId = params?.runId;
+  const [vetoing, setVetoing] = useState(false);
+  const [vetoed, setVetoed] = useState(false);
 
   const duration = spanDuration(beginTimestamp, endTimestamp);
   const cost = spanCost(events);
   const modelCount = events.filter((e) => e.event_type === "model").length;
+
+  const onVeto = useCallback(
+    async (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (!runId || vetoing || vetoed) return;
+      if (!confirm(`Veto span ${name} (${spanId.slice(0, 8)})?`)) return;
+      setVetoing(true);
+      try {
+        await createNudge(runId, {
+          kind: "veto_call",
+          durability: "one_shot",
+          author_kind: "human",
+          author_note: `via parma inline veto on span ${spanType}`,
+          payload: {},
+          scope: {
+            call_types: null,
+            question_ids: null,
+            call_id: spanId,
+            expires_at: null,
+            expires_after_n_calls: null,
+          },
+          soft_text: `vetoed span ${name}`,
+          hard: true,
+        });
+        setVetoed(true);
+      } catch (err) {
+        alert(`Veto failed: ${(err as Error).message}`);
+      } finally {
+        setVetoing(false);
+      }
+    },
+    [runId, spanId, spanType, name, vetoing, vetoed],
+  );
 
   return (
     <div className={`op-span op-span-${spanType}`} data-span-id={spanId}>
@@ -61,6 +100,20 @@ export function SpanGroup({
           )}
           {duration > 0 && <span>{formatDuration(duration)}</span>}
           {cost > 0 && <CostBadge cost={cost} />}
+          {runId && (
+            <span
+              role="button"
+              tabIndex={0}
+              className="op-span-veto"
+              onClick={onVeto}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") onVeto(e as unknown as React.MouseEvent);
+              }}
+              title="Nudge: veto this span (hard one-shot)"
+            >
+              {vetoed ? "vetoed" : vetoing ? "…" : "veto"}
+            </span>
+          )}
         </span>
       </button>
       {expanded && <div className="op-span-body">{children}</div>}

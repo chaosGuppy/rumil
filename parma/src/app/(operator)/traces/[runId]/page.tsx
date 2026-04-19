@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { NudgePanel } from "@/components/operator/NudgePanel";
 import { TraceDetail } from "@/components/operator/TraceDetail";
 import { fetchRunDetail } from "@/lib/operator-api";
 import {
@@ -171,6 +172,7 @@ export default function TraceDetailPage() {
         context={evalContext}
         onNavigate={(nextRunId) => router.push(`/traces/${nextRunId}`)}
       />
+      <NudgePanel runId={runId} />
       <TraceDetail run={run} />
     </div>
   );

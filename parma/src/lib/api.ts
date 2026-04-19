@@ -969,4 +969,52 @@ export async function fetchCall(callId: string): Promise<CallDetail> {
   return res.json();
 }
 
+import type {
+  CreateNudgeIn,
+  NudgeStatus,
+  RunNudge,
+} from "@/api/types.gen";
+
+export type { RunNudge, CreateNudgeIn };
+
+// Mid-run steering nudges. See src/rumil/nudges/ for the read side.
+// Every authoring surface (parma NudgePanel, CLI, /rumil-nudge skill)
+// POSTs the same body shape here.
+export async function fetchNudges(
+  runId: string,
+  status: NudgeStatus | "all" = "active",
+): Promise<RunNudge[]> {
+  const qs = status === "all" ? "" : `?status=${status}`;
+  const res = await fetch(
+    `${API_BASE}/api/runs/${encodeURIComponent(runId)}/nudges${qs}`,
+  );
+  if (!res.ok) throw new Error(await liftFastApiError(res));
+  return res.json();
+}
+
+export async function createNudge(
+  runId: string,
+  body: CreateNudgeIn,
+): Promise<RunNudge> {
+  const res = await fetch(
+    `${API_BASE}/api/runs/${encodeURIComponent(runId)}/nudges`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+  if (!res.ok) throw new Error(await liftFastApiError(res));
+  return res.json();
+}
+
+export async function revokeNudge(nudgeId: string): Promise<RunNudge> {
+  const res = await fetch(
+    `${API_BASE}/api/nudges/${encodeURIComponent(nudgeId)}/revoke`,
+    { method: "PATCH" },
+  );
+  if (!res.ok) throw new Error(await liftFastApiError(res));
+  return res.json();
+}
+
 export { API_BASE };

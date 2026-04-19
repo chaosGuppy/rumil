@@ -2222,6 +2222,368 @@
         }
       }
     },
+    "/api/runs/{run_id}/nudges": {
+      "post": {
+        "summary": "Create Nudge",
+        "operationId": "create_nudge_api_runs__run_id__nudges_post",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateNudgeIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunNudge"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "List Nudges",
+        "operationId": "list_nudges_api_runs__run_id__nudges_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/NudgeStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RunNudge"
+                  },
+                  "title": "Response List Nudges Api Runs  Run Id  Nudges Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/nudges/{nudge_id}/revoke": {
+      "patch": {
+        "summary": "Revoke Nudge",
+        "operationId": "revoke_nudge_api_nudges__nudge_id__revoke_patch",
+        "parameters": [
+          {
+            "name": "nudge_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Nudge Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunNudge"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/alert-configs": {
+      "post": {
+        "summary": "Create Alert Config",
+        "operationId": "create_alert_config_api_alert_configs_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAlertConfigIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertConfig"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "List Alert Configs",
+        "operationId": "list_alert_configs_api_alert_configs_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AlertConfig"
+                  },
+                  "title": "Response List Alert Configs Api Alert Configs Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/alert-configs/{config_id}": {
+      "delete": {
+        "summary": "Delete Alert Config",
+        "operationId": "delete_alert_config_api_alert_configs__config_id__delete",
+        "parameters": [
+          {
+            "name": "config_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Config Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runs/{run_id}/alerts": {
+      "get": {
+        "summary": "Get Run Alerts",
+        "operationId": "get_run_alerts_api_runs__run_id__alerts_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FiredAlert"
+                  },
+                  "title": "Response Get Run Alerts Api Runs  Run Id  Alerts Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/calls/{call_id}/events": {
       "get": {
         "summary": "Get Call Events",
@@ -2342,6 +2704,9 @@
                       },
                       {
                         "$ref": "#/components/schemas/UpdateViewPhaseCompletedEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/NudgeAppliedEventOut"
                       }
                     ],
                     "discriminator": {
@@ -2375,7 +2740,8 @@
                         "view_created": "#/components/schemas/ViewCreatedEventOut",
                         "phase_skipped": "#/components/schemas/PhaseSkippedEventOut",
                         "global_phase_completed": "#/components/schemas/GlobalPhaseCompletedEventOut",
-                        "update_view_phase_completed": "#/components/schemas/UpdateViewPhaseCompletedEventOut"
+                        "update_view_phase_completed": "#/components/schemas/UpdateViewPhaseCompletedEventOut",
+                        "nudge_applied": "#/components/schemas/NudgeAppliedEventOut"
                       }
                     }
                   },
@@ -4378,6 +4744,84 @@
         ],
         "title": "AgentStartedEventOut"
       },
+      "AlertConfig": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AlertKind"
+          },
+          "params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Params"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "project_id",
+          "run_id",
+          "kind",
+          "params",
+          "enabled",
+          "created_at"
+        ],
+        "title": "AlertConfig",
+        "description": "A rule that turns run state into fired alerts at read / tick time."
+      },
+      "AlertKind": {
+        "type": "string",
+        "enum": [
+          "cost_threshold",
+          "stall_timeout",
+          "confusion_spike"
+        ],
+        "title": "AlertKind"
+      },
+      "AlertSeverity": {
+        "type": "string",
+        "enum": [
+          "info",
+          "warn",
+          "crit"
+        ],
+        "title": "AlertSeverity"
+      },
       "AnnotationCreateOut": {
         "properties": {
           "ok": {
@@ -5726,6 +6170,51 @@
         ],
         "title": "ConversationListItem"
       },
+      "CreateAlertConfigIn": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/AlertKind"
+          },
+          "params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Params",
+            "default": {}
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "CreateAlertConfigIn"
+      },
       "CreateConversationRequest": {
         "properties": {
           "project_id": {
@@ -5771,6 +6260,57 @@
           "project_id"
         ],
         "title": "CreateConversationRequest"
+      },
+      "CreateNudgeIn": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/NudgeKind"
+          },
+          "durability": {
+            "$ref": "#/components/schemas/NudgeDurability"
+          },
+          "author_kind": {
+            "$ref": "#/components/schemas/NudgeAuthorKind",
+            "default": "human"
+          },
+          "author_note": {
+            "type": "string",
+            "title": "Author Note",
+            "default": ""
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Payload",
+            "default": {}
+          },
+          "scope": {
+            "$ref": "#/components/schemas/NudgeScope",
+            "default": {}
+          },
+          "soft_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Soft Text"
+          },
+          "hard": {
+            "type": "boolean",
+            "title": "Hard",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "durability"
+        ],
+        "title": "CreateNudgeIn"
       },
       "CreateProjectOut": {
         "properties": {
@@ -6206,6 +6746,52 @@
           "response"
         ],
         "title": "ExplorePageEventOut"
+      },
+      "FiredAlert": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AlertKind"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/AlertSeverity",
+            "default": "info"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "context": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Context"
+          },
+          "source_config_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Config Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "kind",
+          "severity",
+          "message",
+          "context",
+          "source_config_id"
+        ],
+        "title": "FiredAlert",
+        "description": "In-memory alert fired for a specific run on evaluator read.\n\nNot persisted in v1 \u2014 consumers (parma dashboard, orchestrator tick\nemitter) receive the list and decide what to display or forward."
       },
       "GlobalPhaseCompletedEventOut": {
         "properties": {
@@ -7011,6 +7597,212 @@
           "moves"
         ],
         "title": "MovesExecutedEventOut"
+      },
+      "NudgeAppliedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "nudge_applied",
+            "title": "Event",
+            "default": "nudge_applied"
+          },
+          "phase": {
+            "type": "string",
+            "title": "Phase",
+            "default": ""
+          },
+          "applied": {
+            "items": {
+              "$ref": "#/components/schemas/NudgeSummaryItem"
+            },
+            "type": "array",
+            "title": "Applied",
+            "default": []
+          },
+          "filtered_dispatch_count": {
+            "type": "integer",
+            "title": "Filtered Dispatch Count",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "phase",
+          "applied",
+          "filtered_dispatch_count"
+        ],
+        "title": "NudgeAppliedEventOut"
+      },
+      "NudgeAuthorKind": {
+        "type": "string",
+        "enum": [
+          "human",
+          "claude",
+          "system"
+        ],
+        "title": "NudgeAuthorKind"
+      },
+      "NudgeDurability": {
+        "type": "string",
+        "enum": [
+          "one_shot",
+          "persistent"
+        ],
+        "title": "NudgeDurability"
+      },
+      "NudgeKind": {
+        "type": "string",
+        "enum": [
+          "constrain_dispatch",
+          "inject_note",
+          "rewrite_goal",
+          "veto_call",
+          "redo_call",
+          "pause"
+        ],
+        "title": "NudgeKind"
+      },
+      "NudgeScope": {
+        "properties": {
+          "call_types": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Call Types"
+          },
+          "question_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question Ids"
+          },
+          "call_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Call Id"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "expires_after_n_calls": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires After N Calls"
+          }
+        },
+        "type": "object",
+        "required": [
+          "call_types",
+          "question_ids",
+          "call_id",
+          "expires_at",
+          "expires_after_n_calls"
+        ],
+        "title": "NudgeScope",
+        "description": "Where a nudge applies. All fields optional; empty scope matches\neverything on the run. Stored as JSONB on ``run_nudges.scope``."
+      },
+      "NudgeStatus": {
+        "type": "string",
+        "enum": [
+          "active",
+          "expired",
+          "revoked",
+          "consumed"
+        ],
+        "title": "NudgeStatus"
+      },
+      "NudgeSummaryItem": {
+        "properties": {
+          "nudge_id": {
+            "type": "string",
+            "title": "Nudge Id"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "author_kind": {
+            "type": "string",
+            "title": "Author Kind",
+            "default": ""
+          },
+          "hard": {
+            "type": "boolean",
+            "title": "Hard",
+            "default": false
+          },
+          "soft_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Soft Text"
+          },
+          "effect": {
+            "type": "string",
+            "title": "Effect",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "nudge_id",
+          "kind"
+        ],
+        "title": "NudgeSummaryItem",
+        "description": "Summary of one nudge that fired at a safe point.\n\nEmitted under ``NudgeAppliedEvent`` so the trace UI can show which\nhuman-authored nudges influenced this orchestrator tick / call, what\nthey did, and whether any hard filters removed dispatch candidates."
       },
       "OrchestratorSpecOut": {
         "properties": {
@@ -8407,6 +9199,113 @@
           "hidden"
         ],
         "title": "RunListItemOut"
+      },
+      "RunNudge": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "author_kind": {
+            "$ref": "#/components/schemas/NudgeAuthorKind"
+          },
+          "author_note": {
+            "type": "string",
+            "title": "Author Note",
+            "default": ""
+          },
+          "kind": {
+            "$ref": "#/components/schemas/NudgeKind"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Payload"
+          },
+          "durability": {
+            "$ref": "#/components/schemas/NudgeDurability"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/NudgeScope"
+          },
+          "soft_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Soft Text"
+          },
+          "hard": {
+            "type": "boolean",
+            "title": "Hard",
+            "default": false
+          },
+          "status": {
+            "$ref": "#/components/schemas/NudgeStatus",
+            "default": "active"
+          },
+          "staged": {
+            "type": "boolean",
+            "title": "Staged",
+            "default": false
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          },
+          "consumed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Consumed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "run_id",
+          "author_kind",
+          "author_note",
+          "kind",
+          "payload",
+          "durability",
+          "scope",
+          "soft_text",
+          "hard",
+          "status",
+          "staged",
+          "created_at",
+          "revoked_at",
+          "consumed_at"
+        ],
+        "title": "RunNudge"
       },
       "RunSpendByCallTypeOut": {
         "properties": {

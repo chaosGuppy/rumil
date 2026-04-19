@@ -93,6 +93,11 @@ class SpecCallRunner(CallRunner):
         - ``{scope_id}`` — the question_id / claim_id for this call
         - ``{source_page_id}`` — ``stage_ctx_extras["source_page"].id``
           when a source page was passed (used by ingest)
+        - ``{view_id}`` — ``self._view_id`` when a runner subclass has
+          populated it via a pre-stage hook (used by create_view). Empty
+          string when unset, matching the legacy ``CreateViewCall`` behaviour
+          of rendering the description with ``view_id=""`` during the base
+          ``__init__`` and then rebuilding after the view page is created.
         - ``{settings.<name>}`` — attribute access on the active Settings
           instance (e.g. ``{settings.ingest_num_claims}``)
         """
@@ -104,6 +109,7 @@ class SpecCallRunner(CallRunner):
             return self.spec.task_template.format(
                 scope_id=sid or "",
                 source_page_id=getattr(source_page, "id", "") if source_page else "",
+                view_id=getattr(self, "_view_id", ""),
                 settings=get_settings(),
             )
         base = self.spec.description.rstrip()

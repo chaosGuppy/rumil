@@ -37,6 +37,12 @@ def _spec_keys() -> list[SpecKey]:
 async def spec_and_legacy(request, tmp_db, question_page):
     param: tuple[CallType, str] = request.param
     call_type, variant = param
+    # CREATE_VIEW's task_description interpolates a view_id that's only
+    # populated by the runner_factory pre-stage hook. The generic fixture
+    # can't pre-create a View, so it's exercised by a dedicated test below
+    # (``test_create_view_spec_parity_with_view_id``).
+    if call_type == CallType.CREATE_VIEW:
+        pytest.skip("create_view parity is checked by a dedicated test")
     legacy_cls = _legacy_class_for(call_type, variant)
     if legacy_cls is None:
         pytest.skip(f"no legacy class for {call_type.value} variant={variant!r}")
@@ -111,6 +117,49 @@ async def test_stage_types_match(spec_and_legacy):
         f"(legacy={type(legacy.closing_reviewer).__name__}, "
         f"spec={type(spec_runner.closing_reviewer).__name__})"
     )
+
+
+async def test_create_view_spec_parity_with_view_id(tmp_db, question_page):
+    """CreateView's task_description depends on ``_view_id`` being set by
+    the pre-stage hook. The generic fixture skips it; this test
+    constructs both sides with a synthetic view_id pre-populated so
+    their rendered task descriptions can be compared directly.
+    """
+    from rumil.calls.closing_reviewers import ViewClosingReview
+    from rumil.calls.context_builders import CreateViewContext
+    from rumil.calls.create_view import CreateViewCall
+    from rumil.calls.page_creators import SimpleAgentLoop
+    from rumil.calls.spec_registry import CreateViewSpecRunner
+
+    call = Call(
+        call_type=CallType.CREATE_VIEW,
+        workspace=Workspace.RESEARCH,
+        scope_page_id=question_page.id,
+        status=CallStatus.PENDING,
+    )
+    await tmp_db.save_call(call)
+
+    legacy = CreateViewCall(
+        question_id=question_page.id,
+        call=call,
+        db=tmp_db,
+    )
+    legacy._view_id = "view-fixture-id"
+
+    spec = SPECS[(CallType.CREATE_VIEW, "default")]
+    spec_runner = CreateViewSpecRunner(
+        spec,
+        question_id=question_page.id,
+        call=call,
+        db=tmp_db,
+    )
+    spec_runner._view_id = "view-fixture-id"
+
+    assert legacy.task_description().strip() == spec_runner.task_description().strip()
+    assert set(legacy._resolve_available_moves()) == set(spec_runner._resolve_available_moves())
+    assert isinstance(spec_runner.context_builder, CreateViewContext)
+    assert isinstance(spec_runner.workspace_updater, SimpleAgentLoop)
+    assert isinstance(spec_runner.closing_reviewer, ViewClosingReview)
 
 
 async def test_ingest_spec_parity_with_source_page(tmp_db, question_page):

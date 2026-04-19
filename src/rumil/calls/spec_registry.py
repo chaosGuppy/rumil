@@ -12,14 +12,19 @@ is tracked in the master plan.
 
 from __future__ import annotations
 
+import logging
+from typing import Any
+
 from rumil.calls.closing_reviewers import (
     IngestClosingReview,
     SinglePhaseScoutReview,
     StandardClosingReview,
+    ViewClosingReview,
     WebResearchClosingReview,
 )
 from rumil.calls.context_builders import (
     BigAssessContext,
+    CreateViewContext,
     EmbeddingContext,
     IngestEmbeddingContext,
     WebResearchEmbeddingContext,
@@ -36,7 +41,22 @@ from rumil.calls.spec import (
     register_spec,
     register_workspace_updater,
 )
-from rumil.models import CallType, FindConsiderationsMode, PageType
+from rumil.calls.spec_runner import SpecCallRunner
+from rumil.constants import DEFAULT_VIEW_SECTIONS
+from rumil.models import (
+    CallType,
+    FindConsiderationsMode,
+    LinkType,
+    Page,
+    PageLayer,
+    PageLink,
+    PageType,
+    Workspace,
+)
+from rumil.settings import get_settings
+from rumil.tracing.trace_events import ViewCreatedEvent
+
+log = logging.getLogger(__name__)
 
 
 @register_context_builder("embedding")
@@ -186,6 +206,28 @@ def _web_research_review(ctx: StageBuildCtx, cfg: dict) -> WebResearchClosingRev
     if ctx.extras is not None:
         updater = ctx.extras.get("workspace_updater")
     return WebResearchClosingReview(ctx.call_type, page_creator=updater)
+
+
+@register_context_builder("create_view_context")
+def _create_view_context(ctx: StageBuildCtx, cfg: dict) -> CreateViewContext:
+    """CreateViewContext — no args, used by create_view."""
+    return CreateViewContext()
+
+
+@register_closing_reviewer("view_closing_review")
+def _view_closing_review(ctx: StageBuildCtx, cfg: dict) -> ViewClosingReview:
+    """ViewClosingReview — takes (call_type, view_id). The view_id is
+    populated by ``CreateViewSpecRunner`` under ``ctx.extras["view_id"]``
+    once the pre-stage hook has created the View page. When called from
+    the base ``CallRunner.__init__`` before the hook runs, view_id is
+    absent and we default to ``""`` — matching the legacy
+    ``CreateViewCall`` behaviour of constructing the reviewer first with
+    an empty id and rebuilding it in ``_run_stages``.
+    """
+    view_id = ""
+    if ctx.extras is not None:
+        view_id = ctx.extras.get("view_id", "") or ""
+    return ViewClosingReview(ctx.call_type, view_id=view_id)
 
 
 def _boring_scout_spec(
@@ -592,14 +634,129 @@ register_spec(
 )
 
 
-# ---------------------------------------------------------------------------
-# Still deferred: call types that require a SpecCallRunner extension beyond
-# the current StageRef + task_template + stage_ctx_extras contract.
-#
-# - ``CallType.CREATE_VIEW`` (``CreateViewCall``): overrides
-#   ``_run_stages`` to create the View page (and superseded-view link)
-#   before any stage runs, then rebuilds workspace_updater/closing_reviewer
-#   with the new ``view_id``. Its ``task_description`` also interpolates
-#   live ``settings.view_importance_*_cap`` values. Needs a pre-stage hook
-#   for the runner-level View page setup.
-# ---------------------------------------------------------------------------
+class CreateViewSpecRunner(SpecCallRunner):
+    """SpecCallRunner variant that creates a View page before stages run.
+
+    ``create_view`` is the one call type whose wiring genuinely diverges
+    from the declarative StageRef + task_template contract: the task
+    description weaves in a ``view_id`` that doesn't exist until a new
+    View page has been persisted, and the closing reviewer needs that
+    same id. The legacy ``CreateViewCall`` handled this by overriding
+    ``_run_stages`` to create the page first, then rebuilding
+    ``workspace_updater`` + ``closing_reviewer`` so their closures
+    reference the fresh id.
+
+    This subclass preserves that pre-stage hook pattern and threads the
+    fresh view_id back through ``_stage_ctx_extras`` so the registry
+    factories (``view_closing_review``) pick it up on the rebuild. The
+    spec's ``task_template`` references ``{view_id}`` which
+    ``SpecCallRunner.task_description`` substitutes from ``self._view_id``.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        self._view_id: str = ""
+        super().__init__(*args, **kwargs)
+
+    async def _run_stages(self) -> None:
+        self._view_id = await self._create_view_page()
+        self._stage_ctx_extras["view_id"] = self._view_id
+        self.workspace_updater = self._make_workspace_updater()
+        self.closing_reviewer = self._make_closing_reviewer()
+        await super()._run_stages()
+
+    async def _create_view_page(self) -> str:
+        existing_view = await self.infra.db.get_view_for_question(self.infra.question_id)
+
+        question = await self.infra.db.get_page(self.infra.question_id)
+        q_headline = question.headline if question else self.infra.question_id[:8]
+
+        view = Page(
+            page_type=PageType.VIEW,
+            layer=PageLayer.WIKI,
+            workspace=Workspace.RESEARCH,
+            content="",
+            headline=f"View: {q_headline}",
+            sections=list(DEFAULT_VIEW_SECTIONS),
+            provenance_call_type=self.spec.call_type.value,
+            provenance_call_id=self.infra.call.id,
+            provenance_model=get_settings().model,
+        )
+        await self.infra.db.save_page(view)
+
+        await self.infra.db.save_link(
+            PageLink(
+                from_page_id=view.id,
+                to_page_id=self.infra.question_id,
+                link_type=LinkType.VIEW_OF,
+            )
+        )
+
+        if existing_view:
+            await self.infra.db.supersede_page(existing_view.id, view.id)
+            log.info(
+                "Superseded old view %s with new view %s",
+                existing_view.id[:8],
+                view.id[:8],
+            )
+
+        log.info(
+            "Created view page %s for question %s",
+            view.id[:8],
+            self.infra.question_id[:8],
+        )
+        await self.infra.trace.record_strict(
+            ViewCreatedEvent(
+                view_id=view.id,
+                view_headline=view.headline,
+                question_id=self.infra.question_id,
+                superseded_view_id=existing_view.id if existing_view else None,
+            )
+        )
+        return view.id
+
+
+def _build_create_view_task_template() -> str:
+    sections_list = ", ".join(DEFAULT_VIEW_SECTIONS)
+    return (
+        "Create a View page for this question.\n\n"
+        "Question ID: `{scope_id}`\n"
+        "View ID: `{view_id}`\n\n"
+        "Survey the available evidence and create atomic View items, "
+        "each assigned to a section with robustness and importance scores.\n\n"
+        f"**Available sections:** {sections_list}\n\n"
+        "**Importance caps:**\n"
+        "- Importance 5: max {settings.view_importance_5_cap} items\n"
+        "- Importance 4: max {settings.view_importance_4_cap} items\n"
+        "- Importance 3: max {settings.view_importance_3_cap} items\n"
+        "- Importance 2: max {settings.view_importance_2_cap} items\n"
+        "- Importance 1: no cap\n\n"
+        "Use the `create_view_item` tool for each item. Pass the View ID shown above "
+        "as `view_id` in each tool call.\n\n"
+        "Prioritize quality over quantity. A focused View with 10-20 well-scored items "
+        "is better than a sprawling one with 50 marginal items."
+    )
+
+
+register_spec(
+    CallSpec(
+        call_type=CallType.CREATE_VIEW,
+        description=(
+            "Synthesize the research on a question into a structured View "
+            "page. Creates a fresh View (superseding any existing one) and "
+            "populates it with atomic View items, each assigned a section, "
+            "robustness, and importance score. Requires a runner-level "
+            "pre-stage hook to create the View page before stages run — "
+            "see ``CreateViewSpecRunner``."
+        ),
+        task_template=_build_create_view_task_template(),
+        prompt_id="create_view",
+        context_builder=StageRef(id="create_view_context"),
+        workspace_updater=StageRef(id="simple_agent_loop"),
+        closing_reviewer=StageRef(id="view_closing_review"),
+        allowed_moves=PresetKey(""),
+        scope_page_type=PageType.QUESTION,
+        emits_page_types=frozenset({PageType.VIEW, PageType.VIEW_ITEM}),
+        estimated_budget_cost=3,
+        runner_factory=CreateViewSpecRunner,
+    )
+)

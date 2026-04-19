@@ -654,6 +654,41 @@ export async function fetchRunSpend(runId: string): Promise<RunSpend> {
   return res.json();
 }
 
+export interface RefineIterationVerdict {
+  claim_holds: boolean;
+  claim_confidence: number;
+  dissents: string[];
+  concurrences: string[];
+  stronger_side: string;
+}
+
+export interface RefineIteration {
+  iteration: number;
+  draft_page_id: string;
+  draft_short_id: string;
+  content: string;
+  headline: string;
+  verdict: RefineIterationVerdict | null;
+  created_at: string;
+}
+
+export interface PageIterations {
+  page_id: string;
+  iterations: RefineIteration[];
+}
+
+// Fetch refine-artifact iterations for an artifact page. Returns null if
+// the page isn't a refine-artifact (server responds 400) so the caller can
+// silently suppress the panel instead of treating it as an error.
+export async function fetchPageIterations(
+  pageId: string,
+): Promise<PageIterations | null> {
+  const res = await fetch(`${API_BASE}/api/pages/${pageId}/iterations`);
+  if (res.status === 400) return null;
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  return res.json();
+}
+
 export async function fetchCallEvents(callId: string): Promise<TraceEvent[]> {
   const res = await fetch(`${API_BASE}/api/calls/${callId}/events`);
   if (!res.ok) throw new Error(`API error: ${res.status}`);

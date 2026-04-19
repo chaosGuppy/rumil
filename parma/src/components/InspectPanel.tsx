@@ -11,6 +11,7 @@ import { useReadTracker } from "@/lib/useReadTracker";
 import type { LinkType } from "@/lib/types";
 import { PageContent } from "./PageContent";
 import { CredenceBadge } from "./CredenceBadge";
+import { IterationDiffPanel } from "./IterationDiffPanel";
 import { NodeTypeLabel } from "./NodeTypeLabel";
 import { PageAnnotationActions } from "./PageAnnotationActions";
 import { ViewItemFlagButton } from "./ViewItemFlagButton";
@@ -193,6 +194,8 @@ function InspectBody({
           <p>{page.abstract}</p>
         </div>
       )}
+
+      {page.page_type === "artifact" && <IterationDiffPanel pageId={page.id} />}
 
       <InspectLinkGroups
         linksFrom={linksFrom}

@@ -49,6 +49,7 @@ from rumil.api.schemas import (
     LLMExchangeSummaryOut,
     PageCountsOut,
     PageDetailOut,
+    PageIterationsOut,
     PageLoadEventOut,
     PageLoadStatsOut,
     PaginatedPagesOut,
@@ -56,6 +57,8 @@ from rumil.api.schemas import (
     ProjectSummaryOut,
     QuestionStatsOut,
     RealtimeConfigOut,
+    RefineIterationOut,
+    RefineIterationVerdictOut,
     ReputationBucketOut,
     ReputationSummaryOut,
     RunListItemOut,
@@ -610,6 +613,119 @@ async def get_page_detail(
 async def get_page_counts(page_id: str, db: DB = Depends(_get_db)):
     counts = await db.count_pages_for_question(page_id)
     return PageCountsOut(**counts)
+
+
+def _extract_iteration_verdict(
+    verdict_page: Page | None,
+) -> RefineIterationVerdictOut | None:
+    """Pull the adversarial_verdict block off a JUDGEMENT page, if parseable.
+
+    Returns ``None`` when the page is missing, isn't a JUDGEMENT, has no
+    adversarial_verdict payload, or the payload fails to parse as an
+    ``AdversarialVerdict`` (e.g. schema drift). The iteration diff panel
+    handles ``verdict=null`` by just suppressing the header chip.
+    """
+    if verdict_page is None or verdict_page.page_type != PageType.JUDGEMENT:
+        return None
+    raw = (verdict_page.extra or {}).get("adversarial_verdict")
+    if not isinstance(raw, dict):
+        return None
+    try:
+        verdict = AdversarialVerdict.model_validate(raw)
+    except ValidationError:
+        return None
+    return RefineIterationVerdictOut(
+        claim_holds=verdict.claim_holds,
+        claim_confidence=verdict.claim_confidence,
+        dissents=list(verdict.dissents),
+        concurrences=list(verdict.concurrences),
+        stronger_side=str(verdict.stronger_side),
+    )
+
+
+@app.get("/api/pages/{page_id}/iterations", response_model=PageIterationsOut)
+async def get_page_iterations(page_id: str, db: DB = Depends(_get_db)):
+    """Walk the draft chain of a refine-artifact run and render each pass.
+
+    The final artifact page carries ``extra['refinement']`` with the
+    iteration count and final verdict. Every prior draft was superseded by
+    this page (flat, not chained — see _supersede_prior_drafts in
+    refine_artifact.py), so we can pull them all in one query. For each
+    draft we locate the adversarial_review verdict JUDGEMENT via its
+    DEPENDS_ON link back at the draft; ``extra['target_page_id']`` on the
+    JUDGEMENT is the tie-breaker when multiple dependents exist.
+
+    Returns 400 when the page isn't an artifact, isn't the accepted
+    final (no refinement metadata), or the draft-chain query comes back
+    empty for a >1-iteration run.
+    """
+    page = await db.get_page(page_id)
+    if page is None:
+        raise HTTPException(status_code=404, detail="Page not found")
+    if page.page_type != PageType.ARTIFACT:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Page {page_id[:8]} is not an artifact (type={page.page_type.value}).",
+        )
+    refinement = (page.extra or {}).get("refinement")
+    if not isinstance(refinement, dict):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Artifact {page_id[:8]} has no refinement metadata; "
+                "iterations are only recorded on finalized refine-artifact runs."
+            ),
+        )
+
+    prior_rows = _rows(
+        await db._execute(db.client.table("pages").select("id").eq("superseded_by", page_id))
+    )
+    prior_ids = [r["id"] for r in prior_rows]
+    prior_pages_map = await db.get_pages_by_ids(prior_ids) if prior_ids else {}
+    draft_pages: list[Page] = [*prior_pages_map.values(), page]
+    draft_pages.sort(key=lambda p: p.created_at)
+    draft_ids = [p.id for p in draft_pages]
+
+    links_by_target = await db.get_links_to_many(draft_ids)
+    candidate_verdict_ids: set[str] = set()
+    for links in links_by_target.values():
+        for link in links:
+            if link.link_type == LinkType.DEPENDS_ON:
+                candidate_verdict_ids.add(link.from_page_id)
+    verdict_pages = (
+        await db.get_pages_by_ids(list(candidate_verdict_ids)) if candidate_verdict_ids else {}
+    )
+
+    # Pair each draft with its verdict page. A JUDGEMENT's
+    # extra['target_page_id'] is the authoritative link back to the draft
+    # (the adversarial_review call sets it). Keep only the newest verdict
+    # per draft so re-reviews don't produce duplicates.
+    verdicts_by_draft: dict[str, Page] = {}
+    for vp in verdict_pages.values():
+        if vp.page_type != PageType.JUDGEMENT:
+            continue
+        target = (vp.extra or {}).get("target_page_id")
+        if not isinstance(target, str):
+            continue
+        if target not in draft_ids:
+            continue
+        prev = verdicts_by_draft.get(target)
+        if prev is None or vp.created_at > prev.created_at:
+            verdicts_by_draft[target] = vp
+
+    iterations = [
+        RefineIterationOut(
+            iteration=idx + 1,
+            draft_page_id=draft.id,
+            draft_short_id=draft.id[:8],
+            content=draft.content,
+            headline=draft.headline,
+            verdict=_extract_iteration_verdict(verdicts_by_draft.get(draft.id)),
+            created_at=draft.created_at,
+        )
+        for idx, draft in enumerate(draft_pages)
+    ]
+    return PageIterationsOut(page_id=page_id, iterations=iterations)
 
 
 async def _collect_adversarial_verdicts(

@@ -431,6 +431,46 @@ class RunSpendOut(BaseModel):
     by_call_type: list[RunSpendByCallTypeOut]
 
 
+class RefineIterationVerdictOut(BaseModel):
+    """Verdict summary attached to a refine-artifact iteration.
+
+    Pulled from ``extra['adversarial_verdict']`` on the JUDGEMENT page that
+    reviewed the draft. Named after the raw payload shape so the frontend
+    diff panel can render a chip like "claim_holds at conf 6, 2 dissents".
+    """
+
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    claim_holds: bool
+    claim_confidence: int
+    dissents: list[str]
+    concurrences: list[str]
+    stronger_side: str
+
+
+class RefineIterationOut(BaseModel):
+    """One iteration in a refine-artifact chain (draft + optional verdict)."""
+
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    iteration: int
+    draft_page_id: str
+    draft_short_id: str
+    content: str
+    headline: str
+    verdict: RefineIterationVerdictOut | None
+    created_at: datetime
+
+
+class PageIterationsOut(BaseModel):
+    """Response for GET /api/pages/{page_id}/iterations — ordered v1->vN."""
+
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    page_id: str
+    iterations: list[RefineIterationOut]
+
+
 class PaginatedPagesOut(BaseModel):
     model_config = ConfigDict(json_schema_extra=_all_fields_required)
     items: Sequence[Page]

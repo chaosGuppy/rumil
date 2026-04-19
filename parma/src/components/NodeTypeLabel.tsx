@@ -10,6 +10,10 @@ const TYPE_COLORS: Record<PageType, string> = {
   source: "var(--node-evidence)",
   wiki: "var(--node-context)",
   summary: "var(--node-context)",
+  view: "var(--node-context)",
+  view_item: "var(--node-context)",
+  view_meta: "var(--node-context)",
+  artifact: "var(--node-claim)",
 };
 
 export function NodeTypeLabel({ type }: { type: PageType }) {

@@ -8,7 +8,11 @@ export type PageType =
   | "judgement"
   | "concept"
   | "wiki"
-  | "summary";
+  | "summary"
+  | "view"
+  | "view_item"
+  | "view_meta"
+  | "artifact";
 
 export type LinkType =
   | "consideration"

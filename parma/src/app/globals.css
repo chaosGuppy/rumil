@@ -5302,6 +5302,169 @@ details[open] > .article-supplementary-toggle::before {
    lineage (supersedes/variant) → structure (considerations, sub-questions,
    views, meta) → related. Empty groups are omitted by the component. */
 
+/* refine-artifact iteration diff — two-pane line-level diff rendered in
+   the inspect drawer for ARTIFACT pages that survived a refine loop. */
+.iter-diff {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px dashed var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.iter-diff-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.iter-diff-label {
+  font-family: var(--font-mono-stack);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+}
+.iter-diff-subtle {
+  font-family: var(--font-mono-stack);
+  font-size: 10px;
+  color: var(--fg-dim);
+}
+.iter-diff-loading,
+.iter-diff-error {
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+.iter-diff-error {
+  color: var(--node-uncertainty);
+}
+
+.iter-diff-panes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  min-width: 0;
+}
+.iter-diff-pane {
+  border: 1px solid var(--border);
+  background: var(--bg-pane);
+  border-radius: 3px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+.iter-diff-pane-head {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.iter-diff-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+}
+.iter-diff-picker-label {
+  color: var(--fg-dim);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+.iter-diff-select {
+  flex: 1;
+  background: var(--bg-pane);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 3px 6px;
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+  color: var(--fg-muted);
+  cursor: pointer;
+  min-width: 0;
+}
+.iter-diff-select:hover {
+  border-color: var(--border-strong);
+}
+
+.iter-diff-verdict {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--font-mono-stack);
+  font-size: 10px;
+  color: var(--fg-muted);
+  flex-wrap: wrap;
+}
+.iter-diff-verdict-missing {
+  color: var(--fg-dim);
+  font-style: italic;
+}
+.iter-diff-verdict-mark {
+  font-size: 12px;
+  font-weight: 700;
+}
+.iter-diff-verdict-holds .iter-diff-verdict-mark {
+  color: var(--node-claim);
+}
+.iter-diff-verdict-fails .iter-diff-verdict-mark {
+  color: var(--node-uncertainty);
+}
+.iter-diff-verdict-conf {
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+.iter-diff-verdict-count {
+  padding: 1px 5px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--border) 55%, var(--bg-pane) 45%);
+  cursor: help;
+}
+
+.iter-diff-body {
+  margin: 0;
+  padding: 8px 10px;
+  max-height: 42vh;
+  overflow-y: auto;
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--bg-pane);
+}
+.iter-diff-line {
+  padding: 0 4px;
+  border-radius: 2px;
+}
+.iter-diff-line-context {
+  color: var(--fg-muted);
+}
+.iter-diff-line-added {
+  background: color-mix(in srgb, var(--node-claim) 15%, transparent);
+  color: var(--node-claim);
+}
+.iter-diff-line-removed {
+  background: color-mix(in srgb, var(--node-uncertainty) 15%, transparent);
+  color: var(--node-uncertainty);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(
+    in srgb,
+    var(--node-uncertainty) 50%,
+    transparent
+  );
+}
+
+@media (max-width: 700px) {
+  .iter-diff-panes {
+    grid-template-columns: 1fr;
+  }
+}
+
 .inspect-groups {
   margin-top: 24px;
   display: flex;

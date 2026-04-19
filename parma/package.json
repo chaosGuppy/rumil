@@ -8,6 +8,7 @@
     "start": "next start"
   },
   "dependencies": {
+    "diff": "^8.0.4",
     "next": "16.1.6",
     "react": "19.1.0",
     "react-dom": "19.1.0",

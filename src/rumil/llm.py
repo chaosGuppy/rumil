@@ -436,6 +436,7 @@ async def _save_exchange(
                 exchange_id=exchange_id,
                 phase=metadata.phase,
                 round=metadata.round_num,
+                model=model,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
                 cache_creation_input_tokens=cache_creation_input_tokens or None,

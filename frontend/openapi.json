@@ -70,14 +70,73 @@
             }
           }
         }
+      },
+      "post": {
+        "summary": "Create Project",
+        "description": "Create a new workspace (project) from the UI.\n\nIdempotent: if a workspace with the same trimmed name already exists we\nreturn it with ``created=false`` so the client can show a subtle\n\"already exists\" hint while still navigating the user into the existing\nworkspace.",
+        "operationId": "create_project_api_projects_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProjectRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateProjectOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/projects/summary": {
       "get": {
         "summary": "List Projects Summary",
-        "description": "Per-project summary for the public landing page.\n\nOne SQL call produces every project's question_count, claim_count,\ncall_count, and last_activity_at. Consumed by the parma landing grid.",
+        "description": "Per-project summary for the public landing page.\n\nOne SQL call produces every project's question_count, claim_count,\ncall_count, and last_activity_at. Consumed by the parma landing grid.\n``include_hidden`` is off by default; the parma \"show hidden\" toggle\npasses ``?include_hidden=true`` to surface soft-deleted workspaces\n(rendered greyed).",
         "operationId": "list_projects_summary_api_projects_summary_get",
         "parameters": [
+          {
+            "name": "include_hidden",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Hidden"
+            }
+          },
           {
             "name": "project_id",
             "in": "query",
@@ -154,6 +213,54 @@
             }
           }
         }
+      },
+      "patch": {
+        "summary": "Update Project",
+        "description": "Update a workspace's hidden flag and/or name.\n\nAccepts any subset of ``{hidden, name}``. At least one field must be\nsupplied (422 if neither is present). ``name`` is trimmed server-side;\nempty-after-trim is rejected (422) and a collision with another project's\nname returns 409. Renaming to the same name is a no-op (200).\n\nBacks Feature 1 (hide workspace) and Feature 3 (rename workspace) in the\nparma hygiene landing-pad.",
+        "operationId": "update_project_api_projects__project_id__patch",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateProjectRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/projects/{project_id}/runs": {
@@ -182,6 +289,124 @@
                     "$ref": "#/components/schemas/RunListItemOut"
                   },
                   "title": "Response List Project Runs Api Projects  Project Id  Runs Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runs/{run_id}": {
+      "patch": {
+        "summary": "Update Run",
+        "description": "Update a run's hidden flag.\n\nToday the only patchable field is ``hidden`` \u2014 a soft-delete for the\nrun picker so noise runs (smoke tests, failed experiments) don't clutter\nthe list. 422 if the request body is empty. 404 if the run doesn't exist.",
+        "operationId": "update_run_api_runs__run_id__patch",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRunRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/search": {
+      "get": {
+        "summary": "Search Workspace",
+        "description": "Case-insensitive ILIKE search across pages.headline and pages.content,\nscoped to one project.\n\nThe snippet is a ~200 char window around the first content match (or the\nleading prefix if the match was headline-only). Non-active (superseded)\npages are excluded so callers never land on stale drafts. Limit is\nclamped to [1, 100].",
+        "operationId": "search_workspace_api_projects__project_id__search_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Q"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 30,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResultsOut"
                 }
               }
             }
@@ -864,6 +1089,56 @@
         }
       }
     },
+    "/api/pages/{page_id}/iterations": {
+      "get": {
+        "summary": "Get Page Iterations",
+        "description": "Walk the draft chain of a refine-artifact run and render each pass.\n\nThe final artifact page carries ``extra['refinement']`` with the\niteration count and final verdict. Every prior draft was superseded by\nthis page (flat, not chained \u2014 see _supersede_prior_drafts in\nrefine_artifact.py), so we can pull them all in one query. For each\ndraft we locate the adversarial_review verdict JUDGEMENT via its\nDEPENDS_ON link back at the draft; ``extra['target_page_id']`` on the\nJUDGEMENT is the tie-breaker when multiple dependents exist.\n\nReturns 400 when the page isn't an artifact, isn't the accepted\nfinal (no refinement metadata), or the draft-chain query comes back\nempty for a >1-iteration run.",
+        "operationId": "get_page_iterations_api_pages__page_id__iterations_get",
+        "parameters": [
+          {
+            "name": "page_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Page Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageIterationsOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/pages/{page_id}/adversarial-verdicts": {
       "get": {
         "summary": "Get Adversarial Verdicts",
@@ -1147,6 +1422,54 @@
             }
           }
         }
+      },
+      "post": {
+        "summary": "Create Root Question",
+        "description": "Create a bare root question in a workspace.\n\nNo orchestrator dispatch and no call record \u2014 just a Page. The UI uses\nthis to seed a freshly-created workspace so the user can pose a question\nbefore firing any research; chat (``/orchestrate``, ``/dispatch``,\n``/ask``) can then populate it.\n\nMirrors the skill-lane pattern in ``ask_question.py`` for field choices:\n``layer=SQUIDGY``, ``workspace=RESEARCH``, ``provenance_model='human'``,\nand best-effort embedding on the ``abstract`` field so search/dedup work.",
+        "operationId": "create_root_question_api_projects__project_id__questions_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRootQuestionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/projects/{project_id}/calls": {
@@ -1343,6 +1666,210 @@
                 "schema": {
                   "$ref": "#/components/schemas/RunTraceTreeOut"
                 }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runs/{run_id}/spend": {
+      "get": {
+        "summary": "Get Run Spend",
+        "description": "Per-call-type spend breakdown for a run.\n\nAggregates ``cost_usd`` and ``completed_at - created_at`` across the\nrun's calls in Python \u2014 the row count per run is always small (tens,\nnot thousands), so a GROUP BY trip round is unnecessary. Calls that\nhaven't completed yet contribute 0 duration. Returned rows are sorted\ndescending by ``cost_usd`` so the biggest spenders surface first.",
+        "operationId": "get_run_spend_api_runs__run_id__spend_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunSpendOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/questions/{question_id}/continue": {
+      "post": {
+        "summary": "Post Continue Question",
+        "description": "Fire a background orchestrator run on an existing question.\n\nReturns the new run_id immediately; client can navigate to\n/traces/{run_id} to watch the trace live. The server does not await\nthe orchestrator \u2014 known risk: if the server restarts mid-run the\ntask is lost.",
+        "operationId": "post_continue_question_api_questions__question_id__continue_post",
+        "parameters": [
+          {
+            "name": "question_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Question Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContinueQuestionIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runs/{run_id}/stage": {
+      "post": {
+        "summary": "Post Stage Run",
+        "description": "Retroactively stage a completed non-staged run.\n\nFlips the run's rows to staged=true and reverts direct mutations from\nthe event log so baseline readers see the pre-run state.",
+        "operationId": "post_stage_run_api_runs__run_id__stage_post",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runs/{run_id}/commit": {
+      "post": {
+        "summary": "Post Commit Run",
+        "description": "Commit a staged run, making its effects visible to all readers.",
+        "operationId": "post_commit_run_api_runs__run_id__commit_post",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           },
@@ -1562,6 +2089,53 @@
                   },
                   "title": "Response List Ab Evals Api Ab Evals Get"
                 }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Post Ab Eval",
+        "description": "Kick off an AB eval comparing two runs as a background task.\n\nReturns an eval_run_id (the run_id used for the eval itself). The\nfinal ``ab_eval_report`` id is only known when the eval completes,\nso clients should poll /api/ab-evals and filter by run_id_a/b to\nfind the finished report.",
+        "operationId": "post_ab_eval_api_ab_evals_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ABEvalIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           },
@@ -2681,6 +3255,66 @@
         }
       }
     },
+    "/api/chat/conversations/{conversation_id}/branch": {
+      "post": {
+        "summary": "Branch Chat Conversation",
+        "description": "Fork a conversation at message `at_seq` into a new one.\n\nCopies every message with seq <= at_seq from the source into a new\nconversation, tags the new conversation with parent_conversation_id +\nbranched_at_seq, and returns the new conversation (detail-shaped, so\nthe frontend has the copied messages ready without a second round trip).\nThe parent conversation is NOT modified \u2014 branching is additive.",
+        "operationId": "branch_chat_conversation_api_chat_conversations__conversation_id__branch_post",
+        "parameters": [
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Conversation Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BranchConversationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/runs/{run_id}/page-load-stats": {
       "get": {
         "summary": "Get Page Load Stats",
@@ -2998,6 +3632,24 @@
           "preference"
         ],
         "title": "ABEvalDimensionSummaryOut"
+      },
+      "ABEvalIn": {
+        "properties": {
+          "run_id_a": {
+            "type": "string",
+            "title": "Run Id A"
+          },
+          "run_id_b": {
+            "type": "string",
+            "title": "Run Id B"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id_a",
+          "run_id_b"
+        ],
+        "title": "ABEvalIn"
       },
       "ABEvalReportListItemOut": {
         "properties": {
@@ -3565,6 +4217,31 @@
         ],
         "title": "AppConfigOut"
       },
+      "BranchConversationRequest": {
+        "properties": {
+          "at_seq": {
+            "type": "integer",
+            "title": "At Seq"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "type": "object",
+        "required": [
+          "at_seq"
+        ],
+        "title": "BranchConversationRequest",
+        "description": "Body for POST /api/chat/conversations/{id}/branch.\n\nCopies every message in the source conversation where seq <= at_seq\ninto a brand-new conversation, linked via parent_conversation_id.\nThe source is untouched."
+      },
       "Call": {
         "properties": {
           "call_type": {
@@ -3895,7 +4572,6 @@
           "ingest",
           "reframe",
           "maintain",
-          "summarize",
           "scout_subquestions",
           "scout_estimates",
           "scout_hypotheses",
@@ -4027,6 +4703,74 @@
               }
             ],
             "title": "Conversation Id"
+          },
+          "open_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Open Run Id"
+          },
+          "open_page_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Open Page Ids",
+            "default": []
+          },
+          "view_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "View Mode"
+          },
+          "open_call_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Open Call Id"
+          },
+          "drawer_page_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Drawer Page Id"
+          },
+          "active_section": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Section"
+          },
+          "review_open": {
+            "type": "boolean",
+            "title": "Review Open",
+            "default": false
           }
         },
         "type": "object",
@@ -4240,6 +4984,17 @@
         ],
         "title": "ContextBuiltEventOut"
       },
+      "ContinueQuestionIn": {
+        "properties": {
+          "budget": {
+            "type": "integer",
+            "title": "Budget",
+            "default": 10
+          }
+        },
+        "type": "object",
+        "title": "ContinueQuestionIn"
+      },
       "ConversationDetail": {
         "properties": {
           "id": {
@@ -4280,6 +5035,28 @@
             },
             "type": "array",
             "title": "Messages"
+          },
+          "parent_conversation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Conversation Id"
+          },
+          "branched_at_seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branched At Seq"
           }
         },
         "type": "object",
@@ -4326,6 +5103,28 @@
           "updated_at": {
             "type": "string",
             "title": "Updated At"
+          },
+          "parent_conversation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Conversation Id"
+          },
+          "branched_at_seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branched At Seq"
           }
         },
         "type": "object",
@@ -4384,6 +5183,68 @@
           "project_id"
         ],
         "title": "CreateConversationRequest"
+      },
+      "CreateProjectOut": {
+        "properties": {
+          "project": {
+            "$ref": "#/components/schemas/Project"
+          },
+          "created": {
+            "type": "boolean",
+            "title": "Created"
+          }
+        },
+        "type": "object",
+        "required": [
+          "project",
+          "created"
+        ],
+        "title": "CreateProjectOut",
+        "description": "POST /api/projects response.\n\n``created`` is ``True`` when a new row was inserted, ``False`` when an\nexisting workspace with the same name was returned. The frontend uses\nthis to decide whether to show a subtle \"already exists\" hint."
+      },
+      "CreateProjectRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "CreateProjectRequest",
+        "description": "POST /api/projects body.\n\nThe name is trimmed server-side; a purely-whitespace or empty value is\nrejected with 422 via the ``min_length`` validator."
+      },
+      "CreateRootQuestionRequest": {
+        "properties": {
+          "headline": {
+            "type": "string",
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Headline"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          }
+        },
+        "type": "object",
+        "required": [
+          "headline"
+        ],
+        "title": "CreateRootQuestionRequest",
+        "description": "POST /api/projects/{project_id}/questions body.\n\nThe headline is trimmed server-side; empty or whitespace-only input is\nrejected with 422. ``content`` is optional \u2014 if omitted the question is\ncreated with the headline as its content (matches the skill-lane pattern\nin ``ask_question.py``)."
       },
       "DegreeCell": {
         "properties": {
@@ -4744,6 +5605,17 @@
             ],
             "title": "Round"
           },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
           "input_tokens": {
             "anyOf": [
               {
@@ -4845,6 +5717,7 @@
           "exchange_id",
           "phase",
           "round",
+          "model",
           "input_tokens",
           "output_tokens",
           "cache_creation_input_tokens",
@@ -5521,6 +6394,28 @@
         ],
         "title": "PageDetailOut"
       },
+      "PageIterationsOut": {
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "title": "Page Id"
+          },
+          "iterations": {
+            "items": {
+              "$ref": "#/components/schemas/RefineIterationOut"
+            },
+            "type": "array",
+            "title": "Iterations"
+          }
+        },
+        "type": "object",
+        "required": [
+          "page_id",
+          "iterations"
+        ],
+        "title": "PageIterationsOut",
+        "description": "Response for GET /api/pages/{page_id}/iterations \u2014 ordered v1->vN."
+      },
       "PageLayer": {
         "type": "string",
         "enum": [
@@ -5722,7 +6617,6 @@
           "question",
           "judgement",
           "wiki",
-          "summary",
           "view",
           "view_item",
           "view_meta",
@@ -6120,6 +7014,97 @@
         ],
         "title": "ReassessTriggeredEventOut"
       },
+      "RefineIterationOut": {
+        "properties": {
+          "iteration": {
+            "type": "integer",
+            "title": "Iteration"
+          },
+          "draft_page_id": {
+            "type": "string",
+            "title": "Draft Page Id"
+          },
+          "draft_short_id": {
+            "type": "string",
+            "title": "Draft Short Id"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "headline": {
+            "type": "string",
+            "title": "Headline"
+          },
+          "verdict": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RefineIterationVerdictOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "iteration",
+          "draft_page_id",
+          "draft_short_id",
+          "content",
+          "headline",
+          "verdict",
+          "created_at"
+        ],
+        "title": "RefineIterationOut",
+        "description": "One iteration in a refine-artifact chain (draft + optional verdict)."
+      },
+      "RefineIterationVerdictOut": {
+        "properties": {
+          "claim_holds": {
+            "type": "boolean",
+            "title": "Claim Holds"
+          },
+          "claim_confidence": {
+            "type": "integer",
+            "title": "Claim Confidence"
+          },
+          "dissents": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Dissents"
+          },
+          "concurrences": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Concurrences"
+          },
+          "stronger_side": {
+            "type": "string",
+            "title": "Stronger Side"
+          }
+        },
+        "type": "object",
+        "required": [
+          "claim_holds",
+          "claim_confidence",
+          "dissents",
+          "concurrences",
+          "stronger_side"
+        ],
+        "title": "RefineIterationVerdictOut",
+        "description": "Verdict summary attached to a refine-artifact iteration.\n\nPulled from ``extra['adversarial_verdict']`` on the JUDGEMENT page that\nreviewed the draft. Named after the raw payload shape so the frontend\ndiff panel can render a chip like \"claim_holds at conf 6, 2 dissents\"."
+      },
       "RenderQuestionSubgraphEventOut": {
         "properties": {
           "ts": {
@@ -6436,6 +7421,11 @@
             "type": "boolean",
             "title": "Staged",
             "default": false
+          },
+          "hidden": {
+            "type": "boolean",
+            "title": "Hidden",
+            "default": false
           }
         },
         "type": "object",
@@ -6443,6 +7433,77 @@
           "created_at"
         ],
         "title": "RunListItemOut"
+      },
+      "RunSpendByCallTypeOut": {
+        "properties": {
+          "call_type": {
+            "type": "string",
+            "title": "Call Type"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "cost_usd": {
+            "type": "number",
+            "title": "Cost Usd"
+          },
+          "duration_ms": {
+            "type": "integer",
+            "title": "Duration Ms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "call_type",
+          "count",
+          "cost_usd",
+          "duration_ms"
+        ],
+        "title": "RunSpendByCallTypeOut",
+        "description": "One row of the per-call-type spend breakdown for a run."
+      },
+      "RunSpendOut": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "run_id_short": {
+            "type": "string",
+            "title": "Run Id Short"
+          },
+          "total_cost_usd": {
+            "type": "number",
+            "title": "Total Cost Usd"
+          },
+          "total_duration_ms": {
+            "type": "integer",
+            "title": "Total Duration Ms"
+          },
+          "total_calls": {
+            "type": "integer",
+            "title": "Total Calls"
+          },
+          "by_call_type": {
+            "items": {
+              "$ref": "#/components/schemas/RunSpendByCallTypeOut"
+            },
+            "type": "array",
+            "title": "By Call Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "run_id_short",
+          "total_cost_usd",
+          "total_duration_ms",
+          "total_calls",
+          "by_call_type"
+        ],
+        "title": "RunSpendOut",
+        "description": "Aggregate spend for a single run, broken down by call_type.\n\n``total_duration_ms`` sums ``completed_at - created_at`` across the run's\ncalls (only counting calls that have actually completed); ``cost_usd``\nsums ``cost_usd`` across all calls. The ``by_call_type`` list is sorted\ndescending by ``cost_usd``."
       },
       "RunSummaryOut": {
         "properties": {
@@ -6596,6 +7657,40 @@
           "dispatch_guidance"
         ],
         "title": "ScoringCompletedEventOut"
+      },
+      "SearchResultOut": {
+        "properties": {
+          "page": {
+            "$ref": "#/components/schemas/Page"
+          },
+          "snippet": {
+            "type": "string",
+            "title": "Snippet"
+          }
+        },
+        "type": "object",
+        "required": [
+          "page",
+          "snippet"
+        ],
+        "title": "SearchResultOut",
+        "description": "One hit in a workspace full-text search.\n\n``snippet`` is an ~200 char window of ``page.content`` around the first\nmatch of the query (or the leading prefix if the match is in the\nheadline only). Case-insensitive ILIKE across headline and content."
+      },
+      "SearchResultsOut": {
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/SearchResultOut"
+            },
+            "type": "array",
+            "title": "Results"
+          }
+        },
+        "type": "object",
+        "required": [
+          "results"
+        ],
+        "title": "SearchResultsOut"
       },
       "SubagentCompletedEventOut": {
         "properties": {
@@ -7004,6 +8099,55 @@
           "waves"
         ],
         "title": "UpdatePlanCreatedEventOut"
+      },
+      "UpdateProjectRequest": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "hidden": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hidden"
+          }
+        },
+        "type": "object",
+        "title": "UpdateProjectRequest",
+        "description": "PATCH /api/projects/{id} body.\n\nAll fields optional \u2014 callers send only what they want to change. ``name``\nis trimmed server-side and validated for length; ``hidden`` is a straight\nboolean flag that removes the workspace from the default public list."
+      },
+      "UpdateRunRequest": {
+        "properties": {
+          "hidden": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hidden"
+          }
+        },
+        "type": "object",
+        "title": "UpdateRunRequest",
+        "description": "PATCH /api/runs/{run_id} body.\n\nRuns only surface the ``hidden`` toggle today \u2014 a hidden run is filtered\nout of the RunPicker by default but still readable via a show-hidden\naffordance."
       },
       "UpdateSubgraphComputedEventOut": {
         "properties": {

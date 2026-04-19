@@ -304,9 +304,7 @@ function RunPicker({
                   {r.hidden ? "unhide" : "hide"}
                 </button>
                 <div className="trace-pick-row-head">
-                  <span className="trace-pick-row-name">
-                    {r.name || r.run_id!.slice(0, 8)}
-                  </span>
+                  <RunRowLabel run={r} />
                   {r.staged && <span className="trace-pick-row-staged">staged</span>}
                   {r.hidden && (
                     <span className="trace-pick-row-hidden">hidden</span>
@@ -370,6 +368,55 @@ function RunPicker({
         </div>
       )}
     </div>
+  );
+}
+
+// Render a run's display label in the picker. When the backend name is
+// generic ("chat" for ad-hoc chat-dispatched runs), lazily fetch the run's
+// trace tree and substitute the primary call_type so the list is scannable.
+// Runs with a substantive name (e.g. "continue (api): ...") pass through
+// unchanged to avoid the N+1 fetch cost. Failures fall back to the original
+// name silently.
+function RunRowLabel({ run }: { run: RunListItem }) {
+  const baseName = run.name || "";
+  const isGeneric = baseName === "" || baseName === "chat";
+  const [resolved, setResolved] = useState<string | null>(null);
+  const runId = run.run_id;
+
+  useEffect(() => {
+    if (!isGeneric || !runId) return;
+    let cancelled = false;
+    fetchRunTraceTree(runId)
+      .then((tree) => {
+        if (cancelled) return;
+        const root =
+          tree.calls.find((c) => !c.call.parent_call_id) ?? tree.calls[0];
+        if (root) setResolved(root.call.call_type);
+      })
+      .catch(() => {
+        // Silent — the row will fall back to the generic name.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isGeneric, runId]);
+
+  const label =
+    resolved ??
+    (baseName || (runId ? runId.slice(0, 8) : "(unknown)"));
+  const isSubstituted = isGeneric && resolved !== null;
+
+  return (
+    <span
+      className={`trace-pick-row-name ${isSubstituted ? "is-resolved" : ""}`}
+      title={
+        isSubstituted && baseName
+          ? `${baseName} — primary call: ${resolved}`
+          : undefined
+      }
+    >
+      {label}
+    </span>
   );
 }
 
@@ -936,6 +983,11 @@ function CallDetail({
   if (!node) return <div className="trace-empty-detail">Unknown call.</div>;
   const { call } = node;
   const duration = formatDuration(call.created_at, call.completed_at);
+  const callModel = modelFromEvents(events);
+  const exchangeEventsById = useMemo(
+    () => indexExchangeEvents(events),
+    [events],
+  );
 
   return (
     <div className="trace-detail-scroll">
@@ -947,6 +999,14 @@ function CallDetail({
             {call.id.slice(0, 8)}
           </span>
           <span className="trace-detail-status">{call.status}</span>
+          {callModel && (
+            <span
+              className="trace-detail-model"
+              title={`model: ${callModel}`}
+            >
+              {shortenModel(callModel)}
+            </span>
+          )}
         </div>
         {node.scope_page_summary && (
           <h1 className="trace-detail-scope">{node.scope_page_summary}</h1>
@@ -1015,7 +1075,10 @@ function CallDetail({
           <div className="trace-detail-dim">No LLM exchanges recorded.</div>
         )}
         {exchanges && exchanges.length > 0 && (
-          <ExchangeList exchanges={exchanges} />
+          <ExchangeList
+            exchanges={exchanges}
+            exchangeEventsById={exchangeEventsById}
+          />
         )}
       </section>
     </div>
@@ -1153,11 +1216,23 @@ function eventSummary(event: TraceEvent): string {
   }
 }
 
-function ExchangeList({ exchanges }: { exchanges: LLMExchangeSummary[] }) {
+function ExchangeList({
+  exchanges,
+  exchangeEventsById,
+}: {
+  exchanges: LLMExchangeSummary[];
+  exchangeEventsById: Record<string, TraceEvent>;
+}) {
   return (
     <ul className="trace-exchange-list">
       {exchanges.map((x, i) => (
-        <ExchangeRow key={x.id} summary={x} isFirst={i === 0} index={i} />
+        <ExchangeRow
+          key={x.id}
+          summary={x}
+          isFirst={i === 0}
+          index={i}
+          event={exchangeEventsById[x.id]}
+        />
       ))}
     </ul>
   );
@@ -1167,10 +1242,12 @@ function ExchangeRow({
   summary,
   isFirst,
   index,
+  event,
 }: {
   summary: LLMExchangeSummary;
   isFirst: boolean;
   index: number;
+  event: TraceEvent | undefined;
 }) {
   // First exchange opens by default so the reader lands on something
   // substantive. Later exchanges stay collapsed — the whole point of
@@ -1194,6 +1271,17 @@ function ExchangeRow({
     };
   }, [open, detail, summary.id]);
 
+  const model =
+    event && typeof event.model === "string" ? (event.model as string) : null;
+  const cacheRead =
+    event && typeof event.cache_read_input_tokens === "number"
+      ? (event.cache_read_input_tokens as number)
+      : null;
+  const cacheCreate =
+    event && typeof event.cache_creation_input_tokens === "number"
+      ? (event.cache_creation_input_tokens as number)
+      : null;
+
   return (
     <li className={`trace-exchange ${summary.error ? "has-error" : ""}`}>
       <button
@@ -1207,6 +1295,11 @@ function ExchangeRow({
         <span className="trace-exchange-phase">{summary.phase}</span>
         {summary.round != null && (
           <span className="trace-exchange-round">round {summary.round}</span>
+        )}
+        {model && (
+          <span className="trace-exchange-model" title={`model: ${model}`}>
+            {shortenModel(model)}
+          </span>
         )}
         <span className="trace-exchange-tokens">
           {summary.input_tokens != null
@@ -1231,27 +1324,112 @@ function ExchangeRow({
           {!detail && !err && (
             <div className="trace-detail-dim">loading exchange...</div>
           )}
-          {detail && <ExchangeDetail detail={detail} />}
+          {detail && (
+            <ExchangeDetail
+              detail={detail}
+              model={model}
+              cacheRead={cacheRead}
+              cacheCreate={cacheCreate}
+            />
+          )}
         </div>
       )}
     </li>
   );
 }
 
-function ExchangeDetail({ detail }: { detail: LLMExchangeDetail }) {
+function ExchangeDetail({
+  detail,
+  model,
+  cacheRead,
+  cacheCreate,
+}: {
+  detail: LLMExchangeDetail;
+  model: string | null;
+  cacheRead: number | null;
+  cacheCreate: number | null;
+}) {
   // The three heavy panels are collapsed by default per the "on demand"
   // spirit. System prompt especially can be 25k+ chars. Messages are
   // visible by default because they're where a human actually starts
   // reading the conversation.
+  //
+  // The top header shows the model (if recorded in the trace event) and a
+  // compact usage line with cache breakdown — the two pieces of info a
+  // trace-debugger usually wants at a glance before expanding panels.
+  const messagesForCopy = useMemo(() => {
+    const parts: string[] = [];
+    if (detail.user_message) {
+      parts.push(`# user\n\n${detail.user_message}`);
+    }
+    if (detail.response_text) {
+      parts.push(`# assistant\n\n${detail.response_text}`);
+    }
+    if (detail.user_messages && detail.user_messages.length > 0) {
+      parts.push(
+        "# conversation history\n\n" + prettyJson(detail.user_messages),
+      );
+    }
+    return parts.join("\n\n---\n\n");
+  }, [detail]);
+
   return (
     <div className="trace-ex-detail">
-      <Collapsible label="system prompt" defaultOpen={false}>
-        {detail.system_prompt ? (
-          <pre className="trace-code">{detail.system_prompt}</pre>
-        ) : (
-          <div className="trace-detail-dim">none</div>
+      <div className="trace-ex-header-meta">
+        {model && (
+          <span
+            className="trace-ex-header-model"
+            title={`model: ${model}`}
+          >
+            {shortenModel(model)}
+          </span>
         )}
-      </Collapsible>
+        <span className="trace-ex-header-usage">
+          in: {formatTokenCount(detail.input_tokens)}
+          {cacheRead != null && cacheRead > 0 && (
+            <>
+              {" "}
+              <span
+                className="trace-ex-header-cache"
+                title="cache_read_input_tokens"
+              >
+                (cache: {formatTokenCount(cacheRead)})
+              </span>
+            </>
+          )}
+          {cacheCreate != null && cacheCreate > 0 && (
+            <>
+              {" "}
+              <span
+                className="trace-ex-header-cache"
+                title="cache_creation_input_tokens"
+              >
+                (cache-w: {formatTokenCount(cacheCreate)})
+              </span>
+            </>
+          )}
+          {" · out: "}
+          {formatTokenCount(detail.output_tokens)}
+          {detail.duration_ms != null &&
+            ` · ${formatMs(detail.duration_ms)}`}
+        </span>
+      </div>
+
+      <div className="trace-ex-sec">
+        <div className="trace-ex-sec-head">
+          <div className="trace-ex-sec-title">SYSTEM PROMPT</div>
+          {detail.system_prompt && (
+            <CopyButton text={detail.system_prompt} label="copy prompt" />
+          )}
+        </div>
+        <Collapsible label="show system prompt" defaultOpen={false}>
+          {detail.system_prompt ? (
+            <pre className="trace-code">{detail.system_prompt}</pre>
+          ) : (
+            <div className="trace-detail-dim">none</div>
+          )}
+        </Collapsible>
+      </div>
 
       <Collapsible
         label={`tool calls (${detail.tool_calls.length})`}
@@ -1269,7 +1447,12 @@ function ExchangeDetail({ detail }: { detail: LLMExchangeDetail }) {
       </Collapsible>
 
       <div className="trace-ex-messages">
-        <div className="trace-ex-section-label">messages</div>
+        <div className="trace-ex-sec-head">
+          <div className="trace-ex-sec-title">MESSAGES</div>
+          {messagesForCopy && (
+            <CopyButton text={messagesForCopy} label="copy messages" />
+          )}
+        </div>
         <MessageBlock role="user" content={detail.user_message} />
         <MessageBlock role="assistant" content={detail.response_text} />
         {detail.user_messages && detail.user_messages.length > 0 && (
@@ -1284,14 +1467,6 @@ function ExchangeDetail({ detail }: { detail: LLMExchangeDetail }) {
         )}
       </div>
 
-      <div className="trace-ex-foot">
-        <span className="trace-ex-foot-label">usage</span>
-        <span className="trace-ex-foot-value">
-          {detail.input_tokens ?? "?"} in · {detail.output_tokens ?? "?"} out
-          {detail.duration_ms != null &&
-            ` · ${formatMs(detail.duration_ms)}`}
-        </span>
-      </div>
       {detail.error && (
         <div className="trace-detail-err">
           <strong>error:</strong> {detail.error}
@@ -1299,6 +1474,11 @@ function ExchangeDetail({ detail }: { detail: LLMExchangeDetail }) {
       )}
     </div>
   );
+}
+
+function formatTokenCount(n: number | null | undefined): string {
+  if (n == null) return "?";
+  return compactTokens(n);
 }
 
 function ToolCallBlock({
@@ -1451,6 +1631,9 @@ function ToolCallArgValue({
       <button
         type="button"
         className="node-ref-link"
+        onMouseDown={(e) => {
+          if (isPromoteEvent(e)) e.preventDefault();
+        }}
         onClick={(e) => {
           if (isPromoteEvent(e)) {
             e.preventDefault();
@@ -1459,7 +1642,7 @@ function ToolCallArgValue({
             openInspect(shortId);
           }
         }}
-        title={`Click to inspect · shift-click to pin as pane · ${shortId}`}
+        title={`Click to inspect · alt/cmd-click to pin as pane · ${shortId}`}
       >
         {shortId}
       </button>
@@ -1655,6 +1838,79 @@ function compactTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
   return String(n);
+}
+
+// Trim the familiar "claude-" prefix and the trailing -YYYYMMDD date so the
+// chip fits on one line — e.g. "claude-sonnet-4-6-20251201" -> "sonnet-4-6".
+// The full name is preserved in the element's title attribute.
+function shortenModel(model: string): string {
+  return model.replace(/^claude-/, "").replace(/-\d{8}$/, "");
+}
+
+// Pull the model name out of a call's trace events. Uses the first
+// llm_exchange event (calls usually share a model across exchanges). Returns
+// null when no model is recorded (pre-model-event legacy traces).
+function modelFromEvents(events: TraceEvent[] | null): string | null {
+  if (!events) return null;
+  for (const e of events) {
+    if (e.event === "llm_exchange") {
+      const m = e.model;
+      if (typeof m === "string" && m) return m;
+    }
+  }
+  return null;
+}
+
+// Lookup table from exchange_id to the llm_exchange trace event for that
+// exchange, so the detail view can show per-exchange model and cache tokens
+// without another round trip.
+function indexExchangeEvents(
+  events: TraceEvent[] | null,
+): Record<string, TraceEvent> {
+  if (!events) return {};
+  const out: Record<string, TraceEvent> = {};
+  for (const e of events) {
+    if (e.event !== "llm_exchange") continue;
+    const id = e.exchange_id;
+    if (typeof id === "string") out[id] = e;
+  }
+  return out;
+}
+
+// Small button that copies `text` to the clipboard and flashes "copied" for
+// a beat so the user gets visible confirmation. Absorbs the click so parent
+// collapsibles don't toggle. Kept minimal — no icons, no deps.
+function CopyButton({ text, label = "copy" }: { text: string; label?: string }) {
+  const [copied, setCopied] = useState(false);
+  const handle = useCallback(
+    (e: MouseEvent) => {
+      e.stopPropagation();
+      e.preventDefault();
+      if (typeof navigator === "undefined" || !navigator.clipboard) return;
+      navigator.clipboard
+        .writeText(text)
+        .then(() => {
+          setCopied(true);
+          window.setTimeout(() => setCopied(false), 1200);
+        })
+        .catch(() => {
+          // Clipboard can reject in insecure contexts; stay silent rather
+          // than surface a nag.
+        });
+    },
+    [text],
+  );
+  return (
+    <button
+      type="button"
+      className={`trace-copy-btn ${copied ? "is-copied" : ""}`}
+      onClick={handle}
+      title={`Copy ${label} to clipboard`}
+      aria-label={`Copy ${label}`}
+    >
+      {copied ? "copied" : label}
+    </button>
+  );
 }
 
 function compactJson(obj: unknown): string {

@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { ChatApiChatPostData, ChatApiChatPostErrors, ChatApiChatPostResponses, ChatStreamApiChatStreamPostData, ChatStreamApiChatStreamPostErrors, ChatStreamApiChatStreamPostResponses, CreateAnnotationApiAnnotationsPostData, CreateAnnotationApiAnnotationsPostErrors, CreateAnnotationApiAnnotationsPostResponses, CreateChatConversationApiChatConversationsPostData, CreateChatConversationApiChatConversationsPostErrors, CreateChatConversationApiChatConversationsPostResponses, DeleteChatConversationApiChatConversationsConversationIdDeleteData, DeleteChatConversationApiChatConversationsConversationIdDeleteErrors, DeleteChatConversationApiChatConversationsConversationIdDeleteResponses, FlagViewItemApiViewItemsItemIdFlagPostData, FlagViewItemApiViewItemsItemIdFlagPostErrors, FlagViewItemApiViewItemsItemIdFlagPostResponses, GetAbEvalApiAbEvalsEvalIdGetData, GetAbEvalApiAbEvalsEvalIdGetErrors, GetAbEvalApiAbEvalsEvalIdGetResponses, GetAdversarialVerdictsApiPagesPageIdAdversarialVerdictsGetData, GetAdversarialVerdictsApiPagesPageIdAdversarialVerdictsGetErrors, GetAdversarialVerdictsApiPagesPageIdAdversarialVerdictsGetResponses, GetAdversarialVerdictsBatchApiAdversarialVerdictsGetData, GetAdversarialVerdictsBatchApiAdversarialVerdictsGetErrors, GetAdversarialVerdictsBatchApiAdversarialVerdictsGetResponses, GetAppConfigApiConfigGetData, GetAppConfigApiConfigGetResponses, GetCallApiCallsCallIdGetData, GetCallApiCallsCallIdGetErrors, GetCallApiCallsCallIdGetResponses, GetCallEventsApiCallsCallIdEventsGetData, GetCallEventsApiCallsCallIdEventsGetErrors, GetCallEventsApiCallsCallIdEventsGetResponses, GetChatConversationApiChatConversationsConversationIdGetData, GetChatConversationApiChatConversationsConversationIdGetErrors, GetChatConversationApiChatConversationsConversationIdGetResponses, GetChildCallsApiCallsCallIdChildrenGetData, GetChildCallsApiCallsCallIdChildrenGetErrors, GetChildCallsApiCallsCallIdChildrenGetResponses, GetDependenciesApiPagesPageIdDependenciesGetData, GetDependenciesApiPagesPageIdDependenciesGetErrors, GetDependenciesApiPagesPageIdDependenciesGetResponses, GetDependentsApiPagesPageIdDependentsGetData, GetDependentsApiPagesPageIdDependentsGetErrors, GetDependentsApiPagesPageIdDependentsGetResponses, GetLinksFromApiPagesPageIdLinksFromGetData, GetLinksFromApiPagesPageIdLinksFromGetErrors, GetLinksFromApiPagesPageIdLinksFromGetResponses, GetLinksToApiPagesPageIdLinksToGetData, GetLinksToApiPagesPageIdLinksToGetErrors, GetLinksToApiPagesPageIdLinksToGetResponses, GetLlmExchangeApiLlmExchangesExchangeIdGetData, GetLlmExchangeApiLlmExchangesExchangeIdGetErrors, GetLlmExchangeApiLlmExchangesExchangeIdGetResponses, GetPageApiPagesPageIdGetData, GetPageApiPagesPageIdGetErrors, GetPageApiPagesPageIdGetResponses, GetPageByShortIdApiPagesShortShortIdGetData, GetPageByShortIdApiPagesShortShortIdGetErrors, GetPageByShortIdApiPagesShortShortIdGetResponses, GetPageCountsApiPagesPageIdCountsGetData, GetPageCountsApiPagesPageIdCountsGetErrors, GetPageCountsApiPagesPageIdCountsGetResponses, GetPageDetailApiPagesPageIdDetailGetData, GetPageDetailApiPagesPageIdDetailGetErrors, GetPageDetailApiPagesPageIdDetailGetResponses, GetPageLoadStatsApiRunsRunIdPageLoadStatsGetData, GetPageLoadStatsApiRunsRunIdPageLoadStatsGetErrors, GetPageLoadStatsApiRunsRunIdPageLoadStatsGetResponses, GetPageRunApiPagesPageIdRunGetData, GetPageRunApiPagesPageIdRunGetErrors, GetPageRunApiPagesPageIdRunGetResponses, GetProjectApiProjectsProjectIdGetData, GetProjectApiProjectsProjectIdGetErrors, GetProjectApiProjectsProjectIdGetResponses, GetProjectStatsApiProjectsProjectIdStatsGetData, GetProjectStatsApiProjectsProjectIdStatsGetErrors, GetProjectStatsApiProjectsProjectIdStatsGetResponses, GetQuestionStatsApiPagesPageIdStatsGetData, GetQuestionStatsApiPagesPageIdStatsGetErrors, GetQuestionStatsApiPagesPageIdStatsGetResponses, GetQuestionViewApiQuestionsQuestionIdViewGetData, GetQuestionViewApiQuestionsQuestionIdViewGetErrors, GetQuestionViewApiQuestionsQuestionIdViewGetResponses, GetRealtimeConfigApiRealtimeConfigGetData, GetRealtimeConfigApiRealtimeConfigGetResponses, GetReputationSummaryApiProjectsProjectIdReputationGetData, GetReputationSummaryApiProjectsProjectIdReputationGetErrors, GetReputationSummaryApiProjectsProjectIdReputationGetResponses, GetRunTraceTreeApiRunsRunIdTraceTreeGetData, GetRunTraceTreeApiRunsRunIdTraceTreeGetErrors, GetRunTraceTreeApiRunsRunIdTraceTreeGetResponses, HealthzHealthzGetData, HealthzHealthzGetResponses, ListAbEvalsApiAbEvalsGetData, ListAbEvalsApiAbEvalsGetErrors, ListAbEvalsApiAbEvalsGetResponses, ListCallAnnotationsApiCallsCallIdAnnotationsGetData, ListCallAnnotationsApiCallsCallIdAnnotationsGetErrors, ListCallAnnotationsApiCallsCallIdAnnotationsGetResponses, ListCallsApiProjectsProjectIdCallsGetData, ListCallsApiProjectsProjectIdCallsGetErrors, ListCallsApiProjectsProjectIdCallsGetResponses, ListChatConversationsApiChatConversationsGetData, ListChatConversationsApiChatConversationsGetErrors, ListChatConversationsApiChatConversationsGetResponses, ListLlmExchangesApiCallsCallIdLlmExchangesGetData, ListLlmExchangesApiCallsCallIdLlmExchangesGetErrors, ListLlmExchangesApiCallsCallIdLlmExchangesGetResponses, ListPageAnnotationsApiPagesPageIdAnnotationsGetData, ListPageAnnotationsApiPagesPageIdAnnotationsGetErrors, ListPageAnnotationsApiPagesPageIdAnnotationsGetResponses, ListPagesAnnotationsBatchApiPagesAnnotationsGetData, ListPagesAnnotationsBatchApiPagesAnnotationsGetErrors, ListPagesAnnotationsBatchApiPagesAnnotationsGetResponses, ListPagesApiProjectsProjectIdPagesGetData, ListPagesApiProjectsProjectIdPagesGetErrors, ListPagesApiProjectsProjectIdPagesGetResponses, ListProjectRunsApiProjectsProjectIdRunsGetData, ListProjectRunsApiProjectsProjectIdRunsGetErrors, ListProjectRunsApiProjectsProjectIdRunsGetResponses, ListProjectsApiProjectsGetData, ListProjectsApiProjectsGetErrors, ListProjectsApiProjectsGetResponses, ListProjectsSummaryApiProjectsSummaryGetData, ListProjectsSummaryApiProjectsSummaryGetErrors, ListProjectsSummaryApiProjectsSummaryGetResponses, ListReputationEventsApiProjectsProjectIdReputationEventsGetData, ListReputationEventsApiProjectsProjectIdReputationEventsGetErrors, ListReputationEventsApiProjectsProjectIdReputationEventsGetResponses, ListRootQuestionsApiProjectsProjectIdQuestionsGetData, ListRootQuestionsApiProjectsProjectIdQuestionsGetErrors, ListRootQuestionsApiProjectsProjectIdQuestionsGetResponses, ListSuggestionsApiProjectsProjectIdSuggestionsGetData, ListSuggestionsApiProjectsProjectIdSuggestionsGetErrors, ListSuggestionsApiProjectsProjectIdSuggestionsGetResponses, RecordViewItemReadApiViewItemsItemIdReadPostData, RecordViewItemReadApiViewItemsItemIdReadPostErrors, RecordViewItemReadApiViewItemsItemIdReadPostResponses, ReviewSuggestionApiSuggestionsSuggestionIdReviewPostData, ReviewSuggestionApiSuggestionsSuggestionIdReviewPostErrors, ReviewSuggestionApiSuggestionsSuggestionIdReviewPostResponses, UndoViewItemFlagApiViewItemsFlagsFlagIdDeleteData, UndoViewItemFlagApiViewItemsFlagsFlagIdDeleteErrors, UndoViewItemFlagApiViewItemsFlagsFlagIdDeleteResponses, UpdateChatConversationApiChatConversationsConversationIdPatchData, UpdateChatConversationApiChatConversationsConversationIdPatchErrors, UpdateChatConversationApiChatConversationsConversationIdPatchResponses } from './types.gen';
+import type { BranchChatConversationApiChatConversationsConversationIdBranchPostData, BranchChatConversationApiChatConversationsConversationIdBranchPostErrors, BranchChatConversationApiChatConversationsConversationIdBranchPostResponses, ChatApiChatPostData, ChatApiChatPostErrors, ChatApiChatPostResponses, ChatStreamApiChatStreamPostData, ChatStreamApiChatStreamPostErrors, ChatStreamApiChatStreamPostResponses, CreateAnnotationApiAnnotationsPostData, CreateAnnotationApiAnnotationsPostErrors, CreateAnnotationApiAnnotationsPostResponses, CreateChatConversationApiChatConversationsPostData, CreateChatConversationApiChatConversationsPostErrors, CreateChatConversationApiChatConversationsPostResponses, CreateProjectApiProjectsPostData, CreateProjectApiProjectsPostErrors, CreateProjectApiProjectsPostResponses, CreateRootQuestionApiProjectsProjectIdQuestionsPostData, CreateRootQuestionApiProjectsProjectIdQuestionsPostErrors, CreateRootQuestionApiProjectsProjectIdQuestionsPostResponses, DeleteChatConversationApiChatConversationsConversationIdDeleteData, DeleteChatConversationApiChatConversationsConversationIdDeleteErrors, DeleteChatConversationApiChatConversationsConversationIdDeleteResponses, FlagViewItemApiViewItemsItemIdFlagPostData, FlagViewItemApiViewItemsItemIdFlagPostErrors, FlagViewItemApiViewItemsItemIdFlagPostResponses, GetAbEvalApiAbEvalsEvalIdGetData, GetAbEvalApiAbEvalsEvalIdGetErrors, GetAbEvalApiAbEvalsEvalIdGetResponses, GetAdversarialVerdictsApiPagesPageIdAdversarialVerdictsGetData, GetAdversarialVerdictsApiPagesPageIdAdversarialVerdictsGetErrors, GetAdversarialVerdictsApiPagesPageIdAdversarialVerdictsGetResponses, GetAdversarialVerdictsBatchApiAdversarialVerdictsGetData, GetAdversarialVerdictsBatchApiAdversarialVerdictsGetErrors, GetAdversarialVerdictsBatchApiAdversarialVerdictsGetResponses, GetAppConfigApiConfigGetData, GetAppConfigApiConfigGetResponses, GetCallApiCallsCallIdGetData, GetCallApiCallsCallIdGetErrors, GetCallApiCallsCallIdGetResponses, GetCallEventsApiCallsCallIdEventsGetData, GetCallEventsApiCallsCallIdEventsGetErrors, GetCallEventsApiCallsCallIdEventsGetResponses, GetChatConversationApiChatConversationsConversationIdGetData, GetChatConversationApiChatConversationsConversationIdGetErrors, GetChatConversationApiChatConversationsConversationIdGetResponses, GetChildCallsApiCallsCallIdChildrenGetData, GetChildCallsApiCallsCallIdChildrenGetErrors, GetChildCallsApiCallsCallIdChildrenGetResponses, GetDependenciesApiPagesPageIdDependenciesGetData, GetDependenciesApiPagesPageIdDependenciesGetErrors, GetDependenciesApiPagesPageIdDependenciesGetResponses, GetDependentsApiPagesPageIdDependentsGetData, GetDependentsApiPagesPageIdDependentsGetErrors, GetDependentsApiPagesPageIdDependentsGetResponses, GetLinksFromApiPagesPageIdLinksFromGetData, GetLinksFromApiPagesPageIdLinksFromGetErrors, GetLinksFromApiPagesPageIdLinksFromGetResponses, GetLinksToApiPagesPageIdLinksToGetData, GetLinksToApiPagesPageIdLinksToGetErrors, GetLinksToApiPagesPageIdLinksToGetResponses, GetLlmExchangeApiLlmExchangesExchangeIdGetData, GetLlmExchangeApiLlmExchangesExchangeIdGetErrors, GetLlmExchangeApiLlmExchangesExchangeIdGetResponses, GetPageApiPagesPageIdGetData, GetPageApiPagesPageIdGetErrors, GetPageApiPagesPageIdGetResponses, GetPageByShortIdApiPagesShortShortIdGetData, GetPageByShortIdApiPagesShortShortIdGetErrors, GetPageByShortIdApiPagesShortShortIdGetResponses, GetPageCountsApiPagesPageIdCountsGetData, GetPageCountsApiPagesPageIdCountsGetErrors, GetPageCountsApiPagesPageIdCountsGetResponses, GetPageDetailApiPagesPageIdDetailGetData, GetPageDetailApiPagesPageIdDetailGetErrors, GetPageDetailApiPagesPageIdDetailGetResponses, GetPageIterationsApiPagesPageIdIterationsGetData, GetPageIterationsApiPagesPageIdIterationsGetErrors, GetPageIterationsApiPagesPageIdIterationsGetResponses, GetPageLoadStatsApiRunsRunIdPageLoadStatsGetData, GetPageLoadStatsApiRunsRunIdPageLoadStatsGetErrors, GetPageLoadStatsApiRunsRunIdPageLoadStatsGetResponses, GetPageRunApiPagesPageIdRunGetData, GetPageRunApiPagesPageIdRunGetErrors, GetPageRunApiPagesPageIdRunGetResponses, GetProjectApiProjectsProjectIdGetData, GetProjectApiProjectsProjectIdGetErrors, GetProjectApiProjectsProjectIdGetResponses, GetProjectStatsApiProjectsProjectIdStatsGetData, GetProjectStatsApiProjectsProjectIdStatsGetErrors, GetProjectStatsApiProjectsProjectIdStatsGetResponses, GetQuestionStatsApiPagesPageIdStatsGetData, GetQuestionStatsApiPagesPageIdStatsGetErrors, GetQuestionStatsApiPagesPageIdStatsGetResponses, GetQuestionViewApiQuestionsQuestionIdViewGetData, GetQuestionViewApiQuestionsQuestionIdViewGetErrors, GetQuestionViewApiQuestionsQuestionIdViewGetResponses, GetRealtimeConfigApiRealtimeConfigGetData, GetRealtimeConfigApiRealtimeConfigGetResponses, GetReputationSummaryApiProjectsProjectIdReputationGetData, GetReputationSummaryApiProjectsProjectIdReputationGetErrors, GetReputationSummaryApiProjectsProjectIdReputationGetResponses, GetRunSpendApiRunsRunIdSpendGetData, GetRunSpendApiRunsRunIdSpendGetErrors, GetRunSpendApiRunsRunIdSpendGetResponses, GetRunTraceTreeApiRunsRunIdTraceTreeGetData, GetRunTraceTreeApiRunsRunIdTraceTreeGetErrors, GetRunTraceTreeApiRunsRunIdTraceTreeGetResponses, HealthzHealthzGetData, HealthzHealthzGetResponses, ListAbEvalsApiAbEvalsGetData, ListAbEvalsApiAbEvalsGetErrors, ListAbEvalsApiAbEvalsGetResponses, ListCallAnnotationsApiCallsCallIdAnnotationsGetData, ListCallAnnotationsApiCallsCallIdAnnotationsGetErrors, ListCallAnnotationsApiCallsCallIdAnnotationsGetResponses, ListCallsApiProjectsProjectIdCallsGetData, ListCallsApiProjectsProjectIdCallsGetErrors, ListCallsApiProjectsProjectIdCallsGetResponses, ListChatConversationsApiChatConversationsGetData, ListChatConversationsApiChatConversationsGetErrors, ListChatConversationsApiChatConversationsGetResponses, ListLlmExchangesApiCallsCallIdLlmExchangesGetData, ListLlmExchangesApiCallsCallIdLlmExchangesGetErrors, ListLlmExchangesApiCallsCallIdLlmExchangesGetResponses, ListPageAnnotationsApiPagesPageIdAnnotationsGetData, ListPageAnnotationsApiPagesPageIdAnnotationsGetErrors, ListPageAnnotationsApiPagesPageIdAnnotationsGetResponses, ListPagesAnnotationsBatchApiPagesAnnotationsGetData, ListPagesAnnotationsBatchApiPagesAnnotationsGetErrors, ListPagesAnnotationsBatchApiPagesAnnotationsGetResponses, ListPagesApiProjectsProjectIdPagesGetData, ListPagesApiProjectsProjectIdPagesGetErrors, ListPagesApiProjectsProjectIdPagesGetResponses, ListProjectRunsApiProjectsProjectIdRunsGetData, ListProjectRunsApiProjectsProjectIdRunsGetErrors, ListProjectRunsApiProjectsProjectIdRunsGetResponses, ListProjectsApiProjectsGetData, ListProjectsApiProjectsGetErrors, ListProjectsApiProjectsGetResponses, ListProjectsSummaryApiProjectsSummaryGetData, ListProjectsSummaryApiProjectsSummaryGetErrors, ListProjectsSummaryApiProjectsSummaryGetResponses, ListReputationEventsApiProjectsProjectIdReputationEventsGetData, ListReputationEventsApiProjectsProjectIdReputationEventsGetErrors, ListReputationEventsApiProjectsProjectIdReputationEventsGetResponses, ListRootQuestionsApiProjectsProjectIdQuestionsGetData, ListRootQuestionsApiProjectsProjectIdQuestionsGetErrors, ListRootQuestionsApiProjectsProjectIdQuestionsGetResponses, ListSuggestionsApiProjectsProjectIdSuggestionsGetData, ListSuggestionsApiProjectsProjectIdSuggestionsGetErrors, ListSuggestionsApiProjectsProjectIdSuggestionsGetResponses, PostAbEvalApiAbEvalsPostData, PostAbEvalApiAbEvalsPostErrors, PostAbEvalApiAbEvalsPostResponses, PostCommitRunApiRunsRunIdCommitPostData, PostCommitRunApiRunsRunIdCommitPostErrors, PostCommitRunApiRunsRunIdCommitPostResponses, PostContinueQuestionApiQuestionsQuestionIdContinuePostData, PostContinueQuestionApiQuestionsQuestionIdContinuePostErrors, PostContinueQuestionApiQuestionsQuestionIdContinuePostResponses, PostStageRunApiRunsRunIdStagePostData, PostStageRunApiRunsRunIdStagePostErrors, PostStageRunApiRunsRunIdStagePostResponses, RecordViewItemReadApiViewItemsItemIdReadPostData, RecordViewItemReadApiViewItemsItemIdReadPostErrors, RecordViewItemReadApiViewItemsItemIdReadPostResponses, ReviewSuggestionApiSuggestionsSuggestionIdReviewPostData, ReviewSuggestionApiSuggestionsSuggestionIdReviewPostErrors, ReviewSuggestionApiSuggestionsSuggestionIdReviewPostResponses, SearchWorkspaceApiProjectsProjectIdSearchGetData, SearchWorkspaceApiProjectsProjectIdSearchGetErrors, SearchWorkspaceApiProjectsProjectIdSearchGetResponses, UndoViewItemFlagApiViewItemsFlagsFlagIdDeleteData, UndoViewItemFlagApiViewItemsFlagsFlagIdDeleteErrors, UndoViewItemFlagApiViewItemsFlagsFlagIdDeleteResponses, UpdateChatConversationApiChatConversationsConversationIdPatchData, UpdateChatConversationApiChatConversationsConversationIdPatchErrors, UpdateChatConversationApiChatConversationsConversationIdPatchResponses, UpdateProjectApiProjectsProjectIdPatchData, UpdateProjectApiProjectsProjectIdPatchErrors, UpdateProjectApiProjectsProjectIdPatchResponses, UpdateRunApiRunsRunIdPatchData, UpdateRunApiRunsRunIdPatchErrors, UpdateRunApiRunsRunIdPatchResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<TData, ThrowOnError> & {
     /**
@@ -29,12 +29,34 @@ export const healthzHealthzGet = <ThrowOnError extends boolean = false>(options?
 export const listProjectsApiProjectsGet = <ThrowOnError extends boolean = false>(options?: Options<ListProjectsApiProjectsGetData, ThrowOnError>) => (options?.client ?? client).get<ListProjectsApiProjectsGetResponses, ListProjectsApiProjectsGetErrors, ThrowOnError>({ url: '/api/projects', ...options });
 
 /**
+ * Create Project
+ *
+ * Create a new workspace (project) from the UI.
+ *
+ * Idempotent: if a workspace with the same trimmed name already exists we
+ * return it with ``created=false`` so the client can show a subtle
+ * "already exists" hint while still navigating the user into the existing
+ * workspace.
+ */
+export const createProjectApiProjectsPost = <ThrowOnError extends boolean = false>(options: Options<CreateProjectApiProjectsPostData, ThrowOnError>) => (options.client ?? client).post<CreateProjectApiProjectsPostResponses, CreateProjectApiProjectsPostErrors, ThrowOnError>({
+    url: '/api/projects',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
  * List Projects Summary
  *
  * Per-project summary for the public landing page.
  *
  * One SQL call produces every project's question_count, claim_count,
  * call_count, and last_activity_at. Consumed by the parma landing grid.
+ * ``include_hidden`` is off by default; the parma "show hidden" toggle
+ * passes ``?include_hidden=true`` to surface soft-deleted workspaces
+ * (rendered greyed).
  */
 export const listProjectsSummaryApiProjectsSummaryGet = <ThrowOnError extends boolean = false>(options?: Options<ListProjectsSummaryApiProjectsSummaryGetData, ThrowOnError>) => (options?.client ?? client).get<ListProjectsSummaryApiProjectsSummaryGetResponses, ListProjectsSummaryApiProjectsSummaryGetErrors, ThrowOnError>({ url: '/api/projects/summary', ...options });
 
@@ -44,9 +66,62 @@ export const listProjectsSummaryApiProjectsSummaryGet = <ThrowOnError extends bo
 export const getProjectApiProjectsProjectIdGet = <ThrowOnError extends boolean = false>(options: Options<GetProjectApiProjectsProjectIdGetData, ThrowOnError>) => (options.client ?? client).get<GetProjectApiProjectsProjectIdGetResponses, GetProjectApiProjectsProjectIdGetErrors, ThrowOnError>({ url: '/api/projects/{project_id}', ...options });
 
 /**
+ * Update Project
+ *
+ * Update a workspace's hidden flag and/or name.
+ *
+ * Accepts any subset of ``{hidden, name}``. At least one field must be
+ * supplied (422 if neither is present). ``name`` is trimmed server-side;
+ * empty-after-trim is rejected (422) and a collision with another project's
+ * name returns 409. Renaming to the same name is a no-op (200).
+ *
+ * Backs Feature 1 (hide workspace) and Feature 3 (rename workspace) in the
+ * parma hygiene landing-pad.
+ */
+export const updateProjectApiProjectsProjectIdPatch = <ThrowOnError extends boolean = false>(options: Options<UpdateProjectApiProjectsProjectIdPatchData, ThrowOnError>) => (options.client ?? client).patch<UpdateProjectApiProjectsProjectIdPatchResponses, UpdateProjectApiProjectsProjectIdPatchErrors, ThrowOnError>({
+    url: '/api/projects/{project_id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
  * List Project Runs
  */
 export const listProjectRunsApiProjectsProjectIdRunsGet = <ThrowOnError extends boolean = false>(options: Options<ListProjectRunsApiProjectsProjectIdRunsGetData, ThrowOnError>) => (options.client ?? client).get<ListProjectRunsApiProjectsProjectIdRunsGetResponses, ListProjectRunsApiProjectsProjectIdRunsGetErrors, ThrowOnError>({ url: '/api/projects/{project_id}/runs', ...options });
+
+/**
+ * Update Run
+ *
+ * Update a run's hidden flag.
+ *
+ * Today the only patchable field is ``hidden`` — a soft-delete for the
+ * run picker so noise runs (smoke tests, failed experiments) don't clutter
+ * the list. 422 if the request body is empty. 404 if the run doesn't exist.
+ */
+export const updateRunApiRunsRunIdPatch = <ThrowOnError extends boolean = false>(options: Options<UpdateRunApiRunsRunIdPatchData, ThrowOnError>) => (options.client ?? client).patch<UpdateRunApiRunsRunIdPatchResponses, UpdateRunApiRunsRunIdPatchErrors, ThrowOnError>({
+    url: '/api/runs/{run_id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Search Workspace
+ *
+ * Case-insensitive ILIKE search across pages.headline and pages.content,
+ * scoped to one project.
+ *
+ * The snippet is a ~200 char window around the first content match (or the
+ * leading prefix if the match was headline-only). Non-active (superseded)
+ * pages are excluded so callers never land on stale drafts. Limit is
+ * clamped to [1, 100].
+ */
+export const searchWorkspaceApiProjectsProjectIdSearchGet = <ThrowOnError extends boolean = false>(options: Options<SearchWorkspaceApiProjectsProjectIdSearchGetData, ThrowOnError>) => (options.client ?? client).get<SearchWorkspaceApiProjectsProjectIdSearchGetResponses, SearchWorkspaceApiProjectsProjectIdSearchGetErrors, ThrowOnError>({ url: '/api/projects/{project_id}/search', ...options });
 
 /**
  * List Pages
@@ -116,6 +191,25 @@ export const getPageDetailApiPagesPageIdDetailGet = <ThrowOnError extends boolea
 export const getPageCountsApiPagesPageIdCountsGet = <ThrowOnError extends boolean = false>(options: Options<GetPageCountsApiPagesPageIdCountsGetData, ThrowOnError>) => (options.client ?? client).get<GetPageCountsApiPagesPageIdCountsGetResponses, GetPageCountsApiPagesPageIdCountsGetErrors, ThrowOnError>({ url: '/api/pages/{page_id}/counts', ...options });
 
 /**
+ * Get Page Iterations
+ *
+ * Walk the draft chain of a refine-artifact run and render each pass.
+ *
+ * The final artifact page carries ``extra['refinement']`` with the
+ * iteration count and final verdict. Every prior draft was superseded by
+ * this page (flat, not chained — see _supersede_prior_drafts in
+ * refine_artifact.py), so we can pull them all in one query. For each
+ * draft we locate the adversarial_review verdict JUDGEMENT via its
+ * DEPENDS_ON link back at the draft; ``extra['target_page_id']`` on the
+ * JUDGEMENT is the tie-breaker when multiple dependents exist.
+ *
+ * Returns 400 when the page isn't an artifact, isn't the accepted
+ * final (no refinement metadata), or the draft-chain query comes back
+ * empty for a >1-iteration run.
+ */
+export const getPageIterationsApiPagesPageIdIterationsGet = <ThrowOnError extends boolean = false>(options: Options<GetPageIterationsApiPagesPageIdIterationsGetData, ThrowOnError>) => (options.client ?? client).get<GetPageIterationsApiPagesPageIdIterationsGetResponses, GetPageIterationsApiPagesPageIdIterationsGetErrors, ThrowOnError>({ url: '/api/pages/{page_id}/iterations', ...options });
+
+/**
  * Get Adversarial Verdicts
  *
  * List adversarial-review verdicts that target *page_id*.
@@ -162,6 +256,29 @@ export const getQuestionStatsApiPagesPageIdStatsGet = <ThrowOnError extends bool
 export const listRootQuestionsApiProjectsProjectIdQuestionsGet = <ThrowOnError extends boolean = false>(options: Options<ListRootQuestionsApiProjectsProjectIdQuestionsGetData, ThrowOnError>) => (options.client ?? client).get<ListRootQuestionsApiProjectsProjectIdQuestionsGetResponses, ListRootQuestionsApiProjectsProjectIdQuestionsGetErrors, ThrowOnError>({ url: '/api/projects/{project_id}/questions', ...options });
 
 /**
+ * Create Root Question
+ *
+ * Create a bare root question in a workspace.
+ *
+ * No orchestrator dispatch and no call record — just a Page. The UI uses
+ * this to seed a freshly-created workspace so the user can pose a question
+ * before firing any research; chat (``/orchestrate``, ``/dispatch``,
+ * ``/ask``) can then populate it.
+ *
+ * Mirrors the skill-lane pattern in ``ask_question.py`` for field choices:
+ * ``layer=SQUIDGY``, ``workspace=RESEARCH``, ``provenance_model='human'``,
+ * and best-effort embedding on the ``abstract`` field so search/dedup work.
+ */
+export const createRootQuestionApiProjectsProjectIdQuestionsPost = <ThrowOnError extends boolean = false>(options: Options<CreateRootQuestionApiProjectsProjectIdQuestionsPostData, ThrowOnError>) => (options.client ?? client).post<CreateRootQuestionApiProjectsProjectIdQuestionsPostResponses, CreateRootQuestionApiProjectsProjectIdQuestionsPostErrors, ThrowOnError>({
+    url: '/api/projects/{project_id}/questions',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
  * List Calls
  */
 export const listCallsApiProjectsProjectIdCallsGet = <ThrowOnError extends boolean = false>(options: Options<ListCallsApiProjectsProjectIdCallsGetData, ThrowOnError>) => (options.client ?? client).get<ListCallsApiProjectsProjectIdCallsGetResponses, ListCallsApiProjectsProjectIdCallsGetErrors, ThrowOnError>({ url: '/api/projects/{project_id}/calls', ...options });
@@ -182,6 +299,55 @@ export const getChildCallsApiCallsCallIdChildrenGet = <ThrowOnError extends bool
 export const getRunTraceTreeApiRunsRunIdTraceTreeGet = <ThrowOnError extends boolean = false>(options: Options<GetRunTraceTreeApiRunsRunIdTraceTreeGetData, ThrowOnError>) => (options.client ?? client).get<GetRunTraceTreeApiRunsRunIdTraceTreeGetResponses, GetRunTraceTreeApiRunsRunIdTraceTreeGetErrors, ThrowOnError>({ url: '/api/runs/{run_id}/trace-tree', ...options });
 
 /**
+ * Get Run Spend
+ *
+ * Per-call-type spend breakdown for a run.
+ *
+ * Aggregates ``cost_usd`` and ``completed_at - created_at`` across the
+ * run's calls in Python — the row count per run is always small (tens,
+ * not thousands), so a GROUP BY trip round is unnecessary. Calls that
+ * haven't completed yet contribute 0 duration. Returned rows are sorted
+ * descending by ``cost_usd`` so the biggest spenders surface first.
+ */
+export const getRunSpendApiRunsRunIdSpendGet = <ThrowOnError extends boolean = false>(options: Options<GetRunSpendApiRunsRunIdSpendGetData, ThrowOnError>) => (options.client ?? client).get<GetRunSpendApiRunsRunIdSpendGetResponses, GetRunSpendApiRunsRunIdSpendGetErrors, ThrowOnError>({ url: '/api/runs/{run_id}/spend', ...options });
+
+/**
+ * Post Continue Question
+ *
+ * Fire a background orchestrator run on an existing question.
+ *
+ * Returns the new run_id immediately; client can navigate to
+ * /traces/{run_id} to watch the trace live. The server does not await
+ * the orchestrator — known risk: if the server restarts mid-run the
+ * task is lost.
+ */
+export const postContinueQuestionApiQuestionsQuestionIdContinuePost = <ThrowOnError extends boolean = false>(options: Options<PostContinueQuestionApiQuestionsQuestionIdContinuePostData, ThrowOnError>) => (options.client ?? client).post<PostContinueQuestionApiQuestionsQuestionIdContinuePostResponses, PostContinueQuestionApiQuestionsQuestionIdContinuePostErrors, ThrowOnError>({
+    url: '/api/questions/{question_id}/continue',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Post Stage Run
+ *
+ * Retroactively stage a completed non-staged run.
+ *
+ * Flips the run's rows to staged=true and reverts direct mutations from
+ * the event log so baseline readers see the pre-run state.
+ */
+export const postStageRunApiRunsRunIdStagePost = <ThrowOnError extends boolean = false>(options: Options<PostStageRunApiRunsRunIdStagePostData, ThrowOnError>) => (options.client ?? client).post<PostStageRunApiRunsRunIdStagePostResponses, PostStageRunApiRunsRunIdStagePostErrors, ThrowOnError>({ url: '/api/runs/{run_id}/stage', ...options });
+
+/**
+ * Post Commit Run
+ *
+ * Commit a staged run, making its effects visible to all readers.
+ */
+export const postCommitRunApiRunsRunIdCommitPost = <ThrowOnError extends boolean = false>(options: Options<PostCommitRunApiRunsRunIdCommitPostData, ThrowOnError>) => (options.client ?? client).post<PostCommitRunApiRunsRunIdCommitPostResponses, PostCommitRunApiRunsRunIdCommitPostErrors, ThrowOnError>({ url: '/api/runs/{run_id}/commit', ...options });
+
+/**
  * Get Call Events
  */
 export const getCallEventsApiCallsCallIdEventsGet = <ThrowOnError extends boolean = false>(options: Options<GetCallEventsApiCallsCallIdEventsGetData, ThrowOnError>) => (options.client ?? client).get<GetCallEventsApiCallsCallIdEventsGetResponses, GetCallEventsApiCallsCallIdEventsGetErrors, ThrowOnError>({ url: '/api/calls/{call_id}/events', ...options });
@@ -190,6 +356,25 @@ export const getCallEventsApiCallsCallIdEventsGet = <ThrowOnError extends boolea
  * List Ab Evals
  */
 export const listAbEvalsApiAbEvalsGet = <ThrowOnError extends boolean = false>(options?: Options<ListAbEvalsApiAbEvalsGetData, ThrowOnError>) => (options?.client ?? client).get<ListAbEvalsApiAbEvalsGetResponses, ListAbEvalsApiAbEvalsGetErrors, ThrowOnError>({ url: '/api/ab-evals', ...options });
+
+/**
+ * Post Ab Eval
+ *
+ * Kick off an AB eval comparing two runs as a background task.
+ *
+ * Returns an eval_run_id (the run_id used for the eval itself). The
+ * final ``ab_eval_report`` id is only known when the eval completes,
+ * so clients should poll /api/ab-evals and filter by run_id_a/b to
+ * find the finished report.
+ */
+export const postAbEvalApiAbEvalsPost = <ThrowOnError extends boolean = false>(options: Options<PostAbEvalApiAbEvalsPostData, ThrowOnError>) => (options.client ?? client).post<PostAbEvalApiAbEvalsPostResponses, PostAbEvalApiAbEvalsPostErrors, ThrowOnError>({
+    url: '/api/ab-evals',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
 
 /**
  * Get Ab Eval
@@ -394,6 +579,26 @@ export const getChatConversationApiChatConversationsConversationIdGet = <ThrowOn
  */
 export const updateChatConversationApiChatConversationsConversationIdPatch = <ThrowOnError extends boolean = false>(options: Options<UpdateChatConversationApiChatConversationsConversationIdPatchData, ThrowOnError>) => (options.client ?? client).patch<UpdateChatConversationApiChatConversationsConversationIdPatchResponses, UpdateChatConversationApiChatConversationsConversationIdPatchErrors, ThrowOnError>({
     url: '/api/chat/conversations/{conversation_id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Branch Chat Conversation
+ *
+ * Fork a conversation at message `at_seq` into a new one.
+ *
+ * Copies every message with seq <= at_seq from the source into a new
+ * conversation, tags the new conversation with parent_conversation_id +
+ * branched_at_seq, and returns the new conversation (detail-shaped, so
+ * the frontend has the copied messages ready without a second round trip).
+ * The parent conversation is NOT modified — branching is additive.
+ */
+export const branchChatConversationApiChatConversationsConversationIdBranchPost = <ThrowOnError extends boolean = false>(options: Options<BranchChatConversationApiChatConversationsConversationIdBranchPostData, ThrowOnError>) => (options.client ?? client).post<BranchChatConversationApiChatConversationsConversationIdBranchPostResponses, BranchChatConversationApiChatConversationsConversationIdBranchPostErrors, ThrowOnError>({
+    url: '/api/chat/conversations/{conversation_id}/branch',
     ...options,
     headers: {
         'Content-Type': 'application/json',

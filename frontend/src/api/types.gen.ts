@@ -65,6 +65,20 @@ export type AbEvalDimensionSummaryOut = {
 };
 
 /**
+ * ABEvalIn
+ */
+export type AbEvalIn = {
+    /**
+     * Run Id A
+     */
+    run_id_a: string;
+    /**
+     * Run Id B
+     */
+    run_id_b: string;
+};
+
+/**
  * ABEvalReportListItemOut
  */
 export type AbEvalReportListItemOut = {
@@ -451,6 +465,26 @@ export type AppConfigOut = {
 };
 
 /**
+ * BranchConversationRequest
+ *
+ * Body for POST /api/chat/conversations/{id}/branch.
+ *
+ * Copies every message in the source conversation where seq <= at_seq
+ * into a brand-new conversation, linked via parent_conversation_id.
+ * The source is untouched.
+ */
+export type BranchConversationRequest = {
+    /**
+     * At Seq
+     */
+    at_seq: number;
+    /**
+     * Title
+     */
+    title?: string | null;
+};
+
+/**
  * Call
  */
 export type Call = {
@@ -605,7 +639,7 @@ export type CallSummary = {
 /**
  * CallType
  */
-export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'ab_eval' | 'ab_eval_comparison' | 'ab_eval_summary' | 'run_eval' | 'single_call_baseline' | 'create_view' | 'global_prioritization' | 'update_view' | 'chat_direct' | 'adversarial_review' | 'explore_tension' | 'draft_artifact' | 'claude_code_direct';
+export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'ab_eval' | 'ab_eval_comparison' | 'ab_eval_summary' | 'run_eval' | 'single_call_baseline' | 'create_view' | 'global_prioritization' | 'update_view' | 'chat_direct' | 'adversarial_review' | 'explore_tension' | 'draft_artifact' | 'claude_code_direct';
 
 /**
  * CallTypeFruitScoreItem
@@ -675,6 +709,34 @@ export type ChatRequest = {
      * Conversation Id
      */
     conversation_id?: string | null;
+    /**
+     * Open Run Id
+     */
+    open_run_id?: string | null;
+    /**
+     * Open Page Ids
+     */
+    open_page_ids?: Array<string>;
+    /**
+     * View Mode
+     */
+    view_mode?: string | null;
+    /**
+     * Open Call Id
+     */
+    open_call_id?: string | null;
+    /**
+     * Drawer Page Id
+     */
+    drawer_page_id?: string | null;
+    /**
+     * Active Section
+     */
+    active_section?: string | null;
+    /**
+     * Review Open
+     */
+    review_open?: boolean;
 };
 
 /**
@@ -803,6 +865,16 @@ export type ContextBuiltEventOut = {
 };
 
 /**
+ * ContinueQuestionIn
+ */
+export type ContinueQuestionIn = {
+    /**
+     * Budget
+     */
+    budget?: number;
+};
+
+/**
  * ConversationDetail
  */
 export type ConversationDetail = {
@@ -836,6 +908,14 @@ export type ConversationDetail = {
     messages: Array<{
         [key: string]: unknown;
     }>;
+    /**
+     * Parent Conversation Id
+     */
+    parent_conversation_id?: string | null;
+    /**
+     * Branched At Seq
+     */
+    branched_at_seq?: number | null;
 };
 
 /**
@@ -866,6 +946,14 @@ export type ConversationListItem = {
      * Updated At
      */
     updated_at: string;
+    /**
+     * Parent Conversation Id
+     */
+    parent_conversation_id?: string | null;
+    /**
+     * Branched At Seq
+     */
+    branched_at_seq?: number | null;
 };
 
 /**
@@ -888,6 +976,59 @@ export type CreateConversationRequest = {
      * Title
      */
     title?: string | null;
+};
+
+/**
+ * CreateProjectOut
+ *
+ * POST /api/projects response.
+ *
+ * ``created`` is ``True`` when a new row was inserted, ``False`` when an
+ * existing workspace with the same name was returned. The frontend uses
+ * this to decide whether to show a subtle "already exists" hint.
+ */
+export type CreateProjectOut = {
+    project: Project;
+    /**
+     * Created
+     */
+    created: boolean;
+};
+
+/**
+ * CreateProjectRequest
+ *
+ * POST /api/projects body.
+ *
+ * The name is trimmed server-side; a purely-whitespace or empty value is
+ * rejected with 422 via the ``min_length`` validator.
+ */
+export type CreateProjectRequest = {
+    /**
+     * Name
+     */
+    name: string;
+};
+
+/**
+ * CreateRootQuestionRequest
+ *
+ * POST /api/projects/{project_id}/questions body.
+ *
+ * The headline is trimmed server-side; empty or whitespace-only input is
+ * rejected with 422. ``content`` is optional — if omitted the question is
+ * created with the headline as its content (matches the skill-lane pattern
+ * in ``ask_question.py``).
+ */
+export type CreateRootQuestionRequest = {
+    /**
+     * Headline
+     */
+    headline: string;
+    /**
+     * Content
+     */
+    content?: string | null;
 };
 
 /**
@@ -1145,6 +1286,10 @@ export type LlmExchangeEventOut = {
      * Round
      */
     round: number | null;
+    /**
+     * Model
+     */
+    model: string | null;
     /**
      * Input Tokens
      */
@@ -1531,6 +1676,22 @@ export type PageDetailOut = {
 };
 
 /**
+ * PageIterationsOut
+ *
+ * Response for GET /api/pages/{page_id}/iterations — ordered v1->vN.
+ */
+export type PageIterationsOut = {
+    /**
+     * Page Id
+     */
+    page_id: string;
+    /**
+     * Iterations
+     */
+    iterations: Array<RefineIterationOut>;
+};
+
+/**
  * PageLayer
  */
 export type PageLayer = 'wiki' | 'squidgy';
@@ -1643,7 +1804,7 @@ export type PageRef = {
 /**
  * PageType
  */
-export type PageType = 'source' | 'claim' | 'question' | 'judgement' | 'wiki' | 'summary' | 'view' | 'view_item' | 'view_meta' | 'artifact';
+export type PageType = 'source' | 'claim' | 'question' | 'judgement' | 'wiki' | 'view' | 'view_item' | 'view_meta' | 'artifact';
 
 /**
  * PaginatedPagesOut
@@ -1930,6 +2091,71 @@ export type ReassessTriggeredEventOut = {
 };
 
 /**
+ * RefineIterationOut
+ *
+ * One iteration in a refine-artifact chain (draft + optional verdict).
+ */
+export type RefineIterationOut = {
+    /**
+     * Iteration
+     */
+    iteration: number;
+    /**
+     * Draft Page Id
+     */
+    draft_page_id: string;
+    /**
+     * Draft Short Id
+     */
+    draft_short_id: string;
+    /**
+     * Content
+     */
+    content: string;
+    /**
+     * Headline
+     */
+    headline: string;
+    verdict: RefineIterationVerdictOut | null;
+    /**
+     * Created At
+     */
+    created_at: string;
+};
+
+/**
+ * RefineIterationVerdictOut
+ *
+ * Verdict summary attached to a refine-artifact iteration.
+ *
+ * Pulled from ``extra['adversarial_verdict']`` on the JUDGEMENT page that
+ * reviewed the draft. Named after the raw payload shape so the frontend
+ * diff panel can render a chip like "claim_holds at conf 6, 2 dissents".
+ */
+export type RefineIterationVerdictOut = {
+    /**
+     * Claim Holds
+     */
+    claim_holds: boolean;
+    /**
+     * Claim Confidence
+     */
+    claim_confidence: number;
+    /**
+     * Dissents
+     */
+    dissents: Array<string>;
+    /**
+     * Concurrences
+     */
+    concurrences: Array<string>;
+    /**
+     * Stronger Side
+     */
+    stronger_side: string;
+};
+
+/**
  * RenderQuestionSubgraphEventOut
  */
 export type RenderQuestionSubgraphEventOut = {
@@ -2143,6 +2369,71 @@ export type RunListItemOut = {
      * Staged
      */
     staged?: boolean;
+    /**
+     * Hidden
+     */
+    hidden?: boolean;
+};
+
+/**
+ * RunSpendByCallTypeOut
+ *
+ * One row of the per-call-type spend breakdown for a run.
+ */
+export type RunSpendByCallTypeOut = {
+    /**
+     * Call Type
+     */
+    call_type: string;
+    /**
+     * Count
+     */
+    count: number;
+    /**
+     * Cost Usd
+     */
+    cost_usd: number;
+    /**
+     * Duration Ms
+     */
+    duration_ms: number;
+};
+
+/**
+ * RunSpendOut
+ *
+ * Aggregate spend for a single run, broken down by call_type.
+ *
+ * ``total_duration_ms`` sums ``completed_at - created_at`` across the run's
+ * calls (only counting calls that have actually completed); ``cost_usd``
+ * sums ``cost_usd`` across all calls. The ``by_call_type`` list is sorted
+ * descending by ``cost_usd``.
+ */
+export type RunSpendOut = {
+    /**
+     * Run Id
+     */
+    run_id: string;
+    /**
+     * Run Id Short
+     */
+    run_id_short: string;
+    /**
+     * Total Cost Usd
+     */
+    total_cost_usd: number;
+    /**
+     * Total Duration Ms
+     */
+    total_duration_ms: number;
+    /**
+     * Total Calls
+     */
+    total_calls: number;
+    /**
+     * By Call Type
+     */
+    by_call_type: Array<RunSpendByCallTypeOut>;
 };
 
 /**
@@ -2232,6 +2523,33 @@ export type ScoringCompletedEventOut = {
      * Dispatch Guidance
      */
     dispatch_guidance: string;
+};
+
+/**
+ * SearchResultOut
+ *
+ * One hit in a workspace full-text search.
+ *
+ * ``snippet`` is an ~200 char window of ``page.content`` around the first
+ * match of the query (or the leading prefix if the match is in the
+ * headline only). Case-insensitive ILIKE across headline and content.
+ */
+export type SearchResultOut = {
+    page: Page;
+    /**
+     * Snippet
+     */
+    snippet: string;
+};
+
+/**
+ * SearchResultsOut
+ */
+export type SearchResultsOut = {
+    /**
+     * Results
+     */
+    results: Array<SearchResultOut>;
 };
 
 /**
@@ -2498,6 +2816,42 @@ export type UpdatePlanCreatedEventOut = {
     waves: Array<Array<{
         [key: string]: unknown;
     }>>;
+};
+
+/**
+ * UpdateProjectRequest
+ *
+ * PATCH /api/projects/{id} body.
+ *
+ * All fields optional — callers send only what they want to change. ``name``
+ * is trimmed server-side and validated for length; ``hidden`` is a straight
+ * boolean flag that removes the workspace from the default public list.
+ */
+export type UpdateProjectRequest = {
+    /**
+     * Name
+     */
+    name?: string | null;
+    /**
+     * Hidden
+     */
+    hidden?: boolean | null;
+};
+
+/**
+ * UpdateRunRequest
+ *
+ * PATCH /api/runs/{run_id} body.
+ *
+ * Runs only surface the ``hidden`` toggle today — a hidden run is filtered
+ * out of the RunPicker by default but still readable via a show-hidden
+ * affordance.
+ */
+export type UpdateRunRequest = {
+    /**
+     * Hidden
+     */
+    hidden?: boolean | null;
 };
 
 /**
@@ -2809,10 +3163,44 @@ export type ListProjectsApiProjectsGetResponses = {
 
 export type ListProjectsApiProjectsGetResponse = ListProjectsApiProjectsGetResponses[keyof ListProjectsApiProjectsGetResponses];
 
+export type CreateProjectApiProjectsPostData = {
+    body: CreateProjectRequest;
+    path?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/projects';
+};
+
+export type CreateProjectApiProjectsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateProjectApiProjectsPostError = CreateProjectApiProjectsPostErrors[keyof CreateProjectApiProjectsPostErrors];
+
+export type CreateProjectApiProjectsPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: CreateProjectOut;
+};
+
+export type CreateProjectApiProjectsPostResponse = CreateProjectApiProjectsPostResponses[keyof CreateProjectApiProjectsPostResponses];
+
 export type ListProjectsSummaryApiProjectsSummaryGetData = {
     body?: never;
     path?: never;
     query?: {
+        /**
+         * Include Hidden
+         */
+        include_hidden?: boolean;
         /**
          * Project Id
          */
@@ -2871,6 +3259,36 @@ export type GetProjectApiProjectsProjectIdGetResponses = {
 
 export type GetProjectApiProjectsProjectIdGetResponse = GetProjectApiProjectsProjectIdGetResponses[keyof GetProjectApiProjectsProjectIdGetResponses];
 
+export type UpdateProjectApiProjectsProjectIdPatchData = {
+    body: UpdateProjectRequest;
+    path: {
+        /**
+         * Project Id
+         */
+        project_id: string;
+    };
+    query?: never;
+    url: '/api/projects/{project_id}';
+};
+
+export type UpdateProjectApiProjectsProjectIdPatchErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpdateProjectApiProjectsProjectIdPatchError = UpdateProjectApiProjectsProjectIdPatchErrors[keyof UpdateProjectApiProjectsProjectIdPatchErrors];
+
+export type UpdateProjectApiProjectsProjectIdPatchResponses = {
+    /**
+     * Successful Response
+     */
+    200: Project;
+};
+
+export type UpdateProjectApiProjectsProjectIdPatchResponse = UpdateProjectApiProjectsProjectIdPatchResponses[keyof UpdateProjectApiProjectsProjectIdPatchResponses];
+
 export type ListProjectRunsApiProjectsProjectIdRunsGetData = {
     body?: never;
     path: {
@@ -2902,6 +3320,78 @@ export type ListProjectRunsApiProjectsProjectIdRunsGetResponses = {
 };
 
 export type ListProjectRunsApiProjectsProjectIdRunsGetResponse = ListProjectRunsApiProjectsProjectIdRunsGetResponses[keyof ListProjectRunsApiProjectsProjectIdRunsGetResponses];
+
+export type UpdateRunApiRunsRunIdPatchData = {
+    body: UpdateRunRequest;
+    path: {
+        /**
+         * Run Id
+         */
+        run_id: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/runs/{run_id}';
+};
+
+export type UpdateRunApiRunsRunIdPatchErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpdateRunApiRunsRunIdPatchError = UpdateRunApiRunsRunIdPatchErrors[keyof UpdateRunApiRunsRunIdPatchErrors];
+
+export type UpdateRunApiRunsRunIdPatchResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type SearchWorkspaceApiProjectsProjectIdSearchGetData = {
+    body?: never;
+    path: {
+        /**
+         * Project Id
+         */
+        project_id: string;
+    };
+    query?: {
+        /**
+         * Q
+         */
+        q?: string;
+        /**
+         * Limit
+         */
+        limit?: number;
+    };
+    url: '/api/projects/{project_id}/search';
+};
+
+export type SearchWorkspaceApiProjectsProjectIdSearchGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SearchWorkspaceApiProjectsProjectIdSearchGetError = SearchWorkspaceApiProjectsProjectIdSearchGetErrors[keyof SearchWorkspaceApiProjectsProjectIdSearchGetErrors];
+
+export type SearchWorkspaceApiProjectsProjectIdSearchGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: SearchResultsOut;
+};
+
+export type SearchWorkspaceApiProjectsProjectIdSearchGetResponse = SearchWorkspaceApiProjectsProjectIdSearchGetResponses[keyof SearchWorkspaceApiProjectsProjectIdSearchGetResponses];
 
 export type ListPagesApiProjectsProjectIdPagesGetData = {
     body?: never;
@@ -3304,6 +3794,41 @@ export type GetPageCountsApiPagesPageIdCountsGetResponses = {
 
 export type GetPageCountsApiPagesPageIdCountsGetResponse = GetPageCountsApiPagesPageIdCountsGetResponses[keyof GetPageCountsApiPagesPageIdCountsGetResponses];
 
+export type GetPageIterationsApiPagesPageIdIterationsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Page Id
+         */
+        page_id: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/pages/{page_id}/iterations';
+};
+
+export type GetPageIterationsApiPagesPageIdIterationsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetPageIterationsApiPagesPageIdIterationsGetError = GetPageIterationsApiPagesPageIdIterationsGetErrors[keyof GetPageIterationsApiPagesPageIdIterationsGetErrors];
+
+export type GetPageIterationsApiPagesPageIdIterationsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: PageIterationsOut;
+};
+
+export type GetPageIterationsApiPagesPageIdIterationsGetResponse = GetPageIterationsApiPagesPageIdIterationsGetResponses[keyof GetPageIterationsApiPagesPageIdIterationsGetResponses];
+
 export type GetAdversarialVerdictsApiPagesPageIdAdversarialVerdictsGetData = {
     body?: never;
     path: {
@@ -3486,6 +4011,36 @@ export type ListRootQuestionsApiProjectsProjectIdQuestionsGetResponses = {
 
 export type ListRootQuestionsApiProjectsProjectIdQuestionsGetResponse = ListRootQuestionsApiProjectsProjectIdQuestionsGetResponses[keyof ListRootQuestionsApiProjectsProjectIdQuestionsGetResponses];
 
+export type CreateRootQuestionApiProjectsProjectIdQuestionsPostData = {
+    body: CreateRootQuestionRequest;
+    path: {
+        /**
+         * Project Id
+         */
+        project_id: string;
+    };
+    query?: never;
+    url: '/api/projects/{project_id}/questions';
+};
+
+export type CreateRootQuestionApiProjectsProjectIdQuestionsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateRootQuestionApiProjectsProjectIdQuestionsPostError = CreateRootQuestionApiProjectsProjectIdQuestionsPostErrors[keyof CreateRootQuestionApiProjectsProjectIdQuestionsPostErrors];
+
+export type CreateRootQuestionApiProjectsProjectIdQuestionsPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: Page;
+};
+
+export type CreateRootQuestionApiProjectsProjectIdQuestionsPostResponse = CreateRootQuestionApiProjectsProjectIdQuestionsPostResponses[keyof CreateRootQuestionApiProjectsProjectIdQuestionsPostResponses];
+
 export type ListCallsApiProjectsProjectIdCallsGetData = {
     body?: never;
     path: {
@@ -3630,6 +4185,140 @@ export type GetRunTraceTreeApiRunsRunIdTraceTreeGetResponses = {
 
 export type GetRunTraceTreeApiRunsRunIdTraceTreeGetResponse = GetRunTraceTreeApiRunsRunIdTraceTreeGetResponses[keyof GetRunTraceTreeApiRunsRunIdTraceTreeGetResponses];
 
+export type GetRunSpendApiRunsRunIdSpendGetData = {
+    body?: never;
+    path: {
+        /**
+         * Run Id
+         */
+        run_id: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/runs/{run_id}/spend';
+};
+
+export type GetRunSpendApiRunsRunIdSpendGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetRunSpendApiRunsRunIdSpendGetError = GetRunSpendApiRunsRunIdSpendGetErrors[keyof GetRunSpendApiRunsRunIdSpendGetErrors];
+
+export type GetRunSpendApiRunsRunIdSpendGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: RunSpendOut;
+};
+
+export type GetRunSpendApiRunsRunIdSpendGetResponse = GetRunSpendApiRunsRunIdSpendGetResponses[keyof GetRunSpendApiRunsRunIdSpendGetResponses];
+
+export type PostContinueQuestionApiQuestionsQuestionIdContinuePostData = {
+    body: ContinueQuestionIn;
+    path: {
+        /**
+         * Question Id
+         */
+        question_id: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/questions/{question_id}/continue';
+};
+
+export type PostContinueQuestionApiQuestionsQuestionIdContinuePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PostContinueQuestionApiQuestionsQuestionIdContinuePostError = PostContinueQuestionApiQuestionsQuestionIdContinuePostErrors[keyof PostContinueQuestionApiQuestionsQuestionIdContinuePostErrors];
+
+export type PostContinueQuestionApiQuestionsQuestionIdContinuePostResponses = {
+    /**
+     * Successful Response
+     */
+    202: unknown;
+};
+
+export type PostStageRunApiRunsRunIdStagePostData = {
+    body?: never;
+    path: {
+        /**
+         * Run Id
+         */
+        run_id: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/runs/{run_id}/stage';
+};
+
+export type PostStageRunApiRunsRunIdStagePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PostStageRunApiRunsRunIdStagePostError = PostStageRunApiRunsRunIdStagePostErrors[keyof PostStageRunApiRunsRunIdStagePostErrors];
+
+export type PostStageRunApiRunsRunIdStagePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type PostCommitRunApiRunsRunIdCommitPostData = {
+    body?: never;
+    path: {
+        /**
+         * Run Id
+         */
+        run_id: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/runs/{run_id}/commit';
+};
+
+export type PostCommitRunApiRunsRunIdCommitPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PostCommitRunApiRunsRunIdCommitPostError = PostCommitRunApiRunsRunIdCommitPostErrors[keyof PostCommitRunApiRunsRunIdCommitPostErrors];
+
+export type PostCommitRunApiRunsRunIdCommitPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
 export type GetCallEventsApiCallsCallIdEventsGetData = {
     body?: never;
     path: {
@@ -3756,6 +4445,34 @@ export type ListAbEvalsApiAbEvalsGetResponses = {
 };
 
 export type ListAbEvalsApiAbEvalsGetResponse = ListAbEvalsApiAbEvalsGetResponses[keyof ListAbEvalsApiAbEvalsGetResponses];
+
+export type PostAbEvalApiAbEvalsPostData = {
+    body: AbEvalIn;
+    path?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/ab-evals';
+};
+
+export type PostAbEvalApiAbEvalsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PostAbEvalApiAbEvalsPostError = PostAbEvalApiAbEvalsPostErrors[keyof PostAbEvalApiAbEvalsPostErrors];
+
+export type PostAbEvalApiAbEvalsPostResponses = {
+    /**
+     * Successful Response
+     */
+    202: unknown;
+};
 
 export type GetAbEvalApiAbEvalsEvalIdGetData = {
     body?: never;
@@ -4477,6 +5194,41 @@ export type UpdateChatConversationApiChatConversationsConversationIdPatchRespons
 };
 
 export type UpdateChatConversationApiChatConversationsConversationIdPatchResponse = UpdateChatConversationApiChatConversationsConversationIdPatchResponses[keyof UpdateChatConversationApiChatConversationsConversationIdPatchResponses];
+
+export type BranchChatConversationApiChatConversationsConversationIdBranchPostData = {
+    body: BranchConversationRequest;
+    path: {
+        /**
+         * Conversation Id
+         */
+        conversation_id: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/chat/conversations/{conversation_id}/branch';
+};
+
+export type BranchChatConversationApiChatConversationsConversationIdBranchPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type BranchChatConversationApiChatConversationsConversationIdBranchPostError = BranchChatConversationApiChatConversationsConversationIdBranchPostErrors[keyof BranchChatConversationApiChatConversationsConversationIdBranchPostErrors];
+
+export type BranchChatConversationApiChatConversationsConversationIdBranchPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: ConversationDetail;
+};
+
+export type BranchChatConversationApiChatConversationsConversationIdBranchPostResponse = BranchChatConversationApiChatConversationsConversationIdBranchPostResponses[keyof BranchChatConversationApiChatConversationsConversationIdBranchPostResponses];
 
 export type GetPageLoadStatsApiRunsRunIdPageLoadStatsGetData = {
     body?: never;

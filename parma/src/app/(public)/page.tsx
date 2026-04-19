@@ -656,12 +656,6 @@ function AppContent() {
   const [questions, setQuestions] = useState<Page[] | null>(null);
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(questionParam);
   const [loadingQuestions, setLoadingQuestions] = useState(false);
-  // Distinct from loadingQuestions: true while we're resolving the
-  // ?project=<id-or-name> URL param on cold load, so we don't flash the
-  // landing page before the hydrate effect settles.
-  const [hydratingFromUrl, setHydratingFromUrl] = useState<boolean>(
-    Boolean(projectParam),
-  );
   // True when the hydration effect ran and couldn't resolve the project —
   // e.g. project not found, or API error. Used to stop showing a loading
   // screen forever on a bad deep link.
@@ -672,14 +666,10 @@ function AppContent() {
   // and bounce to the project browser. Deep links must render directly.
   const hydratedProjectRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!projectParam) {
-      setHydratingFromUrl(false);
-      return;
-    }
+    if (!projectParam) return;
     if (hydratedProjectRef.current === projectParam) return;
     hydratedProjectRef.current = projectParam;
     let cancelled = false;
-    setHydratingFromUrl(true);
     (async () => {
       try {
         const projects = await fetchProjects();
@@ -692,13 +682,11 @@ function AppContent() {
         );
         if (!match) {
           setHydrationFailed(true);
-          setHydratingFromUrl(false);
           return;
         }
         setSelectedProject(match);
         if (questionParam) {
           setSelectedQuestionId(questionParam);
-          setHydratingFromUrl(false);
           return;
         }
         // No question param yet — defer to the existing load-questions
@@ -715,7 +703,6 @@ function AppContent() {
       } finally {
         if (!cancelled) {
           setLoadingQuestions(false);
-          setHydratingFromUrl(false);
         }
       }
     })();

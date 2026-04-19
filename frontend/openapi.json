@@ -3989,6 +3989,11 @@
           },
           "stronger_side": {
             "type": "string",
+            "enum": [
+              "how_true",
+              "how_false",
+              "tie"
+            ],
             "title": "Stronger Side"
           },
           "claim_holds": {
@@ -7335,6 +7340,11 @@
           },
           "stronger_side": {
             "type": "string",
+            "enum": [
+              "how_true",
+              "how_false",
+              "tie"
+            ],
             "title": "Stronger Side"
           }
         },
@@ -7674,7 +7684,13 @@
         },
         "type": "object",
         "required": [
-          "created_at"
+          "run_id",
+          "created_at",
+          "name",
+          "config",
+          "question_summary",
+          "staged",
+          "hidden"
         ],
         "title": "RunListItemOut"
       },

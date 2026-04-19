@@ -210,7 +210,7 @@ export type AdversarialVerdictSummaryOut = {
     /**
      * Stronger Side
      */
-    stronger_side: string;
+    stronger_side: 'how_true' | 'how_false' | 'tie';
     /**
      * Claim Holds
      */
@@ -2186,7 +2186,7 @@ export type RefineIterationVerdictOut = {
     /**
      * Stronger Side
      */
-    stronger_side: string;
+    stronger_side: 'how_true' | 'how_false' | 'tie';
 };
 
 /**
@@ -2380,7 +2380,7 @@ export type RunListItemOut = {
     /**
      * Run Id
      */
-    run_id?: string | null;
+    run_id: string | null;
     /**
      * Created At
      */
@@ -2388,25 +2388,25 @@ export type RunListItemOut = {
     /**
      * Name
      */
-    name?: string;
+    name: string;
     /**
      * Config
      */
-    config?: {
+    config: {
         [key: string]: unknown;
     } | null;
     /**
      * Question Summary
      */
-    question_summary?: string | null;
+    question_summary: string | null;
     /**
      * Staged
      */
-    staged?: boolean;
+    staged: boolean;
     /**
      * Hidden
      */
-    hidden?: boolean;
+    hidden: boolean;
 };
 
 /**

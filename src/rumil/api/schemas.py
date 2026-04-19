@@ -11,6 +11,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from rumil.calls.adversarial_review import StrongerSide
 from rumil.models import Page, PageLink, Project, _all_fields_required
 from rumil.tracing.trace_events import (
     AffectedPagesIdentifiedEvent,
@@ -434,6 +435,8 @@ class RunSummaryOut(BaseModel):
 
 
 class RunListItemOut(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
     run_id: str | None = None
     created_at: str
     name: str = ""
@@ -487,7 +490,7 @@ class RefineIterationVerdictOut(BaseModel):
     claim_confidence: int
     dissents: list[str]
     concurrences: list[str]
-    stronger_side: str
+    stronger_side: StrongerSide
 
 
 class RefineIterationOut(BaseModel):
@@ -789,7 +792,7 @@ class AdversarialVerdictSummaryOut(BaseModel):
 
     verdict_page_id: str
     target_page_id: str
-    stronger_side: str
+    stronger_side: StrongerSide
     claim_holds: bool
     confidence: int
     rationale: str

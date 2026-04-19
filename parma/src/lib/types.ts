@@ -38,8 +38,3 @@ export type ViewItem = ViewItemOut;
 export type ViewSection = ViewSectionOut;
 export type ViewHealth = ViewHealthOut;
 export type QuestionView = QuestionViewOut;
-
-// The generated AdversarialVerdictSummaryOut.stronger_side is a plain
-// `string` (the Python model doesn't narrow it). Keep the literal union
-// here so UI code can switch on it exhaustively.
-export type AdversarialStrongerSide = "how_true" | "how_false" | "tie";

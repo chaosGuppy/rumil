@@ -1,3 +1,4 @@
+import type { RunListItemOut } from "@/api/types.gen";
 import type {
   Project,
   ProjectSummary,
@@ -6,6 +7,10 @@ import type {
   QuestionView,
   SearchResult,
 } from "./types";
+
+// Re-exported for call-site ergonomics: TraceView and the evaluations page
+// import `type { RunListItem }` from this module.
+export type RunListItem = RunListItemOut;
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -725,17 +730,8 @@ export async function fetchLLMExchange(
 
 // Recent runs for the TRACE mode picker. We reuse the existing
 // /api/projects/{id}/runs endpoint — one SQL call for the active project's
-// runs, ordered most-recent first.
-export interface RunListItem {
-  run_id: string | null;
-  created_at: string;
-  name: string;
-  config: Record<string, unknown> | null;
-  question_summary: string | null;
-  staged: boolean;
-  hidden: boolean;
-}
-
+// runs, ordered most-recent first. RunListItem is re-exported above as an
+// alias for the generated RunListItemOut.
 export async function fetchProjectRuns(
   projectId: string,
 ): Promise<RunListItem[]> {

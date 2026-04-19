@@ -666,7 +666,7 @@ def _extract_iteration_verdict(
         claim_confidence=verdict.claim_confidence,
         dissents=list(verdict.dissents),
         concurrences=list(verdict.concurrences),
-        stronger_side=str(verdict.stronger_side),
+        stronger_side=verdict.stronger_side,
     )
 
 

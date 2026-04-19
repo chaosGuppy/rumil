@@ -39,6 +39,8 @@ from rumil.api.schemas import (
     AppConfigOut,
     CallNodeOut,
     CallSummary,
+    CreateProjectOut,
+    CreateProjectRequest,
     LinkedPageOut,
     LLMExchangeOut,
     LLMExchangeSummaryOut,
@@ -56,6 +58,8 @@ from rumil.api.schemas import (
     RunListItemOut,
     RunSummaryOut,
     RunTraceTreeOut,
+    SearchResultOut,
+    SearchResultsOut,
     TraceEventOut,
     ViewItemFlagDeleteOut,
     ViewItemFlagOut,
@@ -242,6 +246,28 @@ async def _get_db_maybe_staged(
 @app.get("/api/projects", response_model=list[Project])
 async def list_projects(db: DB = Depends(_get_db)):
     return await db.list_projects()
+
+
+@app.post("/api/projects", response_model=CreateProjectOut)
+async def create_project(
+    request: CreateProjectRequest,
+    db: DB = Depends(_get_db),
+):
+    """Create a new workspace (project) from the UI.
+
+    Idempotent: if a workspace with the same trimmed name already exists we
+    return it with ``created=false`` so the client can show a subtle
+    "already exists" hint while still navigating the user into the existing
+    workspace.
+    """
+    name = request.name.strip()
+    if not name:
+        raise HTTPException(
+            status_code=422,
+            detail="Workspace name must not be empty or whitespace-only.",
+        )
+    project, created = await db.get_or_create_project(name)
+    return CreateProjectOut(project=project, created=created)
 
 
 @app.get("/api/projects/summary", response_model=list[ProjectSummaryOut])

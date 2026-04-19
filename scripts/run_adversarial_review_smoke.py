@@ -27,7 +27,7 @@ async def run(target_page_id: str, workspace: str, budget: int, staged: bool) ->
 
     settings = get_settings()
     db = await DB.create(run_id=str(uuid.uuid4()), prod=False, staged=staged)
-    project = await db.get_or_create_project(workspace)
+    project, _ = await db.get_or_create_project(workspace)
     db.project_id = project.id
 
     target = await db.get_page(target_page_id)

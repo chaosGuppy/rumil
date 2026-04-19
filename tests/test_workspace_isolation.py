@@ -18,7 +18,7 @@ from rumil.models import (
 
 async def _make_db(project_name: str) -> DB:
     db = await DB.create(run_id=str(uuid.uuid4()))
-    project = await db.get_or_create_project(project_name)
+    project, _ = await db.get_or_create_project(project_name)
     db.project_id = project.id
     return db
 

@@ -34,7 +34,7 @@ async def _seed_parent_question(workspace: str) -> tuple[str, str]:
     """Create a parent QUESTION page under its own run. Returns (qid, run_id)."""
     seed_run_id = str(uuid.uuid4())
     db = await DB.create(run_id=seed_run_id)
-    project = await db.get_or_create_project(workspace)
+    project, _ = await db.get_or_create_project(workspace)
     db.project_id = project.id
     await db.init_budget(10)
     await db.create_run(name="seed", question_id=None, config={})
@@ -53,7 +53,7 @@ async def _seed_parent_question(workspace: str) -> tuple[str, str]:
 async def _seed_non_question(workspace: str) -> tuple[str, str]:
     seed_run_id = str(uuid.uuid4())
     db = await DB.create(run_id=seed_run_id)
-    project = await db.get_or_create_project(workspace)
+    project, _ = await db.get_or_create_project(workspace)
     db.project_id = project.id
     await db.init_budget(10)
     await db.create_run(name="seed", question_id=None, config={})

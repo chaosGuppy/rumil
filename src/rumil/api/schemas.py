@@ -11,7 +11,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from rumil.models import Page, PageLink, _all_fields_required
+from rumil.models import Page, PageLink, Project, _all_fields_required
 from rumil.tracing.trace_events import (
     AffectedPagesIdentifiedEvent,
     AgentStartedEvent,
@@ -78,6 +78,38 @@ class ProjectSummaryOut(BaseModel):
     claim_count: int
     call_count: int
     last_activity_at: datetime
+
+
+# Workspace names are short human labels. Cap at 80 chars to match what fits
+# on the landing card without wrapping and to keep the DB column predictable.
+_PROJECT_NAME_MAX = 80
+
+
+class CreateProjectRequest(BaseModel):
+    """POST /api/projects body.
+
+    The name is trimmed server-side; a purely-whitespace or empty value is
+    rejected with 422 via the ``min_length`` validator.
+    """
+
+    name: Annotated[
+        str,
+        Field(min_length=1, max_length=_PROJECT_NAME_MAX),
+    ]
+
+
+class CreateProjectOut(BaseModel):
+    """POST /api/projects response.
+
+    ``created`` is ``True`` when a new row was inserted, ``False`` when an
+    existing workspace with the same name was returned. The frontend uses
+    this to decide whether to show a subtle "already exists" hint.
+    """
+
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    project: Project
+    created: bool
 
 
 class _TraceEnvelopeMixin(BaseModel):
@@ -321,6 +353,26 @@ class PaginatedPagesOut(BaseModel):
     total_count: int
     offset: int
     limit: int
+
+
+class SearchResultOut(BaseModel):
+    """One hit in a workspace full-text search.
+
+    ``snippet`` is an ~200 char window of ``page.content`` around the first
+    match of the query (or the leading prefix if the match is in the
+    headline only). Case-insensitive ILIKE across headline and content.
+    """
+
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    page: Page
+    snippet: str
+
+
+class SearchResultsOut(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    results: list[SearchResultOut]
 
 
 class ABEvalDimensionOut(BaseModel):

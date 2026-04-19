@@ -22,7 +22,7 @@ from rumil.models import ChatMessageRole
 
 @pytest_asyncio.fixture
 async def project_id(tmp_db):
-    project = await tmp_db.get_or_create_project("chat-persist-test")
+    project, _ = await tmp_db.get_or_create_project("chat-persist-test")
     tmp_db.project_id = project.id
     return project.id
 

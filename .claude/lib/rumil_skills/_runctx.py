@@ -144,7 +144,7 @@ async def make_db(
         prod=prod,
         staged=staged,
     )
-    project = await db.get_or_create_project(ws)
+    project, _ = await db.get_or_create_project(ws)
     db.project_id = project.id
     return db, ws
 
@@ -214,7 +214,7 @@ async def ensure_chat_envelope(
             prod=False,
             staged=False,
         )
-        project = await db.get_or_create_project(existing["workspace"])
+        project, _ = await db.get_or_create_project(existing["workspace"])
         db.project_id = project.id
         call = await db.get_call(existing["call_id"])
         if call is not None:
@@ -227,7 +227,7 @@ async def ensure_chat_envelope(
         state.chat_envelope = None
         save_session_state(state)
     db = await DB.create(run_id=str(uuid.uuid4()), prod=False, staged=False)
-    project = await db.get_or_create_project(ws)
+    project, _ = await db.get_or_create_project(ws)
     db.project_id = project.id
 
     # A lightweight run row so the envelope call has a trace URL and config.

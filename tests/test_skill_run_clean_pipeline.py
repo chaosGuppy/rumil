@@ -37,7 +37,7 @@ async def seeded_eval_workspace():
     ws_name = f"test-skill-clean-{uuid.uuid4().hex[:6]}"
     run_id = str(uuid.uuid4())
     db = await DB.create(run_id=run_id, staged=False)
-    project = await db.get_or_create_project(ws_name)
+    project, _ = await db.get_or_create_project(ws_name)
     db.project_id = project.id
     await db.init_budget(5)
     await db.create_run(

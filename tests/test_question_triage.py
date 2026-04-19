@@ -213,7 +213,7 @@ async def test_triage_scopes_neighbor_search_to_current_project(tmp_db, mocker):
 async def test_triage_does_not_flag_duplicate_from_other_project(tmp_db, mocker):
     """End-to-end: a near-duplicate question in project A must not cause a
     new project-B question to be flagged as duplicate."""
-    project_a = await tmp_db.get_or_create_project(f"triage-other-{uuid.uuid4().hex[:8]}")
+    project_a, _ = await tmp_db.get_or_create_project(f"triage-other-{uuid.uuid4().hex[:8]}")
     other_db = await DB.create(run_id=str(uuid.uuid4()))
     other_db.project_id = project_a.id
     await other_db.init_budget(10)

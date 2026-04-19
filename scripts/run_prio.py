@@ -45,7 +45,7 @@ async def run(args: argparse.Namespace) -> None:
     if page.project_id:
         db.project_id = page.project_id
     elif args.workspace:
-        project = await db.get_or_create_project(args.workspace)
+        project, _ = await db.get_or_create_project(args.workspace)
         db.project_id = project.id
 
     frontend = settings.frontend_url

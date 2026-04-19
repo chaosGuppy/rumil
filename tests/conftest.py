@@ -108,7 +108,7 @@ async def tmp_db():
     """Create a DB with a unique run_id and throwaway project for test isolation."""
     run_id = str(uuid.uuid4())
     db = await DB.create(run_id=run_id)
-    project = await db.get_or_create_project(f"test-{run_id[:8]}")
+    project, _ = await db.get_or_create_project(f"test-{run_id[:8]}")
     db.project_id = project.id
     await db.init_budget(100)
     yield db

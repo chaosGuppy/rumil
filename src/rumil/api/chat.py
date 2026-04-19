@@ -1614,7 +1614,7 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
         run_id=str(uuid.uuid4()),
         prod=settings.is_prod_db,
     )
-    project = await db.get_or_create_project(request.workspace)
+    project, _ = await db.get_or_create_project(request.workspace)
     db.project_id = project.id
     await db.create_run(name="chat", question_id=None, config={"origin": "chat"})
 
@@ -1751,7 +1751,7 @@ async def handle_chat_stream(request: ChatRequest) -> StreamingResponse:
         run_id=str(uuid.uuid4()),
         prod=settings.is_prod_db,
     )
-    project = await db.get_or_create_project(request.workspace)
+    project, _ = await db.get_or_create_project(request.workspace)
     db.project_id = project.id
     await db.create_run(name="chat", question_id=None, config={"origin": "chat"})
 

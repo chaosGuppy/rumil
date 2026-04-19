@@ -40,7 +40,7 @@ async def _make_page(db: DB, content: str = "original") -> Page:
 @pytest_asyncio.fixture
 async def project_id():
     db = await DB.create(run_id=str(uuid.uuid4()))
-    project = await db.get_or_create_project(f"test-upc-{uuid.uuid4().hex[:8]}")
+    project, _ = await db.get_or_create_project(f"test-upc-{uuid.uuid4().hex[:8]}")
     yield project.id
     await db._execute(db.client.table("projects").delete().eq("id", project.id))
 

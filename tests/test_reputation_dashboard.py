@@ -222,7 +222,7 @@ async def test_other_projects_events_not_included(api_client, reputation_db):
 
     other_db = await DB.create(run_id=str(uuid.uuid4()))
     try:
-        other_project = await other_db.get_or_create_project(
+        other_project, _ = await other_db.get_or_create_project(
             f"test-rep-other-{uuid.uuid4().hex[:8]}"
         )
         other_db.project_id = other_project.id

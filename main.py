@@ -1331,7 +1331,7 @@ async def async_main():
         await cmd_list_workspaces(db)
         return
 
-    project = await db.get_or_create_project(args.workspace_name)
+    project, _ = await db.get_or_create_project(args.workspace_name)
     db.project_id = project.id
 
     if args.stage_run_id:

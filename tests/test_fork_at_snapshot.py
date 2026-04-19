@@ -67,7 +67,7 @@ async def _link(db: DB, src: Page, dst: Page) -> PageLink:
 @pytest_asyncio.fixture
 async def project_id():
     setup = await DB.create(run_id=str(uuid.uuid4()))
-    project = await setup.get_or_create_project(f"test-snap-{uuid.uuid4().hex[:8]}")
+    project, _ = await setup.get_or_create_project(f"test-snap-{uuid.uuid4().hex[:8]}")
     yield project.id
     await setup._execute(setup.client.table("projects").delete().eq("id", project.id))
 
@@ -188,8 +188,8 @@ async def test_retroactive_stage_respects_original_run_timing(project_id):
 @pytest.mark.asyncio
 async def test_project_isolation_holds_across_staged_runs():
     setup = await DB.create(run_id=str(uuid.uuid4()))
-    project_a = await setup.get_or_create_project(f"snap-a-{uuid.uuid4().hex[:6]}")
-    project_b = await setup.get_or_create_project(f"snap-b-{uuid.uuid4().hex[:6]}")
+    project_a, _ = await setup.get_or_create_project(f"snap-a-{uuid.uuid4().hex[:6]}")
+    project_b, _ = await setup.get_or_create_project(f"snap-b-{uuid.uuid4().hex[:6]}")
 
     baseline_a = await _make_db(project_a.id, staged=False)
     await baseline_a.init_budget(100)

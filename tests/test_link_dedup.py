@@ -64,7 +64,7 @@ async def _count_links(db: DB, from_id: str, to_id: str, link_type: LinkType) ->
 @pytest_asyncio.fixture
 async def project_id():
     db = await DB.create(run_id=str(uuid.uuid4()))
-    project = await db.get_or_create_project(f"test-dedup-{uuid.uuid4().hex[:8]}")
+    project, _ = await db.get_or_create_project(f"test-dedup-{uuid.uuid4().hex[:8]}")
     yield project.id
     await db._execute(db.client.table("projects").delete().eq("id", project.id))
 

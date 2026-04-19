@@ -614,24 +614,37 @@ class DB:
         )
         self._invalidate_mutation_cache()
 
-    async def get_or_create_project(self, name: str) -> Project:
+    async def get_or_create_project(self, name: str) -> tuple[Project, bool]:
+        """Return ``(project, created)`` for *name*.
+
+        ``created`` is ``True`` when a new row was inserted on this call,
+        ``False`` when an existing row was returned. The second flag lets the
+        HTTP layer distinguish "you just made a new workspace" from "you
+        reused an existing one".
+        """
         rows = _rows(
             await self._execute(self.client.table("projects").select("*").eq("name", name))
         )
         if rows:
             row = rows[0]
-            return Project(
+            return (
+                Project(
+                    id=row["id"],
+                    name=row["name"],
+                    created_at=datetime.fromisoformat(row["created_at"]),
+                    hidden=row.get("hidden", False),
+                ),
+                False,
+            )
+        row = _rows(await self._execute(self.client.table("projects").insert({"name": name})))[0]
+        return (
+            Project(
                 id=row["id"],
                 name=row["name"],
                 created_at=datetime.fromisoformat(row["created_at"]),
                 hidden=row.get("hidden", False),
-            )
-        row = _rows(await self._execute(self.client.table("projects").insert({"name": name})))[0]
-        return Project(
-            id=row["id"],
-            name=row["name"],
-            created_at=datetime.fromisoformat(row["created_at"]),
-            hidden=row.get("hidden", False),
+            ),
+            True,
         )
 
     async def list_projects_summary(

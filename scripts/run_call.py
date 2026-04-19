@@ -176,7 +176,7 @@ async def run(args: argparse.Namespace) -> None:
     workspace = args.workspace
     staged = not args.no_stage
     db = await DB.create(run_id=str(uuid.uuid4()), prod=args.prod, staged=staged)
-    project = await db.get_or_create_project(workspace)
+    project, _ = await db.get_or_create_project(workspace)
     db.project_id = project.id
 
     frontend = settings.frontend_url

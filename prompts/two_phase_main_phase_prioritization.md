@@ -1,5 +1,7 @@
 # Main-phase prioritization
 
+If your context begins with a **"Human steering"** block, read it before anything else. Hard constraints there (e.g. banned call types) will be enforced by the system after you dispatch — if you try to dispatch a banned type anyway, it will be silently dropped, so don't waste budget on work that will get thrown away. Soft guidance and rewrite-goal notes should actively shape which dispatches you choose — if the operator has said to focus on a specific angle or avoid a rabbit hole, let that guide your priority ordering, not just your tone.
+
 ## Your Task
 
 You are performing prioritization on a research question that has already had some investigation. Phase 1 fan-out scouting has run, and an initial **View** has been written for the scope question — a structured synthesis of current understanding, organised into sections (broader context, confident views, live hypotheses, key evidence, assessments, key uncertainties). That View is loaded at the top of your context and is the central artifact for this prioritization.

@@ -34,6 +34,7 @@ from rumil.models import (
     Workspace,
 )
 from rumil.nudges import (
+    apply_soft_nudges_to_context,
     build_applied_event,
     consume_one_shot,
     filter_dispatch_sequences,
@@ -392,6 +393,31 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             "Initial prioritization skipped — question already has a judgement or view.",
         )
 
+    async def _inject_steering_into_prio(
+        self,
+        context_text: str,
+        question_id: str,
+    ) -> str:
+        """Prepend soft nudges into prioritization context.
+
+        The orchestrator-level batch filter handles hard nudges after the
+        LLM picks dispatches; this injection lets the LLM see any soft
+        guidance (notes, rewrite-goal) before it chooses. Fires a
+        NudgeAppliedEvent on the upcoming prioritization call's trace
+        via the currently-active trace, if one is set — otherwise the
+        emission is skipped (the context change is still made).
+        """
+        new_text, applied = await apply_soft_nudges_to_context(
+            self.db,
+            call_type=CallType.PRIORITIZATION.value,
+            question_id=question_id,
+            context_text=context_text,
+        )
+        if not applied:
+            return context_text
+        await consume_one_shot(self.db, applied)
+        return new_text
+
     async def _apply_nudges_to_batch(
         self,
         result: PrioritizationResult,
@@ -488,6 +514,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             self.db,
             scope_question_id=question_id,
         )
+        context_text = await self._inject_steering_into_prio(context_text, question_id)
         if self._initial_call is not None:
             p_call = self._initial_call
             self._initial_call = None
@@ -773,6 +800,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             self.db,
             scope_question_id=question_id,
         )
+        context_text = await self._inject_steering_into_prio(context_text, question_id)
         dispatch_budget = budget if last_call else budget - 1
         budget_line = f"You have a budget of **{dispatch_budget} budget units** to allocate."
         if last_call:

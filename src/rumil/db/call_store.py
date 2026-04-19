@@ -169,7 +169,41 @@ class CallStore:
             payload["call_params"] = call_params
         if cost_usd is not None:
             payload["cost_usd"] = cost_usd
+        if status == CallStatus.COMPLETE:
+            primary = await self._resolve_primary_prompt(call_id)
+            if primary is not None:
+                payload["primary_prompt_hash"] = primary[0]
+                payload["primary_prompt_name"] = primary[1]
         await self._db._execute(self.client.table("calls").update(payload).eq("id", call_id))
+
+    async def _resolve_primary_prompt(self, call_id: str) -> tuple[str, str] | None:
+        """Pick the call's primary (hash, name) from its exchanges.
+
+        Prefers the first non-closing-review exchange's ``composite_prompt_hash``.
+        Falls back to the first exchange of any phase. Returns None if no
+        exchange has a hash stamped (e.g. call ran before prompt versioning
+        landed, or system_prompt was empty).
+        """
+        rows = _rows(
+            await self._db._execute(
+                self.client.table("call_llm_exchanges")
+                .select("phase,composite_prompt_hash,round")
+                .eq("call_id", call_id)
+                .not_.is_("composite_prompt_hash", "null")
+                .order("round", desc=False)
+            )
+        )
+        if not rows:
+            return None
+        agent_rows = [r for r in rows if not str(r.get("phase", "")).startswith("closing_review")]
+        chosen = agent_rows[0] if agent_rows else rows[0]
+        call_rows = _rows(
+            await self._db._execute(
+                self.client.table("calls").select("call_type").eq("id", call_id).limit(1)
+            )
+        )
+        name = call_rows[0]["call_type"] if call_rows else "unknown"
+        return chosen["composite_prompt_hash"], name
 
     async def increment_call_budget_used(
         self,

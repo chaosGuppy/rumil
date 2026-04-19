@@ -350,11 +350,86 @@ class RunExecutor:
                 pass
         return await self.status(run_id)
 
-    async def pause(self, run_id: str) -> None:  # pragma: no cover
-        raise NotImplementedError("pause lands with orchestrator cooperation.")
+    async def pause(self, run_id: str) -> None:
+        """Flip a running run into ``paused`` state.
 
-    async def resume(self, run_id: str) -> None:  # pragma: no cover
-        raise NotImplementedError("resume lands with orchestrator cooperation.")
+        The transition is DB-level only: ``status = paused`` +
+        ``paused_at = now()``. Orchestrators cooperate by polling
+        ``is_paused(run_id)`` between dispatch batches and sleeping /
+        waiting until it goes false. No orchestrator polls today, so
+        pausing a live run just stamps the status — the handler keeps
+        running. When we flip orchestrators to cooperative pausing,
+        this is the enforcement point.
+
+        Only transitions from ``running`` so double-pause and
+        pause-on-finished are no-ops.
+        """
+        await self._db._execute(
+            self._db.client.table("runs")
+            .update(
+                {
+                    "status": RunStatus.PAUSED.value,
+                    "paused_at": datetime.now(UTC).isoformat(),
+                }
+            )
+            .eq("id", run_id)
+            .eq("status", RunStatus.RUNNING.value)
+        )
+
+    async def resume(self, run_id: str) -> None:
+        """Flip a paused run back to ``running`` and clear ``paused_at``.
+
+        Only transitions from ``paused``. No automatic task restart —
+        the task kept running through the pause (see ``pause()`` docs).
+        Cooperative orchestrators observe the paused → running edge
+        on their next ``is_paused()`` poll and resume dispatching.
+        """
+        await self._db._execute(
+            self._db.client.table("runs")
+            .update(
+                {
+                    "status": RunStatus.RUNNING.value,
+                    "paused_at": None,
+                }
+            )
+            .eq("id", run_id)
+            .eq("status", RunStatus.PAUSED.value)
+        )
+
+    async def is_paused(self, run_id: str) -> bool:
+        """Return True when the run's DB status is ``paused``.
+
+        Orchestrators poll this between dispatches and ``await
+        asyncio.sleep(...)`` while it's True. Returns False for unknown
+        run_ids (conservatively, to avoid blocking on phantom runs).
+        """
+        row = await self._db.get_run(run_id)
+        if row is None:
+            return False
+        return row.get("status") == RunStatus.PAUSED.value
+
+    async def wait_while_paused(
+        self,
+        run_id: str,
+        *,
+        poll_interval: float = 1.0,
+        max_wait: float | None = None,
+    ) -> None:
+        """Sleep in a poll loop while the run is paused.
+
+        Convenience for orchestrator handlers: call this between
+        dispatch batches to implement cooperative pausing. Returns as
+        soon as ``is_paused`` goes false or ``max_wait`` elapses (if
+        set). ``poll_interval`` trades responsiveness for DB load —
+        1s is a reasonable default for minute-scale dispatches.
+        """
+        start = asyncio.get_running_loop().time()
+        while await self.is_paused(run_id):
+            if max_wait is not None:
+                elapsed = asyncio.get_running_loop().time() - start
+                if elapsed >= max_wait:
+                    return
+            await asyncio.sleep(poll_interval)
 
     def events(self, run_id: str) -> AsyncIterator[Any]:  # pragma: no cover
         raise NotImplementedError("events lands with a broker / per-run queue.")

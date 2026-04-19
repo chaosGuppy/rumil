@@ -332,6 +332,82 @@ async def test_would_exceed_budget_false_without_cap(run_db):
     assert await ex.would_exceed_budget(run_db.run_id) is False
 
 
+async def test_pause_running_run_sets_paused_status(run_db):
+    ex = RunExecutor(run_db)
+    await ex.mark_started(run_db.run_id)
+    await ex.pause(run_db.run_id)
+    view = await ex.status(run_db.run_id)
+    assert view is not None
+    assert view.status == RunStatus.PAUSED
+    assert view.paused_at is not None
+
+
+async def test_pause_noop_on_pending_or_complete(run_db):
+    ex = RunExecutor(run_db)
+    # pending — no transition
+    await ex.pause(run_db.run_id)
+    view = await ex.status(run_db.run_id)
+    assert view is not None
+    assert view.status == RunStatus.PENDING
+
+    # complete — no transition
+    await ex.mark_started(run_db.run_id)
+    await ex.mark_complete(run_db.run_id)
+    await ex.pause(run_db.run_id)
+    view = await ex.status(run_db.run_id)
+    assert view is not None
+    assert view.status == RunStatus.COMPLETE
+
+
+async def test_resume_clears_paused_at(run_db):
+    ex = RunExecutor(run_db)
+    await ex.mark_started(run_db.run_id)
+    await ex.pause(run_db.run_id)
+    await ex.resume(run_db.run_id)
+    view = await ex.status(run_db.run_id)
+    assert view is not None
+    assert view.status == RunStatus.RUNNING
+    assert view.paused_at is None
+
+
+async def test_is_paused_reflects_status(run_db):
+    ex = RunExecutor(run_db)
+    assert await ex.is_paused(run_db.run_id) is False
+    await ex.mark_started(run_db.run_id)
+    await ex.pause(run_db.run_id)
+    assert await ex.is_paused(run_db.run_id) is True
+    await ex.resume(run_db.run_id)
+    assert await ex.is_paused(run_db.run_id) is False
+
+
+async def test_is_paused_false_for_unknown_run(tmp_db):
+    ex = RunExecutor(tmp_db)
+    assert await ex.is_paused("does-not-exist") is False
+
+
+async def test_wait_while_paused_returns_when_unpaused(run_db):
+    ex = RunExecutor(run_db)
+    await ex.mark_started(run_db.run_id)
+    await ex.pause(run_db.run_id)
+
+    async def _unpause_soon():
+        await asyncio.sleep(0.05)
+        await ex.resume(run_db.run_id)
+
+    asyncio.create_task(_unpause_soon())
+    await ex.wait_while_paused(run_db.run_id, poll_interval=0.02, max_wait=1.0)
+    assert await ex.is_paused(run_db.run_id) is False
+
+
+async def test_wait_while_paused_respects_max_wait(run_db):
+    ex = RunExecutor(run_db)
+    await ex.mark_started(run_db.run_id)
+    await ex.pause(run_db.run_id)
+    # returns after max_wait even though still paused
+    await ex.wait_while_paused(run_db.run_id, poll_interval=0.02, max_wait=0.05)
+    assert await ex.is_paused(run_db.run_id) is True
+
+
 async def test_checkpoint_writes_sequential_rows(run_db):
     ex = RunExecutor(run_db)
     seq0 = await ex.checkpoint(run_db.run_id, "orchestrator_tick", {"iter": 0})

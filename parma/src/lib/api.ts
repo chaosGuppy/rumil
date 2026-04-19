@@ -1,16 +1,47 @@
-import type { RunListItemOut } from "@/api/types.gen";
+import type {
+  AbEvalDimensionSummaryOut,
+  AbEvalReportListItemOut,
+  AppConfigOut,
+  CallSummary,
+  ConversationListItem,
+  CreateProjectOut,
+  LinkedPageOut,
+  LlmExchangeSummaryOut,
+  PageDetailOut,
+  PageIterationsOut,
+  RefineIterationOut,
+  RefineIterationVerdictOut,
+  RunListItemOut,
+  RunSpendByCallTypeOut,
+  RunSpendOut,
+} from "@/api/types.gen";
 import type {
   Project,
   ProjectSummary,
   Page,
-  PageLink,
   QuestionView,
   SearchResult,
 } from "./types";
 
 // Re-exported for call-site ergonomics: TraceView and the evaluations page
-// import `type { RunListItem }` from this module.
+// import `type { RunListItem }` from this module. Generated *Out types live
+// alongside so the rest of this file can alias to them without cluttering
+// each section with its own import.
 export type RunListItem = RunListItemOut;
+export type CreateProjectResult = CreateProjectOut;
+export type LinkedPage = LinkedPageOut;
+export type PageDetail = PageDetailOut;
+export type ChatConversationSummary = ConversationListItem;
+export type TraceCallSummary = CallSummary;
+export type LLMExchangeSummary = LlmExchangeSummaryOut;
+export type RunSpendByCallType = RunSpendByCallTypeOut;
+export type RunSpend = RunSpendOut;
+export type RefineIterationVerdict = RefineIterationVerdictOut;
+export type RefineIteration = RefineIterationOut;
+export type PageIterations = PageIterationsOut;
+export type AppConfig = AppConfigOut;
+export type ABEvalDimensionSummary = AbEvalDimensionSummaryOut;
+export type ABEvalReportListItem = AbEvalReportListItemOut;
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -19,14 +50,6 @@ export async function fetchProjects(): Promise<Project[]> {
   if (!res.ok) throw new Error(`API error: ${res.status}`);
   const projects: Project[] = await res.json();
   return projects.filter((p) => !p.hidden);
-}
-
-export interface CreateProjectResult {
-  project: Project;
-  // Server-side flag: true if a new row was inserted, false if a workspace
-  // with the same name already existed and was returned unchanged. The
-  // landing modal surfaces the latter with a subtle "already exists" hint.
-  created: boolean;
 }
 
 export async function createProject(
@@ -272,15 +295,18 @@ export async function fetchPageByShortId(
   return res.json();
 }
 
-export interface LinkedPage {
-  page: Page;
-  link: PageLink;
-}
-
-export interface PageDetail {
-  page: Page;
-  links_from: LinkedPage[];
-  links_to: LinkedPage[];
+// Batched page fetch by full ids. Returns a {id: Page} map; ids that the
+// server can't resolve are silently dropped from the response. Used by the
+// trace context-diff panel to render headlines for all of a call's
+// context_built page ids in a single round trip.
+export async function fetchPagesByIds(
+  ids: readonly string[],
+): Promise<Record<string, Page>> {
+  if (ids.length === 0) return {};
+  const params = new URLSearchParams({ ids: ids.join(",") });
+  const res = await fetch(`${API_BASE}/api/pages/by-ids?${params.toString()}`);
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  return res.json();
 }
 
 // Fetch a page + its outgoing/incoming links by full id. Used by InspectPanel
@@ -446,18 +472,6 @@ export async function streamChatMessage(
   }
 }
 
-export interface ChatConversationSummary {
-  id: string;
-  project_id: string;
-  question_id: string | null;
-  title: string;
-  created_at: string;
-  updated_at: string;
-  // Branching metadata. Null on original, non-branched conversations.
-  parent_conversation_id?: string | null;
-  branched_at_seq?: number | null;
-}
-
 export interface ChatConversationDetail extends ChatConversationSummary {
   messages: Array<{
     id: string;
@@ -568,20 +582,6 @@ export async function branchChatConversation(
 // with the rumil frontend, and keeping TRACE self-contained keeps the
 // coupling small.
 
-export interface TraceCallSummary {
-  id: string;
-  call_type: string;
-  status: string;
-  parent_call_id: string | null;
-  scope_page_id: string | null;
-  call_params: Record<string, unknown> | null;
-  created_at: string;
-  completed_at: string | null;
-  sequence_id: string | null;
-  sequence_position: number | null;
-  cost_usd: number | null;
-}
-
 export interface TraceCallNode {
   call: TraceCallSummary;
   scope_page_summary: string | null;
@@ -608,17 +608,6 @@ export interface TraceEvent {
   ts: string;
   call_id: string;
   [key: string]: unknown;
-}
-
-export interface LLMExchangeSummary {
-  id: string;
-  phase: string;
-  round: number | null;
-  input_tokens: number | null;
-  output_tokens: number | null;
-  duration_ms: number | null;
-  error: string | null;
-  created_at: string;
 }
 
 export interface LLMExchangeToolCall {
@@ -649,49 +638,10 @@ export async function fetchRunTraceTree(runId: string): Promise<RunTraceTree> {
   return res.json();
 }
 
-export interface RunSpendByCallType {
-  call_type: string;
-  count: number;
-  cost_usd: number;
-  duration_ms: number;
-}
-
-export interface RunSpend {
-  run_id: string;
-  run_id_short: string;
-  total_cost_usd: number;
-  total_duration_ms: number;
-  total_calls: number;
-  by_call_type: RunSpendByCallType[];
-}
-
 export async function fetchRunSpend(runId: string): Promise<RunSpend> {
   const res = await fetch(`${API_BASE}/api/runs/${runId}/spend`);
   if (!res.ok) throw new Error(`API error: ${res.status}`);
   return res.json();
-}
-
-export interface RefineIterationVerdict {
-  claim_holds: boolean;
-  claim_confidence: number;
-  dissents: string[];
-  concurrences: string[];
-  stronger_side: string;
-}
-
-export interface RefineIteration {
-  iteration: number;
-  draft_page_id: string;
-  draft_short_id: string;
-  content: string;
-  headline: string;
-  verdict: RefineIterationVerdict | null;
-  created_at: string;
-}
-
-export interface PageIterations {
-  page_id: string;
-  iterations: RefineIteration[];
 }
 
 // Fetch refine-artifact iterations for an artifact page. Returns null if
@@ -742,10 +692,6 @@ export async function fetchProjectRuns(
 
 // Friendly-user feature flags surfaced by GET /api/config. The flag UI hides
 // itself when enable_flag_issue is false, mirroring the server-side 403.
-export interface AppConfig {
-  enable_flag_issue: boolean;
-}
-
 export async function fetchAppConfig(): Promise<AppConfig> {
   const res = await fetch(`${API_BASE}/api/config`);
   if (!res.ok) throw new Error(`API error: ${res.status}`);
@@ -894,24 +840,6 @@ export async function startAbEval(
   });
   if (!res.ok) throw new Error(await liftFastApiError(res));
   return res.json();
-}
-
-export interface ABEvalDimensionSummary {
-  name: string;
-  display_name: string;
-  preference: string;
-}
-
-export interface ABEvalReportListItem {
-  id: string;
-  run_id_a: string;
-  run_id_b: string;
-  question_id_a: string;
-  question_id_b: string;
-  question_headline: string;
-  overall_assessment_preview: string;
-  preferences: ABEvalDimensionSummary[];
-  created_at: string;
 }
 
 export async function fetchAbEvals(): Promise<ABEvalReportListItem[]> {

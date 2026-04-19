@@ -5,6 +5,7 @@ import {
   useEffect,
   useMemo,
   useState,
+  type MouseEvent,
   type ReactNode,
 } from "react";
 import ReactMarkdown from "react-markdown";
@@ -23,6 +24,17 @@ import {
   type TraceCallNode,
   type TraceEvent,
 } from "@/lib/api";
+import {
+  classifyToolName,
+  classifyValue,
+  formatPreviewValue,
+  KEY_HINTS,
+  pickPreviewKey,
+  shortenId,
+  type KeyRenderHint,
+} from "@/lib/tool-call-format";
+import { useInspectPanel } from "./InspectPanelContext";
+import { isPromoteEvent } from "./NodeRefLink";
 
 // TraceView — the TRACE view mode.
 //
@@ -859,20 +871,263 @@ function ExchangeDetail({ detail }: { detail: LLMExchangeDetail }) {
   );
 }
 
-function ToolCallBlock({ call }: { call: { name: string; input: Record<string, unknown> | string } }) {
-  // call.input is sometimes a dict, sometimes a stringified repr (see
-  // backend: tool_calls are persisted as `{"name": ..., "input": str(...)}`
-  // for legacy rows). Render both shapes gracefully.
-  let rendered: string;
-  if (typeof call.input === "string") {
-    rendered = call.input;
-  } else {
-    rendered = prettyJson(call.input);
+function ToolCallBlock({
+  call,
+}: {
+  call: { name: string; input: Record<string, unknown> | string };
+}) {
+  // call.input is usually a dict, but legacy rows persist it as a
+  // stringified repr (see backend: `tool_calls` serialization). The string
+  // shape can't be usefully structured, so it always falls back to raw.
+  const inputIsDict = typeof call.input !== "string";
+  const [expanded, setExpanded] = useState(false);
+  const [rawMode, setRawMode] = useState(!inputIsDict);
+
+  const family = classifyToolName(call.name);
+  const previewKey = inputIsDict
+    ? pickPreviewKey(call.input as Record<string, unknown>)
+    : null;
+  const previewValue =
+    inputIsDict && previewKey
+      ? (call.input as Record<string, unknown>)[previewKey]
+      : undefined;
+
+  const toggleExpanded = useCallback(() => setExpanded((v) => !v), []);
+  const toggleRaw = useCallback((e: MouseEvent) => {
+    e.stopPropagation();
+    setRawMode((v) => !v);
+    setExpanded(true);
+  }, []);
+
+  return (
+    <div className={`tc-block tc-family-${family}`}>
+      <div className="tc-head-row">
+        <button
+          type="button"
+          className="tc-head"
+          onClick={toggleExpanded}
+          aria-expanded={expanded}
+        >
+          <span className={`tc-caret ${expanded ? "open" : ""}`}>›</span>
+          <span className="tc-name">{call.name}</span>
+          {!expanded && previewKey && (
+            <span className="tc-preview">
+              <span className="tc-preview-brace">{"{ "}</span>
+              <span className="tc-preview-key">{previewKey}</span>
+              <span className="tc-preview-colon">: </span>
+              <span className="tc-preview-value">
+                {formatPreviewValue(previewValue)}
+              </span>
+              {Object.keys(call.input as Record<string, unknown>).length > 1 && (
+                <span className="tc-preview-more">
+                  {", +"}
+                  {Object.keys(call.input as Record<string, unknown>).length - 1}
+                </span>
+              )}
+              <span className="tc-preview-brace">{" }"}</span>
+            </span>
+          )}
+          {!expanded && !previewKey && inputIsDict && (
+            <span className="tc-preview tc-preview-empty">{"{ }"}</span>
+          )}
+        </button>
+        {inputIsDict && (
+          <button
+            type="button"
+            className={`tc-raw-toggle ${rawMode ? "active" : ""}`}
+            onClick={toggleRaw}
+            title={rawMode ? "Switch to formatted view" : "Switch to raw JSON"}
+          >
+            raw
+          </button>
+        )}
+      </div>
+      {expanded && (
+        <div className="tc-body">
+          {rawMode || !inputIsDict ? (
+            <pre className="trace-code trace-code-tight">
+              {typeof call.input === "string"
+                ? call.input
+                : prettyJson(call.input)}
+            </pre>
+          ) : (
+            <ToolCallArgs input={call.input as Record<string, unknown>} />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Render a tool-call input dict as labeled rows. Keys get render hints
+// from KEY_HINTS; unknown keys fall back to JSON stringify.
+function ToolCallArgs({ input }: { input: Record<string, unknown> }) {
+  const entries = Object.entries(input);
+  if (entries.length === 0) {
+    return <div className="tc-args-empty">(no arguments)</div>;
   }
   return (
-    <div className="trace-ex-tool">
-      <div className="trace-ex-tool-name">{call.name}</div>
-      <pre className="trace-code trace-code-tight">{rendered}</pre>
+    <div className="tc-args">
+      {entries.map(([key, value]) => (
+        <ToolCallArgRow key={key} argKey={key} value={value} />
+      ))}
+    </div>
+  );
+}
+
+function ToolCallArgRow({
+  argKey,
+  value,
+}: {
+  argKey: string;
+  value: unknown;
+}) {
+  const keyHint: KeyRenderHint = KEY_HINTS[argKey] ?? "default";
+  const valueClass = classifyValue(value);
+  // Effective rendering picks the strictest interpretation: a key hinted as
+  // "ref" overrides content heuristics; a key hinted as "longtext" wins
+  // over default; otherwise defer to the value-based classification.
+  const effective: KeyRenderHint =
+    keyHint === "ref" || keyHint === "longtext" || keyHint === "pill" || keyHint === "muted"
+      ? keyHint
+      : valueClass === "ref"
+        ? "ref"
+        : valueClass === "longtext"
+          ? "longtext"
+          : "default";
+
+  return (
+    <div className={`tc-row tc-row-${effective}`}>
+      <div className="tc-row-key">{argKey}</div>
+      <div className="tc-row-value">
+        <ToolCallArgValue hint={effective} value={value} />
+      </div>
+    </div>
+  );
+}
+
+function ToolCallArgValue({
+  hint,
+  value,
+}: {
+  hint: KeyRenderHint;
+  value: unknown;
+}) {
+  const { openInspect, promoteToPane } = useInspectPanel();
+
+  if (hint === "ref" && typeof value === "string") {
+    const shortId = shortenId(value);
+    return (
+      <button
+        type="button"
+        className="node-ref-link"
+        onClick={(e) => {
+          if (isPromoteEvent(e)) {
+            e.preventDefault();
+            promoteToPane(shortId);
+          } else {
+            openInspect(shortId);
+          }
+        }}
+        title={`Click to inspect · shift-click to pin as pane · ${shortId}`}
+      >
+        {shortId}
+      </button>
+    );
+  }
+
+  if (hint === "longtext" && typeof value === "string") {
+    return <LongTextValue text={value} />;
+  }
+
+  if (hint === "pill" && (typeof value === "number" || typeof value === "string")) {
+    return <span className="tc-pill">{String(value)}</span>;
+  }
+
+  if (hint === "muted") {
+    return <span className="tc-muted">{String(value)}</span>;
+  }
+
+  // Nested objects: one level of labeled rows, then JSON for deeper. Arrays
+  // of primitives render inline; arrays of objects fall through to JSON.
+  if (value && typeof value === "object") {
+    if (Array.isArray(value)) {
+      const allPrimitive = value.every(
+        (v) => v === null || ["string", "number", "boolean"].includes(typeof v),
+      );
+      if (allPrimitive && value.length > 0) {
+        return (
+          <div className="tc-array">
+            {value.map((item, i) => (
+              <span key={i} className="tc-array-item">
+                {typeof item === "string" &&
+                (item.length > 200 || item.includes("\n")) ? (
+                  <LongTextValue text={item} />
+                ) : (
+                  String(item)
+                )}
+              </span>
+            ))}
+          </div>
+        );
+      }
+      return (
+        <pre className="trace-code trace-code-tight">{prettyJson(value)}</pre>
+      );
+    }
+    const nested = value as Record<string, unknown>;
+    const nestedEntries = Object.entries(nested);
+    const hasDeepNesting = nestedEntries.some(
+      ([, v]) =>
+        v !== null &&
+        typeof v === "object" &&
+        Object.keys(v as object).length > 0,
+    );
+    if (hasDeepNesting) {
+      return (
+        <pre className="trace-code trace-code-tight">{prettyJson(value)}</pre>
+      );
+    }
+    return (
+      <div className="tc-nested">
+        {nestedEntries.map(([k, v]) => (
+          <div key={k} className="tc-nested-row">
+            <span className="tc-nested-key">{k}</span>
+            <span className="tc-nested-value">{formatPreviewValue(v)}</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (typeof value === "string") {
+    return <span className="tc-string">{value}</span>;
+  }
+  return <span className="tc-scalar">{String(value)}</span>;
+}
+
+// Long-text renderer with pre-wrap and optional "show more" above 2000
+// chars. Preserves newlines/indentation so prose reads naturally instead
+// of appearing as an escaped JSON blob.
+function LongTextValue({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const LIMIT = 2000;
+  const tooLong = text.length > LIMIT;
+  const shown = !tooLong || expanded ? text : text.slice(0, LIMIT) + "\u2026";
+  return (
+    <div className="tc-longtext-wrap">
+      <div className="tc-longtext">{shown}</div>
+      {tooLong && (
+        <button
+          type="button"
+          className="tc-longtext-toggle"
+          onClick={() => setExpanded((v) => !v)}
+        >
+          {expanded
+            ? "show less"
+            : `show more (${text.length - LIMIT} more chars)`}
+        </button>
+      )}
     </div>
   );
 }

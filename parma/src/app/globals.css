@@ -6302,6 +6302,260 @@ mark.ann-mark.ann-mark-dispute:hover {
   letter-spacing: 0.02em;
 }
 
+/* Tool-call block (ToolCallBlock v2) — collapsible header with args preview
+   and per-call raw-JSON toggle. Header borrows palette from --node-* so
+   call families read as kin to the page cards they operate on. */
+.tc-block {
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg-pane);
+  overflow: hidden;
+  --tc-accent: var(--fg-dim);
+  --tc-accent-bg: var(--active-0);
+}
+.tc-family-create  { --tc-accent: var(--node-claim);   --tc-accent-bg: var(--node-claim-bg); }
+.tc-family-load    { --tc-accent: var(--node-evidence);--tc-accent-bg: var(--node-evidence-bg); }
+.tc-family-link    { --tc-accent: var(--link-depends); --tc-accent-bg: var(--node-evidence-bg); }
+.tc-family-annotate{ --tc-accent: var(--node-concept); --tc-accent-bg: var(--node-concept-bg); }
+.tc-family-flag    { --tc-accent: var(--node-uncertainty); --tc-accent-bg: var(--node-uncertainty-bg); }
+.tc-family-update  { --tc-accent: var(--node-hypothesis); --tc-accent-bg: var(--node-hypothesis-bg); }
+.tc-family-remove  { --tc-accent: var(--node-judgement); --tc-accent-bg: var(--node-judgement-bg); }
+
+.tc-head-row {
+  display: flex;
+  align-items: stretch;
+  border-left: 2px solid var(--tc-accent);
+  min-width: 0;
+}
+.tc-head-row:hover { background: var(--active-0); }
+
+.tc-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  padding: 6px 10px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+  color: var(--fg);
+  min-width: 0;
+}
+
+.tc-caret {
+  flex-shrink: 0;
+  color: var(--fg-dim);
+  transition: transform 0.1s;
+  font-size: 12px;
+  line-height: 1;
+}
+.tc-caret.open { transform: rotate(90deg); }
+
+.tc-name {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--tc-accent);
+  letter-spacing: 0.01em;
+  padding: 1px 6px;
+  background: var(--tc-accent-bg);
+  border-radius: 2px;
+  font-size: 10.5px;
+}
+
+.tc-preview {
+  flex: 1;
+  min-width: 0;
+  color: var(--fg-muted);
+  font-size: 10.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tc-preview-empty { color: var(--fg-dim); font-style: italic; }
+.tc-preview-brace { color: var(--fg-dim); }
+.tc-preview-key   { color: var(--fg); }
+.tc-preview-colon { color: var(--fg-dim); }
+.tc-preview-value { color: var(--fg-muted); }
+.tc-preview-more  { color: var(--fg-dim); margin-left: 2px; }
+
+.tc-raw-toggle {
+  flex-shrink: 0;
+  align-self: center;
+  margin-right: 8px;
+  padding: 2px 7px;
+  font-family: var(--font-mono-stack);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--fg-dim);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.1s, border-color 0.1s, background 0.1s;
+}
+.tc-raw-toggle:hover {
+  color: var(--fg);
+  border-color: var(--border-strong);
+}
+.tc-raw-toggle.active {
+  color: var(--bg-pane);
+  background: var(--fg-muted);
+  border-color: var(--fg-muted);
+}
+
+.tc-body {
+  border-top: 1px solid var(--border);
+  padding: 10px 12px;
+  background: var(--bg);
+}
+
+.tc-args {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.tc-args-empty {
+  font-family: var(--font-mono-stack);
+  font-size: 10.5px;
+  color: var(--fg-dim);
+  font-style: italic;
+}
+
+.tc-row {
+  display: flex;
+  gap: 12px;
+  padding: 4px 6px;
+  border-radius: 2px;
+  align-items: baseline;
+}
+.tc-row:nth-child(odd) { background: var(--active-0); }
+.tc-row-longtext {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 6px 6px 8px 6px;
+}
+
+.tc-row-key {
+  flex-shrink: 0;
+  width: 120px;
+  font-family: var(--font-mono-stack);
+  font-size: 10px;
+  color: var(--fg-muted);
+  letter-spacing: 0.02em;
+  text-align: right;
+  padding-top: 1px;
+}
+.tc-row-longtext .tc-row-key {
+  width: auto;
+  text-align: left;
+  text-transform: uppercase;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  color: var(--fg-dim);
+}
+
+.tc-row-value {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+  color: var(--fg);
+  word-break: break-word;
+}
+
+.tc-string {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.tc-scalar { color: var(--fg); }
+.tc-muted  { color: var(--fg-muted); font-size: 10.5px; }
+
+.tc-pill {
+  display: inline-block;
+  padding: 1px 7px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--active-0);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  letter-spacing: 0.02em;
+}
+
+.tc-longtext-wrap {
+  font-family: var(--font-body-stack);
+}
+.tc-longtext {
+  font-family: var(--font-body-stack);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--fg);
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 8px 10px;
+  background: var(--bg-pane);
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--tc-accent);
+  border-radius: 0 2px 2px 0;
+}
+.tc-longtext-toggle {
+  margin-top: 4px;
+  padding: 2px 8px;
+  font-family: var(--font-mono-stack);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--fg-muted);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  cursor: pointer;
+}
+.tc-longtext-toggle:hover {
+  color: var(--fg);
+  border-color: var(--border-strong);
+}
+
+.tc-array {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+}
+.tc-array-item {
+  padding: 1px 6px;
+  background: var(--active-0);
+  border-radius: 2px;
+  font-size: 10.5px;
+}
+
+.tc-nested {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 6px;
+  background: var(--active-0);
+  border-radius: 2px;
+}
+.tc-nested-row {
+  display: flex;
+  gap: 8px;
+  font-size: 10.5px;
+}
+.tc-nested-key {
+  color: var(--fg-muted);
+  min-width: 80px;
+}
+.tc-nested-value {
+  color: var(--fg);
+  word-break: break-word;
+}
+
 .trace-ex-messages {
   display: flex;
   flex-direction: column;

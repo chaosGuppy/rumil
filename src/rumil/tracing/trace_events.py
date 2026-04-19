@@ -89,6 +89,19 @@ class ErrorEvent(BaseModel):
     phase: str = ""
 
 
+class EvalDimensionSummaryItem(BaseModel):
+    """One dimension's summarized reputation-event signal for a page.
+
+    Emitted as part of ``ScoringCompletedEvent`` so the prioritization UI
+    can show the same quality signal the LLM saw in its prompt.
+    """
+
+    dimension: str
+    mean: float = 0.0
+    count: int = 0
+    latest: float = 0.0
+
+
 class SubquestionScoreItem(BaseModel):
     question_id: str
     headline: str = ""
@@ -97,6 +110,7 @@ class SubquestionScoreItem(BaseModel):
     broader_impact: int = 0
     fruit: int = 0
     reasoning: str = ""
+    eval_summary: list[EvalDimensionSummaryItem] = []
 
 
 class CallTypeFruitScoreItem(BaseModel):
@@ -113,6 +127,7 @@ class ClaimScoreItem(BaseModel):
     broader_impact: int = 0
     fruit: int = 0
     reasoning: str = ""
+    eval_summary: list[EvalDimensionSummaryItem] = []
 
 
 class ScoringCompletedEvent(BaseModel):

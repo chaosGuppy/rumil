@@ -62,6 +62,88 @@ from supabase import AsyncClient, acreate_client
 log = logging.getLogger(__name__)
 
 
+class EvalSummary:
+    """Lightweight numeric summary of reputation events for one subject+dimension.
+
+    Kept as a plain class (not a pydantic model) because it's purely a
+    query-time aggregate — callers consume ``mean`` / ``count`` / ``latest``
+    and do not persist instances.
+    """
+
+    __slots__ = ("count", "dimension", "latest", "mean")
+
+    def __init__(self, *, dimension: str, mean: float, count: int, latest: float) -> None:
+        self.dimension = dimension
+        self.mean = mean
+        self.count = count
+        self.latest = latest
+
+    def __repr__(self) -> str:
+        return (
+            f"EvalSummary(dimension={self.dimension!r}, mean={self.mean:.3f}, "
+            f"count={self.count}, latest={self.latest:.3f})"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, EvalSummary):
+            return NotImplemented
+        return (
+            self.dimension == other.dimension
+            and self.count == other.count
+            and self.mean == other.mean
+            and self.latest == other.latest
+        )
+
+
+def _aggregate_eval_rows_by_subject(
+    rows: Sequence[dict[str, Any]],
+    *,
+    subject_key: str,
+) -> dict[str, dict[str, EvalSummary]]:
+    """Group reputation_events rows by (subject_id, dimension).
+
+    Rows must carry ``extra[subject_key]`` — otherwise they're skipped,
+    not an error (the index filter already constrains to rows with
+    ``extra ? 'subject_*_id'``).
+    """
+    buckets: dict[tuple[str, str], dict[str, Any]] = {}
+    for r in rows:
+        extra = r.get("extra") or {}
+        subject = extra.get(subject_key)
+        if not subject:
+            continue
+        dim = r["dimension"]
+        score = float(r["score"])
+        created_at = r.get("created_at") or ""
+        key = (subject, dim)
+        bucket = buckets.get(key)
+        if bucket is None:
+            buckets[key] = {
+                "sum_score": score,
+                "count": 1,
+                "latest_score": score,
+                "latest_at": created_at,
+            }
+        else:
+            bucket["sum_score"] += score
+            bucket["count"] += 1
+            if created_at > bucket["latest_at"]:
+                bucket["latest_at"] = created_at
+                bucket["latest_score"] = score
+
+    result: dict[str, dict[str, EvalSummary]] = {}
+    for (subject, dim), b in buckets.items():
+        n = b["count"]
+        summary = EvalSummary(
+            dimension=dim,
+            mean=b["sum_score"] / n,
+            count=n,
+            latest=b["latest_score"],
+        )
+        result.setdefault(subject, {})[dim] = summary
+    return result
+
+
 _DB_RETRYABLE_EXCEPTIONS = (
     httpx.ConnectTimeout,
     httpx.ReadTimeout,
@@ -128,6 +210,8 @@ class DB:
         staged: bool = False,
         snapshot_ts: datetime | None = None,
     ):
+        from rumil.db.project_store import ProjectStore
+
         self.run_id = run_id
         self.client = client
         self.project_id = project_id
@@ -138,6 +222,7 @@ class DB:
         self._mutation_cache: MutationState | None = None
         self._mutation_cache_ts: float = 0.0
         self.overlay = StagedOverlay(self)
+        self.projects = ProjectStore(self)
 
     @classmethod
     async def create(
@@ -487,86 +572,19 @@ class DB:
         self._invalidate_mutation_cache()
 
     async def get_or_create_project(self, name: str) -> tuple[Project, bool]:
-        """Return ``(project, created)`` for *name*.
-
-        ``created`` is ``True`` when a new row was inserted on this call,
-        ``False`` when an existing row was returned. The second flag lets the
-        HTTP layer distinguish "you just made a new workspace" from "you
-        reused an existing one".
-        """
-        rows = _rows(
-            await self._execute(self.client.table("projects").select("*").eq("name", name))
-        )
-        if rows:
-            row = rows[0]
-            return (
-                Project(
-                    id=row["id"],
-                    name=row["name"],
-                    created_at=datetime.fromisoformat(row["created_at"]),
-                    hidden=row.get("hidden", False),
-                ),
-                False,
-            )
-        row = _rows(await self._execute(self.client.table("projects").insert({"name": name})))[0]
-        return (
-            Project(
-                id=row["id"],
-                name=row["name"],
-                created_at=datetime.fromisoformat(row["created_at"]),
-                hidden=row.get("hidden", False),
-            ),
-            True,
-        )
+        return await self.projects.get_or_create_project(name)
 
     async def list_projects_summary(
         self,
         include_hidden: bool = False,
     ) -> list[dict[str, Any]]:
-        """Per-project summary rows for the public landing page.
-
-        Calls the list_projects_summary RPC (see migration
-        20260418052703_projects_summary_rpc.sql). Returns raw rows with
-        id/name/created_at/hidden plus question_count/claim_count/call_count
-        and last_activity_at aggregated in one SQL pass.
-        """
-        result = await self._execute(
-            self.client.rpc(
-                "list_projects_summary",
-                {"include_hidden": include_hidden},
-            )
-        )
-        return cast(list[dict[str, Any]], result.data or [])
+        return await self.projects.list_projects_summary(include_hidden=include_hidden)
 
     async def list_projects(self, include_hidden: bool = False) -> list[Project]:
-        query = self.client.table("projects").select("*").order("created_at")
-        if not include_hidden:
-            query = query.eq("hidden", False)
-        rows = _rows(await self._execute(query))
-        return [
-            Project(
-                id=r["id"],
-                name=r["name"],
-                created_at=datetime.fromisoformat(r["created_at"]),
-                hidden=r.get("hidden", False),
-            )
-            for r in rows
-        ]
+        return await self.projects.list_projects(include_hidden=include_hidden)
 
     async def get_project(self, project_id: str) -> Project | None:
-        """Return a single project row by id, or None if absent."""
-        rows = _rows(
-            await self._execute(self.client.table("projects").select("*").eq("id", project_id))
-        )
-        if not rows:
-            return None
-        r = rows[0]
-        return Project(
-            id=r["id"],
-            name=r["name"],
-            created_at=datetime.fromisoformat(r["created_at"]),
-            hidden=r.get("hidden", False),
-        )
+        return await self.projects.get_project(project_id)
 
     async def update_project(
         self,
@@ -575,36 +593,10 @@ class DB:
         name: str | None = None,
         hidden: bool | None = None,
     ) -> Project | None:
-        """Patch a project's name and/or hidden flag. Returns the refreshed row.
-
-        Caller is responsible for trimming ``name`` and checking for collisions;
-        this helper only issues the UPDATE. Returns ``None`` if the project
-        doesn't exist (callers should surface 404).
-        """
-        update: dict[str, Any] = {}
-        if name is not None:
-            update["name"] = name
-        if hidden is not None:
-            update["hidden"] = hidden
-        if not update:
-            return await self.get_project(project_id)
-        await self._execute(self.client.table("projects").update(update).eq("id", project_id))
-        return await self.get_project(project_id)
+        return await self.projects.update_project(project_id, name=name, hidden=hidden)
 
     async def bulk_hide_projects(self, project_ids: Sequence[str]) -> int:
-        """Soft-hide many projects in one round trip. Returns count updated.
-
-        Mirrors ``update_project(hidden=True)`` but issues a single UPDATE
-        with ``in_(...)`` instead of one query per project. No mutation
-        event is recorded — the projects table doesn't participate in the
-        staged-runs model.
-        """
-        if not project_ids:
-            return 0
-        await self._execute(
-            self.client.table("projects").update({"hidden": True}).in_("id", list(project_ids))
-        )
-        return len(project_ids)
+        return await self.projects.bulk_hide_projects(project_ids)
 
     async def update_run_hidden(self, run_id: str, hidden: bool) -> dict[str, Any] | None:
         """Flip the ``hidden`` flag on a run. Returns the refreshed run row or
@@ -2361,6 +2353,62 @@ class DB:
         result.sort(key=lambda b: (b["source"], b["dimension"], b["orchestrator"] or ""))
         return result
 
+    async def get_eval_summary_for_pages(
+        self,
+        page_ids: Sequence[str],
+        dimensions: Sequence[str],
+    ) -> dict[str, dict[str, "EvalSummary"]]:
+        """Batched eval summary per page per dimension.
+
+        Returns ``{page_id: {dimension: EvalSummary}}``. Issues one query
+        that filters by ``extra->>'subject_page_id' IN (...)`` and the
+        requested dimensions. Uses the ``idx_rep_subject_page_id`` partial
+        expression index from the ``eval_feedback_indexes`` migration.
+
+        Respects the staged-visibility rule — filters project, applies
+        ``_staged_filter``. Pages with no events for a given dimension are
+        absent from that page's inner dict. Pages with no events at all
+        are absent from the outer dict.
+        """
+        if not page_ids or not dimensions:
+            return {}
+        query = (
+            self.client.table("reputation_events")
+            .select("dimension,score,created_at,extra")
+            .in_("extra->>subject_page_id", list(page_ids))
+            .in_("dimension", list(dimensions))
+        )
+        if self.project_id:
+            query = query.eq("project_id", self.project_id)
+        query = self._staged_filter(query)
+        rows = _rows(await self._execute(query))
+        return _aggregate_eval_rows_by_subject(rows, subject_key="subject_page_id")
+
+    async def get_eval_summary_for_calls(
+        self,
+        call_ids: Sequence[str],
+        dimensions: Sequence[str],
+    ) -> dict[str, dict[str, "EvalSummary"]]:
+        """Batched eval summary per call per dimension.
+
+        Parallel to ``get_eval_summary_for_pages`` but keyed on
+        ``extra->>'subject_call_id'``. Used by the confusion-scan
+        surfacing path.
+        """
+        if not call_ids or not dimensions:
+            return {}
+        query = (
+            self.client.table("reputation_events")
+            .select("dimension,score,created_at,extra")
+            .in_("extra->>subject_call_id", list(call_ids))
+            .in_("dimension", list(dimensions))
+        )
+        if self.project_id:
+            query = query.eq("project_id", self.project_id)
+        query = self._staged_filter(query)
+        rows = _rows(await self._execute(query))
+        return _aggregate_eval_rows_by_subject(rows, subject_key="subject_call_id")
+
     async def record_annotation(
         self,
         *,
@@ -2725,36 +2773,10 @@ class DB:
         }
 
     async def get_project_stats(self, project_id: str) -> dict[str, Any]:
-        """Compute aggregate stats for a project via the compute_project_stats RPC.
-
-        Returns a JSONB blob (see supabase/migrations/20260411204240_add_stats_rpcs.sql
-        for the shape). Staged runs see baseline plus their own rows; non-staged
-        runs see baseline only.
-        """
-        params: dict[str, Any] = {
-            "p_project_id": project_id,
-            "p_staged_run_id": self.run_id if self.staged else None,
-        }
-        if self.snapshot_ts is not None:
-            params["p_snapshot_ts"] = self.snapshot_ts.isoformat()
-        result = await self._execute(self.client.rpc("compute_project_stats", params))
-        return cast(dict[str, Any], result.data or {})
+        return await self.projects.get_project_stats(project_id)
 
     async def get_question_stats(self, question_id: str) -> dict[str, Any]:
-        """Compute aggregate stats for the 2-hop undirected neighborhood of a question.
-
-        Returns the same JSONB shape as get_project_stats plus a subgraph_page_count
-        field. Staged runs see baseline plus their own rows; non-staged runs see
-        baseline only.
-        """
-        params: dict[str, Any] = {
-            "p_question_id": question_id,
-            "p_staged_run_id": self.run_id if self.staged else None,
-        }
-        if self.snapshot_ts is not None:
-            params["p_snapshot_ts"] = self.snapshot_ts.isoformat()
-        result = await self._execute(self.client.rpc("compute_question_stats", params))
-        return cast(dict[str, Any], result.data or {})
+        return await self.projects.get_question_stats(question_id)
 
     async def get_assess_staleness(
         self,

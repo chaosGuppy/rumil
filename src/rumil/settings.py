@@ -110,6 +110,14 @@ class Settings(BaseSettings):
 
     qc_enqueue_cascade: bool = _capture_field(default=True)
 
+    lazy_eval_per_round_cap: int = _capture_field(default=5)
+    lazy_eval_per_run_cap: int = _capture_field(default=20)
+    lazy_eval_enabled: bool = _capture_field(default=False)
+
+    eval_feedback_enabled: bool = _capture_field(default=False)
+    eval_feedback_grounding_floor: float = _capture_field(default=0.4)
+    eval_feedback_min_event_count: int = _capture_field(default=2)
+
     max_db_retries: int = _capture_field(default=60)
     max_api_retries: int = _capture_field(default=60)
     max_api_retries_429: int | None = _capture_field(default=None)

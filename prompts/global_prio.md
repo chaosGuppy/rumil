@@ -35,6 +35,10 @@ Both may appear on the same question. Use **impact on root** to gauge overall im
 - Use 8-character short IDs when referencing pages (e.g. `a1b2c3d4`)
 - Do not duplicate work the local prioritiser is already doing -- focus on connections it cannot see
 
+## Quality signals
+
+Pages rendered in the graph may carry a `Quality signals:` line summarising prior eval outputs (format: `dimension=mean (n=count)`). Read these as a weak prior: items with low `grounding` or `calibration` (or repeatedly negative `confusion`) across multiple branches may indicate a shared weak-evidence pattern that a cross-cutting question could repair. Strongly positive signals across a branch usually mean that branch is already well-covered and is a weaker cross-cutting candidate.
+
 ---
 
 Your work proceeds in three phases. In each conversation turn you will be told which phase you are in.

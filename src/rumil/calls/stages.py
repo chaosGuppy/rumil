@@ -10,6 +10,7 @@ from typing import Any, ClassVar
 
 from rumil.available_moves import get_moves_for_call
 from rumil.calls.common import mark_call_completed
+from rumil.calls.confusion_scan import emit_confusion_scan_for_call
 from rumil.database import DB
 from rumil.models import Call, CallStage, CallStatus, CallType, Dispatch, Move, MoveType
 from rumil.moves.base import MoveState
@@ -222,6 +223,11 @@ class CallRunner(ABC):
                     self.infra.call,
                     self.infra.db,
                     self.review_result.summary,
+                )
+                await emit_confusion_scan_for_call(
+                    self.infra.db,
+                    self.infra.call,
+                    self.infra.trace,
                 )
                 await self.infra.trace.flush_page_loads()
             except Exception as e:

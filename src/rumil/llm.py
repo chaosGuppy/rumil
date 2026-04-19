@@ -12,6 +12,7 @@ Data types: Tool, ToolCall, RoundRecord, AgentResult, APIResponse,
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -155,6 +156,56 @@ def _load_file(name: str) -> str:
     if not path.exists():
         raise FileNotFoundError(f"Prompt file not found: {path}")
     return path.read_text(encoding="utf-8")
+
+
+def _sha256(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+@dataclass(frozen=True)
+class PromptPart:
+    """A named piece of prompt content with a stable content hash.
+
+    ``role`` is ``"system"`` for parts concatenated into the system prompt,
+    or ``"user_template"`` for runtime-assembled templates injected into
+    user messages (e.g. the continue template, self-assessment instruction,
+    JSON schema block).
+    """
+
+    name: str
+    hash: str
+    content: str
+    kind: str = "file"
+    role: str = "system"
+
+
+@dataclass(frozen=True)
+class PromptBinding:
+    """Content-addressed record of the system prompt sent to the model.
+
+    ``rendered`` is the composite string pre-date-suffix. ``rendered_hash``
+    hashes that rendered content (also pre-date-suffix). ``parts`` lists
+    every named prompt piece that contributed — both the files concatenated
+    into the system prompt and any runtime templates surfaced on the user
+    side.
+    """
+
+    name: str
+    rendered: str
+    rendered_hash: str
+    parts: tuple[PromptPart, ...]
+
+    def with_part(self, part: PromptPart) -> PromptBinding:
+        """Return a copy with an extra part appended (e.g. a user template)."""
+        return PromptBinding(
+            name=self.name,
+            rendered=self.rendered,
+            rendered_hash=self.rendered_hash,
+            parts=(*self.parts, part),
+        )
+
+
+_PROMPT_SEPARATOR = "\n\n---\n\n"
 
 
 _CALL_TYPE_VARIANTS: dict[str, dict[str, str]] = {

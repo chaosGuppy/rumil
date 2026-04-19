@@ -42,6 +42,8 @@ You will be shown scoring data from a preliminary assessment:
 
 \- \*\*Per-scout-type fruit scores\*\*: These scores inform you how much useful remaining work there is to do from further scouting of this type. This is a simple 0-10 number. It shouldn't be read as a \*suggested priority\* score. If you want to make it comparable to those scores, perhaps multiply by 3 for scout types that are very apt for what would help the question, and 2 for scout types that are somewhat-apt.
 
+\- \*\*Quality signals\*\* (when present): Scored items may have a `Quality signals: ...` line summarising prior eval outputs against that page — `dimension=mean (n=count)`. Low `grounding` on a load-bearing claim is a strong signal to `recurse_into_claim_investigation`. Low `calibration` suggests reassessing its credence before spending more budget on it. Low `research_progress` suggests the branch needs more scouting, not recursion. Repeated negative `confusion` signal means prior calls on this line were noisy — approach with a narrower dispatch. Strong positive signals (mean high, `n ≥ 2`) mean the item is well-covered; de-prioritise over less-mature candidates.
+
 
 
 Allocation principles

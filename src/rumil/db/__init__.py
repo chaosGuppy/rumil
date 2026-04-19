@@ -11,9 +11,12 @@ Modules:
   constants. Pure functions; no DB handle.
 - ``mutation_log`` — ``MutationState`` dataclass describing mutation events
   visible to a staged run. Cached per ``DB`` instance.
+- ``project_store`` — ``ProjectStore``, owning the ``projects`` table plus
+  stats RPCs.
 """
 
 from rumil.db.mutation_log import MutationState
+from rumil.db.project_store import ProjectStore
 from rumil.db.row_helpers import (
     _LINK_COLUMNS,
     _SLIM_PAGE_COLUMNS,
@@ -31,6 +34,7 @@ __all__ = [
     "_LINK_COLUMNS",
     "_SLIM_PAGE_COLUMNS",
     "MutationState",
+    "ProjectStore",
     "_Rows",
     "_row_to_annotation_event",
     "_row_to_call",

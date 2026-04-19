@@ -18,6 +18,10 @@ from rumil.calls.prioritization import run_prioritization_call
 from rumil.constants import LAST_CALL_THRESHOLD, MIN_TWOPHASE_BUDGET
 from rumil.context import build_prioritization_context
 from rumil.database import DB
+from rumil.eval_feedback import (
+    PRIORITIZATION_EVAL_DIMENSIONS,
+    format_eval_summary_line,
+)
 from rumil.llm import build_system_prompt
 from rumil.models import (
     AssessDispatchPayload,
@@ -49,6 +53,7 @@ from rumil.tracing.trace_events import (
     DispatchExecutedEvent,
     DispatchTraceItem,
     ErrorEvent,
+    EvalDimensionSummaryItem,
     PhaseSkippedEvent,
     ScoringCompletedEvent,
     SubquestionScoreItem,
@@ -56,6 +61,26 @@ from rumil.tracing.trace_events import (
 from rumil.tracing.tracer import CallTrace, set_trace
 
 log = logging.getLogger(__name__)
+
+
+def _eval_summary_dicts(summaries: dict | None) -> list[dict]:
+    """Project EvalSummary objects into a list of plain dicts for trace events.
+
+    Expects the ``{dimension: EvalSummary}`` shape returned by
+    ``DB.get_eval_summary_for_pages``. Returns an empty list when no
+    summaries exist for this subject.
+    """
+    if not summaries:
+        return []
+    return [
+        {
+            "dimension": s.dimension,
+            "mean": s.mean,
+            "count": s.count,
+            "latest": s.latest,
+        }
+        for s in summaries.values()
+    ]
 
 
 class TwoPhaseOrchestrator(BaseOrchestrator):
@@ -546,10 +571,31 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
 
         scoring_tasks.append(self.db.get_latest_scout_fruit(question_id))
 
+        eval_target_ids = [q.id for q in child_questions] + [p.id for p in consideration_pages]
+        scoring_tasks.append(
+            self.db.get_eval_summary_for_pages(
+                eval_target_ids,
+                list(PRIORITIZATION_EVAL_DIMENSIONS),
+            )
+        )
+
+        await self._maybe_dispatch_lazy_evals(
+            question_id=question_id,
+            parent_call_id=p_call.id,
+            child_question_ids=[q.id for q in child_questions],
+            consideration_ids=[p.id for p in consideration_pages],
+        )
+
         scoring_results = await asyncio.gather(*scoring_tasks)
         subq_scores: list[dict] = scoring_results[0]
         claim_scores: list[dict] = scoring_results[1]
         scout_fruit: dict[str, int | None] = scoring_results[2]
+        eval_summaries: dict = scoring_results[3]
+
+        for s in subq_scores:
+            s["eval_summary"] = _eval_summary_dicts(eval_summaries.get(s.get("question_id")))
+        for s in claim_scores:
+            s["eval_summary"] = _eval_summary_dicts(eval_summaries.get(s.get("page_id")))
 
         await trace.record(
             ScoringCompletedEvent(
@@ -579,6 +625,9 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                     f"**priority={priority}** "
                     f"({s['reasoning']})"
                 )
+                quality_line = format_eval_summary_line(eval_summaries.get(s["question_id"]))
+                if quality_line:
+                    lines.append(f"  - Quality signals: {quality_line}")
             lines.append("")
             scores_text = "\n".join(lines)
 
@@ -598,6 +647,9 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                     f"**priority={priority}** "
                     f"({s.get('reasoning', '')})"
                 )
+                quality_line = format_eval_summary_line(eval_summaries.get(s.get("page_id", "")))
+                if quality_line:
+                    lines.append(f"  - Quality signals: {quality_line}")
             lines.append("")
             scores_text += "\n".join(lines)
 
@@ -791,4 +843,163 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             dispatch_sequences=sequences,
             call_id=p_call.id,
             children=children,
+        )
+
+    async def _maybe_dispatch_lazy_evals(
+        self,
+        *,
+        question_id: str,
+        parent_call_id: str,
+        child_question_ids: Sequence[str],
+        consideration_ids: Sequence[str],
+    ) -> None:
+        """Fire lazy eval when the scope subtree has thin eval coverage.
+
+        Evaluates two dimensions (``grounding`` and ``calibration``) — the
+        ones ``EvalFeedbackPolicy`` consumes. Guarded by
+        ``settings.lazy_eval_enabled``; budgets via
+        ``lazy_eval_per_round_cap`` (caps uncovered targets per round) and
+        ``lazy_eval_per_run_cap`` (total lazy-eval events across a run).
+
+        The actual eval is implemented via ``run_eval.evaluate_run_with_agent``
+        (which targets a run + question); we add a ``source="lazy_eval"``
+        reputation event per invocation so the signal is distinguishable
+        from proper ``run_eval`` batches.
+
+        Best-effort: any failure is logged and swallowed. Dispatches run
+        in the background so prioritization isn't blocked.
+        """
+        from rumil.eval_feedback import LAZY_EVAL_DIMENSIONS
+
+        settings = get_settings()
+        if not settings.lazy_eval_enabled:
+            return
+        per_round = settings.lazy_eval_per_round_cap
+        per_run = settings.lazy_eval_per_run_cap
+        if per_round <= 0 or per_run <= 0:
+            return
+
+        used = await self._lazy_eval_count_for_run()
+        remaining = per_run - used
+        if remaining <= 0:
+            log.debug(
+                "lazy_eval: per-run cap reached (used=%d, cap=%d); skipping",
+                used,
+                per_run,
+            )
+            return
+
+        candidates = list(child_question_ids) + list(consideration_ids)
+        if not candidates:
+            return
+
+        try:
+            existing = await self.db.get_eval_summary_for_pages(
+                candidates,
+                list(LAZY_EVAL_DIMENSIONS),
+            )
+        except Exception:
+            log.exception("lazy_eval: get_eval_summary_for_pages failed")
+            return
+
+        uncovered = [
+            pid
+            for pid in candidates
+            if not any(
+                (existing.get(pid) or {}).get(d) and (existing.get(pid) or {})[d].count > 0
+                for d in LAZY_EVAL_DIMENSIONS
+            )
+        ]
+
+        if len(uncovered) < per_round:
+            return
+
+        log.info(
+            "lazy_eval: %d uncovered targets >= per-round cap %d; firing for scope=%s",
+            len(uncovered),
+            per_round,
+            question_id[:8],
+        )
+
+        from rumil.run_eval.agents import EVAL_AGENTS
+
+        specs = {a.name: a for a in EVAL_AGENTS}
+        for dim in LAZY_EVAL_DIMENSIONS:
+            if remaining <= 0:
+                break
+            spec = specs.get(dim)
+            if spec is None:
+                continue
+            asyncio.create_task(
+                _run_lazy_eval(
+                    db=self.db,
+                    broadcaster=self.broadcaster,
+                    spec=spec,
+                    question_id=question_id,
+                    parent_call_id=parent_call_id,
+                    uncovered_targets=tuple(uncovered[:per_round]),
+                )
+            )
+            remaining -= 1
+
+    async def _lazy_eval_count_for_run(self) -> int:
+        """Count the lazy_eval reputation events this run has already emitted."""
+        try:
+            events = await self.db.get_reputation_events(
+                run_id=self.db.run_id,
+                source="lazy_eval",
+            )
+        except Exception:
+            log.debug("lazy_eval: count lookup failed", exc_info=True)
+            return 0
+        return len(events)
+
+
+async def _run_lazy_eval(
+    *,
+    db: DB,
+    broadcaster: Broadcaster | None,
+    spec,
+    question_id: str,
+    parent_call_id: str,
+    uncovered_targets: Sequence[str],
+) -> None:
+    """Run one dimension of the lazy eval against the current run.
+
+    Invokes ``evaluate_run_with_agent`` and records a single reputation
+    event at ``source='lazy_eval'`` so the signal is distinguishable from
+    the run_eval batch. Failures are logged and swallowed.
+    """
+    from rumil.run_eval.runner import evaluate_run_with_agent
+
+    try:
+        _report_text, call = await evaluate_run_with_agent(
+            spec,
+            run_id=db.run_id,
+            question_id=question_id,
+            parent_db=db,
+            broadcaster=broadcaster,
+        )
+    except Exception:
+        log.exception("lazy_eval: evaluate_run_with_agent failed for %s", spec.name)
+        return
+
+    try:
+        await db.record_reputation_event(
+            source="lazy_eval",
+            dimension=spec.name,
+            score=1.0,
+            source_call_id=call.id,
+            extra={
+                "subject_run_id": db.run_id,
+                "subject_question_id": question_id,
+                "parent_call_id": parent_call_id,
+                "uncovered_targets": list(uncovered_targets),
+            },
+        )
+    except Exception:
+        log.exception(
+            "lazy_eval: reputation event write failed for %s on run %s",
+            spec.name,
+            db.run_id,
         )

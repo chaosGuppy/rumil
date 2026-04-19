@@ -38,6 +38,26 @@ You will be shown scoring data from a preliminary assessment:
 
 - **Subquestion and claim scores**: Each subquestion and claim has a `narrow impact` (0-10: how much answering it helps the parent), `broad impact` (0-10: how much answering it is helpful for getting a generally better strategic picture) and `fruit` (0-10: how much useful investigation remains). These scores are used to infer a *suggested priority* score (0-100, although 0-10 is common), that you can use as guidance but may overrule. They also show research stats: how many considerations, judgements, and sub-subquestions it already has.
 - **Per-scout-type fruit scores**: These scores inform you how much useful remaining work there is to do from further scouting of this type. This is a simple 0-10 number. It shouldn't be read as a *suggested priority* score. If you want to make it comparable to those scores, perhaps multiply by 3 for scout types that are very apt for what would help the question, and 2 for scout types that are somewhat-apt.
+- **Quality signals** (when present): Subquestions and claims may have a `Quality signals: ...` line summarising prior eval outputs against that page. Each entry is `dimension=mean (n=count)`. Available dimensions:
+    - `grounding` — how well claims cite sources and evidence (run_eval: lower = thinner evidence, weaker citations)
+    - `calibration` — whether stated credences match what the evidence supports (lower = over- or under-confident)
+    - `research_progress` — how much real investigation (vs surface scouting) has happened here (lower = more work needed)
+    - `consistency` — whether the research is internally coherent
+    - `subquestion_relevance` — whether sub-cascades actually bear on the parent
+    - `general_quality` — catch-all for defects not covered above
+    - `quality_control` — cumulative negative score from parsed QC findings (lower = more flagged defects; **-1 = critical, -0.6 = moderate, -0.3 = low**)
+    - `confusion` — heuristic score from the closing-reviewer scan (range [-1, 1]; **positive = clean, negative = errors / thin output / cost outlier / etc.**). Cheap and automatic: do not over-weight relative to agent-emitted dimensions.
+  Dimensions with zero events are omitted.
+
+## Eval-driven dispatch guidance
+
+Quality signals are *signals*, not verdicts — your judgement on what to dispatch matters more than any single number. Some rules of thumb when they do fire:
+
+- **Low grounding on a load-bearing claim** — A claim that is cited elsewhere in the View but has `grounding` mean < ~0.4 with `n ≥ 2` is a strong candidate for `recurse_into_claim_investigation`. The claim does work in the View but the evidence base under it is thin; upgrading it has cascade value.
+- **Low calibration** — If `calibration` mean is low on a claim, its assigned credence is probably out of step with the evidence. Consider dispatching a regular `assess` against it to resettle the credence before spending further budget on it.
+- **Low research_progress on a subquestion branch** — If a subquestion has low `research_progress` (few pages, mostly surface), it may need more *scouting* (find_considerations, specialized scouts) rather than recursion; or conversely, if its research_progress is already strong, a fresh recursion round is unlikely to surface much new.
+- **Repeated negative confusion signal** — Multiple negative `confusion` events on a page or its immediate calls suggest prior investigations have been noisy or failed partway; pay extra attention before re-dispatching, and consider a narrower prompt or a different scout type.
+- **Strong positive signal is a signal to stop.** If grounding/calibration/research_progress are high and their `n` is ≥ 2-3, the page is probably well-investigated; de-prioritise over other candidates even if its raw priority score is similar.
 
 Cross-check the scores against the View. An item scored high-impact whose content is already an I5 confident-view with R4-R5 robustness in the View probably has less marginal fruit than its score suggests. An item scored lower-priority but sitting at the unresolved core of the View's assessments section may be worth more than its score suggests. Use the View to spot this.
 

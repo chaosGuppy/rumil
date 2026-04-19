@@ -66,6 +66,13 @@ MODEL_MAP: dict[str, str] = {
     "haiku": "claude-haiku-4-5-20251001",
 }
 
+CHAT_TURN_TIMEOUT_S = 120.0
+
+# Strong refs to in-flight chat-turn tasks so they don't get GC'd if the
+# browser disconnects and the SSE generator closure is released. Tasks
+# remove themselves on completion.
+_live_chat_turns: set[asyncio.Task[None]] = set()
+
 
 class ChatRequest(BaseModel):
     question_id: str
@@ -2653,12 +2660,26 @@ async def handle_chat_stream(request: ChatRequest) -> StreamingResponse:
     client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
     context_scope_id = full_id or ""
 
-    async def generate() -> AsyncIterator[str]:
+    event_q: asyncio.Queue[str | None] = asyncio.Queue()
+
+    async def run_turn() -> None:
+        """Drive the Anthropic turn to completion and persist results.
+
+        Emits SSE-encoded event strings onto `event_q`. Runs to completion
+        even if the browser disconnects — this coroutine is scheduled as a
+        detached asyncio.Task, so CancelledError from the SSE generator
+        does not propagate here. The only things that cancel us are the
+        outer wait_for timeout (CHAT_TURN_TIMEOUT_S) and process shutdown.
+        On exit (success, error, or timeout) pushes a sentinel (None) so
+        the reader can stop.
+        """
         nonlocal messages
         turn_start_iso = datetime.now(UTC).isoformat()
         turn_chat_usd = 0.0
         try:
-            yield _sse("conversation", {"conversation_id": conv.id, "title": conv.title})
+            event_q.put_nowait(
+                _sse("conversation", {"conversation_id": conv.id, "title": conv.title})
+            )
             for _ in range(10):
                 async with client.messages.stream(
                     model=model_id,
@@ -2671,10 +2692,12 @@ async def handle_chat_stream(request: ChatRequest) -> StreamingResponse:
                     async for event in stream:
                         if event.type == "content_block_delta":
                             if isinstance(event.delta, TextDelta):
-                                yield _sse("text", {"content": event.delta.text})
+                                event_q.put_nowait(_sse("text", {"content": event.delta.text}))
                         elif event.type == "content_block_start":
                             if isinstance(event.content_block, ToolUseBlock):
-                                yield _sse("tool_use_start", {"name": event.content_block.name})
+                                event_q.put_nowait(
+                                    _sse("tool_use_start", {"name": event.content_block.name})
+                                )
 
                 response = await stream.get_final_message()
                 try:
@@ -2707,7 +2730,7 @@ async def handle_chat_stream(request: ChatRequest) -> StreamingResponse:
                 )
 
                 if is_terminal and costs_payload is not None:
-                    yield _sse("turn_costs", costs_payload)
+                    event_q.put_nowait(_sse("turn_costs", costs_payload))
                     break
 
                 messages.append({"role": "assistant", "content": response.content})
@@ -2726,21 +2749,26 @@ async def handle_chat_stream(request: ChatRequest) -> StreamingResponse:
                         while not task.done():
                             try:
                                 msg = await asyncio.wait_for(progress_q.get(), timeout=0.5)
-                                yield _sse("orchestrator_progress", {"message": msg})
+                                event_q.put_nowait(_sse("orchestrator_progress", {"message": msg}))
                             except TimeoutError:
                                 continue
                         result_str = await task
                         while not progress_q.empty():
-                            yield _sse(
-                                "orchestrator_progress", {"message": progress_q.get_nowait()}
+                            event_q.put_nowait(
+                                _sse(
+                                    "orchestrator_progress",
+                                    {"message": progress_q.get_nowait()},
+                                )
                             )
-                    yield _sse(
-                        "tool_use_result",
-                        {
-                            "name": tc.name,
-                            "input": tc.input,
-                            "result": result_str[:500],
-                        },
+                    event_q.put_nowait(
+                        _sse(
+                            "tool_use_result",
+                            {
+                                "name": tc.name,
+                                "input": tc.input,
+                                "result": result_str[:500],
+                            },
+                        )
                     )
                     tool_results.append(
                         {
@@ -2760,11 +2788,53 @@ async def handle_chat_stream(request: ChatRequest) -> StreamingResponse:
                 messages.append({"role": "user", "content": tool_results})
 
             await db.update_chat_conversation(conv.id, touch=True)
-            yield _sse("done", {"conversation_id": conv.id})
+            event_q.put_nowait(_sse("done", {"conversation_id": conv.id}))
+        except asyncio.CancelledError:
+            # This fires when the outer wait_for hits CHAT_TURN_TIMEOUT_S.
+            # The client disconnect path does NOT cancel us (we're a
+            # detached task). Partial state already persisted to DB stays.
+            log.warning(
+                "chat turn hit CHAT_TURN_TIMEOUT_S (%ss); abandoning (conv=%s)",
+                CHAT_TURN_TIMEOUT_S,
+                conv.id,
+            )
+            raise
         except Exception as e:
             log.error("Chat stream error: %s", e, exc_info=True)
-            yield _sse("error", {"message": str(e)})
+            event_q.put_nowait(_sse("error", {"message": str(e)}))
         finally:
+            event_q.put_nowait(None)
             await db.close()
+
+    turn_task: asyncio.Task[None] = asyncio.create_task(
+        asyncio.wait_for(run_turn(), timeout=CHAT_TURN_TIMEOUT_S)
+    )
+    _live_chat_turns.add(turn_task)
+    turn_task.add_done_callback(_live_chat_turns.discard)
+
+    async def generate() -> AsyncIterator[str]:
+        """Drain events from the detached turn task until it signals done.
+
+        `turn_task` is created with asyncio.create_task and registered in a
+        module-level strong-ref set, making its lifetime fully independent
+        of this generator. When the browser disconnects, FastAPI cancels
+        the generator — but that does not propagate to turn_task. The task
+        continues running server-side: it finishes the Anthropic stream
+        and persists the assistant message + tool_results. On the next
+        browser load, the completed turn shows up via the normal
+        conversation-load path.
+        """
+        try:
+            while True:
+                evt = await event_q.get()
+                if evt is None:
+                    break
+                yield evt
+        except asyncio.CancelledError:
+            log.info(
+                "chat SSE generator cancelled by client; turn continues in background (conv=%s)",
+                conv.id,
+            )
+            raise
 
     return StreamingResponse(generate(), media_type="text/event-stream")

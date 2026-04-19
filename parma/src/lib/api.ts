@@ -3,10 +3,14 @@ import type {
   AbEvalReportListItemOut,
   AppConfigOut,
   CallSummary,
+  CapabilitiesOut,
   ConversationListItem,
   CreateProjectOut,
+  EvaluationTypeSpecOut,
+  GroundingPipelineSpecOut,
   LinkedPageOut,
   LlmExchangeSummaryOut,
+  OrchestratorSpecOut,
   PageDetailOut,
   PageIterationsOut,
   RefineIterationOut,
@@ -42,6 +46,10 @@ export type PageIterations = PageIterationsOut;
 export type AppConfig = AppConfigOut;
 export type ABEvalDimensionSummary = AbEvalDimensionSummaryOut;
 export type ABEvalReportListItem = AbEvalReportListItemOut;
+export type Capabilities = CapabilitiesOut;
+export type EvaluationTypeSpec = EvaluationTypeSpecOut;
+export type GroundingPipelineSpec = GroundingPipelineSpecOut;
+export type OrchestratorSpec = OrchestratorSpecOut;
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -698,6 +706,17 @@ export async function fetchAppConfig(): Promise<AppConfig> {
   return res.json();
 }
 
+// Server-sourced catalog of orchestrators, eval types, grounding pipelines,
+// call types, and preset names. Backed by GET /api/capabilities, which
+// iterates the Python registries on every request so new variants appear
+// here the moment they're registered. Use this to drive pickers in place
+// of hardcoded lists.
+export async function fetchCapabilities(): Promise<Capabilities> {
+  const res = await fetch(`${API_BASE}/api/capabilities`);
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  return res.json();
+}
+
 // Telemetry: record that a friendly user dwelled on a view-item for
 // `dwellSeconds`. The backend writes a reputation_events row tagged
 // read_time. This helper MUST NEVER throw — telemetry failures should
@@ -851,7 +870,11 @@ export async function fetchAbEvals(): Promise<ABEvalReportListItem[]> {
 // Kick off an evaluation on an existing question. Backend returns 202 with
 // the new run_id immediately — the eval runs in the background. Caller
 // navigates to /traces/{run_id} so the operator can watch it materialize.
-export type EvalType = "default" | "grounding" | "feedback";
+//
+// EvalType was historically a union of the three known names; it's now a
+// plain string so callers can pass any name registered in the server-side
+// EVALUATION_TYPES registry (fetch via fetchCapabilities to enumerate).
+export type EvalType = string;
 
 export async function startEvaluation(
   questionId: string,

@@ -42,15 +42,20 @@ from rumil.api.schemas import (
     AppConfigOut,
     CallNodeOut,
     CallSummary,
+    CallTypeInfoOut,
+    CapabilitiesOut,
     ContinueQuestionOut,
     CreateProjectOut,
     CreateProjectRequest,
     CreateRootQuestionRequest,
     EvaluateQuestionOut,
+    EvaluationTypeSpecOut,
     GroundCallOut,
+    GroundingPipelineSpecOut,
     LinkedPageOut,
     LLMExchangeOut,
     LLMExchangeSummaryOut,
+    OrchestratorSpecOut,
     PageCountsOut,
     PageDetailOut,
     PageIterationsOut,
@@ -582,6 +587,36 @@ async def list_pages_annotations_batch(
         if not db.project_id:
             db.project_id = sole_project
     return await db.get_annotations_by_target_pages(page_ids)
+
+
+_PAGES_BY_IDS_BATCH_MAX = 500
+
+
+@app.get("/api/pages/by-ids", response_model=dict[str, Page])
+async def get_pages_by_ids_batch(
+    ids: str = "",
+    db: DB = Depends(_get_db_maybe_staged),
+):
+    """Batched page fetch by full IDs.
+
+    One round trip for up to 500 ids. Response shape is ``{page_id: Page}``
+    — missing/unauthorized ids are silently omitted (consistent with
+    ``DB.get_pages_by_ids``). Used by the trace context-diff panel which
+    needs to render headlines + page_type for ~tens to ~hundreds of UUIDs
+    pulled from the ``context_built`` event payload.
+
+    Declared before ``/api/pages/{page_id}`` so FastAPI's declaration-order
+    routing doesn't swallow the literal ``by-ids`` segment as a page_id.
+    """
+    if not ids:
+        return {}
+    page_ids = [s for s in ids.split(",") if s]
+    if len(page_ids) > _PAGES_BY_IDS_BATCH_MAX:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Too many ids: max {_PAGES_BY_IDS_BATCH_MAX} per call",
+        )
+    return await db.get_pages_by_ids(page_ids)
 
 
 @app.get("/api/pages/{page_id}", response_model=Page)
@@ -1190,8 +1225,8 @@ class ABEvalIn(BaseModel):
     run_id_b: str
 
 
-@app.get("/api/capabilities")
-async def get_capabilities() -> dict:
+@app.get("/api/capabilities", response_model=CapabilitiesOut)
+async def get_capabilities() -> CapabilitiesOut:
     """Return the full set of orchestrators, eval types, call types, and
     presets available on this server. Sourced entirely from the Python
     registries so a new orchestrator/eval-type appears here the moment it's
@@ -1203,41 +1238,42 @@ async def get_capabilities() -> dict:
     from rumil.models import DISPATCHABLE_CALL_TYPES, CallType
     from rumil.orchestrators.registry import ORCHESTRATORS
 
-    return {
-        "orchestrators": [
-            {
-                "variant": spec.variant,
-                "description": spec.description,
-                "stability": spec.stability,
-                "cost_band": spec.cost_band,
-                "exposed_in_chat": spec.exposed_in_chat,
-                "supports_global_prio": spec.supports_global_prio,
-            }
+    return CapabilitiesOut(
+        orchestrators=[
+            OrchestratorSpecOut(
+                variant=spec.variant,
+                description=spec.description,
+                stability=spec.stability,
+                cost_band=spec.cost_band,
+                exposed_in_chat=spec.exposed_in_chat,
+                supports_global_prio=spec.supports_global_prio,
+            )
             for spec in ORCHESTRATORS.values()
         ],
-        "eval_types": [
-            {
-                "name": spec.name,
-                "description": spec.description,
-                "prompt_file": spec.prompt_file,
-                "investigator_prompt_file": spec.investigator_prompt_file,
-            }
+        eval_types=[
+            EvaluationTypeSpecOut(
+                name=spec.name,
+                description=spec.description,
+                prompt_file=spec.prompt_file,
+                investigator_prompt_file=spec.investigator_prompt_file,
+            )
             for spec in EVALUATION_TYPES.values()
         ],
-        "grounding_pipelines": [
-            {
-                "name": spec.name,
-                "description": spec.description,
-                "recommended_eval_type": spec.recommended_eval_type,
-            }
+        grounding_pipelines=[
+            GroundingPipelineSpecOut(
+                name=spec.name,
+                description=spec.description,
+                recommended_eval_type=spec.recommended_eval_type,
+            )
             for spec in GROUNDING_PIPELINES.values()
         ],
-        "call_types": [
-            {"value": ct.value, "dispatchable": ct in DISPATCHABLE_CALL_TYPES} for ct in CallType
+        call_types=[
+            CallTypeInfoOut(value=ct.value, dispatchable=ct in DISPATCHABLE_CALL_TYPES)
+            for ct in CallType
         ],
-        "available_calls_presets": sorted(AVAILABLE_CALLS_PRESETS.keys()),
-        "available_moves_presets": sorted(MOVES_PRESETS.keys()),
-    }
+        available_calls_presets=sorted(AVAILABLE_CALLS_PRESETS.keys()),
+        available_moves_presets=sorted(MOVES_PRESETS.keys()),
+    )
 
 
 @app.post(

@@ -682,6 +682,24 @@ export type CallTypeFruitScoreItem = {
 };
 
 /**
+ * CallTypeInfoOut
+ *
+ * One entry in CapabilitiesOut.call_types. ``dispatchable`` indicates
+ * whether prioritization is allowed to dispatch this call type (i.e. the
+ * value is in ``DISPATCHABLE_CALL_TYPES``).
+ */
+export type CallTypeInfoOut = {
+    /**
+     * Value
+     */
+    value: string;
+    /**
+     * Dispatchable
+     */
+    dispatchable: boolean;
+};
+
+/**
  * CallsForQuestion
  */
 export type CallsForQuestion = {
@@ -703,6 +721,42 @@ export type CallsForQuestion = {
      * Total
      */
     total: number;
+};
+
+/**
+ * CapabilitiesOut
+ *
+ * GET /api/capabilities response.
+ *
+ * Aggregates everything the frontend/chat/skills need to render pickers
+ * and catalogs without hardcoding lists. Sourced entirely from the Python
+ * registries so new variants appear here the moment they're registered.
+ */
+export type CapabilitiesOut = {
+    /**
+     * Orchestrators
+     */
+    orchestrators: Array<OrchestratorSpecOut>;
+    /**
+     * Eval Types
+     */
+    eval_types: Array<EvaluationTypeSpecOut>;
+    /**
+     * Grounding Pipelines
+     */
+    grounding_pipelines: Array<GroundingPipelineSpecOut>;
+    /**
+     * Call Types
+     */
+    call_types: Array<CallTypeInfoOut>;
+    /**
+     * Available Calls Presets
+     */
+    available_calls_presets: Array<string>;
+    /**
+     * Available Moves Presets
+     */
+    available_moves_presets: Array<string>;
 };
 
 /**
@@ -884,6 +938,12 @@ export type ContextBuiltEventOut = {
      * Scout Mode
      */
     scout_mode: string | null;
+    /**
+     * Page Id Tiers
+     */
+    page_id_tiers: {
+        [key: string]: string;
+    } | null;
 };
 
 /**
@@ -1237,6 +1297,31 @@ export type EvaluationCompleteEventOut = {
 };
 
 /**
+ * EvaluationTypeSpecOut
+ *
+ * One entry in CapabilitiesOut.eval_types. Mirrors
+ * rumil.evaluate.registry.EvaluationTypeSpec.
+ */
+export type EvaluationTypeSpecOut = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Description
+     */
+    description: string;
+    /**
+     * Prompt File
+     */
+    prompt_file: string;
+    /**
+     * Investigator Prompt File
+     */
+    investigator_prompt_file: string;
+};
+
+/**
  * ExplorePageEventOut
  */
 export type ExplorePageEventOut = {
@@ -1327,6 +1412,28 @@ export type GroundEvaluationIn = {
      * From Stage
      */
     from_stage?: number;
+};
+
+/**
+ * GroundingPipelineSpecOut
+ *
+ * One entry in CapabilitiesOut.grounding_pipelines. Mirrors the public
+ * fields on rumil.evaluate.registry.GroundingPipelineSpec (runner is
+ * omitted).
+ */
+export type GroundingPipelineSpecOut = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Description
+     */
+    description: string;
+    /**
+     * Recommended Eval Type
+     */
+    recommended_eval_type: string;
 };
 
 /**
@@ -1652,6 +1759,40 @@ export type MovesExecutedEventOut = {
      * Moves
      */
     moves: Array<MoveTraceItem>;
+};
+
+/**
+ * OrchestratorSpecOut
+ *
+ * One entry in CapabilitiesOut.orchestrators. Mirrors
+ * rumil.orchestrators.registry.OrchestratorSpec's public shape — the
+ * factory callable is intentionally omitted.
+ */
+export type OrchestratorSpecOut = {
+    /**
+     * Variant
+     */
+    variant: string;
+    /**
+     * Description
+     */
+    description: string;
+    /**
+     * Stability
+     */
+    stability: string;
+    /**
+     * Cost Band
+     */
+    cost_band: string;
+    /**
+     * Exposed In Chat
+     */
+    exposed_in_chat: boolean;
+    /**
+     * Supports Global Prio
+     */
+    supports_global_prio: boolean;
 };
 
 /**
@@ -3739,6 +3880,48 @@ export type ListPagesAnnotationsBatchApiPagesAnnotationsGetResponses = {
 
 export type ListPagesAnnotationsBatchApiPagesAnnotationsGetResponse = ListPagesAnnotationsBatchApiPagesAnnotationsGetResponses[keyof ListPagesAnnotationsBatchApiPagesAnnotationsGetResponses];
 
+export type GetPagesByIdsBatchApiPagesByIdsGetData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Ids
+         */
+        ids?: string;
+        /**
+         * Staged Run Id
+         */
+        staged_run_id?: string | null;
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/pages/by-ids';
+};
+
+export type GetPagesByIdsBatchApiPagesByIdsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetPagesByIdsBatchApiPagesByIdsGetError = GetPagesByIdsBatchApiPagesByIdsGetErrors[keyof GetPagesByIdsBatchApiPagesByIdsGetErrors];
+
+export type GetPagesByIdsBatchApiPagesByIdsGetResponses = {
+    /**
+     * Response Get Pages By Ids Batch Api Pages By Ids Get
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: Page;
+    };
+};
+
+export type GetPagesByIdsBatchApiPagesByIdsGetResponse = GetPagesByIdsBatchApiPagesByIdsGetResponses[keyof GetPagesByIdsBatchApiPagesByIdsGetResponses];
+
 export type GetPageApiPagesPageIdGetData = {
     body?: never;
     path: {
@@ -4435,13 +4618,9 @@ export type GetCapabilitiesApiCapabilitiesGetData = {
 
 export type GetCapabilitiesApiCapabilitiesGetResponses = {
     /**
-     * Response Get Capabilities Api Capabilities Get
-     *
      * Successful Response
      */
-    200: {
-        [key: string]: unknown;
-    };
+    200: CapabilitiesOut;
 };
 
 export type GetCapabilitiesApiCapabilitiesGetResponse = GetCapabilitiesApiCapabilitiesGetResponses[keyof GetCapabilitiesApiCapabilitiesGetResponses];

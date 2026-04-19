@@ -696,6 +696,77 @@
         }
       }
     },
+    "/api/pages/by-ids": {
+      "get": {
+        "summary": "Get Pages By Ids Batch",
+        "description": "Batched page fetch by full IDs.\n\nOne round trip for up to 500 ids. Response shape is ``{page_id: Page}``\n\u2014 missing/unauthorized ids are silently omitted (consistent with\n``DB.get_pages_by_ids``). Used by the trace context-diff panel which\nneeds to render headlines + page_type for ~tens to ~hundreds of UUIDs\npulled from the ``context_built`` event payload.\n\nDeclared before ``/api/pages/{page_id}`` so FastAPI's declaration-order\nrouting doesn't swallow the literal ``by-ids`` segment as a page_id.",
+        "operationId": "get_pages_by_ids_batch_api_pages_by_ids_get",
+        "parameters": [
+          {
+            "name": "ids",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Ids"
+            }
+          },
+          {
+            "name": "staged_run_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Staged Run Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/components/schemas/Page"
+                  },
+                  "title": "Response Get Pages By Ids Batch Api Pages By Ids Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/pages/{page_id}": {
       "get": {
         "summary": "Get Page",
@@ -1743,9 +1814,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Get Capabilities Api Capabilities Get"
+                  "$ref": "#/components/schemas/CapabilitiesOut"
                 }
               }
             }
@@ -4871,6 +4940,25 @@
         ],
         "title": "CallTypeFruitScoreItem"
       },
+      "CallTypeInfoOut": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "dispatchable": {
+            "type": "boolean",
+            "title": "Dispatchable"
+          }
+        },
+        "type": "object",
+        "required": [
+          "value",
+          "dispatchable"
+        ],
+        "title": "CallTypeInfoOut",
+        "description": "One entry in CapabilitiesOut.call_types. ``dispatchable`` indicates\nwhether prioritization is allowed to dispatch this call type (i.e. the\nvalue is in ``DISPATCHABLE_CALL_TYPES``)."
+      },
       "CallsForQuestion": {
         "properties": {
           "question_id": {
@@ -4908,6 +4996,63 @@
           "total"
         ],
         "title": "CallsForQuestion"
+      },
+      "CapabilitiesOut": {
+        "properties": {
+          "orchestrators": {
+            "items": {
+              "$ref": "#/components/schemas/OrchestratorSpecOut"
+            },
+            "type": "array",
+            "title": "Orchestrators"
+          },
+          "eval_types": {
+            "items": {
+              "$ref": "#/components/schemas/EvaluationTypeSpecOut"
+            },
+            "type": "array",
+            "title": "Eval Types"
+          },
+          "grounding_pipelines": {
+            "items": {
+              "$ref": "#/components/schemas/GroundingPipelineSpecOut"
+            },
+            "type": "array",
+            "title": "Grounding Pipelines"
+          },
+          "call_types": {
+            "items": {
+              "$ref": "#/components/schemas/CallTypeInfoOut"
+            },
+            "type": "array",
+            "title": "Call Types"
+          },
+          "available_calls_presets": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Available Calls Presets"
+          },
+          "available_moves_presets": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Available Moves Presets"
+          }
+        },
+        "type": "object",
+        "required": [
+          "orchestrators",
+          "eval_types",
+          "grounding_pipelines",
+          "call_types",
+          "available_calls_presets",
+          "available_moves_presets"
+        ],
+        "title": "CapabilitiesOut",
+        "description": "GET /api/capabilities response.\n\nAggregates everything the frontend/chat/skills need to render pickers\nand catalogs without hardcoding lists. Sourced entirely from the Python\nregistries so new variants appear here the moment they're registered."
       },
       "ChatRequest": {
         "properties": {
@@ -5209,6 +5354,20 @@
               }
             ],
             "title": "Scout Mode"
+          },
+          "page_id_tiers": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Id Tiers"
           }
         },
         "type": "object",
@@ -5220,7 +5379,8 @@
           "preloaded_page_ids",
           "source_page_id",
           "budget",
-          "scout_mode"
+          "scout_mode",
+          "page_id_tiers"
         ],
         "title": "ContextBuiltEventOut"
       },
@@ -5736,6 +5896,35 @@
         ],
         "title": "EvaluationCompleteEventOut"
       },
+      "EvaluationTypeSpecOut": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "prompt_file": {
+            "type": "string",
+            "title": "Prompt File"
+          },
+          "investigator_prompt_file": {
+            "type": "string",
+            "title": "Investigator Prompt File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "description",
+          "prompt_file",
+          "investigator_prompt_file"
+        ],
+        "title": "EvaluationTypeSpecOut",
+        "description": "One entry in CapabilitiesOut.eval_types. Mirrors\nrumil.evaluate.registry.EvaluationTypeSpec."
+      },
       "ExplorePageEventOut": {
         "properties": {
           "ts": {
@@ -5854,6 +6043,30 @@
         },
         "type": "object",
         "title": "GroundEvaluationIn"
+      },
+      "GroundingPipelineSpecOut": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "recommended_eval_type": {
+            "type": "string",
+            "title": "Recommended Eval Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "description",
+          "recommended_eval_type"
+        ],
+        "title": "GroundingPipelineSpecOut",
+        "description": "One entry in CapabilitiesOut.grounding_pipelines. Mirrors the public\nfields on rumil.evaluate.registry.GroundingPipelineSpec (runner is\nomitted)."
       },
       "GroundingTasksGeneratedEventOut": {
         "properties": {
@@ -6485,6 +6698,45 @@
           "moves"
         ],
         "title": "MovesExecutedEventOut"
+      },
+      "OrchestratorSpecOut": {
+        "properties": {
+          "variant": {
+            "type": "string",
+            "title": "Variant"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "stability": {
+            "type": "string",
+            "title": "Stability"
+          },
+          "cost_band": {
+            "type": "string",
+            "title": "Cost Band"
+          },
+          "exposed_in_chat": {
+            "type": "boolean",
+            "title": "Exposed In Chat"
+          },
+          "supports_global_prio": {
+            "type": "boolean",
+            "title": "Supports Global Prio"
+          }
+        },
+        "type": "object",
+        "required": [
+          "variant",
+          "description",
+          "stability",
+          "cost_band",
+          "exposed_in_chat",
+          "supports_global_prio"
+        ],
+        "title": "OrchestratorSpecOut",
+        "description": "One entry in CapabilitiesOut.orchestrators. Mirrors\nrumil.orchestrators.registry.OrchestratorSpec's public shape \u2014 the\nfactory callable is intentionally omitted."
       },
       "Page": {
         "properties": {

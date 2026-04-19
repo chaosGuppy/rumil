@@ -9,11 +9,13 @@ import { TraceDetail } from "@/components/operator/TraceDetail";
 import { fetchRunDetail } from "@/lib/operator-api";
 import {
   fetchCall,
+  fetchCapabilities,
   fetchRunTraceTree,
   startEvaluation,
   startFeedbackPipeline,
   startGroundPipeline,
   type CallDetail,
+  type EvaluationTypeSpec,
   type EvalType,
   type RunTraceTree,
 } from "@/lib/api";
@@ -208,6 +210,16 @@ function EvaluationReport({
   );
 }
 
+// Fallback eval-type list used only when /api/capabilities is unreachable —
+// keeps the launcher usable in a degraded state rather than showing a blank
+// picker. Names mirror the historical rumil registry. Descriptions are
+// intentionally omitted; the segmented picker renders labels only.
+const FALLBACK_EVAL_TYPES: EvaluationTypeSpec[] = [
+  { name: "default", description: "", prompt_file: "", investigator_prompt_file: "" },
+  { name: "grounding", description: "", prompt_file: "", investigator_prompt_file: "" },
+  { name: "feedback", description: "", prompt_file: "", investigator_prompt_file: "" },
+];
+
 function EvalLauncher({
   context,
   onNavigate,
@@ -218,6 +230,34 @@ function EvalLauncher({
   const [busy, setBusy] = useState<string | null>(null);
   const [errMsg, setErrMsg] = useState<string | null>(null);
   const [evalType, setEvalType] = useState<EvalType>("default");
+  const [evalTypes, setEvalTypes] =
+    useState<EvaluationTypeSpec[]>(FALLBACK_EVAL_TYPES);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchCapabilities()
+      .then((caps) => {
+        if (cancelled) return;
+        if (Array.isArray(caps.eval_types) && caps.eval_types.length > 0) {
+          setEvalTypes(caps.eval_types);
+          // If the current selection disappeared from the registry, fall
+          // back to the first known type. In practice "default" is stable
+          // but this guards against future registry renames.
+          if (!caps.eval_types.some((t) => t.name === evalType)) {
+            setEvalType(caps.eval_types[0].name);
+          }
+        }
+      })
+      .catch(() => {
+        // keep fallback
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Intentionally only on mount — refetching on evalType change would
+    // loop the first-selection logic above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleEvaluate = useCallback(async () => {
     if (context.kind !== "non-eval-run" || busy) return;
@@ -306,18 +346,19 @@ function EvalLauncher({
               role="group"
               aria-label="Evaluation type"
             >
-              {(["default", "grounding", "feedback"] as const).map((t) => (
+              {evalTypes.map((t) => (
                 <button
-                  key={t}
+                  key={t.name}
                   type="button"
+                  title={t.description || undefined}
                   className={
                     "op-eval-launch-select-btn " +
-                    (evalType === t ? "is-active" : "")
+                    (evalType === t.name ? "is-active" : "")
                   }
-                  onClick={() => setEvalType(t)}
+                  onClick={() => setEvalType(t.name)}
                   disabled={busy !== null}
                 >
-                  {t}
+                  {t.name}
                 </button>
               ))}
             </div>

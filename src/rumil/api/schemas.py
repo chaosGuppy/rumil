@@ -169,6 +169,74 @@ class ABEvalStartedOut(BaseModel):
     status: str
 
 
+class OrchestratorSpecOut(BaseModel):
+    """One entry in CapabilitiesOut.orchestrators. Mirrors
+    rumil.orchestrators.registry.OrchestratorSpec's public shape — the
+    factory callable is intentionally omitted."""
+
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    variant: str
+    description: str
+    stability: str
+    cost_band: str
+    exposed_in_chat: bool
+    supports_global_prio: bool
+
+
+class EvaluationTypeSpecOut(BaseModel):
+    """One entry in CapabilitiesOut.eval_types. Mirrors
+    rumil.evaluate.registry.EvaluationTypeSpec."""
+
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    name: str
+    description: str
+    prompt_file: str
+    investigator_prompt_file: str
+
+
+class GroundingPipelineSpecOut(BaseModel):
+    """One entry in CapabilitiesOut.grounding_pipelines. Mirrors the public
+    fields on rumil.evaluate.registry.GroundingPipelineSpec (runner is
+    omitted)."""
+
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    name: str
+    description: str
+    recommended_eval_type: str
+
+
+class CallTypeInfoOut(BaseModel):
+    """One entry in CapabilitiesOut.call_types. ``dispatchable`` indicates
+    whether prioritization is allowed to dispatch this call type (i.e. the
+    value is in ``DISPATCHABLE_CALL_TYPES``)."""
+
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    value: str
+    dispatchable: bool
+
+
+class CapabilitiesOut(BaseModel):
+    """GET /api/capabilities response.
+
+    Aggregates everything the frontend/chat/skills need to render pickers
+    and catalogs without hardcoding lists. Sourced entirely from the Python
+    registries so new variants appear here the moment they're registered.
+    """
+
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    orchestrators: list[OrchestratorSpecOut]
+    eval_types: list[EvaluationTypeSpecOut]
+    grounding_pipelines: list[GroundingPipelineSpecOut]
+    call_types: list[CallTypeInfoOut]
+    available_calls_presets: list[str]
+    available_moves_presets: list[str]
+
+
 class ProjectSummaryOut(BaseModel):
     """Per-project summary row for the public landing page.
 

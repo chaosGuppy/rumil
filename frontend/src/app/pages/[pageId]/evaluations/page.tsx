@@ -5,33 +5,59 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { Call, PageDetailOut, Project } from "@/api";
+import type {
+  Call,
+  CapabilitiesOut,
+  EvaluationTypeSpecOut,
+  PageDetailOut,
+  Project,
+} from "@/api";
 import { CLIENT_API_BASE as API_BASE } from "@/api-config";
 import { WorkspaceIndicator } from "@/components/workspace-indicator";
 import { useDocumentTitle } from "@/lib/use-document-title";
 import { truncateHeadline } from "@/lib/page-titles";
 
-type EvalType = "default" | "grounding" | "feedback";
+type EvalType = string;
 
-const EVAL_TYPES: EvalType[] = ["default", "grounding", "feedback"];
+// Minimal fallback surfaced only when /api/capabilities is unreachable —
+// keeps the page usable in a degraded-network state without breaking.
+const FALLBACK_EVAL_TYPES: EvaluationTypeSpecOut[] = [
+  {
+    name: "default",
+    description: "Balanced dimension-by-dimension critique.",
+    prompt_file: "",
+    investigator_prompt_file: "",
+  },
+  {
+    name: "grounding",
+    description: "Stress-tests citations, provenance, and factual anchors.",
+    prompt_file: "",
+    investigator_prompt_file: "",
+  },
+  {
+    name: "feedback",
+    description:
+      "Reads the run as if you were the next researcher picking it up.",
+    prompt_file: "",
+    investigator_prompt_file: "",
+  },
+];
 
-const EVAL_TYPE_COPY: Record<EvalType, { title: string; sub: string; glyph: string }> = {
-  default: {
-    title: "Default",
-    sub: "Balanced dimension-by-dimension critique.",
-    glyph: "\u25C6",
-  },
-  grounding: {
-    title: "Grounding",
-    sub: "Stress-tests citations, provenance, and factual anchors.",
-    glyph: "\u25B2",
-  },
-  feedback: {
-    title: "Feedback",
-    sub: "Reads the run as if you were the next researcher picking it up.",
-    glyph: "\u25CF",
-  },
+// Display-only polish layered on top of the server-sourced eval-type list:
+// a distinctive glyph per known type, and a title-case of the raw name. The
+// CSS keys `data-type="default|grounding|feedback"` still drive stripe
+// colours; unknown (future) types fall back to the default stripe.
+const EVAL_TYPE_GLYPHS: Record<string, string> = {
+  default: "\u25C6",
+  grounding: "\u25B2",
+  feedback: "\u25CF",
 };
+const FALLBACK_GLYPH = "\u25A0";
+
+function titleCase(name: string): string {
+  if (!name) return "";
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
 
 function formatDate(iso: string): string {
   const d = new Date(iso);
@@ -53,8 +79,7 @@ function formatCost(cost: number | null | undefined): string {
 function getEvalType(call: Call): EvalType {
   const params = (call.call_params ?? {}) as Record<string, unknown>;
   const raw = typeof params["eval_type"] === "string" ? params["eval_type"] : "default";
-  if (raw === "grounding" || raw === "feedback") return raw;
-  return "default";
+  return raw || "default";
 }
 
 function getEvaluationText(call: Call): string | null {
@@ -98,6 +123,30 @@ export default function QuestionEvaluationsPage() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [firing, setFiring] = useState(false);
   const [fireError, setFireError] = useState<string | null>(null);
+  const [evalTypes, setEvalTypes] = useState<EvaluationTypeSpecOut[]>(
+    FALLBACK_EVAL_TYPES,
+  );
+
+  // Fetch the capabilities once on mount. If the call fails, we silently
+  // fall back to FALLBACK_EVAL_TYPES — the picker stays usable even when
+  // the endpoint is unreachable.
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${API_BASE}/api/capabilities`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: CapabilitiesOut | null) => {
+        if (cancelled || !data) return;
+        if (Array.isArray(data.eval_types) && data.eval_types.length > 0) {
+          setEvalTypes(data.eval_types);
+        }
+      })
+      .catch(() => {
+        // keep fallback
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const titleHeadline = state.kind === "ready" ? state.headline : null;
   const titleLabel = titleHeadline
@@ -208,10 +257,14 @@ export default function QuestionEvaluationsPage() {
 
   const evalCounts = useMemo(() => {
     if (state.kind !== "ready") return null;
-    const counts: Record<EvalType, number> = { default: 0, grounding: 0, feedback: 0 };
-    for (const c of state.calls) counts[getEvalType(c)]++;
+    const counts: Record<string, number> = {};
+    for (const t of evalTypes) counts[t.name] = 0;
+    for (const c of state.calls) {
+      const t = getEvalType(c);
+      counts[t] = (counts[t] ?? 0) + 1;
+    }
     return counts;
-  }, [state]);
+  }, [state, evalTypes]);
 
   return (
     <main className="evals-page">
@@ -266,24 +319,24 @@ export default function QuestionEvaluationsPage() {
             {pickerOpen && (
               <div className="eval-picker" role="menu">
                 <div className="eval-picker-head">choose an agent</div>
-                {EVAL_TYPES.map((t) => (
+                {evalTypes.map((t) => (
                   <button
-                    key={t}
+                    key={t.name}
                     className="eval-picker-item"
-                    data-type={t}
-                    onClick={() => fireEvaluate(t)}
+                    data-type={t.name}
+                    onClick={() => fireEvaluate(t.name)}
                     role="menuitem"
                   >
                     <span className="eval-picker-glyph">
-                      {EVAL_TYPE_COPY[t].glyph}
+                      {EVAL_TYPE_GLYPHS[t.name] ?? FALLBACK_GLYPH}
                     </span>
                     <div className="eval-picker-body">
-                      <div className="eval-picker-title">{EVAL_TYPE_COPY[t].title}</div>
-                      <div className="eval-picker-sub">{EVAL_TYPE_COPY[t].sub}</div>
+                      <div className="eval-picker-title">{titleCase(t.name)}</div>
+                      <div className="eval-picker-sub">{t.description}</div>
                     </div>
                     {evalCounts && (
                       <span className="eval-picker-count">
-                        {evalCounts[t]}
+                        {evalCounts[t.name] ?? 0}
                       </span>
                     )}
                   </button>
@@ -295,11 +348,11 @@ export default function QuestionEvaluationsPage() {
         </div>
         {evalCounts && (
           <div className="evals-legend">
-            {EVAL_TYPES.map((t) => (
-              <span key={t} className="evals-legend-item" data-type={t}>
+            {evalTypes.map((t) => (
+              <span key={t.name} className="evals-legend-item" data-type={t.name}>
                 <span className="evals-legend-swatch" />
-                <span className="evals-legend-name">{t}</span>
-                <span className="evals-legend-n">{evalCounts[t]}</span>
+                <span className="evals-legend-name">{t.name}</span>
+                <span className="evals-legend-n">{evalCounts[t.name] ?? 0}</span>
               </span>
             ))}
           </div>
@@ -445,7 +498,9 @@ function EvalCard({
         <span className="eval-card-index">{String(index).padStart(2, "0")}</span>
         <span className="eval-card-rail" />
         <span className="eval-card-type">
-          <span className="eval-card-glyph">{EVAL_TYPE_COPY[evalType].glyph}</span>
+          <span className="eval-card-glyph">
+            {EVAL_TYPE_GLYPHS[evalType] ?? FALLBACK_GLYPH}
+          </span>
           <span className="eval-card-type-name">{evalType}</span>
         </span>
         <span className="eval-card-main">

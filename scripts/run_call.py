@@ -32,17 +32,9 @@ import asyncio
 import logging
 import uuid
 
-from rumil.calls.call_registry import ASSESS_CALL_CLASSES
+from rumil.calls.call_registry import ASSESS_CALL_CLASSES, get_call_runner_class
 from rumil.calls.find_considerations import FindConsiderationsCall
 from rumil.calls.link_subquestions import LinkSubquestionsCall
-from rumil.calls.scout_analogies import ScoutAnalogiesCall
-from rumil.calls.scout_deep_questions import ScoutDeepQuestionsCall
-from rumil.calls.scout_estimates import ScoutEstimatesCall
-from rumil.calls.scout_factchecks import ScoutFactchecksCall
-from rumil.calls.scout_hypotheses import ScoutHypothesesCall
-from rumil.calls.scout_paradigm_cases import ScoutParadigmCasesCall
-from rumil.calls.scout_subquestions import ScoutSubquestionsCall
-from rumil.calls.scout_web_questions import ScoutWebQuestionsCall
 from rumil.calls.stages import CallRunner
 from rumil.calls.web_research import WebResearchCall
 from rumil.database import DB
@@ -51,15 +43,19 @@ from rumil.orchestrators import create_root_question
 from rumil.orchestrators.robustify import RobustifyOrchestrator
 from rumil.settings import get_settings
 
+_SCOUT_CALL_TYPES_ORDERED: tuple[CallType, ...] = (
+    CallType.SCOUT_SUBQUESTIONS,
+    CallType.SCOUT_ESTIMATES,
+    CallType.SCOUT_HYPOTHESES,
+    CallType.SCOUT_ANALOGIES,
+    CallType.SCOUT_PARADIGM_CASES,
+    CallType.SCOUT_FACTCHECKS,
+    CallType.SCOUT_WEB_QUESTIONS,
+    CallType.SCOUT_DEEP_QUESTIONS,
+)
+
 _SCOUT_CALL_TYPES: dict[str, tuple[CallType, type[CallRunner]]] = {
-    "scout-subquestions": (CallType.SCOUT_SUBQUESTIONS, ScoutSubquestionsCall),
-    "scout-estimates": (CallType.SCOUT_ESTIMATES, ScoutEstimatesCall),
-    "scout-hypotheses": (CallType.SCOUT_HYPOTHESES, ScoutHypothesesCall),
-    "scout-analogies": (CallType.SCOUT_ANALOGIES, ScoutAnalogiesCall),
-    "scout-paradigm-cases": (CallType.SCOUT_PARADIGM_CASES, ScoutParadigmCasesCall),
-    "scout-factchecks": (CallType.SCOUT_FACTCHECKS, ScoutFactchecksCall),
-    "scout-web-questions": (CallType.SCOUT_WEB_QUESTIONS, ScoutWebQuestionsCall),
-    "scout-deep-questions": (CallType.SCOUT_DEEP_QUESTIONS, ScoutDeepQuestionsCall),
+    ct.value.replace("_", "-"): (ct, get_call_runner_class(ct)) for ct in _SCOUT_CALL_TYPES_ORDERED
 }
 
 

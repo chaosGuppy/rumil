@@ -205,7 +205,6 @@ class ExperimentalOrchestrator(BaseOrchestrator):
                         force=True,
                         sequence_id=self._sequence_id,
                         sequence_position=self._seq_position,
-                        summarise=False,
                     )
                     if self._sequence_id is not None:
                         self._seq_position += 1

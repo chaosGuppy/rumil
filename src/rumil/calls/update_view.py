@@ -796,11 +796,25 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
         await db.save_link(link)
 
         if score.robustness is not None:
-            await db.update_epistemic_score(
+            await db.record_mutation_event(
+                "set_robustness",
                 page.id,
-                robustness=score.robustness,
-                robustness_reasoning=score.robustness_reasoning,
+                {
+                    "value": int(score.robustness),
+                    "reasoning": score.robustness_reasoning,
+                },
             )
+            if not db.staged:
+                await db._execute(
+                    db.client.table("pages")
+                    .update(
+                        {
+                            "robustness": score.robustness,
+                            "robustness_reasoning": score.robustness_reasoning,
+                        }
+                    )
+                    .eq("id", page.id)
+                )
 
         return True
 
@@ -825,11 +839,25 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
                 await infra.db.save_link(link)
 
             if review.new_robustness is not None:
-                await infra.db.update_epistemic_score(
+                await infra.db.record_mutation_event(
+                    "set_robustness",
                     page.id,
-                    robustness=review.new_robustness,
-                    robustness_reasoning=review.new_robustness_reasoning,
+                    {
+                        "value": int(review.new_robustness),
+                        "reasoning": review.new_robustness_reasoning,
+                    },
                 )
+                if not infra.db.staged:
+                    await infra.db._execute(
+                        infra.db.client.table("pages")
+                        .update(
+                            {
+                                "robustness": review.new_robustness,
+                                "robustness_reasoning": review.new_robustness_reasoning,
+                            }
+                        )
+                        .eq("id", page.id)
+                    )
             return True
 
         if review.action == "supersede":

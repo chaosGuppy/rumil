@@ -110,8 +110,7 @@ class ViewClosingReview(StandardClosingReview):
                     track_tags={"source": "closing_review_view"},
                 )
                 item_lines.append(
-                    f"### [C{page.credence}/R{page.robustness} I{imp}]{marker} "
-                    f"{page.headline}\n\n{formatted}\n"
+                    f"### [R{page.robustness} I{imp}]{marker} {page.headline}\n\n{formatted}\n"
                 )
             items_text = "\n".join(item_lines)
 

@@ -11,6 +11,7 @@ import json
 schema = app.openapi()
 with open('frontend/openapi.json', 'w') as f:
     json.dump(schema, f, indent=2, default=str)
+    f.write('\n')
 "
 
 echo "Generating TypeScript types for frontend/..."

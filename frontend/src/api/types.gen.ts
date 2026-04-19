@@ -157,6 +157,10 @@ export type AbEvalReportOut = {
      */
     overall_assessment_call_id: string;
     /**
+     * Eval Run Id
+     */
+    eval_run_id?: string;
+    /**
      * Dimension Reports
      */
     dimension_reports: Array<AbEvalDimensionOut>;
@@ -721,6 +725,18 @@ export type CallsForQuestion = {
      * Total
      */
     total: number;
+    /**
+     * Child Questions
+     */
+    child_questions: number;
+    /**
+     * Considerations
+     */
+    considerations: number;
+    /**
+     * Judgements
+     */
+    judgements: number;
 };
 
 /**
@@ -1831,9 +1847,17 @@ export type Page = {
      */
     credence: number | null;
     /**
+     * Credence Reasoning
+     */
+    credence_reasoning: string | null;
+    /**
      * Robustness
      */
     robustness: number | null;
+    /**
+     * Robustness Reasoning
+     */
+    robustness_reasoning: string | null;
     /**
      * Provenance Model
      */
@@ -2035,6 +2059,12 @@ export type PageLoadStatsOut = {
      * Total Unique
      */
     total_unique: number;
+    /**
+     * Question Headlines
+     */
+    question_headlines: {
+        [key: string]: string;
+    };
 };
 
 /**

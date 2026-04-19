@@ -4032,6 +4032,11 @@
             "title": "Overall Assessment Call Id",
             "default": ""
           },
+          "eval_run_id": {
+            "type": "string",
+            "title": "Eval Run Id",
+            "default": ""
+          },
           "dimension_reports": {
             "items": {
               "$ref": "#/components/schemas/ABEvalDimensionOut"
@@ -5002,6 +5007,18 @@
           "total": {
             "type": "integer",
             "title": "Total"
+          },
+          "child_questions": {
+            "type": "integer",
+            "title": "Child Questions"
+          },
+          "considerations": {
+            "type": "integer",
+            "title": "Considerations"
+          },
+          "judgements": {
+            "type": "integer",
+            "title": "Judgements"
           }
         },
         "type": "object",
@@ -5009,7 +5026,10 @@
           "question_id",
           "headline",
           "by_type",
-          "total"
+          "total",
+          "child_questions",
+          "considerations",
+          "judgements"
         ],
         "title": "CallsForQuestion"
       },
@@ -6804,6 +6824,17 @@
             ],
             "title": "Credence"
           },
+          "credence_reasoning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credence Reasoning"
+          },
           "robustness": {
             "anyOf": [
               {
@@ -6814,6 +6845,17 @@
               }
             ],
             "title": "Robustness"
+          },
+          "robustness_reasoning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Robustness Reasoning"
           },
           "provenance_model": {
             "type": "string",
@@ -6938,7 +6980,9 @@
           "epistemic_status",
           "epistemic_type",
           "credence",
+          "credence_reasoning",
           "robustness",
+          "robustness_reasoning",
           "provenance_model",
           "provenance_call_type",
           "provenance_call_id",
@@ -7189,13 +7233,21 @@
           "total_unique": {
             "type": "integer",
             "title": "Total Unique"
+          },
+          "question_headlines": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Question Headlines"
           }
         },
         "type": "object",
         "required": [
           "events",
           "total",
-          "total_unique"
+          "total_unique",
+          "question_headlines"
         ],
         "title": "PageLoadStatsOut"
       },

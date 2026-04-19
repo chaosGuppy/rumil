@@ -364,8 +364,10 @@ class Page(BaseModel):
     project_id: str = ""
     epistemic_status: float = 2.5  # DEPRECATED — kept for backward compat
     epistemic_type: str = ""  # DEPRECATED — kept for backward compat
-    credence: int | None = None  # 1-9 probability bucket (claims/judgements only)
-    robustness: int | None = None  # 1-5 resilience of view (claims/judgements only)
+    credence: int | None = None  # 1-9 probability bucket (claim pages only)
+    credence_reasoning: str | None = None
+    robustness: int | None = None  # 1-5 resilience of view (any non-question page)
+    robustness_reasoning: str | None = None
     provenance_model: str = ""
     provenance_call_type: str = ""
     provenance_call_id: str = ""

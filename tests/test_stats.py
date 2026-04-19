@@ -80,9 +80,7 @@ async def small_project(tmp_db):
     c_2 = await _make_page(
         tmp_db, page_type=PageType.CLAIM, headline="c_2", credence=3, robustness=2
     )
-    j_1 = await _make_page(
-        tmp_db, page_type=PageType.JUDGEMENT, headline="j_1", credence=5, robustness=4
-    )
+    j_1 = await _make_page(tmp_db, page_type=PageType.JUDGEMENT, headline="j_1", robustness=4)
 
     await _link(tmp_db, q_a, q_b, LinkType.CHILD_QUESTION)
     await _link(tmp_db, c_1, q_a, LinkType.CONSIDERATION)
@@ -147,10 +145,10 @@ async def test_project_stats_histograms(tmp_db, small_project):
     credence = blob["credence_histogram"]
     robustness = blob["robustness_histogram"]
 
-    # Questions have credence=None so they're excluded. Claims: 7, 3. Judgement: 5.
+    # Credence is claim-only. Claims: 7, 3.
     assert credence.get("7") == 1
     assert credence.get("3") == 1
-    assert credence.get("5") == 1
+    assert credence.get("5") is None
 
     # Claims: 3, 2. Judgement: 4.
     assert robustness.get("3") == 1
@@ -169,10 +167,17 @@ async def test_project_stats_calls_per_question(tmp_db, small_project):
     q_a_entry = by_qid[small_project["q_a"].id]
     assert q_a_entry["total"] == 3
     assert q_a_entry["by_type"] == {"find_considerations": 2, "assess": 1}
+    # q_a has 1 child question (q_b), 2 considerations (c_1, c_2), 1 judgement (j_1)
+    assert q_a_entry["child_questions"] == 1
+    assert q_a_entry["considerations"] == 2
+    assert q_a_entry["judgements"] == 1
 
     q_b_entry = by_qid[small_project["q_b"].id]
     assert q_b_entry["total"] == 1
     assert q_b_entry["by_type"] == {"find_considerations": 1}
+    assert q_b_entry["child_questions"] == 0
+    assert q_b_entry["considerations"] == 0
+    assert q_b_entry["judgements"] == 0
 
 
 @pytest.mark.asyncio
@@ -251,7 +256,15 @@ async def test_question_stats_isolated(tmp_db):
     assert blob["pages_by_type"] == {"question": 1}
     assert blob["links_total"] == 0
     assert blob["calls_per_question"] == [
-        {"question_id": q.id, "headline": "lonely", "by_type": {}, "total": 0}
+        {
+            "question_id": q.id,
+            "headline": "lonely",
+            "by_type": {},
+            "total": 0,
+            "child_questions": 0,
+            "considerations": 0,
+            "judgements": 0,
+        }
     ]
 
 

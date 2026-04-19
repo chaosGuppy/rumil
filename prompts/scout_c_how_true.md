@@ -28,4 +28,4 @@ Use `CREATE_CLAIM` to create each story and `LINK_CONSIDERATION` to link it to t
 - **Concrete mechanisms.** Name the actors, forces, or processes involved. "Supply constraints drive up prices because X, Y, Z" not "economic factors."
 - **Observable consequences.** Each story should predict something — what would we expect to see if this mechanism is operating?
 - **Do not duplicate** stories already present in the workspace.
-- **Set credence and robustness honestly.** These are initial assessments — low robustness is expected.
+- **Set credence and robustness honestly, with reasoning.** These are initial assessments — low robustness is expected. Every score needs its paired reasoning field per the preamble rubric.

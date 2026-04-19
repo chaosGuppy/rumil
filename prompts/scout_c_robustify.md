@@ -37,4 +37,4 @@ Consider these approaches (use whichever are most appropriate for the claim at h
 - **Genuinely more robust.** The variation should survive more scenarios, not just be vaguer. A well-supported lower bound beats a vague hedge.
 - **Explain the trade-off.** Note what precision or scope is being sacrificed and why the trade-off is worthwhile.
 - **Do not duplicate** variations already present in the workspace.
-- **Set credence and robustness honestly.** The robust version should have higher higher credence than the original.
+- **Set credence and robustness honestly, with reasoning.** The robust version should have higher credence than the original. Every score needs its paired reasoning field per the preamble rubric — in robustness_reasoning, spell out *why* the variation is sturdier than the original.

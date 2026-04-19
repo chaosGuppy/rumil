@@ -58,11 +58,15 @@ Your context may contain previous judgements on this question or on questions si
 
 **Your judgement must stand alone.** Do not write "as the previous judgement noted..." or "building on the earlier assessment...". A reader who has never seen any prior judgement should be able to read yours and get the full picture. If a prior judgement contains something worth incorporating, absorb it into your own reasoning in your own words.
 
-## Updating Existing Claims
+## Updating Existing Epistemic Scores
 
-You have access to `update_epistemic` to revise credence and robustness scores on any claim loaded in your context. Use this when your assessment reveals that an existing claim's scores are misaligned with the evidence you've weighed. Provide clear reasoning for the change.
+You have access to `update_epistemic` to revise epistemic scores on pages in your context:
+- **Credence** updates apply only to claims.
+- **Robustness** updates apply to any non-question page (claims, prior judgements, summaries, View items).
 
-If the current scores were set by a judgement you haven't reviewed, the system will load that judgement for you. Review it, then re-submit your update with the same or modified values.
+Use this when your assessment reveals that an existing page's scores are misaligned with the evidence you've weighed. Provide `credence_reasoning` whenever you set a new credence and `robustness_reasoning` whenever you set a new robustness, per the preamble rubric.
+
+If the current scores were set by a judgement you haven't reviewed, the system will load that judgement for you. Review it, then re-submit your update with the same or modified values. (Your own judgement carries robustness but no credence — don't try to set one on it.)
 
 ## Quality Bar
 

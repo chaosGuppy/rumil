@@ -43,7 +43,12 @@ function formatDate(iso: string): string {
 
 type DimTab = "comparison" | "report_a" | "report_b";
 
-function DimensionSection({ dim }: { dim: AbEvalDimensionOut }) {
+function traceHref(evalRunId: string | undefined, callId: string): string {
+  if (evalRunId) return `/traces/${evalRunId}#call-${callId.slice(0, 8)}`;
+  return `/traces/${callId}`;
+}
+
+function DimensionSection({ dim, evalRunId }: { dim: AbEvalDimensionOut; evalRunId?: string }) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<DimTab>("comparison");
 
@@ -92,7 +97,7 @@ function DimensionSection({ dim }: { dim: AbEvalDimensionOut }) {
           <div className="ab-eval-dim-eval-links">
             {dim.call_id_a && (
               <Link
-                href={`/traces/${dim.call_id_a}`}
+                href={traceHref(evalRunId, dim.call_id_a)}
                 className="ab-eval-dim-eval-link"
               >
                 eval trace A
@@ -100,7 +105,7 @@ function DimensionSection({ dim }: { dim: AbEvalDimensionOut }) {
             )}
             {dim.call_id_b && (
               <Link
-                href={`/traces/${dim.call_id_b}`}
+                href={traceHref(evalRunId, dim.call_id_b)}
                 className="ab-eval-dim-eval-link"
               >
                 eval trace B
@@ -108,7 +113,7 @@ function DimensionSection({ dim }: { dim: AbEvalDimensionOut }) {
             )}
             {dim.comparison_call_id && (
               <Link
-                href={`/traces/${dim.comparison_call_id}`}
+                href={traceHref(evalRunId, dim.comparison_call_id)}
                 className="ab-eval-dim-eval-link"
               >
                 comparison trace
@@ -245,7 +250,7 @@ export function EvalDetail({ report }: { report: AbEvalReportOut }) {
         {report.overall_assessment_call_id && (
           <div className="ab-eval-dim-eval-links">
             <Link
-              href={`/traces/${report.overall_assessment_call_id}`}
+              href={traceHref(report.eval_run_id, report.overall_assessment_call_id)}
               className="ab-eval-dim-eval-link"
             >
               overall assessment trace
@@ -258,7 +263,7 @@ export function EvalDetail({ report }: { report: AbEvalReportOut }) {
         <div className="ab-eval-section-label">dimension reports</div>
         <div className="ab-eval-dimensions">
           {report.dimension_reports.map((dim) => (
-            <DimensionSection key={dim.name} dim={dim} />
+            <DimensionSection key={dim.name} dim={dim} evalRunId={report.eval_run_id} />
           ))}
         </div>
       </section>

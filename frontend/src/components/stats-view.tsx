@@ -12,7 +12,11 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { CallsForQuestion, DegreeCell } from "@/api";
+import type { CallsForQuestion, DegreeCell, Subgraph } from "@/api";
+import {
+  QuestionFocusBars,
+  SubquestionFocusGrid,
+} from "@/components/question-focus";
 
 type Histogram = { [key: string]: number };
 
@@ -25,6 +29,7 @@ export type StatsViewData = {
   robustness_histogram: Histogram;
   credence_histogram: Histogram;
   calls_per_question: Array<CallsForQuestion>;
+  subgraph?: Subgraph;
 };
 
 const TYPE_ORDER = [
@@ -215,9 +220,11 @@ function binCallsPerQuestion(
 export function StatsView({
   data,
   leadingPanel,
+  anchorId,
 }: {
   data: StatsViewData;
   leadingPanel?: React.ReactNode;
+  anchorId?: string;
 }) {
   const pageTypeKeys = useMemo(
     () => orderedTypeKeys(data.pages_by_type),
@@ -254,6 +261,17 @@ export function StatsView({
     () => collectCallTypes(data.calls_per_question),
     [data.calls_per_question],
   );
+  const callsByQuestion = useMemo(() => {
+    const m: Record<string, CallsForQuestion> = {};
+    for (const e of data.calls_per_question) m[e.question_id] = e;
+    return m;
+  }, [data.calls_per_question]);
+  const anchorEntry = anchorId ? callsByQuestion[anchorId] : undefined;
+  const focusAvailable = Boolean(anchorId && anchorEntry);
+  const [callsView, setCallsView] = useState<"distribution" | "focus">(
+    focusAvailable ? "focus" : "distribution",
+  );
+  const activeCallsView = focusAvailable ? callsView : "distribution";
   const [hiddenCallTypes, setHiddenCallTypes] = useState<Set<string>>(
     () => new Set(),
   );
@@ -314,6 +332,55 @@ export function StatsView({
           color: var(--color-muted);
           font-family: var(--font-geist-mono), monospace;
           margin-bottom: 0.9rem;
+        }
+        .stats-view .panel-header {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 1rem;
+          margin-bottom: 0.9rem;
+          flex-wrap: wrap;
+        }
+        .stats-view .panel-header .panel-label {
+          margin-bottom: 0.25rem;
+        }
+        .panel-sublabel {
+          font-size: 0.7rem;
+          color: var(--color-muted);
+          font-family: var(--font-geist-mono), monospace;
+          letter-spacing: 0.02em;
+          opacity: 0.8;
+        }
+        .view-toggle {
+          display: inline-flex;
+          border: 1px solid var(--color-border);
+          background: var(--color-background);
+        }
+        .view-toggle .toggle-chip {
+          background: transparent;
+          border: none;
+          color: var(--color-muted);
+          font-family: var(--font-geist-mono), monospace;
+          font-size: 0.65rem;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          padding: 0.4rem 0.75rem;
+          cursor: pointer;
+          transition: all 0.14s ease;
+          border-right: 1px solid var(--color-border);
+        }
+        .view-toggle .toggle-chip:last-child {
+          border-right: none;
+        }
+        .view-toggle .toggle-chip:hover {
+          color: var(--color-foreground);
+        }
+        .view-toggle .toggle-chip.active {
+          background: var(--color-foreground);
+          color: var(--color-background);
+        }
+        .focus-panel {
+          padding: 0.4rem 0 0.2rem 0;
         }
 
         .summary-row {
@@ -732,9 +799,9 @@ export function StatsView({
 
       <div className="two-col-histograms">
         <div className="panel">
-          <div className="panel-label">Credence</div>
+          <div className="panel-label">Claim credence</div>
           {Object.keys(data.credence_histogram).length === 0 ? (
-            <div className="hist-empty">no credence-scored pages</div>
+            <div className="hist-empty">no credence-scored claims</div>
           ) : (
             <>
               <div className="hist-wrap">
@@ -783,7 +850,7 @@ export function StatsView({
                   </BarChart>
                 </ResponsiveContainer>
               </div>
-              <div className="hist-caption">bins 1–9 · claims and judgements</div>
+              <div className="hist-caption">bins 1–9 · claim pages only</div>
             </>
           )}
         </div>
@@ -849,14 +916,101 @@ export function StatsView({
       {allHistEmpty && null}
 
       <div className="panel">
-        <div className="panel-label">
-          Calls per question &nbsp;
-          <span style={{ opacity: 0.7, fontWeight: 400 }}>
-            questions binned by total calls, stacked by call type
-          </span>
+        <div className="panel-header">
+          <div>
+            <div className="panel-label">
+              {activeCallsView === "focus"
+                ? "Question focus"
+                : "Calls per question"}
+            </div>
+            <div className="panel-sublabel">
+              {activeCallsView === "focus"
+                ? "calls, child questions, considerations and judgements for this question"
+                : "questions binned by total calls, stacked by call type"}
+            </div>
+          </div>
+          {focusAvailable && (
+            <div
+              className="view-toggle"
+              role="tablist"
+              aria-label="Calls view mode"
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeCallsView === "focus"}
+                className={`toggle-chip${activeCallsView === "focus" ? " active" : ""}`}
+                onClick={() => setCallsView("focus")}
+              >
+                this question
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeCallsView === "distribution"}
+                className={`toggle-chip${activeCallsView === "distribution" ? " active" : ""}`}
+                onClick={() => setCallsView("distribution")}
+              >
+                neighbourhood
+              </button>
+            </div>
+          )}
         </div>
-        {callTypes.length === 0 ? (
+
+        {callTypes.length === 0 && !focusAvailable ? (
           <div className="empty-panel">no calls recorded</div>
+        ) : activeCallsView === "focus" && anchorEntry ? (
+          <>
+            <div className="focus-panel">
+              <QuestionFocusBars
+                entry={anchorEntry}
+                callTypes={callTypes}
+                hiddenCallTypes={hiddenCallTypes}
+                callTypeColor={callTypeColor}
+              />
+            </div>
+            {callTypes.length > 0 && (
+              <div className="legend-row">
+                <button
+                  type="button"
+                  className="legend-chip legend-all"
+                  onClick={toggleAllCallTypes}
+                  title={
+                    anyHidden ? "Show all call types" : "Hide all call types"
+                  }
+                >
+                  {anyHidden ? "show all" : "hide all"}
+                </button>
+                {callTypes.map((ct, i) => {
+                  const hidden = hiddenCallTypes.has(ct);
+                  return (
+                    <button
+                      key={ct}
+                      type="button"
+                      className={`legend-chip${hidden ? " hidden" : ""}`}
+                      onClick={() => toggleCallType(ct)}
+                      title={hidden ? `Show ${ct}` : `Hide ${ct}`}
+                    >
+                      <span
+                        className="legend-swatch"
+                        style={{
+                          background: hidden
+                            ? "transparent"
+                            : callTypeColor(ct, i),
+                          borderColor: callTypeColor(ct, i),
+                        }}
+                      />
+                      {ct}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            <div className="hist-caption">
+              bars share a common scale · click a call type to toggle its
+              contribution
+            </div>
+          </>
         ) : (
           <>
             <div className="calls-wrap">
@@ -955,6 +1109,27 @@ export function StatsView({
           </>
         )}
       </div>
+
+      {focusAvailable && anchorId && data.subgraph && (
+        <div className="panel">
+          <div className="panel-header">
+            <div>
+              <div className="panel-label">Per subquestion</div>
+              <div className="panel-sublabel">
+                direct children of this question
+              </div>
+            </div>
+          </div>
+          <SubquestionFocusGrid
+            anchorId={anchorId}
+            subgraph={data.subgraph}
+            callsByQuestion={callsByQuestion}
+            callTypes={callTypes}
+            hiddenCallTypes={hiddenCallTypes}
+            callTypeColor={callTypeColor}
+          />
+        </div>
+      )}
     </div>
   );
 }

@@ -21,46 +21,15 @@ from rumil.views import View, build_view, render_view_as_context
 
 log = logging.getLogger(__name__)
 
-CREDENCE_LABELS: dict[int, str] = {
-    9: "Completely uncontroversial (>99.99%)",
-    8: "Almost certain (99–99.99%)",
-    7: "Very likely (90–99%)",
-    6: "Likely (70–90%)",
-    5: "Genuinely uncertain (30–70%)",
-    4: "Plausible but doubtful (10–30%)",
-    3: "Unlikely (1–10%)",
-    2: "Extremely unlikely (0.01–1%)",
-    1: "Virtually impossible (<0.01%)",
-}
 
-
-def group_by_credence(
-    items: Sequence[tuple[str, Page]],
-    heading_level: str = "###",
-    separator: str = "\n\n",
-) -> str:
-    """Group pre-formatted page strings by descending credence.
-
-    Items with credence=None (questions) go in a "Questions" group first.
-    Empty groups are skipped.
-    """
-    questions: list[str] = []
-    by_credence: dict[int, list[str]] = {}
-    for text, page in items:
-        if page.credence is None:
-            questions.append(text)
-        else:
-            by_credence.setdefault(page.credence, []).append(text)
-
-    parts: list[str] = []
-    if questions:
-        parts.append(f"{heading_level} Questions")
-        parts.append(separator.join(questions))
-    for c in range(9, 0, -1):
-        if c in by_credence:
-            parts.append(f"{heading_level} Credence {c} — {CREDENCE_LABELS[c]}")
-            parts.append(separator.join(by_credence[c]))
-    return "\n\n".join(parts)
+def format_epistemic_tag(page: Page) -> str:
+    """Render "C{c}/R{r}" | "C{c}" | "R{r}" | "" for a page (null-safe)."""
+    parts = []
+    if page.credence is not None:
+        parts.append(f"C{page.credence}")
+    if page.robustness is not None:
+        parts.append(f"R{page.robustness}")
+    return "/".join(parts)
 
 
 @dataclass
@@ -159,7 +128,7 @@ async def render_page_and_immediate_children(
             )
         )
 
-        con_items: list[tuple[str, Page]] = []
+        con_items: list[tuple[float, str]] = []
         for claim, link in considerations_by_q.get(question.id, []):
             visited.add(claim.id)
             direction = f"({link.direction.value}) " if link.direction else ""
@@ -173,12 +142,13 @@ async def render_page_and_immediate_children(
             )
             if link.reasoning:
                 line += f"\n{indent}  Reasoning: {link.reasoning}"
-            con_items.append((line, claim))
+            con_items.append((link.strength or 0.0, line))
         if con_items:
             parts.append("")
             hn = min(depth + 3, 6)
-            grouped = group_by_credence(con_items, heading_level="#" * hn, separator="\n")
-            parts.append(grouped)
+            parts.append(f"{'#' * hn} Considerations")
+            con_items.sort(key=lambda x: x[0], reverse=True)
+            parts.append("\n".join(line for _, line in con_items))
 
         all_judgements = judgements_by_q.get(question.id, [])
         judgements = [max(all_judgements, key=lambda j: j.created_at)] if all_judgements else []
@@ -361,8 +331,9 @@ async def format_page(
 
     if detail == PageDetail.HEADLINE:
         tag = f"{page.page_type.value.upper()}"
-        if page.credence is not None:
-            tag += f" C{page.credence}/R{page.robustness}"
+        ep = format_epistemic_tag(page)
+        if ep:
+            tag += f" {ep}"
         prefix = "[ADDED BY THIS RUN] " if _is_highlighted else ""
         return f"{prefix}[{tag}] `{page.id[:8]}` -- {page.headline}"
 
@@ -374,7 +345,15 @@ async def format_page(
     if _is_highlighted:
         lines.append("**[ADDED BY THIS RUN]**")
     if page.credence is not None:
-        lines.append(f"Credence: {page.credence}/9 | Robustness: {page.robustness}/5")
+        credence_line = f"Credence: {page.credence}/9"
+        if page.credence_reasoning:
+            credence_line += f" — {page.credence_reasoning}"
+        lines.append(credence_line)
+    if page.robustness is not None:
+        robustness_line = f"Robustness: {page.robustness}/5"
+        if page.robustness_reasoning:
+            robustness_line += f" — {page.robustness_reasoning}"
+        lines.append(robustness_line)
     for k, v in extra.items():
         lines.append(f"{k}: {v}")
 
@@ -393,7 +372,7 @@ async def format_page(
 
     _exclude = exclude_page_ids or set()
     if linked_detail is not None and db and page.page_type == PageType.QUESTION:
-        linked_items: list[tuple[str, Page]] = []
+        linked_items: list[tuple[float, datetime, str]] = []
 
         considerations = await db.get_considerations_for_question(page.id)
         for claim, link in considerations:
@@ -419,7 +398,7 @@ async def format_page(
             )
             if link.reasoning:
                 line += f"\n  Reasoning: {link.reasoning}"
-            linked_items.append((line, claim))
+            linked_items.append((link.strength or 0.0, claim.created_at, line))
 
         judgements = await db.get_judgements_for_question(page.id)
         for j in judgements:
@@ -432,7 +411,7 @@ async def format_page(
                 linked_detail=None,
                 highlight_run_id=highlight_run_id,
             )
-            linked_items.append((line, j))
+            linked_items.append((0.0, j.created_at, line))
 
         children = await db.get_child_questions(page.id)
         child_judgements = await db.get_judgements_for_questions(
@@ -451,11 +430,12 @@ async def format_page(
                     linked_detail=None,
                     highlight_run_id=highlight_run_id,
                 )
-                linked_items.append((line, j))
+                linked_items.append((0.0, j.created_at, line))
 
         if linked_items:
+            linked_items.sort(key=lambda x: (-x[0], x[1]))
             lines.append("")
-            lines.append(group_by_credence(linked_items, heading_level="####", separator="\n"))
+            lines.append("\n".join(line for _, _, line in linked_items))
 
     return "\n".join(lines)
 
@@ -515,9 +495,8 @@ async def render_view(
         items.sort(key=lambda pair: pair[1].position or 0)
         for page, link in items:
             imp = link.importance or 0
-            c = page.credence if page.credence is not None else "?"
             r = page.robustness if page.robustness is not None else "?"
-            parts.append(f"- [C{c}/R{r} I{imp}] `{page.id[:8]}` — {page.headline}")
+            parts.append(f"- [R{r} I{imp}] `{page.id[:8]}` — {page.headline}")
             if page.content:
                 for line in page.content.strip().split("\n"):
                     parts.append(f"  {line}")
@@ -604,9 +583,8 @@ async def render_child_investigation_results(
                     lines.append("**Key items:**")
                     for page, link in items:
                         imp = link.importance or 0
-                        c = page.credence if page.credence is not None else "?"
                         r = page.robustness if page.robustness is not None else "?"
-                        lines.append(f"- [C{c}/R{r} I{imp}] `{page.id[:8]}` — {page.headline}")
+                        lines.append(f"- [R{r} I{imp}] `{page.id[:8]}` — {page.headline}")
                         page_ids.append(page.id)
         elif latest_judgement:
             new = _is_new(latest_judgement)
@@ -700,9 +678,11 @@ async def build_prioritization_context(
 ) -> tuple[str, dict[str, str]]:
     """Build context for a prioritization call.
 
-    Includes the current View (importance 2+) for the scope question,
-    then appends the scope question and its direct children (at ABSTRACT
-    detail) and a dependency signal.
+    When a View exists for the scope question, the View (at importance 2+)
+    leads the context — it is the current best synthesis of research, and
+    is the artifact that prioritization dispatches are meant to improve.
+    The scope question subtree at ABSTRACT detail and a dependency signal
+    follow.
 
     Returns (context_text, short_id_map) where short_id_map maps 8-char
     short IDs to full UUIDs.
@@ -725,6 +705,16 @@ async def build_prioritization_context(
                     min_importance=2,
                 )
                 if view_text.strip():
+                    parts.append("## Current View — the synthesis you are working to improve")
+                    parts.append("")
+                    parts.append(
+                        "The View below is the current best structured synthesis of "
+                        "research on the scope question. Your dispatches should be "
+                        "chosen to improve the next revision of this View — fill its "
+                        "gaps, stress-test its weak items, resolve its tensions, and "
+                        "deepen investigation on load-bearing claims."
+                    )
+                    parts.append("")
                     parts.append(view_text)
                     parts.append("")
                     parts.append("---")
@@ -948,7 +938,7 @@ async def build_embedding_based_context(
     if scope_section:
         sections.append(scope_section)
     if all_items:
-        sections.append(group_by_credence(all_items, heading_level="##"))
+        sections.append("\n\n".join(text for text, _ in all_items))
 
     context_text = "\n".join(sections)
 

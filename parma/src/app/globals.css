@@ -6739,6 +6739,8 @@ mark.ann-mark.ann-mark-dispute:hover {
   max-width: 680px;
   margin: 0 auto;
   padding: 64px 32px;
+  height: 100%;
+  overflow-y: auto;
 }
 .trace-pick-head { margin-bottom: 28px; }
 .trace-pick-title {

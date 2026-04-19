@@ -357,7 +357,7 @@ class DB:
             if isinstance(value, str):
                 return datetime.fromisoformat(value)
         except Exception:
-            log.debug("db_now() RPC not available, falling back to local clock", exc_info=True)
+            log.warning("db_now() RPC failed, falling back to local clock", exc_info=True)
         return datetime.now(UTC)
 
     async def fork(self) -> "DB":
@@ -1594,6 +1594,31 @@ class DB:
                 result.setdefault(link.to_page_id, []).append(page)
         return result
 
+    async def get_tension_verdicts_for_question(self, question_id: str) -> list[Page]:
+        """Return active TensionVerdict judgement pages for a question.
+
+        TensionVerdicts are JUDGEMENT pages tagged with ``extra.tension_verdict``
+        and ``extra.tension_pair.question_id`` — produced by ExploreTension
+        calls. We filter by the question_id embedded in ``extra.tension_pair``
+        rather than by a graph link, since verdicts link to the two claims
+        (RELATED), not to the question.
+        """
+        query = (
+            self.client.table("pages")
+            .select("*")
+            .eq("page_type", PageType.JUDGEMENT.value)
+            .eq("is_superseded", False)
+            .eq("extra->tension_pair->>question_id", question_id)
+            .not_.is_("extra->tension_verdict", "null")
+        )
+        if self.project_id:
+            query = query.eq("project_id", self.project_id)
+        query = self._staged_filter(query)
+        rows = _rows(await self._execute(query.order("created_at", desc=True)))
+        pages = [_row_to_page(r) for r in rows]
+        pages = await self._apply_page_events(pages)
+        return [p for p in pages if p.is_active()]
+
     async def get_dependents(
         self,
         page_id: str,
@@ -2201,6 +2226,30 @@ class DB:
                 .order("created_at")
             )
         )
+        return [_row_to_call(r) for r in rows]
+
+    async def get_recent_calls_for_question(
+        self,
+        question_id: str,
+        limit: int = 10,
+    ) -> list[Call]:
+        """Return the most recent completed calls scoped to a question, newest first.
+
+        Capped at ``limit``. Used by the policy layer to decide what to dispatch
+        next based on recent history.
+        """
+        # TODO: staged-runs visibility — calls table has no `staged` column today,
+        # so `_staged_filter` cannot be applied here. See CLAUDE.md staged-runs
+        # section; a fuller fix requires extending the schema and event replay.
+        query = (
+            self.client.table("calls")
+            .select("*")
+            .eq("scope_page_id", question_id)
+            .eq("status", CallStatus.COMPLETE.value)
+        )
+        if self.project_id:
+            query = query.eq("project_id", self.project_id)
+        rows = _rows(await self._execute(query.order("created_at", desc=True).limit(limit)))
         return [_row_to_call(r) for r in rows]
 
     async def save_page_rating(
@@ -3502,6 +3551,7 @@ class DB:
         )
         if target_page_id:
             query = query.eq("target_page_id", target_page_id)
+        query = self._staged_filter(query)
         query = query.order("created_at", desc=True)
         rows = _rows(await self._execute(query))
         return [_row_to_suggestion(r) for r in rows]
@@ -3520,6 +3570,7 @@ class DB:
         )
         if target_page_id:
             query = query.eq("target_page_id", target_page_id)
+        query = self._staged_filter(query)
         query = query.order("created_at", desc=True)
         rows = _rows(await self._execute(query))
         return [_row_to_suggestion(r) for r in rows]

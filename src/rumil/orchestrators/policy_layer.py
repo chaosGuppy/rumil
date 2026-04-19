@@ -146,15 +146,11 @@ class QuestionState:
 async def _recent_call_types(db: DB, question_id: str, limit: int) -> Sequence[CallType]:
     """Best-effort recent-call-type lookup, newest first.
 
-    Defensive: if the DB lacks the helper (older branches, test mocks that
-    only cover the fields this policy actually reads), returns []. Callers
+    Narrow try/except: swallow transient DB errors and return []. Callers
     should check emptiness rather than failing.
     """
-    getter = getattr(db, "get_recent_calls_for_question", None)
-    if getter is None:
-        return []
     try:
-        calls = await getter(question_id, limit=limit)
+        calls = await db.get_recent_calls_for_question(question_id, limit=limit)
     except Exception:
         log.debug("recent call types lookup failed", exc_info=True)
         return []

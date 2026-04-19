@@ -305,22 +305,20 @@ async def _already_explored_pair_keys(
                 aa, bb = sorted([str(a), str(b)])
                 pair_keys.add((str(qid), aa, bb))
 
-    explored_getter = getattr(db, "get_tension_verdicts_for_question", None)
-    if explored_getter is not None:
-        try:
-            verdicts = await explored_getter(question_id)
-        except Exception:
-            log.debug("tension dedup: get_tension_verdicts_for_question failed", exc_info=True)
-            verdicts = []
-        for page in verdicts:
-            extra = page.extra or {}
-            pair = extra.get("tension_pair") or {}
-            qid = pair.get("question_id")
-            a = pair.get("claim_a_id")
-            b = pair.get("claim_b_id")
-            if qid and a and b:
-                aa, bb = sorted([str(a), str(b)])
-                pair_keys.add((str(qid), aa, bb))
+    try:
+        verdicts = await db.get_tension_verdicts_for_question(question_id)
+    except Exception:
+        log.debug("tension dedup: get_tension_verdicts_for_question failed", exc_info=True)
+        verdicts = []
+    for page in verdicts:
+        extra = page.extra or {}
+        pair = extra.get("tension_pair") or {}
+        qid = pair.get("question_id")
+        a = pair.get("claim_a_id")
+        b = pair.get("claim_b_id")
+        if qid and a and b:
+            aa, bb = sorted([str(a), str(b)])
+            pair_keys.add((str(qid), aa, bb))
     return pair_keys
 
 

@@ -3,6 +3,7 @@ db/
 /pages/
 /reports/
 /planning/
+/marketplace-thread/
 frontend/package-lock.json
 .claude/settings.local.json
 .claude/state/

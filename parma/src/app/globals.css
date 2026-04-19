@@ -6481,8 +6481,19 @@ mark.ann-mark.ann-mark-dispute:hover {
   display: flex;
   gap: 6px;
   align-items: center;
+  flex-wrap: wrap;
   font-family: var(--font-mono-stack);
   font-size: 10px;
   color: var(--fg-dim);
   letter-spacing: 0.04em;
+}
+
+.trace-pick-row-meta-chip {
+  padding: 1px 6px;
+  background: var(--bg-pane);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  color: var(--fg-muted);
+  font-size: 9px;
+  letter-spacing: 0.02em;
 }

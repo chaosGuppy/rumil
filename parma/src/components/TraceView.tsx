@@ -114,31 +114,70 @@ function RunPicker({
         </p>
       </div>
       <div className="trace-pick-list">
-        {usable.map((r) => (
-          <button
-            key={r.run_id!}
-            className="trace-pick-row"
-            onClick={() => onSelect(r.run_id!)}
-          >
-            <div className="trace-pick-row-head">
-              <span className="trace-pick-row-name">
-                {r.name || r.run_id!.slice(0, 8)}
-              </span>
-              {r.staged && <span className="trace-pick-row-staged">staged</span>}
-            </div>
-            {r.question_summary && (
-              <div className="trace-pick-row-q">{r.question_summary}</div>
-            )}
-            <div className="trace-pick-row-meta">
-              <span>{r.run_id!.slice(0, 8)}</span>
-              <span>·</span>
-              <span>{formatWhen(r.created_at)}</span>
-            </div>
-          </button>
-        ))}
+        {usable.map((r) => {
+          const discriminators = extractRunDiscriminators(r.config);
+          return (
+            <button
+              key={r.run_id!}
+              className="trace-pick-row"
+              onClick={() => onSelect(r.run_id!)}
+            >
+              <div className="trace-pick-row-head">
+                <span className="trace-pick-row-name">
+                  {r.name || r.run_id!.slice(0, 8)}
+                </span>
+                {r.staged && <span className="trace-pick-row-staged">staged</span>}
+              </div>
+              {r.question_summary && (
+                <div className="trace-pick-row-q">{r.question_summary}</div>
+              )}
+              <div className="trace-pick-row-meta">
+                <span>{r.run_id!.slice(0, 8)}</span>
+                <span>·</span>
+                <span>{formatWhen(r.created_at)}</span>
+                {discriminators.map((d) => (
+                  <span key={d.key} className="trace-pick-row-meta-chip" title={d.title}>
+                    {d.label}
+                  </span>
+                ))}
+              </div>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
+}
+
+// Pull a few human-scannable fields out of a run's captured config so
+// adjacent rows with the same truncated name (see ux-review-wave7 #8 —
+// all "refine-artifact (strategy_brief): ..." in wave7-smoke) are
+// visibly different at a glance. We surface orchestrator (if present),
+// model, available_moves preset, and the short git commit. Extra runs
+// contribute extra chips automatically — we don't hand-pick further.
+function extractRunDiscriminators(
+  config: Record<string, unknown> | null,
+): Array<{ key: string; label: string; title: string }> {
+  if (!config) return [];
+  const out: Array<{ key: string; label: string; title: string }> = [];
+  const orchestrator = config["orchestrator"];
+  if (typeof orchestrator === "string" && orchestrator) {
+    out.push({ key: "orchestrator", label: orchestrator, title: `orchestrator: ${orchestrator}` });
+  }
+  const model = config["model"];
+  if (typeof model === "string" && model) {
+    const short = model.replace(/^claude-/, "").replace(/-\d{8}$/, "");
+    out.push({ key: "model", label: short, title: `model: ${model}` });
+  }
+  const moves = config["available_moves"];
+  if (typeof moves === "string" && moves && moves !== "default") {
+    out.push({ key: "moves", label: `moves:${moves}`, title: `available_moves: ${moves}` });
+  }
+  const commit = config["git_commit"];
+  if (typeof commit === "string" && commit) {
+    out.push({ key: "commit", label: commit.slice(0, 7), title: `git_commit: ${commit}` });
+  }
+  return out;
 }
 
 function TraceRunView({

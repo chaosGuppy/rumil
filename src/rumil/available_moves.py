@@ -152,6 +152,13 @@ PRESETS: dict[str, AvailableMoves] = {
         CallType.ADVERSARIAL_REVIEW: [],
         CallType.EXPLORE_TENSION: [],
         CallType.DRAFT_ARTIFACT: [],
+        CallType.BUILD_MODEL: [
+            MoveType.WRITE_MODEL_BODY,
+            MoveType.CREATE_CLAIM,
+            MoveType.LINK_CONSIDERATION,
+            MoveType.PROPOSE_VIEW_ITEM,
+            MoveType.LOAD_PAGE,
+        ],
     },
     "judge-on-assess": {
         CallType.ASSESS: [
@@ -297,6 +304,13 @@ PRESETS: dict[str, AvailableMoves] = {
         CallType.ADVERSARIAL_REVIEW: [],
         CallType.EXPLORE_TENSION: [],
         CallType.DRAFT_ARTIFACT: [],
+        CallType.BUILD_MODEL: [
+            MoveType.WRITE_MODEL_BODY,
+            MoveType.CREATE_CLAIM,
+            MoveType.LINK_CONSIDERATION,
+            MoveType.PROPOSE_VIEW_ITEM,
+            MoveType.LOAD_PAGE,
+        ],
     },
 }
 

@@ -30,6 +30,7 @@ AVAILABLE_CALLS_PRESETS: dict[str, AvailableCallsPreset] = {
         main_phase_prioritization_dispatch=[
             CallType.FIND_CONSIDERATIONS,
             CallType.WEB_RESEARCH,
+            CallType.BUILD_MODEL,
             CallType.SCOUT_SUBQUESTIONS,
             CallType.SCOUT_ESTIMATES,
             CallType.SCOUT_HYPOTHESES,

@@ -26,6 +26,7 @@ from rumil.moves.propose_view_item import MOVE as _propose_view_item
 from rumil.moves.remove_link import MOVE as _remove_link
 from rumil.moves.report_duplicate import MOVE as _report_duplicate
 from rumil.moves.update_epistemic import MOVE as _update_epistemic
+from rumil.moves.write_model_body import MOVE as _write_model_body
 
 MOVES: dict[MoveType, MoveDef] = {
     m.move_type: m
@@ -50,5 +51,6 @@ MOVES: dict[MoveType, MoveDef] = {
         _propose_view_item,
         _annotate_span,
         _annotate_alternative,
+        _write_model_body,
     ]
 }

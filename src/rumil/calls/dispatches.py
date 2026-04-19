@@ -10,6 +10,7 @@ from rumil.llm import Tool
 from rumil.models import (
     AssessDispatchPayload,
     BaseDispatchPayload,
+    BuildModelDispatchPayload,
     CallType,
     Dispatch,
     FindConsiderationsMode,
@@ -367,6 +368,23 @@ DISPATCH_DEFS: dict[CallType, DispatchDef] = {
             "Budget cost: between 1 and max_rounds (inclusive), plus 1 auto-assess if targeting a subquestion."
         ),
         schema=ScoutCStrengthenDispatchPayload,
+    ),
+    CallType.BUILD_MODEL: DispatchDef(
+        call_type=CallType.BUILD_MODEL,
+        name="dispatch_build_model",
+        description=(
+            "Build a structured theoretical model of the phenomenon a question "
+            "is about. Produces a single MODEL page covering variables, "
+            "relations, parameters, predictions, assumptions, and "
+            "sensitivities, plus one CLAIM (or VIEW_ITEM proposal) per "
+            "prediction the model generates. Use on questions where making the "
+            "reasoning structure explicit would help — especially 'what drives "
+            "X?' or 'how does Y scale?' questions. Only the 'theoretical' "
+            "flavor is supported today. "
+            "Budget cost: exactly 1 (plus 1 auto-assess if targeting a "
+            "subquestion, so 2 total)."
+        ),
+        schema=BuildModelDispatchPayload,
     ),
     CallType.WEB_RESEARCH: DispatchDef(
         call_type=CallType.WEB_RESEARCH,

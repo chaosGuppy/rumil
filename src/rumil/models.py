@@ -31,6 +31,7 @@ class PageType(str, Enum):
     VIEW_ITEM = "view_item"
     VIEW_META = "view_meta"
     ARTIFACT = "artifact"
+    MODEL = "model"
 
 
 class PageDetail(str, Enum):
@@ -88,6 +89,7 @@ class CallType(str, Enum):
     ADVERSARIAL_REVIEW = "adversarial_review"
     EXPLORE_TENSION = "explore_tension"
     DRAFT_ARTIFACT = "draft_artifact"
+    BUILD_MODEL = "build_model"
     # Envelope call for mutations made from Claude Code's broader context
     # (not a rumil-internal call with carefully scoped prompt). Never
     # dispatchable from prioritization — only created by .claude/ skills.
@@ -114,6 +116,7 @@ DISPATCHABLE_CALL_TYPES: set[CallType] = {
     CallType.SCOUT_C_ROBUSTIFY,
     CallType.SCOUT_C_STRENGTHEN,
     CallType.WEB_RESEARCH,
+    CallType.BUILD_MODEL,
 }
 
 
@@ -139,6 +142,9 @@ class LinkType(str, Enum):
     VIEW_ITEM = "view_item"  # view -> view_item: item belongs to this view
     VIEW_OF = "view_of"  # view -> question: this view covers this question
     META_FOR = "meta_for"  # view_meta -> view_item or view: meta annotation
+    MODEL_OF = (
+        "model_of"  # model -> question: this model captures structure bearing on this question
+    )
 
 
 class MoveType(str, Enum):
@@ -162,6 +168,19 @@ class MoveType(str, Enum):
     PROPOSE_VIEW_ITEM = "PROPOSE_VIEW_ITEM"
     ANNOTATE_SPAN = "ANNOTATE_SPAN"
     ANNOTATE_ALTERNATIVE = "ANNOTATE_ALTERNATIVE"
+    WRITE_MODEL_BODY = "WRITE_MODEL_BODY"
+
+
+class ModelFlavor(str, Enum):
+    """Flavor of a model-building call.
+
+    `theoretical` — no code execution; the LLM writes a structured
+    theoretical model (variables, relations, predictions, assumptions).
+    The `executable` flavor is deferred pending a separate sandboxing
+    design doc and will be added as a new enum value here when ready.
+    """
+
+    THEORETICAL = "theoretical"
 
 
 class CallStage(str, Enum):
@@ -319,6 +338,17 @@ class UpdateViewDispatchPayload(BaseDispatchPayload):
 
 class WebResearchDispatchPayload(BaseDispatchPayload):
     pass
+
+
+class BuildModelDispatchPayload(BaseDispatchPayload):
+    flavor: ModelFlavor = Field(
+        default=ModelFlavor.THEORETICAL,
+        description=(
+            "Model flavor. Only 'theoretical' is supported today; the "
+            "executable flavor is deferred pending a separate sandboxing "
+            "design doc."
+        ),
+    )
 
 
 class RecurseDispatchPayload(BaseDispatchPayload, PrioritizationFields):

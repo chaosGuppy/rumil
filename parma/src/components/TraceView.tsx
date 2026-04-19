@@ -180,7 +180,7 @@ function extractRunDiscriminators(
   if (typeof orchestratorRaw === "string" && orchestratorRaw) {
     out.push({
       key: "orchestrator",
-      label: `orch: ${orchestratorRaw}`,
+      label: `orchestrator: ${orchestratorRaw}`,
       title: `orchestrator: ${orchestratorRaw}`,
     });
   }

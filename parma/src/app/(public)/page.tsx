@@ -443,7 +443,8 @@ function QuestionViewPage({
         params.delete("call_id");
       }
       const query = params.toString();
-      router.replace(`${pathname}${query ? `?${query}` : ""}`, {
+      // push (not replace) so browser back/forward navigate view changes.
+      router.push(`${pathname}${query ? `?${query}` : ""}`, {
         scroll: false,
       });
     },
@@ -464,7 +465,7 @@ function QuestionViewPage({
       params.set("view", "trace");
       params.set("run_id", runId);
       params.delete("call_id");
-      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+      router.push(`${pathname}?${params.toString()}`, { scroll: false });
     },
     [searchParams, router, pathname],
   );
@@ -487,7 +488,7 @@ function QuestionViewPage({
       } else {
         params.delete("call_id");
       }
-      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+      router.push(`${pathname}?${params.toString()}`, { scroll: false });
     };
     registerTraceHandler(handler);
     return () => registerTraceHandler(null);

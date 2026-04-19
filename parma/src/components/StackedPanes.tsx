@@ -93,7 +93,10 @@ export function StackedPanes({
         params.set("panes", serializePaneStack(next));
       }
       const query = params.toString();
-      router.replace(`${pathname}${query ? `?${query}` : ""}`, {
+      // push (not replace) so browser back/forward move through pane
+      // stack changes — pinning or closing a pane is a deliberate action
+      // the user expects to be able to reverse with the back button.
+      router.push(`${pathname}${query ? `?${query}` : ""}`, {
         scroll: false,
       });
     },

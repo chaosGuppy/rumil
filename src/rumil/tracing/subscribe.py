@@ -22,9 +22,7 @@ from realtime.types import BroadcastPayload
 log = logging.getLogger(__name__)
 
 
-# Events we surface as chat progress. Anything not listed here is
-# silently dropped — LLMExchangeEvent, SubagentStartedEvent, ToolCallEvent,
-# LoadPageEvent etc. would flood the stream otherwise.
+# Events we surface as chat progress messages.
 _SURFACED_EVENTS: frozenset[str] = frozenset(
     {
         "dispatch_executed",
@@ -38,6 +36,36 @@ _SURFACED_EVENTS: frozenset[str] = frozenset(
         "view_created",
         "phase_skipped",
         "global_phase_completed",
+    }
+)
+
+# Events we explicitly drop — too noisy (LLM exchanges, tool calls, page
+# loads) or too internal (agent/subagent lifecycle, post-run pipelines)
+# to surface in a chat progress stream. Every TraceEvent variant in
+# ``rumil.tracing.trace_events.TraceEvent`` must appear in either
+# ``_SURFACED_EVENTS`` or ``_SUPPRESSED_EVENTS`` — see the contract
+# test in tests/test_registry_contracts.py. Adding a new event? Add it
+# to one of these sets when you define it.
+_SUPPRESSED_EVENTS: frozenset[str] = frozenset(
+    {
+        "llm_exchange",
+        "tool_call",
+        "load_page",
+        "subagent_started",
+        "subagent_completed",
+        "agent_started",
+        "explore_page",
+        "render_question_subgraph",
+        "evaluation_complete",
+        "reassess_triggered",
+        "affected_pages_identified",
+        "update_subgraph_computed",
+        "update_plan_created",
+        "claim_reassessed",
+        "grounding_tasks_generated",
+        "web_research_complete",
+        "link_subquestions_complete",
+        "update_view_phase_completed",
     }
 )
 

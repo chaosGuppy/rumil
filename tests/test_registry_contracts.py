@@ -149,6 +149,46 @@ def test_chat_async_sentinels_have_handlers() -> None:
     )
 
 
+def test_every_trace_event_is_surfaced_or_suppressed() -> None:
+    """Every variant in ``rumil.tracing.trace_events.TraceEvent`` must be
+    categorized in ``subscribe.py`` — either surfaced to the chat SSE
+    stream or explicitly suppressed.
+
+    Regression guard: if someone adds a new TraceEvent type but forgets
+    to update subscribe.py, the event silently drops off the chat stream.
+    This test fails fast in that case.
+    """
+    import typing
+
+    from rumil.tracing import trace_events
+    from rumil.tracing.subscribe import _SUPPRESSED_EVENTS, _SURFACED_EVENTS
+
+    union_members = typing.get_args(typing.get_args(trace_events.TraceEvent)[0])
+    all_event_values: set[str] = set()
+    for member in union_members:
+        literal_field = member.model_fields["event"]
+        literal_values = typing.get_args(literal_field.annotation)
+        all_event_values.update(literal_values)
+
+    assert all_event_values, (
+        "Expected to extract at least one event value from TraceEvent — "
+        "union introspection may have broken"
+    )
+
+    overlap = _SURFACED_EVENTS & _SUPPRESSED_EVENTS
+    assert not overlap, f"event in both surface and suppress sets: {overlap}"
+
+    categorized = _SURFACED_EVENTS | _SUPPRESSED_EVENTS
+    uncategorized = all_event_values - categorized
+    assert not uncategorized, (
+        f"TraceEvent variants not categorized in subscribe.py: {uncategorized}. "
+        "Add each to either _SURFACED_EVENTS or _SUPPRESSED_EVENTS."
+    )
+
+    stray = categorized - all_event_values
+    assert not stray, f"subscribe.py references events that no longer exist in TraceEvent: {stray}"
+
+
 def test_capabilities_endpoint_returns_registry_content() -> None:
     """The /api/capabilities endpoint must return registry content verbatim.
 

@@ -888,4 +888,28 @@ export async function startAbEval(
   return res.json();
 }
 
+export interface ABEvalDimensionSummary {
+  name: string;
+  display_name: string;
+  preference: string;
+}
+
+export interface ABEvalReportListItem {
+  id: string;
+  run_id_a: string;
+  run_id_b: string;
+  question_id_a: string;
+  question_id_b: string;
+  question_headline: string;
+  overall_assessment_preview: string;
+  preferences: ABEvalDimensionSummary[];
+  created_at: string;
+}
+
+export async function fetchAbEvals(): Promise<ABEvalReportListItem[]> {
+  const res = await fetch(`${API_BASE}/api/ab-evals`);
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  return res.json();
+}
+
 export { API_BASE };

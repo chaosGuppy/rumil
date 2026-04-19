@@ -7628,6 +7628,156 @@ mark.ann-mark.ann-mark-dispute:hover {
   border-radius: 4px;
 }
 
+/* AB-eval multi-select affordance. Checkbox sits in the top-left of each
+ * row mirroring the top-right hide button — invisible until hover or
+ * selection so it doesn't add noise to the default view. Once picked the
+ * row gets a subtle accent border. */
+.trace-pick-row-ab {
+  position: absolute;
+  top: 8px;
+  left: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  cursor: pointer;
+  font-family: var(--font-mono-stack);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  border: 1px solid transparent;
+  border-radius: 2px;
+  background: transparent;
+  opacity: 0;
+  transition: opacity 0.15s, border-color 0.1s, background 0.1s;
+}
+.trace-pick-row:hover .trace-pick-row-ab,
+.trace-pick-row-ab:focus-within,
+.trace-pick-row.is-ab-selected .trace-pick-row-ab {
+  opacity: 1;
+}
+.trace-pick-row.is-ab-selected .trace-pick-row-ab {
+  border-color: var(--border-strong);
+  background: var(--bg-pane);
+  color: var(--fg);
+}
+.trace-pick-row-ab input {
+  accent-color: var(--fg);
+  cursor: pointer;
+  margin: 0;
+}
+.trace-pick-row-ab-slot {
+  font-weight: 600;
+  color: var(--fg);
+}
+.trace-pick-row.is-ab-selected {
+  border-color: var(--border-strong);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+
+/* AB-eval launcher bar — appears at the bottom of the list once any run
+ * is selected. Pinned via sticky so it's always reachable while
+ * scrolling through long run lists. */
+.trace-pick-ab-bar {
+  position: sticky;
+  bottom: 12px;
+  margin-top: 16px;
+  padding: 10px 12px;
+  background: var(--bg-pane);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+}
+.trace-pick-ab-bar-label {
+  font-family: var(--font-mono-stack);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+.trace-pick-ab-bar-ids {
+  display: inline-flex;
+  gap: 10px;
+  align-items: center;
+}
+.trace-pick-ab-bar-id {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+}
+.trace-pick-ab-bar-slot {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+  padding: 1px 4px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+}
+.trace-pick-ab-bar-short {
+  color: var(--fg);
+}
+.trace-pick-ab-bar-actions {
+  display: inline-flex;
+  gap: 6px;
+  margin-left: auto;
+}
+.trace-pick-ab-bar-clear,
+.trace-pick-ab-bar-launch {
+  font-family: var(--font-mono-stack);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s, border-color 0.12s;
+}
+.trace-pick-ab-bar-clear {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--fg-muted);
+}
+.trace-pick-ab-bar-clear:hover:not(:disabled) {
+  color: var(--fg);
+  border-color: var(--border-strong);
+}
+.trace-pick-ab-bar-launch {
+  background: var(--fg);
+  border: 1px solid var(--fg);
+  color: var(--bg);
+}
+.trace-pick-ab-bar-launch:hover:not(:disabled) {
+  background: var(--fg);
+  border-color: var(--fg);
+}
+.trace-pick-ab-bar-launch:disabled,
+.trace-pick-ab-bar-clear:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.trace-pick-ab-bar-err {
+  flex-basis: 100%;
+  font-family: var(--font-mono-stack);
+  font-size: 10px;
+  color: var(--node-uncertainty);
+}
+
+.ab-evals-preview {
+  margin-top: 8px;
+  font-family: var(--font-body-stack);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fg-muted);
+}
+
 /* ---------- Search palette (⌘K) ---------- */
 
 .search-palette-backdrop {

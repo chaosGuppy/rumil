@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 const NAV_ITEMS = [
   { href: "/traces", label: "traces" },
+  { href: "/ab-evals", label: "ab-evals" },
 ] as const;
 
 export default function OperatorLayout({

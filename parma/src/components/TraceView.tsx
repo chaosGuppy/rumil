@@ -104,6 +104,12 @@ function RunPicker({
   const [error, setError] = useState<string | null>(null);
   const [showHidden, setShowHidden] = useState(false);
   const [busyRunId, setBusyRunId] = useState<string | null>(null);
+  // AB-eval multi-select. FIFO-eviction at 3rd selection keeps the
+  // interaction stateless — no "clear" button needed, the user just keeps
+  // picking runs. Order matters: first pick = A, second pick = B.
+  const [selectedForAb, setSelectedForAb] = useState<string[]>([]);
+  const [abLaunching, setAbLaunching] = useState(false);
+  const [abError, setAbError] = useState<string | null>(null);
 
   useEffect(() => {
     setShowHidden(loadShowHiddenRuns());
@@ -155,6 +161,37 @@ function RunPicker({
     [busyRunId],
   );
 
+  const handleToggleAbSelect = useCallback((runId: string) => {
+    setAbError(null);
+    setSelectedForAb((prev) => {
+      if (prev.includes(runId)) {
+        return prev.filter((id) => id !== runId);
+      }
+      // FIFO: when adding a third, drop the oldest so the user's latest two
+      // picks are always the ones compared.
+      const next = [...prev, runId];
+      return next.length > 2 ? next.slice(next.length - 2) : next;
+    });
+  }, []);
+
+  const handleLaunchAbEval = useCallback(async () => {
+    if (selectedForAb.length !== 2 || abLaunching) return;
+    setAbLaunching(true);
+    setAbError(null);
+    try {
+      await startAbEval(selectedForAb[0], selectedForAb[1]);
+      // Backend returns 202 before the eval finishes — the final ab_eval_report
+      // id isn't known yet. Send the user to the list page so they can watch
+      // it show up once the background task completes.
+      if (typeof window !== "undefined") {
+        window.location.href = "/ab-evals";
+      }
+    } catch (e) {
+      setAbError(e instanceof Error ? e.message : "Could not start ab-eval");
+      setAbLaunching(false);
+    }
+  }, [selectedForAb, abLaunching]);
+
   if (error) return <div className="trace-pick-error">Failed to load runs: {error}</div>;
   if (!rows) return <div className="trace-pick-loading">Loading runs...</div>;
 
@@ -201,10 +238,13 @@ function RunPicker({
           {visible.map((r) => {
             const discriminators = extractRunDiscriminators(r.config);
             const busy = busyRunId === r.run_id;
+            const abSlot = selectedForAb.indexOf(r.run_id!);
+            const isAbSelected = abSlot !== -1;
             const rowClasses = [
               "trace-pick-row",
               r.hidden ? "is-hidden-run" : "",
               busy ? "is-busy" : "",
+              isAbSelected ? "is-ab-selected" : "",
             ]
               .filter(Boolean)
               .join(" ");
@@ -222,6 +262,31 @@ function RunPicker({
                   }
                 }}
               >
+                <label
+                  className="trace-pick-row-ab"
+                  title={
+                    isAbSelected
+                      ? `Selected as ${abSlot === 0 ? "A" : "B"} for ab-eval`
+                      : "Select for ab-eval"
+                  }
+                  onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isAbSelected}
+                    onChange={() => handleToggleAbSelect(r.run_id!)}
+                    aria-label={
+                      isAbSelected ? "Deselect from ab-eval" : "Select for ab-eval"
+                    }
+                  />
+                  {isAbSelected && (
+                    <span className="trace-pick-row-ab-slot">
+                      {abSlot === 0 ? "A" : "B"}
+                    </span>
+                  )}
+                </label>
                 <button
                   type="button"
                   className="trace-pick-row-hide"
@@ -263,6 +328,45 @@ function RunPicker({
               </div>
             );
           })}
+        </div>
+      )}
+      {selectedForAb.length > 0 && (
+        <div className="trace-pick-ab-bar" role="status">
+          <div className="trace-pick-ab-bar-label">
+            {selectedForAb.length === 1
+              ? "Pick one more run to compare with ab-eval"
+              : "Compare these two runs with ab-eval:"}
+          </div>
+          <div className="trace-pick-ab-bar-ids">
+            {selectedForAb.map((id, i) => (
+              <span key={id} className="trace-pick-ab-bar-id">
+                <span className="trace-pick-ab-bar-slot">{i === 0 ? "A" : "B"}</span>
+                <span className="trace-pick-ab-bar-short">{id.slice(0, 8)}</span>
+              </span>
+            ))}
+          </div>
+          <div className="trace-pick-ab-bar-actions">
+            <button
+              type="button"
+              className="trace-pick-ab-bar-clear"
+              onClick={() => {
+                setSelectedForAb([]);
+                setAbError(null);
+              }}
+              disabled={abLaunching}
+            >
+              clear
+            </button>
+            <button
+              type="button"
+              className="trace-pick-ab-bar-launch"
+              onClick={handleLaunchAbEval}
+              disabled={selectedForAb.length !== 2 || abLaunching}
+            >
+              {abLaunching ? "launching…" : "compare with ab-eval →"}
+            </button>
+          </div>
+          {abError && <div className="trace-pick-ab-bar-err">{abError}</div>}
         </div>
       )}
     </div>

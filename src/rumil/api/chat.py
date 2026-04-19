@@ -2324,8 +2324,16 @@ async def _run_orchestrate(
     shape. Applies any per-call settings overrides (variant,
     available_calls, available_moves, enable_global_prio) via
     ``override_settings`` — they don't leak into the chat session.
+
+    Also wires a ``Broadcaster`` into the orchestrator run and subscribes
+    to the same ``trace:{run_id}`` channel so trace events can be
+    translated into short chat progress messages while the orchestrator
+    runs. Subscription failures are swallowed so they can't break the
+    orchestrator itself.
     """
     from rumil.dispatch import dispatch_orchestrator
+    from rumil.tracing.broadcast import Broadcaster
+    from rumil.tracing.subscribe import format_trace_event, stream_run_events
 
     question_id = params["question_id"]
     headline = params.get("headline", question_id[:8])
@@ -2342,6 +2350,35 @@ async def _run_orchestrate(
         prod=settings.is_prod_db,
         project_id=db.project_id,
     )
+
+    broadcaster: Broadcaster | None = None
+    subscription_task: asyncio.Task[None] | None = None
+    try:
+        supabase_url, supabase_key = settings.get_supabase_credentials(prod=settings.is_prod_db)
+        broadcaster = Broadcaster(new_run_id, supabase_url, supabase_key)
+
+        if on_progress:
+
+            def _forward(payload: dict[str, Any]) -> None:
+                msg = format_trace_event(payload)
+                if msg is not None and on_progress is not None:
+                    try:
+                        on_progress(msg)
+                    except Exception as e:
+                        log.debug("on_progress callback error (non-fatal): %s", e)
+
+            subscription_task = asyncio.create_task(
+                stream_run_events(new_run_id, supabase_url, supabase_key, _forward)
+            )
+    except Exception as e:
+        log.warning(
+            "trace broadcast setup failed for run %s (orchestrator will still run): %s",
+            new_run_id[:8],
+            e,
+        )
+        broadcaster = None
+        subscription_task = None
+
     try:
         await new_db.init_budget(budget)
         await new_db.create_run(
@@ -2362,6 +2399,7 @@ async def _run_orchestrate(
             available_calls=available_calls,
             available_moves=available_moves,
             enable_global_prio=enable_global_prio,
+            broadcaster=broadcaster,
             on_progress=on_progress,
         )
         return (
@@ -2372,6 +2410,18 @@ async def _run_orchestrate(
         log.exception("Orchestrator run %s failed", new_run_id[:8])
         return f"Orchestrator run {new_run_id[:8]} failed: {e}"
     finally:
+        if subscription_task is not None:
+            subscription_task.cancel()
+            try:
+                await subscription_task
+            except (asyncio.CancelledError, Exception) as e:
+                if not isinstance(e, asyncio.CancelledError):
+                    log.debug("subscription task cleanup error (non-fatal): %s", e)
+        if broadcaster is not None:
+            try:
+                await broadcaster.close()
+            except Exception as e:
+                log.debug("broadcaster close error (non-fatal): %s", e)
         await new_db.close()
 
 

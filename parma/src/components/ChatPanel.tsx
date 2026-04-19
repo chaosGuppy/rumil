@@ -445,7 +445,7 @@ export function ChatPanel({
     id: "initial",
     role: "assistant",
     content:
-      "Ask me about this view \u2014 I can explain the reasoning behind claims, surface tensions between findings, or discuss what the research might be missing. Or use `/` for slash commands.",
+      "Ask me about this view \u2014 I can explain the reasoning behind claims, surface tensions between findings, or discuss what the research might be missing. Try `/search`, `/ask`, `/inspect`, or `/review`; type `/` for the full list.",
     timestamp: new Date(),
   };
   const { openInspect } = useInspectPanel();
@@ -1294,6 +1294,15 @@ export function ChatPanel({
                   >
                     <span className="chat-starter-chip-cmd">/ask</span>
                     <span className="chat-starter-chip-desc">Add a question to investigate</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="chat-starter-chip"
+                    onClick={() => seedSlashCommand("/inspect")}
+                    title="Look up a specific page by its short ID"
+                  >
+                    <span className="chat-starter-chip-cmd">/inspect</span>
+                    <span className="chat-starter-chip-desc">Open a page by short ID</span>
                   </button>
                   <button
                     type="button"

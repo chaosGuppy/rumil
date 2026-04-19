@@ -303,7 +303,10 @@ TOOLS: list[dict[str, Any]] = [
             "Each round lets the model produce pages and call moves; more "
             "rounds = broader exploration but linearly more cost. Bump it "
             "when the user asks for deeper investigation, or leave the default "
-            "for a normal pass."
+            "for a normal pass.\n\n"
+            "The model is fixed to the server's default — per-call model "
+            "overrides aren't supported from chat. If the user wants haiku "
+            "vs opus for A/B, they need to run `main.py --model` from the CLI."
         ),
         "input_schema": {
             "type": "object",

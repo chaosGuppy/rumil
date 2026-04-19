@@ -925,4 +925,85 @@ export async function fetchAbEvals(): Promise<ABEvalReportListItem[]> {
   return res.json();
 }
 
+// Kick off an evaluation on an existing question. Backend returns 202 with
+// the new run_id immediately — the eval runs in the background. Caller
+// navigates to /traces/{run_id} so the operator can watch it materialize.
+export type EvalType = "default" | "grounding" | "feedback";
+
+export async function startEvaluation(
+  questionId: string,
+  evalType: EvalType,
+): Promise<{ run_id: string; question_id: string; eval_type: string }> {
+  const res = await fetch(
+    `${API_BASE}/api/questions/${encodeURIComponent(questionId)}/evaluate`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ eval_type: evalType }),
+    },
+  );
+  if (!res.ok) throw new Error(await liftFastApiError(res));
+  return res.json();
+}
+
+// Kick off the grounding-feedback pipeline on an existing EVALUATE call.
+// 400 if the call is not an EVALUATE call or has no evaluation text.
+export async function startGroundPipeline(
+  evalCallId: string,
+  fromStage: number = 1,
+): Promise<{ run_id: string; source_call_id: string; pipeline: string }> {
+  const res = await fetch(
+    `${API_BASE}/api/calls/${encodeURIComponent(evalCallId)}/ground`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from_stage: fromStage }),
+    },
+  );
+  if (!res.ok) throw new Error(await liftFastApiError(res));
+  return res.json();
+}
+
+// Kick off the feedback-update pipeline on an existing EVALUATE call.
+export async function startFeedbackPipeline(
+  evalCallId: string,
+  fromStage: number = 1,
+): Promise<{ run_id: string; source_call_id: string; pipeline: string }> {
+  const res = await fetch(
+    `${API_BASE}/api/calls/${encodeURIComponent(evalCallId)}/feedback`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from_stage: fromStage }),
+    },
+  );
+  if (!res.ok) throw new Error(await liftFastApiError(res));
+  return res.json();
+}
+
+// Minimal Call shape surfaced to the UI. The backend Call model has many
+// more fields (budget, context_page_ids, ...) — we only read what the
+// evaluations UI needs. `review_json` is a free-form dict; EVALUATE calls
+// stash the rendered markdown under `review_json.evaluation`.
+export interface CallDetail {
+  id: string;
+  call_type: string;
+  status: string;
+  project_id: string;
+  parent_call_id: string | null;
+  scope_page_id: string | null;
+  result_summary: string;
+  review_json: Record<string, unknown>;
+  call_params: Record<string, unknown> | null;
+  created_at: string;
+  completed_at: string | null;
+  cost_usd: number | null;
+}
+
+export async function fetchCall(callId: string): Promise<CallDetail> {
+  const res = await fetch(`${API_BASE}/api/calls/${encodeURIComponent(callId)}`);
+  if (!res.ok) throw new Error(await liftFastApiError(res));
+  return res.json();
+}
+
 export { API_BASE };

@@ -7994,6 +7994,288 @@ mark.ann-mark.ann-mark-dispute:hover {
   color: var(--fg-muted);
 }
 
+/* ---------- Evaluations UI ---------- */
+
+/* Launcher strip rendered on /traces/[runId]. Sits just below the back
+   link and above the RunHeader — a flat, utilitarian control that feels
+   continuous with the run metadata rather than a call-to-action banner. */
+.op-eval-launch {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  background: var(--bg-pane);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--node-question);
+  border-radius: 3px;
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+}
+
+.op-eval-launch-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--fg-muted);
+  letter-spacing: 0.02em;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.op-eval-launch-q {
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 420px;
+}
+
+.op-eval-launch-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--node-question);
+  flex-shrink: 0;
+}
+
+.op-eval-launch-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.op-eval-launch-select {
+  display: flex;
+  gap: 0;
+}
+
+.op-eval-launch-select-btn {
+  font-family: var(--font-mono-stack);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 4px 9px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--fg-dim);
+  cursor: pointer;
+  transition: color 0.1s, background 0.1s, border-color 0.1s;
+}
+
+.op-eval-launch-select-btn:first-child { border-radius: 3px 0 0 3px; }
+.op-eval-launch-select-btn:last-child { border-radius: 0 3px 3px 0; }
+.op-eval-launch-select-btn:not(:first-child) { border-left: none; }
+
+.op-eval-launch-select-btn:hover:not(:disabled) { color: var(--fg); }
+
+.op-eval-launch-select-btn.is-active {
+  background: var(--node-question-bg);
+  border-color: var(--node-question);
+  color: var(--node-question);
+}
+
+.op-eval-launch-select-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.op-eval-launch-btn {
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 5px 12px;
+  background: var(--fg);
+  color: var(--bg);
+  border: 1px solid var(--fg);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: opacity 0.1s;
+}
+
+.op-eval-launch-btn:hover:not(:disabled) { opacity: 0.85; }
+
+.op-eval-launch-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.op-eval-launch-err {
+  width: 100%;
+  color: #b33;
+  font-size: 11px;
+  padding-top: 4px;
+}
+
+/* Rendered evaluation markdown report, surfaced at the top of the trace
+   page when the root call is EVALUATE. Body text uses the serif/body
+   stack so the distillation reads naturally; the header is a tiny
+   monospace tag to make it clear this is an artifact, not UI chrome. */
+.op-eval-report {
+  background: var(--bg-pane);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 16px 20px 20px;
+  margin-bottom: 16px;
+}
+
+.op-eval-report-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.op-eval-report-tag {
+  font-family: var(--font-mono-stack);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--node-question);
+  padding: 2px 8px;
+  background: var(--node-question-bg);
+  border-radius: 2px;
+}
+
+.op-eval-report-q {
+  font-family: var(--font-body-stack);
+  font-size: 13px;
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+}
+
+.op-eval-report-body {
+  font-family: var(--font-body-stack);
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--fg);
+}
+
+.op-eval-report-body h1,
+.op-eval-report-body h2,
+.op-eval-report-body h3 {
+  font-family: var(--font-mono-stack);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg);
+  margin: 18px 0 6px;
+}
+
+.op-eval-report-body h1 { font-size: 13px; }
+.op-eval-report-body h2 { font-size: 12px; }
+.op-eval-report-body h3 { font-size: 11px; color: var(--fg-muted); }
+
+.op-eval-report-body p { margin: 8px 0; }
+
+.op-eval-report-body ul,
+.op-eval-report-body ol {
+  margin: 8px 0;
+  padding-left: 22px;
+}
+
+.op-eval-report-body li { margin: 4px 0; }
+
+.op-eval-report-body code {
+  font-family: var(--font-mono-stack);
+  font-size: 12px;
+  background: var(--bg);
+  padding: 1px 5px;
+  border-radius: 2px;
+  border: 1px solid var(--border);
+}
+
+.op-eval-report-body pre {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.op-eval-report-body pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
+.op-eval-report-body blockquote {
+  border-left: 2px solid var(--border-strong);
+  margin: 10px 0;
+  padding: 2px 12px;
+  color: var(--fg-muted);
+}
+
+/* Evaluations listing page (cards + filter chips). Leans on the same
+   card shell as /traces so the two surfaces feel of a piece — the
+   differences are in the kind pill (tinted per-kind) and the name/project
+   meta row. */
+.op-eval-card .op-eval-kind {
+  text-transform: uppercase;
+}
+
+.op-eval-kind-evaluate {
+  color: var(--node-question);
+  background: var(--node-question-bg);
+}
+
+.op-eval-kind-grounding {
+  color: var(--node-claim);
+  background: var(--node-claim-bg);
+}
+
+.op-eval-kind-feedback {
+  color: var(--node-hypothesis);
+  background: var(--node-hypothesis-bg);
+}
+
+.op-eval-staged {
+  font-family: var(--font-mono-stack);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--node-uncertainty);
+  border: 1px solid var(--node-uncertainty);
+  padding: 1px 6px;
+  border-radius: 2px;
+}
+
+.op-eval-project {
+  font-family: var(--font-mono-stack);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-dim);
+}
+
+.op-eval-name {
+  font-family: var(--font-mono-stack);
+  font-size: 10px;
+  color: var(--fg-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 480px;
+}
+
+.op-eval-filter-count {
+  margin-left: 4px;
+  font-size: 10px;
+  opacity: 0.7;
+}
+
 /* ---------- Search palette (⌘K) ---------- */
 
 .search-palette-backdrop {

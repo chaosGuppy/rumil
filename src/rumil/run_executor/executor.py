@@ -10,7 +10,7 @@ writes.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
@@ -60,6 +60,66 @@ class RunExecutor:
             staged=bool(row.get("staged", False)),
             hidden=bool(row.get("hidden", False)),
             config=row.get("config") or {},
+        )
+
+    async def mark_started(self, run_id: str) -> None:
+        """Transition a run from pending to running and stamp started_at.
+
+        Opt-in for dispatch paths (main.py cmd_*, scripts/run_call.py,
+        api/app.py _run_background*) that want their runs to show up
+        live in the status-aware UI while the full executor.start()
+        refactor is still pending. Safe to call more than once — the
+        update only fires when status is still ``pending``.
+        """
+        await self._db._execute(
+            self._db.client.table("runs")
+            .update(
+                {
+                    "status": RunStatus.RUNNING.value,
+                    "started_at": datetime.now(UTC).isoformat(),
+                }
+            )
+            .eq("id", run_id)
+            .eq("status", RunStatus.PENDING.value)
+        )
+
+    async def mark_complete(
+        self,
+        run_id: str,
+        *,
+        cost_usd_cents: int | None = None,
+    ) -> None:
+        """Transition a run to complete + stamp finished_at (+ optional cost)."""
+        update: dict[str, Any] = {
+            "status": RunStatus.COMPLETE.value,
+            "finished_at": datetime.now(UTC).isoformat(),
+        }
+        if cost_usd_cents is not None:
+            update["cost_usd_cents"] = cost_usd_cents
+        await self._db._execute(self._db.client.table("runs").update(update).eq("id", run_id))
+
+    async def mark_failed(self, run_id: str, *, reason: str | None = None) -> None:
+        """Transition a run to failed + stamp finished_at."""
+        update: dict[str, Any] = {
+            "status": RunStatus.FAILED.value,
+            "finished_at": datetime.now(UTC).isoformat(),
+        }
+        if reason is not None:
+            update["cancel_reason"] = reason
+        await self._db._execute(self._db.client.table("runs").update(update).eq("id", run_id))
+
+    async def mark_cancelled(self, run_id: str, *, reason: str = "") -> None:
+        """Transition a run to cancelled + stamp finished_at + cancel_reason."""
+        await self._db._execute(
+            self._db.client.table("runs")
+            .update(
+                {
+                    "status": RunStatus.CANCELLED.value,
+                    "finished_at": datetime.now(UTC).isoformat(),
+                    "cancel_reason": reason or None,
+                }
+            )
+            .eq("id", run_id)
         )
 
     async def start(self, spec: RunSpec) -> str:  # pragma: no cover

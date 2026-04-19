@@ -1065,7 +1065,7 @@ function QuestionViewPage({
     return () => registerTraceHandler(null);
   }, [searchParams, router, pathname, registerTraceHandler]);
 
-  const refreshView = useCallback(() => {
+const refreshView = useCallback(() => {
     setRefreshKey((k) => k + 1);
   }, []);
 

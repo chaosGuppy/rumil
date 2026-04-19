@@ -68,6 +68,21 @@ MODEL_MAP: dict[str, str] = {
 
 CHAT_TURN_TIMEOUT_S = 120.0
 
+CHAT_RUN_BUDGET = 50
+"""Budget initialized for each chat turn's run.
+
+Research calls dispatched from chat (find-considerations, scout-*, etc.)
+consume one unit per agent-loop round via `consume_budget`. Without an
+initialized budget, every round fails its gate and the call terminates
+after context-build with 0 pages created. 50 is plenty of headroom for
+several multi-round dispatches per chat turn; actual spend is bounded by
+per-call `max_rounds`, not this number.
+"""
+
+DEFAULT_DISPATCH_MAX_ROUNDS = 4
+MIN_DISPATCH_MAX_ROUNDS = 1
+MAX_DISPATCH_MAX_ROUNDS = 8
+
 # Strong refs to in-flight chat-turn tasks so they don't get GC'd if the
 # browser disconnects and the SSE generator closure is released. Tasks
 # remove themselves on completion.
@@ -281,7 +296,14 @@ TOOLS: list[dict[str, Any]] = [
             "and COSTS REAL MONEY. Confirm with the user before calling. "
             "The call runs in the background — results appear in the view. "
             "Available call types: find-considerations, assess, web-research, "
-            "scout-subquestions, scout-hypotheses, scout-estimates, scout-analogies."
+            "scout-subquestions, scout-hypotheses, scout-estimates, scout-analogies.\n\n"
+            "Effort is controlled by `max_rounds` — the number of agent-loop "
+            f"iterations the call runs (default {DEFAULT_DISPATCH_MAX_ROUNDS}, "
+            f"min {MIN_DISPATCH_MAX_ROUNDS}, max {MAX_DISPATCH_MAX_ROUNDS}). "
+            "Each round lets the model produce pages and call moves; more "
+            "rounds = broader exploration but linearly more cost. Bump it "
+            "when the user asks for deeper investigation, or leave the default "
+            "for a normal pass."
         ),
         "input_schema": {
             "type": "object",
@@ -302,6 +324,15 @@ TOOLS: list[dict[str, Any]] = [
                         "scout-analogies",
                     ],
                     "description": "Type of research call to fire",
+                },
+                "max_rounds": {
+                    "type": "integer",
+                    "minimum": MIN_DISPATCH_MAX_ROUNDS,
+                    "maximum": MAX_DISPATCH_MAX_ROUNDS,
+                    "description": (
+                        f"Agent-loop rounds (default {DEFAULT_DISPATCH_MAX_ROUNDS}). "
+                        "Higher = deeper investigation, more cost."
+                    ),
                 },
             },
             "required": ["question_id", "call_type"],
@@ -1223,12 +1254,18 @@ async def _execute_tool(
             return f"Unknown call type: {call_type_str}"
         question = await db.get_page(full_id)
         headline = question.headline if question else qid_short
+        raw_rounds = tool_input.get("max_rounds", DEFAULT_DISPATCH_MAX_ROUNDS)
+        max_rounds = max(
+            MIN_DISPATCH_MAX_ROUNDS,
+            min(int(raw_rounds), MAX_DISPATCH_MAX_ROUNDS),
+        )
         return json.dumps(
             {
                 "__async_dispatch__": True,
                 "question_id": full_id,
                 "headline": headline,
                 "call_type": call_type_str,
+                "max_rounds": max_rounds,
             }
         )
 
@@ -2012,11 +2049,12 @@ async def _run_dispatch(
     question_id = params["question_id"]
     headline = params.get("headline", question_id[:8])
     call_type_str = params["call_type"]
+    max_rounds = params.get("max_rounds", DEFAULT_DISPATCH_MAX_ROUNDS)
     call = None
     try:
         ct, cls = _CALL_TYPE_MAP[call_type_str]
         call = await db.create_call(ct, scope_page_id=question_id)
-        runner = _build_runner(cls, call_type_str, question_id, call, db)
+        runner = _build_runner(cls, call_type_str, question_id, call, db, max_rounds)
         if on_progress:
             on_progress(f"Running {call_type_str} on '{headline[:40]}'...")
         await runner.run()
@@ -2038,22 +2076,22 @@ def _build_runner(
     question_id: str,
     call: Call,
     db: DB,
+    max_rounds: int = DEFAULT_DISPATCH_MAX_ROUNDS,
 ) -> CallRunner:
     """Construct a CallRunner with the right keyword args per call type.
 
-    FindConsiderationsCall requires max_rounds + fruit_threshold. Other
-    call types take no required kwargs, so we just pass positional args.
-    Defaults mirror common.find_considerations_until_done's shape.
+    FindConsiderationsCall requires max_rounds + fruit_threshold; other
+    call types accept max_rounds via CallRunner's default kwargs.
     """
     if cls is FindConsiderationsCall:
         return cls(
             question_id,
             call,
             db,
-            max_rounds=4,
+            max_rounds=max_rounds,
             fruit_threshold=4,
         )
-    return cls(question_id, call, db)
+    return cls(question_id, call, db, max_rounds=max_rounds)
 
 
 async def _run_research(
@@ -2451,6 +2489,7 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
     project, _ = await db.get_or_create_project(request.workspace)
     db.project_id = project.id
     await db.create_run(name="chat", question_id=None, config={"origin": "chat"})
+    await db.init_budget(CHAT_RUN_BUDGET)
 
     try:
         full_id = await db.resolve_page_id(request.question_id) if request.question_id else None
@@ -2621,6 +2660,7 @@ async def handle_chat_stream(request: ChatRequest) -> StreamingResponse:
     project, _ = await db.get_or_create_project(request.workspace)
     db.project_id = project.id
     await db.create_run(name="chat", question_id=None, config={"origin": "chat"})
+    await db.init_budget(CHAT_RUN_BUDGET)
 
     full_id = await db.resolve_page_id(request.question_id) if request.question_id else None
     if request.question_id and not full_id:

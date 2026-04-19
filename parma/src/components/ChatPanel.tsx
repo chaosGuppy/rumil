@@ -75,6 +75,22 @@ function contentToText(content: unknown): string {
 function persistedMessagesToUi(
   raw: Array<{ id: string; role: string; content: Record<string, unknown>; seq: number; ts: string; question_id?: string | null }>,
 ): Message[] {
+  // Tool results live on their own `tool_result` message, keyed by the
+  // tool_use id. Build a map up front so we can stitch each tool_use block
+  // back to its result — otherwise ToolBlock sees an empty result and
+  // forever renders "running…" for completed calls loaded from history.
+  const resultById = new Map<string, string>();
+  for (const m of raw) {
+    if (m.role !== "tool_result") continue;
+    const results = (m.content?.results ?? []) as Array<{ tool_use_id?: string; content?: unknown }>;
+    for (const r of results) {
+      if (!r.tool_use_id) continue;
+      const content =
+        typeof r.content === "string" ? r.content : JSON.stringify(r.content ?? "");
+      resultById.set(r.tool_use_id, content);
+    }
+  }
+
   const out: Message[] = [];
   for (const m of raw) {
     if (m.role === "user") {
@@ -87,7 +103,7 @@ function persistedMessagesToUi(
         seq: m.seq,
       });
     } else if (m.role === "assistant") {
-      const blocksIn = (m.content?.blocks ?? []) as Array<{ type: string; text?: string; name?: string; input?: Record<string, unknown> }>;
+      const blocksIn = (m.content?.blocks ?? []) as Array<{ type: string; id?: string; text?: string; name?: string; input?: Record<string, unknown> }>;
       const blocks: MessageBlock[] = [];
       let textAccum = "";
       for (const b of blocksIn) {
@@ -95,9 +111,10 @@ function persistedMessagesToUi(
           textAccum += b.text ?? "";
           blocks.push({ type: "text", content: b.text ?? "" });
         } else if (b.type === "tool_use") {
+          const result = (b.id && resultById.get(b.id)) ?? "(no result recorded)";
           blocks.push({
             type: "tool",
-            tool: { name: b.name ?? "", input: b.input ?? {}, result: "" },
+            tool: { name: b.name ?? "", input: b.input ?? {}, result },
           });
         }
       }

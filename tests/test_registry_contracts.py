@@ -149,6 +149,33 @@ def test_chat_async_sentinels_have_handlers() -> None:
     )
 
 
+def test_every_dispatchable_call_type_has_a_runner_class() -> None:
+    """Every ``CallType`` in ``DISPATCHABLE_CALL_TYPES`` must have a registered
+    runner in ``CALL_RUNNER_CLASSES``.
+
+    Regression guard: when a new dispatchable scout / assess variant is added
+    to the enum, we need the runner mapping in the same PR or
+    ``get_call_runner_class`` raises at runtime from chat, CLI, and any other
+    dispatch site.
+    """
+    from rumil.calls.call_registry import CALL_RUNNER_CLASSES
+    from rumil.models import DISPATCHABLE_CALL_TYPES
+
+    missing = set(DISPATCHABLE_CALL_TYPES) - set(CALL_RUNNER_CLASSES)
+    assert not missing, (
+        f"Dispatchable CallTypes with no registered runner: "
+        f"{sorted(ct.value for ct in missing)}. "
+        "Add entries to rumil.calls.call_registry.CALL_RUNNER_CLASSES."
+    )
+
+    stray = set(CALL_RUNNER_CLASSES) - set(DISPATCHABLE_CALL_TYPES)
+    assert not stray, (
+        f"CALL_RUNNER_CLASSES has runners for non-dispatchable CallTypes: "
+        f"{sorted(ct.value for ct in stray)}. Either add to "
+        "DISPATCHABLE_CALL_TYPES or drop the runner entry."
+    )
+
+
 def test_every_trace_event_is_surfaced_or_suppressed() -> None:
     """Every variant in ``rumil.tracing.trace_events.TraceEvent`` must be
     categorized in ``subscribe.py`` — either surfaced to the chat SSE

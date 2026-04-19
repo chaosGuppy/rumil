@@ -2171,6 +2171,10 @@ function ExchangeRow({
             {shortenModel(model)}
           </span>
         )}
+        <PromptBadge
+          promptName={summary.prompt_name}
+          promptHash={summary.composite_prompt_hash}
+        />
         <span className="trace-exchange-tokens">
           {summary.input_tokens != null
             ? compactTokens(summary.input_tokens)
@@ -2205,6 +2209,33 @@ function ExchangeRow({
         </div>
       )}
     </li>
+  );
+}
+
+function PromptBadge({
+  promptName,
+  promptHash,
+}: {
+  promptName: string | null | undefined;
+  promptHash: string | null | undefined;
+}) {
+  if (!promptHash && !promptName) return null;
+  const name = promptName || "composite";
+  const short = promptHash ? promptHash.slice(0, 12) : null;
+  return (
+    <span
+      className="trace-exchange-prompt"
+      title={
+        promptHash
+          ? `prompt: ${name} \u00b7 ${promptHash}`
+          : `prompt: ${name}`
+      }
+    >
+      <span className="trace-exchange-prompt-name">{name}</span>
+      {short && (
+        <span className="trace-exchange-prompt-hash">{short}</span>
+      )}
+    </span>
   );
 }
 

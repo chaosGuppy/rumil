@@ -653,6 +653,8 @@ export interface LLMExchangeDetail {
   duration_ms: number | null;
   error: string | null;
   created_at: string;
+  composite_prompt_hash?: string | null;
+  prompt_name?: string | null;
 }
 
 export async function fetchRunTraceTree(runId: string): Promise<RunTraceTree> {

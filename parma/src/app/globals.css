@@ -7346,6 +7346,27 @@ mark.ann-mark.ann-mark-dispute:hover {
   color: var(--fg-dim);
   font-size: 10px;
 }
+.trace-exchange-prompt {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  cursor: help;
+}
+.trace-exchange-prompt-name {
+  color: var(--fg-dim);
+  text-transform: lowercase;
+}
+.trace-exchange-prompt-hash {
+  color: var(--fg-muted);
+  font-size: 9px;
+  letter-spacing: 0.02em;
+}
 .trace-exchange-err-tag {
   color: var(--node-uncertainty);
   font-size: 9px;

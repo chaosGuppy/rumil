@@ -112,6 +112,33 @@ class CreateProjectOut(BaseModel):
     created: bool
 
 
+# Cap the headline around the "10-15 words, 20-word ceiling" guidance that
+# HEADLINE_DESCRIPTION in moves/base.py uses for LLM-created questions —
+# 300 chars leaves plenty of slack for humans without letting the column grow
+# unbounded. Content is a larger freeform body.
+_QUESTION_HEADLINE_MAX = 300
+_QUESTION_CONTENT_MAX = 20000
+
+
+class CreateRootQuestionRequest(BaseModel):
+    """POST /api/projects/{project_id}/questions body.
+
+    The headline is trimmed server-side; empty or whitespace-only input is
+    rejected with 422. ``content`` is optional — if omitted the question is
+    created with the headline as its content (matches the skill-lane pattern
+    in ``ask_question.py``).
+    """
+
+    headline: Annotated[
+        str,
+        Field(min_length=1, max_length=_QUESTION_HEADLINE_MAX),
+    ]
+    content: Annotated[
+        str | None,
+        Field(default=None, max_length=_QUESTION_CONTENT_MAX),
+    ] = None
+
+
 class _TraceEnvelopeMixin(BaseModel):
     model_config = ConfigDict(json_schema_extra=_all_fields_required)
 

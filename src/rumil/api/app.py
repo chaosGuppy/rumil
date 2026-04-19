@@ -41,6 +41,7 @@ from rumil.api.schemas import (
     CallSummary,
     CreateProjectOut,
     CreateProjectRequest,
+    CreateRootQuestionRequest,
     LinkedPageOut,
     LLMExchangeOut,
     LLMExchangeSummaryOut,
@@ -69,12 +70,14 @@ from rumil.api.schemas import (
 )
 from rumil.calls.adversarial_review import AdversarialVerdict, is_verdict_expired
 from rumil.database import DB, _row_to_call, _rows
+from rumil.embeddings import embed_and_store_page
 from rumil.models import (
     AnnotationEvent,
     Call,
     ChatMessageRole,
     LinkType,
     Page,
+    PageLayer,
     PageLink,
     PageType,
     Project,
@@ -182,7 +185,7 @@ app.add_middleware(BasicAuthMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -310,6 +313,68 @@ async def get_project(project_id: str, db: DB = Depends(_get_db)):
 @app.get("/api/projects/{project_id}/runs", response_model=list[RunListItemOut])
 async def list_project_runs(project_id: str, db: DB = Depends(_get_db)):
     return await db.list_runs_for_project(project_id)
+
+
+def _extract_snippet(content: str, query: str, window: int = 200) -> str:
+    """Return a ~window-char excerpt around the first case-insensitive match.
+
+    Falls back to the leading prefix when the query only matched the headline
+    (or the content is shorter than the window). Collapses newlines so the
+    excerpt renders cleanly in a dropdown without wrapping pathologically.
+    """
+    text = (content or "").replace("\n", " ").strip()
+    if not text:
+        return ""
+    if not query:
+        return text[:window]
+    lowered = text.lower()
+    idx = lowered.find(query.lower())
+    if idx < 0:
+        return text[:window]
+    half = window // 2
+    start = max(0, idx - half)
+    end = min(len(text), start + window)
+    if end - start < window:
+        start = max(0, end - window)
+    excerpt = text[start:end]
+    if start > 0:
+        excerpt = "..." + excerpt
+    if end < len(text):
+        excerpt = excerpt + "..."
+    return excerpt
+
+
+@app.get(
+    "/api/projects/{project_id}/search",
+    response_model=SearchResultsOut,
+)
+async def search_workspace(
+    project_id: str,
+    q: str = "",
+    limit: int = 30,
+    db: DB = Depends(_get_db),
+):
+    """Case-insensitive ILIKE search across pages.headline and pages.content,
+    scoped to one project.
+
+    The snippet is a ~200 char window around the first content match (or the
+    leading prefix if the match was headline-only). Non-active (superseded)
+    pages are excluded so callers never land on stale drafts. Limit is
+    clamped to [1, 100].
+    """
+    query = q.strip()
+    if not query:
+        return SearchResultsOut(results=[])
+    limit = max(1, min(limit, 100))
+    pages, _total = await db.get_pages_paginated(
+        search=query,
+        active_only=True,
+        offset=0,
+        limit=limit,
+    )
+    return SearchResultsOut(
+        results=[SearchResultOut(page=p, snippet=_extract_snippet(p.content, query)) for p in pages]
+    )
 
 
 @app.get("/api/projects/{project_id}/pages", response_model=PaginatedPagesOut)
@@ -604,6 +669,67 @@ async def list_root_questions(
     db: DB = Depends(_get_db),
 ):
     return await db.get_root_questions(workspace)
+
+
+@app.post(
+    "/api/projects/{project_id}/questions",
+    response_model=Page,
+)
+async def create_root_question(
+    project_id: str,
+    request: CreateRootQuestionRequest,
+    db: DB = Depends(_get_db),
+):
+    """Create a bare root question in a workspace.
+
+    No orchestrator dispatch and no call record — just a Page. The UI uses
+    this to seed a freshly-created workspace so the user can pose a question
+    before firing any research; chat (``/orchestrate``, ``/dispatch``,
+    ``/ask``) can then populate it.
+
+    Mirrors the skill-lane pattern in ``ask_question.py`` for field choices:
+    ``layer=SQUIDGY``, ``workspace=RESEARCH``, ``provenance_model='human'``,
+    and best-effort embedding on the ``abstract`` field so search/dedup work.
+    """
+    headline = request.headline.strip()
+    if not headline:
+        raise HTTPException(
+            status_code=422,
+            detail="Question headline must not be empty or whitespace-only.",
+        )
+
+    project_rows = _rows(
+        await db.client.table("projects").select("id").eq("id", project_id).execute()
+    )
+    if not project_rows:
+        raise HTTPException(status_code=404, detail="Project not found")
+    db.project_id = project_id
+
+    content = (request.content or "").strip()
+    page = Page(
+        page_type=PageType.QUESTION,
+        layer=PageLayer.SQUIDGY,
+        workspace=Workspace.RESEARCH,
+        project_id=project_id,
+        content=content or headline,
+        headline=headline,
+        abstract=content,
+        provenance_model="human",
+        extra={"status": "open"},
+    )
+    await db.save_page(page)
+    try:
+        await embed_and_store_page(db, page, field_name="abstract")
+    except Exception:
+        log.warning("Failed to embed new root question %s", page.id[:8], exc_info=True)
+
+    log.info(
+        "Root question created via API: project=%s id=%s headline=%s",
+        project_id[:8],
+        page.id[:8],
+        headline[:70],
+    )
+    return page
 
 
 @app.get(

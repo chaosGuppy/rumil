@@ -19,7 +19,7 @@ export function ToolEventCard({ event }: { event: ToolEvent }) {
   return (
     <div className={`op-tool-card ${event.error ? "op-tool-error" : ""}`}>
       <button className="op-tool-header" onClick={toggle} type="button">
-        <span className="op-tool-icon">\u2192</span>
+        <span className="op-tool-icon">→</span>
         <span className="op-tool-name">{event.function_name}</span>
         {!expanded && (
           <span className="op-tool-args-preview">{truncatedArgs}</span>

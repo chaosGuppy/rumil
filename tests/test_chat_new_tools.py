@@ -111,7 +111,6 @@ async def seeded_graph(tmp_db):
         workspace=Workspace.RESEARCH,
         content="On balance, the upgrades help.",
         headline="Upgrades help on balance",
-        credence=6,
         robustness=3,
     )
     await tmp_db.save_page(judgement)
@@ -345,7 +344,9 @@ async def test_create_claim_persists_page(tmp_db, seeded_graph):
             "headline": "Prompt caching reduces per-turn latency materially",
             "content": "In profiling runs, cache hits dropped p50 latency 40%.",
             "credence": 7,
+            "credence_reasoning": "profiled runs converge on 40% drop",
             "robustness": 3,
+            "robustness_reasoning": "replicated across two workloads",
         },
         tmp_db,
     )
@@ -363,6 +364,10 @@ async def test_create_claim_links_as_consideration(tmp_db, seeded_graph):
         {
             "headline": "Batch embedding calls dominate per-request cost",
             "content": "Embeddings are ~60% of per-tool-round spend.",
+            "credence": 6,
+            "credence_reasoning": "cost telemetry shows consistent share",
+            "robustness": 2,
+            "robustness_reasoning": "single-project telemetry snapshot",
             "question_id": root.id[:8],
             "strength": 3.5,
             "reasoning": "Cost attribution",
@@ -391,8 +396,8 @@ async def test_create_judgement_supersedes_prior(tmp_db, seeded_graph):
             "question_id": root.id[:8],
             "headline": "After more data, the upgrades help moderately",
             "content": "Evidence base updated; judgement revised.",
-            "credence": 7,
             "robustness": 3,
+            "robustness_reasoning": "updated evidence base",
             "key_dependencies": "Latency measurements stay flat",
             "sensitivity_analysis": "Would flip if p95 exceeds 2s",
         },

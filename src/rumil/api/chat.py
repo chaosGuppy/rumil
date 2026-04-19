@@ -725,11 +725,19 @@ TOOLS: list[dict[str, Any]] = [
                 },
                 "credence": {
                     "type": "integer",
-                    "description": "1-9 credence (default 5)",
+                    "description": "1-9 credence",
+                },
+                "credence_reasoning": {
+                    "type": "string",
+                    "description": "Why this credence level — what would push it up or down.",
                 },
                 "robustness": {
                     "type": "integer",
-                    "description": "1-5 robustness (default 1)",
+                    "description": "1-5 robustness",
+                },
+                "robustness_reasoning": {
+                    "type": "string",
+                    "description": "Where the remaining uncertainty stems from and how reducible it is.",
                 },
                 "question_id": {
                     "type": "string",
@@ -746,7 +754,14 @@ TOOLS: list[dict[str, Any]] = [
                     "description": "Why this claim bears on the question. Only used if question_id is set.",
                 },
             },
-            "required": ["headline", "content"],
+            "required": [
+                "headline",
+                "content",
+                "credence",
+                "credence_reasoning",
+                "robustness",
+                "robustness_reasoning",
+            ],
         },
     },
     {
@@ -772,13 +787,13 @@ TOOLS: list[dict[str, Any]] = [
                     "type": "string",
                     "description": "Full judgement text, synthesising considerations",
                 },
-                "credence": {
-                    "type": "integer",
-                    "description": "1-9 credence (default 5)",
-                },
                 "robustness": {
                     "type": "integer",
-                    "description": "1-5 robustness (default 1)",
+                    "description": "1-5 robustness",
+                },
+                "robustness_reasoning": {
+                    "type": "string",
+                    "description": "Where the remaining uncertainty stems from and how reducible it is.",
                 },
                 "key_dependencies": {
                     "type": "string",
@@ -789,7 +804,13 @@ TOOLS: list[dict[str, Any]] = [
                     "description": "What would shift this judgement, and in which direction",
                 },
             },
-            "required": ["question_id", "headline", "content"],
+            "required": [
+                "question_id",
+                "headline",
+                "content",
+                "robustness",
+                "robustness_reasoning",
+            ],
         },
     },
     {
@@ -1833,10 +1854,12 @@ async def _execute_tool(
 
     if name == "create_claim":
         headline = tool_input["headline"]
-        content = tool_input.get("content", "")
+        content = tool_input["content"]
         question_short = tool_input.get("question_id")
-        credence = int(tool_input.get("credence", 5))
-        robustness = int(tool_input.get("robustness", 1))
+        credence = int(tool_input["credence"])
+        credence_reasoning = tool_input["credence_reasoning"]
+        robustness = int(tool_input["robustness"])
+        robustness_reasoning = tool_input["robustness_reasoning"]
         strength = float(tool_input.get("strength", 2.5))
         reasoning = tool_input.get("reasoning", "")
 
@@ -1859,7 +1882,9 @@ async def _execute_tool(
             headline=headline,
             content=content,
             credence=credence,
+            credence_reasoning=credence_reasoning,
             robustness=robustness,
+            robustness_reasoning=robustness_reasoning,
             links=links_payload,
         )
         call = await db.create_call(CallType.CHAT_DIRECT, scope_page_id=scope_full_id)
@@ -1875,8 +1900,8 @@ async def _execute_tool(
         payload = move_def.schema(
             headline=tool_input["headline"],
             content=tool_input["content"],
-            credence=int(tool_input.get("credence", 5)),
-            robustness=int(tool_input.get("robustness", 1)),
+            robustness=int(tool_input["robustness"]),
+            robustness_reasoning=tool_input["robustness_reasoning"],
             key_dependencies=tool_input.get("key_dependencies"),
             sensitivity_analysis=tool_input.get("sensitivity_analysis"),
         )

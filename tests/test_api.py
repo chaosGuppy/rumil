@@ -201,3 +201,93 @@ async def test_commit_run_success(api_client, mocker):
     assert resp.status_code == 200
     assert resp.json() == {"run_id": "r1", "staged": False}
     commit_spy.assert_called_once_with("r1")
+
+
+async def test_continue_question_missing_returns_404(api_client, mocker):
+    """POST /api/questions/{id}/continue returns 404 if question missing."""
+    mocker.patch.object(DB, "get_page", return_value=None)
+    create_task_spy = mocker.patch("rumil.api.app.asyncio.create_task")
+
+    resp = await api_client.post(
+        "/api/questions/not-a-real-id/continue",
+        json={"budget": 5},
+    )
+    assert resp.status_code == 404
+    create_task_spy.assert_not_called()
+
+
+def _fake_question_page(page_id: str = "q1"):
+    from rumil.models import Page, PageLayer, PageType, Workspace
+
+    return Page(
+        id=page_id,
+        page_type=PageType.QUESTION,
+        layer=PageLayer.SQUIDGY,
+        workspace=Workspace.RESEARCH,
+        content="test question",
+        headline="test question",
+    )
+
+
+def _fake_claim_page(page_id: str = "c1"):
+    from rumil.models import Page, PageLayer, PageType, Workspace
+
+    return Page(
+        id=page_id,
+        page_type=PageType.CLAIM,
+        layer=PageLayer.SQUIDGY,
+        workspace=Workspace.RESEARCH,
+        content="test claim",
+        headline="test claim",
+    )
+
+
+async def test_continue_question_wrong_type_returns_400(api_client, mocker):
+    """POST continue on a non-question page returns 400."""
+    claim = _fake_claim_page()
+    mocker.patch.object(DB, "get_page", return_value=claim)
+    create_task_spy = mocker.patch("rumil.api.app.asyncio.create_task")
+
+    resp = await api_client.post(
+        f"/api/questions/{claim.id}/continue",
+        json={"budget": 5},
+    )
+    assert resp.status_code == 400
+    create_task_spy.assert_not_called()
+
+
+async def test_continue_question_invalid_budget_returns_400(api_client, mocker):
+    """Budget < 1 is rejected."""
+    question = _fake_question_page()
+    mocker.patch.object(DB, "get_page", return_value=question)
+    create_task_spy = mocker.patch("rumil.api.app.asyncio.create_task")
+
+    resp = await api_client.post(
+        f"/api/questions/{question.id}/continue",
+        json={"budget": 0},
+    )
+    assert resp.status_code == 400
+    create_task_spy.assert_not_called()
+
+
+async def test_continue_question_success_spawns_task(api_client, mocker):
+    """Happy path: returns 202 with a new run_id and schedules a task.
+
+    The background orchestrator itself is not invoked here — we only
+    verify the handler's synchronous response and that a task was
+    created. This keeps the test from hitting the LLM.
+    """
+    question = _fake_question_page()
+    mocker.patch.object(DB, "get_page", return_value=question)
+    create_task_spy = mocker.patch("rumil.api.app.asyncio.create_task")
+
+    resp = await api_client.post(
+        f"/api/questions/{question.id}/continue",
+        json={"budget": 7},
+    )
+    assert resp.status_code == 202
+    data = resp.json()
+    assert data["question_id"] == question.id
+    assert data["budget"] == 7
+    assert len(data["run_id"]) > 0
+    create_task_spy.assert_called_once()

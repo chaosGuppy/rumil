@@ -4,6 +4,7 @@ FastAPI application for the Rumil research workspace.
 Read-only API for browsing projects, pages, links, and calls.
 """
 
+import asyncio
 import base64
 import logging
 import os
@@ -14,7 +15,7 @@ from datetime import UTC, datetime
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import TypeAdapter, ValidationError
+from pydantic import BaseModel, TypeAdapter, ValidationError
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from rumil.api.chat import (
@@ -87,6 +88,7 @@ from rumil.models import (
     SuggestionType,
     Workspace,
 )
+from rumil.orchestrators import Orchestrator
 from rumil.settings import get_settings
 from rumil.views import View, build_view
 
@@ -835,6 +837,105 @@ async def get_run_trace_tree(run_id: str, db: DB = Depends(_get_db)):
         staged=is_staged,
         config=run_config,
     )
+
+
+async def _run_background(label: str, coro):
+    """Wrap a coroutine so unhandled exceptions are logged instead of vanishing.
+
+    Background orchestrator runs can take minutes; if the server restarts
+    mid-run the task is lost. This is a known limit of the fire-and-forget
+    pattern — acceptable for operator-triggered kickoffs in the UI.
+    """
+    try:
+        await coro
+    except Exception:
+        log.exception("Background task %s failed", label)
+
+
+async def _run_continue_orchestrator(
+    run_id: str,
+    question_id: str,
+    project_id: str,
+    budget: int,
+) -> None:
+    """Spin up a fresh DB for the orchestrator and run to completion."""
+    prod = get_settings().is_prod_db
+    db = await DB.create(run_id=run_id, prod=prod, project_id=project_id)
+    try:
+        await db.init_budget(budget)
+        question = await db.get_page(question_id)
+        headline = question.headline if question else question_id[:8]
+        await db.create_run(
+            name=f"continue (api): {headline[:90]}",
+            question_id=question_id,
+            config=get_settings().capture_config(),
+        )
+        orch = Orchestrator(db)
+        await orch.run(question_id)
+    finally:
+        await db.close()
+
+
+async def _run_ab_eval_background(
+    run_id_a: str,
+    run_id_b: str,
+    project_id: str,
+) -> None:
+    """Spin up a fresh DB for the AB eval and run to completion."""
+    from rumil.ab_eval import run_ab_eval
+
+    prod = get_settings().is_prod_db
+    db = await DB.create(run_id=str(uuid.uuid4()), prod=prod, project_id=project_id)
+    try:
+        await run_ab_eval(run_id_a=run_id_a, run_id_b=run_id_b, db=db)
+    finally:
+        await db.close()
+
+
+class ContinueQuestionIn(BaseModel):
+    budget: int = 10
+
+
+@app.post("/api/questions/{question_id}/continue", status_code=202)
+async def post_continue_question(
+    question_id: str,
+    body: ContinueQuestionIn,
+    db: DB = Depends(_get_db),
+):
+    """Fire a background orchestrator run on an existing question.
+
+    Returns the new run_id immediately; client can navigate to
+    /traces/{run_id} to watch the trace live. The server does not await
+    the orchestrator — known risk: if the server restarts mid-run the
+    task is lost.
+    """
+    question = await db.get_page(question_id)
+    if not question:
+        raise HTTPException(status_code=404, detail="Question not found")
+    if question.page_type != PageType.QUESTION:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Page {question_id} is a {question.page_type.value}, not a question",
+        )
+    if body.budget < 1:
+        raise HTTPException(status_code=400, detail="Budget must be >= 1")
+
+    new_run_id = str(uuid.uuid4())
+    project_id = question.project_id or ""
+
+    asyncio.create_task(
+        _run_background(
+            f"continue question={question_id[:8]} run={new_run_id[:8]}",
+            _run_continue_orchestrator(
+                run_id=new_run_id,
+                question_id=question_id,
+                project_id=project_id,
+                budget=body.budget,
+            ),
+        )
+    )
+
+    return {"run_id": new_run_id, "question_id": question_id, "budget": body.budget}
 
 
 @app.post("/api/runs/{run_id}/stage", status_code=200)

@@ -463,6 +463,10 @@ class LLMExchangeMetadata:
     round_num: int | None = None
     user_message: str | None = None
     user_messages: list[dict] | None = None
+    # Friendly prompt label (e.g. "big_assess", "score_subquestions"). Used by
+    # save_llm_exchange to upsert prompt_versions with a human-readable name
+    # and surfaced back on the LLMExchangeEvent for UI display.
+    prompt_name: str = "composite"
 
 
 async def _save_exchange(
@@ -479,7 +483,7 @@ async def _save_exchange(
     cache_read_input_tokens: int = 0,
 ) -> None:
     """Persist an LLM exchange and record a trace event."""
-    exchange_id = await db.save_llm_exchange(
+    exchange_id, composite_hash, prompt_name = await db.save_llm_exchange(
         call_id=metadata.call_id,
         phase=metadata.phase,
         system_prompt=system_prompt,
@@ -493,6 +497,7 @@ async def _save_exchange(
         cache_creation_input_tokens=cache_creation_input_tokens or None,
         cache_read_input_tokens=cache_read_input_tokens or None,
         user_messages=metadata.user_messages,
+        prompt_name=metadata.prompt_name,
     )
     cost_usd = compute_cost(
         model=model,
@@ -515,6 +520,8 @@ async def _save_exchange(
                 cache_read_input_tokens=cache_read_input_tokens or None,
                 duration_ms=duration_ms,
                 cost_usd=cost_usd or None,
+                composite_prompt_hash=composite_hash,
+                prompt_name=prompt_name,
             )
         )
 

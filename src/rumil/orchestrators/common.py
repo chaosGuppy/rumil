@@ -341,6 +341,7 @@ async def score_items_sequentially(
                 call_id=call_id,
                 phase=f"score_batch_{batch_idx}",
                 user_messages=[{"role": "user", "content": user_content}],
+                prompt_name=system_prompt_name,
             ),
             db=db,
         )

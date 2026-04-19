@@ -90,6 +90,7 @@ class SimpleAgentLoop(WorkspaceUpdater):
             state=infra.state,
             max_rounds=max_rounds,
             cache=True,
+            prompt_name=self._prompt_name or self._call_type.value,
         )
 
         log.info(

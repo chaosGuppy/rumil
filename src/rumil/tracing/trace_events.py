@@ -76,6 +76,13 @@ class LLMExchangeEvent(BaseModel):
     cost_usd: float | None = None
     has_thinking: bool | None = None
     tool_uses: list[dict[str, Any]] | None = None
+    # Stable content hash of the system prompt this exchange used, joined to
+    # prompt_versions on read. Null for legacy exchanges and for subagent
+    # turns that don't go through save_llm_exchange.
+    composite_prompt_hash: str | None = None
+    # Friendly name of the prompt (e.g. "big_assess", "composite"). Logged at
+    # save time for UI display without an extra round trip.
+    prompt_name: str | None = None
 
 
 class WarningEvent(BaseModel):

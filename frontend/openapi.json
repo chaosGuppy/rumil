@@ -5405,6 +5405,14 @@
             "type": "string",
             "title": "Reasoning",
             "default": ""
+          },
+          "eval_summary": {
+            "items": {
+              "$ref": "#/components/schemas/EvalDimensionSummaryItem"
+            },
+            "type": "array",
+            "title": "Eval Summary",
+            "default": []
           }
         },
         "type": "object",
@@ -6009,6 +6017,35 @@
         ],
         "title": "ErrorEventOut"
       },
+      "EvalDimensionSummaryItem": {
+        "properties": {
+          "dimension": {
+            "type": "string",
+            "title": "Dimension"
+          },
+          "mean": {
+            "type": "number",
+            "title": "Mean",
+            "default": 0.0
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count",
+            "default": 0
+          },
+          "latest": {
+            "type": "number",
+            "title": "Latest",
+            "default": 0.0
+          }
+        },
+        "type": "object",
+        "required": [
+          "dimension"
+        ],
+        "title": "EvalDimensionSummaryItem",
+        "description": "One dimension's summarized reputation-event signal for a page.\n\nEmitted as part of ``ScoringCompletedEvent`` so the prioritization UI\ncan show the same quality signal the LLM saw in its prompt."
+      },
       "EvaluateQuestionIn": {
         "properties": {
           "eval_type": {
@@ -6438,6 +6475,28 @@
               }
             ],
             "title": "Tool Uses"
+          },
+          "composite_prompt_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Composite Prompt Hash"
+          },
+          "prompt_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Name"
           }
         },
         "type": "object",
@@ -6456,7 +6515,9 @@
           "duration_ms",
           "cost_usd",
           "has_thinking",
-          "tool_uses"
+          "tool_uses",
+          "composite_prompt_hash",
+          "prompt_name"
         ],
         "title": "LLMExchangeEventOut"
       },
@@ -6589,6 +6650,28 @@
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "composite_prompt_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Composite Prompt Hash"
+          },
+          "prompt_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Name"
           }
         },
         "type": "object",
@@ -6606,7 +6689,9 @@
           "output_tokens",
           "duration_ms",
           "error",
-          "created_at"
+          "created_at",
+          "composite_prompt_hash",
+          "prompt_name"
         ],
         "title": "LLMExchangeOut"
       },
@@ -6679,6 +6764,28 @@
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "composite_prompt_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Composite Prompt Hash"
+          },
+          "prompt_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Name"
           }
         },
         "type": "object",
@@ -8828,6 +8935,14 @@
             "type": "string",
             "title": "Reasoning",
             "default": ""
+          },
+          "eval_summary": {
+            "items": {
+              "$ref": "#/components/schemas/EvalDimensionSummaryItem"
+            },
+            "type": "array",
+            "title": "Eval Summary",
+            "default": []
           }
         },
         "type": "object",

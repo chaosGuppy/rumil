@@ -22,7 +22,7 @@ async def test_list_projects(api_client):
 
 async def test_llm_exchange_with_null_round(api_client, tmp_db, scout_call):
     """Exchanges without a round (e.g. closing review) should serialize cleanly."""
-    exchange_id = await tmp_db.save_llm_exchange(
+    exchange_id, _, _ = await tmp_db.save_llm_exchange(
         call_id=scout_call.id,
         phase="review",
         system_prompt="test",

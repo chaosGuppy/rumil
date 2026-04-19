@@ -524,6 +524,14 @@ class LLMExchangeSummaryOut(BaseModel):
     duration_ms: int | None
     error: str | None
     created_at: datetime
+    # Content hash of the composite system prompt used in this exchange, or
+    # null for legacy exchanges that predate prompt versioning. The UI shows
+    # the first 12 chars as a monospace tag.
+    composite_prompt_hash: str | None = None
+    # Friendly prompt name (e.g. "big_assess", "composite") resolved from
+    # prompt_versions.name on read. Falls back to "composite" when the
+    # exchange has a hash but no matching prompt_versions row.
+    prompt_name: str | None = None
 
 
 class LLMExchangeOut(BaseModel):
@@ -543,6 +551,8 @@ class LLMExchangeOut(BaseModel):
     duration_ms: int | None
     error: str | None
     created_at: datetime
+    composite_prompt_hash: str | None = None
+    prompt_name: str | None = None
 
 
 class CallSummary(BaseModel):

@@ -572,6 +572,31 @@
   font-size: 12px;
 }
 
+.trace-prompt-badge {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  margin-left: 8px;
+  padding: 1px 6px;
+  border: 1px solid #e3e3e3;
+  border-radius: 3px;
+  background: #fafafa;
+  font-size: 11px;
+  line-height: 1.4;
+  cursor: help;
+}
+
+.trace-prompt-badge-name {
+  color: #777;
+  letter-spacing: 0.01em;
+}
+
+.trace-prompt-badge-hash {
+  font-family: var(--font-geist-mono), monospace;
+  color: #aaa;
+  font-size: 10.5px;
+}
+
 .trace-warning-text {
   color: #8a6508;
   font-size: 13px;
@@ -1294,6 +1319,12 @@
   .trace-cache-pct { color: #4dd88a; }
   .trace-token-count { color: #666; }
   .trace-duration { color: #666; }
+  .trace-prompt-badge {
+    border-color: #2a2a2a;
+    background: #161616;
+  }
+  .trace-prompt-badge-name { color: #888; }
+  .trace-prompt-badge-hash { color: #666; }
   .trace-warning-text { color: #d4a017; }
   .trace-error-text { color: #e55; }
   .trace-error-phase { background: #3a1c1c; color: #e88; }

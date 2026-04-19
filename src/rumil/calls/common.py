@@ -280,6 +280,7 @@ async def run_agent_loop(
     max_rounds: int | None = None,
     messages: list[dict] | None = None,
     cache: bool = False,
+    prompt_name: str = "composite",
 ) -> AgentResult:
     """Tool-use conversation loop with per-round exchange/trace persistence.
 
@@ -323,6 +324,7 @@ async def run_agent_loop(
             phase="inner_loop",
             round_num=round_num,
             user_message=user_message if round_num == 0 else None,
+            prompt_name=prompt_name,
         )
         api_resp = await call_api(
             client,

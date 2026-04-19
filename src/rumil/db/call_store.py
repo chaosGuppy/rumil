@@ -462,7 +462,13 @@ class CallStore:
         cache_read_input_tokens: int | None = None,
         user_messages: Sequence[dict] | None = None,
         prompt_name: str = "composite",
-    ) -> str:
+    ) -> tuple[str, str | None, str]:
+        """Insert an exchange row, upsert its prompt_version, return
+        ``(exchange_id, composite_prompt_hash, prompt_name)`` so callers can
+        echo the hash/name into the trace event without a second round trip.
+        ``composite_prompt_hash`` is ``None`` only when ``system_prompt`` was
+        empty or when the prompt_versions upsert failed.
+        """
         exchange_id = str(uuid.uuid4())
         composite_hash: str | None = None
         if system_prompt:
@@ -510,7 +516,7 @@ class CallStore:
         if user_messages is not None:
             row["user_messages"] = user_messages
         await self._db._execute(self.client.table("call_llm_exchanges").insert(row))
-        return exchange_id
+        return exchange_id, composite_hash, prompt_name
 
     async def get_llm_exchanges(self, call_id: str) -> list[dict[str, Any]]:
         rows = _rows(
@@ -519,12 +525,13 @@ class CallStore:
                 .select(
                     "id, call_id, phase, round, input_tokens, output_tokens, "
                     "cache_creation_input_tokens, cache_read_input_tokens, "
-                    "duration_ms, error, created_at"
+                    "duration_ms, error, created_at, composite_prompt_hash"
                 )
                 .eq("call_id", call_id)
                 .order("round")
             )
         )
+        await self._attach_prompt_names(rows)
         return rows
 
     async def get_llm_exchange(self, exchange_id: str) -> dict[str, Any] | None:
@@ -533,4 +540,27 @@ class CallStore:
                 self.client.table("call_llm_exchanges").select("*").eq("id", exchange_id)
             )
         )
-        return rows[0] if rows else None
+        if not rows:
+            return None
+        await self._attach_prompt_names(rows)
+        return rows[0]
+
+    async def _attach_prompt_names(self, rows: Sequence[dict[str, Any]]) -> None:
+        """Fill a ``prompt_name`` field on each row by looking up
+        ``prompt_versions.name`` for the row's ``composite_prompt_hash``. Rows
+        without a hash get ``prompt_name = None``. One query per call regardless
+        of exchange count."""
+        hashes = {r["composite_prompt_hash"] for r in rows if r.get("composite_prompt_hash")}
+        name_by_hash: dict[str, str] = {}
+        if hashes:
+            prompt_rows = _rows(
+                await self._db._execute(
+                    self.client.table("prompt_versions")
+                    .select("hash, name")
+                    .in_("hash", list(hashes))
+                )
+            )
+            name_by_hash = {r["hash"]: r["name"] for r in prompt_rows}
+        for r in rows:
+            h = r.get("composite_prompt_hash")
+            r["prompt_name"] = name_by_hash.get(h) if h else None

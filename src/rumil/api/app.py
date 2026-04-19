@@ -1830,6 +1830,8 @@ async def list_llm_exchanges(call_id: str, db: DB = Depends(_get_db)):
             duration_ms=r.get("duration_ms"),
             error=r.get("error"),
             created_at=r["created_at"],
+            composite_prompt_hash=r.get("composite_prompt_hash"),
+            prompt_name=r.get("prompt_name"),
         )
         for r in rows
     ]
@@ -1855,6 +1857,8 @@ async def get_llm_exchange(exchange_id: str, db: DB = Depends(_get_db)):
         duration_ms=row.get("duration_ms"),
         error=row.get("error"),
         created_at=row["created_at"],
+        composite_prompt_hash=row.get("composite_prompt_hash"),
+        prompt_name=row.get("prompt_name"),
     )
 
 

@@ -895,6 +895,10 @@ export type ClaimScoreItem = {
      * Reasoning
      */
     reasoning?: string;
+    /**
+     * Eval Summary
+     */
+    eval_summary?: Array<EvalDimensionSummaryItem>;
 };
 
 /**
@@ -1288,6 +1292,33 @@ export type ErrorEventOut = {
 };
 
 /**
+ * EvalDimensionSummaryItem
+ *
+ * One dimension's summarized reputation-event signal for a page.
+ *
+ * Emitted as part of ``ScoringCompletedEvent`` so the prioritization UI
+ * can show the same quality signal the LLM saw in its prompt.
+ */
+export type EvalDimensionSummaryItem = {
+    /**
+     * Dimension
+     */
+    dimension: string;
+    /**
+     * Mean
+     */
+    mean?: number;
+    /**
+     * Count
+     */
+    count?: number;
+    /**
+     * Latest
+     */
+    latest?: number;
+};
+
+/**
  * EvaluateQuestionIn
  */
 export type EvaluateQuestionIn = {
@@ -1583,6 +1614,14 @@ export type LlmExchangeEventOut = {
     tool_uses: Array<{
         [key: string]: unknown;
     }> | null;
+    /**
+     * Composite Prompt Hash
+     */
+    composite_prompt_hash: string | null;
+    /**
+     * Prompt Name
+     */
+    prompt_name: string | null;
 };
 
 /**
@@ -1649,6 +1688,14 @@ export type LlmExchangeOut = {
      * Created At
      */
     created_at: string;
+    /**
+     * Composite Prompt Hash
+     */
+    composite_prompt_hash: string | null;
+    /**
+     * Prompt Name
+     */
+    prompt_name: string | null;
 };
 
 /**
@@ -1687,6 +1734,14 @@ export type LlmExchangeSummaryOut = {
      * Created At
      */
     created_at: string;
+    /**
+     * Composite Prompt Hash
+     */
+    composite_prompt_hash?: string | null;
+    /**
+     * Prompt Name
+     */
+    prompt_name?: string | null;
 };
 
 /**
@@ -3061,6 +3116,10 @@ export type SubquestionScoreItem = {
      * Reasoning
      */
     reasoning?: string;
+    /**
+     * Eval Summary
+     */
+    eval_summary?: Array<EvalDimensionSummaryItem>;
 };
 
 /**

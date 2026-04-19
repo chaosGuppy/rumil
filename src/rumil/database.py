@@ -884,7 +884,8 @@ class DB:
         cache_creation_input_tokens: int | None = None,
         cache_read_input_tokens: int | None = None,
         user_messages: Sequence[dict] | None = None,
-    ) -> str:
+        prompt_name: str = "composite",
+    ) -> tuple[str, str | None, str]:
         return await self.calls.save_llm_exchange(
             call_id,
             phase,
@@ -900,6 +901,7 @@ class DB:
             cache_creation_input_tokens=cache_creation_input_tokens,
             cache_read_input_tokens=cache_read_input_tokens,
             user_messages=user_messages,
+            prompt_name=prompt_name,
         )
 
     async def get_llm_exchanges(self, call_id: str) -> list[dict[str, Any]]:

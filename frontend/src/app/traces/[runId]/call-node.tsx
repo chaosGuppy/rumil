@@ -655,6 +655,31 @@ function ExchangeDetail({ detail }: { detail: LlmExchangeOut }) {
   );
 }
 
+function PromptBadge({
+  promptName,
+  promptHash,
+}: {
+  promptName: string | null | undefined;
+  promptHash: string | null | undefined;
+}) {
+  if (!promptHash && !promptName) return null;
+  const name = promptName || "composite";
+  const short = promptHash ? promptHash.slice(0, 12) : null;
+  return (
+    <span
+      className="trace-prompt-badge"
+      title={
+        promptHash
+          ? `prompt: ${name} · ${promptHash}`
+          : `prompt: ${name}`
+      }
+    >
+      <span className="trace-prompt-badge-name">{name}</span>
+      {short && <span className="trace-prompt-badge-hash">{short}</span>}
+    </span>
+  );
+}
+
 function StatusDot({ status }: { status: string }) {
   const colorClass =
     status === "running"
@@ -727,6 +752,10 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
                 {(event.duration_ms / 1000).toFixed(1)}s
               </span>
             )}
+            <PromptBadge
+              promptName={event.prompt_name}
+              promptHash={event.composite_prompt_hash}
+            />
             {exchangeLoading && (
               <span className="trace-exchange-loading">loading...</span>
             )}

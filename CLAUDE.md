@@ -104,7 +104,22 @@ To add a new call type: subclass `CallRunner`. Set `call_type`, override `_make_
 
 **Moves** (`src/rumil/moves/`): Package with one module per move type. Each module defines a pydantic payload schema, an `execute()` function, and a `MoveDef` that binds them together as a tool. `base.py` has shared helpers (page creation, linking, `LAST_CREATED` resolution). `registry.py` collects all moves into a `MOVES` dict keyed by `MoveType`. See `MoveType` enum in `models.py` for the full list.
 
-**Data layer** (`src/rumil/database.py`): Supabase (Postgres) via the `supabase` Python SDK. Tables: pages, page_links, calls, budget, page_ratings, page_flags, mutation_events, runs, projects. `DB.create(run_id, prod=True, staged=False)` classmethod handles connection setup (delegated to `settings.py`); defaults to local Supabase. When `staged=True`, writes tag rows with `staged`/`run_id` and mutations go to `mutation_events` (see "Staged Runs and the Mutation Log" above). Several operations use Postgres RPC functions defined in the migrations.
+**Data layer** (`src/rumil/database.py` + `src/rumil/db/`): Supabase (Postgres) via the `supabase` Python SDK. Tables: pages, page_links, calls, budget, page_ratings, page_flags, mutation_events, runs, projects, annotation_events, reputation_events, chat_conversations, chat_messages, suggestions, prompt_versions, ab_eval_reports, run_eval_reports, page_format_events. `DB.create(run_id, prod=True, staged=False)` classmethod handles connection setup (delegated to `settings.py`); defaults to local Supabase. When `staged=True`, writes tag rows with `staged`/`run_id` and mutations go to `mutation_events` (see "Staged Runs and the Mutation Log" above). Several operations use Postgres RPC functions defined in the migrations.
+
+**DB is split into bounded stores** under `src/rumil/db/`. Each store owns a small set of tables; `DB` composes them as attributes (`db.projects`, `db.runs`, `db.calls`, `db.annotations`, `db.chat`) and retains delegating shims so every existing `db.<method>(...)` call continues to work unchanged. Extracted so far:
+
+- `rumil.db.row_helpers` — pure `_row_to_*` converters and column constants (e.g. `_SLIM_PAGE_COLUMNS`). No DB handle.
+- `rumil.db.mutation_log` — `MutationState` cache dataclass (staged-runs event replay).
+- `rumil.db.eval_summary` — `EvalSummary` + `aggregate_eval_rows_by_subject`, shared by `AnnotationStore` and consumers like `rumil.eval_feedback`.
+- `rumil.db.project_store.ProjectStore` — projects table + stats RPCs. Not mutation-tracked.
+- `rumil.db.run_store.RunStore` — runs + budget + ab_eval_reports + run_eval_reports + per-run page queries. Not mutation-tracked.
+- `rumil.db.call_store.CallStore` — calls + call_sequences + call_llm_exchanges + traces + ID resolution. Not mutation-tracked (calls table has no staged column today).
+- `rumil.db.annotation_store.AnnotationStore` — page_ratings, page_flags, reputation_events, annotation_events, page_format_events, and epistemic-score entry points. The epistemic-score path is the one crossing into mutation-log territory: it calls `self._db.record_mutation_event` for `set_credence` / `set_robustness` events.
+- `rumil.db.chat_store.ChatStore` — suggestions + chat_conversations + chat_messages + branching.
+
+**Still on `DB` directly (pending later refactor phases):** page CRUD (`save_page`, `supersede_page`, content/importance updates, etc.), link CRUD (`save_link`, `delete_link`, `update_link_role`, traversal helpers), the mutation-log machinery itself (`record_mutation_event`, `_load_mutation_state`, `_apply_*_events`, `_staged_filter`), `stage_run` / `commit_staged_run`, the few cross-cutting reads (`get_root_questions`, `resolve_page_id*`). These are the highest-risk extractions because they interact with the staged-runs mutation-log contract; they're deferred until `MutationLog` is hardened into its own capability object.
+
+When adding DB methods: put them in the relevant store, add a one-line delegating shim on `DB` to preserve the public surface. New stores (or methods on existing stores) that mutate tracked state (`pages`, `page_links`) still MUST go through `record_mutation_event` — the structural enforcement of that contract is a later phase.
 
 **Projects vs Workspace enum** — two separate concepts with confusingly similar names:
 - **Project** (`projects` table, `project_id` FK): The user-facing isolation mechanism. The CLI `--workspace <name>` flag resolves to a `Project` row via `db.get_or_create_project(name)`, then `db.project_id` is set. Every query on pages/calls/runs/links filters by `project_id`, so projects are fully isolated from each other.

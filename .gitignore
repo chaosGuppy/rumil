@@ -12,6 +12,9 @@ frontend/package-lock.json
 next-env.d.ts
 tsconfig.tsbuildinfo
 *.db
+*.db-shm
+*.db-wal
+*.db-journal
 CLAUDE.md.local
 
 # macOS

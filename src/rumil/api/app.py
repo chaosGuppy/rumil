@@ -837,6 +837,34 @@ async def get_run_trace_tree(run_id: str, db: DB = Depends(_get_db)):
     )
 
 
+@app.post("/api/runs/{run_id}/stage", status_code=200)
+async def post_stage_run(run_id: str, db: DB = Depends(_get_db)):
+    """Retroactively stage a completed non-staged run.
+
+    Flips the run's rows to staged=true and reverts direct mutations from
+    the event log so baseline readers see the pre-run state.
+    """
+    run = await db.get_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if run.get("staged"):
+        raise HTTPException(status_code=409, detail="Run is already staged")
+    await db.stage_run(run_id)
+    return {"run_id": run_id, "staged": True}
+
+
+@app.post("/api/runs/{run_id}/commit", status_code=200)
+async def post_commit_run(run_id: str, db: DB = Depends(_get_db)):
+    """Commit a staged run, making its effects visible to all readers."""
+    run = await db.get_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if not run.get("staged"):
+        raise HTTPException(status_code=409, detail="Run is not staged")
+    await db.commit_staged_run(run_id)
+    return {"run_id": run_id, "staged": False}
+
+
 @app.get("/api/calls/{call_id}/events", response_model=list[TraceEventOut])
 async def get_call_events(call_id: str, db: DB = Depends(_get_db)):
     call = await db.get_call(call_id)

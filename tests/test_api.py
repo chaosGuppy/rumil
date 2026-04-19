@@ -123,3 +123,81 @@ async def test_db_closed_even_when_endpoint_raises_http_exception(
     assert resp.status_code == 404
     assert db_close_spy.created == 1
     assert db_close_spy.closed == 1
+
+
+async def test_stage_run_missing_returns_404(api_client, mocker):
+    """POST /api/runs/{run_id}/stage returns 404 when the run does not exist."""
+    mocker.patch.object(DB, "get_run", return_value=None)
+    stage_spy = mocker.patch.object(DB, "stage_run")
+
+    resp = await api_client.post("/api/runs/does-not-exist/stage")
+    assert resp.status_code == 404
+    stage_spy.assert_not_called()
+
+
+async def test_stage_run_already_staged_returns_409(api_client, mocker):
+    """Staging an already-staged run should 409 without touching the DB."""
+    mocker.patch.object(
+        DB,
+        "get_run",
+        return_value={"id": "r1", "staged": True},
+    )
+    stage_spy = mocker.patch.object(DB, "stage_run")
+
+    resp = await api_client.post("/api/runs/r1/stage")
+    assert resp.status_code == 409
+    stage_spy.assert_not_called()
+
+
+async def test_stage_run_success(api_client, mocker):
+    """POST stage on a non-staged run calls DB.stage_run and returns staged=True."""
+    mocker.patch.object(
+        DB,
+        "get_run",
+        return_value={"id": "r1", "staged": False},
+    )
+    stage_spy = mocker.patch.object(DB, "stage_run", return_value=None)
+
+    resp = await api_client.post("/api/runs/r1/stage")
+    assert resp.status_code == 200
+    assert resp.json() == {"run_id": "r1", "staged": True}
+    stage_spy.assert_called_once_with("r1")
+
+
+async def test_commit_run_missing_returns_404(api_client, mocker):
+    """POST /api/runs/{run_id}/commit returns 404 when run does not exist."""
+    mocker.patch.object(DB, "get_run", return_value=None)
+    commit_spy = mocker.patch.object(DB, "commit_staged_run")
+
+    resp = await api_client.post("/api/runs/does-not-exist/commit")
+    assert resp.status_code == 404
+    commit_spy.assert_not_called()
+
+
+async def test_commit_run_not_staged_returns_409(api_client, mocker):
+    """Committing a run that is not staged should 409."""
+    mocker.patch.object(
+        DB,
+        "get_run",
+        return_value={"id": "r1", "staged": False},
+    )
+    commit_spy = mocker.patch.object(DB, "commit_staged_run")
+
+    resp = await api_client.post("/api/runs/r1/commit")
+    assert resp.status_code == 409
+    commit_spy.assert_not_called()
+
+
+async def test_commit_run_success(api_client, mocker):
+    """POST commit on a staged run calls DB.commit_staged_run and returns staged=False."""
+    mocker.patch.object(
+        DB,
+        "get_run",
+        return_value={"id": "r1", "staged": True},
+    )
+    commit_spy = mocker.patch.object(DB, "commit_staged_run", return_value=None)
+
+    resp = await api_client.post("/api/runs/r1/commit")
+    assert resp.status_code == 200
+    assert resp.json() == {"run_id": "r1", "staged": False}
+    commit_spy.assert_called_once_with("r1")

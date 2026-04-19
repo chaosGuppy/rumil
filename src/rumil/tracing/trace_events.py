@@ -44,6 +44,11 @@ class ContextBuiltEvent(BaseModel):
     source_page_id: str | None = None
     budget: int | None = None
     scout_mode: str | None = None
+    # Per-page rendering tier from the embedding context builder:
+    # "distillation" | "full" | "abstract" | "summary". Pages omitted from
+    # this map (e.g. preloaded, scope, view items) have no tier classification.
+    # Optional / nullable so older trace_json rows still parse.
+    page_id_tiers: dict[str, str] | None = None
 
 
 class MovesExecutedEvent(BaseModel):

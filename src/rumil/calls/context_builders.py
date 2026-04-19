@@ -54,6 +54,7 @@ async def _record_context_built(
     *,
     source_page_id: str | None = None,
     scout_mode: str | None = None,
+    page_id_tiers: dict[str, str] | None = None,
 ) -> None:
     await infra.trace.record(
         ContextBuiltEvent(
@@ -61,6 +62,7 @@ async def _record_context_built(
             preloaded_page_ids=await resolve_page_refs(preloaded_ids, infra.db),
             source_page_id=source_page_id,
             scout_mode=scout_mode,
+            page_id_tiers=page_id_tiers,
         )
     )
 
@@ -148,7 +150,12 @@ class CreateViewContext(ContextBuilder):
                     ]
             context_text += "\n".join(parts_pre)
 
-        await _record_context_built(infra, working_page_ids, preloaded_ids)
+        await _record_context_built(
+            infra,
+            working_page_ids,
+            preloaded_ids,
+            page_id_tiers=result.page_id_tiers(),
+        )
         return ContextResult(
             context_text=context_text,
             working_page_ids=working_page_ids,
@@ -211,7 +218,12 @@ class EmbeddingContext(ContextBuilder):
                     ]
             context_text += "\n".join(parts)
 
-        await _record_context_built(infra, working_page_ids, preloaded_ids)
+        await _record_context_built(
+            infra,
+            working_page_ids,
+            preloaded_ids,
+            page_id_tiers=result.page_id_tiers(),
+        )
         return ContextResult(
             context_text=context_text,
             working_page_ids=working_page_ids,
@@ -241,6 +253,7 @@ class IngestEmbeddingContext(ContextBuilder):
             working_page_ids,
             [],
             source_page_id=self._source_page.id,
+            page_id_tiers=result.page_id_tiers(),
         )
 
         formatted_source = await format_page(
@@ -301,6 +314,7 @@ class WebResearchEmbeddingContext(ContextBuilder):
                     infra.db,
                 ),
                 preloaded_page_ids=[],
+                page_id_tiers=emb_result.page_id_tiers(),
             )
         )
 
@@ -1007,7 +1021,12 @@ class BigAssessContext(ContextBuilder):
             if parts:
                 context_text += "\n".join(parts)
 
-        await _record_context_built(infra, working_page_ids, all_extra)
+        await _record_context_built(
+            infra,
+            working_page_ids,
+            all_extra,
+            page_id_tiers=result.page_id_tiers(),
+        )
         return ContextResult(
             context_text=context_text,
             working_page_ids=working_page_ids,

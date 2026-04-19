@@ -73,6 +73,26 @@ class EmbeddingBasedContextResult:
     distillation_page_ids: list[str] = field(default_factory=list)
     budget_usage: dict[str, int] = field(default_factory=dict)
 
+    def page_id_tiers(self) -> dict[str, str]:
+        """Map each page_id to its rendering tier.
+
+        Tiers correspond to the detail level the page was rendered at:
+        ``"distillation"`` (CONTENT, distillation pool), ``"full"`` (CONTENT),
+        ``"abstract"`` (ABSTRACT), ``"summary"`` (HEADLINE). Pages that do
+        not appear in any tier list (e.g. scope pages rendered separately,
+        view items, preloaded pages) are omitted from the map.
+        """
+        tiers: dict[str, str] = {}
+        for pid in self.distillation_page_ids:
+            tiers[pid] = "distillation"
+        for pid in self.full_page_ids:
+            tiers.setdefault(pid, "full")
+        for pid in self.abstract_page_ids:
+            tiers.setdefault(pid, "abstract")
+        for pid in self.summary_page_ids:
+            tiers.setdefault(pid, "summary")
+        return tiers
+
 
 async def render_page_and_immediate_children(
     root_id: str,

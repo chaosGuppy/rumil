@@ -810,4 +810,82 @@ export async function unflagViewItem(flagId: string): Promise<void> {
   if (!res.ok) throw new Error(`API error: ${res.status}`);
 }
 
+// Lift a FastAPI-style error detail off a failed response. Mirrors the
+// pattern used by createProject/createRootQuestion/etc. — returns a string
+// suitable for an inline error message, or a fallback when the body is
+// empty/unparseable.
+async function liftFastApiError(res: Response, fallback?: string): Promise<string> {
+  try {
+    const body = await res.json();
+    if (typeof body?.detail === "string") return body.detail;
+    if (Array.isArray(body?.detail) && body.detail[0]?.msg) {
+      return String(body.detail[0].msg);
+    }
+  } catch {
+    // non-JSON body
+  }
+  return fallback ?? `API error: ${res.status}`;
+}
+
+// Operator action: retroactively stage a completed run. 409 if already
+// staged, 404 if the run doesn't exist. Returns the updated staged flag
+// so the caller can refresh its local view without a second fetch.
+export async function stageRun(
+  runId: string,
+): Promise<{ run_id: string; staged: boolean }> {
+  const res = await fetch(`${API_BASE}/api/runs/${runId}/stage`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(await liftFastApiError(res));
+  return res.json();
+}
+
+// Operator action: commit a staged run, making its effects visible to all
+// readers. 409 if the run isn't staged.
+export async function commitRun(
+  runId: string,
+): Promise<{ run_id: string; staged: boolean }> {
+  const res = await fetch(`${API_BASE}/api/runs/${runId}/commit`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(await liftFastApiError(res));
+  return res.json();
+}
+
+// Kick off an orchestrator run against an existing question. Backend
+// returns 202 with the new run_id immediately (orchestrator runs in the
+// background). Caller should navigate to the trace so the user can watch
+// it materialize.
+export async function continueResearch(
+  questionId: string,
+  budget: number,
+): Promise<{ run_id: string; question_id: string; budget: number }> {
+  const res = await fetch(
+    `${API_BASE}/api/questions/${encodeURIComponent(questionId)}/continue`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ budget }),
+    },
+  );
+  if (!res.ok) throw new Error(await liftFastApiError(res));
+  return res.json();
+}
+
+// Kick off an AB-eval comparing two runs. Backend returns 202 immediately;
+// the eval runs in the background. The final ab_eval_report id isn't known
+// yet — callers typically navigate to /ab-evals and poll.
+export async function startAbEval(
+  runIdA: string,
+  runIdB: string,
+): Promise<{ run_id_a: string; run_id_b: string; status: string }> {
+  const res = await fetch(`${API_BASE}/api/ab-evals`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ run_id_a: runIdA, run_id_b: runIdB }),
+  });
+  if (!res.ok) throw new Error(await liftFastApiError(res));
+  return res.json();
+}
+
 export { API_BASE };

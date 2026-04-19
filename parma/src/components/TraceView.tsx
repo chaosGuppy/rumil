@@ -12,12 +12,15 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import {
+  commitRun,
   fetchCallEvents,
   fetchCallLLMExchanges,
   fetchLLMExchange,
   fetchRunSpend,
   fetchRunTraceTree,
   fetchProjectRuns,
+  stageRun,
+  startAbEval,
   updateRunHidden,
   type LLMExchangeDetail,
   type LLMExchangeSummary,
@@ -320,20 +323,25 @@ function TraceRunView({
 }) {
   const [tree, setTree] = useState<RunTraceTree | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
   const [selectedCallId, setSelectedCallId] = useState<string | null>(
     initialCallId ?? null,
   );
 
+  const refreshTree = useCallback(() => {
+    setRefreshKey((k) => k + 1);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
-    setTree(null);
     setError(null);
     fetchRunTraceTree(runId)
       .then((t) => {
         if (cancelled) return;
         setTree(t);
-        // Auto-select root call if nothing was pre-selected.
-        if (!initialCallId && t.calls.length > 0) {
+        // Auto-select root call if nothing was pre-selected. Only run this
+        // on the initial load — refreshTree() keeps the selected call.
+        if (refreshKey === 0 && !initialCallId && t.calls.length > 0) {
           const root = t.calls.find((c) => !c.call.parent_call_id) ?? t.calls[0];
           setSelectedCallId(root.call.id);
         }
@@ -344,7 +352,7 @@ function TraceRunView({
     return () => {
       cancelled = true;
     };
-  }, [runId, initialCallId]);
+  }, [runId, initialCallId, refreshKey]);
 
   // When the consumer pre-selects a call, trust them — don't wait for the
   // tree to load before reflecting that in state.
@@ -371,6 +379,7 @@ function TraceRunView({
         <TraceHeader
           tree={tree}
           projectId={projectId}
+          onRefresh={refreshTree}
         />
         <div className="trace-tree-scroll">
           <CallTree
@@ -399,9 +408,11 @@ function TraceRunView({
 function TraceHeader({
   tree,
   projectId,
+  onRefresh,
 }: {
   tree: RunTraceTree;
   projectId: string;
+  onRefresh: () => void;
 }) {
   // Surface the most useful run-level context at the top: question
   // headline (if present), short run id, total cost, staged flag. This
@@ -417,6 +428,11 @@ function TraceHeader({
           {shortRunId}
         </span>
         {tree.staged && <span className="trace-head-staged">staged</span>}
+        <StageCommitToggle
+          runId={tree.run_id}
+          staged={tree.staged}
+          onRefresh={onRefresh}
+        />
         {tree.cost_usd != null && (
           <span className="trace-head-cost">${tree.cost_usd.toFixed(4)}</span>
         )}
@@ -448,6 +464,70 @@ function TraceHeader({
         {projectId.slice(0, 8)} · project
       </div>
     </header>
+  );
+}
+
+// Operator affordance: toggle a run between staged and baseline. When
+// `staged` is true the button commits (with a confirm), otherwise it
+// retroactively stages. On success we refetch the trace tree via
+// onRefresh so the badge and other downstream UI update.
+function StageCommitToggle({
+  runId,
+  staged,
+  onRefresh,
+}: {
+  runId: string;
+  staged: boolean;
+  onRefresh: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleClick = useCallback(async () => {
+    if (busy) return;
+    if (staged) {
+      // Commit is semi-irreversible — it flips staged=false and the run's
+      // effects become visible to all readers. Confirm before firing.
+      const ok = window.confirm(
+        "Commit this staged run? Its effects will become visible to all "
+        + "readers. You can't un-commit without retroactively re-staging "
+        + "(which only works if no newer mutations depend on it).",
+      );
+      if (!ok) return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      if (staged) {
+        await commitRun(runId);
+      } else {
+        await stageRun(runId);
+      }
+      onRefresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "action failed");
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, staged, runId, onRefresh]);
+
+  return (
+    <>
+      <button
+        type="button"
+        className="trace-head-stage-btn"
+        onClick={handleClick}
+        disabled={busy}
+        title={
+          staged
+            ? "Commit this staged run (makes it visible to all readers)"
+            : "Retroactively stage this run (hides its effects from other readers)"
+        }
+      >
+        {busy ? "…" : staged ? "commit run" : "retroactively stage"}
+      </button>
+      {error && <span className="trace-head-stage-err">{error}</span>}
+    </>
   );
 }
 

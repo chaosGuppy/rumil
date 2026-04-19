@@ -6395,6 +6395,37 @@ mark.ann-mark.ann-mark-dispute:hover {
   border-radius: 2px;
 }
 
+/* Operator toggle — lives next to the staged badge. Subtle by default,
+ * sharper on hover. Commits require a confirm dialog (handled in JS) so
+ * nothing here needs to shout. */
+.trace-head-stage-btn {
+  font-family: var(--font-mono-stack);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  background: var(--bg-pane);
+  border: 1px solid var(--border);
+  padding: 2px 7px;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+}
+.trace-head-stage-btn:hover:not(:disabled) {
+  color: var(--fg);
+  border-color: var(--border-strong);
+}
+.trace-head-stage-btn:disabled {
+  opacity: 0.55;
+  cursor: progress;
+}
+.trace-head-stage-err {
+  font-family: var(--font-mono-stack);
+  font-size: 10px;
+  color: var(--node-uncertainty);
+  margin-left: 4px;
+}
+
 .trace-head-cost {
   font-family: var(--font-mono-stack);
   font-size: 11px;

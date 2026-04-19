@@ -466,7 +466,7 @@ async def cmd_summary(
     db: DB,
     max_depth: int = 4,
     summary_cutoff: int | None = None,
-) -> None:
+) -> str:
     question = await db.get_page(question_id)
     if not question:
         print(f"Error: question '{question_id}' not found. Run --list to see existing questions.")
@@ -482,6 +482,7 @@ async def cmd_summary(
 
     print(summary_text)
     print(f"\n---\nSummary saved to: {path}")
+    return summary_text
 
 
 async def cmd_report(
@@ -874,6 +875,17 @@ async def async_main():
         ),
     )
     parser.add_argument(
+        "--obsidian",
+        dest="obsidian_dir",
+        metavar="OUTPUT_DIR",
+        help=(
+            "Export pages as an Obsidian vault to OUTPUT_DIR. "
+            "Pass a question ID as the positional arg to scope to that "
+            "question's subtree. Combined with a new question text: "
+            "auto-exports the question's subtree after investigation."
+        ),
+    )
+    parser.add_argument(
         "--evaluate",
         dest="evaluate_id",
         metavar="QUESTION_ID",
@@ -1171,6 +1183,22 @@ async def async_main():
         )
         return
 
+    if args.obsidian_dir and not args.question:
+        from rumil.obsidian_export import export_obsidian
+
+        out = await export_obsidian(db, args.obsidian_dir)
+        print(f"Exported to: {out}")
+        return
+
+    if args.obsidian_dir and args.question:
+        resolved = await db.resolve_page_id(args.question)
+        if resolved:
+            from rumil.obsidian_export import export_obsidian
+
+            out = await export_obsidian(db, args.obsidian_dir, question_id=resolved)
+            print(f"Exported to: {out}")
+            return
+
     if args.list:
         await cmd_list(db, args.workspace_name)
         return
@@ -1244,13 +1272,24 @@ async def async_main():
             name=args.run_name,
             auto_summary=do_summary,
         )
+        summary_text = ""
         if do_summary:
-            await cmd_summary(
+            summary_text = await cmd_summary(
                 question_id,
                 db,
                 max_depth=args.max_depth,
                 summary_cutoff=args.summarize_after_depth,
             )
+        if args.obsidian_dir:
+            from rumil.obsidian_export import export_obsidian
+
+            out = await export_obsidian(
+                db,
+                args.obsidian_dir,
+                question_id=question_id,
+                summary_text=summary_text or None,
+            )
+            print(f"\nObsidian vault exported to: {out}")
     else:
         parser.print_help()
 

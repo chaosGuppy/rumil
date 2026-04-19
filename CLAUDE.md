@@ -162,6 +162,17 @@ PostToolUse hooks in `.claude/settings.json` run automatically after file edits.
 
 Whenever you run a script that prints a trace url, please report that trace url to the user immediately so they can follow along.
 
+## Dispatching agents
+
+When using the `Agent` tool, **`isolation: "worktree"` has been unreliable in this repo** — worktrees have repeatedly been created on a base commit that isn't the current branch head (e.g. a merge from an unrelated PR on `main`), leaving agents looking at a disjoint file tree. Symptoms: the agent reports "file X doesn't exist" for a file that clearly exists on your branch, or runs its `git` commands against an unexpected HEAD.
+
+Practical rules:
+
+- For work that depends on recent commits on a feature branch (i.e. anything touching `src/rumil/api/chat.py`, `src/rumil/dispatch.py`, or other recently-added files), **prefer running the agent without `isolation: "worktree"`** so it edits the main repo directly. The main repo is already on the correct branch.
+- If you do use `isolation: "worktree"`, tell the agent to run a quick `ls` / `grep` sanity check at the top of its prompt and **STOP and report the worktree HEAD commit** if the expected files aren't there — don't let it guess or force a fix.
+- Don't assume `isolation: "worktree"` prevents main-repo edits. In practice, agents' `Edit`/`Write` tool calls have sometimes landed in the main repo path despite the worktree being created, so treat the isolation as a git-history convenience, not a safety barrier.
+- Multiple Claude Code sessions editing the same repo is common here. When an agent (or this session) finishes and you see unrelated modifications or a mid-merge `UU` file in `git status`, that's another session — don't resolve its merge conflicts or touch its staged files without checking.
+
 ## Skills
 
 You must always invoke the relevant skill when doing certain types of work

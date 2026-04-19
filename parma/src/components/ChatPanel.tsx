@@ -12,7 +12,7 @@ import {
   fetchPageByShortId,
 } from "@/lib/api";
 import type { ChatToolUse, ChatConversationSummary } from "@/lib/api";
-import { SlashCommandDropdown, useSlashCommands, recordRecentCommand } from "./SlashCommands";
+import { SlashCommandDropdown, useSlashCommands, recordRecentCommand, COMMANDS } from "./SlashCommands";
 import { processChildren } from "./NodeRefLink";
 import { useInspectPanel } from "./InspectPanelContext";
 
@@ -500,6 +500,33 @@ export function ChatPanel({
 
     if (trimmed.startsWith("/")) {
       const cmdName = trimmed.slice(1).split(/\s+/)[0]?.toLowerCase();
+      // Unknown slashes silently forwarded to the model look like a no-op
+      // from the user's side (ux-review-wave7 #3). Surface an explicit
+      // "unknown command" reply in the transcript so the interaction
+      // closes the loop. Known commands — even the ones handled by the
+      // model via tool use (/search, /ask, /dispatch, /orchestrate,
+      // /ingest) — still fall through to the stream as before.
+      const known = COMMANDS.some((c) => c.name === cmdName);
+      if (cmdName && !known) {
+        setInput("");
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `user-${Date.now()}`,
+            role: "user",
+            content: trimmed,
+            timestamp: new Date(),
+          },
+          {
+            id: `sys-${Date.now()}`,
+            role: "assistant",
+            content:
+              `Unknown command \`/${cmdName}\`. Type \`/\` to see the available slash commands.`,
+            timestamp: new Date(),
+          },
+        ]);
+        return;
+      }
       if (cmdName) recordRecentCommand(cmdName);
     }
 

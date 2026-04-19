@@ -149,6 +149,13 @@ PRESETS: dict[str, AvailableMoves] = {
             MoveType.LOAD_PAGE,
             MoveType.UPDATE_EPISTEMIC,
         ],
+        CallType.BUILD_MODEL: [
+            MoveType.WRITE_MODEL_BODY,
+            MoveType.CREATE_CLAIM,
+            MoveType.LINK_CONSIDERATION,
+            MoveType.PROPOSE_VIEW_ITEM,
+            MoveType.LOAD_PAGE,
+        ],
     },
     "judge-on-assess": {
         CallType.ASSESS: [
@@ -290,6 +297,13 @@ PRESETS: dict[str, AvailableMoves] = {
         CallType.UPDATE_VIEW: [
             MoveType.LOAD_PAGE,
             MoveType.UPDATE_EPISTEMIC,
+        ],
+        CallType.BUILD_MODEL: [
+            MoveType.WRITE_MODEL_BODY,
+            MoveType.CREATE_CLAIM,
+            MoveType.LINK_CONSIDERATION,
+            MoveType.PROPOSE_VIEW_ITEM,
+            MoveType.LOAD_PAGE,
         ],
     },
 }

@@ -1,6 +1,7 @@
 """Call types for the research workspace."""
 
 from rumil.calls.assess import AssessCall, BigAssessCall
+from rumil.calls.build_model import BuildModelCall
 from rumil.calls.call_registry import ASSESS_CALL_CLASSES
 from rumil.calls.create_view import CreateViewCall
 from rumil.calls.find_considerations import FindConsiderationsCall
@@ -29,6 +30,7 @@ __all__ = [
     "ASSESS_CALL_CLASSES",
     "AssessCall",
     "BigAssessCall",
+    "BuildModelCall",
     "CallRunner",
     "CreateViewCall",
     "FindConsiderationsCall",

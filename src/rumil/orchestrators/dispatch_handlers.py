@@ -32,6 +32,7 @@ from rumil.calls.stages import CallRunner
 from rumil.models import (
     AssessDispatchPayload,
     BaseDispatchPayload,
+    BuildModelDispatchPayload,
     CallType,
     CreateViewDispatchPayload,
     MultiRoundFields,
@@ -55,6 +56,7 @@ from rumil.models import (
 )
 from rumil.orchestrators.common import (
     assess_question,
+    build_model_for_question,
     create_view_for_question,
     find_considerations_until_done,
     update_view_for_question,
@@ -177,6 +179,28 @@ async def _handle_create_view(ctx: DispatchContext, payload: BaseDispatchPayload
     )
 
 
+async def _handle_build_model(ctx: DispatchContext, payload: BaseDispatchPayload) -> str | None:
+    assert isinstance(payload, BuildModelDispatchPayload)
+    log.info(
+        "Dispatch: build_model on %s (flavor=%s) — %s",
+        ctx.d_label,
+        payload.flavor.value,
+        payload.reason,
+    )
+    return await build_model_for_question(
+        ctx.resolved_question_id,
+        ctx.orchestrator.db,
+        parent_call_id=ctx.parent_call_id,
+        context_page_ids=payload.context_page_ids,
+        broadcaster=ctx.orchestrator.broadcaster,
+        force=ctx.force,
+        call_id=ctx.call_id,
+        sequence_id=ctx.sequence_id,
+        sequence_position=ctx.sequence_position,
+        flavor=payload.flavor.value,
+    )
+
+
 async def _handle_web_research(ctx: DispatchContext, payload: BaseDispatchPayload) -> str | None:
     assert isinstance(payload, WebResearchDispatchPayload)
     log.info("Dispatch: web_research on %s — %s", ctx.d_label, payload.reason)
@@ -234,6 +258,7 @@ DISPATCH_HANDLERS: dict[type[BaseDispatchPayload], DispatchHandler] = {
     ScoutDispatchPayload: _handle_find_considerations,
     AssessDispatchPayload: _handle_assess,
     CreateViewDispatchPayload: _handle_create_view,
+    BuildModelDispatchPayload: _handle_build_model,
     WebResearchDispatchPayload: _handle_web_research,
     ScoutSubquestionsDispatchPayload: _make_scout_handler(
         CallType.SCOUT_SUBQUESTIONS,

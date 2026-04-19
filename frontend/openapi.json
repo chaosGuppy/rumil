@@ -2234,6 +2234,7 @@
           "create_view",
           "global_prioritization",
           "update_view",
+          "build_model",
           "claude_code_direct"
         ],
         "title": "CallType"
@@ -3252,7 +3253,8 @@
           "depends_on",
           "view_item",
           "view_of",
-          "meta_for"
+          "meta_for",
+          "model_of"
         ],
         "title": "LinkType"
       },
@@ -3839,7 +3841,8 @@
           "summary",
           "view",
           "view_item",
-          "view_meta"
+          "view_meta",
+          "model"
         ],
         "title": "PageType"
       },

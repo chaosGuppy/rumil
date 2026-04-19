@@ -32,6 +32,7 @@ import asyncio
 import logging
 import uuid
 
+from rumil.calls.build_model import BuildModelCall
 from rumil.calls.call_registry import ASSESS_CALL_CLASSES
 from rumil.calls.find_considerations import FindConsiderationsCall
 from rumil.calls.link_subquestions import LinkSubquestionsCall
@@ -46,7 +47,7 @@ from rumil.calls.scout_web_questions import ScoutWebQuestionsCall
 from rumil.calls.stages import CallRunner
 from rumil.calls.web_research import WebResearchCall
 from rumil.database import DB
-from rumil.models import CallStage, CallType, FindConsiderationsMode
+from rumil.models import CallStage, CallType, FindConsiderationsMode, ModelFlavor
 from rumil.orchestrators import create_root_question
 from rumil.orchestrators.robustify import RobustifyOrchestrator
 from rumil.settings import get_settings
@@ -112,6 +113,20 @@ async def run_call(args: argparse.Namespace, db: DB, question_id: str) -> None:
             up_to_stage=up_to_stage,
         )
         await web_research.run()
+
+    elif call_type == "build-model":
+        call = await db.create_call(
+            CallType.BUILD_MODEL,
+            scope_page_id=question_id,
+        )
+        build_model = BuildModelCall(
+            question_id,
+            call,
+            db,
+            flavor=ModelFlavor(args.flavor),
+            up_to_stage=up_to_stage,
+        )
+        await build_model.run()
 
     elif call_type in _SCOUT_CALL_TYPES:
         scout_ct, cls = _SCOUT_CALL_TYPES[call_type]
@@ -224,6 +239,7 @@ def main() -> None:
             "assess",
             "robustify",
             "web-research",
+            "build-model",
             "link-subquestions",
             *_SCOUT_CALL_TYPES,
         ],
@@ -304,6 +320,12 @@ def main() -> None:
         "--guidance",
         default="",
         help="Optional guidance text appended to the assess task prompt (big assess only)",
+    )
+    parser.add_argument(
+        "--flavor",
+        default="theoretical",
+        choices=[f.value for f in ModelFlavor],
+        help="build-model flavor (default: theoretical). Only theoretical is implemented.",
     )
     parser.add_argument(
         "--up-to-stage",

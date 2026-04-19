@@ -630,6 +630,50 @@ async def update_view_for_question(
     return call.id
 
 
+async def build_model_for_question(
+    question_id: str,
+    db: DB,
+    parent_call_id: str | None = None,
+    context_page_ids: Sequence[str] | None = None,
+    broadcaster=None,
+    force: bool = False,
+    call_id: str | None = None,
+    sequence_id: str | None = None,
+    sequence_position: int | None = None,
+    flavor: str = "theoretical",
+) -> str | None:
+    """Run one BuildModel call on a question. Returns call ID, or None if no budget.
+
+    Only ``flavor='theoretical'`` is supported today; the executable flavor
+    is deferred pending a separate sandboxing design doc.
+    """
+    from rumil.calls.build_model import BuildModelCall
+    from rumil.models import ModelFlavor
+
+    log.info("build_model_for_question: question=%s, flavor=%s", question_id[:8], flavor)
+    if not await _consume_budget(db, force=force):
+        return None
+
+    call = await db.create_call(
+        CallType.BUILD_MODEL,
+        scope_page_id=question_id,
+        parent_call_id=parent_call_id,
+        context_page_ids=context_page_ids,
+        call_id=call_id,
+        sequence_id=sequence_id,
+        sequence_position=sequence_position,
+    )
+    instance = BuildModelCall(
+        question_id,
+        call,
+        db,
+        flavor=ModelFlavor(flavor),
+        broadcaster=broadcaster,
+    )
+    await instance.run()
+    return call.id
+
+
 async def web_research_question(
     question_id: str,
     db: DB,

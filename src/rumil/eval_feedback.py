@@ -45,3 +45,45 @@ def format_eval_summary_line(
             continue
         parts.append(f"{dim}={s.mean:.2f} (n={s.count})")
     return ", ".join(parts)
+
+
+def select_lazy_eval_targets(
+    page_ids: Sequence[str],
+    *,
+    summaries: dict[str, dict[str, EvalSummary]],
+    dimensions: Sequence[str] = LAZY_EVAL_DIMENSIONS,
+    per_round_cap: int,
+    already_evaluated_this_run: int,
+    per_run_cap: int,
+) -> list[str]:
+    """Pick up to ``per_round_cap`` pages that lack any of ``dimensions``.
+
+    Phase 3 of evals-as-feedback: at prioritization time, orchestrators
+    call this to decide which claims/subquestions deserve a cheap lazy
+    eval pass before scoring. Mandatory hedges enforced:
+
+    - Respects per-run spend ceiling: the returned list shrinks so
+      ``already_evaluated_this_run + len(result) <= per_run_cap``.
+    - Skips pages that already have at least one event for EVERY
+      requested dimension — those are "covered" for this round.
+    - Preserves input order so the caller's importance-based ranking
+      determines which uncovered pages win when the cap bites.
+
+    Pure function — callers (two_phase / policies) combine this with
+    ``settings.lazy_eval_enabled`` gating + actual dispatch.
+    """
+    if per_round_cap <= 0 or already_evaluated_this_run >= per_run_cap:
+        return []
+    remaining_budget = per_run_cap - already_evaluated_this_run
+    cap = min(per_round_cap, remaining_budget)
+    if cap <= 0:
+        return []
+    out: list[str] = []
+    for pid in page_ids:
+        covered = summaries.get(pid) or {}
+        missing = any(covered.get(dim) is None or covered[dim].count == 0 for dim in dimensions)
+        if missing:
+            out.append(pid)
+            if len(out) >= cap:
+                break
+    return out

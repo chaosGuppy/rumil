@@ -589,6 +589,25 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1;
+}
+
+.pane-detail-depth-type {
+  color: var(--fg-muted);
+  letter-spacing: 0.08em;
+}
+
+.pane-detail-depth-head {
+  color: var(--fg);
+  text-transform: none;
+  letter-spacing: 0.01em;
+  font-family: var(--font-body-stack);
+  font-size: 11px;
+}
+
+.pane-detail-depth-id {
+  opacity: 0.6;
 }
 
 .pane-detail-actions {

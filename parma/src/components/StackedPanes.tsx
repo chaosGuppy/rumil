@@ -167,16 +167,16 @@ export function StackedPanes({
     return () => clearTimeout(timer);
   }, [focusNodeId, allItems, onFocusHandled]);
 
-  // Scroll the rightmost pane into view whenever the stack grows.
+  // Scroll the rightmost pane into view horizontally when the stack grows.
+  // scrollIntoView with block: "nearest" was yanking the whole container
+  // vertically — making pane 1 jump from its top down to wherever the
+  // pinned card happened to be. Scrolling the container directly keeps
+  // vertical scroll untouched so the spatial anchor holds.
   useEffect(() => {
     if (paneStack.length === 0) return;
-    // Defer one frame so the new pane has mounted.
     const raf = requestAnimationFrame(() => {
-      lastPaneRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "nearest",
-        inline: "end",
-      });
+      const c = containerRef.current;
+      if (c) c.scrollTo({ left: c.scrollWidth, behavior: "smooth" });
     });
     return () => cancelAnimationFrame(raf);
   }, [paneStack.length]);
@@ -281,7 +281,7 @@ function RootPane({
             }}
           >
             {view.health.total_pages} pages · depth {view.health.max_depth} ·
-            shift-click a ref to pin it as a pane →
+            click any card to pin as a pane →
           </div>
         </header>
 
@@ -428,16 +428,22 @@ function DetailPane({
         <header className="pane-detail-header">
           <div className="pane-detail-head-row">
             <span className="pane-detail-depth">
-              pane {depth} · {shortId}
+              pane {depth}
+              {detail && (
+                <>
+                  {" · "}
+                  <span className="pane-detail-depth-type">
+                    {detail.page.page_type}
+                  </span>
+                  {" · "}
+                  <span className="pane-detail-depth-head">
+                    {detail.page.headline}
+                  </span>
+                </>
+              )}
+              <span className="pane-detail-depth-id"> · {shortId}</span>
             </span>
             <div className="pane-detail-actions">
-              <button
-                className="pane-detail-btn"
-                onClick={() => onPromote(shortId)}
-                title="Pin this page again as the new rightmost pane"
-              >
-                pin →
-              </button>
               <button
                 className="pane-detail-btn pane-detail-btn-close"
                 onClick={onClose}

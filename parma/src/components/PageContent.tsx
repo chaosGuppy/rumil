@@ -151,6 +151,9 @@ function linkifyString(
         <button
           key={`${keyPrefix}-ref-${match.index}`}
           type="button"
+          onMouseDown={(e) => {
+            if (onPromote && isPromoteEvent(e)) e.preventDefault();
+          }}
           onClick={(e) => {
             if (onPromote && isPromoteEvent(e)) {
               e.preventDefault();
@@ -160,7 +163,7 @@ function linkifyString(
             }
           }}
           className="node-ref-link"
-          title={`Click to inspect · shift-click to pin as pane · ${matched}`}
+          title={`Click to inspect · alt/cmd-click to pin as pane · ${matched}`}
         >
           {matched}
         </button>,

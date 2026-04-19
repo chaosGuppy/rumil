@@ -8,12 +8,13 @@ import { useInspectPanel } from "./InspectPanelContext";
 // are not word characters. The capture group is the id.
 export const NODE_ID_RE = /\b([0-9a-f]{8})\b/g;
 
-// Plain click → `onNodeRef` (typically drawer). Shift/cmd/ctrl click →
+// Plain click → `onNodeRef` (typically drawer). Alt/cmd/ctrl click →
 // promote the ref onto the active view's pane stack (if one has registered
-// a handler) and close the drawer. Falls back to the plain handler if no
-// pane-owner is mounted.
+// a handler) and close the drawer. Alt is preferred over Shift because
+// Shift+click extends text selection as a side effect, leaving a stray
+// highlight in the source prose after every pin.
 export function isPromoteEvent(e: MouseEvent): boolean {
-  return e.shiftKey || e.metaKey || e.ctrlKey;
+  return e.altKey || e.metaKey || e.ctrlKey;
 }
 
 export function TextWithNodeRefs({
@@ -38,6 +39,11 @@ export function TextWithNodeRefs({
       <button
         key={match.index}
         type="button"
+        onMouseDown={(e) => {
+          // Prevent native selection-extension when a modifier is held,
+          // so alt/cmd/ctrl-click to pin doesn't leave a text highlight.
+          if (isPromoteEvent(e)) e.preventDefault();
+        }}
         onClick={(e) => {
           if (isPromoteEvent(e)) {
             e.preventDefault();
@@ -47,7 +53,7 @@ export function TextWithNodeRefs({
           }
         }}
         className="node-ref-link"
-        title={`Click to inspect · shift-click to pin as pane · ${id}`}
+        title={`Click to inspect · alt/cmd-click to pin as pane · ${id}`}
       >
         {id}
       </button>,

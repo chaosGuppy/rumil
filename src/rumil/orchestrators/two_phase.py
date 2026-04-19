@@ -199,7 +199,23 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
 
                 self._executed_since_last_plan = True
 
-                if self._invocation > 1 or last_call:
+                # Create/update the View after this batch of dispatches in any
+                # of these cases:
+                # - invocation > 1: after any main_phase_prio batch, as before
+                # - last_call: so the final state has a View, as before
+                # - end of initial_prio (invocation == 1) when enough budget
+                #   remains for a meaningful main_phase_prio round to follow:
+                #   main-phase prio is View-first and expects a View to
+                #   interrogate. The MIN_TWOPHASE_BUDGET threshold excludes
+                #   budget-tight runs where adding a View call would starve
+                #   the scheduled follow-up dispatches.
+                post_batch_remaining = self._effective_budget(await self.db.budget_remaining())
+                should_create_view = (
+                    self._invocation > 1
+                    or last_call
+                    or (self._invocation == 1 and post_batch_remaining >= MIN_TWOPHASE_BUDGET)
+                )
+                if should_create_view:
                     existing_view = await self.db.get_view_for_question(root_question_id)
                     if existing_view:
                         await update_view_for_question(

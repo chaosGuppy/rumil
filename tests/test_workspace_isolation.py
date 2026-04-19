@@ -4,6 +4,7 @@ import uuid
 
 import pytest_asyncio
 
+from rumil.constants import DEFAULT_VIEW_SECTIONS
 from rumil.context import build_prioritization_context
 from rumil.database import DB
 from rumil.models import (
@@ -223,5 +224,69 @@ async def test_prioritization_context_no_load_bearing_section_when_empty():
         question = await _make_question(db, "What is 2+2?")
         ctx, _ = await build_prioritization_context(db, question.id)
         assert "Load-Bearing Pages" not in ctx
+    finally:
+        await db.delete_run_data(delete_project=True)
+
+
+async def test_prioritization_context_leads_with_view_when_present():
+    db = await _make_db(f"view-first-{uuid.uuid4().hex[:8]}")
+    try:
+        question = await _make_question(db, "Is the sky blue?")
+
+        view = Page(
+            page_type=PageType.VIEW,
+            layer=PageLayer.WIKI,
+            workspace=Workspace.RESEARCH,
+            content="Short synthesis of sky colour research.",
+            headline=f"View: {question.headline}",
+            sections=list(DEFAULT_VIEW_SECTIONS),
+        )
+        await db.save_page(view)
+        await db.save_link(
+            PageLink(
+                from_page_id=view.id,
+                to_page_id=question.id,
+                link_type=LinkType.VIEW_OF,
+            )
+        )
+
+        item = Page(
+            page_type=PageType.VIEW_ITEM,
+            layer=PageLayer.WIKI,
+            workspace=Workspace.RESEARCH,
+            content="Rayleigh scattering dominates sky colour in clear air.",
+            headline="Rayleigh scattering is the primary mechanism",
+        )
+        await db.save_page(item)
+        await db.save_link(
+            PageLink(
+                from_page_id=view.id,
+                to_page_id=item.id,
+                link_type=LinkType.VIEW_ITEM,
+                importance=4,
+                section="confident_views",
+                position=0,
+            )
+        )
+
+        ctx, _ = await build_prioritization_context(db, question.id)
+
+        view_heading = "Current View — the synthesis you are working to improve"
+        scope_heading = "Scope Question — Detail"
+        assert view_heading in ctx
+        assert scope_heading in ctx
+        assert ctx.index(view_heading) < ctx.index(scope_heading)
+        assert "Rayleigh scattering is the primary mechanism" in ctx
+    finally:
+        await db.delete_run_data(delete_project=True)
+
+
+async def test_prioritization_context_without_view_omits_view_heading():
+    db = await _make_db(f"no-view-{uuid.uuid4().hex[:8]}")
+    try:
+        question = await _make_question(db, "Is the sky green?")
+        ctx, _ = await build_prioritization_context(db, question.id)
+        assert "Current View" not in ctx
+        assert "Scope Question — Detail" in ctx
     finally:
         await db.delete_run_data(delete_project=True)

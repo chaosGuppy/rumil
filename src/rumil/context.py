@@ -670,9 +670,11 @@ async def build_prioritization_context(
 ) -> tuple[str, dict[str, str]]:
     """Build context for a prioritization call.
 
-    Includes the current View (importance 2+) for the scope question,
-    then appends the scope question and its direct children (at ABSTRACT
-    detail) and a dependency signal.
+    When a View exists for the scope question, the View (at importance 2+)
+    leads the context — it is the current best synthesis of research, and
+    is the artifact that prioritization dispatches are meant to improve.
+    The scope question subtree at ABSTRACT detail and a dependency signal
+    follow.
 
     Returns (context_text, short_id_map) where short_id_map maps 8-char
     short IDs to full UUIDs.
@@ -695,6 +697,16 @@ async def build_prioritization_context(
                     min_importance=2,
                 )
                 if view_text.strip():
+                    parts.append("## Current View — the synthesis you are working to improve")
+                    parts.append("")
+                    parts.append(
+                        "The View below is the current best structured synthesis of "
+                        "research on the scope question. Your dispatches should be "
+                        "chosen to improve the next revision of this View — fill its "
+                        "gaps, stress-test its weak items, resolve its tensions, and "
+                        "deepen investigation on load-bearing claims."
+                    )
+                    parts.append("")
                     parts.append(view_text)
                     parts.append("")
                     parts.append("---")

@@ -157,6 +157,10 @@ export type AbEvalReportOut = {
      */
     overall_assessment_call_id: string;
     /**
+     * Eval Run Id
+     */
+    eval_run_id: string;
+    /**
      * Dimension Reports
      */
     dimension_reports: Array<AbEvalDimensionOut>;
@@ -721,6 +725,18 @@ export type CallsForQuestion = {
      * Total
      */
     total: number;
+    /**
+     * Child Questions
+     */
+    child_questions: number;
+    /**
+     * Considerations
+     */
+    considerations: number;
+    /**
+     * Judgements
+     */
+    judgements: number;
 };
 
 /**

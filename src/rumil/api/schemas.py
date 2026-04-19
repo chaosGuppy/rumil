@@ -737,6 +737,14 @@ class ABEvalReportOut(BaseModel):
     question_headline: str = ""
     overall_assessment: str
     overall_assessment_call_id: str = ""
+    eval_run_id: str = ""
+    """Run ID that produced the comparison / overall-assessment calls.
+
+    Distinct from ``run_id_a`` / ``run_id_b`` (the runs being
+    compared) — this is the eval's own run, which the trace UI
+    links to when rendering dimension + overall-assessment call
+    traces.
+    """
     dimension_reports: list[ABEvalDimensionOut]
     config_a: dict = {}
     config_b: dict = {}
@@ -782,6 +790,14 @@ class CallsForQuestion(BaseModel):
     headline: str | None
     by_type: dict[str, int]
     total: int
+    # Per-question page counts for the focus-bars UI. Default 0 because
+    # the current stats RPC (compute_project_stats / compute_question_stats)
+    # doesn't populate them yet — extending the SQL is a follow-up. Keeping
+    # the fields on the schema lets the TS frontend render the UI immediately
+    # without a type error, with zero bars until the RPC is updated.
+    child_questions: int = 0
+    considerations: int = 0
+    judgements: int = 0
 
 
 class StatsOut(BaseModel):

@@ -4146,6 +4146,11 @@
             "title": "Overall Assessment Call Id",
             "default": ""
           },
+          "eval_run_id": {
+            "type": "string",
+            "title": "Eval Run Id",
+            "default": ""
+          },
           "dimension_reports": {
             "items": {
               "$ref": "#/components/schemas/ABEvalDimensionOut"
@@ -4180,6 +4185,7 @@
           "question_headline",
           "overall_assessment",
           "overall_assessment_call_id",
+          "eval_run_id",
           "dimension_reports",
           "config_a",
           "config_b",
@@ -5118,6 +5124,21 @@
           "total": {
             "type": "integer",
             "title": "Total"
+          },
+          "child_questions": {
+            "type": "integer",
+            "title": "Child Questions",
+            "default": 0
+          },
+          "considerations": {
+            "type": "integer",
+            "title": "Considerations",
+            "default": 0
+          },
+          "judgements": {
+            "type": "integer",
+            "title": "Judgements",
+            "default": 0
           }
         },
         "type": "object",
@@ -5125,7 +5146,10 @@
           "question_id",
           "headline",
           "by_type",
-          "total"
+          "total",
+          "child_questions",
+          "considerations",
+          "judgements"
         ],
         "title": "CallsForQuestion"
       },

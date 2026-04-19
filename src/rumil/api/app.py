@@ -1785,6 +1785,22 @@ async def get_ab_eval(eval_id: str, db: DB = Depends(_get_db)):
     )
     configs_by_id = {r["id"]: r.get("config") or {} for r in run_rows}
 
+    # Derive eval_run_id from the overall-assessment call (or any dimension
+    # call as a fallback). These calls all live in the eval's own run.
+    eval_run_id = ""
+    eval_call_id = row.get("overall_assessment_call_id") or ""
+    if not eval_call_id:
+        for d in dims:
+            eval_call_id = d.get("comparison_call_id") or d.get("call_id_a") or ""
+            if eval_call_id:
+                break
+    if eval_call_id:
+        call_rows = _rows(
+            await db.client.table("calls").select("run_id").eq("id", eval_call_id).execute()
+        )
+        if call_rows:
+            eval_run_id = call_rows[0].get("run_id") or ""
+
     return ABEvalReportOut(
         id=row["id"],
         run_id_a=row["run_id_a"],
@@ -1794,6 +1810,7 @@ async def get_ab_eval(eval_id: str, db: DB = Depends(_get_db)):
         question_headline=q_page.headline if q_page else "",
         overall_assessment=row.get("overall_assessment") or "",
         overall_assessment_call_id=row.get("overall_assessment_call_id") or "",
+        eval_run_id=eval_run_id,
         dimension_reports=[
             ABEvalDimensionOut(
                 name=d.get("name", ""),

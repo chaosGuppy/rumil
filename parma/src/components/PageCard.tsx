@@ -62,23 +62,6 @@ export function PageCard({
     .filter((l) => l.link_type === "cites")
     .map((l) => l.to_page_id.slice(0, 8));
 
-  if (page.page_type === "concept") {
-    return (
-      <div
-        className={[
-          "concept-node-card",
-          isFocused ? "node-focused" : "",
-        ]
-          .filter(Boolean)
-          .join(" ")}
-      >
-        <div className="concept-node-label">concept</div>
-        <h3>{page.headline}</h3>
-        <PageContent text={page.content} excludeConceptId={page.id} />
-      </div>
-    );
-  }
-
   const className = [
     "node-card",
     isActive ? "node-active" : "",

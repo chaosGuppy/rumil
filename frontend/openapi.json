@@ -1732,6 +1732,27 @@
         }
       }
     },
+    "/api/capabilities": {
+      "get": {
+        "summary": "Get Capabilities",
+        "description": "Return the full set of orchestrators, eval types, call types, and\npresets available on this server. Sourced entirely from the Python\nregistries so a new orchestrator/eval-type appears here the moment it's\nregistered \u2014 frontend pickers and skill docs can iterate this endpoint\nrather than hard-coding lists.",
+        "operationId": "get_capabilities_api_capabilities_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Get Capabilities Api Capabilities Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/questions/{question_id}/continue": {
       "post": {
         "summary": "Post Continue Question",

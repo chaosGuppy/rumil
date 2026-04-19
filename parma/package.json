@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev --turbopack --port 3100",
     "build": "next build --turbopack",
-    "start": "next start"
+    "start": "next start",
+    "generate-api": "openapi-ts"
   },
   "dependencies": {
     "diff": "^8.0.4",
@@ -16,6 +17,7 @@
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
+    "@hey-api/openapi-ts": "^0.94.5",
     "@tailwindcss/postcss": "^4",
     "@tailwindcss/typography": "^0.5.16",
     "@types/node": "^20",

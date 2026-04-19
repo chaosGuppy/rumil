@@ -1,5 +1,4 @@
 import type {
-  AdversarialVerdictSummary,
   Project,
   ProjectSummary,
   Page,

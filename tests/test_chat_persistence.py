@@ -21,10 +21,23 @@ from rumil.models import ChatMessageRole
 
 
 @pytest_asyncio.fixture
-async def project_id(tmp_db):
-    project, _ = await tmp_db.get_or_create_project("chat-persist-test")
+async def workspace_name(tmp_db):
+    # Unique per test so tmp_db teardown (delete_project=True) doesn't hit
+    # FK violations from stale handle_chat runs on a shared-named project.
+    return f"chat-persist-{tmp_db.run_id[:8]}"
+
+
+@pytest_asyncio.fixture
+async def project_id(tmp_db, workspace_name):
+    project, _ = await tmp_db.get_or_create_project(workspace_name)
     tmp_db.project_id = project.id
-    return project.id
+    yield project.id
+    # `handle_chat` creates its own throwaway DB+run pointing at this
+    # project; those rows aren't cleaned by tmp_db.delete_run_data (which
+    # filters by tmp_db.run_id), so tmp_db's delete_project=True step hits
+    # an FK violation unless we scrub them first. Delete in FK-safe order.
+    for table in ("calls", "pages", "runs"):
+        await tmp_db._execute(tmp_db.client.table(table).delete().eq("project_id", project.id))
 
 
 @pytest_asyncio.fixture
@@ -238,7 +251,9 @@ def _fake_anthropic_response(text: str):
     return msg
 
 
-async def test_handle_chat_auto_creates_conversation_when_missing(tmp_db, project_id, mocker):
+async def test_handle_chat_auto_creates_conversation_when_missing(
+    tmp_db, project_id, workspace_name, mocker
+):
     """Calling handle_chat with no conversation_id auto-creates one and persists messages."""
     fake_response = _fake_anthropic_response("Reply from assistant")
 
@@ -256,7 +271,7 @@ async def test_handle_chat_auto_creates_conversation_when_missing(tmp_db, projec
     request = ChatRequest(
         question_id="",
         messages=[{"role": "user", "content": "What do we know?"}],
-        workspace="chat-persist-test",
+        workspace=workspace_name,
     )
     response = await handle_chat(request)
 
@@ -280,7 +295,9 @@ async def test_handle_chat_auto_creates_conversation_when_missing(tmp_db, projec
     assert asst_msg.content["blocks"][0]["text"] == "Reply from assistant"
 
 
-async def test_handle_chat_resumes_existing_conversation(tmp_db, project_id, mocker):
+async def test_handle_chat_resumes_existing_conversation(
+    tmp_db, project_id, workspace_name, mocker
+):
     """Passing conversation_id loads prior messages and persists new turn."""
     conv = await tmp_db.create_chat_conversation(
         project_id=project_id,
@@ -324,7 +341,7 @@ async def test_handle_chat_resumes_existing_conversation(tmp_db, project_id, moc
             {"role": "assistant", "content": "first answer"},
             {"role": "user", "content": "second question"},
         ],
-        workspace="chat-persist-test",
+        workspace=workspace_name,
         conversation_id=conv.id,
     )
     response = await handle_chat(request)
@@ -379,3 +396,130 @@ async def test_derive_title_truncates_long_message():
 
     short = "short"
     assert _derive_title(short) == "short"
+
+
+async def test_chat_messages_table_has_question_id_column(tmp_db, project_id):
+    """The migration adds a nullable question_id column that the DB helpers
+    round-trip, so a conversation can span multiple questions within a project."""
+    conv = await tmp_db.create_chat_conversation(project_id=project_id, title="multi-q")
+    m_alpha = await tmp_db.save_chat_message(
+        conversation_id=conv.id,
+        role=ChatMessageRole.USER,
+        content={"text": "on alpha"},
+        question_id="q-alpha",
+    )
+    m_beta = await tmp_db.save_chat_message(
+        conversation_id=conv.id,
+        role=ChatMessageRole.USER,
+        content={"text": "on beta"},
+        question_id="q-beta",
+    )
+    m_none = await tmp_db.save_chat_message(
+        conversation_id=conv.id,
+        role=ChatMessageRole.USER,
+        content={"text": "no scope"},
+    )
+
+    assert m_alpha.question_id == "q-alpha"
+    assert m_beta.question_id == "q-beta"
+    assert m_none.question_id is None
+
+    fetched = await tmp_db.list_chat_messages(conv.id)
+    by_text = {m.content["text"]: m.question_id for m in fetched}
+    assert by_text == {
+        "on alpha": "q-alpha",
+        "on beta": "q-beta",
+        "no scope": None,
+    }
+
+
+async def test_conversation_persists_across_question_switches(
+    tmp_db, project_id, workspace_name, mocker
+):
+    """A single conversation can hold turns asked against different questions.
+    This is the core multi-question-scope behaviour: switching the active
+    question mid-session should NOT create a new conversation."""
+    fake_client = MagicMock()
+    fake_client.messages.create = AsyncMock(return_value=_fake_anthropic_response("ok"))
+    mocker.patch.object(
+        chat_module.anthropic,
+        "AsyncAnthropic",
+        return_value=fake_client,
+    )
+    mocker.patch(
+        "rumil.api.chat.build_chat_context",
+        new=AsyncMock(return_value="stub context"),
+    )
+    mocker.patch(
+        "rumil.api.chat.DB.resolve_page_id",
+        new=AsyncMock(side_effect=lambda short: f"full-{short}"),
+    )
+
+    conv = await tmp_db.create_chat_conversation(
+        project_id=project_id, question_id="full-q-alpha", title="spans"
+    )
+
+    request_a = ChatRequest(
+        question_id="q-alpha",
+        messages=[{"role": "user", "content": "first on alpha"}],
+        workspace=workspace_name,
+        conversation_id=conv.id,
+    )
+    resp_a = await handle_chat(request_a)
+    assert resp_a.conversation_id == conv.id
+
+    request_b = ChatRequest(
+        question_id="q-beta",
+        messages=[
+            {"role": "user", "content": "first on alpha"},
+            {"role": "assistant", "content": "ok"},
+            {"role": "user", "content": "follow-up on beta"},
+        ],
+        workspace=workspace_name,
+        conversation_id=conv.id,
+    )
+    resp_b = await handle_chat(request_b)
+    assert resp_b.conversation_id == conv.id
+
+    messages = await tmp_db.list_chat_messages(conv.id)
+    user_entries = [m for m in messages if m.role == ChatMessageRole.USER]
+    assert [m.content["text"] for m in user_entries] == [
+        "first on alpha",
+        "follow-up on beta",
+    ]
+    assert [m.question_id for m in user_entries] == ["full-q-alpha", "full-q-beta"]
+
+
+async def test_persist_user_turn_tags_each_message_with_its_question(
+    tmp_db, project_id, workspace_name
+):
+    """_persist_user_turn should stamp the current turn's question_id onto
+    the newly-persisted user row, not onto previously-persisted turns."""
+    from rumil.api.chat import _persist_user_turn
+
+    conv = await tmp_db.create_chat_conversation(project_id=project_id, title="turns")
+
+    req_one = ChatRequest(
+        question_id="q-alpha",
+        messages=[{"role": "user", "content": "alpha turn"}],
+        workspace=workspace_name,
+        conversation_id=conv.id,
+    )
+    await _persist_user_turn(tmp_db, conv, req_one, "full-q-alpha")
+
+    req_two = ChatRequest(
+        question_id="q-beta",
+        messages=[
+            {"role": "user", "content": "alpha turn"},
+            {"role": "assistant", "content": "intermediate"},
+            {"role": "user", "content": "beta turn"},
+        ],
+        workspace=workspace_name,
+        conversation_id=conv.id,
+    )
+    await _persist_user_turn(tmp_db, conv, req_two, "full-q-beta")
+
+    messages = await tmp_db.list_chat_messages(conv.id)
+    user_entries = [m for m in messages if m.role == ChatMessageRole.USER]
+    assert [m.content["text"] for m in user_entries] == ["alpha turn", "beta turn"]
+    assert [m.question_id for m in user_entries] == ["full-q-alpha", "full-q-beta"]

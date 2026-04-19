@@ -28,6 +28,11 @@ interface Message {
   loading?: boolean;
   blocks?: MessageBlock[];
   costs?: ChatTurnCosts;
+  // Full id of the question this turn was asked against. When it doesn't
+  // match the ChatPanel's current `questionId`, the message renders a small
+  // "(on question: <headline>)" tag so the user can see the context shifted.
+  // `null` means "no question scope" (landing-page chat).
+  questionId?: string | null;
 }
 
 interface ChatPanelProps {
@@ -58,7 +63,7 @@ function contentToText(content: unknown): string {
 }
 
 function persistedMessagesToUi(
-  raw: Array<{ id: string; role: string; content: Record<string, unknown>; seq: number; ts: string }>,
+  raw: Array<{ id: string; role: string; content: Record<string, unknown>; seq: number; ts: string; question_id?: string | null }>,
 ): Message[] {
   const out: Message[] = [];
   for (const m of raw) {
@@ -68,6 +73,7 @@ function persistedMessagesToUi(
         role: "user",
         content: contentToText(m.content),
         timestamp: new Date(m.ts),
+        questionId: m.question_id ?? null,
       });
     } else if (m.role === "assistant") {
       const blocksIn = (m.content?.blocks ?? []) as Array<{ type: string; text?: string; name?: string; input?: Record<string, unknown> }>;
@@ -103,6 +109,7 @@ function persistedMessagesToUi(
         timestamp: new Date(m.ts),
         blocks,
         costs,
+        questionId: m.question_id ?? null,
       });
     }
   }
@@ -248,12 +255,29 @@ function TextContent({ text, onNodeRef }: { text: string; onNodeRef?: (id: strin
 function MessageEntry({
   message,
   onNodeRef,
+  currentQuestionId,
+  headlineFor,
 }: {
   message: Message;
   onNodeRef?: (id: string) => void;
+  currentQuestionId?: string;
+  headlineFor?: (qid: string) => string | undefined;
 }) {
   const isUser = message.role === "user";
   const blocks = message.blocks;
+
+  // Surface "this turn was asked against a different question" so the
+  // user sees the context shifted when browsing across questions in a
+  // single project conversation. The check is defensive: skip if either
+  // side is missing, and skip when they match.
+  const offQuestion =
+    message.questionId &&
+    currentQuestionId &&
+    message.questionId !== currentQuestionId
+      ? message.questionId
+      : null;
+  const offHeadline =
+    offQuestion && headlineFor ? headlineFor(offQuestion) : undefined;
 
   return (
     <div style={{ padding: "12px 0", borderBottom: "1px solid var(--border)" }}>
@@ -273,6 +297,24 @@ function MessageEntry({
         }}>
           {formatTime(message.timestamp)}
         </span>
+        {offQuestion && (
+          <span
+            title={offHeadline ?? offQuestion}
+            style={{
+              fontFamily: "var(--font-mono-stack)",
+              fontSize: "9px",
+              color: "var(--fg-dim)",
+              letterSpacing: "0.02em",
+              fontStyle: "italic",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              maxWidth: "60%",
+            }}
+          >
+            {`(on question: ${offHeadline ?? offQuestion.slice(0, 8)})`}
+          </span>
+        )}
       </div>
 
       {isUser ? (
@@ -357,40 +399,94 @@ export function ChatPanel({
   const [conversations, setConversations] = useState<ChatConversationSummary[]>([]);
   const [showSidebar, setShowSidebar] = useState(false);
   const [input, setInput] = useState("");
+  // Cache full question_id → headline for off-question message tags. We
+  // lazily populate via fetchPageByShortId the first time we see an unknown
+  // question id in a persisted transcript. Keeping it in a ref avoids
+  // re-renders on cache writes — we only re-render when a message list
+  // change triggers a resolution pass.
+  const [headlineCache, setHeadlineCache] = useState<Record<string, string>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // When the current question's headline is passed in as a prop, seed the
+  // cache so the on-question label for that id resolves immediately.
+  useEffect(() => {
+    if (!questionId) return;
+    setHeadlineCache((prev) =>
+      prev[questionId] === questionHeadline ? prev : { ...prev, [questionId]: questionHeadline },
+    );
+  }, [questionId, questionHeadline]);
+
+  // Resolve any unknown question ids referenced by loaded messages. Off-
+  // question tags render a short id + no headline until this completes;
+  // once resolved, the tag text upgrades.
+  useEffect(() => {
+    const unknown = new Set<string>();
+    for (const m of messages) {
+      const qid = m.questionId;
+      if (qid && !(qid in headlineCache)) unknown.add(qid);
+    }
+    if (unknown.size === 0) return;
+    let cancelled = false;
+    (async () => {
+      const updates: Record<string, string> = {};
+      await Promise.all(
+        Array.from(unknown).map(async (qid) => {
+          try {
+            const page = await fetchPageByShortId(qid.slice(0, 8));
+            if (page && page.headline) updates[qid] = page.headline;
+          } catch {
+            /* leave it unresolved — renders fall back to short id */
+          }
+        }),
+      );
+      if (cancelled || Object.keys(updates).length === 0) return;
+      setHeadlineCache((prev) => ({ ...prev, ...updates }));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [messages, headlineCache]);
+
+  const headlineFor = useCallback(
+    (qid: string) => headlineCache[qid],
+    [headlineCache],
+  );
 
   const refreshConversations = useCallback(async () => {
     if (!projectId) return;
     try {
-      const items = await listChatConversations(projectId, questionId || undefined);
+      // Project-scoped: conversations can span multiple questions, so we
+      // don't filter by questionId here. See `loadedForKeyRef` below.
+      const items = await listChatConversations(projectId);
       setConversations(items);
     } catch {
       /* ignore — API may not be available yet */
     }
-  }, [projectId, questionId]);
+  }, [projectId]);
 
   useEffect(() => {
     if (isOpen) refreshConversations();
   }, [isOpen, refreshConversations]);
 
-  // Auto-bind the chat to the most-recent conversation scoped to this
-  // (project, question). Runs once per (project, question) change. Does NOT
-  // fire on view-mode switches (view mode is not in the dep list), which is
-  // why this correctly preserves transcript when Alice toggles panes.
+  // Auto-bind the chat to the most-recent conversation in this project.
+  // Runs once per project change. Question switches within the same
+  // project deliberately do NOT reset the transcript — the conversation
+  // is project-scoped, and per-message question_id tags mark turns that
+  // referred to a different question than the current one.
   const loadedForKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!projectId || !questionId) return;
-    const key = `${projectId}::${questionId}`;
+    if (!projectId) return;
+    const key = projectId;
     if (loadedForKeyRef.current === key) return;
     loadedForKeyRef.current = key;
     let cancelled = false;
     (async () => {
       try {
-        const items = await listChatConversations(projectId, questionId);
+        const items = await listChatConversations(projectId);
         if (cancelled) return;
         if (items.length === 0) {
-          // No prior conversation for this question — keep the initial
+          // No prior conversation in this project — keep the initial
           // greeting and let the first message auto-create the row.
           setConversationId(null);
           setMessages([initialAssistantMessage]);
@@ -410,7 +506,7 @@ export function ChatPanel({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, questionId]);
+  }, [projectId]);
 
   const handleNewChat = useCallback(() => {
     setConversationId(null);
@@ -641,6 +737,7 @@ export function ChatPanel({
       role: "user",
       content: trimmed,
       timestamp: new Date(),
+      questionId: questionId || null,
     };
 
     setMessages((prev) => [...prev, userMsg]);
@@ -661,6 +758,7 @@ export function ChatPanel({
         timestamp: new Date(),
         loading: true,
         blocks: [],
+        questionId: questionId || null,
       },
     ]);
 
@@ -957,7 +1055,13 @@ export function ChatPanel({
 
           <div className="chat-messages">
             {messages.map((msg) => (
-              <MessageEntry key={msg.id} message={msg} onNodeRef={handleNodeRef} />
+              <MessageEntry
+                key={msg.id}
+                message={msg}
+                onNodeRef={handleNodeRef}
+                currentQuestionId={questionId || undefined}
+                headlineFor={headlineFor}
+              />
             ))}
             {isFreshChat && (
               <div className="chat-starter-chips" role="group" aria-label="Starter prompts">

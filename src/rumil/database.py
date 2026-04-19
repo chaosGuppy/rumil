@@ -3639,8 +3639,14 @@ class DB:
         role: ChatMessageRole,
         content: dict,
         seq: int | None = None,
+        question_id: str | None = None,
     ) -> ChatMessage:
-        """Append a message to a conversation. Auto-assigns seq if omitted."""
+        """Append a message to a conversation. Auto-assigns seq if omitted.
+
+        `question_id` records which research question this turn was asked
+        against. Conversations can span multiple questions within a project,
+        so this is per-message rather than per-conversation.
+        """
         if seq is None:
             seq = await self._next_chat_message_seq(conversation_id)
         msg = ChatMessage(
@@ -3650,6 +3656,7 @@ class DB:
             seq=seq,
             staged=self.staged,
             run_id=self.run_id if self.staged else None,
+            question_id=question_id,
         )
         await self._execute(
             self.client.table("chat_messages").insert(
@@ -3662,6 +3669,7 @@ class DB:
                     "ts": msg.ts.isoformat(),
                     "staged": msg.staged,
                     "run_id": msg.run_id,
+                    "question_id": msg.question_id,
                 }
             )
         )
@@ -3717,4 +3725,5 @@ def _row_to_chat_message(row: dict[str, Any]) -> ChatMessage:
         ts=row["ts"],
         staged=row.get("staged", False),
         run_id=row.get("run_id"),
+        question_id=row.get("question_id"),
     )

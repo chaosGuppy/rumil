@@ -1809,6 +1809,7 @@ async def get_chat_conversation(
                 "content": m.content,
                 "seq": m.seq,
                 "ts": m.ts.isoformat(),
+                "question_id": m.question_id,
             }
             for m in messages
         ],
@@ -1838,6 +1839,7 @@ async def create_chat_conversation(
             conversation_id=conv.id,
             role=ChatMessageRole.USER,
             content={"text": request.first_message},
+            question_id=request.question_id,
         )
     return ConversationListItem(
         id=conv.id,

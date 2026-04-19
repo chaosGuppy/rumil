@@ -1826,13 +1826,22 @@ def _serialize_assistant_content(content: Sequence[Any]) -> list[dict[str, Any]]
     return out
 
 
-async def _persist_user_turn(db: DB, conv: ChatConversation, request: ChatRequest) -> None:
+async def _persist_user_turn(
+    db: DB,
+    conv: ChatConversation,
+    request: ChatRequest,
+    question_full_id: str | None,
+) -> None:
     """Persist the newest user message from the request (if not already persisted).
 
     Existing messages are addressed by count: if the DB already has N stored
     messages and the request carries >N messages, persist everything new
     (only the user-originated entries; assistant turns are persisted as they
     happen during generation).
+
+    Each new user message is tagged with `question_full_id` — the research
+    question this turn was asked against. Conversations can span multiple
+    questions within a project, so the tag is per-message.
     """
     existing = await db.list_chat_messages(conv.id)
     persisted_user_turns = sum(1 for m in existing if m.role == ChatMessageRole.USER)
@@ -1845,6 +1854,7 @@ async def _persist_user_turn(db: DB, conv: ChatConversation, request: ChatReques
             conversation_id=conv.id,
             role=ChatMessageRole.USER,
             content={"text": text},
+            question_id=question_full_id,
         )
 
 
@@ -1911,7 +1921,7 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
         else:
             messages = list(request.messages)
 
-        await _persist_user_turn(db, conv, request)
+        await _persist_user_turn(db, conv, request, full_id)
 
         system_prompt = (PROMPTS_DIR / "api_chat.md").read_text(encoding="utf-8")
         context_scope_id = full_id or ""
@@ -1974,6 +1984,7 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
                 conversation_id=conv.id,
                 role=ChatMessageRole.ASSISTANT,
                 content=assistant_content,
+                question_id=full_id,
             )
 
             if not tool_calls:
@@ -2009,6 +2020,7 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
                 conversation_id=conv.id,
                 role=ChatMessageRole.TOOL_RESULT,
                 content={"results": tool_results},
+                question_id=full_id,
             )
 
             messages.append({"role": "user", "content": tool_results})
@@ -2075,7 +2087,7 @@ async def handle_chat_stream(request: ChatRequest) -> StreamingResponse:
     else:
         messages = list(request.messages)
 
-    await _persist_user_turn(db, conv, request)
+    await _persist_user_turn(db, conv, request, full_id)
 
     system_prompt = (PROMPTS_DIR / "api_chat.md").read_text(encoding="utf-8")
     context_text = await build_chat_context(full_id, db) if full_id else "(no question scope)"
@@ -2145,6 +2157,7 @@ async def handle_chat_stream(request: ChatRequest) -> StreamingResponse:
                     conversation_id=conv.id,
                     role=ChatMessageRole.ASSISTANT,
                     content=assistant_content,
+                    question_id=full_id,
                 )
 
                 if is_terminal and costs_payload is not None:
@@ -2195,6 +2208,7 @@ async def handle_chat_stream(request: ChatRequest) -> StreamingResponse:
                     conversation_id=conv.id,
                     role=ChatMessageRole.TOOL_RESULT,
                     content={"results": tool_results},
+                    question_id=full_id,
                 )
 
                 messages.append({"role": "user", "content": tool_results})

@@ -557,3 +557,4 @@ class ChatMessage(BaseModel):
     ts: datetime = Field(default_factory=lambda: datetime.now(UTC))
     staged: bool = False
     run_id: str | None = None
+    question_id: str | None = None

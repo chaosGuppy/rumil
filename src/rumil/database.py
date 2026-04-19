@@ -2743,8 +2743,15 @@ class DB:
     async def get_root_questions(
         self,
         workspace: Workspace = Workspace.RESEARCH,
+        *,
+        include_duplicates: bool = False,
     ) -> list[Page]:
-        """Return questions that have no parent (top-level questions)."""
+        """Return questions that have no parent (top-level questions).
+
+        Triage-confirmed duplicates (``extra.triage.is_duplicate == True``)
+        are hidden by default. Pass ``include_duplicates=True`` to see
+        them — useful for operator/debug surfaces.
+        """
         params: dict[str, Any] = {"ws": workspace.value}
         if self.project_id:
             params["pid"] = self.project_id
@@ -2752,6 +2759,8 @@ class DB:
             params["p_staged_run_id"] = self.run_id
         if self.snapshot_ts is not None:
             params["p_snapshot_ts"] = self.snapshot_ts.isoformat()
+        if include_duplicates:
+            params["p_include_duplicates"] = True
         rows = _rows(await self._execute(self.client.rpc("get_root_questions", params)))
         pages = [_row_to_page(r) for r in rows]
         await self.apply_epistemic_overrides(pages)

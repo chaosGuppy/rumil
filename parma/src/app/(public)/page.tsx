@@ -974,6 +974,13 @@ function QuestionPicker({
             hour: "2-digit",
             minute: "2-digit",
           });
+          const triage = (q.extra?.triage ?? null) as
+            | { is_duplicate?: boolean; duplicate_of?: string | null }
+            | null;
+          const dupeOf =
+            triage?.is_duplicate && typeof triage.duplicate_of === "string"
+              ? triage.duplicate_of
+              : null;
           return (
             <button
               key={q.id}
@@ -987,6 +994,17 @@ function QuestionPicker({
                 <span title={createdAbsolute}>
                   created {formatRelative(q.created_at)}
                 </span>
+                {dupeOf && (
+                  <>
+                    {" · "}
+                    <span
+                      className="browser-card-dupe-badge"
+                      title={`Triage marked this as a duplicate of ${dupeOf}`}
+                    >
+                      duplicate of {dupeOf.slice(0, 8)}
+                    </span>
+                  </>
+                )}
               </div>
             </button>
           );

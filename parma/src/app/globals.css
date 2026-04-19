@@ -1395,6 +1395,21 @@ body {
   font-weight: 500;
 }
 
+/* Triage-flagged duplicate marker on a root question card. The page is
+ * normally hidden by the get_root_questions filter — this badge only
+ * appears when the operator has surfaced duplicates explicitly (e.g.
+ * via a future "show duplicates" toggle), or for any consumer that
+ * passed include_duplicates. */
+.browser-card-dupe-badge {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 2px;
+  background: var(--node-uncertainty-bg, rgba(180, 110, 40, 0.12));
+  color: var(--node-uncertainty);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
 .browser-create {
   border-top: 1px solid var(--border);
   padding-top: 24px;

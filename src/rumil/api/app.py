@@ -111,6 +111,7 @@ from rumil.models import (
     Workspace,
 )
 from rumil.orchestrators import Orchestrator
+from rumil.question_triage import auto_triage_and_save
 from rumil.settings import get_settings
 from rumil.views import View, build_view
 
@@ -999,6 +1000,11 @@ async def create_root_question(
         await embed_and_store_page(db, page, field_name="abstract")
     except Exception:
         log.warning("Failed to embed new root question %s", page.id[:8], exc_info=True)
+    # Match main.py's create-question path: triage runs after embedding so
+    # near-duplicates created via the parma "ask a question" form get the
+    # same is_duplicate marker that get_root_questions then filters on.
+    # Gated on settings.enable_question_triage and never raises.
+    await auto_triage_and_save(db, page.id, parent_id=None)
 
     log.info(
         "Root question created via API: project=%s id=%s headline=%s",

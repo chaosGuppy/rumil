@@ -168,7 +168,10 @@ export function CredenceBadge({ credence, robustness }: CredenceBadgeProps) {
       title={formatTitle(credence, robustness)}
     >
       {credence !== null && (
-        <span className="credence-item">
+        <span
+          className="credence-item"
+          title={`Credence ${credence}/9 — ${credenceGloss(credence)}`}
+        >
           <span className="credence-label">
             {credence}<span className="credence-max">/9</span>
           </span>
@@ -176,7 +179,10 @@ export function CredenceBadge({ credence, robustness }: CredenceBadgeProps) {
         </span>
       )}
       {robustness !== null && (
-        <span className="credence-item">
+        <span
+          className="credence-item"
+          title={`Robustness ${robustness}/5 — ${robustnessGloss(robustness)}`}
+        >
           <span className="credence-label">
             {robustness}<span className="credence-max">/5</span>
           </span>

@@ -69,6 +69,46 @@ export async function fetchRootQuestions(
   return res.json();
 }
 
+// Create a bare root question in a workspace. No research is triggered —
+// the Page is seeded with provenance_model='human' and the caller is
+// expected to navigate into it and start asking via chat (/orchestrate,
+// /dispatch, /ask).
+//
+// `content` is optional; if omitted the backend uses the headline as the
+// page body so the question still renders sensibly before chat fleshes it out.
+export async function createRootQuestion(
+  projectId: string,
+  headline: string,
+  content?: string,
+): Promise<Page> {
+  const res = await fetch(
+    `${API_BASE}/api/projects/${projectId}/questions`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        headline,
+        content: content ?? null,
+      }),
+    },
+  );
+  if (!res.ok) {
+    let detail: string | null = null;
+    try {
+      const body = await res.json();
+      if (typeof body?.detail === "string") {
+        detail = body.detail;
+      } else if (Array.isArray(body?.detail) && body.detail[0]?.msg) {
+        detail = String(body.detail[0].msg);
+      }
+    } catch {
+      // empty/non-JSON body
+    }
+    throw new Error(detail ?? `API error: ${res.status}`);
+  }
+  return res.json();
+}
+
 export async function fetchQuestionView(
   questionId: string,
   importanceThreshold: number = 3,

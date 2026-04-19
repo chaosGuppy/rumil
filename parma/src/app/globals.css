@@ -7166,3 +7166,213 @@ mark.ann-mark.ann-mark-dispute:hover {
   padding: 0 2px;
   border-radius: 2px;
 }
+
+/* ------------------------------------------------------------------
+ * Ask-a-question form — used in two places on the landing:
+ *   1. `variant="empty"` on a workspace with zero questions, as the
+ *      primary affordance instead of a dead-end.
+ *   2. `variant="picker"` inline inside QuestionPicker when a user
+ *      with existing questions clicks "+ new question".
+ * The surrounding `.browser` container already supplies the outer
+ * padding and max-width; these rules are the form itself.
+ * ------------------------------------------------------------------ */
+
+.browser-header-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.browser-new-btn {
+  flex-shrink: 0;
+  padding: 7px 14px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: border-color 0.1s, color 0.1s, background 0.1s;
+}
+.browser-new-btn:hover {
+  border-color: var(--fg);
+  color: var(--fg);
+}
+
+.ask-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.ask-form-empty {
+  padding: 24px 0 8px 0;
+}
+
+.ask-form-picker {
+  margin: 8px 0 28px 0;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--bg-pane) 60%, transparent);
+}
+
+.ask-form-lede {
+  margin-bottom: 4px;
+}
+
+.ask-form-lede-eyebrow {
+  font-family: var(--font-mono-stack);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+  margin-bottom: 10px;
+}
+
+.ask-form-lede-title {
+  font-family: var(--font-body-stack);
+  font-size: 24px;
+  font-weight: 400;
+  margin: 0 0 10px 0;
+  letter-spacing: -0.01em;
+}
+
+.ask-form-lede-body {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--fg-muted);
+  margin: 0 0 8px 0;
+  max-width: 60ch;
+}
+
+.ask-form-lede-body code {
+  font-family: var(--font-mono-stack);
+  font-size: 12.5px;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: var(--bg-pane);
+  color: var(--fg);
+}
+
+.ask-form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ask-form-label {
+  font-family: var(--font-mono-stack);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
+.ask-form-label-optional {
+  font-style: normal;
+  color: var(--fg-dim);
+  margin-left: 6px;
+  text-transform: none;
+  letter-spacing: 0.04em;
+}
+
+.ask-form-input,
+.ask-form-textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg-pane);
+  color: var(--fg);
+  font-family: var(--font-body-stack);
+  font-size: 15px;
+  line-height: 1.45;
+  transition: border-color 0.1s;
+}
+
+.ask-form-input {
+  font-size: 16px;
+}
+
+.ask-form-textarea {
+  font-size: 14px;
+  resize: vertical;
+  min-height: 72px;
+}
+
+.ask-form-input:focus,
+.ask-form-textarea:focus {
+  outline: none;
+  border-color: var(--fg);
+}
+
+.ask-form-input::placeholder,
+.ask-form-textarea::placeholder {
+  color: var(--fg-dim);
+  font-style: italic;
+}
+
+.ask-form-input:disabled,
+.ask-form-textarea:disabled {
+  opacity: 0.5;
+}
+
+.ask-form-error {
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: #c0392b;
+  line-height: 1.45;
+}
+@media (prefers-color-scheme: dark) {
+  .ask-form-error { color: #f08672; }
+}
+
+.ask-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.ask-form-cancel,
+.ask-form-submit {
+  padding: 8px 18px;
+  border-radius: 3px;
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s, border-color 0.1s, opacity 0.1s;
+}
+
+.ask-form-cancel {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--fg-muted);
+}
+.ask-form-cancel:hover:not(:disabled) {
+  color: var(--fg);
+  border-color: var(--border-strong);
+}
+
+.ask-form-submit {
+  background: var(--fg);
+  border: 1px solid var(--fg);
+  color: var(--bg);
+}
+.ask-form-submit:hover:not(:disabled) {
+  opacity: 0.88;
+}
+
+.ask-form-submit:disabled,
+.ask-form-cancel:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

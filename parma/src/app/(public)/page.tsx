@@ -25,6 +25,7 @@ import {
 } from "@/components/InspectPanelContext";
 import {
   createProject,
+  createRootQuestion,
   fetchProjects,
   fetchProjectsSummary,
   fetchRootQuestions,
@@ -447,17 +448,157 @@ function ProjectBrowser({
   );
 }
 
+// AskQuestionForm — inline form for creating a bare root question in the
+// active workspace. No research is triggered; the user is redirected into
+// the new question where they can start chatting to populate it.
+//
+// Used in two places:
+//   1. As the primary affordance when a workspace has zero questions
+//      (replaces the old "no questions found" dead-end).
+//   2. As an expandable affordance inside QuestionPicker so users with
+//      existing questions aren't stuck.
+//
+// `variant="empty"` renders with larger type and the subtitle; `variant="picker"`
+// is more compact and sits under the picker header.
+function AskQuestionForm({
+  projectName,
+  onCreated,
+  variant,
+  onCancel,
+}: {
+  projectName: string;
+  onCreated: (question: Page) => void;
+  variant: "empty" | "picker";
+  onCancel?: () => void;
+}) {
+  const [headline, setHeadline] = useState("");
+  const [content, setContent] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const headlineRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    headlineRef.current?.focus();
+  }, []);
+
+  const submit = useCallback(
+    async (e?: React.FormEvent) => {
+      e?.preventDefault();
+      const trimmed = headline.trim();
+      if (!trimmed || submitting) return;
+      setSubmitting(true);
+      setError(null);
+      try {
+        // projectName actually holds the project *id* when called from
+        // AppContent (handleCreateQuestion below passes selectedProject.id)
+        // — this component never needs to resolve names itself.
+        const page = await createRootQuestion(
+          projectName,
+          trimmed,
+          content.trim() || undefined,
+        );
+        onCreated(page);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not create question");
+        setSubmitting(false);
+      }
+    },
+    [headline, content, submitting, projectName, onCreated],
+  );
+
+  const disabled = !headline.trim() || submitting;
+
+  return (
+    <form
+      className={`ask-form ask-form-${variant}`}
+      onSubmit={submit}
+      aria-label="Ask a question"
+    >
+      {variant === "empty" && (
+        <div className="ask-form-lede">
+          <div className="ask-form-lede-eyebrow">start here</div>
+          <h2 className="ask-form-lede-title">Ask a question</h2>
+          <p className="ask-form-lede-body">
+            Seed this workspace with a root question. No research runs yet —
+            once it exists you can use chat (<code>/orchestrate</code>,{" "}
+            <code>/dispatch</code>, <code>/ask</code>) to investigate it.
+          </p>
+        </div>
+      )}
+
+      <label className="ask-form-field">
+        <span className="ask-form-label">Headline</span>
+        <input
+          ref={headlineRef}
+          className="ask-form-input"
+          type="text"
+          value={headline}
+          placeholder="What do you want to know?"
+          maxLength={300}
+          disabled={submitting}
+          onChange={(e) => {
+            setHeadline(e.target.value);
+            if (error) setError(null);
+          }}
+        />
+      </label>
+
+      <label className="ask-form-field">
+        <span className="ask-form-label">
+          Context <em className="ask-form-label-optional">optional</em>
+        </span>
+        <textarea
+          className="ask-form-textarea"
+          value={content}
+          placeholder="Anything that frames the question. Leave blank to start with just the headline."
+          rows={variant === "empty" ? 4 : 3}
+          disabled={submitting}
+          onChange={(e) => {
+            setContent(e.target.value);
+            if (error) setError(null);
+          }}
+        />
+      </label>
+
+      {error && <div className="ask-form-error">{error}</div>}
+
+      <div className="ask-form-actions">
+        {onCancel && (
+          <button
+            type="button"
+            className="ask-form-cancel"
+            onClick={onCancel}
+            disabled={submitting}
+          >
+            Cancel
+          </button>
+        )}
+        <button
+          type="submit"
+          className="ask-form-submit"
+          disabled={disabled}
+        >
+          {submitting ? "Creating..." : "Create question"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
 function QuestionPicker({
   project,
   questions,
   onSelect,
   onBack,
+  onCreateQuestion,
 }: {
   project: Project;
   questions: Page[];
   onSelect: (question: Page) => void;
   onBack: () => void;
+  onCreateQuestion: (question: Page) => void;
 }) {
+  const [creating, setCreating] = useState(false);
   useDocumentTitle([project.name]);
   return (
     <div className="browser">
@@ -477,11 +618,33 @@ function QuestionPicker({
         >
           ← projects
         </button>
-        <h1 className="browser-title">{project.name}</h1>
-        <p className="browser-subtitle">
-          {questions.length} root question{questions.length !== 1 ? "s" : ""}
-        </p>
+        <div className="browser-header-row">
+          <div>
+            <h1 className="browser-title">{project.name}</h1>
+            <p className="browser-subtitle">
+              {questions.length} root question{questions.length !== 1 ? "s" : ""}
+            </p>
+          </div>
+          {!creating && (
+            <button
+              type="button"
+              className="browser-new-btn"
+              onClick={() => setCreating(true)}
+            >
+              + new question
+            </button>
+          )}
+        </div>
       </div>
+
+      {creating && (
+        <AskQuestionForm
+          projectName={project.id}
+          variant="picker"
+          onCancel={() => setCreating(false)}
+          onCreated={onCreateQuestion}
+        />
+      )}
 
       <div className="browser-list">
         {questions.map((q) => (
@@ -919,6 +1082,24 @@ function AppContent() {
     }
   }, [selectedProject]);
 
+  // Navigate into a newly-created question, mirroring the existing deep-link
+  // pattern (`?project=<id>&q=<id>`). Also prepend the new question into the
+  // cached list so that if the user later clicks "back" from the view, the
+  // picker shows it without a refetch.
+  const handleCreateQuestion = useCallback(
+    (question: Page) => {
+      if (!selectedProject) return;
+      setQuestions((prev) => (prev ? [question, ...prev] : [question]));
+      setSelectedQuestionId(question.id);
+      window.history.replaceState(
+        null,
+        "",
+        `?project=${encodeURIComponent(selectedProject.id)}&q=${encodeURIComponent(question.id)}`,
+      );
+    },
+    [selectedProject],
+  );
+
   if (!selectedProject) {
     // If the URL has ?project=X, always show loading until either the
     // hydration effect resolves the project or explicitly marks failure.
@@ -951,29 +1132,42 @@ function AppContent() {
         questions={questions}
         onSelect={handleSelectQuestion}
         onBack={handleBackToProjects}
+        onCreateQuestion={handleCreateQuestion}
       />
     );
   }
 
+  // Empty workspace (or freshly created one): show the ask-a-question form
+  // as the primary affordance instead of a dead-end. Same form is used from
+  // inside QuestionPicker when a project already has questions.
   return (
-    <div className="view-error">
-      No questions found in this project.
-      <br />
-      <button
-        onClick={handleBackToProjects}
-        style={{
-          marginTop: "12px",
-          background: "none",
-          border: "1px solid var(--border)",
-          padding: "8px 16px",
-          cursor: "pointer",
-          fontFamily: "var(--font-mono-stack)",
-          fontSize: "12px",
-          color: "var(--fg-muted)",
-        }}
-      >
-        ← back to projects
-      </button>
+    <div className="browser">
+      <div className="browser-header">
+        <button
+          onClick={handleBackToProjects}
+          style={{
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            fontFamily: "var(--font-mono-stack)",
+            fontSize: "11px",
+            color: "var(--fg-dim)",
+            padding: "0 0 8px 0",
+            letterSpacing: "0.04em",
+          }}
+        >
+          ← projects
+        </button>
+        <h1 className="browser-title">{selectedProject.name}</h1>
+        <p className="browser-subtitle">
+          No questions yet.
+        </p>
+      </div>
+      <AskQuestionForm
+        projectName={selectedProject.id}
+        variant="empty"
+        onCreated={handleCreateQuestion}
+      />
     </div>
   );
 }

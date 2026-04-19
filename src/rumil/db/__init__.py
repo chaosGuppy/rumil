@@ -15,6 +15,7 @@ Modules:
   stats RPCs.
 """
 
+from rumil.db.call_store import CallStore
 from rumil.db.mutation_log import MutationState
 from rumil.db.project_store import ProjectStore
 from rumil.db.row_helpers import (
@@ -34,6 +35,7 @@ from rumil.db.run_store import RunStore
 __all__ = [
     "_LINK_COLUMNS",
     "_SLIM_PAGE_COLUMNS",
+    "CallStore",
     "MutationState",
     "ProjectStore",
     "RunStore",

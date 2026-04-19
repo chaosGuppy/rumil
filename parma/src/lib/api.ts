@@ -423,6 +423,7 @@ export interface ChatConversationDetail extends ChatConversationSummary {
     content: Record<string, unknown>;
     seq: number;
     ts: string;
+    question_id: string | null;
   }>;
 }
 
@@ -430,6 +431,10 @@ export async function listChatConversations(
   projectId: string,
   questionId?: string,
 ): Promise<ChatConversationSummary[]> {
+  // Conversations are project-scoped — see ChatPanel. `questionId` is kept
+  // as an optional filter for callers that want a question-only slice (e.g.
+  // future per-question views); the default chat-panel listing omits it so
+  // the sidebar shows every project conversation.
   const params = new URLSearchParams({ project_id: projectId });
   if (questionId) params.set("question_id", questionId);
   const res = await fetch(`${API_BASE}/api/chat/conversations?${params}`);
@@ -611,6 +616,84 @@ export async function fetchProjectRuns(
   const res = await fetch(`${API_BASE}/api/projects/${projectId}/runs`);
   if (!res.ok) throw new Error(`API error: ${res.status}`);
   return res.json();
+}
+
+// Friendly-user feature flags surfaced by GET /api/config. The flag UI hides
+// itself when enable_flag_issue is false, mirroring the server-side 403.
+export interface AppConfig {
+  enable_flag_issue: boolean;
+}
+
+export async function fetchAppConfig(): Promise<AppConfig> {
+  const res = await fetch(`${API_BASE}/api/config`);
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  return res.json();
+}
+
+// Telemetry: record that a friendly user dwelled on a view-item for
+// `dwellSeconds`. The backend writes a reputation_events row tagged
+// read_time. This helper MUST NEVER throw — telemetry failures should
+// never break the reader UX. Errors are swallowed after a debug log so a
+// broken proxy / offline tab doesn't cascade into visible errors.
+export async function recordViewItemRead(
+  viewItemId: string,
+  dwellSeconds: number,
+): Promise<void> {
+  const url = `${API_BASE}/api/view-items/${encodeURIComponent(viewItemId)}/read`;
+  try {
+    await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ seconds: dwellSeconds }),
+      // keepalive lets the request survive a page unload when fired from a
+      // visibilitychange/beforeunload handler.
+      keepalive: true,
+    }).catch(() => {});
+  } catch {
+    // defensive: fetch() itself can synchronously throw in exotic cases
+    // (invalid URL, etc.). Telemetry is strictly best-effort.
+  }
+}
+
+// Flag a view-item with a short category + freeform note. Returns the new
+// flag id so the caller can offer an inline "undo" within a grace window.
+// 403 when the server has enable_flag_issue=false.
+export async function flagViewItem(
+  viewItemId: string,
+  params: { category: string; message: string; suggestedFix?: string },
+): Promise<{ flag_id: string; page_id: string }> {
+  const res = await fetch(
+    `${API_BASE}/api/view-items/${encodeURIComponent(viewItemId)}/flag`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        category: params.category,
+        message: params.message,
+        suggested_fix: params.suggestedFix ?? "",
+      }),
+    },
+  );
+  if (!res.ok) {
+    let detail: string | null = null;
+    try {
+      const body = await res.json();
+      if (typeof body?.detail === "string") detail = body.detail;
+    } catch {
+      // ignore
+    }
+    throw new Error(detail ?? `API error: ${res.status}`);
+  }
+  const body = await res.json();
+  return { flag_id: body.flag_id, page_id: body.page_id };
+}
+
+export async function unflagViewItem(flagId: string): Promise<void> {
+  const res = await fetch(
+    `${API_BASE}/api/view-items/flags/${encodeURIComponent(flagId)}`,
+    { method: "DELETE" },
+  );
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
 }
 
 export { API_BASE };

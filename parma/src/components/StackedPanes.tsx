@@ -4,10 +4,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { QuestionView, ViewItem, Page } from "@/lib/types";
 import { fetchPageByShortId, fetchPageDetail, type PageDetail } from "@/lib/api";
+import { useReadTracker } from "@/lib/useReadTracker";
 import { PageCard } from "./PageCard";
 import { PageContent } from "./PageContent";
 import { CredenceBadge } from "./CredenceBadge";
 import { NodeTypeLabel } from "./NodeTypeLabel";
+import { ViewItemFlagButton } from "./ViewItemFlagButton";
 import { useInspectPanel } from "./InspectPanelContext";
 
 // StackedPanes — URL-driven recursive pane workbench.
@@ -387,6 +389,13 @@ function DetailPane({
     };
   }, [shortId]);
 
+  // Track dwell on the pinned pane. Each mounted DetailPane is considered
+  // "visible" for as long as it exists — the user pinned it explicitly,
+  // and the parma container doesn't do any lazy hiding today. The hook
+  // pauses internally when the browser tab is hidden.
+  const resolvedPageId = detail?.page.id ?? null;
+  useReadTracker(resolvedPageId, resolvedPageId !== null);
+
   // Depth tint cycles through --active-0..4. Subtract 1 so the first
   // detail pane (depth 1) starts at --active-0 — matching the warm band
   // that `.node-card.node-active` uses inside the root pane.
@@ -445,6 +454,7 @@ function DetailPane({
                   superseded
                 </span>
               )}
+              <ViewItemFlagButton pageId={detail.page.id} />
             </div>
           )}
         </header>

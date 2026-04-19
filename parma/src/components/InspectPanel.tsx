@@ -7,11 +7,13 @@ import {
   type LinkedPage,
   type PageDetail,
 } from "@/lib/api";
+import { useReadTracker } from "@/lib/useReadTracker";
 import type { LinkType } from "@/lib/types";
 import { PageContent } from "./PageContent";
 import { CredenceBadge } from "./CredenceBadge";
 import { NodeTypeLabel } from "./NodeTypeLabel";
 import { PageAnnotationActions } from "./PageAnnotationActions";
+import { ViewItemFlagButton } from "./ViewItemFlagButton";
 import { useInspectPanel } from "./InspectPanelContext";
 
 interface InspectPanelProps {
@@ -84,6 +86,12 @@ export function InspectPanel({
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
   }, [shortId]);
+
+  // Record a read event once the user dwells on a resolved page for >= 3s.
+  // Keyed on the full page id (not the short id) so two pages sharing a
+  // short-id prefix don't collide in the dedup set.
+  const resolvedPageId = state.detail?.page.id ?? null;
+  useReadTracker(resolvedPageId, shortId !== null && resolvedPageId !== null);
 
   useEffect(() => {
     if (!shortId) return;
@@ -165,6 +173,7 @@ function InspectBody({
           </span>
         )}
         <PageAnnotationActions pageId={page.id} />
+        <ViewItemFlagButton pageId={page.id} />
       </div>
 
       <h2 className="inspect-headline">{page.headline}</h2>

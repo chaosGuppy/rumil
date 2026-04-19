@@ -9,7 +9,9 @@ import pytest
 import pytest_asyncio
 
 from rumil.run_executor import RunExecutor, RunStatus
+from rumil.run_executor import executor as executor_module
 from rumil.run_executor.executor import _ACTIVE_RUNS, _KIND_HANDLERS
+from rumil.run_executor.run_state import RunEvent
 
 
 @pytest_asyncio.fixture
@@ -510,3 +512,126 @@ async def test_would_exceed_budget_trips_when_spend_reaches_cap(tmp_db, fake_han
 
     await ex.cancel(run_id, reason="budget-test cleanup")
     await ex.wait_until_settled(run_id, timeout=5.0)
+
+
+async def test_events_yields_status_transitions(tmp_db, fake_handler):
+    from rumil.run_executor import RunSpec
+
+    fake_handler["sleep"] = 10.0
+    ex = RunExecutor(tmp_db)
+    spec = RunSpec(
+        kind="orchestrator",
+        project_id=tmp_db.project_id,
+        question_id="00000000-0000-0000-0000-000000000100",
+    )
+    run_id = await ex.start(spec)
+
+    collected: list[RunEvent] = []
+
+    async def _consume():
+        async for event in ex.events(run_id):
+            collected.append(event)
+            # Stop once we see the transition of interest; the handler is
+            # still sleeping so the underlying task won't enqueue the
+            # sentinel, and we don't want to block forever.
+            if event.event == "status_changed" and event.payload.get("new") == "complete":
+                return
+
+    consumer = asyncio.create_task(_consume())
+    # Give the handler time to enter tracked_scope and emit pending→running,
+    # and give _consume() time to subscribe before we force the next transition.
+    await asyncio.sleep(0.1)
+    await ex.mark_complete(run_id)
+    await asyncio.wait_for(consumer, timeout=5.0)
+    # Clean up the still-sleeping handler task.
+    await ex.cancel(run_id, reason="events-test cleanup")
+    await ex.wait_until_settled(run_id, timeout=5.0)
+
+    status_changes = [e for e in collected if e.event == "status_changed"]
+    transitions = [(e.payload.get("old"), e.payload.get("new")) for e in status_changes]
+    assert ("running", "complete") in transitions
+    for event in collected:
+        assert event.run_id == run_id
+
+
+async def test_events_passive_for_unknown_run(tmp_db):
+    ex = RunExecutor(tmp_db)
+    events = [event async for event in ex.events("does-not-exist")]
+    assert events == []
+
+
+async def test_events_passive_snapshot_for_settled_run(run_db):
+    ex = RunExecutor(run_db)
+    await ex.mark_started(run_db.run_id)
+    await ex.mark_complete(run_db.run_id)
+    events = [event async for event in ex.events(run_db.run_id)]
+    assert len(events) == 1
+    assert events[0].event == "status_changed"
+    assert events[0].payload == {"old": None, "new": "complete"}
+
+
+async def test_events_drops_on_slow_subscriber(tmp_db, fake_handler, mocker):
+    from rumil.run_executor import RunSpec
+
+    mocker.patch.object(executor_module, "EVENT_QUEUE_MAXSIZE", 1)
+    fake_handler["sleep"] = 10.0
+    ex = RunExecutor(tmp_db)
+    spec = RunSpec(
+        kind="orchestrator",
+        project_id=tmp_db.project_id,
+        question_id="00000000-0000-0000-0000-000000000101",
+    )
+    run_id = await ex.start(spec)
+    await asyncio.sleep(0.1)
+
+    slow_events: list[RunEvent] = []
+    fast_events: list[RunEvent] = []
+
+    async def _slow():
+        async for event in ex.events(run_id):
+            slow_events.append(event)
+            await asyncio.sleep(10.0)
+
+    async def _fast():
+        async for event in ex.events(run_id):
+            fast_events.append(event)
+
+    slow_task = asyncio.create_task(_slow())
+    fast_task = asyncio.create_task(_fast())
+    await asyncio.sleep(0.05)
+
+    for _ in range(5):
+        await ex.checkpoint(run_id, "orchestrator_tick", {"iter": 0})
+
+    await ex.cancel(run_id, reason="drop-test cleanup")
+    await ex.wait_until_settled(run_id, timeout=5.0)
+    await asyncio.wait_for(fast_task, timeout=5.0)
+    slow_task.cancel()
+    try:
+        await slow_task
+    except asyncio.CancelledError:
+        pass
+
+    checkpoint_count = sum(1 for e in fast_events if e.event == "checkpointed")
+    assert checkpoint_count == 5
+    assert len(slow_events) <= 2
+
+
+async def test_events_terminates_on_task_settled(tmp_db, fake_handler):
+    from rumil.run_executor import RunSpec
+
+    fake_handler["sleep"] = 0.2
+    ex = RunExecutor(tmp_db)
+    spec = RunSpec(
+        kind="orchestrator",
+        project_id=tmp_db.project_id,
+        question_id="00000000-0000-0000-0000-000000000102",
+    )
+    run_id = await ex.start(spec)
+
+    async def _consume():
+        return [event async for event in ex.events(run_id)]
+
+    consumer = asyncio.create_task(_consume())
+    events = await asyncio.wait_for(consumer, timeout=5.0)
+    assert any(e.event == "status_changed" for e in events)

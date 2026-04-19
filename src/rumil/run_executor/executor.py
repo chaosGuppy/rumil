@@ -22,7 +22,6 @@ Still pending:
 
 - ``pause`` / ``resume`` — requires orchestrator cooperation (checking
   a paused flag between dispatches)
-- ``events(run_id)`` — requires a broker / per-run queue
 - ``run_checkpoints`` consumption — orchestrators write them today via
   no-op stubs; resume reads them in a follow-up phase.
 
@@ -44,7 +43,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 from rumil.run_executor.run_spec import RunKind, RunSpec
-from rumil.run_executor.run_state import RunStatus, RunView
+from rumil.run_executor.run_state import RunEvent, RunStatus, RunView
 
 if TYPE_CHECKING:
     from rumil.database import DB
@@ -71,9 +70,12 @@ class _RunTask:
     cost_cap_usd_cents: int | None = None
     cancel_reason: str | None = None
     started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    event_queues: list[asyncio.Queue[RunEvent | None]] = field(default_factory=list)
 
 
 _ACTIVE_RUNS: dict[str, _RunTask] = {}
+
+EVENT_QUEUE_MAXSIZE = 256
 
 _KIND_HANDLERS: dict[RunKind, RunHandler] = {}
 
@@ -145,6 +147,7 @@ class RunExecutor:
 
     async def mark_started(self, run_id: str) -> None:
         """Transition a run from pending to running and stamp started_at."""
+        old = await self._read_status(run_id)
         await self._db._execute(
             self._db.client.table("runs")
             .update(
@@ -156,6 +159,7 @@ class RunExecutor:
             .eq("id", run_id)
             .eq("status", RunStatus.PENDING.value)
         )
+        await self._emit_status_changed(run_id, old)
 
     async def mark_complete(
         self,
@@ -163,6 +167,7 @@ class RunExecutor:
         *,
         cost_usd_cents: int | None = None,
     ) -> None:
+        old = await self._read_status(run_id)
         update: dict[str, Any] = {
             "status": RunStatus.COMPLETE.value,
             "finished_at": datetime.now(UTC).isoformat(),
@@ -170,8 +175,10 @@ class RunExecutor:
         if cost_usd_cents is not None:
             update["cost_usd_cents"] = cost_usd_cents
         await self._db._execute(self._db.client.table("runs").update(update).eq("id", run_id))
+        await self._emit_status_changed(run_id, old)
 
     async def mark_failed(self, run_id: str, *, reason: str | None = None) -> None:
+        old = await self._read_status(run_id)
         update: dict[str, Any] = {
             "status": RunStatus.FAILED.value,
             "finished_at": datetime.now(UTC).isoformat(),
@@ -179,8 +186,10 @@ class RunExecutor:
         if reason is not None:
             update["cancel_reason"] = reason
         await self._db._execute(self._db.client.table("runs").update(update).eq("id", run_id))
+        await self._emit_status_changed(run_id, old)
 
     async def mark_cancelled(self, run_id: str, *, reason: str = "") -> None:
+        old = await self._read_status(run_id)
         await self._db._execute(
             self._db.client.table("runs")
             .update(
@@ -192,6 +201,7 @@ class RunExecutor:
             )
             .eq("id", run_id)
         )
+        await self._emit_status_changed(run_id, old)
 
     async def create_run_from_spec(
         self,
@@ -299,7 +309,14 @@ class RunExecutor:
         _ACTIVE_RUNS[run_id] = entry
 
         def _cleanup(_: asyncio.Task[Any]) -> None:
-            _ACTIVE_RUNS.pop(run_id, None)
+            settled = _ACTIVE_RUNS.pop(run_id, None)
+            if settled is None:
+                return
+            for queue in settled.event_queues:
+                try:
+                    queue.put_nowait(None)
+                except asyncio.QueueFull:
+                    pass
 
         task.add_done_callback(_cleanup)
         return run_id
@@ -364,6 +381,7 @@ class RunExecutor:
         Only transitions from ``running`` so double-pause and
         pause-on-finished are no-ops.
         """
+        old = await self._read_status(run_id)
         await self._db._execute(
             self._db.client.table("runs")
             .update(
@@ -375,6 +393,13 @@ class RunExecutor:
             .eq("id", run_id)
             .eq("status", RunStatus.RUNNING.value)
         )
+        new = await self._read_status(run_id)
+        if old != new and new == RunStatus.PAUSED:
+            self._emit_event(
+                run_id,
+                RunEvent(run_id=run_id, event="paused", payload={}),
+            )
+        self._emit_status_changed_from(run_id, old, new)
 
     async def resume(self, run_id: str) -> None:
         """Flip a paused run back to ``running`` and clear ``paused_at``.
@@ -384,6 +409,7 @@ class RunExecutor:
         Cooperative orchestrators observe the paused → running edge
         on their next ``is_paused()`` poll and resume dispatching.
         """
+        old = await self._read_status(run_id)
         await self._db._execute(
             self._db.client.table("runs")
             .update(
@@ -395,6 +421,13 @@ class RunExecutor:
             .eq("id", run_id)
             .eq("status", RunStatus.PAUSED.value)
         )
+        new = await self._read_status(run_id)
+        if old != new and new == RunStatus.RUNNING:
+            self._emit_event(
+                run_id,
+                RunEvent(run_id=run_id, event="resumed", payload={}),
+            )
+        self._emit_status_changed_from(run_id, old, new)
 
     async def is_paused(self, run_id: str) -> bool:
         """Return True when the run's DB status is ``paused``.
@@ -431,8 +464,100 @@ class RunExecutor:
                     return
             await asyncio.sleep(poll_interval)
 
-    def events(self, run_id: str) -> AsyncIterator[Any]:  # pragma: no cover
-        raise NotImplementedError("events lands with a broker / per-run queue.")
+    async def _read_status(self, run_id: str) -> RunStatus | None:
+        """Read just the ``status`` column for ``run_id``, or None if absent."""
+        row = await self._db.get_run(run_id)
+        if row is None:
+            return None
+        raw = row.get("status")
+        return RunStatus(raw) if raw else None
+
+    def _emit_event(self, run_id: str, event: RunEvent) -> None:
+        """Fan out an event to every active subscriber for ``run_id``.
+
+        Uses ``put_nowait`` with ``QueueFull`` swallowed so a slow
+        subscriber cannot stall a status transition. Other exceptions
+        are not swallowed — they indicate bugs, not backpressure.
+        """
+        entry = _ACTIVE_RUNS.get(run_id)
+        if entry is None:
+            return
+        for queue in entry.event_queues:
+            try:
+                queue.put_nowait(event)
+            except asyncio.QueueFull:
+                pass
+
+    async def _emit_status_changed(self, run_id: str, old: RunStatus | None) -> None:
+        """Emit a ``status_changed`` event if the DB status actually moved.
+
+        Called after a ``mark_*`` update. Re-reads the status to handle
+        conditional updates (e.g. ``mark_started`` only fires pending→running).
+        """
+        new = await self._read_status(run_id)
+        self._emit_status_changed_from(run_id, old, new)
+
+    def _emit_status_changed_from(
+        self,
+        run_id: str,
+        old: RunStatus | None,
+        new: RunStatus | None,
+    ) -> None:
+        if new is None or old == new:
+            return
+        self._emit_event(
+            run_id,
+            RunEvent(
+                run_id=run_id,
+                event="status_changed",
+                payload={
+                    "old": old.value if old else None,
+                    "new": new.value,
+                },
+            ),
+        )
+
+    async def events(self, run_id: str) -> AsyncIterator[RunEvent]:
+        """Yield lifecycle events for ``run_id`` as they happen.
+
+        Per-subscriber asyncio.Queue broker: each caller gets its own
+        queue so a slow consumer doesn't starve others. Emissions use
+        ``put_nowait`` with a drop-on-full policy — see ``_emit_event``
+        — so status transitions never block on a stuck subscriber.
+
+        For runs not in ``_ACTIVE_RUNS`` (unknown, or already-settled),
+        emit one synthetic ``status_changed`` snapshotting the current
+        DB status and return. Unknown runs (no row) return immediately
+        with no events.
+
+        Subscribers should ``async for`` the returned iterator. The
+        iterator terminates cleanly when the run's task settles (a
+        sentinel ``None`` is enqueued by the ``add_done_callback``).
+        """
+        entry = _ACTIVE_RUNS.get(run_id)
+        if entry is None:
+            view = await self.status(run_id)
+            if view is None:
+                return
+            yield RunEvent(
+                run_id=run_id,
+                event="status_changed",
+                payload={"old": None, "new": view.status.value},
+            )
+            return
+        queue: asyncio.Queue[RunEvent | None] = asyncio.Queue(maxsize=EVENT_QUEUE_MAXSIZE)
+        entry.event_queues.append(queue)
+        try:
+            while True:
+                item = await queue.get()
+                if item is None:
+                    return
+                yield item
+        finally:
+            try:
+                entry.event_queues.remove(queue)
+            except ValueError:
+                pass
 
     async def checkpoint(
         self,
@@ -470,6 +595,14 @@ class RunExecutor:
                     "payload": payload or {},
                 }
             )
+        )
+        self._emit_event(
+            run_id,
+            RunEvent(
+                run_id=run_id,
+                event="checkpointed",
+                payload={"seq": seq, "kind": kind},
+            ),
         )
         return seq
 

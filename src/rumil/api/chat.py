@@ -2334,6 +2334,7 @@ async def _run_orchestrate(
 
     broadcaster: Broadcaster | None = None
     subscription_task: asyncio.Task[None] | None = None
+    subscribed_event: asyncio.Event | None = None
     try:
         supabase_url, supabase_key = settings.get_supabase_credentials(prod=settings.is_prod_db)
         broadcaster = Broadcaster(new_run_id, supabase_url, supabase_key)
@@ -2348,8 +2349,15 @@ async def _run_orchestrate(
                     except Exception as e:
                         log.debug("on_progress callback error (non-fatal): %s", e)
 
+            subscribed_event = asyncio.Event()
             subscription_task = asyncio.create_task(
-                stream_run_events(new_run_id, supabase_url, supabase_key, _forward)
+                stream_run_events(
+                    new_run_id,
+                    supabase_url,
+                    supabase_key,
+                    _forward,
+                    subscribed=subscribed_event,
+                )
             )
     except Exception as e:
         log.warning(
@@ -2359,6 +2367,7 @@ async def _run_orchestrate(
         )
         broadcaster = None
         subscription_task = None
+        subscribed_event = None
 
     try:
         await new_db.init_budget(budget)
@@ -2373,6 +2382,19 @@ async def _run_orchestrate(
                 f" (variant={variant or settings.prioritizer_variant}, "
                 f"budget={budget}). Trace: /traces/{new_run_id}"
             )
+        # Wait briefly for the trace subscription to become active so we
+        # don't miss the first few broadcast events. Best-effort: if it
+        # doesn't come up in time, the orchestrator still runs — we just
+        # lose live streaming for this run.
+        if subscribed_event is not None:
+            try:
+                await asyncio.wait_for(subscribed_event.wait(), timeout=3.0)
+            except TimeoutError:
+                log.debug(
+                    "trace subscription for run %s didn't become ready in 3s; "
+                    "orchestrator running without live stream",
+                    new_run_id[:8],
+                )
         await dispatch_orchestrator(
             question_id,
             new_db,

@@ -176,6 +176,7 @@ async def stream_run_events(
     supabase_url: str,
     supabase_key: str,
     on_event: Callable[[dict[str, Any]], Any],
+    subscribed: asyncio.Event | None = None,
 ) -> None:
     """Subscribe to ``trace:{run_id}`` and call ``on_event(payload)`` per message.
 
@@ -186,6 +187,13 @@ async def stream_run_events(
     ``Broadcaster.send`` emits: a dumped TraceEvent with ``ts`` and
     ``call_id`` fields added). Exceptions from the callback are logged
     and ignored.
+
+    ``subscribed``: caller-supplied event that is set once
+    ``channel.subscribe()`` has returned — callers can await it before
+    starting the work they want to observe, to avoid missing early
+    events. The event is *also* set on subscription failure (so callers
+    awaiting it don't hang forever) — callers shouldn't treat "set"
+    as "succeeded"; the stream itself is best-effort.
     """
     ws_url = _realtime_url(supabase_url)
     client = AsyncRealtimeClient(ws_url, token=supabase_key, auto_reconnect=True)
@@ -207,6 +215,8 @@ async def stream_run_events(
 
         channel.on_broadcast("*", _handle)
         await channel.subscribe()
+        if subscribed is not None:
+            subscribed.set()
 
         # Keep the task alive; the realtime client runs its own receive
         # loop in background tasks, so we just wait until cancelled.
@@ -216,6 +226,10 @@ async def stream_run_events(
         raise
     except Exception as e:
         log.warning("trace subscription for run %s failed: %s", run_id[:8], e)
+        if subscribed is not None:
+            # Release any caller awaiting readiness so they can proceed
+            # without streaming rather than hang.
+            subscribed.set()
     finally:
         try:
             if channel is not None:

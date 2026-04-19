@@ -10,7 +10,7 @@ import json
 import logging
 import uuid
 from collections.abc import AsyncIterator, Callable, Sequence
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -47,6 +47,7 @@ from rumil.models import (
     Workspace,
 )
 from rumil.moves.registry import MOVES
+from rumil.pricing import usd_from_usage
 from rumil.scraper import scrape_url
 from rumil.settings import get_settings
 from rumil.summary import build_research_tree
@@ -69,6 +70,8 @@ class ChatRequest(BaseModel):
     workspace: str = "default"
     model: str = "sonnet"
     conversation_id: str | None = None
+    open_run_id: str | None = None
+    open_page_ids: list[str] = []
 
 
 class ToolUseInfo(BaseModel):
@@ -491,6 +494,26 @@ TOOLS: list[dict[str, Any]] = [
                 },
             },
             "required": ["call_id"],
+        },
+    },
+    {
+        "name": "get_run",
+        "description": (
+            "Fetch a run's metadata — orchestrator, model, config highlights, "
+            "scope question, timestamps, total cost, and per-call-type stats. "
+            "Use when the user asks 'which orchestrator did this run?', 'what "
+            "was this run configured with?', or to see the overall shape of "
+            "a trace the user is viewing."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "run_id": {
+                    "type": "string",
+                    "description": "8-character short ID or full UUID of the run",
+                },
+            },
+            "required": ["run_id"],
         },
     },
     {
@@ -1164,7 +1187,7 @@ async def _execute_tool(
                 db.client.table("calls")
                 .select(
                     "id,call_type,status,created_at,budget_allocated,budget_used,"
-                    "cost_usd,result_summary"
+                    "cost_usd,result_summary,run_id"
                 )
                 .eq("scope_page_id", full_id)
                 .order("created_at", desc=True)
@@ -1173,6 +1196,23 @@ async def _execute_tool(
         ).data or []
         if not rows:
             return f"No calls on {qid_short}."
+        run_orch_cache: dict[str, str | None] = {}
+
+        async def _orch_for(run_id: str | None) -> str | None:
+            if not run_id:
+                return None
+            if run_id in run_orch_cache:
+                return run_orch_cache[run_id]
+            try:
+                run_row = await db.get_run(run_id)
+            except Exception:
+                log.debug("get_run failed for run_id %s", run_id, exc_info=True)
+                run_row = None
+            config = (run_row or {}).get("config") or {}
+            orch = config.get("orchestrator") if isinstance(config, dict) else None
+            run_orch_cache[run_id] = orch
+            return orch
+
         lines = [f"{len(rows)} recent call(s) on {qid_short}:"]
         for r in rows:
             cost = f" ${r['cost_usd']:.3f}" if r.get("cost_usd") else ""
@@ -1184,7 +1224,11 @@ async def _execute_tool(
                 ts = str(ts_raw)[:16]
             call_type = r.get("call_type") or "?"
             status = r.get("status") or "?"
-            lines.append(f"  [{str(r['id'])[:8]}] {call_type} ({status}){cost}{budget} — {ts}")
+            orch = await _orch_for(r.get("run_id"))
+            orch_note = f" orch={orch}" if orch else (" orch=?" if r.get("run_id") else "")
+            lines.append(
+                f"  [{str(r['id'])[:8]}] {call_type} ({status}){cost}{budget}{orch_note} — {ts}"
+            )
             if r.get("result_summary"):
                 lines.append(f"    {r['result_summary'][:200]}")
         return "\n".join(lines)
@@ -1197,14 +1241,31 @@ async def _execute_tool(
         call = await db.get_call(full_id)
         if not call:
             return f"Call '{cid_short}' not found."
+        call_rows = (
+            await db._execute(db.client.table("calls").select("run_id").eq("id", full_id))
+        ).data or []
+        call_run_id = (call_rows[0] or {}).get("run_id") if call_rows else None
         events = await db.get_call_trace(full_id)
         exchanges = await db.get_llm_exchanges(full_id)
-        lines = [
-            f"Call [{full_id[:8]}] {call.call_type.value} ({call.status.value})",
+        run_line: str | None = None
+        if call_run_id:
+            try:
+                run_row = await db.get_run(call_run_id)
+            except Exception:
+                log.debug("get_run failed for call %s", full_id, exc_info=True)
+                run_row = None
+            config = (run_row or {}).get("config") or {}
+            orch = config.get("orchestrator") if isinstance(config, dict) else None
+            orch_note = f" (orchestrator: {orch})" if orch else ""
+            run_line = f"  run: {call_run_id[:8]}{orch_note}"
+        lines = [f"Call [{full_id[:8]}] {call.call_type.value} ({call.status.value})"]
+        if run_line:
+            lines.append(run_line)
+        lines.append(
             f"  scope={call.scope_page_id[:8] if call.scope_page_id else '-'} "
             f"budget={call.budget_used}/{call.budget_allocated or '?'} "
-            f"cost=${(call.cost_usd or 0):.3f}",
-        ]
+            f"cost=${(call.cost_usd or 0):.3f}"
+        )
         if call.result_summary:
             lines.append(f"  summary: {call.result_summary[:400]}")
         lines.append(f"\n{len(events)} trace event(s):")
@@ -1224,6 +1285,95 @@ async def _execute_tool(
             err = ex.get("error")
             err_note = f" ERROR: {str(err)[:100]}" if err else ""
             lines.append(f"  - {phase} r{rnd}: {tin}->{tout} tok{err_note}")
+        return "\n".join(lines)
+
+    if name == "get_run":
+        rid = tool_input["run_id"]
+        full_run_id: str | None = None
+        run_row: dict[str, Any] | None = None
+        try:
+            direct = await db.get_run(rid)
+        except Exception:
+            log.debug("get_run direct lookup failed for %s", rid, exc_info=True)
+            direct = None
+        if direct:
+            full_run_id = direct["id"]
+            run_row = direct
+        else:
+            matches = (
+                await db._execute(db.client.table("runs").select("*").like("id", f"{rid}%"))
+            ).data or []
+            if len(matches) == 1:
+                first = matches[0]
+                if first:
+                    run_row = first
+                    full_run_id = str(first["id"])
+            elif len(matches) > 1:
+                return f"Run id '{rid}' is ambiguous ({len(matches)} matches)."
+        if not run_row or not full_run_id:
+            return f"Run '{rid}' not found."
+        config = run_row.get("config") or {}
+        if not isinstance(config, dict):
+            config = {}
+        orch = config.get("orchestrator") or "?"
+        model_name = config.get("model") or config.get("model_name") or "?"
+        scope_qid = run_row.get("question_id")
+        scope_headline: str | None = None
+        if scope_qid:
+            scope_page = await db.get_page(scope_qid)
+            scope_headline = scope_page.headline if scope_page else None
+        rows = (
+            await db._execute(
+                db.client.table("calls")
+                .select("call_type,cost_usd,budget_used,status")
+                .eq("run_id", full_run_id)
+            )
+        ).data or []
+        total_cost = 0.0
+        total_budget = 0
+        by_type: dict[str, int] = {}
+        by_status: dict[str, int] = {}
+        for r in rows:
+            cost = r.get("cost_usd")
+            if cost is not None:
+                total_cost += float(cost)
+            used = r.get("budget_used") or 0
+            total_budget += int(used)
+            ct = r.get("call_type") or "?"
+            by_type[ct] = by_type.get(ct, 0) + 1
+            st = r.get("status") or "?"
+            by_status[st] = by_status.get(st, 0) + 1
+        lines = [
+            f"Run [{full_run_id[:8]}] {run_row.get('name') or '?'}",
+            f"  orchestrator: {orch}",
+            f"  model: {model_name}",
+        ]
+        if scope_qid:
+            scope_label = f"{scope_qid[:8]} — {scope_headline}" if scope_headline else scope_qid[:8]
+            lines.append(f"  scope question: {scope_label}")
+        lines.append(f"  created: {run_row.get('created_at') or '?'}")
+        lines.append(f"  staged: {run_row.get('staged')}")
+        lines.append(f"  total cost: ${total_cost:.3f}")
+        lines.append(f"  total budget used: {total_budget}")
+        lines.append(f"  calls: {len(rows)}")
+        if by_type:
+            type_bits = ", ".join(f"{k}={v}" for k, v in sorted(by_type.items()))
+            lines.append(f"    by type: {type_bits}")
+        if by_status:
+            status_bits = ", ".join(f"{k}={v}" for k, v in sorted(by_status.items()))
+            lines.append(f"    by status: {status_bits}")
+        interesting_keys = (
+            "origin",
+            "available_moves",
+            "assess_call_variant",
+            "git_commit",
+            "git_branch",
+        )
+        extras = [(k, config[k]) for k in interesting_keys if k in config]
+        if extras:
+            lines.append("  config:")
+            for k, v in extras:
+                lines.append(f"    {k}: {v}")
         return "\n".join(lines)
 
     if name == "create_claim":
@@ -1501,7 +1651,7 @@ async def build_chat_context(
         parts.append(f"{question.content}\n")
 
     parts.append("## Research tree\n")
-    tree = await build_research_tree(question_id, db, max_depth=3)
+    tree = await build_research_tree(question_id, db, max_depth=3, show_run_ids=True)
     parts.append(tree)
     parts.append("")
 
@@ -1515,6 +1665,63 @@ async def build_chat_context(
         parts.append(neighbor_result.context_text)
 
     return "\n".join(parts)
+
+
+async def _build_ui_state_block(
+    db: DB,
+    open_run_id: str | None,
+    open_page_ids: Sequence[str],
+) -> str:
+    """Render a short 'Currently open in UI' block for the system prompt.
+
+    Returns '' if neither field yields resolvable context. Degrades
+    gracefully when run or pages are missing.
+    """
+    lines: list[str] = []
+
+    if open_run_id:
+        full_run_id: str | None = None
+        try:
+            rows = (
+                await db._execute(
+                    db.client.table("runs").select("id,config").like("id", f"{open_run_id}%")
+                )
+            ).data or []
+            if len(rows) == 1 and rows[0]:
+                full_run_id = str(rows[0]["id"])
+                config = rows[0].get("config") or {}
+                orch = config.get("orchestrator") if isinstance(config, dict) else None
+                orch_note = f" (orchestrator: {orch})" if orch else ""
+                lines.append(f"- Viewing trace for run: {full_run_id[:8]}{orch_note}")
+            elif len(rows) > 1:
+                log.debug("open_run_id '%s' ambiguous (%d matches)", open_run_id, len(rows))
+            else:
+                log.debug("open_run_id '%s' not found", open_run_id)
+        except Exception:
+            log.debug("Failed to resolve open_run_id '%s'", open_run_id, exc_info=True)
+
+    if open_page_ids:
+        try:
+            resolved = await db.resolve_page_ids(list(open_page_ids))
+            full_ids = [v for v in resolved.values() if v]
+            pages = await db.get_pages_by_ids(full_ids) if full_ids else {}
+            rendered: list[str] = []
+            for short in open_page_ids[:6]:
+                full = resolved.get(short)
+                page = pages.get(full) if full else None
+                if page:
+                    headline = (page.headline or "")[:80]
+                    rendered.append(f'  - {page.id[:8]} ({page.page_type.value}, "{headline}")')
+            if rendered:
+                lines.append("- Open in inspect panel:")
+                lines.extend(rendered)
+        except Exception:
+            log.debug("Failed to resolve open_page_ids %r", list(open_page_ids), exc_info=True)
+
+    if not lines:
+        return ""
+    header = "## Currently open in UI"
+    return "\n".join([header, *lines])
 
 
 async def _ensure_conversation(
@@ -1607,6 +1814,38 @@ async def _persist_user_turn(db: DB, conv: ChatConversation, request: ChatReques
         )
 
 
+async def _aggregate_turn_research_cost(
+    db: DB,
+    turn_start_iso: str,
+) -> tuple[float, dict[str, float]]:
+    """Sum `cost_usd` across calls created this turn.
+
+    Returns `(research_usd, by_call_type)`. Rows with a NULL `cost_usd` are
+    skipped (pending calls, calls without LLM cost). Callers that want to
+    distinguish "no cost yet" from "zero cost" should rely on their own
+    bookkeeping — this helper collapses both to 0 for display.
+    """
+    rows = (
+        await db._execute(
+            db.client.table("calls")
+            .select("id,call_type,cost_usd,created_at")
+            .eq("run_id", db.run_id)
+            .gte("created_at", turn_start_iso)
+        )
+    ).data or []
+    total = 0.0
+    by_type: dict[str, float] = {}
+    for row in rows:
+        cost = row.get("cost_usd")
+        if cost is None:
+            continue
+        cost_f = float(cost)
+        total += cost_f
+        call_type = row.get("call_type") or "unknown"
+        by_type[call_type] = by_type.get(call_type, 0.0) + cost_f
+    return total, by_type
+
+
 async def handle_chat(request: ChatRequest) -> ChatResponse:
     """Handle a chat request: build context, call LLM with tools, return response."""
     settings = get_settings()
@@ -1643,11 +1882,16 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
         system_prompt = (PROMPTS_DIR / "api_chat.md").read_text(encoding="utf-8")
         context_scope_id = full_id or ""
         context_text = await build_chat_context(full_id, db) if full_id else "(no question scope)"
-        full_system = f"{system_prompt}\n\n---\n\n{context_text}"
+        ui_block = await _build_ui_state_block(db, request.open_run_id, request.open_page_ids)
+        preamble = f"{ui_block}\n\n" if ui_block else ""
+        full_system = f"{system_prompt}\n\n---\n\n{preamble}{context_text}"
 
         model_id = MODEL_MAP.get(request.model, MODEL_MAP["sonnet"])
         client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
         tool_uses_log: list[ToolUseInfo] = []
+
+        turn_start_iso = datetime.now(UTC).isoformat()
+        turn_chat_usd = 0.0
 
         for _ in range(10):
             response = await client.messages.create(
@@ -1658,6 +1902,10 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
                 messages=messages,  # type: ignore[arg-type]
                 tools=TOOLS,  # type: ignore[arg-type]
             )
+            try:
+                turn_chat_usd += usd_from_usage(model_id, response.usage)
+            except KeyError:
+                log.warning("No pricing entry for model %s; chat cost not counted", model_id)
 
             text_parts: list[str] = []
             tool_calls: list[ToolUseBlock] = []
@@ -1667,10 +1915,22 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
                 elif isinstance(block, ToolUseBlock):
                     tool_calls.append(block)
 
+            assistant_content: dict[str, Any] = {
+                "blocks": _serialize_assistant_content(response.content),
+            }
+            if not tool_calls:
+                research_usd, research_by_type = await _aggregate_turn_research_cost(
+                    db, turn_start_iso
+                )
+                assistant_content["costs"] = {
+                    "chat_usd": turn_chat_usd,
+                    "research_usd": research_usd,
+                    "research_by_call_type": research_by_type,
+                }
             await db.save_chat_message(
                 conversation_id=conv.id,
                 role=ChatMessageRole.ASSISTANT,
-                content={"blocks": _serialize_assistant_content(response.content)},
+                content=assistant_content,
             )
 
             if not tool_calls:
@@ -1776,13 +2036,17 @@ async def handle_chat_stream(request: ChatRequest) -> StreamingResponse:
 
     system_prompt = (PROMPTS_DIR / "api_chat.md").read_text(encoding="utf-8")
     context_text = await build_chat_context(full_id, db) if full_id else "(no question scope)"
-    full_system = f"{system_prompt}\n\n---\n\n{context_text}"
+    ui_block = await _build_ui_state_block(db, request.open_run_id, request.open_page_ids)
+    preamble = f"{ui_block}\n\n" if ui_block else ""
+    full_system = f"{system_prompt}\n\n---\n\n{preamble}{context_text}"
     model_id = MODEL_MAP.get(request.model, MODEL_MAP["sonnet"])
     client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
     context_scope_id = full_id or ""
 
     async def generate() -> AsyncIterator[str]:
         nonlocal messages
+        turn_start_iso = datetime.now(UTC).isoformat()
+        turn_chat_usd = 0.0
         try:
             yield _sse("conversation", {"conversation_id": conv.id, "title": conv.title})
             for _ in range(10):
@@ -1803,15 +2067,36 @@ async def handle_chat_stream(request: ChatRequest) -> StreamingResponse:
                                 yield _sse("tool_use_start", {"name": event.content_block.name})
 
                 response = await stream.get_final_message()
+                try:
+                    turn_chat_usd += usd_from_usage(model_id, response.usage)
+                except KeyError:
+                    log.warning("No pricing entry for model %s; chat cost not counted", model_id)
+
+                tool_calls = [b for b in response.content if isinstance(b, ToolUseBlock)]
+                is_terminal = not tool_calls
+                assistant_content: dict[str, Any] = {
+                    "blocks": _serialize_assistant_content(response.content),
+                }
+                costs_payload: dict[str, Any] | None = None
+                if is_terminal:
+                    research_usd, research_by_type = await _aggregate_turn_research_cost(
+                        db, turn_start_iso
+                    )
+                    costs_payload = {
+                        "chat_usd": turn_chat_usd,
+                        "research_usd": research_usd,
+                        "research_by_call_type": research_by_type,
+                    }
+                    assistant_content["costs"] = costs_payload
 
                 await db.save_chat_message(
                     conversation_id=conv.id,
                     role=ChatMessageRole.ASSISTANT,
-                    content={"blocks": _serialize_assistant_content(response.content)},
+                    content=assistant_content,
                 )
 
-                tool_calls = [b for b in response.content if isinstance(b, ToolUseBlock)]
-                if not tool_calls:
+                if is_terminal and costs_payload is not None:
+                    yield _sse("turn_costs", costs_payload)
                     break
 
                 messages.append({"role": "assistant", "content": response.content})

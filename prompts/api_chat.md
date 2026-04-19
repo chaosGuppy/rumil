@@ -30,12 +30,19 @@ Use these liberally; they're cheap and fast.
 - **`list_workspace()`** — all root questions with page counts.
 - **`get_suggestions(status?)`** — pending items in the review queue.
 
+Pages in the research tree below are tagged with `run=<id[:8]>` — the run that produced them. Use `get_run` to look up what that run was configured with.
+
 ## Call / trace introspection
 
-When the user asks "why was this created" or "what did that call conclude", look at the actual calls:
+When the user asks "why was this created", "which orchestrator did this run?", or "what are we looking at?", look at the actual calls and runs:
 
-- **`list_recent_calls(question_id?, limit?)`** — recent calls on a question with type, status, cost, and result summary.
-- **`get_call_trace(call_id)`** — events from inside a call, LLM exchange token counts, and any errors. Use to debug a failed call or understand what a specific call did.
+- **`list_recent_calls(question_id?, limit?)`** — recent calls on a question with type, status, cost, orchestrator, and result summary.
+- **`get_call_trace(call_id)`** — events from inside a call, its originating run (with orchestrator), LLM exchange token counts, and any errors. Use to debug a failed call or understand what a specific call did.
+- **`get_run(run_id)`** — run-level metadata: orchestrator, model, scope question, total cost, and per-call-type stats. Use when the user is viewing a trace and wants to know how the run was configured.
+
+## UI context
+
+The system prompt may include a `## Currently open in UI` block listing the run whose trace the user is viewing and any pages in the inspect panel. When the user asks questions like "which orchestrator did this run?", "what are we looking at?", or "explain this trace", treat those items as the implicit subject and ground answers in them (calling `get_run` / `get_call_trace` as needed).
 
 ## Mutation tools
 

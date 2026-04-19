@@ -23,6 +23,7 @@ async def build_research_tree(
     depth: int = 0,
     max_depth: int = 4,
     summary_cutoff: int | None = None,
+    show_run_ids: bool = False,
     _visited: set[str] | None = None,
 ) -> str:
     """
@@ -31,6 +32,10 @@ async def build_research_tree(
     The first ``summary_cutoff`` levels render full content (claims,
     reasoning, judgement bodies). Deeper levels render only page summaries
     to keep total context size manageable. Defaults to max_depth // 2.
+
+    When ``show_run_ids`` is True, each rendered page line includes the
+    short run_id that produced it (``run=<id[:8]>``). Kept off by default
+    so existing callers (summary generation, etc.) are unchanged.
     """
     if _visited is None:
         _visited = set()
@@ -48,46 +53,56 @@ async def build_research_tree(
     indent = "  " * depth
     parts = []
 
-    # Question heading
+    def run_tag(run_id: str | None) -> str:
+        if not show_run_ids or not run_id:
+            return ""
+        return f" run={run_id[:8]}"
+
     short_id = question.id[:8]
+    q_run = run_tag(question.run_id)
     if depth == 0:
-        parts.append(f"# Research Question [id: {short_id}]\n\n{question.content}\n")
+        parts.append(f"# Research Question [id: {short_id}{q_run}]\n\n{question.content}\n")
     elif full_detail:
         parts.append(
-            f"{'#' * (depth + 2)} Sub-question [id: {short_id}]: {question.headline}\n\n{question.content}\n"
+            f"{'#' * (depth + 2)} Sub-question [id: {short_id}{q_run}]: "
+            f"{question.headline}\n\n{question.content}\n"
         )
     else:
-        parts.append(f"{'#' * (depth + 2)} Sub-question [id: {short_id}]: {question.headline}\n")
+        parts.append(
+            f"{'#' * (depth + 2)} Sub-question [id: {short_id}{q_run}]: {question.headline}\n"
+        )
 
-    # Considerations
     considerations = await db.get_considerations_for_question(question_id)
     if considerations:
 
         def format_consideration(claim, link) -> str:
             cid = claim.id[:8]
             strength_note = f" (strength {link.strength:.1f})" if link.strength else ""
+            rtag = run_tag(claim.run_id)
             if full_detail:
-                lines = [f"- **{claim.headline}** [id: {cid}]{strength_note}"]
+                lines = [f"- **{claim.headline}** [id: {cid}{rtag}]{strength_note}"]
                 lines.append(f"  {claim.content}")
                 if link.reasoning:
                     lines.append(f"  *Bearing on question: {link.reasoning}*")
                 return "\n".join(lines)
-            return f"- {claim.headline} [id: {cid}]{strength_note}"
+            return f"- {claim.headline} [id: {cid}{rtag}]{strength_note}"
 
         parts.append(f"{indent}**Considerations:**\n")
         for p, l in sorted(considerations, key=lambda x: x[1].strength, reverse=True):
             parts.append(format_consideration(p, l))
         parts.append("")
 
-    # Judgements — oldest first so the evolution of thinking is legible
     judgements = await db.get_judgements_for_question(question_id)
     if judgements:
         ordered = sorted(judgements, key=lambda j: j.created_at)
         for i, j in enumerate(ordered):
             label = f"Judgement {i + 1} of {len(ordered)}" if len(ordered) > 1 else "Judgement"
             jid = j.id[:8]
+            jtag = run_tag(j.run_id)
             if full_detail:
-                parts.append(f"{indent}**{label}** [id: {jid}] (C{j.credence}/R{j.robustness}):\n")
+                parts.append(
+                    f"{indent}**{label}** [id: {jid}{jtag}] (C{j.credence}/R{j.robustness}):\n"
+                )
                 parts.append(j.content)
                 extra = j.extra or {}
                 if extra.get("key_dependencies"):
@@ -96,11 +111,11 @@ async def build_research_tree(
                     parts.append(f"\n*Sensitivity: {extra['sensitivity_analysis']}*")
             else:
                 parts.append(
-                    f"{indent}**{label}** [id: {jid}] (C{j.credence}/R{j.robustness}): {j.headline}"
+                    f"{indent}**{label}** [id: {jid}{jtag}] "
+                    f"(C{j.credence}/R{j.robustness}): {j.headline}"
                 )
             parts.append("")
 
-    # Sub-questions (recurse)
     if depth < max_depth:
         children = await db.get_child_questions(question_id)
         if children:
@@ -112,6 +127,7 @@ async def build_research_tree(
                         depth=depth + 1,
                         max_depth=max_depth,
                         summary_cutoff=summary_cutoff,
+                        show_run_ids=show_run_ids,
                         _visited=_visited,
                     )
                 )

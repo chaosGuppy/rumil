@@ -11,7 +11,7 @@ import {
   deleteChatConversation,
   fetchPageByShortId,
 } from "@/lib/api";
-import type { ChatToolUse, ChatConversationSummary } from "@/lib/api";
+import type { ChatToolUse, ChatConversationSummary, ChatTurnCosts } from "@/lib/api";
 import { SlashCommandDropdown, useSlashCommands, recordRecentCommand, COMMANDS } from "./SlashCommands";
 import { processChildren } from "./NodeRefLink";
 import { useInspectPanel } from "./InspectPanelContext";
@@ -27,6 +27,7 @@ interface Message {
   timestamp: Date;
   loading?: boolean;
   blocks?: MessageBlock[];
+  costs?: ChatTurnCosts;
 }
 
 interface ChatPanelProps {
@@ -39,6 +40,8 @@ interface ChatPanelProps {
   onShowReview?: () => void;
   workspace?: string;
   projectId?: string;
+  openRunId?: string;
+  openPageIds?: string[];
 }
 
 function contentToText(content: unknown): string {
@@ -76,12 +79,25 @@ function persistedMessagesToUi(
           });
         }
       }
+      const costsRaw = m.content?.costs as
+        | { chat_usd?: unknown; research_usd?: unknown; research_by_call_type?: unknown }
+        | undefined;
+      const costs: ChatTurnCosts | undefined = costsRaw
+        ? {
+            chat_usd: typeof costsRaw.chat_usd === "number" ? costsRaw.chat_usd : 0,
+            research_usd:
+              typeof costsRaw.research_usd === "number" ? costsRaw.research_usd : 0,
+            research_by_call_type:
+              (costsRaw.research_by_call_type as Record<string, number>) ?? {},
+          }
+        : undefined;
       out.push({
         id: m.id,
         role: "assistant",
         content: textAccum,
         timestamp: new Date(m.ts),
         blocks,
+        costs,
       });
     }
   }
@@ -94,6 +110,80 @@ function formatTime(date: Date): string {
     minute: "2-digit",
     hour12: true,
   });
+}
+
+function formatUsd(v: number): string {
+  if (v === 0) return "$0";
+  if (v < 0.001) return "<$0.001";
+  return `$${v.toFixed(3)}`;
+}
+
+// Map internal rumil call types to user-facing labels for the cost footer.
+// chat_direct is dropped entirely (tiny mutation-move cost, shows up for
+// every mutation); scout_* / find_considerations / assess / web_research
+// collapse to "research call" so users see one line per kind of work
+// rather than the internal taxonomy.
+function labelForCallType(ct: string): string | null {
+  if (ct === "chat_direct") return null;
+  if (ct === "ingest") return "ingest";
+  if (
+    ct === "find_considerations" ||
+    ct === "assess" ||
+    ct === "web_research" ||
+    ct.startsWith("scout_")
+  ) {
+    return "research call";
+  }
+  return ct;
+}
+
+function summarizeResearchByType(byType: Record<string, number>): {
+  total: number;
+  parts: string[];
+} {
+  const byLabel: Record<string, { usd: number; count: number }> = {};
+  let total = 0;
+  for (const [ct, usd] of Object.entries(byType)) {
+    const label = labelForCallType(ct);
+    if (label === null) continue;
+    total += usd;
+    const entry = byLabel[label] ?? { usd: 0, count: 0 };
+    entry.usd += usd;
+    entry.count += 1;
+    byLabel[label] = entry;
+  }
+  const parts = Object.entries(byLabel).map(([label, { usd, count }]) => {
+    const plural = count === 1 ? "" : "s";
+    return `${count} ${label}${plural} ${formatUsd(usd)}`;
+  });
+  return { total, parts };
+}
+
+function CostFooter({ costs }: { costs: ChatTurnCosts }) {
+  const { total: researchDisplay, parts } = summarizeResearchByType(
+    costs.research_by_call_type,
+  );
+  const showResearch = researchDisplay > 0 || parts.length > 0;
+  return (
+    <div
+      style={{
+        marginTop: "6px",
+        fontFamily: "var(--font-mono-stack)",
+        fontSize: "9px",
+        letterSpacing: "0.02em",
+        color: "var(--fg-dim)",
+      }}
+    >
+      <span>Chat: {formatUsd(costs.chat_usd)}</span>
+      {showResearch && (
+        <span>
+          {" \u00b7 Research: "}
+          {formatUsd(researchDisplay)}
+          {parts.length > 0 ? ` (${parts.join(", ")})` : ""}
+        </span>
+      )}
+    </div>
+  );
 }
 
 // "Searching…" verb tailored to the tool name. Non-committal for unknown
@@ -213,6 +303,10 @@ function MessageEntry({
           <span className="thinking-text">thinking</span>
         </div>
       )}
+
+      {!isUser && !message.loading && message.costs && (
+        <CostFooter costs={message.costs} />
+      )}
     </div>
   );
 }
@@ -227,6 +321,8 @@ export function ChatPanel({
   onShowReview,
   workspace = "default",
   projectId,
+  openRunId,
+  openPageIds,
 }: ChatPanelProps) {
   const initialAssistantMessage: Message = {
     id: "initial",
@@ -626,6 +722,16 @@ export function ChatPanel({
             };
           }
           updateMsg();
+        } else if (event.type === "turn_costs") {
+          const costs: ChatTurnCosts = {
+            chat_usd: Number(event.data.chat_usd ?? 0),
+            research_usd: Number(event.data.research_usd ?? 0),
+            research_by_call_type:
+              (event.data.research_by_call_type as Record<string, number>) ?? {},
+          };
+          setMessages((prev) =>
+            prev.map((m) => (m.id === assistantId ? { ...m, costs } : m)),
+          );
         } else if (event.type === "error") {
           currentText += `\n\n*Error: ${event.data.message}*`;
           const lastIdx = currentBlocks.length - 1;
@@ -636,7 +742,7 @@ export function ChatPanel({
           }
           updateMsg();
         }
-      }, workspace, model, conversationId ?? undefined);
+      }, workspace, model, conversationId ?? undefined, openRunId, openPageIds);
 
       setMessages((prev) =>
         prev.map((m) =>
@@ -660,7 +766,7 @@ export function ChatPanel({
     } finally {
       setIsLoading(false);
     }
-  }, [input, isLoading, messages, questionId, onMessageSent, onNodeRef, workspace, onShowReview, conversationId, model, refreshConversations, openInspect]);
+  }, [input, isLoading, messages, questionId, onMessageSent, onNodeRef, workspace, onShowReview, conversationId, model, refreshConversations, openInspect, openRunId, openPageIds]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {

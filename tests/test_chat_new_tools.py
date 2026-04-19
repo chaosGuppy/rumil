@@ -6,10 +6,13 @@ calls. Mutating tools are checked by reading the resulting DB state.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
 import pytest_asyncio
 
-from rumil.api.chat import TOOLS, _execute_tool
+from rumil.api.chat import TOOLS, _aggregate_turn_research_cost, _execute_tool
+from rumil.database import DB
 from rumil.models import (
     Call,
     CallStatus,
@@ -580,3 +583,291 @@ async def test_report_duplicate_records_flag(tmp_db, seeded_graph):
     assert "Duplicate reported" in result
     flags = await _query_flags(tmp_db, "duplicate")
     assert any({f.get("page_id_a"), f.get("page_id_b")} == {strong.id, weak.id} for f in flags)
+
+
+async def test_aggregate_turn_research_cost_sums_and_buckets(tmp_db, seeded_graph):
+
+    root = seeded_graph["root"]
+    turn_start = datetime.now(UTC) - timedelta(seconds=1)
+
+    fc_call = Call(
+        call_type=CallType.FIND_CONSIDERATIONS,
+        workspace=Workspace.RESEARCH,
+        scope_page_id=root.id,
+        status=CallStatus.COMPLETE,
+        cost_usd=0.25,
+    )
+    assess_call = Call(
+        call_type=CallType.ASSESS,
+        workspace=Workspace.RESEARCH,
+        scope_page_id=root.id,
+        status=CallStatus.COMPLETE,
+        cost_usd=0.10,
+    )
+    chat_direct = Call(
+        call_type=CallType.CHAT_DIRECT,
+        workspace=Workspace.RESEARCH,
+        scope_page_id=root.id,
+        status=CallStatus.COMPLETE,
+        cost_usd=0.001,
+    )
+    pending = Call(
+        call_type=CallType.FIND_CONSIDERATIONS,
+        workspace=Workspace.RESEARCH,
+        scope_page_id=root.id,
+        status=CallStatus.PENDING,
+        cost_usd=None,
+    )
+    for c in (fc_call, assess_call, chat_direct, pending):
+        await tmp_db.save_call(c)
+
+    total, by_type = await _aggregate_turn_research_cost(tmp_db, turn_start.isoformat())
+
+    assert total == pytest.approx(0.25 + 0.10 + 0.001)
+    assert by_type["find_considerations"] == pytest.approx(0.25)
+    assert by_type["assess"] == pytest.approx(0.10)
+    assert by_type["chat_direct"] == pytest.approx(0.001)
+    assert "pending_call" not in by_type
+
+
+async def test_aggregate_turn_research_cost_ignores_calls_before_turn(tmp_db, seeded_graph):
+
+    root = seeded_graph["root"]
+
+    earlier = Call(
+        call_type=CallType.FIND_CONSIDERATIONS,
+        workspace=Workspace.RESEARCH,
+        scope_page_id=root.id,
+        status=CallStatus.COMPLETE,
+        cost_usd=0.50,
+    )
+    await tmp_db.save_call(earlier)
+
+    turn_start = datetime.now(UTC) + timedelta(seconds=1)
+    total, by_type = await _aggregate_turn_research_cost(tmp_db, turn_start.isoformat())
+
+    assert total == 0.0
+    assert by_type == {}
+
+
+async def test_aggregate_turn_research_cost_scoped_to_run_id(tmp_db, seeded_graph):
+
+    root = seeded_graph["root"]
+    turn_start = datetime.now(UTC) - timedelta(seconds=1)
+
+    mine = Call(
+        call_type=CallType.FIND_CONSIDERATIONS,
+        workspace=Workspace.RESEARCH,
+        scope_page_id=root.id,
+        status=CallStatus.COMPLETE,
+        cost_usd=0.30,
+    )
+    await tmp_db.save_call(mine)
+
+    other = await DB.create(run_id="11111111-1111-1111-1111-111111111111")
+    other.project_id = tmp_db.project_id
+    try:
+        await other.create_run(name="other", question_id=None, config={})
+        stranger = Call(
+            call_type=CallType.FIND_CONSIDERATIONS,
+            workspace=Workspace.RESEARCH,
+            scope_page_id=root.id,
+            status=CallStatus.COMPLETE,
+            cost_usd=99.99,
+        )
+        await other.save_call(stranger)
+    finally:
+        await other.delete_run_data(delete_project=False)
+        await other.close()
+
+    total, by_type = await _aggregate_turn_research_cost(tmp_db, turn_start.isoformat())
+    assert total == pytest.approx(0.30)
+    assert by_type["find_considerations"] == pytest.approx(0.30)
+
+
+async def _set_run_config(tmp_db, config: dict) -> None:
+    await tmp_db._execute(
+        tmp_db.client.table("runs").update({"config": config}).eq("id", tmp_db.run_id)
+    )
+
+
+async def test_get_run_returns_orchestrator(tmp_db, seeded_graph):
+    root = seeded_graph["root"]
+    await _set_run_config(
+        tmp_db,
+        {"orchestrator": "two_phase", "model": "claude-sonnet", "origin": "cli"},
+    )
+
+    fc = Call(
+        call_type=CallType.FIND_CONSIDERATIONS,
+        workspace=Workspace.RESEARCH,
+        scope_page_id=root.id,
+        status=CallStatus.COMPLETE,
+        budget_used=1,
+        cost_usd=0.20,
+    )
+    assess = Call(
+        call_type=CallType.ASSESS,
+        workspace=Workspace.RESEARCH,
+        scope_page_id=root.id,
+        status=CallStatus.COMPLETE,
+        budget_used=1,
+        cost_usd=0.05,
+    )
+    for c in (fc, assess):
+        await tmp_db.save_call(c)
+
+    result = await _execute_tool("get_run", {"run_id": tmp_db.run_id}, tmp_db)
+
+    assert "two_phase" in result
+    assert "claude-sonnet" in result
+    assert "find_considerations=1" in result
+    assert "assess=1" in result
+    assert "calls: 2" in result
+    assert "total cost: $0.250" in result
+
+
+async def test_get_run_resolves_short_id(tmp_db, seeded_graph):
+    await _set_run_config(tmp_db, {"orchestrator": "two_phase"})
+    short = tmp_db.run_id[:8]
+    result = await _execute_tool("get_run", {"run_id": short}, tmp_db)
+    assert "two_phase" in result
+    assert short in result
+
+
+async def test_get_run_not_found(tmp_db, seeded_graph):
+    result = await _execute_tool(
+        "get_run",
+        {"run_id": "00000000-0000-0000-0000-000000000000"},
+        tmp_db,
+    )
+    assert "not found" in result
+
+
+async def test_get_call_trace_includes_run_origin(tmp_db, seeded_graph):
+    root = seeded_graph["root"]
+    await _set_run_config(tmp_db, {"orchestrator": "claim_investigation"})
+
+    call = Call(
+        call_type=CallType.ASSESS,
+        workspace=Workspace.RESEARCH,
+        scope_page_id=root.id,
+        status=CallStatus.COMPLETE,
+        budget_used=1,
+        cost_usd=0.02,
+        result_summary="Graded one claim.",
+    )
+    await tmp_db.save_call(call)
+
+    result = await _execute_tool("get_call_trace", {"call_id": call.id[:8]}, tmp_db)
+
+    assert "orchestrator:" in result
+    assert "claim_investigation" in result
+    assert tmp_db.run_id[:8] in result
+
+
+async def test_list_recent_calls_includes_orch(tmp_db, seeded_graph):
+    root = seeded_graph["root"]
+    await _set_run_config(tmp_db, {"orchestrator": "two_phase"})
+
+    a = Call(
+        call_type=CallType.FIND_CONSIDERATIONS,
+        workspace=Workspace.RESEARCH,
+        scope_page_id=root.id,
+        status=CallStatus.COMPLETE,
+        budget_used=1,
+        cost_usd=0.10,
+    )
+    b = Call(
+        call_type=CallType.ASSESS,
+        workspace=Workspace.RESEARCH,
+        scope_page_id=root.id,
+        status=CallStatus.COMPLETE,
+        budget_used=1,
+        cost_usd=0.05,
+    )
+    for c in (a, b):
+        await tmp_db.save_call(c)
+
+    result = await _execute_tool(
+        "list_recent_calls",
+        {"question_id": root.id[:8]},
+        tmp_db,
+        scope_question_id=root.id,
+    )
+
+    assert "orch=two_phase" in result
+    assert result.count("orch=two_phase") >= 2
+
+
+async def test_build_chat_context_tags_run_ids(tmp_db, seeded_graph):
+    from rumil.api.chat import build_chat_context
+
+    root = seeded_graph["root"]
+    strong = seeded_graph["strong"]
+
+    result = await build_chat_context(root.id, tmp_db)
+
+    assert f"run={tmp_db.run_id[:8]}" in result
+    assert strong.id[:8] in result
+
+
+async def test_chat_request_accepts_open_run_id():
+    from rumil.api.chat import ChatRequest
+
+    req = ChatRequest(
+        question_id="abc",
+        messages=[{"role": "user", "content": "hi"}],
+        open_run_id="780ffdf0",
+        open_page_ids=["77d295eb", "d19b6c91"],
+    )
+    assert req.open_run_id == "780ffdf0"
+    assert req.open_page_ids == ["77d295eb", "d19b6c91"]
+
+    req2 = ChatRequest(question_id="abc", messages=[])
+    assert req2.open_run_id is None
+    assert req2.open_page_ids == []
+
+
+async def test_build_ui_state_block_renders_run_and_pages(tmp_db, seeded_graph):
+    from rumil.api.chat import _build_ui_state_block
+
+    await _set_run_config(tmp_db, {"orchestrator": "two_phase"})
+    strong = seeded_graph["strong"]
+
+    block = await _build_ui_state_block(
+        tmp_db,
+        tmp_db.run_id[:8],
+        [strong.id[:8]],
+    )
+
+    assert "Currently open in UI" in block
+    assert tmp_db.run_id[:8] in block
+    assert "two_phase" in block
+    assert strong.id[:8] in block
+
+
+async def test_build_ui_state_block_empty_when_no_inputs(tmp_db):
+    from rumil.api.chat import _build_ui_state_block
+
+    block = await _build_ui_state_block(tmp_db, None, [])
+    assert block == ""
+
+
+async def test_build_ui_state_block_handles_missing_run_gracefully(tmp_db, seeded_graph):
+    from rumil.api.chat import _build_ui_state_block
+
+    block = await _build_ui_state_block(tmp_db, "deadbeef", [])
+    assert block == ""
+
+
+async def test_build_research_tree_shows_run_ids(tmp_db, seeded_graph):
+    from rumil.summary import build_research_tree
+
+    root = seeded_graph["root"]
+
+    off = await build_research_tree(root.id, tmp_db, max_depth=2, show_run_ids=False)
+    assert f"run={tmp_db.run_id[:8]}" not in off
+
+    on = await build_research_tree(root.id, tmp_db, max_depth=2, show_run_ids=True)
+    assert f"run={tmp_db.run_id[:8]}" in on

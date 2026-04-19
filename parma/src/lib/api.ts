@@ -249,11 +249,25 @@ export async function sendChatMessage(
   return res.json();
 }
 
-export type ChatStreamEventType = "text" | "tool_use_start" | "tool_use_result" | "orchestrator_progress" | "done" | "error" | "conversation";
+export type ChatStreamEventType =
+  | "text"
+  | "tool_use_start"
+  | "tool_use_result"
+  | "orchestrator_progress"
+  | "turn_costs"
+  | "done"
+  | "error"
+  | "conversation";
 
 export interface ChatStreamEvent {
   type: ChatStreamEventType;
   data: Record<string, unknown>;
+}
+
+export interface ChatTurnCosts {
+  chat_usd: number;
+  research_usd: number;
+  research_by_call_type: Record<string, number>;
 }
 
 export async function streamChatMessage(
@@ -263,6 +277,8 @@ export async function streamChatMessage(
   workspace: string = "default",
   model: string = "sonnet",
   conversationId?: string,
+  openRunId?: string,
+  openPageIds?: string[],
 ): Promise<void> {
   const res = await fetch(`${API_BASE}/api/chat/stream`, {
     method: "POST",
@@ -273,6 +289,8 @@ export async function streamChatMessage(
       workspace,
       model,
       conversation_id: conversationId ?? null,
+      open_run_id: openRunId ?? null,
+      open_page_ids: openPageIds ?? [],
     }),
   });
   if (!res.ok) throw new Error(`API error: ${res.status}`);

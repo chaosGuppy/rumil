@@ -135,8 +135,6 @@ async def test_near_duplicate_headline_reuses_existing_page(tmp_db, call, mocker
     payload_a = CreateQuestionPayload(
         content="Supply of pretraining-grade text.",
         headline="How much high-quality text training data remains available for LLM training as of 2026?",
-        credence=5,
-        robustness=1,
         workspace="research",
         supersedes=None,
         change_magnitude=None,
@@ -153,8 +151,6 @@ async def test_near_duplicate_headline_reuses_existing_page(tmp_db, call, mocker
     payload_b = CreateQuestionPayload(
         content="Different wording, same question.",
         headline="How much high-quality text data remains available for LLM pretraining?",
-        credence=5,
-        robustness=1,
         workspace="research",
         supersedes=None,
         change_magnitude=None,
@@ -178,8 +174,6 @@ async def test_truly_different_questions_both_created(tmp_db, call, mocker):
     payload_a = CreateQuestionPayload(
         content="Availability of pretraining text.",
         headline="What is data scarcity for LLM pretraining?",
-        credence=5,
-        robustness=1,
         workspace="research",
         supersedes=None,
         change_magnitude=None,
@@ -191,8 +185,6 @@ async def test_truly_different_questions_both_created(tmp_db, call, mocker):
     payload_b = CreateQuestionPayload(
         content="Compute trajectory.",
         headline="What is compute scaling for LLM pretraining?",
-        credence=5,
-        robustness=1,
         workspace="research",
         supersedes=None,
         change_magnitude=None,
@@ -222,8 +214,6 @@ async def test_dedup_redirects_parent_link_to_existing_page(tmp_db, call, parent
     payload = CreateQuestionPayload(
         content="Same question, slight rewording.",
         headline="How much high-quality text data remains available for LLM pretraining?",
-        credence=5,
-        robustness=1,
         workspace="research",
         supersedes=None,
         change_magnitude=None,
@@ -264,8 +254,6 @@ async def test_similarity_below_threshold_still_creates(tmp_db, call, mocker):
         payload = CreateQuestionPayload(
             content="Different enough.",
             headline="Somewhat related question about training data",
-            credence=5,
-            robustness=1,
             workspace="research",
             supersedes=None,
             change_magnitude=None,
@@ -289,8 +277,6 @@ async def test_embedding_failure_falls_back_to_creating_page(tmp_db, call, mocke
     payload = CreateQuestionPayload(
         content="Fallback body.",
         headline="Question for embedding-failure fallback",
-        credence=5,
-        robustness=1,
         workspace="research",
         supersedes=None,
         change_magnitude=None,
@@ -320,8 +306,6 @@ async def test_dedup_ignores_non_question_matches(tmp_db, call, mocker):
     payload = CreateQuestionPayload(
         content="Question body.",
         headline="Claim headline that shares wording",
-        credence=5,
-        robustness=1,
         workspace="research",
         supersedes=None,
         change_magnitude=None,

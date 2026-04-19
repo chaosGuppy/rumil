@@ -359,6 +359,101 @@ class RunExecutor:
     def events(self, run_id: str) -> AsyncIterator[Any]:  # pragma: no cover
         raise NotImplementedError("events lands with a broker / per-run queue.")
 
+    async def checkpoint(
+        self,
+        run_id: str,
+        kind: str,
+        payload: dict[str, Any] | None = None,
+    ) -> int:
+        """Append a checkpoint row for a run and return its ``seq``.
+
+        Orchestrators opt in by calling this at stage boundaries
+        (``orchestrator_tick`` between dispatch batches,
+        ``cost_committed`` after a BudgetGate.commit, etc.). The
+        ``run_checkpoints`` table is append-only; ``seq`` is allocated
+        server-side by looking up the current max for the run and
+        incrementing. Calls race-safely enough for our single-writer
+        model — concurrent writes from the same run_id would hit the
+        ``(run_id, seq)`` primary key and the loser retries.
+        """
+        existing = _rows_sync(
+            await self._db._execute(
+                self._db.client.table("run_checkpoints")
+                .select("seq")
+                .eq("run_id", run_id)
+                .order("seq", desc=True)
+                .limit(1)
+            )
+        )
+        seq = 0 if not existing else int(existing[0]["seq"]) + 1
+        await self._db._execute(
+            self._db.client.table("run_checkpoints").insert(
+                {
+                    "run_id": run_id,
+                    "seq": seq,
+                    "kind": kind,
+                    "payload": payload or {},
+                }
+            )
+        )
+        return seq
+
+    async def latest_checkpoint(
+        self,
+        run_id: str,
+        *,
+        kind: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Return the most recent checkpoint row for ``run_id``, or None.
+
+        Optionally filter by ``kind`` (e.g. ``"orchestrator_tick"``).
+        Returns the raw dict — caller reads ``payload`` as needed.
+        """
+        query = (
+            self._db.client.table("run_checkpoints")
+            .select("seq,kind,payload,created_at")
+            .eq("run_id", run_id)
+            .order("seq", desc=True)
+            .limit(1)
+        )
+        if kind is not None:
+            query = query.eq("kind", kind)
+        rows = _rows_sync(await self._db._execute(query))
+        return rows[0] if rows else None
+
+    async def list_checkpoints(
+        self,
+        run_id: str,
+        *,
+        kind: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """All checkpoints for ``run_id``, oldest first, optionally by kind."""
+        query = (
+            self._db.client.table("run_checkpoints")
+            .select("seq,kind,payload,created_at")
+            .eq("run_id", run_id)
+            .order("seq")
+        )
+        if kind is not None:
+            query = query.eq("kind", kind)
+        return list(_rows_sync(await self._db._execute(query)))
+
+    async def is_resumable(self, run_id: str) -> bool:
+        """True when a run crashed (status=running but not in _ACTIVE_RUNS)
+        and has at least one checkpoint to resume from.
+
+        Orchestrator handlers can poll this at startup to decide whether
+        to re-hydrate from checkpoints vs start fresh. No handler uses it
+        yet — the surface is ready for when resumable orchestrators land.
+        """
+        if run_id in _ACTIVE_RUNS:
+            return False
+        view = await self.status(run_id)
+        if view is None or view.status != RunStatus.RUNNING:
+            return False
+        latest = await self.latest_checkpoint(run_id)
+        return latest is not None
+
     async def sum_call_costs(self, run_id: str) -> int:
         """Sum ``call_costs.usd`` for a run, in cents.
 
@@ -389,6 +484,17 @@ class RunExecutor:
             return False
         spent = await self.sum_call_costs(run_id)
         return spent >= entry.cost_cap_usd_cents
+
+
+def _rows_sync(result: Any) -> list[dict[str, Any]]:
+    """Extract .data from a postgrest response as a list of dicts.
+
+    Kept local to this module so the executor doesn't depend on
+    rumil.db.row_helpers (which has a ``_rows`` helper with the same
+    shape but is scoped to the stores).
+    """
+    data = getattr(result, "data", None)
+    return list(data) if data else []
 
 
 def _usd_to_cents(value: Decimal | None) -> int | None:

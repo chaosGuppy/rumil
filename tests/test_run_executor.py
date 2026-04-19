@@ -332,6 +332,79 @@ async def test_would_exceed_budget_false_without_cap(run_db):
     assert await ex.would_exceed_budget(run_db.run_id) is False
 
 
+async def test_checkpoint_writes_sequential_rows(run_db):
+    ex = RunExecutor(run_db)
+    seq0 = await ex.checkpoint(run_db.run_id, "orchestrator_tick", {"iter": 0})
+    seq1 = await ex.checkpoint(run_db.run_id, "orchestrator_tick", {"iter": 1})
+    seq2 = await ex.checkpoint(run_db.run_id, "cost_committed", {"usd_cents": 250})
+
+    assert seq0 == 0
+    assert seq1 == 1
+    assert seq2 == 2
+
+    all_checkpoints = await ex.list_checkpoints(run_db.run_id)
+    assert [c["kind"] for c in all_checkpoints] == [
+        "orchestrator_tick",
+        "orchestrator_tick",
+        "cost_committed",
+    ]
+
+
+async def test_latest_checkpoint_filters_by_kind(run_db):
+    ex = RunExecutor(run_db)
+    await ex.checkpoint(run_db.run_id, "orchestrator_tick", {"iter": 0})
+    await ex.checkpoint(run_db.run_id, "cost_committed", {"usd_cents": 100})
+    await ex.checkpoint(run_db.run_id, "orchestrator_tick", {"iter": 1})
+
+    latest_any = await ex.latest_checkpoint(run_db.run_id)
+    assert latest_any is not None
+    assert latest_any["kind"] == "orchestrator_tick"
+    assert latest_any["payload"] == {"iter": 1}
+
+    latest_cost = await ex.latest_checkpoint(run_db.run_id, kind="cost_committed")
+    assert latest_cost is not None
+    assert latest_cost["payload"] == {"usd_cents": 100}
+
+
+async def test_latest_checkpoint_returns_none_for_empty_run(run_db):
+    ex = RunExecutor(run_db)
+    assert await ex.latest_checkpoint(run_db.run_id) is None
+
+
+async def test_is_resumable_false_for_active_run(tmp_db, fake_handler):
+    from rumil.run_executor import RunSpec
+
+    fake_handler["sleep"] = 10.0
+    ex = RunExecutor(tmp_db)
+    spec = RunSpec(
+        kind="orchestrator",
+        project_id=tmp_db.project_id,
+        question_id="00000000-0000-0000-0000-000000000008",
+    )
+    run_id = await ex.start(spec)
+    await asyncio.sleep(0.05)
+    # Active in _ACTIVE_RUNS → not resumable even with checkpoints
+    await ex.checkpoint(run_id, "orchestrator_tick", {"iter": 0})
+    assert await ex.is_resumable(run_id) is False
+    await ex.cancel(run_id, reason="is-resumable-test cleanup")
+    await ex.wait_until_settled(run_id, timeout=5.0)
+
+
+async def test_is_resumable_true_for_crashed_run_with_checkpoints(run_db):
+    ex = RunExecutor(run_db)
+    # simulate a worker that marked_started and wrote a checkpoint, then died
+    await ex.mark_started(run_db.run_id)
+    await ex.checkpoint(run_db.run_id, "orchestrator_tick", {"iter": 0})
+    assert await ex.is_resumable(run_db.run_id) is True
+
+
+async def test_is_resumable_false_without_checkpoints(run_db):
+    ex = RunExecutor(run_db)
+    await ex.mark_started(run_db.run_id)
+    # running but no checkpoints → nothing to resume from
+    assert await ex.is_resumable(run_db.run_id) is False
+
+
 async def test_would_exceed_budget_trips_when_spend_reaches_cap(tmp_db, fake_handler):
     from rumil.run_executor import RunSpec
 

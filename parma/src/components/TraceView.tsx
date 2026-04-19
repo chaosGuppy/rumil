@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type MouseEvent,
   type ReactNode,
@@ -938,19 +939,20 @@ function TraceRunView({
   const [tree, setTree] = useState<RunTraceTree | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [selectedCallId, setSelectedCallIdState] = useState<string | null>(
+  const [selectedCallId, setSelectedCallId] = useState<string | null>(
     initialCallId ?? null,
   );
-  const setSelectedCallId = useCallback(
-    (value: React.SetStateAction<string | null>) => {
-      setSelectedCallIdState((prev) => {
-        const next = typeof value === "function" ? value(prev) : value;
-        if (next !== prev && onSelectedCallChange) onSelectedCallChange(next);
-        return next;
-      });
-    },
-    [onSelectedCallChange],
-  );
+  // Side-effects (router.replace inside onSelectedCallChange) cannot live in
+  // a useState updater — React invokes updaters during render in concurrent
+  // mode, which surfaces as "Cannot update Router while rendering". Sync via
+  // an effect instead, and skip the initial mount + already-notified values
+  // so we don't bounce the URL on first render or echo parent-driven updates.
+  const lastNotifiedRef = useRef<string | null>(initialCallId ?? null);
+  useEffect(() => {
+    if (lastNotifiedRef.current === selectedCallId) return;
+    lastNotifiedRef.current = selectedCallId;
+    onSelectedCallChange?.(selectedCallId);
+  }, [selectedCallId, onSelectedCallChange]);
 
   const refreshTree = useCallback(() => {
     setRefreshKey((k) => k + 1);

@@ -37,6 +37,8 @@ from rumil.models import (
     ChatConversation,
     ChatMessage,
     ChatMessageRole,
+    LinkRole,
+    LinkType,
     MoveType,
     Page,
     PageLayer,
@@ -364,6 +366,329 @@ TOOLS: list[dict[str, Any]] = [
                 },
             },
             "required": ["question_id"],
+        },
+    },
+    {
+        "name": "get_considerations",
+        "description": (
+            "List all considerations (claims linked as evidence) on a question, "
+            "sorted by strength. Each entry has the claim's short ID, headline, "
+            "link strength (0-5), direction (supports/opposes/neutral), and "
+            "the reasoning for why it bears on the question. Use this to trace "
+            "the evidence base — much faster than N sequential get_page calls."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "question_id": {
+                    "type": "string",
+                    "description": (
+                        "Short ID of the question. Omit to use the current question in scope."
+                    ),
+                },
+            },
+        },
+    },
+    {
+        "name": "get_child_questions",
+        "description": (
+            "List sub-questions of a question, with each child's judgement "
+            "status (has-judgement vs open), link role (direct/structural), "
+            "and estimated impact on the parent. Use to understand how the "
+            "question decomposes and which branches are still open."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "question_id": {
+                    "type": "string",
+                    "description": (
+                        "Short ID of the parent question. Omit to use the "
+                        "current question in scope."
+                    ),
+                },
+            },
+        },
+    },
+    {
+        "name": "get_incoming_links",
+        "description": (
+            "List all pages that point at this page (who cites it, who uses "
+            "it as a consideration, who links to it as related, etc.). "
+            "Complements get_page, which only shows outgoing links."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "short_id": {
+                    "type": "string",
+                    "description": "8-character short ID of the page",
+                },
+            },
+            "required": ["short_id"],
+        },
+    },
+    {
+        "name": "get_parent_chain",
+        "description": (
+            "Walk up the child_question chain from a question to its root. "
+            "Returns the list of ancestor questions in order (closest parent "
+            "first). Useful for understanding where a sub-question sits in "
+            "the broader investigation."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "short_id": {
+                    "type": "string",
+                    "description": (
+                        "Short ID of the question. Omit to use the current question in scope."
+                    ),
+                },
+            },
+        },
+    },
+    {
+        "name": "list_recent_calls",
+        "description": (
+            "List recent research calls on a question — call type, status "
+            "(complete/failed/running), budget used, cost, timestamp, and "
+            "result summary. Use to answer 'what's been investigated' or to "
+            "find a specific call to inspect via get_call_trace."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "question_id": {
+                    "type": "string",
+                    "description": (
+                        "Short ID of the question. Omit to use the current question in scope."
+                    ),
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max calls to return (default 15)",
+                },
+            },
+        },
+    },
+    {
+        "name": "get_call_trace",
+        "description": (
+            "Fetch a specific call's trace — its events (what happened inside "
+            "the call), LLM exchanges (round-by-round token counts and any "
+            "errors), and metadata (status, cost, result summary). Use when "
+            "the user asks why a page was created, what a call concluded, or "
+            "to debug a failed call."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "call_id": {
+                    "type": "string",
+                    "description": "8-character short ID of the call",
+                },
+            },
+            "required": ["call_id"],
+        },
+    },
+    {
+        "name": "create_claim",
+        "description": (
+            "Create a new claim — an assertion with supporting reasoning. "
+            "Cite other pages inline with [shortid] in content and the tool "
+            "auto-creates depends_on/cites links. Optionally link this claim "
+            "as a consideration on a question by passing question_id + "
+            "strength + direction."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "headline": {
+                    "type": "string",
+                    "description": "10-20 word self-contained headline",
+                },
+                "content": {
+                    "type": "string",
+                    "description": "Full claim text with reasoning. Cite sources with [shortid].",
+                },
+                "credence": {
+                    "type": "integer",
+                    "description": "1-9 credence (default 5)",
+                },
+                "robustness": {
+                    "type": "integer",
+                    "description": "1-5 robustness (default 1)",
+                },
+                "question_id": {
+                    "type": "string",
+                    "description": (
+                        "Optional short ID of a question to link this claim to as a consideration."
+                    ),
+                },
+                "strength": {
+                    "type": "number",
+                    "description": "0-5 consideration strength (default 2.5). Only used if question_id is set.",
+                },
+                "reasoning": {
+                    "type": "string",
+                    "description": "Why this claim bears on the question. Only used if question_id is set.",
+                },
+            },
+            "required": ["headline", "content"],
+        },
+    },
+    {
+        "name": "create_judgement",
+        "description": (
+            "Create a judgement on a question — a considered position "
+            "synthesising the considerations. Supersedes any prior judgement "
+            "on the question. Should engage with considerations on multiple "
+            "sides."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "question_id": {
+                    "type": "string",
+                    "description": "Short ID of the question being judged",
+                },
+                "headline": {
+                    "type": "string",
+                    "description": "10-20 word headline stating the position",
+                },
+                "content": {
+                    "type": "string",
+                    "description": "Full judgement text, synthesising considerations",
+                },
+                "credence": {
+                    "type": "integer",
+                    "description": "1-9 credence (default 5)",
+                },
+                "robustness": {
+                    "type": "integer",
+                    "description": "1-5 robustness (default 1)",
+                },
+                "key_dependencies": {
+                    "type": "string",
+                    "description": "What this judgement most depends on",
+                },
+                "sensitivity_analysis": {
+                    "type": "string",
+                    "description": "What would shift this judgement, and in which direction",
+                },
+            },
+            "required": ["question_id", "headline", "content"],
+        },
+    },
+    {
+        "name": "link_pages",
+        "description": (
+            "Create a link between two existing pages. Supported link types: "
+            "'related' (general relation), 'child_question' (sub-question "
+            "under a parent question), 'consideration' (claim bearing on a "
+            "question — must pass strength)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "from_id": {
+                    "type": "string",
+                    "description": "Short ID of the source page",
+                },
+                "to_id": {
+                    "type": "string",
+                    "description": "Short ID of the target page",
+                },
+                "link_type": {
+                    "type": "string",
+                    "enum": ["related", "child_question", "consideration"],
+                    "description": "Link type",
+                },
+                "reasoning": {
+                    "type": "string",
+                    "description": "Why this link is warranted",
+                },
+                "strength": {
+                    "type": "number",
+                    "description": "0-5 strength (consideration links only; default 2.5)",
+                },
+            },
+            "required": ["from_id", "to_id", "link_type"],
+        },
+    },
+    {
+        "name": "update_epistemic",
+        "description": (
+            "Update credence and robustness scores on a claim or judgement "
+            "(not questions — questions don't carry scores). Both values "
+            "required, plus reasoning."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "short_id": {
+                    "type": "string",
+                    "description": "Short ID of the page to update",
+                },
+                "credence": {
+                    "type": "integer",
+                    "description": "1-9 new credence score",
+                },
+                "robustness": {
+                    "type": "integer",
+                    "description": "1-5 new robustness score",
+                },
+                "reasoning": {
+                    "type": "string",
+                    "description": "Why this update is warranted",
+                },
+            },
+            "required": ["short_id", "credence", "robustness", "reasoning"],
+        },
+    },
+    {
+        "name": "flag_page",
+        "description": (
+            "Flag a specific page as having something off or wrong with it. "
+            "Use when you or the user spot an error, a misstated claim, a "
+            "broken reasoning step, or anything suspicious. Flags are "
+            "reviewed later — they don't modify the page."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "short_id": {
+                    "type": "string",
+                    "description": "Short ID of the flagged page",
+                },
+                "note": {
+                    "type": "string",
+                    "description": "What seems off",
+                },
+            },
+            "required": ["short_id", "note"],
+        },
+    },
+    {
+        "name": "report_duplicate",
+        "description": (
+            "Flag two pages as duplicates of each other. Use when you notice "
+            "the same claim/question exists twice in the workspace."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "page_id_a": {
+                    "type": "string",
+                    "description": "Short ID of the first duplicate",
+                },
+                "page_id_b": {
+                    "type": "string",
+                    "description": "Short ID of the second duplicate",
+                },
+            },
+            "required": ["page_id_a", "page_id_b"],
         },
     },
 ]
@@ -722,6 +1047,313 @@ async def _execute_tool(
                 )
         return "\n".join(result_parts)
 
+    if name == "get_considerations":
+        qid_short = tool_input.get("question_id") or scope_question_id[:8]
+        full_id = await db.resolve_page_id(qid_short) if qid_short else None
+        if not full_id:
+            return f"Question '{qid_short}' not found."
+        pairs = await db.get_considerations_for_question(full_id)
+        if not pairs:
+            return f"No considerations on question {qid_short}."
+        pairs = sorted(pairs, key=lambda x: x[1].strength or 0, reverse=True)
+        lines = [f"{len(pairs)} consideration(s) on question {qid_short} (by strength):\n"]
+        for claim, link in pairs:
+            direction = link.direction.value if link.direction else "neutral"
+            strength = f"{link.strength:.1f}" if link.strength is not None else "?"
+            role = link.role.value if link.role else "?"
+            lines.append(
+                f"  [{claim.id[:8]}] ({direction}, strength={strength}, role={role}) {claim.headline}"
+            )
+            if link.reasoning:
+                lines.append(f"    bearing: {link.reasoning[:200]}")
+        return "\n".join(lines)
+
+    if name == "get_child_questions":
+        qid_short = tool_input.get("question_id") or scope_question_id[:8]
+        full_id = await db.resolve_page_id(qid_short) if qid_short else None
+        if not full_id:
+            return f"Question '{qid_short}' not found."
+        pairs = await db.get_child_questions_with_links(full_id)
+        if not pairs:
+            return f"No child questions on {qid_short}."
+        child_ids = [c.id for c, _ in pairs]
+        judgements_by_q = await db.get_judgements_for_questions(child_ids)
+        lines = [f"{len(pairs)} child question(s) under {qid_short}:\n"]
+        for child, link in pairs:
+            role = link.role.value if link.role else "?"
+            impact = (
+                f", impact={link.impact_on_parent_question}"
+                if link.impact_on_parent_question is not None
+                else ""
+            )
+            js = judgements_by_q.get(child.id, [])
+            j_note = f" [judgement: {js[0].id[:8]}]" if js else " [no judgement]"
+            lines.append(f"  [{child.id[:8]}] ({role}{impact}) {child.headline}{j_note}")
+            if link.reasoning:
+                lines.append(f"    link reasoning: {link.reasoning[:200]}")
+        return "\n".join(lines)
+
+    if name == "get_incoming_links":
+        short = tool_input["short_id"]
+        full_id = await db.resolve_page_id(short)
+        if not full_id:
+            return f"Page '{short}' not found."
+        links = await db.get_links_to(full_id)
+        if not links:
+            return f"No incoming links to {short}."
+        from_ids = list({l.from_page_id for l in links})
+        from_pages = await db.get_pages_by_ids(from_ids)
+        lines = [f"{len(links)} incoming link(s) to {short}:"]
+        for lk in links:
+            src = from_pages.get(lk.from_page_id)
+            src_label = (
+                f"{lk.from_page_id[:8]} ({src.page_type.value}) {src.headline[:80]}"
+                if src
+                else lk.from_page_id[:8]
+            )
+            bits = [lk.link_type.value]
+            if lk.strength is not None and lk.link_type == LinkType.CONSIDERATION:
+                bits.append(f"strength={lk.strength:.1f}")
+            if lk.direction is not None:
+                bits.append(f"direction={lk.direction.value}")
+            if lk.role is not None and lk.link_type in (
+                LinkType.CONSIDERATION,
+                LinkType.CHILD_QUESTION,
+            ):
+                bits.append(f"role={lk.role.value}")
+            lines.append(f"  {' '.join(bits)}: {src_label}")
+            if lk.reasoning:
+                lines.append(f"    reasoning: {lk.reasoning[:200]}")
+        return "\n".join(lines)
+
+    if name == "get_parent_chain":
+        short = tool_input.get("short_id") or (scope_question_id[:8] if scope_question_id else "")
+        full_id = await db.resolve_page_id(short) if short else None
+        if not full_id:
+            return f"Page '{short}' not found."
+        chain: list[Page] = []
+        current = full_id
+        visited: set[str] = {current}
+        for _ in range(8):
+            parent = await db.get_parent_question(current)
+            if not parent or parent.id in visited:
+                break
+            chain.append(parent)
+            visited.add(parent.id)
+            current = parent.id
+        if not chain:
+            return f"{short} is a root question (no parent chain)."
+        lines = [f"Parent chain for {short} (closest first):"]
+        for p in chain:
+            lines.append(f"  [{p.id[:8]}] {p.headline}")
+        return "\n".join(lines)
+
+    if name == "list_recent_calls":
+        qid_short = tool_input.get("question_id") or (
+            scope_question_id[:8] if scope_question_id else None
+        )
+        limit = max(1, min(int(tool_input.get("limit", 15)), 50))
+        if not qid_short:
+            return "list_recent_calls requires a question_id (or scope question in context)."
+        full_id = await db.resolve_page_id(qid_short)
+        if not full_id:
+            return f"Question '{qid_short}' not found."
+        calls = await db.get_root_calls_for_question(full_id)
+        calls = sorted(calls, key=lambda c: c.created_at, reverse=True)[:limit]
+        if not calls:
+            return f"No calls on {qid_short}."
+        lines = [f"{len(calls)} recent call(s) on {qid_short}:"]
+        for c in calls:
+            cost = f" ${c.cost_usd:.3f}" if c.cost_usd else ""
+            budget = f" budget={c.budget_used}/{c.budget_allocated or '?'}"
+            ts = c.created_at.strftime("%Y-%m-%d %H:%M")
+            lines.append(
+                f"  [{c.id[:8]}] {c.call_type.value} ({c.status.value}){cost}{budget} — {ts}"
+            )
+            if c.result_summary:
+                lines.append(f"    {c.result_summary[:200]}")
+        return "\n".join(lines)
+
+    if name == "get_call_trace":
+        cid_short = tool_input["call_id"]
+        full_id = await db.resolve_call_id(cid_short)
+        if not full_id:
+            return f"Call '{cid_short}' not found."
+        call = await db.get_call(full_id)
+        if not call:
+            return f"Call '{cid_short}' not found."
+        events = await db.get_call_trace(full_id)
+        exchanges = await db.get_llm_exchanges(full_id)
+        lines = [
+            f"Call [{full_id[:8]}] {call.call_type.value} ({call.status.value})",
+            f"  scope={call.scope_page_id[:8] if call.scope_page_id else '-'} "
+            f"budget={call.budget_used}/{call.budget_allocated or '?'} "
+            f"cost=${(call.cost_usd or 0):.3f}",
+        ]
+        if call.result_summary:
+            lines.append(f"  summary: {call.result_summary[:400]}")
+        lines.append(f"\n{len(events)} trace event(s):")
+        for ev in events[:40]:
+            ev_type = ev.get("event", "?") if isinstance(ev, dict) else "?"
+            rest = {k: v for k, v in ev.items() if k != "event"} if isinstance(ev, dict) else {}
+            snippet = json.dumps(rest, default=str)[:200]
+            lines.append(f"  - {ev_type}: {snippet}")
+        if len(events) > 40:
+            lines.append(f"  ... ({len(events) - 40} more events)")
+        lines.append(f"\n{len(exchanges)} LLM exchange(s):")
+        for ex in exchanges[:10]:
+            phase = ex.get("phase", "?")
+            rnd = ex.get("round", "?")
+            tin = ex.get("input_tokens") or 0
+            tout = ex.get("output_tokens") or 0
+            err = ex.get("error")
+            err_note = f" ERROR: {str(err)[:100]}" if err else ""
+            lines.append(f"  - {phase} r{rnd}: {tin}->{tout} tok{err_note}")
+        return "\n".join(lines)
+
+    if name == "create_claim":
+        headline = tool_input["headline"]
+        content = tool_input.get("content", "")
+        question_short = tool_input.get("question_id")
+        credence = int(tool_input.get("credence", 5))
+        robustness = int(tool_input.get("robustness", 1))
+        strength = float(tool_input.get("strength", 2.5))
+        reasoning = tool_input.get("reasoning", "")
+
+        scope_full_id: str | None = None
+        links_payload: list[dict[str, Any]] = []
+        if question_short:
+            scope_full_id = await db.resolve_page_id(question_short)
+            if not scope_full_id:
+                return f"Question '{question_short}' not found."
+            links_payload.append(
+                {
+                    "question_id": scope_full_id,
+                    "strength": strength,
+                    "reasoning": reasoning,
+                }
+            )
+
+        move_def = MOVES[MoveType.CREATE_CLAIM]
+        payload = move_def.schema(
+            headline=headline,
+            content=content,
+            credence=credence,
+            robustness=robustness,
+            links=links_payload,
+        )
+        call = await db.create_call(CallType.CHAT_DIRECT, scope_page_id=scope_full_id)
+        result = await move_def.execute(payload, call, db)
+        return result.message
+
+    if name == "create_judgement":
+        question_short = tool_input["question_id"]
+        full_id = await db.resolve_page_id(question_short)
+        if not full_id:
+            return f"Question '{question_short}' not found."
+        move_def = MOVES[MoveType.CREATE_JUDGEMENT]
+        payload = move_def.schema(
+            headline=tool_input["headline"],
+            content=tool_input["content"],
+            credence=int(tool_input.get("credence", 5)),
+            robustness=int(tool_input.get("robustness", 1)),
+            key_dependencies=tool_input.get("key_dependencies"),
+            sensitivity_analysis=tool_input.get("sensitivity_analysis"),
+        )
+        call = await db.create_call(CallType.CHAT_DIRECT, scope_page_id=full_id)
+        result = await move_def.execute(payload, call, db)
+        return result.message
+
+    if name == "link_pages":
+        from_short = tool_input["from_id"]
+        to_short = tool_input["to_id"]
+        link_type = tool_input["link_type"]
+        reasoning = tool_input.get("reasoning", "")
+        strength = float(tool_input.get("strength", 2.5))
+
+        from_full = await db.resolve_page_id(from_short)
+        to_full = await db.resolve_page_id(to_short)
+        if not from_full:
+            return f"Page '{from_short}' not found."
+        if not to_full:
+            return f"Page '{to_short}' not found."
+
+        if link_type == "related":
+            move_def = MOVES[MoveType.LINK_RELATED]
+            payload = move_def.schema(
+                from_page_id=from_full,
+                to_page_id=to_full,
+                reasoning=reasoning,
+            )
+            scope = None
+        elif link_type == "child_question":
+            move_def = MOVES[MoveType.LINK_CHILD_QUESTION]
+            payload = move_def.schema(
+                parent_id=from_full,
+                child_id=to_full,
+                reasoning=reasoning,
+                role=LinkRole.STRUCTURAL,
+            )
+            scope = from_full
+        elif link_type == "consideration":
+            move_def = MOVES[MoveType.LINK_CONSIDERATION]
+            payload = move_def.schema(
+                claim_id=from_full,
+                question_id=to_full,
+                strength=strength,
+                reasoning=reasoning,
+                role=LinkRole.DIRECT,
+            )
+            scope = to_full
+        else:
+            return f"Unsupported link_type: {link_type}"
+
+        call = await db.create_call(CallType.CHAT_DIRECT, scope_page_id=scope)
+        result = await move_def.execute(payload, call, db)
+        return result.message
+
+    if name == "update_epistemic":
+        short = tool_input["short_id"]
+        full_id = await db.resolve_page_id(short)
+        if not full_id:
+            return f"Page '{short}' not found."
+        move_def = MOVES[MoveType.UPDATE_EPISTEMIC]
+        payload = move_def.schema(
+            page_id=full_id,
+            credence=int(tool_input["credence"]),
+            robustness=int(tool_input["robustness"]),
+            reasoning=tool_input["reasoning"],
+        )
+        call = await db.create_call(CallType.CHAT_DIRECT, scope_page_id=full_id)
+        result = await move_def.execute(payload, call, db)
+        return result.message
+
+    if name == "flag_page":
+        short = tool_input["short_id"]
+        full_id = await db.resolve_page_id(short)
+        if not full_id:
+            return f"Page '{short}' not found."
+        move_def = MOVES[MoveType.FLAG_FUNNINESS]
+        payload = move_def.schema(page_id=full_id, note=tool_input["note"])
+        call = await db.create_call(CallType.CHAT_DIRECT, scope_page_id=full_id)
+        result = await move_def.execute(payload, call, db)
+        return f"Flagged {short}: {result.message}"
+
+    if name == "report_duplicate":
+        a_short = tool_input["page_id_a"]
+        b_short = tool_input["page_id_b"]
+        a_full = await db.resolve_page_id(a_short)
+        b_full = await db.resolve_page_id(b_short)
+        if not a_full:
+            return f"Page '{a_short}' not found."
+        if not b_full:
+            return f"Page '{b_short}' not found."
+        move_def = MOVES[MoveType.REPORT_DUPLICATE]
+        payload = move_def.schema(page_id_a=a_full, page_id_b=b_full)
+        call = await db.create_call(CallType.CHAT_DIRECT, scope_page_id=None)
+        result = await move_def.execute(payload, call, db)
+        return f"Duplicate reported ({a_short} <-> {b_short}): {result.message}"
+
     return f"Unknown tool: {name}"
 
 
@@ -969,6 +1601,7 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
     )
     project = await db.get_or_create_project(request.workspace)
     db.project_id = project.id
+    await db.create_run(name="chat", question_id=None, config={"origin": "chat"})
 
     try:
         full_id = await db.resolve_page_id(request.question_id) if request.question_id else None
@@ -1105,6 +1738,7 @@ async def handle_chat_stream(request: ChatRequest) -> StreamingResponse:
     )
     project = await db.get_or_create_project(request.workspace)
     db.project_id = project.id
+    await db.create_run(name="chat", question_id=None, config={"origin": "chat"})
 
     full_id = await db.resolve_page_id(request.question_id) if request.question_id else None
     if request.question_id and not full_id:

@@ -29,12 +29,14 @@ from rumil.db.row_helpers import (
     _Rows,
     _rows,
 )
+from rumil.db.run_store import RunStore
 
 __all__ = [
     "_LINK_COLUMNS",
     "_SLIM_PAGE_COLUMNS",
     "MutationState",
     "ProjectStore",
+    "RunStore",
     "_Rows",
     "_row_to_annotation_event",
     "_row_to_call",

@@ -211,6 +211,7 @@ class DB:
         snapshot_ts: datetime | None = None,
     ):
         from rumil.db.project_store import ProjectStore
+        from rumil.db.run_store import RunStore
 
         self.run_id = run_id
         self.client = client
@@ -223,6 +224,7 @@ class DB:
         self._mutation_cache_ts: float = 0.0
         self.overlay = StagedOverlay(self)
         self.projects = ProjectStore(self)
+        self.runs = RunStore(self)
 
     @classmethod
     async def create(
@@ -599,17 +601,7 @@ class DB:
         return await self.projects.bulk_hide_projects(project_ids)
 
     async def update_run_hidden(self, run_id: str, hidden: bool) -> dict[str, Any] | None:
-        """Flip the ``hidden`` flag on a run. Returns the refreshed run row or
-        ``None`` if the run doesn't exist.
-
-        The RunPicker in the parma UI filters hidden runs out by default; this
-        is a soft delete affordance for smoke tests, failed experiments, etc.
-        No mutation event is recorded because visibility of run rows is not
-        part of the staged-runs model (runs own events, they don't participate
-        in them).
-        """
-        await self._execute(self.client.table("runs").update({"hidden": hidden}).eq("id", run_id))
-        return await self.get_run(run_id)
+        return await self.runs.update_run_hidden(run_id, hidden)
 
     async def save_page(self, page: Page) -> None:
         log.debug(
@@ -1771,51 +1763,19 @@ class DB:
         )
 
     async def init_budget(self, total: int) -> None:
-        await self._execute(
-            self.client.table("budget").upsert(
-                {
-                    "run_id": self.run_id,
-                    "total": total,
-                    "used": 0,
-                }
-            )
-        )
+        return await self.runs.init_budget(total)
 
     async def get_budget(self) -> tuple[int, int]:
-        """Returns (total, used)."""
-        rows = _rows(
-            await self._execute(
-                self.client.table("budget").select("total, used").eq("run_id", self.run_id)
-            )
-        )
-        if rows:
-            return rows[0]["total"], rows[0]["used"]
-        return 0, 0
+        return await self.runs.get_budget()
 
     async def consume_budget(self, amount: int = 1) -> bool:
-        """Deduct from global budget. Returns False if insufficient budget."""
-        result = await self._execute(
-            self.client.rpc(
-                "consume_budget",
-                {"rid": self.run_id, "amount": amount},
-            )
-        )
-        ok = cast(bool, result.data)
-        log.debug("consume_budget: amount=%d, success=%s", amount, ok)
-        return ok
+        return await self.runs.consume_budget(amount)
 
     async def add_budget(self, amount: int) -> None:
-        """Add more calls to the existing budget (for continue runs)."""
-        await self._execute(
-            self.client.rpc(
-                "add_budget",
-                {"rid": self.run_id, "amount": amount},
-            )
-        )
+        return await self.runs.add_budget(amount)
 
     async def budget_remaining(self) -> int:
-        total, used = await self.get_budget()
-        return max(0, total - used)
+        return await self.runs.budget_remaining()
 
     async def get_links_between(
         self,
@@ -2912,72 +2872,19 @@ class DB:
         return rows[0] if rows else None
 
     async def get_call_rows_for_run(self, run_id: str) -> list[dict]:
-        return _rows(
-            await self._execute(
-                self.client.table("calls").select("*").eq("run_id", run_id).order("created_at")
-            )
-        )
+        return await self.runs.get_call_rows_for_run(run_id)
 
     async def get_calls_for_run(self, run_id: str) -> list[Call]:
-        rows = await self.get_call_rows_for_run(run_id)
-        return [_row_to_call(r) for r in rows]
+        return await self.runs.get_calls_for_run(run_id)
 
     async def get_run_question_id(self, run_id: str) -> str | None:
-        rows = _rows(
-            await self._execute(
-                self.client.table("calls")
-                .select("scope_page_id")
-                .eq("run_id", run_id)
-                .is_("parent_call_id", "null")
-                .order("created_at")
-                .limit(1)
-            )
-        )
-        return rows[0]["scope_page_id"] if rows else None
+        return await self.runs.get_run_question_id(run_id)
 
     async def get_run_for_page(self, page_id: str) -> dict[str, Any] | None:
-        """Return the run that created a page.
-
-        Looks up via provenance_call_id first. Falls back to finding a
-        root call scoped to the page (for root questions that weren't
-        created by a call).
-        """
-        page = await self.get_page(page_id)
-        if not page:
-            return None
-        if page.provenance_call_id:
-            rows = _rows(
-                await self._execute(
-                    self.client.table("calls")
-                    .select("run_id, created_at")
-                    .eq("id", page.provenance_call_id)
-                    .limit(1)
-                )
-            )
-            if rows and rows[0].get("run_id"):
-                return {
-                    "run_id": rows[0]["run_id"],
-                    "created_at": rows[0]["created_at"],
-                    "provenance_call_id": page.provenance_call_id,
-                }
-        rows = _rows(
-            await self._execute(
-                self.client.table("calls")
-                .select("run_id, created_at")
-                .eq("scope_page_id", page_id)
-                .is_("parent_call_id", "null")
-                .order("created_at", desc=True)
-                .limit(1)
-            )
-        )
-        if rows and rows[0].get("run_id"):
-            return {"run_id": rows[0]["run_id"], "created_at": rows[0]["created_at"]}
-        return None
+        return await self.runs.get_run_for_page(page_id)
 
     async def get_run(self, run_id: str) -> dict[str, Any] | None:
-        """Fetch a row from the runs table by run_id."""
-        rows = _rows(await self._execute(self.client.table("runs").select("*").eq("id", run_id)))
-        return rows[0] if rows else None
+        return await self.runs.get_run(run_id)
 
     async def create_run(
         self,
@@ -2986,31 +2893,7 @@ class DB:
         config: dict | None = None,
         orchestrator: str | None = None,
     ) -> None:
-        """Insert a row in the runs table for this DB's run_id.
-
-        If *orchestrator* is provided, it is written into ``config["orchestrator"]``
-        so trace-UI consumers can display the canonical orchestrator name for
-        this entrypoint. Callers that bypass the factory-selected orchestrator
-        (e.g. ``RefineArtifactOrchestrator``, ``ClaimInvestigationOrchestrator``)
-        should pass this explicitly; ``settings.prioritizer_variant`` remains
-        captured separately via ``capture_config()`` and the frontend falls
-        back to it when ``orchestrator`` is absent.
-        """
-        final_config = dict(config) if config else {}
-        if orchestrator is not None:
-            final_config["orchestrator"] = orchestrator
-        await self._execute(
-            self.client.table("runs").insert(
-                {
-                    "id": self.run_id,
-                    "name": name,
-                    "project_id": self.project_id,
-                    "question_id": question_id,
-                    "config": final_config,
-                    "staged": self.staged,
-                }
-            )
-        )
+        return await self.runs.create_run(name, question_id, config, orchestrator)
 
     async def get_or_create_named_run(
         self,
@@ -3018,76 +2901,16 @@ class DB:
         name: str,
         config: dict | None = None,
     ) -> str:
-        """Return an existing non-staged run id for (project, name), creating one if absent.
-
-        Used by telemetry endpoints (friendly-user flag, read-dwell, etc.) that
-        want a stable FK target for reputation_events without creating a fresh
-        runs row per event. Race-safe-enough for the current write volume: two
-        concurrent first-time callers might each create a row, but subsequent
-        calls will pick the earliest and further rows become orphans (not
-        correctness-affecting).
-        """
-        existing = _rows(
-            await self._execute(
-                self.client.table("runs")
-                .select("id")
-                .eq("project_id", project_id)
-                .eq("name", name)
-                .eq("staged", False)
-                .order("created_at")
-                .limit(1)
-            )
-        )
-        if existing:
-            return existing[0]["id"]
-        new_id = str(uuid.uuid4())
-        await self._execute(
-            self.client.table("runs").insert(
-                {
-                    "id": new_id,
-                    "name": name,
-                    "project_id": project_id,
-                    "question_id": None,
-                    "config": config or {},
-                    "staged": False,
-                }
-            )
-        )
-        return new_id
+        return await self.runs.get_or_create_named_run(project_id, name, config)
 
     async def count_run_questions(self) -> int:
-        """Count question pages created by this run."""
-        query = (
-            self.client.table("pages")
-            .select("id", count=CountMethod.exact)
-            .eq("run_id", self.run_id)
-            .eq("page_type", PageType.QUESTION.value)
-        )
-        if self.project_id:
-            query = query.eq("project_id", self.project_id)
-        query = self._staged_filter(query)
-        result = await self._execute(query)
-        return result.count or 0
+        return await self.runs.count_run_questions()
 
     async def get_run_questions_since(
         self,
         since: datetime,
     ) -> list[Page]:
-        """Return question pages created by this run after *since*."""
-        query = (
-            self.client.table("pages")
-            .select(_SLIM_PAGE_COLUMNS)
-            .eq("run_id", self.run_id)
-            .eq("page_type", PageType.QUESTION.value)
-            .gt("created_at", since.isoformat())
-            .order("created_at")
-        )
-        if self.project_id:
-            query = query.eq("project_id", self.project_id)
-        query = self._staged_filter(query)
-        result = await self._execute(query)
-        pages = [_row_to_page(r) for r in _rows(result)]
-        return await self._apply_page_events(pages)
+        return await self.runs.get_run_questions_since(since)
 
     async def stage_run(self, run_id: str) -> None:
         """Retroactively stage a completed non-staged run.
@@ -3333,46 +3156,21 @@ class DB:
         dimension_reports: Sequence[dict[str, Any]],
         overall_assessment_call_id: str | None = None,
     ) -> str:
-        """Save an AB evaluation report. Returns the report ID."""
-        report_id = str(uuid.uuid4())
-        await self._execute(
-            self.client.table("ab_eval_reports").insert(
-                {
-                    "id": report_id,
-                    "run_id_a": run_id_a,
-                    "run_id_b": run_id_b,
-                    "question_id_a": question_id_a,
-                    "question_id_b": question_id_b,
-                    "overall_assessment": overall_assessment,
-                    "overall_assessment_call_id": overall_assessment_call_id,
-                    "dimension_reports": list(dimension_reports),
-                    "project_id": str(self.project_id) if self.project_id else None,
-                }
-            )
+        return await self.runs.save_ab_eval_report(
+            run_id_a,
+            run_id_b,
+            question_id_a,
+            question_id_b,
+            overall_assessment,
+            dimension_reports,
+            overall_assessment_call_id=overall_assessment_call_id,
         )
-        return report_id
 
     async def list_ab_eval_reports(self) -> list[dict[str, Any]]:
-        """List all AB evaluation reports for this project, newest first."""
-        q = (
-            self.client.table("ab_eval_reports")
-            .select(
-                "id, run_id_a, run_id_b, question_id_a, question_id_b, "
-                "overall_assessment, dimension_reports, created_at"
-            )
-            .order("created_at", desc=True)
-        )
-        if self.project_id:
-            q = q.eq("project_id", str(self.project_id))
-        return _rows(await self._execute(q))
+        return await self.runs.list_ab_eval_reports()
 
     async def get_ab_eval_report(self, report_id: str) -> dict[str, Any] | None:
-        """Get a single AB evaluation report by ID."""
-        q = self.client.table("ab_eval_reports").select("*").eq("id", report_id)
-        if self.project_id:
-            q = q.eq("project_id", str(self.project_id))
-        rows = _rows(await self._execute(q))
-        return rows[0] if rows else None
+        return await self.runs.get_ab_eval_report(report_id)
 
     async def save_run_eval_report(
         self,
@@ -3381,140 +3179,21 @@ class DB:
         overall_assessment: str,
         dimension_reports: Sequence[dict[str, Any]],
     ) -> str:
-        """Save a single-run evaluation report. Returns the report ID."""
-        report_id = str(uuid.uuid4())
-        await self._execute(
-            self.client.table("run_eval_reports").insert(
-                {
-                    "id": report_id,
-                    "run_id": run_id,
-                    "question_id": question_id,
-                    "overall_assessment": overall_assessment,
-                    "dimension_reports": list(dimension_reports),
-                    "project_id": str(self.project_id) if self.project_id else None,
-                }
-            )
+        return await self.runs.save_run_eval_report(
+            run_id, question_id, overall_assessment, dimension_reports
         )
-        return report_id
 
     async def list_run_eval_reports(self) -> list[dict[str, Any]]:
-        """List all single-run evaluation reports for this project, newest first."""
-        q = (
-            self.client.table("run_eval_reports")
-            .select("id, run_id, question_id, overall_assessment, dimension_reports, created_at")
-            .order("created_at", desc=True)
-        )
-        if self.project_id:
-            q = q.eq("project_id", str(self.project_id))
-        return _rows(await self._execute(q))
+        return await self.runs.list_run_eval_reports()
 
     async def get_run_eval_report(self, report_id: str) -> dict[str, Any] | None:
-        """Get a single run evaluation report by ID."""
-        q = self.client.table("run_eval_reports").select("*").eq("id", report_id)
-        if self.project_id:
-            q = q.eq("project_id", str(self.project_id))
-        rows = _rows(await self._execute(q))
-        return rows[0] if rows else None
+        return await self.runs.get_run_eval_report(report_id)
 
     async def list_runs_for_project(self, project_id: str, limit: int = 50) -> list[dict[str, Any]]:
-        """Return recent runs for a project, newest first.
-
-        Queries the runs table and falls back to the calls table for legacy
-        runs that predate the runs table.
-        """
-        run_rows = _rows(
-            await self._execute(
-                self.client.table("runs")
-                .select("id, name, question_id, config, created_at, staged, hidden")
-                .eq("project_id", project_id)
-                .order("created_at", desc=True)
-                .limit(limit * 2)
-            )
-        )
-        legacy_rows = _rows(
-            await self._execute(
-                self.client.table("calls")
-                .select("run_id, created_at, scope_page_id")
-                .eq("project_id", project_id)
-                .is_("parent_call_id", "null")
-                .order("created_at", desc=True)
-            )
-        )
-
-        page_ids: set[str] = set()
-        for row in run_rows:
-            qid = row.get("question_id")
-            if qid:
-                page_ids.add(qid)
-        for row in legacy_rows:
-            scope_id = row.get("scope_page_id")
-            if scope_id:
-                page_ids.add(scope_id)
-        pages_by_id = await self.get_pages_by_ids(list(page_ids)) if page_ids else {}
-
-        results: list[dict[str, Any]] = []
-        seen_run_ids: set[str] = set()
-        for row in run_rows:
-            qid = row.get("question_id")
-            page = pages_by_id.get(qid) if qid else None
-            results.append(
-                {
-                    "run_id": row["id"],
-                    "created_at": row["created_at"],
-                    "name": row.get("name", ""),
-                    "config": row.get("config", {}),
-                    "question_summary": page.headline if page else None,
-                    "staged": row.get("staged", False),
-                    "hidden": row.get("hidden", False),
-                }
-            )
-            seen_run_ids.add(row["id"])
-
-        seen_legacy: set[str] = set()
-        for row in legacy_rows:
-            rid = row.get("run_id")
-            if not rid or rid in seen_run_ids or rid in seen_legacy:
-                continue
-            seen_legacy.add(rid)
-            scope_id = row.get("scope_page_id")
-            page = pages_by_id.get(scope_id) if scope_id else None
-            results.append(
-                {
-                    "run_id": rid,
-                    "created_at": row["created_at"],
-                    "question_summary": page.headline if page else None,
-                }
-            )
-        results.sort(key=lambda r: r.get("created_at", ""), reverse=True)
-        return results[:limit]
+        return await self.runs.list_runs_for_project(project_id, limit=limit)
 
     async def delete_run_data(self, delete_project: bool = False) -> None:
-        """Delete all data for this run_id. Used by test teardown."""
-        await self._execute(self.client.table("mutation_events").delete().eq("run_id", self.run_id))
-        await self._execute(
-            self.client.table("call_llm_exchanges").delete().eq("run_id", self.run_id)
-        )
-        for table in [
-            "page_flags",
-            "page_ratings",
-            "page_format_events",
-            "page_links",
-            "reputation_events",
-            "annotation_events",
-        ]:
-            await self._execute(self.client.table(table).delete().eq("run_id", self.run_id))
-        # Null out sequence_id FK before deleting sequences and calls
-        await self._execute(
-            self.client.table("calls").update({"sequence_id": None}).eq("run_id", self.run_id)
-        )
-        await self._execute(self.client.table("suggestions").delete().eq("run_id", self.run_id))
-        await self._execute(self.client.table("call_sequences").delete().eq("run_id", self.run_id))
-        for table in ["calls", "pages"]:
-            await self._execute(self.client.table(table).delete().eq("run_id", self.run_id))
-        await self._execute(self.client.table("budget").delete().eq("run_id", self.run_id))
-        await self._execute(self.client.table("runs").delete().eq("id", self.run_id))
-        if delete_project and self.project_id:
-            await self._execute(self.client.table("projects").delete().eq("id", self.project_id))
+        return await self.runs.delete_run_data(delete_project=delete_project)
 
     async def save_suggestion(self, suggestion: Suggestion) -> None:
         """Save a suggestion to the database."""

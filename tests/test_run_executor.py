@@ -79,3 +79,70 @@ async def test_mark_started_is_idempotent_only_on_pending(run_db):
     second = await ex.status(run_db.run_id)
     assert second is not None
     assert second.started_at == started_at
+
+
+async def test_create_run_from_spec_creates_row_and_inits_budget(tmp_db):
+    from rumil.run_executor.run_spec import RunSpec
+
+    ex = RunExecutor(tmp_db)
+    spec = RunSpec(
+        kind="orchestrator",
+        project_id=tmp_db.project_id,
+        budget_calls=7,
+        name="spec-test",
+        origin="cli",
+    )
+    run_id = await ex.create_run_from_spec(spec)
+    assert run_id == tmp_db.run_id
+
+    view = await ex.status(run_id)
+    assert view is not None
+    assert view.name == "spec-test"
+    assert view.status == RunStatus.PENDING
+    assert view.config.get("origin") == "cli"
+
+    total, used = await tmp_db.get_budget()
+    assert total == 7
+    assert used == 0
+
+
+async def test_create_run_from_spec_respects_staged_consistency(tmp_db):
+    import pytest
+
+    from rumil.run_executor.run_spec import RunSpec
+
+    ex = RunExecutor(tmp_db)
+    # tmp_db is non-staged; spec.staged=True must raise.
+    spec = RunSpec(
+        kind="orchestrator",
+        project_id=tmp_db.project_id,
+        staged=True,
+    )
+    with pytest.raises(ValueError, match="staged=True"):
+        await ex.create_run_from_spec(spec)
+
+
+async def test_tracked_scope_marks_complete_on_success(run_db):
+    ex = RunExecutor(run_db)
+    async with ex.tracked_scope(run_db.run_id):
+        pass
+    view = await ex.status(run_db.run_id)
+    assert view is not None
+    assert view.status == RunStatus.COMPLETE
+    assert view.started_at is not None
+    assert view.finished_at is not None
+
+
+async def test_tracked_scope_marks_failed_on_exception(run_db):
+    import pytest
+
+    ex = RunExecutor(run_db)
+    with pytest.raises(RuntimeError, match="boom"):
+        async with ex.tracked_scope(run_db.run_id):
+            raise RuntimeError("boom")
+    view = await ex.status(run_db.run_id)
+    assert view is not None
+    assert view.status == RunStatus.FAILED
+    assert view.cancel_reason is not None
+    assert "RuntimeError" in view.cancel_reason
+    assert "boom" in view.cancel_reason

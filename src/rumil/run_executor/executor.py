@@ -10,6 +10,7 @@ writes.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
@@ -122,11 +123,85 @@ class RunExecutor:
             .eq("id", run_id)
         )
 
+    async def create_run_from_spec(
+        self,
+        spec: RunSpec,
+        *,
+        orchestrator: str | None = None,
+    ) -> str:
+        """Create the runs row + init budget from a RunSpec.
+
+        Returns the run_id (always ``self._db.run_id``). Intended as the
+        unified replacement for main.py's six cmd_* scaffolds and
+        scripts/run_call.py's manual init. Callers then dispatch via
+        their existing handler (dispatch_orchestrator / run_call / etc.)
+        inside ``tracked_scope(run_id)`` for lifecycle tracking.
+
+        Status stays at ``pending`` until ``tracked_scope`` transitions
+        it. That lets the DB row exist for inspection + broadcasting
+        before the actual dispatch kicks off.
+        """
+        if spec.staged and not self._db.staged:
+            raise ValueError(
+                "RunExecutor.create_run_from_spec: spec.staged=True requires "
+                "the DB handle to have been created with staged=True"
+            )
+        config = {
+            **spec.config_snapshot,
+            "origin": spec.origin,
+        }
+        if spec.prompt_version is not None:
+            config["pinned_prompt_version"] = spec.prompt_version
+        await self._db.create_run(
+            name=spec.name or f"{spec.kind}-{self._db.run_id[:8]}",
+            question_id=spec.question_id,
+            config=config,
+            orchestrator=orchestrator,
+        )
+        if spec.budget_calls is not None and spec.budget_calls > 0:
+            await self._db.init_budget(spec.budget_calls)
+        return self._db.run_id
+
+    @asynccontextmanager
+    async def tracked_scope(self, run_id: str) -> AsyncIterator[None]:
+        """Context manager that marks a run started/complete/failed.
+
+        Usage::
+
+            async with executor.tracked_scope(db.run_id):
+                await dispatch_orchestrator(...)
+
+        On enter: ``pending → running`` + stamps ``started_at``.
+        On clean exit: ``running → complete`` + stamps ``finished_at``.
+        On exception: ``running → failed`` with the exception's type+message
+        as ``cancel_reason``, then re-raises.
+
+        Idempotent-safe: ``mark_started`` only transitions pending rows, so
+        wrapping a run twice won't stomp a second ``started_at``. The
+        complete/failed branch unconditionally sets ``finished_at`` — the
+        last scope to exit wins, which matches how async callers nest.
+        """
+        await self.mark_started(run_id)
+        try:
+            yield
+        except BaseException as exc:
+            reason = f"{type(exc).__name__}: {exc}"[:500]
+            try:
+                await self.mark_failed(run_id, reason=reason)
+            except Exception:
+                pass
+            raise
+        else:
+            try:
+                await self.mark_complete(run_id)
+            except Exception:
+                pass
+
     async def start(self, spec: RunSpec) -> str:  # pragma: no cover
         raise NotImplementedError(
-            "RunExecutor.start() lands in Phase 3 of the control-plane refactor. "
-            "Until then construct runs via main.py / scripts/run_call.py / "
-            "api/app.py as before."
+            "RunExecutor.start() (fully managed: create + track + dispatch) "
+            "lands in a later phase. Today callers invoke "
+            "create_run_from_spec + tracked_scope + their own dispatcher."
         )
 
     async def pause(self, run_id: str) -> None:  # pragma: no cover

@@ -5,7 +5,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import type {
   CallNodeOut,
-  CallSummary,
   DispatchExecutedEventOut,
   DispatchesPlannedEventOut,
   GetCallEventsApiCallsCallIdEventsGetResponse,

@@ -137,6 +137,7 @@ class DB:
     ):
         from rumil.db.annotation_store import AnnotationStore
         from rumil.db.call_store import CallStore
+        from rumil.db.chat_store import ChatStore
         from rumil.db.project_store import ProjectStore
         from rumil.db.run_store import RunStore
 
@@ -154,6 +155,7 @@ class DB:
         self.runs = RunStore(self)
         self.calls = CallStore(self)
         self.annotations = AnnotationStore(self)
+        self.chat = ChatStore(self)
 
     @classmethod
     async def create(
@@ -2512,84 +2514,30 @@ class DB:
         return await self.runs.delete_run_data(delete_project=delete_project)
 
     async def save_suggestion(self, suggestion: Suggestion) -> None:
-        """Save a suggestion to the database."""
-        await self._execute(
-            self.client.table("suggestions").upsert(
-                {
-                    "id": suggestion.id,
-                    "project_id": suggestion.project_id or self.project_id,
-                    "workspace": suggestion.workspace,
-                    "run_id": suggestion.run_id or self.run_id,
-                    "suggestion_type": suggestion.suggestion_type.value,
-                    "target_page_id": suggestion.target_page_id,
-                    "source_page_id": suggestion.source_page_id,
-                    "payload": suggestion.payload,
-                    "status": suggestion.status.value,
-                    "created_at": suggestion.created_at.isoformat(),
-                    "reviewed_at": (
-                        suggestion.reviewed_at.isoformat() if suggestion.reviewed_at else None
-                    ),
-                    "staged": suggestion.staged,
-                }
-            )
-        )
+        return await self.chat.save_suggestion(suggestion)
 
     async def get_pending_suggestions(
         self,
         target_page_id: str | None = None,
     ) -> list[Suggestion]:
-        """Get pending suggestions, optionally filtered by target page."""
-        query = (
-            self.client.table("suggestions")
-            .select("*")
-            .eq("project_id", self.project_id)
-            .eq("status", "pending")
-        )
-        if target_page_id:
-            query = query.eq("target_page_id", target_page_id)
-        query = self._staged_filter(query)
-        query = query.order("created_at", desc=True)
-        rows = _rows(await self._execute(query))
-        return [_row_to_suggestion(r) for r in rows]
+        return await self.chat.get_pending_suggestions(target_page_id=target_page_id)
 
     async def get_suggestions(
         self,
         status: str = "pending",
         target_page_id: str | None = None,
     ) -> list[Suggestion]:
-        """Get suggestions filtered by status, optionally by target page."""
-        query = (
-            self.client.table("suggestions")
-            .select("*")
-            .eq("project_id", self.project_id)
-            .eq("status", status)
-        )
-        if target_page_id:
-            query = query.eq("target_page_id", target_page_id)
-        query = self._staged_filter(query)
-        query = query.order("created_at", desc=True)
-        rows = _rows(await self._execute(query))
-        return [_row_to_suggestion(r) for r in rows]
+        return await self.chat.get_suggestions(status=status, target_page_id=target_page_id)
 
     async def get_suggestion(self, suggestion_id: str) -> Suggestion | None:
-        """Fetch a single suggestion by ID."""
-        rows = _rows(
-            await self._execute(
-                self.client.table("suggestions").select("*").eq("id", suggestion_id)
-            )
-        )
-        return _row_to_suggestion(rows[0]) if rows else None
+        return await self.chat.get_suggestion(suggestion_id)
 
     async def update_suggestion_status(
         self,
         suggestion_id: str,
         status: SuggestionStatus,
     ) -> None:
-        """Update a suggestion's status (accept/reject/dismiss)."""
-        update: dict[str, Any] = {"status": status.value}
-        if status != SuggestionStatus.PENDING:
-            update["reviewed_at"] = datetime.now(UTC).isoformat()
-        await self._execute(self.client.table("suggestions").update(update).eq("id", suggestion_id))
+        return await self.chat.update_suggestion_status(suggestion_id, status)
 
     async def create_chat_conversation(
         self,
@@ -2597,41 +2545,12 @@ class DB:
         question_id: str | None = None,
         title: str = "",
     ) -> ChatConversation:
-        """Create a new chat conversation row."""
-        conv = ChatConversation(
-            project_id=project_id,
-            question_id=question_id,
-            title=title,
-            staged=self.staged,
-            run_id=self.run_id if self.staged else None,
+        return await self.chat.create_chat_conversation(
+            project_id, question_id=question_id, title=title
         )
-        await self._execute(
-            self.client.table("chat_conversations").insert(
-                {
-                    "id": conv.id,
-                    "project_id": conv.project_id,
-                    "question_id": conv.question_id,
-                    "title": conv.title,
-                    "created_at": conv.created_at.isoformat(),
-                    "updated_at": conv.updated_at.isoformat(),
-                    "staged": conv.staged,
-                    "run_id": conv.run_id,
-                }
-            )
-        )
-        return conv
 
     async def get_chat_conversation(self, conversation_id: str) -> ChatConversation | None:
-        """Fetch a single conversation (staged-run-aware, excludes soft-deleted)."""
-        query = (
-            self.client.table("chat_conversations")
-            .select("*")
-            .eq("id", conversation_id)
-            .is_("deleted_at", "null")
-        )
-        query = self._staged_filter(query)
-        rows = _rows(await self._execute(query))
-        return _row_to_chat_conversation(rows[0]) if rows else None
+        return await self.chat.get_chat_conversation(conversation_id)
 
     async def list_chat_conversations(
         self,
@@ -2640,19 +2559,9 @@ class DB:
         offset: int = 0,
         question_id: str | None = None,
     ) -> Sequence[ChatConversation]:
-        """List conversations for a project, most-recently-updated first."""
-        query = (
-            self.client.table("chat_conversations")
-            .select("*")
-            .eq("project_id", project_id)
-            .is_("deleted_at", "null")
+        return await self.chat.list_chat_conversations(
+            project_id, limit=limit, offset=offset, question_id=question_id
         )
-        if question_id:
-            query = query.eq("question_id", question_id)
-        query = self._staged_filter(query).order("updated_at", desc=True)
-        query = query.range(offset, offset + max(0, limit - 1))
-        rows = _rows(await self._execute(query))
-        return [_row_to_chat_conversation(r) for r in rows]
 
     async def update_chat_conversation(
         self,
@@ -2660,25 +2569,10 @@ class DB:
         title: str | None = None,
         touch: bool = False,
     ) -> None:
-        """Rename or touch updated_at on a conversation."""
-        update: dict[str, Any] = {}
-        if title is not None:
-            update["title"] = title
-        if touch or title is not None:
-            update["updated_at"] = datetime.now(UTC).isoformat()
-        if not update:
-            return
-        await self._execute(
-            self.client.table("chat_conversations").update(update).eq("id", conversation_id)
-        )
+        return await self.chat.update_chat_conversation(conversation_id, title=title, touch=touch)
 
     async def soft_delete_chat_conversation(self, conversation_id: str) -> None:
-        """Mark a conversation as soft-deleted."""
-        await self._execute(
-            self.client.table("chat_conversations")
-            .update({"deleted_at": datetime.now(UTC).isoformat()})
-            .eq("id", conversation_id)
-        )
+        return await self.chat.soft_delete_chat_conversation(conversation_id)
 
     async def save_chat_message(
         self,
@@ -2688,64 +2582,18 @@ class DB:
         seq: int | None = None,
         question_id: str | None = None,
     ) -> ChatMessage:
-        """Append a message to a conversation. Auto-assigns seq if omitted.
-
-        `question_id` records which research question this turn was asked
-        against. Conversations can span multiple questions within a project,
-        so this is per-message rather than per-conversation.
-        """
-        if seq is None:
-            seq = await self._next_chat_message_seq(conversation_id)
-        msg = ChatMessage(
-            conversation_id=conversation_id,
-            role=role,
-            content=content,
-            seq=seq,
-            staged=self.staged,
-            run_id=self.run_id if self.staged else None,
-            question_id=question_id,
+        return await self.chat.save_chat_message(
+            conversation_id, role, content, seq=seq, question_id=question_id
         )
-        await self._execute(
-            self.client.table("chat_messages").insert(
-                {
-                    "id": msg.id,
-                    "conversation_id": msg.conversation_id,
-                    "role": msg.role.value,
-                    "content": msg.content,
-                    "seq": msg.seq,
-                    "ts": msg.ts.isoformat(),
-                    "staged": msg.staged,
-                    "run_id": msg.run_id,
-                    "question_id": msg.question_id,
-                }
-            )
-        )
-        return msg
 
     async def _next_chat_message_seq(self, conversation_id: str) -> int:
-        """Return the next sequence number for a conversation."""
-        rows = _rows(
-            await self._execute(
-                self.client.table("chat_messages")
-                .select("seq")
-                .eq("conversation_id", conversation_id)
-                .order("seq", desc=True)
-                .limit(1)
-            )
-        )
-        return (rows[0]["seq"] + 1) if rows else 0
+        return await self.chat._next_chat_message_seq(conversation_id)
 
     async def list_chat_messages(
         self,
         conversation_id: str,
     ) -> Sequence[ChatMessage]:
-        """List all messages in a conversation in order."""
-        query = (
-            self.client.table("chat_messages").select("*").eq("conversation_id", conversation_id)
-        )
-        query = self._staged_filter(query).order("seq", desc=False)
-        rows = _rows(await self._execute(query))
-        return [_row_to_chat_message(r) for r in rows]
+        return await self.chat.list_chat_messages(conversation_id)
 
     async def branch_chat_conversation(
         self,
@@ -2753,127 +2601,4 @@ class DB:
         at_seq: int,
         title: str | None = None,
     ) -> ChatConversation:
-        """Branch a conversation at `at_seq`, copying messages 0..at_seq into a new convo.
-
-        The source conversation is left untouched — branching is non-destructive,
-        the whole point is to preserve the original thread while forking a new
-        one from a chosen point. Returns the newly-created conversation.
-
-        Raises:
-            ValueError: if the source conversation does not exist, or if
-                `at_seq` is negative, or if no message in the source has a
-                seq <= at_seq (i.e. the branch point is before any message).
-        """
-        source = await self.get_chat_conversation(source_conversation_id)
-        if source is None:
-            raise ValueError(f"source conversation {source_conversation_id} not found")
-        if at_seq < 0:
-            raise ValueError(f"at_seq must be >= 0, got {at_seq}")
-
-        messages = await self.list_chat_messages(source_conversation_id)
-        if not messages:
-            raise ValueError(
-                f"at_seq={at_seq} does not correspond to any message in "
-                f"conversation {source_conversation_id}"
-            )
-        max_seq = messages[-1].seq
-        if at_seq > max_seq:
-            # Reject out-of-range branch points. Clients specify a message
-            # explicitly, so "branch at seq 999" when the last seq is 7 is
-            # almost certainly a bug (stale UI state, off-by-one, etc.).
-            # Fail loud rather than silently cloning the whole conversation.
-            raise ValueError(
-                f"at_seq={at_seq} does not correspond to any message in "
-                f"conversation {source_conversation_id} (max seq is {max_seq})"
-            )
-        to_copy = [m for m in messages if m.seq <= at_seq]
-        if not to_copy:
-            raise ValueError(
-                f"at_seq={at_seq} does not correspond to any message in "
-                f"conversation {source_conversation_id}"
-            )
-
-        effective_seq = to_copy[-1].seq
-        derived_title = title or f"branch of {source.title or '(untitled)'} @ msg {effective_seq}"
-
-        new_conv = ChatConversation(
-            project_id=source.project_id,
-            question_id=source.question_id,
-            title=derived_title,
-            staged=self.staged,
-            run_id=self.run_id if self.staged else None,
-            parent_conversation_id=source.id,
-            branched_at_seq=effective_seq,
-        )
-        await self._execute(
-            self.client.table("chat_conversations").insert(
-                {
-                    "id": new_conv.id,
-                    "project_id": new_conv.project_id,
-                    "question_id": new_conv.question_id,
-                    "title": new_conv.title,
-                    "created_at": new_conv.created_at.isoformat(),
-                    "updated_at": new_conv.updated_at.isoformat(),
-                    "staged": new_conv.staged,
-                    "run_id": new_conv.run_id,
-                    "parent_conversation_id": new_conv.parent_conversation_id,
-                    "branched_at_seq": new_conv.branched_at_seq,
-                }
-            )
-        )
-
-        # Bulk-insert copies of the messages. We deliberately allocate fresh
-        # primary keys (so the new rows are independent of the source) but
-        # preserve role/content/seq/question_id — the UI relies on seq to
-        # render chronological order, and on question_id for the off-question
-        # tags. ts is set to now() so the new conversation's activity reflects
-        # when the branch happened, not when the original was written.
-        now_iso = datetime.now(UTC).isoformat()
-        new_rows = [
-            {
-                "id": str(uuid.uuid4()),
-                "conversation_id": new_conv.id,
-                "role": m.role.value,
-                "content": m.content,
-                "seq": m.seq,
-                "ts": now_iso,
-                "staged": new_conv.staged,
-                "run_id": new_conv.run_id,
-                "question_id": m.question_id,
-            }
-            for m in to_copy
-        ]
-        if new_rows:
-            await self._execute(self.client.table("chat_messages").insert(new_rows))
-
-        return new_conv
-
-
-def _row_to_chat_conversation(row: dict[str, Any]) -> ChatConversation:
-    return ChatConversation(
-        id=row["id"],
-        project_id=row["project_id"],
-        question_id=row.get("question_id"),
-        title=row.get("title") or "",
-        created_at=row["created_at"],
-        updated_at=row["updated_at"],
-        deleted_at=row.get("deleted_at"),
-        staged=row.get("staged", False),
-        run_id=row.get("run_id"),
-        parent_conversation_id=row.get("parent_conversation_id"),
-        branched_at_seq=row.get("branched_at_seq"),
-    )
-
-
-def _row_to_chat_message(row: dict[str, Any]) -> ChatMessage:
-    return ChatMessage(
-        id=row["id"],
-        conversation_id=row["conversation_id"],
-        role=ChatMessageRole(row["role"]),
-        content=row.get("content") or {},
-        seq=row.get("seq", 0),
-        ts=row["ts"],
-        staged=row.get("staged", False),
-        run_id=row.get("run_id"),
-        question_id=row.get("question_id"),
-    )
+        return await self.chat.branch_chat_conversation(source_conversation_id, at_seq, title=title)

@@ -14,6 +14,9 @@ from rumil.models import (
     CallSequence,
     CallStatus,
     CallType,
+    ChatConversation,
+    ChatMessage,
+    ChatMessageRole,
     ConsiderationDirection,
     LinkRole,
     LinkType,
@@ -171,4 +174,34 @@ def _row_to_annotation_event(row: dict[str, Any]) -> AnnotationEvent:
         extra=row.get("extra") or {},
         staged=row.get("staged", False),
         created_at=datetime.fromisoformat(row["created_at"]),
+    )
+
+
+def _row_to_chat_conversation(row: dict[str, Any]) -> ChatConversation:
+    return ChatConversation(
+        id=row["id"],
+        project_id=row["project_id"],
+        question_id=row.get("question_id"),
+        title=row.get("title") or "",
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+        deleted_at=row.get("deleted_at"),
+        staged=row.get("staged", False),
+        run_id=row.get("run_id"),
+        parent_conversation_id=row.get("parent_conversation_id"),
+        branched_at_seq=row.get("branched_at_seq"),
+    )
+
+
+def _row_to_chat_message(row: dict[str, Any]) -> ChatMessage:
+    return ChatMessage(
+        id=row["id"],
+        conversation_id=row["conversation_id"],
+        role=ChatMessageRole(row["role"]),
+        content=row.get("content") or {},
+        seq=row.get("seq", 0),
+        ts=row["ts"],
+        staged=row.get("staged", False),
+        run_id=row.get("run_id"),
+        question_id=row.get("question_id"),
     )

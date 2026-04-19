@@ -17,6 +17,7 @@ Modules:
 
 from rumil.db.annotation_store import AnnotationStore
 from rumil.db.call_store import CallStore
+from rumil.db.chat_store import ChatStore
 from rumil.db.eval_summary import EvalSummary, aggregate_eval_rows_by_subject
 from rumil.db.mutation_log import MutationState
 from rumil.db.project_store import ProjectStore
@@ -39,6 +40,7 @@ __all__ = [
     "_SLIM_PAGE_COLUMNS",
     "AnnotationStore",
     "CallStore",
+    "ChatStore",
     "EvalSummary",
     "MutationState",
     "ProjectStore",

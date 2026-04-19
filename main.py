@@ -50,6 +50,7 @@ from rumil.run_eval.agents import EVAL_AGENTS, EvalAgentSpec
 from rumil.settings import Settings, _settings_var, get_settings
 from rumil.sources import create_source_page, run_ingest_calls
 from rumil.summary import generate_summary, save_summary
+from rumil.task_shape import auto_tag_and_save
 
 
 @dataclasses.dataclass
@@ -124,8 +125,6 @@ async def cmd_add_question(
     )
     await db.save_page(page)
     if task_shape is None:
-        from rumil.task_shape import auto_tag_and_save
-
         await auto_tag_and_save(page.id, q.headline, q.abstract or q.content, db)
 
     resolved_parent_id: str | None = None
@@ -555,7 +554,7 @@ async def cmd_refine_artifact(
     if question.project_id and question.project_id != db.project_id:
         db.project_id = question.project_id
 
-    effective_budget = budget if budget is not None else 10
+    effective_budget = _default_budget(budget)
     await db.init_budget(effective_budget)
     await db.create_run(
         name=name or f"refine-artifact ({shape}): {question.headline[:80]}",

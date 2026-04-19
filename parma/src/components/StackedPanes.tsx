@@ -197,21 +197,33 @@ export function StackedPanes({
         onOpenSource={onOpenSource}
       />
 
-      {paneStack.map((shortId, i) => {
-        const depth = i + 1;
-        const isLast = i === paneStack.length - 1;
-        return (
-          <DetailPane
-            key={`${i}-${shortId}`}
-            shortId={shortId}
-            depth={depth}
-            isLast={isLast}
-            lastPaneRef={isLast ? lastPaneRef : undefined}
-            onClose={() => closePaneAt(depth)}
-            onPromote={(id) => pushPane(id, depth)}
-          />
-        );
-      })}
+      {(() => {
+        // Keys must stay stable under middle-pane close so React preserves
+        // DetailPane state + avoids re-fetch. `pushPane` only dedupes against
+        // the immediately-previous entry, so the same shortId CAN appear
+        // multiple times (e.g. via `onPromote` after a truncation). Use
+        // `${occurrence}-${shortId}` — the Nth occurrence of a shortId is a
+        // stable identity as long as earlier occurrences aren't removed, and
+        // index-blending (which reassigns keys on any reorder) is avoided.
+        const occurrenceByShortId = new Map<string, number>();
+        return paneStack.map((shortId, i) => {
+          const depth = i + 1;
+          const isLast = i === paneStack.length - 1;
+          const occurrence = occurrenceByShortId.get(shortId) ?? 0;
+          occurrenceByShortId.set(shortId, occurrence + 1);
+          return (
+            <DetailPane
+              key={`${occurrence}-${shortId}`}
+              shortId={shortId}
+              depth={depth}
+              isLast={isLast}
+              lastPaneRef={isLast ? lastPaneRef : undefined}
+              onClose={() => closePaneAt(depth)}
+              onPromote={(id) => pushPane(id, depth)}
+            />
+          );
+        });
+      })()}
     </div>
   );
 }

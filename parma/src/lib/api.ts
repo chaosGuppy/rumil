@@ -380,6 +380,7 @@ export async function streamChatMessage(
   model: string = "sonnet",
   conversationId?: string,
   ui?: ChatUiSnapshot,
+  signal?: AbortSignal,
 ): Promise<void> {
   const res = await fetch(`${API_BASE}/api/chat/stream`, {
     method: "POST",
@@ -398,6 +399,7 @@ export async function streamChatMessage(
       active_section: ui?.activeSection ?? null,
       review_open: ui?.reviewOpen ?? false,
     }),
+    signal,
   });
   if (!res.ok) throw new Error(`API error: ${res.status}`);
 
@@ -405,26 +407,37 @@ export async function streamChatMessage(
   const decoder = new TextDecoder();
   let buffer = "";
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
+  try {
+    while (true) {
+      if (signal?.aborted) break;
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
 
-    const blocks = buffer.split("\n\n");
-    buffer = blocks.pop()!;
-    for (const block of blocks) {
-      const lines = block.split("\n");
-      let eventType = "";
-      let data = "";
-      for (const line of lines) {
-        if (line.startsWith("event: ")) eventType = line.slice(7);
-        else if (line.startsWith("data: ")) data = line.slice(6);
+      const blocks = buffer.split("\n\n");
+      buffer = blocks.pop()!;
+      for (const block of blocks) {
+        const lines = block.split("\n");
+        let eventType = "";
+        let data = "";
+        for (const line of lines) {
+          if (line.startsWith("event: ")) eventType = line.slice(7);
+          else if (line.startsWith("data: ")) data = line.slice(6);
+        }
+        if (eventType && data) {
+          try {
+            onEvent({ type: eventType as ChatStreamEventType, data: JSON.parse(data) });
+          } catch { /* skip malformed */ }
+        }
       }
-      if (eventType && data) {
-        try {
-          onEvent({ type: eventType as ChatStreamEventType, data: JSON.parse(data) });
-        } catch { /* skip malformed */ }
-      }
+    }
+  } finally {
+    // Release the reader so the underlying stream can be cancelled by the
+    // fetch abort — otherwise the body keeps a lock and the connection lingers.
+    if (signal?.aborted) {
+      await reader.cancel().catch(() => {});
+    } else {
+      reader.releaseLock();
     }
   }
 }

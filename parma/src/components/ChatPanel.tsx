@@ -481,6 +481,11 @@ export function ChatPanel({
   const [headlineCache, setHeadlineCache] = useState<Record<string, string>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // AbortController for the in-flight stream, if any. Lives in a ref so we
+  // can abort from effect cleanups (panel close, unmount) without triggering
+  // a re-render. Each new turn replaces the controller; the previous one is
+  // aborted first to free its SSE reader.
+  const streamAbortRef = useRef<AbortController | null>(null);
 
   // When the current question's headline is passed in as a prop, seed the
   // cache so the on-question label for that id resolves immediately.
@@ -698,6 +703,22 @@ export function ChatPanel({
     }
   }, [isOpen]);
 
+  // Abort any in-flight stream when the panel closes, and on unmount. Without
+  // this, closing the panel mid-turn leaves the SSE reader pumping events
+  // into state nobody is looking at (and holding the HTTP connection open).
+  useEffect(() => {
+    if (isOpen) return;
+    streamAbortRef.current?.abort();
+    streamAbortRef.current = null;
+  }, [isOpen]);
+
+  useEffect(() => {
+    return () => {
+      streamAbortRef.current?.abort();
+      streamAbortRef.current = null;
+    };
+  }, []);
+
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key === "/") {
@@ -896,6 +917,13 @@ export function ChatPanel({
       },
     ]);
 
+    // Abort any prior in-flight stream before starting a new one — otherwise
+    // a rapid send/send sequence would leave the first reader pumping into
+    // an assistant message that's no longer the "current" turn.
+    streamAbortRef.current?.abort();
+    const controller = new AbortController();
+    streamAbortRef.current = controller;
+
     try {
       const apiMessages = [...messages, userMsg]
         .filter((m) => m.id !== "initial")
@@ -1006,7 +1034,7 @@ export function ChatPanel({
         drawerPageId,
         activeSection,
         reviewOpen,
-      });
+      }, controller.signal);
 
       setMessages((prev) =>
         prev.map((m) =>
@@ -1016,19 +1044,29 @@ export function ChatPanel({
       onMessageSent?.();
       refreshConversations();
     } catch (e) {
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === assistantId
-            ? {
-                ...m,
-                loading: false,
-                content: `Failed to get response: ${e instanceof Error ? e.message : "unknown error"}. Is the API running?`,
-              }
-            : m,
-        ),
-      );
+      // User-initiated aborts (panel close / new turn) aren't errors —
+      // swallow them silently instead of rendering an error message.
+      const aborted =
+        controller.signal.aborted ||
+        (e instanceof DOMException && e.name === "AbortError");
+      if (!aborted) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId
+              ? {
+                  ...m,
+                  loading: false,
+                  content: `Failed to get response: ${e instanceof Error ? e.message : "unknown error"}. Is the API running?`,
+                }
+              : m,
+          ),
+        );
+      }
     } finally {
       setIsLoading(false);
+      if (streamAbortRef.current === controller) {
+        streamAbortRef.current = null;
+      }
     }
   }, [input, isLoading, messages, questionId, onMessageSent, onNodeRef, workspace, onShowReview, conversationId, model, refreshConversations, openInspect, openRunId, openPageIds, viewMode, openCallId, drawerPageId, activeSection, reviewOpen]);
 

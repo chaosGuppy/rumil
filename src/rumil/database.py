@@ -138,6 +138,7 @@ class DB:
         from rumil.db.annotation_store import AnnotationStore
         from rumil.db.call_store import CallStore
         from rumil.db.chat_store import ChatStore
+        from rumil.db.page_store import PageStore
         from rumil.db.project_store import ProjectStore
         from rumil.db.run_store import RunStore
 
@@ -156,6 +157,7 @@ class DB:
         self.calls = CallStore(self)
         self.annotations = AnnotationStore(self)
         self.chat = ChatStore(self)
+        self.pages = PageStore(self)
 
     @classmethod
     async def create(
@@ -535,305 +537,49 @@ class DB:
         return await self.runs.update_run_hidden(run_id, hidden)
 
     async def save_page(self, page: Page) -> None:
-        log.debug(
-            "save_page: id=%s, type=%s, headline=%s",
-            page.id[:8],
-            page.page_type.value,
-            page.headline[:60],
-        )
-        if not page.project_id:
-            page.project_id = self.project_id
-        await self._execute(
-            self.client.table("pages").upsert(
-                {
-                    "id": page.id,
-                    "page_type": page.page_type.value,
-                    "layer": page.layer.value,
-                    "workspace": page.workspace.value,
-                    "content": page.content,
-                    "headline": page.headline,
-                    "project_id": page.project_id,
-                    "epistemic_status": page.epistemic_status,
-                    "epistemic_type": page.epistemic_type,
-                    "credence": page.credence,
-                    "credence_reasoning": page.credence_reasoning,
-                    "robustness": page.robustness,
-                    "robustness_reasoning": page.robustness_reasoning,
-                    "provenance_model": page.provenance_model,
-                    "provenance_call_type": page.provenance_call_type,
-                    "provenance_call_id": page.provenance_call_id,
-                    "created_at": page.created_at.isoformat(),
-                    "superseded_by": page.superseded_by,
-                    "is_superseded": page.is_superseded,
-                    "extra": page.extra,
-                    "importance": page.importance,
-                    "fruit_remaining": page.fruit_remaining,
-                    "sections": page.sections,
-                    "meta_type": page.meta_type,
-                    "run_id": self.run_id,
-                    "staged": self.staged,
-                    "abstract": page.abstract,
-                    "task_shape": page.task_shape,
-                }
-            )
-        )
+        return await self.pages.save_page(page)
 
     async def update_page_importance(self, page_id: str, importance: int) -> None:
-        """Update the importance level on a page."""
-        await self._execute(
-            self.client.table("pages").update({"importance": importance}).eq("id", page_id)
-        )
+        return await self.pages.update_page_importance(page_id, importance)
 
     async def update_page_content(self, page_id: str, new_content: str) -> None:
-        """Update a page's content field with mutation event recording."""
-        page = await self.get_page(page_id)
-        if not page:
-            raise ValueError(f"update_page_content: page {page_id} not found")
-        await self.record_mutation_event(
-            "update_page_content",
-            page_id,
-            {"old_content": page.content, "new_content": new_content},
-        )
-        if not self.staged:
-            await self._execute(
-                self.client.table("pages").update({"content": new_content}).eq("id", page_id)
-            )
+        return await self.pages.update_page_content(page_id, new_content)
 
     async def update_page_abstract(self, page_id: str, abstract: str) -> None:
-        await self._execute(
-            self.client.table("pages").update({"abstract": abstract}).eq("id", page_id)
-        )
+        return await self.pages.update_page_abstract(page_id, abstract)
 
     async def update_page_task_shape(self, page_id: str, task_shape: dict | None) -> None:
-        """Set the task_shape JSONB payload on a page.
-
-        Task-shape is metadata attached only to questions (v1 taxonomy).
-        Non-question pages always store NULL.
-        """
-        await self._execute(
-            self.client.table("pages").update({"task_shape": task_shape}).eq("id", page_id)
-        )
+        return await self.pages.update_page_task_shape(page_id, task_shape)
 
     async def workspace_coverage(self) -> dict[str, dict[str, int]]:
-        """Aggregate task_shape tag values across all question pages in the project.
-
-        Returns a mapping ``{dimension: {value: count}}`` for every dimension
-        that appears in any tagged question. Untagged questions contribute
-        nothing. Used to report distribution of deliverable_shape /
-        source_posture across a project.
-        """
-        query = (
-            self.client.table("pages")
-            .select("task_shape")
-            .eq("page_type", PageType.QUESTION.value)
-            .not_.is_("task_shape", "null")
-        )
-        if self.project_id:
-            query = query.eq("project_id", self.project_id)
-        query = self._staged_filter(query)
-        rows = _rows(await self._execute(query))
-        coverage: dict[str, dict[str, int]] = {}
-        for row in rows:
-            shape = row.get("task_shape") or {}
-            if not isinstance(shape, dict):
-                continue
-            for dim, value in shape.items():
-                if not isinstance(value, str):
-                    continue
-                coverage.setdefault(dim, {})
-                coverage[dim][value] = coverage[dim].get(value, 0) + 1
-        return coverage
+        return await self.pages.workspace_coverage()
 
     async def merge_page_extra(self, page_id: str, updates: dict) -> None:
-        """Merge ``updates`` into a page's ``extra`` JSONB column.
-
-        Reads the current ``extra`` (if any), shallow-merges ``updates`` into
-        it, and writes the result back. Caller-provided keys overwrite existing
-        ones. No mutation event is recorded — ``extra`` is append-only
-        metadata that is not part of the staged-runs mutation surface.
-        """
-        page = await self.get_page(page_id)
-        if not page:
-            raise ValueError(f"merge_page_extra: page {page_id} not found")
-        merged = {**(page.extra or {}), **updates}
-        await self._execute(self.client.table("pages").update({"extra": merged}).eq("id", page_id))
+        return await self.pages.merge_page_extra(page_id, updates)
 
     async def get_page(self, page_id: str) -> Page | None:
-        query = self.client.table("pages").select("*").eq("id", page_id)
-        return await self.overlay.read_page_opt(query)
+        return await self.pages.get_page(page_id)
 
     async def get_pages_by_ids(self, page_ids: Sequence[str]) -> dict[str, Page]:
-        """Bulk-fetch pages by ID. Returns {id: Page} for pages that exist."""
-        if not page_ids:
-            return {}
-        result: dict[str, Page] = {}
-        id_list = list(page_ids)
-        batch_size = 200
-        for start in range(0, len(id_list), batch_size):
-            batch = id_list[start : start + batch_size]
-            query = self.client.table("pages").select("*").in_("id", batch)
-            for page in await self.overlay.read_pages(query):
-                result[page.id] = page
-        return result
+        return await self.pages.get_pages_by_ids(page_ids)
 
     async def resolve_page_ids(self, page_ids: Sequence[str]) -> dict[str, str]:
-        """Batch-resolve a mix of full UUIDs and 8-char short IDs.
-
-        Returns a mapping from each input id to its resolved full UUID,
-        omitting inputs that can't be resolved (not found, or ambiguous
-        short prefix). At most two queries are issued regardless of
-        input size: one for full-id matches, one for short-id prefix
-        matches.
-        """
-        if not page_ids:
-            return {}
-        cleaned: list[str] = [pid.strip() for pid in page_ids if pid and pid.strip()]
-        full_ids = [pid for pid in cleaned if len(pid) > 8]
-        short_ids = [pid for pid in cleaned if len(pid) <= 8]
-
-        resolved: dict[str, str] = {}
-
-        if full_ids:
-            rows = _rows(
-                await self._execute(
-                    self.client.table("pages").select("id").in_("id", list(set(full_ids)))
-                )
-            )
-            existing = {r["id"] for r in rows}
-            for pid in full_ids:
-                if pid in existing:
-                    resolved[pid] = pid
-
-        if short_ids:
-            unique_short = list({pid for pid in short_ids})
-            or_clause = ",".join(f"id.like.{p}%" for p in unique_short)
-            rows = _rows(
-                await self._execute(self.client.table("pages").select("id").or_(or_clause))
-            )
-            matches_by_prefix: dict[str, list[str]] = {p: [] for p in unique_short}
-            for r in rows:
-                full = r["id"]
-                for p in unique_short:
-                    if full.startswith(p):
-                        matches_by_prefix[p].append(full)
-            for pid in short_ids:
-                hits = matches_by_prefix.get(pid, [])
-                if len(hits) == 1:
-                    resolved[pid] = hits[0]
-                elif len(hits) > 1:
-                    log.warning("Ambiguous short ID '%s' matches %d pages", pid, len(hits))
-        return resolved
+        return await self.pages.resolve_page_ids(page_ids)
 
     async def resolve_page_id(self, page_id: str) -> str | None:
-        """Resolve a page ID to a full UUID. Handles both full UUIDs and
-        8-char short IDs. Returns the full UUID if found, or None."""
-        if not page_id:
-            log.debug("resolve_page_id: empty page_id")
-            return None
-        # Try exact match first
-        rows = _rows(await self._execute(self.client.table("pages").select("id").eq("id", page_id)))
-        if rows:
-            log.debug("resolve_page_id: exact match for %s", page_id[:8])
-            return rows[0]["id"]
-        # Try prefix match for short IDs
-        if len(page_id) <= 8:
-            rows = _rows(
-                await self._execute(
-                    self.client.table("pages").select("id").like("id", f"{page_id}%")
-                )
-            )
-            if len(rows) == 1:
-                log.debug(
-                    "resolve_page_id: prefix match %s -> %s",
-                    page_id,
-                    rows[0]["id"][:8],
-                )
-                return rows[0]["id"]
-            if len(rows) > 1:
-                log.warning(
-                    "Ambiguous short ID '%s' matches %d pages",
-                    page_id,
-                    len(rows),
-                )
-            else:
-                log.debug("resolve_page_id: no prefix match for %s", page_id)
-            return None
-        if page_id.startswith("http"):
-            rows = _rows(
-                await self._execute(
-                    self.client.table("pages").select("id").eq("extra->>url", page_id)
-                )
-            )
-            if len(rows) == 1:
-                log.debug(
-                    "resolve_page_id: URL match %s -> %s",
-                    page_id,
-                    rows[0]["id"][:8],
-                )
-                return rows[0]["id"]
-            if len(rows) > 1:
-                log.debug(
-                    "resolve_page_id: URL match %s -> %s (first of %d)",
-                    page_id,
-                    rows[0]["id"][:8],
-                    len(rows),
-                )
-                return rows[0]["id"]
-        log.debug("resolve_page_id: no match for %s", page_id[:8])
-        return None
+        return await self.pages.resolve_page_id(page_id)
 
     async def resolve_call_id(self, call_id: str) -> str | None:
         return await self.calls.resolve_call_id(call_id)
 
     async def resolve_link_id(self, link_id: str) -> str | None:
-        """Resolve a link ID to a full UUID. Handles both full UUIDs and
-        8-char short IDs. Returns the full UUID if found, or None."""
-        if not link_id:
-            return None
-        rows = _rows(
-            await self._execute(self.client.table("page_links").select("id").eq("id", link_id))
-        )
-        if rows:
-            return rows[0]["id"]
-        if len(link_id) <= 8:
-            rows = _rows(
-                await self._execute(
-                    self.client.table("page_links").select("id").like("id", f"{link_id}%")
-                )
-            )
-            if len(rows) == 1:
-                return rows[0]["id"]
-            if len(rows) > 1:
-                log.warning(
-                    "Ambiguous short ID '%s' matches %d links",
-                    link_id,
-                    len(rows),
-                )
-        return None
+        return await self.pages.resolve_link_id(link_id)
 
     async def page_label(self, page_id: str) -> str:
-        """Return a human-readable label like '"Summary text" [short_id]'."""
-        page = await self.get_page(page_id)
-        if page:
-            return f'"{page.headline[:60]}" [{page_id[:8]}]'
-        return f"[{page_id[:8]}]"
+        return await self.pages.page_label(page_id)
 
     async def get_pages_slim(self, active_only: bool = True) -> list[Page]:
-        """Fetch all pages without the content field — safe for bulk loads."""
-        query = self.client.table("pages").select(_SLIM_PAGE_COLUMNS)
-        if self.project_id:
-            query = query.eq("project_id", self.project_id)
-        if active_only:
-            query = query.eq("is_superseded", False)
-        query = self._staged_filter(query)
-        pages = [
-            _row_to_page(r)
-            for r in _rows(await self._execute(query.order("created_at", desc=True).limit(10000)))
-        ]
-        pages = await self._apply_page_events(pages)
-        if active_only:
-            pages = [p for p in pages if p.is_active()]
-        return pages
+        return await self.pages.get_pages_slim(active_only=active_only)
 
     async def get_pages(
         self,
@@ -841,24 +587,9 @@ class DB:
         page_type: PageType | None = None,
         active_only: bool = True,
     ) -> list[Page]:
-        query = self.client.table("pages").select("*")
-        if self.project_id:
-            query = query.eq("project_id", self.project_id)
-        if workspace:
-            query = query.eq("workspace", workspace.value)
-        if page_type:
-            query = query.eq("page_type", page_type.value)
-        if active_only:
-            query = query.eq("is_superseded", False)
-        query = self._staged_filter(query)
-        pages = [
-            _row_to_page(r)
-            for r in _rows(await self._execute(query.order("created_at", desc=True).limit(10000)))
-        ]
-        pages = await self._apply_page_events(pages)
-        if active_only:
-            pages = [p for p in pages if p.is_active()]
-        return pages
+        return await self.pages.get_pages(
+            workspace=workspace, page_type=page_type, active_only=active_only
+        )
 
     async def supersede_page(
         self,
@@ -866,27 +597,7 @@ class DB:
         new_id: str,
         change_magnitude: int | None = None,
     ) -> None:
-        payload: dict = {"new_page_id": new_id}
-        if change_magnitude is not None:
-            payload["change_magnitude"] = change_magnitude
-
-        await self.record_mutation_event(
-            "supersede_page",
-            old_id,
-            payload,
-        )
-
-        if not self.staged:
-            await self._execute(
-                self.client.table("pages")
-                .update(
-                    {
-                        "is_superseded": True,
-                        "superseded_by": new_id,
-                    }
-                )
-                .eq("id", old_id)
-            )
+        return await self.pages.supersede_page(old_id, new_id, change_magnitude=change_magnitude)
 
     async def get_pages_paginated(
         self,
@@ -897,98 +608,28 @@ class DB:
         offset: int = 0,
         limit: int = 50,
     ) -> tuple[Sequence[Page], int]:
-        """Return a page of results and the total matching count."""
-        query = self.client.table("pages").select("*", count=CountMethod.exact)
-        if self.project_id:
-            query = query.eq("project_id", self.project_id)
-        if workspace:
-            query = query.eq("workspace", workspace.value)
-        if page_type:
-            query = query.eq("page_type", page_type.value)
-        if active_only:
-            query = query.eq("is_superseded", False)
-        if search:
-            query = query.or_(f"headline.ilike.%{search}%,content.ilike.%{search}%")
-        query = self._staged_filter(query)
-        query = query.order(
-            "is_human_created",
-            desc=True,
-        ).order("created_at", desc=True)
-        end = offset + limit - 1
-        result = await self._execute(query.range(offset, end))
-        total = result.count or 0
-        pages = [_row_to_page(r) for r in _rows(result)]
-        pages = await self._apply_page_events(pages)
-        if active_only:
-            pages = [p for p in pages if p.is_active()]
-        return pages, total
+        return await self.pages.get_pages_paginated(
+            workspace=workspace,
+            page_type=page_type,
+            active_only=active_only,
+            search=search,
+            offset=offset,
+            limit=limit,
+        )
 
     async def resolve_supersession_chain(
         self,
         page_id: str,
         max_depth: int = 10,
     ) -> Page | None:
-        """Follow superseded_by links from *page_id* to the final active page.
-
-        Returns the end-of-chain (non-superseded) page, or ``None`` if the
-        chain is broken (missing page) or exceeds *max_depth*.
-
-        Delegates to the batched ``resolve_supersession_chains`` so the
-        cost is dominated by level-wise batched fetches rather than one
-        DB round trip per hop. Cycles terminate via the plural's
-        depth bound.
-
-        Note on max_depth: the singular historically counted *fetches*
-        (``max_depth`` page fetches -> chains of length <= max_depth).
-        The plural counts iterations *after* an initial fetch, so we
-        pass ``max_depth - 1`` to preserve the singular's bound.
-        """
-        results = await self.resolve_supersession_chains(
-            [page_id],
-            max_depth=max(0, max_depth - 1),
-        )
-        return results.get(page_id)
+        return await self.pages.resolve_supersession_chain(page_id, max_depth=max_depth)
 
     async def resolve_supersession_chains(
         self,
         page_ids: Sequence[str],
         max_depth: int = 10,
     ) -> dict[str, Page]:
-        """Bulk-resolve supersession chains for multiple page IDs.
-
-        Returns ``{original_id: active_replacement}`` for each input ID whose
-        chain reaches an active page. IDs that are already active, have broken
-        chains, or exceed *max_depth* are omitted.
-        """
-        pages = await self.get_pages_by_ids(list(page_ids))
-        pending: dict[str, str] = {}
-        result: dict[str, Page] = {}
-        origin: dict[str, str] = {}
-
-        for pid in page_ids:
-            page = pages.get(pid)
-            if not page or not page.is_superseded or not page.superseded_by:
-                continue
-            pending[pid] = page.superseded_by
-            origin[pid] = pid
-
-        for _ in range(max_depth):
-            if not pending:
-                break
-            targets = list(set(pending.values()))
-            fetched = await self.get_pages_by_ids(targets)
-            next_pending: dict[str, str] = {}
-            for orig_id, target_id in pending.items():
-                target_page = fetched.get(target_id)
-                if not target_page:
-                    continue
-                if not target_page.is_superseded:
-                    result[orig_id] = target_page
-                elif target_page.superseded_by:
-                    next_pending[orig_id] = target_page.superseded_by
-            pending = next_pending
-
-        return result
+        return await self.pages.resolve_supersession_chains(page_ids, max_depth=max_depth)
 
     async def save_link(self, link: PageLink) -> None:
         log.debug(
@@ -2007,70 +1648,18 @@ class DB:
         *,
         include_duplicates: bool = False,
     ) -> list[Page]:
-        """Return questions that have no parent (top-level questions).
-
-        Triage-confirmed duplicates (``extra.triage.is_duplicate == True``)
-        are hidden by default. Pass ``include_duplicates=True`` to see
-        them — useful for operator/debug surfaces.
-        """
-        params: dict[str, Any] = {"ws": workspace.value}
-        if self.project_id:
-            params["pid"] = self.project_id
-        if self.staged:
-            params["p_staged_run_id"] = self.run_id
-        if self.snapshot_ts is not None:
-            params["p_snapshot_ts"] = self.snapshot_ts.isoformat()
-        if include_duplicates:
-            params["p_include_duplicates"] = True
-        rows = _rows(await self._execute(self.client.rpc("get_root_questions", params)))
-        pages = [_row_to_page(r) for r in rows]
-        return await self._apply_page_events(pages)
+        return await self.pages.get_root_questions(
+            workspace=workspace, include_duplicates=include_duplicates
+        )
 
     async def get_human_questions(
         self,
         workspace: Workspace = Workspace.RESEARCH,
     ) -> list[Page]:
-        """Return all active, human-authored questions in *workspace*.
-
-        Uses the generated `is_human_created` column on `pages`. Unlike
-        `get_root_questions`, this does not assume the question graph is a
-        DAG -- a human-authored question deep inside a cycle is still
-        returned.
-        """
-        query = (
-            self.client.table("pages")
-            .select("*")
-            .eq("page_type", PageType.QUESTION.value)
-            .eq("workspace", workspace.value)
-            .eq("is_human_created", True)
-            .eq("is_superseded", False)
-        )
-        if self.project_id:
-            query = query.eq("project_id", self.project_id)
-        query = self._staged_filter(query)
-        rows = _rows(await self._execute(query))
-        pages = [_row_to_page(r) for r in rows]
-        pages = await self._apply_page_events(pages)
-        return [p for p in pages if p.is_active()]
+        return await self.pages.get_human_questions(workspace=workspace)
 
     async def count_pages_for_question(self, question_id: str) -> dict:
-        """Count pages linked to or created in context of a question."""
-        cons_result = await self._execute(
-            self.client.table("page_links")
-            .select("id", count=CountMethod.exact)
-            .eq("to_page_id", question_id)
-            .eq("link_type", "consideration")
-        )
-        judgements_result = await self._execute(
-            self.client.rpc(
-                "count_active_judgements",
-                {"qid": question_id},
-            )
-        )
-        return {
-            "considerations": cons_result.count or 0,
-            "judgements": cast(int, judgements_result.data or 0),
-        }
+        return await self.pages.count_pages_for_question(question_id)
 
     async def get_project_stats(self, project_id: str) -> dict[str, Any]:
         return await self.projects.get_project_stats(project_id)
@@ -2082,72 +1671,10 @@ class DB:
         self,
         question_ids: Sequence[str],
     ) -> dict[str, bool]:
-        """Check whether questions need re-assessment.
-
-        A question is stale if it has no completed ASSESS call, or if any
-        link targeting it was created after the most recent completed ASSESS
-        call's created_at.
-
-        Returns a dict mapping each question_id to True (stale) or False.
-        """
-        if not question_ids:
-            return {}
-
-        calls_query = (
-            self.client.table("calls")
-            .select("scope_page_id,created_at")
-            .eq("call_type", CallType.ASSESS.value)
-            .eq("status", CallStatus.COMPLETE.value)
-            .in_("scope_page_id", list(question_ids))
-            .order("created_at", desc=True)
-        )
-        calls_result = await self._execute(calls_query)
-
-        latest_assess: dict[str, datetime] = {}
-        for row in _rows(calls_result):
-            qid = row["scope_page_id"]
-            if qid not in latest_assess:
-                latest_assess[qid] = datetime.fromisoformat(row["created_at"])
-
-        links_query = (
-            self.client.table("page_links")
-            .select(_LINK_COLUMNS)
-            .in_("to_page_id", list(question_ids))
-        )
-        links_query = self._staged_filter(links_query)
-        links_result = await self._execute(links_query)
-        links = [_row_to_link(r) for r in _rows(links_result)]
-        links = await self._apply_link_events(links)
-
-        latest_link: dict[str, datetime] = {}
-        for link in links:
-            qid = link.to_page_id
-            ts = link.created_at
-            if qid not in latest_link or ts > latest_link[qid]:
-                latest_link[qid] = ts
-
-        staleness: dict[str, bool] = {}
-        for qid in question_ids:
-            if qid not in latest_assess or (
-                qid in latest_link and latest_link[qid] > latest_assess[qid]
-            ):
-                staleness[qid] = True
-            else:
-                staleness[qid] = False
-        return staleness
+        return await self.pages.get_assess_staleness(question_ids)
 
     async def count_pages_since(self, since: datetime) -> int:
-        """Count workspace pages created after *since* (for cache invalidation)."""
-        query = (
-            self.client.table("pages")
-            .select("id", count=CountMethod.exact)
-            .gt("created_at", since.isoformat())
-        )
-        if self.project_id:
-            query = query.eq("project_id", self.project_id)
-        query = self._staged_filter(query)
-        result = await self._execute(query)
-        return result.count or 0
+        return await self.pages.count_pages_since(since)
 
     async def save_llm_exchange(
         self,

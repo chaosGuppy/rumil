@@ -20,6 +20,7 @@ from rumil.db.call_store import CallStore
 from rumil.db.chat_store import ChatStore
 from rumil.db.eval_summary import EvalSummary, aggregate_eval_rows_by_subject
 from rumil.db.mutation_log import MutationState
+from rumil.db.page_store import PageStore
 from rumil.db.project_store import ProjectStore
 from rumil.db.row_helpers import (
     _LINK_COLUMNS,
@@ -43,6 +44,7 @@ __all__ = [
     "ChatStore",
     "EvalSummary",
     "MutationState",
+    "PageStore",
     "ProjectStore",
     "RunStore",
     "_Rows",

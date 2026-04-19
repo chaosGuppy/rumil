@@ -53,19 +53,23 @@ def _standard_review(ctx: StageBuildCtx, cfg: dict) -> StandardClosingReview:
     return StandardClosingReview(ctx.call_type)
 
 
-_SCOUT_ANALOGIES_DESC = (
-    "Identify analogies that may be informative about the parent "
-    "question. For each analogy, create claims describing it and its "
-    "relevance, and generate subquestions asking about the details "
-    "and limits of the analogy."
-)
-
-
-register_spec(
-    CallSpec(
-        call_type=CallType.SCOUT_ANALOGIES,
-        description=_SCOUT_ANALOGIES_DESC,
-        prompt_id="scout_analogies",
+def _boring_scout_spec(
+    *,
+    call_type: CallType,
+    prompt_id: str,
+    description: str,
+    scope: PageType = PageType.QUESTION,
+    emits: frozenset[PageType] = frozenset({PageType.CLAIM, PageType.QUESTION}),
+) -> CallSpec:
+    """Build the CallSpec for a "boring scout" — embedding context +
+    multi-round loop + standard closing review. Params are pulled from
+    the call's runtime ``call_params`` so orchestrators can still
+    override max_rounds / fruit_threshold per-dispatch.
+    """
+    return CallSpec(
+        call_type=call_type,
+        description=description,
+        prompt_id=prompt_id,
         context_builder=StageRef(id="embedding"),
         workspace_updater=StageRef(
             id="multi_round_loop",
@@ -76,8 +80,84 @@ register_spec(
         ),
         closing_reviewer=StageRef(id="standard_review"),
         allowed_moves=PresetKey(""),
-        scope_page_type=PageType.QUESTION,
-        emits_page_types=frozenset({PageType.CLAIM, PageType.QUESTION}),
+        scope_page_type=scope,
+        emits_page_types=emits,
         estimated_budget_cost=5,
+    )
+
+
+register_spec(
+    _boring_scout_spec(
+        call_type=CallType.SCOUT_ANALOGIES,
+        prompt_id="scout_analogies",
+        description=(
+            "Identify analogies that may be informative about the parent "
+            "question. For each analogy, create claims describing it and its "
+            "relevance, and generate subquestions asking about the details "
+            "and limits of the analogy."
+        ),
+    )
+)
+
+register_spec(
+    _boring_scout_spec(
+        call_type=CallType.SCOUT_DEEP_QUESTIONS,
+        prompt_id="scout_deep_questions",
+        description=(
+            "Identify important questions bearing on the scope question that "
+            "require judgement, interpretation, or involved reasoning to answer "
+            "— questions that cannot be resolved by simply looking something up. "
+            "For each, create a question using `create_question` (it is "
+            "automatically linked as a child of the scope question). Also "
+            "produce confident, non-obvious high-level claims that bear on "
+            "the scope question."
+        ),
+    )
+)
+
+register_spec(
+    _boring_scout_spec(
+        call_type=CallType.SCOUT_HYPOTHESES,
+        prompt_id="scout_hypotheses",
+        description=(
+            "Identify hypotheses that should be explored as potential answers "
+            "to the parent question. For each hypothesis, create a claim "
+            "stating the hypothesis and link it as a consideration to the "
+            "parent question. Set credence and robustness honestly — these "
+            "are initial assessments."
+        ),
+    )
+)
+
+register_spec(
+    _boring_scout_spec(
+        call_type=CallType.SCOUT_C_CRUXES,
+        prompt_id="scout_c_cruxes",
+        description=(
+            "Identify cruxes — specific points where the how-true and "
+            "how-false stories diverge, such that resolving them would "
+            "tell you which story is closer to the truth. A crux may be "
+            "a claim (something whose truth is load-bearing) or a question "
+            "(something whose answer would discriminate between stories). "
+            "Rank by importance and tractability."
+        ),
+        scope=PageType.CLAIM,
+    )
+)
+
+register_spec(
+    _boring_scout_spec(
+        call_type=CallType.SCOUT_C_HOW_TRUE,
+        prompt_id="scout_c_how_true",
+        description=(
+            "Identify plausible causal mechanisms that would make the "
+            "scope claim true. For each story: what is the mechanism? "
+            "What is actually going on in the world that makes the claim "
+            "true? What observable consequences would we expect if this "
+            "mechanism is operating? Be specific and concrete about the "
+            "causal chain. Focus on stories genuinely different from ones "
+            "already identified."
+        ),
+        scope=PageType.CLAIM,
     )
 )

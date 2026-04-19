@@ -79,18 +79,23 @@ class SpecCallRunner(CallRunner):
         )
 
     def task_description(self) -> str:
-        """Default task description: ``spec.description`` + question ID.
+        """Default task description: ``spec.description`` + scope ID.
 
-        Matches the convention used by the imperative call-type subclasses
-        (every ``task_description`` ends with ``Question ID: ``<id>```).
-        Specs whose instructions must diverge from this format use
-        ``runner_factory`` to supply a custom runner.
+        Matches the convention used by the imperative call-type subclasses —
+        every task_description ends with ``Question ID: `<id>``` (for
+        question-scoped calls) or ``Claim ID: `<id>``` (for scout_c_*
+        variants that operate on a claim). The label is selected from
+        ``spec.scope_page_type``. Specs whose instructions must diverge
+        from this format use ``runner_factory`` to supply a custom runner.
         """
         base = self.spec.description.rstrip()
-        qid = self.infra.question_id if hasattr(self, "infra") and self.infra else None
-        if not qid:
+        sid = self.infra.question_id if hasattr(self, "infra") and self.infra else None
+        if not sid:
             return base
-        return f"{base}\n\nQuestion ID: `{qid}`"
+        from rumil.models import PageType
+
+        label = "Claim ID" if self.spec.scope_page_type == PageType.CLAIM else "Question ID"
+        return f"{base}\n\n{label}: `{sid}`"
 
     def _make_context_builder(self) -> ContextBuilder:
         return _build_stage(

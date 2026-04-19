@@ -85,10 +85,35 @@ export function TraceView(props: TraceViewProps) {
 // be nicer but a single global knob keeps the mental model simple — when
 // you're hunting for a smoke-test run you probably want them everywhere.
 const SHOW_HIDDEN_RUNS_STORAGE_KEY = "parma:showHiddenRuns";
+const RUN_PICKER_SORT_STORAGE_KEY = "parma:runPicker:sort";
+const RUN_PICKER_FILTER_STORAGE_KEY = "parma:runPicker:filter";
+
+type RunPickerSortMode = "recency" | "cost";
 
 function loadShowHiddenRuns(): boolean {
   if (typeof window === "undefined") return false;
   return window.localStorage.getItem(SHOW_HIDDEN_RUNS_STORAGE_KEY) === "1";
+}
+
+function loadRunPickerSort(): RunPickerSortMode {
+  if (typeof window === "undefined") return "recency";
+  const raw = window.localStorage.getItem(RUN_PICKER_SORT_STORAGE_KEY);
+  return raw === "cost" ? "cost" : "recency";
+}
+
+function loadRunPickerFilter(): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  const raw = window.localStorage.getItem(RUN_PICKER_FILTER_STORAGE_KEY);
+  if (!raw) return new Set();
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return new Set(parsed.filter((x): x is string => typeof x === "string"));
+    }
+  } catch {
+    // corrupt value — fall through to empty set
+  }
+  return new Set();
 }
 
 // When trace mode is entered without a run_id, show a list of recent runs
@@ -111,10 +136,28 @@ function RunPicker({
   const [selectedForAb, setSelectedForAb] = useState<string[]>([]);
   const [abLaunching, setAbLaunching] = useState(false);
   const [abError, setAbError] = useState<string | null>(null);
+  // Filter + search + sort controls. Persisted to localStorage so the
+  // chosen slice survives navigation — matches the showHidden pattern.
+  const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [activeCallTypes, setActiveCallTypes] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [sortMode, setSortMode] = useState<RunPickerSortMode>("recency");
+  // Bumped whenever a lazily-resolved row lands, so the filter chip set
+  // and any cost-sort re-evaluate against the synchronous cache.
+  const [resolveTick, setResolveTick] = useState(0);
 
   useEffect(() => {
     setShowHidden(loadShowHiddenRuns());
+    setSortMode(loadRunPickerSort());
+    setActiveCallTypes(loadRunPickerFilter());
   }, []);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => setDebouncedQuery(query), 100);
+    return () => window.clearTimeout(t);
+  }, [query]);
 
   useEffect(() => {
     let cancelled = false;
@@ -193,6 +236,70 @@ function RunPicker({
     }
   }, [selectedForAb, abLaunching]);
 
+  const persistSortMode = useCallback((next: RunPickerSortMode) => {
+    setSortMode(next);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(RUN_PICKER_SORT_STORAGE_KEY, next);
+    }
+  }, []);
+
+  const persistActiveCallTypes = useCallback(
+    (updater: (prev: Set<string>) => Set<string>) => {
+      setActiveCallTypes((prev) => {
+        const next = updater(prev);
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem(
+            RUN_PICKER_FILTER_STORAGE_KEY,
+            JSON.stringify([...next]),
+          );
+        }
+        return next;
+      });
+    },
+    [],
+  );
+
+  const handleToggleCallType = useCallback(
+    (callType: string) => {
+      persistActiveCallTypes((prev) => {
+        const next = new Set(prev);
+        if (next.has(callType)) next.delete(callType);
+        else next.add(callType);
+        return next;
+      });
+    },
+    [persistActiveCallTypes],
+  );
+
+  const handleClearFilters = useCallback(() => {
+    setQuery("");
+    setDebouncedQuery("");
+    persistActiveCallTypes(() => new Set());
+  }, [persistActiveCallTypes]);
+
+  // Prefetch resolutions for generic rows so the chip filter populates
+  // with real call_types (instead of just the handful we know synchronously
+  // from row.name). Also lets cost-sort work for resolved rows. Deduped by
+  // the module-level cache — each run is fetched at most once per page load.
+  useEffect(() => {
+    if (!rows) return;
+    let cancelled = false;
+    for (const r of rows) {
+      if (!r.run_id) continue;
+      const baseName = r.name || "";
+      const isGeneric = baseName === "" || baseName === "chat";
+      if (!isGeneric) continue;
+      if (runRowResolvedValues.has(r.run_id)) continue;
+      resolveRunRow(r.run_id).then((resolved) => {
+        if (cancelled || !resolved) return;
+        setResolveTick((t) => t + 1);
+      });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [rows]);
+
   if (error) return <div className="trace-pick-error">Failed to load runs: {error}</div>;
   if (!rows) return <div className="trace-pick-loading">Loading runs...</div>;
 
@@ -208,12 +315,54 @@ function RunPicker({
     );
   }
 
+  // Distinct call_types among the currently-visible rows, resolved or
+  // synchronously known. `resolveTick` triggers recomputation as lazy
+  // resolutions land. Sorted alphabetically for stable chip order.
+  void resolveTick;
+  const availableCallTypes: string[] = [
+    ...new Set(
+      visible
+        .map((r) => getRowCallType(r))
+        .filter((x): x is string => x !== null),
+    ),
+  ].sort();
+
+  let filtered: RunListItem[] = visible;
+  if (debouncedQuery) {
+    filtered = filtered.filter((r) => matchesRunQuery(r, debouncedQuery));
+  }
+  if (activeCallTypes.size > 0) {
+    filtered = filtered.filter((r) => {
+      const ct = getRowCallType(r);
+      // Pass-through rows whose call_type we don't yet know — otherwise a
+      // chip click would hide every lazy row until its resolve landed.
+      if (ct === null) return true;
+      return activeCallTypes.has(ct);
+    });
+  }
+  if (sortMode === "cost") {
+    // Resolved rows first, sorted by cost desc; unresolved rows tail in
+    // original (recency) order so newly-arrived runs don't jump around.
+    const withCost: Array<{ r: RunListItem; cost: number }> = [];
+    const noCost: RunListItem[] = [];
+    for (const r of filtered) {
+      const c = getRowCostUsd(r);
+      if (c !== null) withCost.push({ r, cost: c });
+      else noCost.push(r);
+    }
+    withCost.sort((a, b) => b.cost - a.cost);
+    filtered = [...withCost.map((x) => x.r), ...noCost];
+  }
+
+  const filterActive =
+    debouncedQuery !== "" || activeCallTypes.size > 0;
+
   // Same-minute + same-name runs are indistinguishable by default. Group
   // them, compute config diffs across the group, and hand each row a
   // disambiguator (a list of distinguishing key:value chips, or a fallback
   // "#N of M" ordinal if configs are identical). Computed once per visible
   // list so rows just look up their own entry.
-  const disambiguatorsByRunId = computeRunRowDisambiguators(visible);
+  const disambiguatorsByRunId = computeRunRowDisambiguators(filtered);
 
   return (
     <div className="trace-pick">
@@ -236,14 +385,94 @@ function RunPicker({
           </label>
         )}
       </div>
-      {visible.length === 0 ? (
-        <div className="trace-pick-empty-hidden">
-          All runs in this project are hidden. Toggle &quot;show hidden&quot;
-          to reveal them.
+      <div className="trace-pick-controls">
+        <div className="trace-pick-controls-row trace-pick-controls-search">
+          <input
+            type="text"
+            className="trace-pick-search"
+            placeholder="filter by name, id, or call_type"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            aria-label="Filter runs"
+          />
+          <div className="trace-pick-sort" role="group" aria-label="Sort runs">
+            <button
+              type="button"
+              className={
+                "trace-pick-sort-btn "
+                + (sortMode === "recency" ? "is-active" : "")
+              }
+              onClick={() => persistSortMode("recency")}
+              title="Sort by most recent first"
+            >
+              recency
+            </button>
+            <button
+              type="button"
+              className={
+                "trace-pick-sort-btn "
+                + (sortMode === "cost" ? "is-active" : "")
+              }
+              onClick={() => persistSortMode("cost")}
+              title="Sort by total run cost, highest first (resolved rows only)"
+            >
+              cost
+            </button>
+          </div>
         </div>
+        {availableCallTypes.length > 0 && (
+          <div className="trace-pick-controls-row trace-pick-chips">
+            {availableCallTypes.map((ct) => {
+              const active = activeCallTypes.has(ct);
+              return (
+                <button
+                  key={ct}
+                  type="button"
+                  className={
+                    "trace-pick-chip " + (active ? "is-active" : "")
+                  }
+                  onClick={() => handleToggleCallType(ct)}
+                  aria-pressed={active}
+                >
+                  {ct}
+                </button>
+              );
+            })}
+            {filterActive && (
+              <button
+                type="button"
+                className="trace-pick-chip trace-pick-chip-clear"
+                onClick={handleClearFilters}
+                title="Clear search and filter chips"
+              >
+                clear
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+      {filtered.length === 0 ? (
+        visible.length === 0 ? (
+          <div className="trace-pick-empty-hidden">
+            All runs in this project are hidden. Toggle &quot;show hidden&quot;
+            to reveal them.
+          </div>
+        ) : (
+          <div className="trace-pick-empty-hidden">
+            No runs match the current filter.
+            {" "}
+            <button
+              type="button"
+              className="trace-pick-empty-clear"
+              onClick={handleClearFilters}
+            >
+              clear filters
+            </button>
+          </div>
+        )
       ) : (
         <div className="trace-pick-list">
-          {visible.map((r) => {
+          {filtered.map((r) => {
             const discriminators = extractRunDiscriminators(r.config);
             const busy = busyRunId === r.run_id;
             const abSlot = selectedForAb.indexOf(r.run_id!);
@@ -402,12 +631,16 @@ interface RunRowResolved {
   callType: string;
   question: string | null;
   model: string | null;
+  costUsd: number | null;
 }
 
 // Module-level cache so RunRowLabel + RunRowResolvedQuestion +
 // RunRowResolvedModelChip share one outstanding promise per run. Each row
 // calls the hook up to 3 times; without this the picker would triple-fetch.
 const runRowResolveCache = new Map<string, Promise<RunRowResolved | null>>();
+// Synchronous mirror of the resolved values so the RunPicker's filter/sort
+// logic can read them without awaiting. Populated as promises resolve.
+const runRowResolvedValues = new Map<string, RunRowResolved>();
 
 function resolveRunRow(runId: string): Promise<RunRowResolved | null> {
   const cached = runRowResolveCache.get(runId);
@@ -433,17 +666,48 @@ function resolveRunRow(runId: string): Promise<RunRowResolved | null> {
           // silent — model chip is nice-to-have
         }
       }
-      return {
+      const resolved: RunRowResolved = {
         callType: root.call.call_type,
         question,
         model,
+        costUsd: tree.cost_usd,
       };
+      runRowResolvedValues.set(runId, resolved);
+      return resolved;
     } catch {
       return null;
     }
   })();
   runRowResolveCache.set(runId, promise);
   return promise;
+}
+
+// Best-effort synchronous call-type reader. Returns the resolved call_type
+// if we've cached it, otherwise the base name if it's not the generic
+// "chat"/empty placeholder, otherwise null — matches the behavior of the
+// label component so filter chips line up with what the user sees.
+function getRowCallType(run: RunListItem): string | null {
+  if (run.run_id) {
+    const resolved = runRowResolvedValues.get(run.run_id);
+    if (resolved) return resolved.callType;
+  }
+  const name = run.name || "";
+  if (!name || name === "chat") return null;
+  return name;
+}
+
+function getRowCostUsd(run: RunListItem): number | null {
+  if (!run.run_id) return null;
+  return runRowResolvedValues.get(run.run_id)?.costUsd ?? null;
+}
+
+function matchesRunQuery(run: RunListItem, query: string): boolean {
+  const q = query.toLowerCase();
+  if (run.name && run.name.toLowerCase().includes(q)) return true;
+  if (run.run_id && run.run_id.toLowerCase().includes(q)) return true;
+  const callType = getRowCallType(run);
+  if (callType && callType.toLowerCase().includes(q)) return true;
+  return false;
 }
 
 // Shared lazy-fetch hook so RunRowLabel and RunRowExtras stay aligned on

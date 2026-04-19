@@ -7665,6 +7665,113 @@ mark.ann-mark.ann-mark-dispute:hover {
   letter-spacing: 0.02em;
 }
 
+/* Control strip between the header and the run list: free-text search +
+ * sort toggle on the first line, call_type chip filter on the second.
+ * Styled to sit quietly — monospace captions, minimal borders — so the
+ * list itself remains the focal point. */
+.trace-pick-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0 16px 0;
+}
+.trace-pick-controls-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.trace-pick-controls-search { align-items: stretch; }
+.trace-pick-search {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 6px 10px;
+  background: var(--bg-pane);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--fg);
+}
+.trace-pick-search::placeholder {
+  color: var(--fg-dim);
+  letter-spacing: 0.04em;
+}
+.trace-pick-search:focus {
+  outline: none;
+  border-color: var(--border-strong);
+}
+.trace-pick-sort {
+  display: inline-flex;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.trace-pick-sort-btn {
+  padding: 5px 10px;
+  background: var(--bg-pane);
+  border: 0;
+  border-left: 1px solid var(--border);
+  font-family: var(--font-mono-stack);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+  cursor: pointer;
+  transition: color 0.1s, background 0.1s;
+}
+.trace-pick-sort-btn:first-child { border-left: 0; }
+.trace-pick-sort-btn:hover { color: var(--fg); }
+.trace-pick-sort-btn.is-active {
+  color: var(--fg);
+  background: var(--active-0);
+}
+.trace-pick-chips {
+  row-gap: 6px;
+}
+.trace-pick-chip {
+  padding: 3px 8px;
+  background: var(--bg-pane);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  font-family: var(--font-mono-stack);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--fg-dim);
+  cursor: pointer;
+  transition: color 0.1s, border-color 0.1s, background 0.1s;
+}
+.trace-pick-chip:hover {
+  color: var(--fg);
+  border-color: var(--border-strong);
+}
+.trace-pick-chip.is-active {
+  color: var(--fg);
+  border-color: var(--border-strong);
+  background: var(--active-0);
+}
+.trace-pick-chip-clear {
+  border-style: dashed;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 9px;
+}
+.trace-pick-empty-clear {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin-left: 4px;
+  font-family: var(--font-mono-stack);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
 .trace-pick-row {
   position: relative;
 }

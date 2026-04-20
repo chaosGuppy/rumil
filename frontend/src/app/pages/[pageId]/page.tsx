@@ -169,9 +169,12 @@ function injectCitationLinks(
   });
 }
 
-async function getPageRun(pageId: string): Promise<RunSummaryOut | null> {
+async function getPageRun(
+  pageId: string,
+  stagedRunId?: string,
+): Promise<RunSummaryOut | null> {
   const res = await fetch(
-    `${API_BASE}/api/pages/${pageId}/run`,
+    `${API_BASE}/api/pages/${pageId}/run${stagedQs(stagedRunId)}`,
     { cache: "no-store" },
   );
   if (!res.ok) return null;
@@ -399,7 +402,7 @@ export default async function PageDetailPage({
   const { staged_run_id: stagedRunId } = await searchParams;
   const [detail, run] = await Promise.all([
     getPageDetail(pageId, stagedRunId),
-    getPageRun(pageId),
+    getPageRun(pageId, stagedRunId),
   ]);
 
   if (!detail) {

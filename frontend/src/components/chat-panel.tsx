@@ -1,8 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { ConversationListItem } from "@/api";
 import { CLIENT_API_BASE } from "@/api-config";
 import {
@@ -78,6 +80,21 @@ function pathToQuestionId(pathname: string | null): string | null {
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const NAVIGATE_PREFIX = "[NAVIGATE]";
+const SUGGEST_PREFIX = "[SUGGEST]";
+
+const ID_LINK_RE =
+  /\[([0-9a-f]{8})\]|`([0-9a-f]{8})`|\b([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b/gi;
+
+function preprocessIds(text: string): string {
+  return text.replace(ID_LINK_RE, (match, bracketed, backticked, full) => {
+    const id = bracketed || backticked || full;
+    if (!id) return match;
+    if (full) return `[\`${id.slice(0, 8)}\`](/pages/${id})`;
+    return `[\`${id}\`](/pages/${id})`;
+  });
+}
 
 async function resolveProjectFromPath(
   pathname: string | null,
@@ -311,6 +328,7 @@ function hydrateFromDetail(
 
 export function ChatPanel() {
   const pathname = usePathname();
+  const router = useRouter();
   const focusPageId = pathToQuestionId(pathname);
 
   const [open, setOpen] = useState(false);
@@ -327,6 +345,7 @@ export function ChatPanel() {
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const skipHydrateRef = useRef(false);
 
   const setModelAndNote = useCallback((next: ModelShort) => {
     setModel(next);
@@ -433,6 +452,10 @@ export function ChatPanel() {
   useEffect(() => {
     if (!activeConvId) {
       setMessages([]);
+      return;
+    }
+    if (skipHydrateRef.current) {
+      skipHydrateRef.current = false;
       return;
     }
     let cancelled = false;
@@ -574,6 +597,7 @@ export function ChatPanel() {
         });
         convId = created.id;
         setProjectId(created.project_id);
+        skipHydrateRef.current = true;
         setActiveConvId(created.id);
         setConversations((prev) => [created, ...prev]);
       }
@@ -589,6 +613,16 @@ export function ChatPanel() {
       setMessages((prev) => ensureInitialAssistant(prev));
 
       for await (const frame of streamChatTurn(req, controller.signal)) {
+        if (
+          frame.event === "tool_use_result" &&
+          frame.data.name === "navigate_url" &&
+          frame.data.result.startsWith(NAVIGATE_PREFIX)
+        ) {
+          const path = frame.data.result.slice(NAVIGATE_PREFIX.length).trim();
+          if (path.startsWith("/")) {
+            router.push(path);
+          }
+        }
         handleStreamFrame(frame, setMessages, (cid, title) => {
           if (cid && cid !== convId) {
             convId = cid;
@@ -951,18 +985,28 @@ function MessageView({ msg }: { msg: UiMessage }) {
     <div className="chat-msg chat-msg-assistant">
       {msg.blocks.map((block) => {
         if (block.kind === "text") {
+          const isLast = block === lastBlock;
           return (
-            <p key={block.id} className="chat-text">
-              {block.text}
-              {msg.pending && block === lastBlock && (
-                <span className="chat-cursor" aria-hidden>
-                  ▍
-                </span>
-              )}
-            </p>
+            <AssistantText
+              key={block.id}
+              text={block.text}
+              trailingCursor={!!msg.pending && isLast}
+            />
           );
         }
         if (block.kind === "tool") {
+          if (
+            block.name === "suggest_view" &&
+            block.result?.startsWith(SUGGEST_PREFIX)
+          ) {
+            return <SuggestChip key={block.id} raw={block.result} />;
+          }
+          if (
+            block.name === "navigate_url" &&
+            block.result?.startsWith(NAVIGATE_PREFIX)
+          ) {
+            return <NavigatedChip key={block.id} raw={block.result} />;
+          }
           return <ToolChip key={block.id} block={block} />;
         }
         return <DispatchChip key={block.id} block={block} />;
@@ -978,6 +1022,104 @@ function MessageView({ msg }: { msg: UiMessage }) {
           <span className="chat-thinking-dot" />
         </div>
       )}
+    </div>
+  );
+}
+
+function AssistantText({
+  text,
+  trailingCursor,
+}: {
+  text: string;
+  trailingCursor: boolean;
+}) {
+  const processed = preprocessIds(text);
+  return (
+    <div className="chat-text">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          a: ({ href, children }) => {
+            if (href && href.startsWith("/")) {
+              return (
+                <Link href={href} className="chat-md-link">
+                  {children}
+                </Link>
+              );
+            }
+            return (
+              <a
+                href={href}
+                className="chat-md-link"
+                target="_blank"
+                rel="noreferrer"
+              >
+                {children}
+              </a>
+            );
+          },
+          p: ({ children }) => <p className="chat-md-p">{children}</p>,
+          code: (props) => {
+            const { className, children, ...rest } = props as {
+              className?: string;
+              children?: React.ReactNode;
+            };
+            const isBlock = /language-/.test(className || "");
+            return (
+              <code
+                className={
+                  isBlock ? "chat-md-code-block" : "chat-md-code-inline"
+                }
+                {...rest}
+              >
+                {children}
+              </code>
+            );
+          },
+          ul: ({ children }) => <ul className="chat-md-ul">{children}</ul>,
+          ol: ({ children }) => <ol className="chat-md-ol">{children}</ol>,
+          li: ({ children }) => <li className="chat-md-li">{children}</li>,
+          h1: ({ children }) => <h3 className="chat-md-h">{children}</h3>,
+          h2: ({ children }) => <h3 className="chat-md-h">{children}</h3>,
+          h3: ({ children }) => <h3 className="chat-md-h">{children}</h3>,
+          h4: ({ children }) => <h4 className="chat-md-h">{children}</h4>,
+          blockquote: ({ children }) => (
+            <blockquote className="chat-md-bq">{children}</blockquote>
+          ),
+        }}
+      >
+        {processed}
+      </ReactMarkdown>
+      {trailingCursor && (
+        <span className="chat-cursor" aria-hidden>
+          ▍
+        </span>
+      )}
+    </div>
+  );
+}
+
+function SuggestChip({ raw }: { raw: string }) {
+  const payload = raw.slice(SUGGEST_PREFIX.length);
+  const sep = payload.indexOf("|");
+  const path = sep >= 0 ? payload.slice(0, sep) : payload;
+  const label = sep >= 0 ? payload.slice(sep + 1) : payload;
+  if (!path.startsWith("/")) return null;
+  return (
+    <Link href={path} className="chat-suggest">
+      <span className="chat-suggest-arrow">→</span>
+      <span className="chat-suggest-label">{label}</span>
+      <code className="chat-suggest-path">{path}</code>
+    </Link>
+  );
+}
+
+function NavigatedChip({ raw }: { raw: string }) {
+  const path = raw.slice(NAVIGATE_PREFIX.length).trim();
+  return (
+    <div className="chat-navigated">
+      <span className="chat-navigated-arrow">⤳</span>
+      navigated to <code>{path}</code>
     </div>
   );
 }
@@ -1390,11 +1532,129 @@ const styles = `
   gap: 0.55rem;
 }
 .chat-text {
-  margin: 0;
   font-size: 0.88rem;
-  line-height: 1.55;
+  line-height: 1.45;
   color: var(--foreground);
-  white-space: pre-wrap;
+}
+.chat-md-p {
+  margin: 0 0 0.35rem;
+}
+.chat-md-p:last-child {
+  margin-bottom: 0;
+}
+.chat-md-p + .chat-md-ul,
+.chat-md-p + .chat-md-ol {
+  margin-top: -0.15rem;
+}
+.chat-md-link {
+  color: var(--type-claim);
+  text-decoration: underline;
+  text-decoration-color: var(--color-border);
+  text-underline-offset: 2px;
+}
+.chat-md-link:hover {
+  text-decoration-color: var(--type-claim);
+}
+.chat-md-code-inline {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.82em;
+  background: var(--color-surface);
+  padding: 0.02em 0.28em;
+  border-radius: 2px;
+}
+.chat-md-code-block {
+  display: block;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.78em;
+  background: var(--color-surface);
+  padding: 0.4rem 0.55rem;
+  border-radius: 3px;
+  margin: 0.15rem 0 0.35rem;
+  white-space: pre;
+  overflow-x: auto;
+  line-height: 1.4;
+}
+.chat-md-ul,
+.chat-md-ol {
+  margin: 0 0 0.35rem;
+  padding-left: 1.1rem;
+}
+.chat-md-ul:last-child,
+.chat-md-ol:last-child {
+  margin-bottom: 0;
+}
+.chat-md-li {
+  margin-bottom: 0.05rem;
+  padding-left: 0.1rem;
+}
+.chat-md-li > .chat-md-p {
+  margin-bottom: 0;
+}
+.chat-md-h {
+  margin: 0.45rem 0 0.2rem;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--foreground);
+  line-height: 1.3;
+}
+.chat-md-h:first-child {
+  margin-top: 0;
+}
+.chat-md-bq {
+  margin: 0 0 0.35rem;
+  padding: 0.15rem 0.55rem;
+  border-left: 2px solid var(--color-border);
+  color: var(--color-muted);
+  font-style: italic;
+}
+
+.chat-suggest {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid var(--type-claim-border);
+  background: var(--type-claim-bg);
+  border-radius: 3px;
+  text-decoration: none;
+  color: var(--type-claim);
+  font-size: 0.8rem;
+  max-width: 100%;
+}
+.chat-suggest:hover {
+  background: var(--type-claim-bg-hover);
+}
+.chat-suggest-arrow {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  color: var(--type-claim);
+}
+.chat-suggest-label {
+  color: var(--foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+.chat-suggest-path {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.7rem;
+  color: var(--color-muted);
+}
+
+.chat-navigated {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  padding: 0.25rem 0.5rem;
+  border: 1px dashed var(--color-border);
+  border-radius: 3px;
+  font-size: 0.76rem;
+  color: var(--color-muted);
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+}
+.chat-navigated code {
+  color: var(--color-accent);
 }
 .chat-cursor {
   display: inline-block;

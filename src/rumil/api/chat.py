@@ -509,6 +509,47 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "navigate_url",
+        "description": (
+            "Navigate the user's browser to a rumil URL. Use sparingly — "
+            "this changes what the user is looking at. Prefer suggest_view "
+            "unless the user explicitly asked to be taken somewhere. Paths "
+            "must start with / (e.g. '/pages/abc12345', '/traces/...')."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Relative path beginning with /.",
+                },
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "suggest_view",
+        "description": (
+            "Propose a clickable link for the user. Renders as a chip in "
+            "chat; the user decides whether to open it. Use liberally when "
+            "referring to pages, traces, or other workspace views."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Relative path beginning with /.",
+                },
+                "label": {
+                    "type": "string",
+                    "description": "Short human label (e.g. page headline).",
+                },
+            },
+            "required": ["path", "label"],
+        },
+    },
+    {
         "name": "create_question",
         "description": (
             "Create a new question page. Optionally links as a child of an "
@@ -758,6 +799,23 @@ async def _handle_create_question(db: DB, tool_input: dict[str, Any]) -> str:
     return "\n".join(response_parts)
 
 
+def _handle_navigate_url(tool_input: dict[str, Any]) -> str:
+    """Sentinel result parsed by the frontend to trigger router.push."""
+    path = tool_input.get("path", "").strip()
+    if not path.startswith("/"):
+        return f"refused: path must start with / (got '{path}')"
+    return f"[NAVIGATE]{path}"
+
+
+def _handle_suggest_view(tool_input: dict[str, Any]) -> str:
+    """Sentinel result parsed by the frontend to render a clickable chip."""
+    path = tool_input.get("path", "").strip()
+    label = tool_input.get("label", "").strip() or path
+    if not path.startswith("/"):
+        return f"refused: path must start with / (got '{path}')"
+    return f"[SUGGEST]{path}|{label}"
+
+
 _CHAT_DISPATCH_CALL_TYPES: dict[str, CallType] = {
     "find_considerations": CallType.FIND_CONSIDERATIONS,
     "assess": CallType.ASSESS,
@@ -991,6 +1049,10 @@ async def _handle_tool(
         return await _handle_get_recent_activity(db, tool_input)
     if name == "create_question":
         return await _handle_create_question(db, tool_input)
+    if name == "navigate_url":
+        return _handle_navigate_url(tool_input)
+    if name == "suggest_view":
+        return _handle_suggest_view(tool_input)
     if name == "dispatch_call":
         return await _handle_dispatch_call(db, tool_input, conv_id=conv_id, tool_use_id=tool_use_id)
     return f"Unknown tool: {name}"

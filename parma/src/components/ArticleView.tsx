@@ -92,7 +92,6 @@ function ArticleItem({
       </div>
       <PageContent
         text={page.content}
-        excludeConceptId={page.id}
         pageId={page.id}
       />
     </div>

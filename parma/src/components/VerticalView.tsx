@@ -90,7 +90,6 @@ function VerticalItem({
           <div className="vertical-content">
             <PageContent
               text={page.content}
-              excludeConceptId={page.id}
               pageId={page.id}
             />
           </div>

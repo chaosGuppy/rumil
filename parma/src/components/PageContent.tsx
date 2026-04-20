@@ -12,14 +12,12 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { NODE_ID_RE, isPromoteEvent } from "./NodeRefLink";
-import { useConcepts } from "./ConceptContext";
 import { useInspectPanel } from "./InspectPanelContext";
 import {
   useAnnotations,
   useRegisterPage,
 } from "./AnnotationContext";
 import type { AnnotationEvent } from "@/lib/annotations";
-import type { Page } from "@/lib/types";
 import { AnnotationToolbar } from "./AnnotationToolbar";
 import type { ToolbarSelection } from "./AnnotationToolbar";
 import { AnnotationDrawer } from "./AnnotationDrawer";
@@ -33,31 +31,15 @@ import { AnnotationDrawer } from "./AnnotationDrawer";
  *   2. Linkify 8-char hex node refs (`[abc12345]` or bare `abc12345`) into
  *      clickable spans that call `onNodeRef(id)` — defaulting to the
  *      global inspect panel.
- *   3. Linkify inline concept matches (headlines of `concept` pages), the
- *      same behavior `TextWithConcepts` previously provided.
- *   4. When `pageId` is provided: attach annotation affordances —
+ *   3. When `pageId` is provided: attach annotation affordances —
  *      - selection → floating toolbar
  *      - existing span annotations overlaid as underlines
  *      - page-level annotation indicator + drawer toggle
  *
- * Option B (unified pass) rationale: scanning each markdown text leaf once
- * for both node refs and concepts, rather than nesting a second pass on
- * top of rendered markdown, avoids two problems:
- *   (a) Concepts match by headline *within* a text run — the old
- *       `TextWithConcepts` did substring matching. Applying it on top of
- *       already-sliced node-ref parts risks breaking matches that straddle
- *       a ref. Scanning once with a combined pattern matches left-to-right
- *       with a single lastIndex.
- *   (b) It keeps the React tree shallow: every text leaf is replaced by a
- *       flat array of strings/buttons/spans, no extra wrapper divs.
- *
- * Both refs and concepts are optional: if no concepts are loaded and no
- * onNodeRef is provided, the function fast-paths back to raw strings.
- *
  * Span anchoring: offsets are into the rendered `textContent` of the body,
  * not the markdown source. We picked textContent-offsets because they're
  * easy to round-trip between selection.toString() and mark overlay, and
- * because concept/ref linkification doesn't alter the character stream.
+ * because ref linkification doesn't alter the character stream.
  * Drift risk is real — if the page is superseded with new text, offsets
  * will silently misalign. Acceptable for the MVP per doc 28; a v2 would
  * anchor via prefix+suffix text match.
@@ -66,75 +48,27 @@ import { AnnotationDrawer } from "./AnnotationDrawer";
 interface PageContentProps {
   text: string;
   onNodeRef?: (id: string) => void;
-  excludeConceptId?: string;
   className?: string;
   /** Override the default inline-prose tag; useful when embedding in a list. */
   inline?: boolean;
   /**
    * When set, this PageContent becomes annotatable: text selections raise a
    * floating toolbar, existing spans are underlined, and a page-level
-   * indicator opens an annotations drawer. Leave undefined for contexts
-   * where annotation makes no sense (e.g. concept popovers, toy renders).
+   * indicator opens an annotations drawer.
    */
   pageId?: string;
 }
 
-function escapeRegex(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-// Inline ConceptRef popover — colocated since it's only used by the
-// unified text processor below. Extracting it isn't worth the indirection
-// given it's pure presentation.
-function ConceptRefInline({ concept }: { concept: Page }) {
-  const [open, setOpen] = useState(false);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-
-  const show = useCallback(() => {
-    clearTimeout(timeoutRef.current);
-    setOpen(true);
-  }, []);
-  const hide = useCallback(() => {
-    timeoutRef.current = setTimeout(() => setOpen(false), 120);
-  }, []);
-
-  return (
-    <span className="concept-ref" onMouseEnter={show} onMouseLeave={hide}>
-      {concept.headline}
-      {open && (
-        <span
-          className="concept-popover"
-          onMouseEnter={show}
-          onMouseLeave={hide}
-        >
-          <span className="concept-popover-label">concept</span>
-          <span className="concept-popover-headline">{concept.headline}</span>
-          <span className="concept-popover-content">{concept.content}</span>
-        </span>
-      )}
-    </span>
-  );
-}
-
-// Split a raw string into a mixed array of strings, node-ref buttons, and
-// concept-ref spans, scanning once from left to right.
+// Split a raw string into a mixed array of strings and node-ref buttons.
 function linkifyString(
   text: string,
   onNodeRef: ((id: string) => void) | undefined,
   onPromote: ((id: string) => void) | undefined,
-  conceptRegex: RegExp | null,
-  conceptMap: Map<string, Page>,
   keyPrefix: string,
 ): ReactNode[] {
-  // Build a combined regex: node-refs OR concept headlines. If either side
-  // is absent we just use the other, which keeps the common case (no
-  // concepts loaded yet) identical to the pure-node-ref scan ChatPanel had.
-  const patterns: string[] = [];
-  if (onNodeRef) patterns.push(NODE_ID_RE.source);
-  if (conceptRegex) patterns.push(conceptRegex.source);
-  if (patterns.length === 0) return [text];
+  if (!onNodeRef) return [text];
 
-  const combined = new RegExp(patterns.join("|"), "gi");
+  const combined = new RegExp(NODE_ID_RE.source, "gi");
   const parts: ReactNode[] = [];
   let lastIndex = 0;
   let match: RegExpExecArray | null;
@@ -144,44 +78,27 @@ function linkifyString(
       parts.push(text.slice(lastIndex, match.index));
     }
     const matched = match[0];
-
-    // Node ref — 8 lowercase hex with word boundaries
-    if (onNodeRef && /^[0-9a-f]{8}$/.test(matched)) {
-      parts.push(
-        <button
-          key={`${keyPrefix}-ref-${match.index}`}
-          type="button"
-          onMouseDown={(e) => {
-            if (onPromote && isPromoteEvent(e)) e.preventDefault();
-          }}
-          onClick={(e) => {
-            if (onPromote && isPromoteEvent(e)) {
-              e.preventDefault();
-              onPromote(matched);
-            } else {
-              onNodeRef(matched);
-            }
-          }}
-          className="node-ref-link"
-          title={`Click to inspect · alt/cmd-click to pin as pane · ${matched}`}
-        >
-          {matched}
-        </button>,
-      );
-    } else {
-      // Concept headline (case-insensitive)
-      const concept = conceptMap.get(matched.toLowerCase());
-      if (concept) {
-        parts.push(
-          <ConceptRefInline
-            key={`${keyPrefix}-concept-${match.index}`}
-            concept={concept}
-          />,
-        );
-      } else {
-        parts.push(matched);
-      }
-    }
+    parts.push(
+      <button
+        key={`${keyPrefix}-ref-${match.index}`}
+        type="button"
+        onMouseDown={(e) => {
+          if (onPromote && isPromoteEvent(e)) e.preventDefault();
+        }}
+        onClick={(e) => {
+          if (onPromote && isPromoteEvent(e)) {
+            e.preventDefault();
+            onPromote(matched);
+          } else {
+            onNodeRef(matched);
+          }
+        }}
+        className="node-ref-link"
+        title={`Click to inspect · alt/cmd-click to pin as pane · ${matched}`}
+      >
+        {matched}
+      </button>,
+    );
     lastIndex = combined.lastIndex;
   }
   if (lastIndex < text.length) {
@@ -193,7 +110,6 @@ function linkifyString(
 export function PageContent({
   text,
   onNodeRef,
-  excludeConceptId,
   className,
   inline = false,
   pageId,
@@ -201,42 +117,16 @@ export function PageContent({
   const inspect = useInspectPanel();
   const handleNodeRef = onNodeRef ?? inspect.openInspect;
   const handlePromote = inspect.promoteToPane;
-  const concepts = useConcepts();
-
-  const { conceptRegex, conceptMap } = useMemo(() => {
-    const filtered = concepts.filter(
-      (c) => c.id !== excludeConceptId && c.headline.length > 2,
-    );
-    if (filtered.length === 0) {
-      return { conceptRegex: null, conceptMap: new Map<string, Page>() };
-    }
-    // Longest headlines first so "self-driving car" beats "car".
-    const sorted = [...filtered].sort(
-      (a, b) => b.headline.length - a.headline.length,
-    );
-    const map = new Map<string, Page>();
-    const patterns: string[] = [];
-    for (const c of sorted) {
-      patterns.push(escapeRegex(c.headline));
-      map.set(c.headline.toLowerCase(), c);
-    }
-    return {
-      conceptRegex: new RegExp(`\\b(?:${patterns.join("|")})\\b`, "gi"),
-      conceptMap: map,
-    };
-  }, [concepts, excludeConceptId]);
 
   const processChildren = useCallback(
     (children: ReactNode, keyPrefix: string): ReactNode => {
-      if (!handleNodeRef && !conceptRegex) return children;
+      if (!handleNodeRef) return children;
       if (!Array.isArray(children)) {
         if (typeof children === "string") {
           return linkifyString(
             children,
             handleNodeRef,
             handlePromote,
-            conceptRegex,
-            conceptMap,
             keyPrefix,
           );
         }
@@ -250,8 +140,6 @@ export function PageContent({
                 child,
                 handleNodeRef,
                 handlePromote,
-                conceptRegex,
-                conceptMap,
                 `${keyPrefix}-${i}`,
               )}
             </span>
@@ -260,7 +148,7 @@ export function PageContent({
         return child;
       });
     },
-    [handleNodeRef, handlePromote, conceptRegex, conceptMap],
+    [handleNodeRef, handlePromote],
   );
 
   const wrapperClass = className ?? "view-prose";

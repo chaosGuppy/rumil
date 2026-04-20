@@ -181,7 +181,6 @@ function InspectBody({
         <PageContent
           text={page.content}
           onNodeRef={onOpenRef}
-          excludeConceptId={page.id}
           pageId={page.id}
         />
       )}

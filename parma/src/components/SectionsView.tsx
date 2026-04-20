@@ -266,7 +266,6 @@ function SectionsCard({
         >
           <PageContent
             text={item.page.content}
-            excludeConceptId={item.page.id}
           />
         </div>
         {verdict && <VerdictInline verdict={verdict} />}
@@ -288,7 +287,7 @@ function SectionsCard({
             className="sections-card-body"
             onClick={(e) => e.stopPropagation()}
           >
-            <PageContent text={abstract} excludeConceptId={item.page.id} />
+            <PageContent text={abstract} />
           </div>
         )}
         {verdict && <VerdictInline verdict={verdict} />}

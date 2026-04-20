@@ -2404,21 +2404,12 @@ async def _bg_run_dispatch(
                 "trace_url": trace_url,
             }
 
-        try:
-            await bg_db.save_chat_message(
-                conversation_id=conv_id,
-                role=ChatMessageRole.DISPATCH_RESULT,
-                content=content,
-                question_id=question_id,
-            )
-            await bg_db.update_chat_conversation(conv_id, touch=True)
-        except Exception:
-            log.exception(
-                "Failed to persist dispatch completion for run %s conv %s",
-                new_run_id[:8],
-                conv_id[:8],
-            )
-        _publish_conv_event(conv_id, "dispatch_completed", content)
+        await _persist_dispatch_completion(
+            bg_db,
+            conv_id=conv_id,
+            content=content,
+            question_id=question_id,
+        )
     finally:
         await bg_db.close()
 
@@ -2461,7 +2452,7 @@ async def _run_dispatch(
     new_run_id = str(uuid.uuid4())
     trace_url = f"/traces/{new_run_id}"
 
-    task = asyncio.create_task(
+    _spawn_bg(
         _bg_run_dispatch(
             conv_id=conv_id,
             tool_use_id=tool_use_id,
@@ -2474,8 +2465,6 @@ async def _run_dispatch(
             model=model,
         )
     )
-    _live_dispatch_tasks.add(task)
-    task.add_done_callback(_live_dispatch_tasks.discard)
 
     return (
         f"{call_type_str} call on '{headline[:40]}' started in background. "
@@ -2491,46 +2480,74 @@ async def _await_live_dispatches() -> None:
         await asyncio.gather(*tasks, return_exceptions=True)
 
 
-async def _run_orchestrate(
-    db: DB,
-    params: dict[str, Any],
-    on_progress: Callable[[str], Any] | None = None,
+async def _persist_dispatch_completion(
+    bg_db: DB,
     *,
-    conv_id: str | None = None,
-    tool_use_id: str | None = None,
-) -> str:
-    """Run a real rumil orchestrator via dispatch_orchestrator.
+    conv_id: str,
+    content: dict[str, Any],
+    question_id: str | None,
+) -> None:
+    """Write a DISPATCH_RESULT chat message and publish the event.
 
-    Creates a fresh DB + run_id so the trace shows up cleanly at
-    /traces/{run_id}, matching the CLI and /api/questions/{id}/continue
-    shape. Applies any per-call settings overrides (variant,
-    available_calls, available_moves, enable_global_prio) via
-    ``override_settings`` — they don't leak into the chat session.
+    Shared by every fire-and-forget handler's completion path so the row
+    shape and broker notification stay uniform. Swallows DB errors (and
+    logs) so a persistence blip can't crash the background task — the
+    broker still gets the event.
+    """
+    try:
+        await bg_db.save_chat_message(
+            conversation_id=conv_id,
+            role=ChatMessageRole.DISPATCH_RESULT,
+            content=content,
+            question_id=question_id,
+        )
+        await bg_db.update_chat_conversation(conv_id, touch=True)
+    except Exception:
+        log.exception(
+            "Failed to persist dispatch completion for run %s conv %s",
+            (content.get("run_id") or "")[:8],
+            conv_id[:8],
+        )
+    _publish_conv_event(conv_id, "dispatch_completed", content)
 
-    Also wires a ``Broadcaster`` into the orchestrator run and subscribes
-    to the same ``trace:{run_id}`` channel so trace events can be
-    translated into short chat progress messages while the orchestrator
-    runs. Subscription failures are swallowed so they can't break the
-    orchestrator itself.
+
+def _spawn_bg(coro: Any) -> None:
+    """Register a fire-and-forget background task in the global set."""
+    task = asyncio.create_task(coro)
+    _live_dispatch_tasks.add(task)
+    task.add_done_callback(_live_dispatch_tasks.discard)
+
+
+async def _bg_run_orchestrate(
+    *,
+    conv_id: str,
+    tool_use_id: str,
+    new_run_id: str,
+    project_id: str,
+    question_id: str,
+    headline: str,
+    budget: int,
+    variant: str | None,
+    available_calls: Any,
+    available_moves: Any,
+    enable_global_prio: Any,
+) -> None:
+    """Background task: run the orchestrator and persist completion.
+
+    Subscribes to the trace broadcast channel so per-step progress can be
+    forwarded to the conversation event stream (phase 3+). On finish
+    (success or failure) writes a DISPATCH_RESULT row keyed to
+    ``tool_use_id`` and publishes ``dispatch_completed`` on the broker.
     """
     from rumil.dispatch import dispatch_orchestrator
     from rumil.tracing.broadcast import Broadcaster
     from rumil.tracing.subscribe import format_trace_event, stream_run_events
 
-    question_id = params["question_id"]
-    headline = params.get("headline", question_id[:8])
-    budget = params.get("budget", 3)
-    variant = params.get("orchestrator")
-    available_calls = params.get("available_calls")
-    available_moves = params.get("available_moves")
-    enable_global_prio = params.get("enable_global_prio")
-
-    new_run_id = str(uuid.uuid4())
     settings = get_settings()
     new_db = await DB.create(
         run_id=new_run_id,
         prod=settings.is_prod_db,
-        project_id=db.project_id,
+        project_id=project_id,
     )
 
     broadcaster: Broadcaster | None = None
@@ -2540,26 +2557,26 @@ async def _run_orchestrate(
         supabase_url, supabase_key = settings.get_supabase_credentials(prod=settings.is_prod_db)
         broadcaster = Broadcaster(new_run_id, supabase_url, supabase_key)
 
-        if on_progress:
-
-            def _forward(payload: dict[str, Any]) -> None:
-                msg = format_trace_event(payload)
-                if msg is not None and on_progress is not None:
-                    try:
-                        on_progress(msg)
-                    except Exception as e:
-                        log.debug("on_progress callback error (non-fatal): %s", e)
-
-            subscribed_event = asyncio.Event()
-            subscription_task = asyncio.create_task(
-                stream_run_events(
-                    new_run_id,
-                    supabase_url,
-                    supabase_key,
-                    _forward,
-                    subscribed=subscribed_event,
-                )
+        def _forward(payload: dict[str, Any]) -> None:
+            msg = format_trace_event(payload)
+            if msg is None:
+                return
+            _publish_conv_event(
+                conv_id,
+                "dispatch_progress",
+                {"tool_use_id": tool_use_id, "run_id": new_run_id, "message": msg},
             )
+
+        subscribed_event = asyncio.Event()
+        subscription_task = asyncio.create_task(
+            stream_run_events(
+                new_run_id,
+                supabase_url,
+                supabase_key,
+                _forward,
+                subscribed=subscribed_event,
+            )
+        )
     except Exception as e:
         log.warning(
             "trace broadcast setup failed for run %s (orchestrator will still run): %s",
@@ -2570,6 +2587,8 @@ async def _run_orchestrate(
         subscription_task = None
         subscribed_event = None
 
+    trace_url = f"/traces/{new_run_id}"
+    content: dict[str, Any]
     try:
         await new_db.init_budget(budget)
         await new_db.create_run(
@@ -2577,16 +2596,6 @@ async def _run_orchestrate(
             question_id=question_id,
             config=settings.capture_config(),
         )
-        if on_progress:
-            on_progress(
-                f"Orchestrator run {new_run_id[:8]} started"
-                f" (variant={variant or settings.prioritizer_variant}, "
-                f"budget={budget}). Trace: /traces/{new_run_id}"
-            )
-        # Wait briefly for the trace subscription to become active so we
-        # don't miss the first few broadcast events. Best-effort: if it
-        # doesn't come up in time, the orchestrator still runs — we just
-        # lose live streaming for this run.
         if subscribed_event is not None:
             try:
                 await asyncio.wait_for(subscribed_event.wait(), timeout=3.0)
@@ -2596,23 +2605,49 @@ async def _run_orchestrate(
                     "orchestrator running without live stream",
                     new_run_id[:8],
                 )
-        await dispatch_orchestrator(
-            question_id,
+        try:
+            await dispatch_orchestrator(
+                question_id,
+                new_db,
+                variant=variant,
+                available_calls=available_calls,
+                available_moves=available_moves,
+                enable_global_prio=enable_global_prio,
+                broadcaster=broadcaster,
+            )
+            content = {
+                "tool_use_id": tool_use_id,
+                "run_id": new_run_id,
+                "call_type": "orchestrate",
+                "question_id": question_id,
+                "headline": headline,
+                "status": "completed",
+                "summary": (
+                    f"Orchestrator run {new_run_id[:8]} on '{headline[:40]}' "
+                    f"completed (budget={budget})."
+                ),
+                "trace_url": trace_url,
+            }
+        except Exception as e:
+            log.exception("Orchestrator run %s failed", new_run_id[:8])
+            content = {
+                "tool_use_id": tool_use_id,
+                "run_id": new_run_id,
+                "call_type": "orchestrate",
+                "question_id": question_id,
+                "headline": headline,
+                "status": "failed",
+                "summary": f"Orchestrator run {new_run_id[:8]} failed: {e}",
+                "error": str(e),
+                "trace_url": trace_url,
+            }
+
+        await _persist_dispatch_completion(
             new_db,
-            variant=variant,
-            available_calls=available_calls,
-            available_moves=available_moves,
-            enable_global_prio=enable_global_prio,
-            broadcaster=broadcaster,
-            on_progress=on_progress,
+            conv_id=conv_id,
+            content=content,
+            question_id=question_id,
         )
-        return (
-            f"Orchestrator run {new_run_id[:8]} on '{headline[:40]}' completed. "
-            f"Trace: /traces/{new_run_id}. Refresh the view to see new findings."
-        )
-    except Exception as e:
-        log.exception("Orchestrator run %s failed", new_run_id[:8])
-        return f"Orchestrator run {new_run_id[:8]} failed: {e}"
     finally:
         if subscription_task is not None:
             subscription_task.cancel()
@@ -2629,6 +2664,164 @@ async def _run_orchestrate(
         await new_db.close()
 
 
+async def _run_orchestrate(
+    db: DB,
+    params: dict[str, Any],
+    on_progress: Callable[[str], Any] | None = None,
+    *,
+    conv_id: str | None = None,
+    tool_use_id: str | None = None,
+) -> str:
+    """Fire-and-forget orchestrator run.
+
+    Validates inputs, spawns a background task (which creates its own
+    DB + run_id + broadcaster), and returns a receipt for the chat turn.
+    Progress events from the orchestrator land on the conversation SSE
+    stream via ``dispatch_progress``; the final outcome lands as a
+    DISPATCH_RESULT row plus a ``dispatch_completed`` event.
+    """
+    question_id = params["question_id"]
+    headline = params.get("headline", question_id[:8])
+    budget = params.get("budget", 3)
+    variant = params.get("orchestrator")
+    available_calls = params.get("available_calls")
+    available_moves = params.get("available_moves")
+    enable_global_prio = params.get("enable_global_prio")
+
+    if not conv_id or not tool_use_id:
+        return "Internal error: orchestrate tool is missing conversation context."
+    if not db.project_id:
+        return "Internal error: orchestrate tool has no project scope."
+
+    new_run_id = str(uuid.uuid4())
+    settings = get_settings()
+    variant_label = variant or settings.prioritizer_variant
+
+    _spawn_bg(
+        _bg_run_orchestrate(
+            conv_id=conv_id,
+            tool_use_id=tool_use_id,
+            new_run_id=new_run_id,
+            project_id=db.project_id,
+            question_id=question_id,
+            headline=headline,
+            budget=budget,
+            variant=variant,
+            available_calls=available_calls,
+            available_moves=available_moves,
+            enable_global_prio=enable_global_prio,
+        )
+    )
+    return (
+        f"Orchestrator run started on '{headline[:40]}' "
+        f"(variant={variant_label}, budget={budget}). "
+        f"Trace: /traces/{new_run_id}. Running in background — you will "
+        f"not see results in this turn."
+    )
+
+
+async def _bg_run_ingest(
+    *,
+    conv_id: str,
+    tool_use_id: str,
+    new_run_id: str,
+    project_id: str,
+    url: str,
+    target_short: str | None,
+    headline: str,
+) -> None:
+    """Background task: scrape a URL, save as source, and run ingest."""
+    settings = get_settings()
+    bg_db = await DB.create(
+        run_id=new_run_id,
+        prod=settings.is_prod_db,
+        project_id=project_id,
+    )
+    trace_url = f"/traces/{new_run_id}"
+    content: dict[str, Any]
+    target_question_id: str | None = None
+    try:
+        await bg_db.create_run(
+            name=f"ingest (chat): {headline[:90]}",
+            question_id=None,
+            config=settings.capture_config(),
+        )
+        try:
+            scraped = await scrape_url(url)
+            if not scraped:
+                raise RuntimeError(f"Failed to fetch URL: {url}")
+
+            source_page = Page(
+                page_type=PageType.SOURCE,
+                layer=PageLayer.SQUIDGY,
+                workspace=Workspace.RESEARCH,
+                headline=scraped.title or url,
+                content=scraped.content,
+                extra={"url": url},
+                project_id=project_id,
+            )
+            await bg_db.save_page(source_page)
+            summary_parts = [
+                f"Created source page {source_page.id[:8]}: {(scraped.title or url)[:60]}"
+            ]
+
+            if target_short:
+                full_id = await bg_db.resolve_page_id(target_short)
+                if not full_id:
+                    summary_parts.append(
+                        f"Target question '{target_short}' not found \u2014 "
+                        f"source saved but no extraction."
+                    )
+                else:
+                    target_question_id = full_id
+                    call = await bg_db.create_call(CallType.INGEST, scope_page_id=full_id)
+                    runner = IngestCall(source_page, full_id, call, bg_db)
+                    try:
+                        await runner.run()
+                        summary_parts.append(
+                            f"Ingest extraction call {call.id[:8]} on '{headline[:40]}' completed."
+                        )
+                    except Exception as e:
+                        log.exception("Ingest call %s failed", call.id[:8])
+                        summary_parts.append(f"Ingest call {call.id[:8]} failed: {e}")
+
+            content = {
+                "tool_use_id": tool_use_id,
+                "run_id": new_run_id,
+                "call_type": "ingest",
+                "question_id": target_question_id,
+                "headline": headline,
+                "status": "completed",
+                "summary": " \u2014 ".join(summary_parts),
+                "trace_url": trace_url,
+                "source_page_id": source_page.id,
+                "url": url,
+            }
+        except Exception as e:
+            log.exception("Ingest for %s failed", url)
+            content = {
+                "tool_use_id": tool_use_id,
+                "run_id": new_run_id,
+                "call_type": "ingest",
+                "question_id": target_question_id,
+                "headline": headline,
+                "status": "failed",
+                "summary": f"Ingest for {url} failed: {e}",
+                "error": str(e),
+                "trace_url": trace_url,
+                "url": url,
+            }
+
+        await _persist_dispatch_completion(
+            bg_db,
+            conv_id=conv_id,
+            content=content,
+            question_id=target_question_id,
+        )
+    finally:
+        await bg_db.close()
+
+
 async def _run_ingest(
     db: DB,
     params: dict[str, Any],
@@ -2637,63 +2830,101 @@ async def _run_ingest(
     conv_id: str | None = None,
     tool_use_id: str | None = None,
 ) -> str:
-    """Scrape a URL, save it as a source page, and run an ingest call.
-
-    Mirrors _run_dispatch/_run_research: broad try/except so the chat never
-    loses a tool_result. Returns a human-readable string — never raises.
-    """
+    """Fire-and-forget ingest: scrape a URL + run extraction in background."""
     url = params["url"]
     target_short = params.get("target_question_id")
     headline = params.get("headline") or url
-    try:
-        if on_progress:
-            on_progress(f"Scraping {url[:60]}...")
-        scraped = await scrape_url(url)
-        if not scraped:
-            return f"Failed to fetch URL: {url}"
 
-        if on_progress:
-            on_progress(f"Saving source page for '{(scraped.title or url)[:40]}'...")
-        source_page = Page(
-            page_type=PageType.SOURCE,
-            layer=PageLayer.SQUIDGY,
-            workspace=Workspace.RESEARCH,
-            headline=scraped.title or url,
-            content=scraped.content,
-            extra={"url": url},
+    if not conv_id or not tool_use_id:
+        return "Internal error: ingest tool is missing conversation context."
+    if not db.project_id:
+        return "Internal error: ingest tool has no project scope."
+
+    new_run_id = str(uuid.uuid4())
+    _spawn_bg(
+        _bg_run_ingest(
+            conv_id=conv_id,
+            tool_use_id=tool_use_id,
+            new_run_id=new_run_id,
             project_id=db.project_id,
+            url=url,
+            target_short=target_short,
+            headline=headline,
         )
-        await db.save_page(source_page)
-        result_parts = [f"Created source page {source_page.id[:8]}: {scraped.title or url}"]
+    )
+    return (
+        f"Ingest started for {url[:80]}. Trace: /traces/{new_run_id}. "
+        f"Running in background — completion will appear in chat."
+    )
 
-        if not target_short:
-            return "\n".join(result_parts)
 
-        full_id = await db.resolve_page_id(target_short)
-        if not full_id:
-            result_parts.append(
-                f"Target question '{target_short}' not found \u2014 source saved but no extraction."
-            )
-            return "\n".join(result_parts)
+async def _bg_run_evaluate(
+    *,
+    conv_id: str,
+    tool_use_id: str,
+    new_run_id: str,
+    project_id: str,
+    question_id: str,
+    headline: str,
+    eval_type: str,
+) -> None:
+    """Background task: run an evaluation agent + persist completion."""
+    from rumil.dispatch import dispatch_evaluation
 
-        if on_progress:
-            on_progress(f"Extracting citations for '{headline[:40]}'...")
-        call = await db.create_call(CallType.INGEST, scope_page_id=full_id)
-        runner = IngestCall(source_page, full_id, call, db)
+    settings = get_settings()
+    bg_db = await DB.create(
+        run_id=new_run_id,
+        prod=settings.is_prod_db,
+        project_id=project_id,
+    )
+    trace_url = f"/traces/{new_run_id}"
+    content: dict[str, Any]
+    try:
+        await bg_db.create_run(
+            name=f"evaluate (chat, {eval_type}): {headline[:90]}",
+            question_id=question_id,
+            config=settings.capture_config(),
+        )
         try:
-            await runner.run()
-            result_parts.append(
-                f"Ingest extraction call {call.id[:8]} on '{headline[:40]}' completed."
-            )
-            if on_progress:
-                on_progress(f"Ingest call {call.id[:8]} completed")
+            call = await dispatch_evaluation(question_id, bg_db, eval_type=eval_type)
+            content = {
+                "tool_use_id": tool_use_id,
+                "run_id": new_run_id,
+                "call_id": call.id,
+                "call_type": "evaluate",
+                "eval_type": eval_type,
+                "question_id": question_id,
+                "headline": headline,
+                "status": "completed",
+                "summary": (
+                    f"Evaluation call {call.id[:8]} on '{headline[:40]}' "
+                    f"completed (eval_type={eval_type})."
+                ),
+                "trace_url": trace_url,
+            }
         except Exception as e:
-            log.exception("Ingest call %s failed", call.id[:8])
-            result_parts.append(f"Ingest call {call.id[:8]} failed: {e}")
-        return "\n".join(result_parts)
-    except Exception as e:
-        log.exception("Ingest for %s failed before runner", url)
-        return f"Ingest for {url} failed: {e}"
+            log.exception("Evaluation run %s failed", new_run_id[:8])
+            content = {
+                "tool_use_id": tool_use_id,
+                "run_id": new_run_id,
+                "call_type": "evaluate",
+                "eval_type": eval_type,
+                "question_id": question_id,
+                "headline": headline,
+                "status": "failed",
+                "summary": f"Evaluation run {new_run_id[:8]} failed: {e}",
+                "error": str(e),
+                "trace_url": trace_url,
+            }
+
+        await _persist_dispatch_completion(
+            bg_db,
+            conv_id=conv_id,
+            content=content,
+            question_id=question_id,
+        )
+    finally:
+        await bg_db.close()
 
 
 async def _run_evaluate(
@@ -2704,49 +2935,112 @@ async def _run_evaluate(
     conv_id: str | None = None,
     tool_use_id: str | None = None,
 ) -> str:
-    """Run an evaluation agent against a question via dispatch_evaluation.
-
-    Creates a fresh DB + run_id so the trace shows up cleanly at
-    /traces/{run_id}, matching /api/questions/{id}/evaluate.
-    """
-    from rumil.dispatch import dispatch_evaluation
-
+    """Fire-and-forget evaluation run."""
     question_id = params["question_id"]
     headline = params.get("headline", question_id[:8])
     eval_type = params.get("eval_type", "default")
 
+    if not conv_id or not tool_use_id:
+        return "Internal error: evaluate tool is missing conversation context."
+    if not db.project_id:
+        return "Internal error: evaluate tool has no project scope."
+
     new_run_id = str(uuid.uuid4())
+    _spawn_bg(
+        _bg_run_evaluate(
+            conv_id=conv_id,
+            tool_use_id=tool_use_id,
+            new_run_id=new_run_id,
+            project_id=db.project_id,
+            question_id=question_id,
+            headline=headline,
+            eval_type=eval_type,
+        )
+    )
+    return (
+        f"Evaluation started on '{headline[:40]}' (eval_type={eval_type}). "
+        f"Trace: /traces/{new_run_id}. Running in background — "
+        f"completion will appear in chat."
+    )
+
+
+async def _bg_run_ground(
+    *,
+    conv_id: str,
+    tool_use_id: str,
+    new_run_id: str,
+    project_id: str,
+    question_id: str,
+    evaluation_text: str,
+    pipeline: str,
+    from_stage: int,
+    prior_checkpoints: Any,
+) -> None:
+    """Background task: run a grounding pipeline + persist completion."""
+    from rumil.dispatch import dispatch_grounding_pipeline
+
     settings = get_settings()
-    new_db = await DB.create(
+    bg_db = await DB.create(
         run_id=new_run_id,
         prod=settings.is_prod_db,
-        project_id=db.project_id,
+        project_id=project_id,
     )
+    trace_url = f"/traces/{new_run_id}"
+    content: dict[str, Any]
     try:
-        await new_db.create_run(
-            name=f"evaluate (chat, {eval_type}): {headline[:90]}",
+        question = await bg_db.get_page(question_id)
+        headline = question.headline if question else question_id[:8]
+        await bg_db.create_run(
+            name=f"{pipeline} (chat): {headline[:90]}",
             question_id=question_id,
             config=settings.capture_config(),
         )
-        if on_progress:
-            on_progress(
-                f"Evaluation run {new_run_id[:8]} started "
-                f"(eval_type={eval_type}). Trace: /traces/{new_run_id}"
+        try:
+            call = await dispatch_grounding_pipeline(
+                pipeline,
+                question_id,
+                evaluation_text,
+                bg_db,
+                from_stage=from_stage,
+                prior_checkpoints=prior_checkpoints,
             )
-        call = await dispatch_evaluation(
-            question_id, new_db, eval_type=eval_type, on_progress=on_progress
+            content = {
+                "tool_use_id": tool_use_id,
+                "run_id": new_run_id,
+                "call_id": call.id,
+                "call_type": "ground",
+                "pipeline": pipeline,
+                "question_id": question_id,
+                "headline": headline,
+                "status": "completed",
+                "summary": (
+                    f"{pipeline} pipeline call {call.id[:8]} on '{headline[:40]}' completed."
+                ),
+                "trace_url": trace_url,
+            }
+        except Exception as e:
+            log.exception("%s run %s failed", pipeline, new_run_id[:8])
+            content = {
+                "tool_use_id": tool_use_id,
+                "run_id": new_run_id,
+                "call_type": "ground",
+                "pipeline": pipeline,
+                "question_id": question_id,
+                "headline": headline,
+                "status": "failed",
+                "summary": f"{pipeline} run {new_run_id[:8]} failed: {e}",
+                "error": str(e),
+                "trace_url": trace_url,
+            }
+
+        await _persist_dispatch_completion(
+            bg_db,
+            conv_id=conv_id,
+            content=content,
+            question_id=question_id,
         )
-        return (
-            f"Evaluation call {call.id[:8]} on '{headline[:40]}' completed "
-            f"(eval_type={eval_type}). Trace: /traces/{new_run_id}. Use "
-            f"`get_evaluation` with call_id={call.id[:8]} to read the report, "
-            f"or `ground_evaluation` to apply a follow-up pipeline."
-        )
-    except Exception as e:
-        log.exception("Evaluation run %s failed", new_run_id[:8])
-        return f"Evaluation run {new_run_id[:8]} failed: {e}"
     finally:
-        await new_db.close()
+        await bg_db.close()
 
 
 async def _run_ground(
@@ -2757,13 +3051,17 @@ async def _run_ground(
     conv_id: str | None = None,
     tool_use_id: str | None = None,
 ) -> str:
-    """Apply a grounding/feedback pipeline to an existing evaluation call."""
-    from rumil.dispatch import dispatch_grounding_pipeline
+    """Fire-and-forget grounding pipeline run."""
     from rumil.models import CallType as _CallType
 
     call_short = params["eval_call_id"]
     pipeline = params.get("pipeline", "grounding")
     from_stage = params.get("from_stage", 1)
+
+    if not conv_id or not tool_use_id:
+        return "Internal error: ground_evaluation tool is missing conversation context."
+    if not db.project_id:
+        return "Internal error: ground_evaluation tool has no project scope."
 
     eval_full_id = await db.resolve_call_id(call_short)
     if not eval_full_id:
@@ -2789,43 +3087,24 @@ async def _run_ground(
     prior_checkpoints = (eval_call.call_params or {}).get("checkpoints") if from_stage > 1 else None
 
     new_run_id = str(uuid.uuid4())
-    settings = get_settings()
-    new_db = await DB.create(
-        run_id=new_run_id,
-        prod=settings.is_prod_db,
-        project_id=db.project_id,
-    )
-    try:
-        question = await new_db.get_page(question_id)
-        headline = question.headline if question else question_id[:8]
-        await new_db.create_run(
-            name=f"{pipeline} (chat): {headline[:90]}",
+    _spawn_bg(
+        _bg_run_ground(
+            conv_id=conv_id,
+            tool_use_id=tool_use_id,
+            new_run_id=new_run_id,
+            project_id=db.project_id,
             question_id=question_id,
-            config=settings.capture_config(),
-        )
-        if on_progress:
-            on_progress(
-                f"{pipeline} run {new_run_id[:8]} started from stage {from_stage}. "
-                f"Trace: /traces/{new_run_id}"
-            )
-        call = await dispatch_grounding_pipeline(
-            pipeline,
-            question_id,
-            evaluation_text,
-            new_db,
+            evaluation_text=evaluation_text,
+            pipeline=pipeline,
             from_stage=from_stage,
             prior_checkpoints=prior_checkpoints,
-            on_progress=on_progress,
         )
-        return (
-            f"{pipeline} pipeline call {call.id[:8]} on '{headline[:40]}' "
-            f"completed. Trace: /traces/{new_run_id}. Refresh the view."
-        )
-    except Exception as e:
-        log.exception("%s run %s failed", pipeline, new_run_id[:8])
-        return f"{pipeline} run {new_run_id[:8]} failed: {e}"
-    finally:
-        await new_db.close()
+    )
+    return (
+        f"{pipeline} pipeline started on eval {eval_call.id[:8]} from stage {from_stage}. "
+        f"Trace: /traces/{new_run_id}. Running in background — "
+        f"completion will appear in chat."
+    )
 
 
 _ASYNC_HANDLERS: dict[str, Callable[..., Any]] = {

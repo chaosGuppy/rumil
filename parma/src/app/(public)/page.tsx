@@ -24,7 +24,6 @@ import {
   useSearchPaletteShortcut,
 } from "@/components/SearchPalette";
 import { TraceView } from "@/components/TraceView";
-import { ConceptProvider } from "@/components/ConceptContext";
 import { AnnotationProvider } from "@/components/AnnotationContext";
 import {
   InspectPanelProvider,
@@ -1380,8 +1379,7 @@ const refreshView = useCallback(() => {
   }
 
   return (
-    <ConceptProvider projectId={project.id}>
-      <div className="layout-with-chat">
+    <div className="layout-with-chat">
       {showReview ? (
         <div className="pane-container">
           <div className="pane" style={{ minWidth: "500px" }}>
@@ -1546,8 +1544,7 @@ const refreshView = useCallback(() => {
           }}
         />
       )}
-      </div>
-    </ConceptProvider>
+    </div>
   );
 }
 

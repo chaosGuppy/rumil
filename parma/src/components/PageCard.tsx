@@ -136,7 +136,6 @@ export function PageCard({
 
       <PageContent
         text={page.content}
-        excludeConceptId={page.id}
         pageId={page.id}
       />
 
@@ -152,7 +151,6 @@ export function PageCard({
         >
           <PageContent
             text={truncateAbstract(page.abstract, 200)}
-            excludeConceptId={page.id}
             inline
             className=""
           />

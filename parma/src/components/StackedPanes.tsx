@@ -509,7 +509,7 @@ function DetailPaneBody({
 
       {page.content && (
         <div style={{ marginBottom: "16px" }}>
-          <PageContent text={page.content} excludeConceptId={page.id} />
+          <PageContent text={page.content} />
         </div>
       )}
 
@@ -518,7 +518,6 @@ function DetailPaneBody({
           <div className="pane-detail-section-label">Abstract</div>
           <PageContent
             text={page.abstract}
-            excludeConceptId={page.id}
             inline
           />
         </div>

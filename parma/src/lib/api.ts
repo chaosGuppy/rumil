@@ -296,17 +296,6 @@ export async function respondToSuggestion(
   return res.json();
 }
 
-export async function fetchConcepts(
-  projectId: string,
-): Promise<Page[]> {
-  const res = await fetch(
-    `${API_BASE}/api/projects/${projectId}/pages?page_type=concept&limit=200`,
-  );
-  if (!res.ok) return [];
-  const data = await res.json();
-  return data.items ?? [];
-}
-
 export async function fetchSources(
   projectId: string,
 ): Promise<Page[]> {

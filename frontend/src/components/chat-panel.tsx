@@ -939,6 +939,9 @@ function MessageView({ msg }: { msg: UiMessage }) {
       </div>
     );
   }
+  const lastBlock = msg.blocks[msg.blocks.length - 1];
+  const showThinking =
+    msg.pending && (!lastBlock || lastBlock.kind !== "text");
   return (
     <div className="chat-msg chat-msg-assistant">
       {msg.blocks.map((block) => {
@@ -946,7 +949,7 @@ function MessageView({ msg }: { msg: UiMessage }) {
           return (
             <p key={block.id} className="chat-text">
               {block.text}
-              {msg.pending && block === msg.blocks[msg.blocks.length - 1] && (
+              {msg.pending && block === lastBlock && (
                 <span className="chat-cursor" aria-hidden>
                   ▍
                 </span>
@@ -959,6 +962,17 @@ function MessageView({ msg }: { msg: UiMessage }) {
         }
         return <DispatchChip key={block.id} block={block} />;
       })}
+      {showThinking && (
+        <div
+          className="chat-thinking"
+          role="status"
+          aria-label="assistant is thinking"
+        >
+          <span className="chat-thinking-dot" />
+          <span className="chat-thinking-dot" />
+          <span className="chat-thinking-dot" />
+        </div>
+      )}
     </div>
   );
 }
@@ -1386,6 +1400,37 @@ const styles = `
 @keyframes chat-blink {
   50% {
     opacity: 0;
+  }
+}
+
+.chat-thinking {
+  display: inline-flex;
+  gap: 0.25rem;
+  padding: 0.2rem 0.1rem;
+  align-items: center;
+}
+.chat-thinking-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-muted);
+  opacity: 0.35;
+  animation: chat-thinking-bounce 1.3s ease-in-out infinite;
+}
+.chat-thinking-dot:nth-child(2) {
+  animation-delay: 0.18s;
+}
+.chat-thinking-dot:nth-child(3) {
+  animation-delay: 0.36s;
+}
+@keyframes chat-thinking-bounce {
+  0%, 70%, 100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 0.9;
+    transform: translateY(-2px);
   }
 }
 

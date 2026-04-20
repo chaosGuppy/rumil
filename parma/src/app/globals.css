@@ -6482,6 +6482,19 @@ mark.ann-mark.ann-mark-dispute:hover {
   color: var(--fg);
   border-color: var(--node-judgement, var(--border));
 }
+.trace-head-chip-orchestrator-btn {
+  cursor: pointer;
+  font-family: var(--font-mono-stack);
+  line-height: inherit;
+}
+.trace-head-chip-orchestrator-btn:hover {
+  background: var(--bg-accent, var(--bg-pane));
+  border-color: var(--fg-muted, var(--border));
+}
+.trace-head-chip-orchestrator-btn:focus-visible {
+  outline: 2px solid var(--fg-link, currentColor);
+  outline-offset: 1px;
+}
 .trace-head-chip-model {
   color: var(--fg-muted);
 }

@@ -1005,15 +1005,33 @@ function TraceHeader({
       )}
       {discriminators.length > 0 && (
         <div className="trace-head-chips">
-          {discriminators.map((d) => (
-            <span
-              key={d.key}
-              className={`trace-head-chip trace-head-chip-${d.key}`}
-              title={d.title}
-            >
-              {d.label}
-            </span>
-          ))}
+          {discriminators.map((d) => {
+            if (d.key === "orchestrator") {
+              const variant = d.title.replace(/^orchestrator:\s*/, "");
+              return (
+                <button
+                  key={d.key}
+                  type="button"
+                  className="trace-head-chip trace-head-chip-orchestrator trace-head-chip-orchestrator-btn"
+                  title={`${d.title} — click for details`}
+                  onClick={(e) =>
+                    setOrchPopover({ variant, anchorEl: e.currentTarget })
+                  }
+                >
+                  {d.label}
+                </button>
+              );
+            }
+            return (
+              <span
+                key={d.key}
+                className={`trace-head-chip trace-head-chip-${d.key}`}
+                title={d.title}
+              >
+                {d.label}
+              </span>
+            );
+          })}
         </div>
       )}
       <TraceSpendDetails runId={tree.run_id} />
@@ -1021,6 +1039,14 @@ function TraceHeader({
       <div className="trace-head-project" title={projectId}>
         {projectId.slice(0, 8)} · project
       </div>
+      {orchPopover && (
+        <OrchestratorInfoPopover
+          variant={orchPopover.variant}
+          projectId={projectId}
+          anchorEl={orchPopover.anchorEl}
+          onClose={() => setOrchPopover(null)}
+        />
+      )}
     </header>
   );
 }

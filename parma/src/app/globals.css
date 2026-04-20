@@ -1481,6 +1481,20 @@ body {
   text-transform: uppercase;
 }
 
+/* Inline, non-blocking loader used after first paint. Fills its container
+ * rather than the whole viewport so the chrome (ViewModeSwitcher, etc.)
+ * stays rendered and the user sees structure, not an empty viewport. */
+.view-loading-inline {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+  color: var(--fg-dim);
+  letter-spacing: 0.04em;
+}
+
 .view-error { color: var(--fg-muted); padding: 20px; text-align: center; }
 
 /* public landing page */
@@ -2115,27 +2129,41 @@ body {
   margin-top: 2px;
 }
 
-.sug-preview-level {
-  font-family: var(--font-mono-stack);
+.sug-preview-effect {
   font-size: 13px;
   color: var(--fg);
+  line-height: 1.5;
 }
 
-.sug-preview-arrow {
+.sug-preview-effect strong {
+  font-weight: 600;
+}
+
+.sug-preview-note {
+  margin-top: 4px;
+  font-size: 11px;
   color: var(--fg-dim);
+  line-height: 1.4;
 }
 
-.sug-preview-tension,
-.sug-preview-merge {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-family: var(--font-mono-stack);
+.sug-preview-cascade-body {
   font-size: 12px;
+  line-height: 1.5;
   color: var(--fg-dim);
+}
+
+.sug-preview-changes {
+  margin-top: 4px;
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+}
+
+.sug-preview-dim {
+  opacity: 0.6;
 }
 
 .sug-preview-id {
+  font-family: var(--font-mono-stack);
   color: var(--fg);
   font-weight: 500;
 }
@@ -6298,8 +6326,7 @@ mark.ann-mark.ann-mark-dispute:hover {
   height: 100%;
   overflow-y: auto;
   padding: 32px 36px 64px 36px;
-  max-width: 880px;
-  margin: 0 auto;
+  max-width: 1400px;
 }
 
 .trace-loading, .trace-error, .trace-pick-loading, .trace-pick-error, .trace-pick-empty {
@@ -8366,6 +8393,13 @@ mark.ann-mark.ann-mark-dispute:hover {
   color: var(--fg-dim);
   cursor: pointer;
   transition: color 0.1s, border-color 0.1s, background 0.1s;
+  /* Truncate long chip labels (e.g. refine-artifact (strategy_brief): …)
+   * rather than letting them wrap and hijack the filter bar. Full text is
+   * available on hover via the existing title attr. */
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .trace-pick-chip:hover {
   color: var(--fg);

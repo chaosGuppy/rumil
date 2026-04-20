@@ -350,9 +350,10 @@ function RunPicker({
   return (
     <div className="trace-pick">
       <div className="trace-pick-head">
-        <h2 className="trace-pick-title">Runs</h2>
+        <h2 className="trace-pick-title">All runs in this project</h2>
         <p className="trace-pick-sub">
-          Pick a run to inspect. Most-recent first.
+          Pick a run to inspect. Most-recent first. Includes runs on every
+          question in this workspace, not just the currently open one.
         </p>
         {hiddenCount > 0 && (
           <label className="trace-pick-toggle">
@@ -416,6 +417,7 @@ function RunPicker({
                   }
                   onClick={() => handleToggleCallType(ct)}
                   aria-pressed={active}
+                  title={ct}
                 >
                   {ct}
                 </button>

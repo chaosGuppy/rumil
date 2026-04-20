@@ -289,6 +289,7 @@ function ViewModeSwitcher({
   onChange,
   extra,
   onBack,
+  onBackToProjects,
   label,
   onRename,
 }: {
@@ -296,20 +297,30 @@ function ViewModeSwitcher({
   onChange: (mode: ViewMode) => void;
   extra?: React.ReactNode;
   onBack?: () => void;
+  onBackToProjects?: () => void;
   label?: string;
   onRename?: (next: string) => Promise<void>;
 }) {
   return (
     <div className="view-switcher">
       <div className="view-switcher-row">
+        {onBackToProjects && (
+          <button
+            className="view-switcher-back view-switcher-back-projects"
+            onClick={onBackToProjects}
+            title="Back to projects"
+          >
+            ← projects
+          </button>
+        )}
         {onBack && (
           <>
             <button
               className="view-switcher-back"
               onClick={onBack}
-              title="Back"
+              title="Back to workspace"
             >
-              Home
+              ← workspace
             </button>
             {label && (
               <span className="view-switcher-ws-name">
@@ -1137,11 +1148,13 @@ function QuestionViewPage({
   project,
   questionId,
   onBack,
+  onBackToProjects,
   onRenameProject,
 }: {
   project: Project;
   questionId: string;
   onBack: () => void;
+  onBackToProjects?: () => void;
   onRenameProject?: (next: string) => Promise<void>;
 }) {
   const searchParams = useSearchParams();
@@ -1374,10 +1387,6 @@ const refreshView = useCallback(() => {
     );
   }
 
-  if (!view) {
-    return <div className="view-loading">Loading research...</div>;
-  }
-
   return (
     <div className="layout-with-chat">
       {showReview ? (
@@ -1396,6 +1405,7 @@ const refreshView = useCallback(() => {
             current={viewMode}
             onChange={setViewMode}
             onBack={onBack}
+            onBackToProjects={onBackToProjects}
             label={project.name}
             onRename={onRenameProject}
             extra={
@@ -1435,7 +1445,12 @@ const refreshView = useCallback(() => {
               </>
             }
           />
-          {viewMode === "panes" && (
+          {!view && (
+            <div className="view-loading-inline" role="status" aria-live="polite">
+              loading…
+            </div>
+          )}
+          {view && viewMode === "panes" && (
             <StackedPanes
               view={view}
               focusNodeId={focusNodeId}
@@ -1443,13 +1458,13 @@ const refreshView = useCallback(() => {
               onOpenSource={setDrawerSource}
             />
           )}
-          {viewMode === "article" && inlayState?.selected ? (
+          {view && viewMode === "article" && inlayState?.selected ? (
             <InlayFrame
               inlay={inlayState.selected}
               view={view}
               project={{ id: project.id, name: project.name }}
             />
-          ) : viewMode === "article" ? (
+          ) : view && viewMode === "article" ? (
             <ArticleView
               view={view}
               focusNodeId={focusNodeId}
@@ -1457,7 +1472,7 @@ const refreshView = useCallback(() => {
               onOpenSource={setDrawerSource}
             />
           ) : null}
-          {viewMode === "vertical" && (
+          {view && viewMode === "vertical" && (
             <VerticalView
               ref={verticalRef}
               view={view}
@@ -1465,7 +1480,7 @@ const refreshView = useCallback(() => {
               onFocusHandled={() => setFocusNodeId(null)}
             />
           )}
-          {viewMode === "sections" && (
+          {view && viewMode === "sections" && (
             <SectionsView
               view={view}
               onOpenSource={setDrawerSource}
@@ -1496,7 +1511,7 @@ const refreshView = useCallback(() => {
       />
       <ChatPanel
         questionId={questionId}
-        questionHeadline={view.question.headline}
+        questionHeadline={view?.question.headline ?? ""}
         isOpen={chatOpen}
         onToggle={toggleChat}
         onMessageSent={refreshView}
@@ -1718,13 +1733,14 @@ function AppContent() {
       <QuestionViewPage
         project={selectedProject}
         questionId={selectedQuestionId}
-        onBack={questions && questions.length > 1 ? handleBackToQuestions : handleBackToProjects}
+        onBack={handleBackToQuestions}
+        onBackToProjects={handleBackToProjects}
         onRenameProject={handleRenameProject}
       />
     );
   }
 
-  if (questions && questions.length > 1) {
+  if (questions && questions.length > 0) {
     return (
       <QuestionPicker
         project={selectedProject}

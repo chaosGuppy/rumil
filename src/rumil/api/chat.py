@@ -17,6 +17,7 @@ Fire-and-forget dispatch:
 import asyncio
 import json
 import logging
+import re
 import uuid
 from collections.abc import AsyncIterator, Callable, Sequence
 from datetime import UTC, datetime
@@ -63,13 +64,20 @@ MODEL_MAP: dict[str, str] = {
 
 CHAT_TURN_TIMEOUT_S = 600.0
 
-CHAT_RUN_BUDGET = 50
-"""Budget initialized for each chat turn's run.
+CHAT_RUN_BUDGET = 10
+"""Budget for the chat turn's own run row.
 
-Research calls dispatched from chat consume one unit per agent-loop round
-via ``consume_budget``. Without an initialized budget, every round fails
-its gate. 50 is plenty of headroom for several multi-round dispatches per
-chat turn.
+Chat turns don't consume budget themselves — but a dispatched call
+inherits its *own* fresh run with its *own* budget (see
+``DEFAULT_DISPATCH_BUDGET``). This number is a ceiling for unexpected
+side-effects only.
+"""
+
+DEFAULT_DISPATCH_BUDGET = 5
+"""Budget for each fire-and-forget dispatch spawned from chat.
+
+Matches DEFAULT_MAX_ROUNDS / MIN_TWOPHASE_BUDGET in the domain
+constants (``rumil.constants``). Tools accept ``budget`` to override.
 """
 
 DEFAULT_DISPATCH_MAX_ROUNDS = 4
@@ -530,6 +538,24 @@ TOOLS: list[dict[str, Any]] = [
                         "against. Omit to save the source without extraction."
                     ),
                 },
+                "budget": {
+                    "type": "integer",
+                    "description": (
+                        f"Agent-loop rounds available to the ingest extraction. "
+                        f"Default {DEFAULT_DISPATCH_BUDGET}. Only used when "
+                        f"target_question_id is set."
+                    ),
+                    "default": DEFAULT_DISPATCH_BUDGET,
+                    "minimum": 1,
+                    "maximum": 50,
+                },
+                "model": {
+                    "type": "string",
+                    "enum": ["haiku", "sonnet", "opus"],
+                    "description": (
+                        "Override the model used for extraction. Default: workspace default."
+                    ),
+                },
             },
             "required": ["url"],
         },
@@ -617,6 +643,28 @@ TOOLS: list[dict[str, Any]] = [
                     "type": "integer",
                     "description": f"Default {DEFAULT_DISPATCH_MAX_ROUNDS}.",
                     "default": DEFAULT_DISPATCH_MAX_ROUNDS,
+                },
+                "budget": {
+                    "type": "integer",
+                    "description": (
+                        f"Agent-loop rounds available to the call. Default "
+                        f"{DEFAULT_DISPATCH_BUDGET}. Raise only for deliberately "
+                        f"deep investigations — each round can hit the LLM "
+                        f"multiple times and costs real money."
+                    ),
+                    "default": DEFAULT_DISPATCH_BUDGET,
+                    "minimum": 1,
+                    "maximum": 50,
+                },
+                "model": {
+                    "type": "string",
+                    "enum": ["haiku", "sonnet", "opus"],
+                    "description": (
+                        "Override the model used by the dispatched call. "
+                        "Default: workspace default (opus in prod, haiku in "
+                        "test). Pick haiku to cut cost; opus for the toughest "
+                        "assessments."
+                    ),
                 },
             },
             "required": ["call_type", "question_id"],
@@ -825,20 +873,55 @@ async def _handle_create_question(db: DB, tool_input: dict[str, Any]) -> str:
     return "\n".join(response_parts)
 
 
-def _handle_navigate_url(tool_input: dict[str, Any]) -> str:
+UUID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    re.I,
+)
+_SHORT_ID_IN_PATH_RE = re.compile(r"^/(pages|calls|traces)/([0-9a-f-]{4,})(?=/|$|\?|#)", re.I)
+
+
+async def _resolve_short_ids_in_path(db: DB, path: str) -> str:
+    """Expand a short id in a rumil URL path to a full UUID.
+
+    Handles /pages/<short>, /calls/<short>, /traces/<short>. If the id is
+    already a full UUID it's left alone; if resolution fails the original
+    path is returned (frontend will 404, surfacing the error).
+    """
+    m = _SHORT_ID_IN_PATH_RE.match(path)
+    if not m:
+        return path
+    section, ident = m.group(1), m.group(2)
+    if UUID_RE.match(ident):
+        return path
+    full: str | None = None
+    if section == "pages":
+        full = await db.resolve_page_id(ident)
+    elif section == "calls":
+        full = await db.resolve_call_id(ident)
+    elif section == "traces":
+        full = await db.resolve_run_id(ident, project_id=db.project_id or None)
+    if not full:
+        return path
+    tail = path[m.end() :]
+    return f"/{section}/{full}{tail}"
+
+
+async def _handle_navigate_url(db: DB, tool_input: dict[str, Any]) -> str:
     """Sentinel result parsed by the frontend to trigger router.push."""
     path = tool_input.get("path", "").strip()
     if not path.startswith("/"):
         return f"refused: path must start with / (got '{path}')"
+    path = await _resolve_short_ids_in_path(db, path)
     return f"[NAVIGATE]{path}"
 
 
-def _handle_suggest_view(tool_input: dict[str, Any]) -> str:
+async def _handle_suggest_view(db: DB, tool_input: dict[str, Any]) -> str:
     """Sentinel result parsed by the frontend to render a clickable chip."""
     path = tool_input.get("path", "").strip()
     label = tool_input.get("label", "").strip() or path
     if not path.startswith("/"):
         return f"refused: path must start with / (got '{path}')"
+    path = await _resolve_short_ids_in_path(db, path)
     return f"[SUGGEST]{path}|{label}"
 
 
@@ -926,10 +1009,13 @@ async def _bg_run_ingest(
     url: str,
     target_short: str | None,
     headline: str,
+    budget: int,
+    model_short: str | None,
 ) -> None:
     """Background task: scrape a URL, save as Source page, run ingest if targeted."""
     from rumil.calls.ingest import IngestCall
     from rumil.scraper import scrape_url
+    from rumil.settings import override_settings
 
     settings = get_settings()
     bg_db = await DB.create(
@@ -937,7 +1023,8 @@ async def _bg_run_ingest(
         prod=settings.is_prod_db,
         project_id=project_id,
     )
-    await bg_db.init_budget(CHAT_RUN_BUDGET)
+    await bg_db.init_budget(budget)
+    model_id = MODEL_MAP.get(model_short) if model_short else None
     trace_url = f"/traces/{new_run_id}"
     content: dict[str, Any]
     target_question_id: str | None = None
@@ -976,7 +1063,11 @@ async def _bg_run_ingest(
                     call = await bg_db.create_call(CallType.INGEST, scope_page_id=full_id)
                     runner = IngestCall(source_page, full_id, call, bg_db)
                     try:
-                        await runner.run()
+                        if model_id:
+                            with override_settings(model_override=model_id):
+                                await runner.run()
+                        else:
+                            await runner.run()
                         summary_parts.append(
                             f"Ingest extraction {call.id[:8]} on '{headline[:40]}' completed."
                         )
@@ -1037,6 +1128,14 @@ async def _handle_ingest_source(
 
     target_short = tool_input.get("target_question_id")
     headline = url[:80]
+    budget = int(tool_input.get("budget", DEFAULT_DISPATCH_BUDGET))
+    budget = max(1, min(budget, 50))
+    model_short_raw = tool_input.get("model")
+    model_short = (
+        model_short_raw
+        if isinstance(model_short_raw, str) and model_short_raw in MODEL_MAP
+        else None
+    )
 
     new_run_id = str(uuid.uuid4())
     trace_url = f"/traces/{new_run_id}"
@@ -1065,6 +1164,8 @@ async def _handle_ingest_source(
             url=url,
             target_short=target_short,
             headline=headline,
+            budget=budget,
+            model_short=model_short,
         )
     )
     target_note = (
@@ -1072,10 +1173,11 @@ async def _handle_ingest_source(
         if target_short
         else " (no extraction target — source only)"
     )
+    model_note = f" · model={model_short}" if model_short else ""
     return (
         f"Ingest started for {url[:60]}{target_note} "
-        f"(run_id={new_run_id[:8]}). Trace: {trace_url}. Running in "
-        f"background — completion will appear in chat."
+        f"(run={new_run_id[:8]}, budget={budget}{model_note}). "
+        f"Trace: {trace_url}. Completion will appear in chat."
     )
 
 
@@ -1089,8 +1191,12 @@ async def _bg_run_dispatch(
     headline: str,
     call_type_str: str,
     max_rounds: int,
+    budget: int,
+    model_short: str | None,
 ) -> None:
     """Background task: run one dispatch call and persist completion."""
+    from rumil.settings import override_settings
+
     call_type = _CHAT_DISPATCH_CALL_TYPES.get(call_type_str)
     if call_type is None:
         log.error("Background dispatch got unknown call_type %r", call_type_str)
@@ -1102,12 +1208,17 @@ async def _bg_run_dispatch(
         prod=settings.is_prod_db,
         project_id=project_id,
     )
-    await bg_db.init_budget(CHAT_RUN_BUDGET)
+    await bg_db.init_budget(budget)
     trace_url = f"/traces/{new_run_id}"
     content: dict[str, Any]
+    model_id = MODEL_MAP.get(model_short) if model_short else None
     try:
         try:
-            call = await _run_one_chat_dispatch(bg_db, call_type, question_id, max_rounds)
+            if model_id:
+                with override_settings(model_override=model_id):
+                    call = await _run_one_chat_dispatch(bg_db, call_type, question_id, max_rounds)
+            else:
+                call = await _run_one_chat_dispatch(bg_db, call_type, question_id, max_rounds)
             content = {
                 "tool_use_id": tool_use_id,
                 "run_id": new_run_id,
@@ -1159,6 +1270,14 @@ async def _handle_dispatch_call(
     call_type_str = tool_input["call_type"]
     qid_short = tool_input["question_id"]
     max_rounds = int(tool_input.get("max_rounds", DEFAULT_DISPATCH_MAX_ROUNDS))
+    budget = int(tool_input.get("budget", DEFAULT_DISPATCH_BUDGET))
+    budget = max(1, min(budget, 50))
+    model_short_raw = tool_input.get("model")
+    model_short = (
+        model_short_raw
+        if isinstance(model_short_raw, str) and model_short_raw in MODEL_MAP
+        else None
+    )
 
     if call_type_str not in _CHAT_DISPATCH_CALL_TYPES:
         return (
@@ -1201,13 +1320,15 @@ async def _handle_dispatch_call(
             headline=headline,
             call_type_str=call_type_str,
             max_rounds=max_rounds,
+            budget=budget,
+            model_short=model_short,
         )
     )
+    model_note = f" · model={model_short}" if model_short else ""
     return (
-        f"{call_type_str} call on '{headline[:40]}' started in background "
-        f"(run_id={new_run_id[:8]}). Trace: {trace_url}. A completion note "
-        f"will appear in chat once the call finishes — you will not see "
-        f"the result in this turn."
+        f"{call_type_str} on '{headline[:40]}' started (budget={budget}"
+        f"{model_note}, run={new_run_id[:8]}). Trace: {trace_url}. "
+        f"Completion will appear in chat when the call finishes."
     )
 
 
@@ -1238,9 +1359,9 @@ async def _handle_tool(
     if name == "create_question":
         return await _handle_create_question(db, tool_input)
     if name == "navigate_url":
-        return _handle_navigate_url(tool_input)
+        return await _handle_navigate_url(db, tool_input)
     if name == "suggest_view":
-        return _handle_suggest_view(tool_input)
+        return await _handle_suggest_view(db, tool_input)
     if name == "dispatch_call":
         return await _handle_dispatch_call(db, tool_input, conv_id=conv_id, tool_use_id=tool_use_id)
     if name == "ingest_source":

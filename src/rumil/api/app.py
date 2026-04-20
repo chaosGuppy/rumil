@@ -304,6 +304,19 @@ async def _get_db_maybe_staged(
         await db.close()
 
 
+async def _resolve_run_or_404(db: DB, run_id: str) -> str:
+    """Resolve a short-or-full run_id or raise HTTP 404.
+
+    Used by ``/api/runs/{run_id}/*`` endpoints so they can accept the
+    same 8-char short IDs the parma URL shape uses (e.g. from chat's
+    ``set_view`` tool) without each endpoint duplicating the lookup.
+    """
+    full_id = await db.resolve_run_id(run_id)
+    if full_id is None:
+        raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
+    return full_id
+
+
 @app.get("/api/projects", response_model=list[Project])
 async def list_projects(db: DB = Depends(_get_db)):
     return await db.list_projects()
@@ -1211,6 +1224,7 @@ def _count_trace_events(trace_json: list[dict] | None) -> tuple[int, int]:
 
 @app.get("/api/runs/{run_id}/trace-tree", response_model=RunTraceTreeOut)
 async def get_run_trace_tree(run_id: str, db: DB = Depends(_get_db)):
+    run_id = await _resolve_run_or_404(db, run_id)
     question_id = await db.get_run_question_id(run_id)
     question_page = None
     if question_id:
@@ -1236,14 +1250,20 @@ async def get_run_trace_tree(run_id: str, db: DB = Depends(_get_db)):
             )
         )
     total_cost = sum(c.cost_usd or 0 for c in calls)
-    run_resp = await db.client.table("runs").select("staged, config").eq("id", run_id).execute()
+    run_resp = (
+        await db.client.table("runs").select("staged, config, name").eq("id", run_id).execute()
+    )
     run_data: list[dict[str, object]] = run_resp.data or []  # type: ignore[assignment]
     is_staged = bool(run_data and run_data[0].get("staged"))
     run_config: dict = {}
+    run_name = ""
     if run_data:
         run_config = run_data[0].get("config") or {}  # type: ignore[assignment]
+        name_val = run_data[0].get("name") or ""
+        run_name = name_val if isinstance(name_val, str) else ""
     return RunTraceTreeOut(
         run_id=run_id,
+        name=run_name,
         question=question_page,
         calls=nodes,
         cost_usd=total_cost if total_cost > 0 else None,
@@ -1262,9 +1282,7 @@ async def get_run_spend(run_id: str, db: DB = Depends(_get_db)):
     haven't completed yet contribute 0 duration. Returned rows are sorted
     descending by ``cost_usd`` so the biggest spenders surface first.
     """
-    run = await db.get_run(run_id)
-    if run is None:
-        raise HTTPException(status_code=404, detail="Run not found")
+    run_id = await _resolve_run_or_404(db, run_id)
     calls = await db.get_calls_for_run(run_id)
 
     totals_cost: dict[str, float] = {}
@@ -1914,10 +1932,9 @@ async def post_stage_run(run_id: str, db: DB = Depends(_get_db)) -> StageRunOut:
     Flips the run's rows to staged=true and reverts direct mutations from
     the event log so baseline readers see the pre-run state.
     """
+    run_id = await _resolve_run_or_404(db, run_id)
     run = await db.get_run(run_id)
-    if not run:
-        raise HTTPException(status_code=404, detail="Run not found")
-    if run.get("staged"):
+    if run and run.get("staged"):
         raise HTTPException(status_code=409, detail="Run is already staged")
     await db.stage_run(run_id)
     return StageRunOut(run_id=run_id, staged=True)
@@ -1926,10 +1943,9 @@ async def post_stage_run(run_id: str, db: DB = Depends(_get_db)) -> StageRunOut:
 @app.post("/api/runs/{run_id}/commit", status_code=200, response_model=StageRunOut)
 async def post_commit_run(run_id: str, db: DB = Depends(_get_db)) -> StageRunOut:
     """Commit a staged run, making its effects visible to all readers."""
+    run_id = await _resolve_run_or_404(db, run_id)
     run = await db.get_run(run_id)
-    if not run:
-        raise HTTPException(status_code=404, detail="Run not found")
-    if not run.get("staged"):
+    if run and not run.get("staged"):
         raise HTTPException(status_code=409, detail="Run is not staged")
     await db.commit_staged_run(run_id)
     return StageRunOut(run_id=run_id, staged=False)
@@ -1952,9 +1968,7 @@ async def create_nudge(
     body: CreateNudgeIn,
     db: DB = Depends(_get_db),
 ) -> RunNudge:
-    existing = await db.get_run(run_id)
-    if existing is None:
-        raise HTTPException(status_code=404, detail="Run not found")
+    run_id = await _resolve_run_or_404(db, run_id)
     return await db.nudges.create_nudge(
         run_id=run_id,
         kind=body.kind,
@@ -1974,9 +1988,7 @@ async def list_nudges(
     status: NudgeStatus | None = None,
     db: DB = Depends(_get_db),
 ) -> list[RunNudge]:
-    existing = await db.get_run(run_id)
-    if existing is None:
-        raise HTTPException(status_code=404, detail="Run not found")
+    run_id = await _resolve_run_or_404(db, run_id)
     return await db.nudges.list_nudges_for_run(run_id, status=status)
 
 
@@ -2029,10 +2041,9 @@ async def delete_alert_config(config_id: str, db: DB = Depends(_get_db)) -> None
 
 @app.get("/api/runs/{run_id}/alerts", response_model=list[FiredAlert])
 async def get_run_alerts(run_id: str, db: DB = Depends(_get_db)) -> list[FiredAlert]:
+    run_id = await _resolve_run_or_404(db, run_id)
     existing = await db.get_run(run_id)
-    if existing is None:
-        raise HTTPException(status_code=404, detail="Run not found")
-    project_id = existing.get("project_id") or None
+    project_id = (existing or {}).get("project_id") or None
     return await evaluate_alerts(db, run_id, project_id=project_id)
 
 

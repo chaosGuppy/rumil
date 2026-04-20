@@ -192,14 +192,17 @@ function VerdictChip({
         conf {verdict.claim_confidence}
       </span>
       {verdict.dissents.length > 0 && (
-        <span className="iter-diff-verdict-count" title={verdict.dissents.join("\n")}>
+        <span
+          className="iter-diff-verdict-count parma-hovertip"
+          data-tooltip={verdict.dissents.join("\n")}
+        >
           {verdict.dissents.length} dissent{verdict.dissents.length === 1 ? "" : "s"}
         </span>
       )}
       {verdict.concurrences.length > 0 && (
         <span
-          className="iter-diff-verdict-count"
-          title={verdict.concurrences.join("\n")}
+          className="iter-diff-verdict-count parma-hovertip"
+          data-tooltip={verdict.concurrences.join("\n")}
         >
           {verdict.concurrences.length} concur{verdict.concurrences.length === 1 ? "" : "s"}
         </span>

@@ -695,6 +695,7 @@ export interface TraceCallNode {
 
 export interface RunTraceTree {
   run_id: string;
+  name: string;
   question: Page | null;
   calls: TraceCallNode[];
   cost_usd: number | null;

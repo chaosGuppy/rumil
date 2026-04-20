@@ -974,6 +974,12 @@ function TraceHeader({
   // looking at.
   const shortRunId = tree.run_id.slice(0, 8);
   const discriminators = extractRunDiscriminators(tree.config);
+  // Prefer a human label over the UUID: run.name if set and non-generic,
+  // otherwise the root call's call_type. The short id stays as a monospace
+  // anchor beside it for linking/copying.
+  const rootCall = tree.calls.find((c) => !c.call.parent_call_id) ?? tree.calls[0];
+  const runName = tree.name && tree.name !== "chat" ? tree.name : null;
+  const runHeadline = runName ?? rootCall?.call.call_type ?? null;
   const [orchPopover, setOrchPopover] = useState<{
     variant: string;
     anchorEl: HTMLElement;
@@ -982,7 +988,20 @@ function TraceHeader({
     <header className="trace-head">
       <div className="trace-head-row">
         <span className="trace-head-label">trace</span>
-        <span className="trace-head-run-id" title={tree.run_id}>
+        {runHeadline && (
+          <span
+            className="trace-head-headline parma-hovertip"
+            data-tooltip={
+              runName ? `run name: ${runName}` : `root call_type: ${runHeadline}`
+            }
+          >
+            {runHeadline}
+          </span>
+        )}
+        <span
+          className="trace-head-run-id parma-hovertip"
+          data-tooltip={tree.run_id}
+        >
           {shortRunId}
         </span>
         {tree.staged && <span className="trace-head-staged">staged</span>}
@@ -1025,8 +1044,8 @@ function TraceHeader({
             return (
               <span
                 key={d.key}
-                className={`trace-head-chip trace-head-chip-${d.key}`}
-                title={d.title}
+                className={`trace-head-chip trace-head-chip-${d.key} parma-hovertip`}
+                data-tooltip={d.title}
               >
                 {d.label}
               </span>
@@ -2178,8 +2197,8 @@ function PromptBadge({
   const short = promptHash ? promptHash.slice(0, 12) : null;
   return (
     <span
-      className="trace-exchange-prompt"
-      title={
+      className="trace-exchange-prompt parma-hovertip"
+      data-tooltip={
         promptHash
           ? `prompt: ${name} \u00b7 ${promptHash}`
           : `prompt: ${name}`

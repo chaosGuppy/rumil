@@ -10347,6 +10347,11 @@
             "type": "string",
             "title": "Run Id"
           },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "default": ""
+          },
           "question": {
             "anyOf": [
               {
@@ -10390,6 +10395,7 @@
         "type": "object",
         "required": [
           "run_id",
+          "name",
           "question",
           "calls",
           "cost_usd",

@@ -6378,6 +6378,13 @@ mark.ann-mark.ann-mark-dispute:hover {
   letter-spacing: 0.02em;
 }
 
+.trace-head-headline {
+  font-family: var(--font-body-stack);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--fg);
+}
+
 .trace-head-staged {
   font-family: var(--font-mono-stack);
   font-size: 9px;
@@ -8118,14 +8125,17 @@ mark.ann-mark.ann-mark-dispute:hover {
   cursor: help;
   display: inline-block;
 }
-/* Instant CSS-only tooltip — the native title= attribute has a 500ms+
- * browser delay that felt sluggish when scanning the call-type list. */
-.orch-info-call-chip-wrap {
+/* Shared instant CSS-only tooltip — opt in by adding `parma-hovertip` to
+ * any element and setting `data-tooltip="..."`. The native title=
+ * attribute has a 500ms+ browser delay that felt sluggish on chips and
+ * verdict markers. `pre-line` so multi-line content (\n-joined dissents,
+ * concurrences) wraps but preserves explicit line breaks. */
+.parma-hovertip[data-tooltip] {
   position: relative;
-  display: inline-block;
 }
-.orch-info-call-chip-wrap[data-tooltip]:hover::after,
-.orch-info-call-chip-wrap[data-tooltip]:focus-within::after {
+.parma-hovertip[data-tooltip]:hover::after,
+.parma-hovertip[data-tooltip]:focus-visible::after,
+.parma-hovertip[data-tooltip]:focus-within::after {
   content: attr(data-tooltip);
   position: absolute;
   bottom: calc(100% + 6px);
@@ -8142,8 +8152,11 @@ mark.ann-mark.ann-mark-dispute:hover {
   font-family: var(--font-sans-stack, inherit);
   font-size: 11px;
   line-height: 1.4;
-  white-space: normal;
+  white-space: pre-line;
   pointer-events: none;
+}
+.orch-info-call-chip-wrap {
+  display: inline-block;
 }
 .orch-info-call-list {
   list-style: none;

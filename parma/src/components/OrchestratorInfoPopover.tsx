@@ -286,7 +286,7 @@ export default function OrchestratorInfoPopover({
                   {info.related_call_types.map((c) => (
                     <span
                       key={c.value}
-                      className="orch-info-call-chip-wrap"
+                      className="orch-info-call-chip-wrap parma-hovertip"
                       data-tooltip={c.description || "(no description)"}
                     >
                       <code className="orch-info-call-chip">{c.value}</code>

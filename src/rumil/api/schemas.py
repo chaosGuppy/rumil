@@ -659,6 +659,7 @@ class RunTraceTreeOut(BaseModel):
     model_config = ConfigDict(json_schema_extra=_all_fields_required)
 
     run_id: str
+    name: str = ""
     question: Page | None
     calls: list[CallNodeOut]
     cost_usd: float | None = None

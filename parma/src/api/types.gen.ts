@@ -3513,6 +3513,10 @@ export type RunTraceTreeOut = {
      * Run Id
      */
     run_id: string;
+    /**
+     * Name
+     */
+    name: string;
     question: Page | null;
     /**
      * Calls

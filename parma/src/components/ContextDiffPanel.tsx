@@ -251,6 +251,13 @@ function DiffColumn({
   rows: DiffRow[];
   pagesById: Record<string, Page>;
 }) {
+  // Only show the bucket column when the rows actually differ. A column
+  // where every row is "working" conveys nothing — drop the tag and say it
+  // once in the header instead. Same for all-preloaded.
+  const uniformBucket =
+    rows.length > 0 && rows.every((r) => r.bucket === rows[0].bucket)
+      ? rows[0].bucket
+      : null;
   return (
     <div className={`ctx-diff-col ctx-diff-col-${kind}`}>
       <div className="ctx-diff-col-head">
@@ -259,13 +266,26 @@ function DiffColumn({
         </span>
         <span className="ctx-diff-col-label">{label}</span>
         <span className="ctx-diff-col-count">{rows.length}</span>
+        {uniformBucket && (
+          <span
+            className={`ctx-diff-col-bucket ctx-diff-col-bucket-${uniformBucket}`}
+            title={`all rows are in the ${uniformBucket} bucket`}
+          >
+            {uniformBucket}
+          </span>
+        )}
       </div>
       {rows.length === 0 ? (
         <div className="ctx-diff-empty">none</div>
       ) : (
         <ul className="ctx-diff-list">
           {rows.map((row) => (
-            <DiffRow key={row.id} row={row} page={pagesById[row.id] ?? null} />
+            <DiffRow
+              key={row.id}
+              row={row}
+              page={pagesById[row.id] ?? null}
+              showBucket={uniformBucket === null}
+            />
           ))}
         </ul>
       )}
@@ -273,7 +293,15 @@ function DiffColumn({
   );
 }
 
-function DiffRow({ row, page }: { row: DiffRow; page: Page | null }) {
+function DiffRow({
+  row,
+  page,
+  showBucket,
+}: {
+  row: DiffRow;
+  page: Page | null;
+  showBucket: boolean;
+}) {
   const { openInspect } = useInspectPanel();
   const shortId = row.id.slice(0, 8);
   return (
@@ -294,9 +322,11 @@ function DiffRow({ row, page }: { row: DiffRow; page: Page | null }) {
       <span className="ctx-diff-headline">
         {page?.headline ?? <span className="ctx-diff-pending">resolving…</span>}
       </span>
-      <span className={`ctx-diff-bucket ctx-diff-bucket-${row.bucket}`}>
-        {row.bucket}
-      </span>
+      {showBucket && (
+        <span className={`ctx-diff-bucket ctx-diff-bucket-${row.bucket}`}>
+          {row.bucket}
+        </span>
+      )}
     </li>
   );
 }

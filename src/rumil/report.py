@@ -105,9 +105,10 @@ async def _collect_section_pages(section: OutlineSection, db: DB) -> str:
     if not all_ids:
         return "(No source pages specified for this section.)"
 
+    resolved_map = await db.resolve_page_ids(all_ids)
     resolved_ids: list[str] = []
     for pid in all_ids:
-        full_id = await db.resolve_page_id(pid)
+        full_id = resolved_map.get(pid)
         if full_id:
             resolved_ids.append(full_id)
         else:

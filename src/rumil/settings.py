@@ -77,6 +77,7 @@ class Settings(BaseSettings):
     ingest_num_claims: int = _capture_field(default=4)
 
     sonnet_model: str = _capture_field(default="claude-sonnet-4-6")
+    model_override: str | None = _capture_field(default=None)
     enable_global_prio: bool = _capture_field(default=False)
     global_prio_budget_fraction: float = _capture_field(default=0.2)
     global_prio_trigger_threshold: int = _capture_field(default=10)
@@ -126,6 +127,8 @@ class Settings(BaseSettings):
 
     @property
     def model(self) -> str:
+        if self.model_override:
+            return self.model_override
         return (
             "claude-haiku-4-5-20251001"
             if self.is_test_mode or self.is_smoke_test

@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { GetAbEvalApiAbEvalsEvalIdGetData, GetAbEvalApiAbEvalsEvalIdGetErrors, GetAbEvalApiAbEvalsEvalIdGetResponses, GetCallApiCallsCallIdGetData, GetCallApiCallsCallIdGetErrors, GetCallApiCallsCallIdGetResponses, GetCallEventsApiCallsCallIdEventsGetData, GetCallEventsApiCallsCallIdEventsGetErrors, GetCallEventsApiCallsCallIdEventsGetResponses, GetChildCallsApiCallsCallIdChildrenGetData, GetChildCallsApiCallsCallIdChildrenGetErrors, GetChildCallsApiCallsCallIdChildrenGetResponses, GetDependenciesApiPagesPageIdDependenciesGetData, GetDependenciesApiPagesPageIdDependenciesGetErrors, GetDependenciesApiPagesPageIdDependenciesGetResponses, GetDependentsApiPagesPageIdDependentsGetData, GetDependentsApiPagesPageIdDependentsGetErrors, GetDependentsApiPagesPageIdDependentsGetResponses, GetLinksFromApiPagesPageIdLinksFromGetData, GetLinksFromApiPagesPageIdLinksFromGetErrors, GetLinksFromApiPagesPageIdLinksFromGetResponses, GetLinksToApiPagesPageIdLinksToGetData, GetLinksToApiPagesPageIdLinksToGetErrors, GetLinksToApiPagesPageIdLinksToGetResponses, GetLlmExchangeApiLlmExchangesExchangeIdGetData, GetLlmExchangeApiLlmExchangesExchangeIdGetErrors, GetLlmExchangeApiLlmExchangesExchangeIdGetResponses, GetPageApiPagesPageIdGetData, GetPageApiPagesPageIdGetErrors, GetPageApiPagesPageIdGetResponses, GetPageByShortIdApiPagesShortShortIdGetData, GetPageByShortIdApiPagesShortShortIdGetErrors, GetPageByShortIdApiPagesShortShortIdGetResponses, GetPageCountsApiPagesPageIdCountsGetData, GetPageCountsApiPagesPageIdCountsGetErrors, GetPageCountsApiPagesPageIdCountsGetResponses, GetPageDetailApiPagesPageIdDetailGetData, GetPageDetailApiPagesPageIdDetailGetErrors, GetPageDetailApiPagesPageIdDetailGetResponses, GetPageLoadStatsApiRunsRunIdPageLoadStatsGetData, GetPageLoadStatsApiRunsRunIdPageLoadStatsGetErrors, GetPageLoadStatsApiRunsRunIdPageLoadStatsGetResponses, GetPageRunApiPagesPageIdRunGetData, GetPageRunApiPagesPageIdRunGetErrors, GetPageRunApiPagesPageIdRunGetResponses, GetProjectApiProjectsProjectIdGetData, GetProjectApiProjectsProjectIdGetErrors, GetProjectApiProjectsProjectIdGetResponses, GetProjectStatsApiProjectsProjectIdStatsGetData, GetProjectStatsApiProjectsProjectIdStatsGetErrors, GetProjectStatsApiProjectsProjectIdStatsGetResponses, GetQuestionStatsApiPagesPageIdStatsGetData, GetQuestionStatsApiPagesPageIdStatsGetErrors, GetQuestionStatsApiPagesPageIdStatsGetResponses, GetRealtimeConfigApiRealtimeConfigGetData, GetRealtimeConfigApiRealtimeConfigGetResponses, GetRunTraceTreeApiRunsRunIdTraceTreeGetData, GetRunTraceTreeApiRunsRunIdTraceTreeGetErrors, GetRunTraceTreeApiRunsRunIdTraceTreeGetResponses, HealthzHealthzGetData, HealthzHealthzGetResponses, ListAbEvalsApiAbEvalsGetData, ListAbEvalsApiAbEvalsGetErrors, ListAbEvalsApiAbEvalsGetResponses, ListCallsApiProjectsProjectIdCallsGetData, ListCallsApiProjectsProjectIdCallsGetErrors, ListCallsApiProjectsProjectIdCallsGetResponses, ListLlmExchangesApiCallsCallIdLlmExchangesGetData, ListLlmExchangesApiCallsCallIdLlmExchangesGetErrors, ListLlmExchangesApiCallsCallIdLlmExchangesGetResponses, ListPagesApiProjectsProjectIdPagesGetData, ListPagesApiProjectsProjectIdPagesGetErrors, ListPagesApiProjectsProjectIdPagesGetResponses, ListProjectRunsApiProjectsProjectIdRunsGetData, ListProjectRunsApiProjectsProjectIdRunsGetErrors, ListProjectRunsApiProjectsProjectIdRunsGetResponses, ListProjectsApiProjectsGetData, ListProjectsApiProjectsGetErrors, ListProjectsApiProjectsGetResponses, ListRootQuestionsApiProjectsProjectIdQuestionsGetData, ListRootQuestionsApiProjectsProjectIdQuestionsGetErrors, ListRootQuestionsApiProjectsProjectIdQuestionsGetResponses } from './types.gen';
+import type { BranchChatConversationApiChatConversationsConversationIdBranchPostData, BranchChatConversationApiChatConversationsConversationIdBranchPostErrors, BranchChatConversationApiChatConversationsConversationIdBranchPostResponses, ChatApiChatPostData, ChatApiChatPostErrors, ChatApiChatPostResponses, ChatConversationEventsApiChatConversationsConversationIdEventsGetData, ChatConversationEventsApiChatConversationsConversationIdEventsGetErrors, ChatConversationEventsApiChatConversationsConversationIdEventsGetResponses, ChatStreamApiChatStreamPostData, ChatStreamApiChatStreamPostErrors, ChatStreamApiChatStreamPostResponses, CreateChatConversationApiChatConversationsPostData, CreateChatConversationApiChatConversationsPostErrors, CreateChatConversationApiChatConversationsPostResponses, DeleteChatConversationApiChatConversationsConversationIdDeleteData, DeleteChatConversationApiChatConversationsConversationIdDeleteErrors, DeleteChatConversationApiChatConversationsConversationIdDeleteResponses, GetAbEvalApiAbEvalsEvalIdGetData, GetAbEvalApiAbEvalsEvalIdGetErrors, GetAbEvalApiAbEvalsEvalIdGetResponses, GetCallApiCallsCallIdGetData, GetCallApiCallsCallIdGetErrors, GetCallApiCallsCallIdGetResponses, GetCallEventsApiCallsCallIdEventsGetData, GetCallEventsApiCallsCallIdEventsGetErrors, GetCallEventsApiCallsCallIdEventsGetResponses, GetChatConversationApiChatConversationsConversationIdGetData, GetChatConversationApiChatConversationsConversationIdGetErrors, GetChatConversationApiChatConversationsConversationIdGetResponses, GetChildCallsApiCallsCallIdChildrenGetData, GetChildCallsApiCallsCallIdChildrenGetErrors, GetChildCallsApiCallsCallIdChildrenGetResponses, GetDependenciesApiPagesPageIdDependenciesGetData, GetDependenciesApiPagesPageIdDependenciesGetErrors, GetDependenciesApiPagesPageIdDependenciesGetResponses, GetDependentsApiPagesPageIdDependentsGetData, GetDependentsApiPagesPageIdDependentsGetErrors, GetDependentsApiPagesPageIdDependentsGetResponses, GetLinksFromApiPagesPageIdLinksFromGetData, GetLinksFromApiPagesPageIdLinksFromGetErrors, GetLinksFromApiPagesPageIdLinksFromGetResponses, GetLinksToApiPagesPageIdLinksToGetData, GetLinksToApiPagesPageIdLinksToGetErrors, GetLinksToApiPagesPageIdLinksToGetResponses, GetLlmExchangeApiLlmExchangesExchangeIdGetData, GetLlmExchangeApiLlmExchangesExchangeIdGetErrors, GetLlmExchangeApiLlmExchangesExchangeIdGetResponses, GetPageApiPagesPageIdGetData, GetPageApiPagesPageIdGetErrors, GetPageApiPagesPageIdGetResponses, GetPageByShortIdApiPagesShortShortIdGetData, GetPageByShortIdApiPagesShortShortIdGetErrors, GetPageByShortIdApiPagesShortShortIdGetResponses, GetPageCountsApiPagesPageIdCountsGetData, GetPageCountsApiPagesPageIdCountsGetErrors, GetPageCountsApiPagesPageIdCountsGetResponses, GetPageDetailApiPagesPageIdDetailGetData, GetPageDetailApiPagesPageIdDetailGetErrors, GetPageDetailApiPagesPageIdDetailGetResponses, GetPageLoadStatsApiRunsRunIdPageLoadStatsGetData, GetPageLoadStatsApiRunsRunIdPageLoadStatsGetErrors, GetPageLoadStatsApiRunsRunIdPageLoadStatsGetResponses, GetPageRunApiPagesPageIdRunGetData, GetPageRunApiPagesPageIdRunGetErrors, GetPageRunApiPagesPageIdRunGetResponses, GetProjectApiProjectsProjectIdGetData, GetProjectApiProjectsProjectIdGetErrors, GetProjectApiProjectsProjectIdGetResponses, GetProjectStatsApiProjectsProjectIdStatsGetData, GetProjectStatsApiProjectsProjectIdStatsGetErrors, GetProjectStatsApiProjectsProjectIdStatsGetResponses, GetQuestionStatsApiPagesPageIdStatsGetData, GetQuestionStatsApiPagesPageIdStatsGetErrors, GetQuestionStatsApiPagesPageIdStatsGetResponses, GetRealtimeConfigApiRealtimeConfigGetData, GetRealtimeConfigApiRealtimeConfigGetResponses, GetRunTraceTreeApiRunsRunIdTraceTreeGetData, GetRunTraceTreeApiRunsRunIdTraceTreeGetErrors, GetRunTraceTreeApiRunsRunIdTraceTreeGetResponses, HealthzHealthzGetData, HealthzHealthzGetResponses, ListAbEvalsApiAbEvalsGetData, ListAbEvalsApiAbEvalsGetErrors, ListAbEvalsApiAbEvalsGetResponses, ListCallsApiProjectsProjectIdCallsGetData, ListCallsApiProjectsProjectIdCallsGetErrors, ListCallsApiProjectsProjectIdCallsGetResponses, ListChatConversationsApiChatConversationsGetData, ListChatConversationsApiChatConversationsGetErrors, ListChatConversationsApiChatConversationsGetResponses, ListLlmExchangesApiCallsCallIdLlmExchangesGetData, ListLlmExchangesApiCallsCallIdLlmExchangesGetErrors, ListLlmExchangesApiCallsCallIdLlmExchangesGetResponses, ListPagesApiProjectsProjectIdPagesGetData, ListPagesApiProjectsProjectIdPagesGetErrors, ListPagesApiProjectsProjectIdPagesGetResponses, ListProjectRunsApiProjectsProjectIdRunsGetData, ListProjectRunsApiProjectsProjectIdRunsGetErrors, ListProjectRunsApiProjectsProjectIdRunsGetResponses, ListProjectsApiProjectsGetData, ListProjectsApiProjectsGetErrors, ListProjectsApiProjectsGetResponses, ListRootQuestionsApiProjectsProjectIdQuestionsGetData, ListRootQuestionsApiProjectsProjectIdQuestionsGetErrors, ListRootQuestionsApiProjectsProjectIdQuestionsGetResponses, UpdateChatConversationApiChatConversationsConversationIdPatchData, UpdateChatConversationApiChatConversationsConversationIdPatchErrors, UpdateChatConversationApiChatConversationsConversationIdPatchResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<TData, ThrowOnError> & {
     /**
@@ -170,3 +170,87 @@ export const getPageRunApiPagesPageIdRunGet = <ThrowOnError extends boolean = fa
  * Get Page Load Stats
  */
 export const getPageLoadStatsApiRunsRunIdPageLoadStatsGet = <ThrowOnError extends boolean = false>(options: Options<GetPageLoadStatsApiRunsRunIdPageLoadStatsGetData, ThrowOnError>) => (options.client ?? client).get<GetPageLoadStatsApiRunsRunIdPageLoadStatsGetResponses, GetPageLoadStatsApiRunsRunIdPageLoadStatsGetErrors, ThrowOnError>({ url: '/api/runs/{run_id}/page-load-stats', ...options });
+
+/**
+ * Chat
+ */
+export const chatApiChatPost = <ThrowOnError extends boolean = false>(options: Options<ChatApiChatPostData, ThrowOnError>) => (options.client ?? client).post<ChatApiChatPostResponses, ChatApiChatPostErrors, ThrowOnError>({
+    url: '/api/chat',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Chat Stream
+ */
+export const chatStreamApiChatStreamPost = <ThrowOnError extends boolean = false>(options: Options<ChatStreamApiChatStreamPostData, ThrowOnError>) => (options.client ?? client).post<ChatStreamApiChatStreamPostResponses, ChatStreamApiChatStreamPostErrors, ThrowOnError>({
+    url: '/api/chat/stream',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Chat Conversation Events
+ *
+ * SSE stream of dispatch_completed events for one conversation.
+ */
+export const chatConversationEventsApiChatConversationsConversationIdEventsGet = <ThrowOnError extends boolean = false>(options: Options<ChatConversationEventsApiChatConversationsConversationIdEventsGetData, ThrowOnError>) => (options.client ?? client).get<ChatConversationEventsApiChatConversationsConversationIdEventsGetResponses, ChatConversationEventsApiChatConversationsConversationIdEventsGetErrors, ThrowOnError>({ url: '/api/chat/conversations/{conversation_id}/events', ...options });
+
+/**
+ * List Chat Conversations
+ */
+export const listChatConversationsApiChatConversationsGet = <ThrowOnError extends boolean = false>(options: Options<ListChatConversationsApiChatConversationsGetData, ThrowOnError>) => (options.client ?? client).get<ListChatConversationsApiChatConversationsGetResponses, ListChatConversationsApiChatConversationsGetErrors, ThrowOnError>({ url: '/api/chat/conversations', ...options });
+
+/**
+ * Create Chat Conversation
+ */
+export const createChatConversationApiChatConversationsPost = <ThrowOnError extends boolean = false>(options: Options<CreateChatConversationApiChatConversationsPostData, ThrowOnError>) => (options.client ?? client).post<CreateChatConversationApiChatConversationsPostResponses, CreateChatConversationApiChatConversationsPostErrors, ThrowOnError>({
+    url: '/api/chat/conversations',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Delete Chat Conversation
+ */
+export const deleteChatConversationApiChatConversationsConversationIdDelete = <ThrowOnError extends boolean = false>(options: Options<DeleteChatConversationApiChatConversationsConversationIdDeleteData, ThrowOnError>) => (options.client ?? client).delete<DeleteChatConversationApiChatConversationsConversationIdDeleteResponses, DeleteChatConversationApiChatConversationsConversationIdDeleteErrors, ThrowOnError>({ url: '/api/chat/conversations/{conversation_id}', ...options });
+
+/**
+ * Get Chat Conversation
+ */
+export const getChatConversationApiChatConversationsConversationIdGet = <ThrowOnError extends boolean = false>(options: Options<GetChatConversationApiChatConversationsConversationIdGetData, ThrowOnError>) => (options.client ?? client).get<GetChatConversationApiChatConversationsConversationIdGetResponses, GetChatConversationApiChatConversationsConversationIdGetErrors, ThrowOnError>({ url: '/api/chat/conversations/{conversation_id}', ...options });
+
+/**
+ * Update Chat Conversation
+ */
+export const updateChatConversationApiChatConversationsConversationIdPatch = <ThrowOnError extends boolean = false>(options: Options<UpdateChatConversationApiChatConversationsConversationIdPatchData, ThrowOnError>) => (options.client ?? client).patch<UpdateChatConversationApiChatConversationsConversationIdPatchResponses, UpdateChatConversationApiChatConversationsConversationIdPatchErrors, ThrowOnError>({
+    url: '/api/chat/conversations/{conversation_id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Branch Chat Conversation
+ *
+ * Fork a conversation at message at_seq into a new one.
+ */
+export const branchChatConversationApiChatConversationsConversationIdBranchPost = <ThrowOnError extends boolean = false>(options: Options<BranchChatConversationApiChatConversationsConversationIdBranchPostData, ThrowOnError>) => (options.client ?? client).post<BranchChatConversationApiChatConversationsConversationIdBranchPostResponses, BranchChatConversationApiChatConversationsConversationIdBranchPostErrors, ThrowOnError>({
+    url: '/api/chat/conversations/{conversation_id}/branch',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});

@@ -7,7 +7,7 @@ Composite response types and trace event envelope types. Core models
 
 from collections.abc import Sequence
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -432,3 +432,69 @@ class PageLoadStatsOut(BaseModel):
     total: int
     total_unique: int
     question_headlines: dict[str, str]
+
+
+class ChatRequest(BaseModel):
+    question_id: str
+    messages: list[dict[str, Any]]
+    workspace: str = "default"
+    model: str = "sonnet"
+    conversation_id: str | None = None
+    open_run_id: str | None = None
+    open_page_ids: list[str] = []
+    view_mode: str | None = None
+    open_call_id: str | None = None
+    drawer_page_id: str | None = None
+    active_section: str | None = None
+    review_open: bool = False
+
+
+class ToolUseInfo(BaseModel):
+    name: str
+    input: dict[str, Any]
+    result: str
+
+
+class ChatResponse(BaseModel):
+    response: str
+    tool_uses: list[ToolUseInfo]
+    conversation_id: str
+
+
+class ConversationListItem(BaseModel):
+    id: str
+    project_id: str
+    question_id: str | None
+    title: str
+    created_at: str
+    updated_at: str
+    parent_conversation_id: str | None = None
+    branched_at_seq: int | None = None
+
+
+class ConversationDetail(BaseModel):
+    id: str
+    project_id: str
+    question_id: str | None
+    title: str
+    created_at: str
+    updated_at: str
+    messages: list[dict[str, Any]]
+    parent_conversation_id: str | None = None
+    branched_at_seq: int | None = None
+
+
+class CreateConversationRequest(BaseModel):
+    project_id: str
+    question_id: str | None = None
+    first_message: str | None = None
+    title: str | None = None
+
+
+class UpdateConversationRequest(BaseModel):
+    title: str
+
+
+class BranchConversationRequest(BaseModel):
+    at_seq: int
+    title: str | None = None

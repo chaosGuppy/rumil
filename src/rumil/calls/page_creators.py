@@ -29,7 +29,6 @@ from rumil.llm import (
 )
 from rumil.models import (
     CallType,
-    FindConsiderationsMode,
     MoveType,
 )
 from rumil.moves.create_claim import (
@@ -122,20 +121,11 @@ class SimpleAgentLoop(WorkspaceUpdater):
         )
 
 
-_CONCRETE_INSTRUCTION = (
-    "\n\n**Mode: CONCRETE**\n\n"
-    "Your goal is considerations, sub-questions, and hypotheses that are as specific "
-    "and falsifiable as possible. Concreteness means: named actors, specific timeframes, "
-    "quantitative claims, named mechanisms, particular cases. A concrete claim should be "
-    "possible to be clearly wrong about — that is what makes it valuable.\n\n"
-    "Concrete scouts are expected to produce claims that subsequent investigation may "
-    "refute. That is a feature, not a failure. Do not hedge your way back to vagueness."
-)
-
 _CONTINUE_TEMPLATE = (
-    "Continue scouting this question. You have already made contributions in "
-    "prior rounds (visible above). Focus on NEW angles, evidence, or "
-    "sub-questions you have not yet covered.{mode_instruction}\n\n"
+    "Continue this task. You have already made contributions in prior rounds "
+    "(visible above). Focus on NEW angles, evidence, or sub-questions you "
+    "have not yet covered — prioritise those that would most add to the "
+    "eventual judgement on this question.\n\n"
     "Question ID: `{question_id}`"
 )
 
@@ -145,16 +135,6 @@ _FRUIT_CHECK_MESSAGE = (
     "angles are left unexplored. Respond with remaining_fruit (0-10) and "
     "brief_reasoning. Do not call any tools — they will have no effect here."
 )
-
-
-def _resolve_round_mode(mode: FindConsiderationsMode, round_index: int) -> FindConsiderationsMode:
-    if mode == FindConsiderationsMode.ALTERNATE:
-        return (
-            FindConsiderationsMode.ABSTRACT
-            if round_index % 2 == 0
-            else FindConsiderationsMode.CONCRETE
-        )
-    return mode
 
 
 class _FruitCheck(BaseModel):
@@ -176,14 +156,12 @@ class MultiRoundLoop(WorkspaceUpdater):
         self,
         max_rounds: int,
         fruit_threshold: int,
-        mode: FindConsiderationsMode | None = None,
         available_moves: Sequence[MoveType] | None = None,
         call_type: CallType = CallType.FIND_CONSIDERATIONS,
         task_description: str | None = None,
     ) -> None:
         self._max_rounds = max_rounds
         self._fruit_threshold = fruit_threshold
-        self._mode = mode
         self._available_moves = available_moves
         self._call_type = call_type
         self._task_description = task_description
@@ -206,12 +184,9 @@ class MultiRoundLoop(WorkspaceUpdater):
         if self._task_description is not None:
             task = self._task_description
         else:
-            round_mode = _resolve_round_mode(self._mode or FindConsiderationsMode.ALTERNATE, 0)
-            mode_instruction = (
-                _CONCRETE_INSTRUCTION if round_mode == FindConsiderationsMode.CONCRETE else ""
-            )
             task = (
-                f"Scout for missing considerations on this question.{mode_instruction}\n\n"
+                "Generate considerations that would most improve the next "
+                "judgement on this question.\n\n"
                 "Question ID (use this when linking considerations): "
                 f"`{infra.question_id}`"
             )
@@ -240,17 +215,7 @@ class MultiRoundLoop(WorkspaceUpdater):
                     cache=True,
                 )
             else:
-                if self._mode is not None:
-                    round_mode = _resolve_round_mode(self._mode, i)
-                    mi = (
-                        _CONCRETE_INSTRUCTION
-                        if round_mode == FindConsiderationsMode.CONCRETE
-                        else ""
-                    )
-                else:
-                    mi = ""
                 continue_msg = _CONTINUE_TEMPLATE.format(
-                    mode_instruction=mi,
                     question_id=infra.question_id,
                 )
                 resume_messages.append({"role": "user", "content": continue_msg})

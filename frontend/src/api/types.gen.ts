@@ -552,10 +552,6 @@ export type ContextBuiltEventOut = {
      * Budget
      */
     budget: number | null;
-    /**
-     * Scout Mode
-     */
-    scout_mode: string | null;
 };
 
 /**
@@ -711,6 +707,50 @@ export type EvaluationCompleteEventOut = {
      * Evaluation
      */
     evaluation: string;
+};
+
+/**
+ * ExperimentalScoringCompletedEventOut
+ */
+export type ExperimentalScoringCompletedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'experimental_scoring_completed';
+    /**
+     * Subquestion Scores
+     */
+    subquestion_scores: Array<ExperimentalSubquestionScoreItem>;
+    /**
+     * Per Type Fruit
+     */
+    per_type_fruit: Array<CallTypeFruitScoreItem>;
+};
+
+/**
+ * ExperimentalSubquestionScoreItem
+ */
+export type ExperimentalSubquestionScoreItem = {
+    /**
+     * Question Id
+     */
+    question_id: string;
+    /**
+     * Headline
+     */
+    headline?: string;
+    /**
+     * Impact Curve
+     */
+    impact_curve?: string;
 };
 
 /**
@@ -2998,6 +3038,8 @@ export type GetCallEventsApiCallsCallIdEventsGetResponses = {
     } & ErrorEventOut) | ({
         event: 'scoring_completed';
     } & ScoringCompletedEventOut) | ({
+        event: 'experimental_scoring_completed';
+    } & ExperimentalScoringCompletedEventOut) | ({
         event: 'dispatches_planned';
     } & DispatchesPlannedEventOut) | ({
         event: 'dispatch_executed';

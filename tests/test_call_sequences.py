@@ -6,7 +6,6 @@ from rumil.models import (
     AssessDispatchPayload,
     CallType,
     Dispatch,
-    FindConsiderationsMode,
     ScoutDispatchPayload,
 )
 from rumil.orchestrators import BaseOrchestrator
@@ -37,7 +36,6 @@ class ScriptedOrchestrator(BaseOrchestrator):
 
 
 def _scout(qid, **kw):
-    kw.setdefault("mode", FindConsiderationsMode.ALTERNATE)
     return Dispatch(
         call_type=CallType.FIND_CONSIDERATIONS,
         payload=ScoutDispatchPayload(question_id=qid, max_rounds=1, **kw),

@@ -12,6 +12,7 @@ Data types: Tool, ToolCall, RoundRecord, AgentResult, APIResponse,
 
 from __future__ import annotations
 
+import contextvars
 import json
 import logging
 import re
@@ -145,6 +146,37 @@ def _load_file(name: str) -> str:
     return path.read_text(encoding="utf-8")
 
 
+_experimental_scout_budget: contextvars.ContextVar[int | None] = contextvars.ContextVar(
+    "experimental_scout_budget", default=None
+)
+
+
+def set_experimental_scout_budget(budget: int | None) -> contextvars.Token:
+    """Set the prioritiser's budget visible to scouts on the experimental path.
+
+    Returns a token that can be passed to `reset_experimental_scout_budget`.
+    """
+    return _experimental_scout_budget.set(budget)
+
+
+def reset_experimental_scout_budget(token: contextvars.Token) -> None:
+    _experimental_scout_budget.reset(token)
+
+
+_SCOUT_BUDGET_CALL_TYPES: frozenset[str] = frozenset(
+    {
+        "scout_subquestions",
+        "scout_estimates",
+        "scout_hypotheses",
+        "scout_analogies",
+        "scout_paradigm_cases",
+        "scout_factchecks",
+        "scout_web_questions",
+        "scout_deep_questions",
+    }
+)
+
+
 def build_system_prompt(call_type: str, *, include_citations: bool = True) -> str:
     """Combine preamble + call-type instructions + citations into one system prompt.
 
@@ -159,6 +191,12 @@ def build_system_prompt(call_type: str, *, include_citations: bool = True) -> st
     if include_citations:
         parts.append(_load_file("citations.md"))
     parts.append(grounding)
+    budget = _experimental_scout_budget.get()
+    if budget is not None and call_type in _SCOUT_BUDGET_CALL_TYPES:
+        budget_awareness = _load_file("scout_budget_awareness_experimental.md").format(
+            budget=budget
+        )
+        parts.append(budget_awareness)
     return "\n\n---\n\n".join(parts)
 
 

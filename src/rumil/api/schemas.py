@@ -22,6 +22,7 @@ from rumil.tracing.trace_events import (
     DispatchExecutedEvent,
     ErrorEvent,
     EvaluationCompleteEvent,
+    ExperimentalScoringCompletedEvent,
     ExplorePageEvent,
     GlobalPhaseCompletedEvent,
     GroundingTasksGeneratedEvent,
@@ -95,6 +96,10 @@ class ErrorEventOut(ErrorEvent, _TraceEnvelopeMixin):
 
 
 class ScoringCompletedEventOut(ScoringCompletedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class ExperimentalScoringCompletedEventOut(ExperimentalScoringCompletedEvent, _TraceEnvelopeMixin):
     pass
 
 
@@ -202,6 +207,7 @@ TraceEventOut = Annotated[
     | WarningEventOut
     | ErrorEventOut
     | ScoringCompletedEventOut
+    | ExperimentalScoringCompletedEventOut
     | DispatchesPlannedEventOut
     | DispatchExecutedEventOut
     | ExplorePageEventOut

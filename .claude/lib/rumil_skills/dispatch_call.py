@@ -49,7 +49,7 @@ from rumil.calls.stages import CallRunner
 from rumil.calls.web_research import WebResearchCall
 from rumil.constants import DEFAULT_FRUIT_THRESHOLD
 from rumil.database import DB
-from rumil.models import Call, CallType, FindConsiderationsMode
+from rumil.models import Call, CallType
 from rumil.settings import get_settings
 
 from ._format import print_event, print_trace, truncate
@@ -121,7 +121,6 @@ async def _dispatch(
             db,
             max_rounds=max_rounds or 5,
             fruit_threshold=DEFAULT_FRUIT_THRESHOLD,
-            mode=FindConsiderationsMode.ALTERNATE,
         )
         await runner.run()
         return call

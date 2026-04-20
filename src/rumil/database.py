@@ -773,6 +773,134 @@ class DB:
                 )
         return None
 
+    async def resolve_run_id(self, run_id: str, project_id: str | None = None) -> str | None:
+        """Resolve a run ID to a full UUID. Accepts full UUIDs or <=8-char prefixes.
+
+        When *project_id* is given, scopes the search so the same short prefix
+        across different projects does not collide.
+        """
+        if not run_id:
+            return None
+        query = self.client.table("runs").select("id").eq("id", run_id)
+        if project_id:
+            query = query.eq("project_id", project_id)
+        rows = _rows(await self._execute(query))
+        if rows:
+            return rows[0]["id"]
+        if len(run_id) <= 8:
+            query = self.client.table("runs").select("id").like("id", f"{run_id}%")
+            if project_id:
+                query = query.eq("project_id", project_id)
+            rows = _rows(await self._execute(query))
+            if len(rows) == 1:
+                return rows[0]["id"]
+        return None
+
+    async def get_active_chat_dispatches(self, conv_id: str) -> list[dict[str, Any]]:
+        """Query runs tagged with config.chat.conv_id for one chat conversation.
+
+        DB-backed fallback for the in-memory _live_runs registry, which loses
+        state on API restart. Returns runs whose root call is not yet
+        terminal and which have no DISPATCH_RESULT chat message written yet.
+
+        Each row matches the _list_live_runs shape:
+        ``{run_id, call_type, headline, tool_use_id, question_id, started_at}``
+        """
+        runs_rows = _rows(
+            await self._execute(
+                self.client.table("runs")
+                .select("id, question_id, created_at, config")
+                .filter("config->chat->>conv_id", "eq", conv_id)
+            )
+        )
+        if not runs_rows:
+            return []
+        run_ids = [r["id"] for r in runs_rows]
+        root_call_rows = _rows(
+            await self._execute(
+                self.client.table("calls")
+                .select("run_id, status")
+                .in_("run_id", run_ids)
+                .is_("parent_call_id", "null")
+            )
+        )
+        root_status_by_run: dict[str, str] = {r["run_id"]: r["status"] for r in root_call_rows}
+        completed_rows = _rows(
+            await self._execute(
+                self.client.table("chat_messages")
+                .select("content")
+                .eq("conversation_id", conv_id)
+                .eq("role", "dispatch_result")
+            )
+        )
+        completed_run_ids = {
+            (row.get("content") or {}).get("run_id")
+            for row in completed_rows
+            if (row.get("content") or {}).get("run_id")
+        }
+        terminal = {"complete", "failed"}
+        live: list[dict[str, Any]] = []
+        for row in runs_rows:
+            rid = row["id"]
+            if rid in completed_run_ids:
+                continue
+            root_status = root_status_by_run.get(rid)
+            if root_status in terminal:
+                continue
+            chat_meta = (row.get("config") or {}).get("chat") or {}
+            live.append(
+                {
+                    "run_id": rid,
+                    "call_type": chat_meta.get("call_type") or "",
+                    "headline": chat_meta.get("headline") or "",
+                    "tool_use_id": chat_meta.get("tool_use_id") or "",
+                    "question_id": row.get("question_id"),
+                    "started_at": row.get("created_at"),
+                }
+            )
+        return live
+
+    async def precreate_chat_run_row(
+        self,
+        *,
+        new_run_id: str,
+        name: str,
+        question_id: str | None,
+        conv_id: str,
+        tool_use_id: str,
+        call_type: str,
+        headline: str,
+    ) -> None:
+        """Insert a runs row for a chat-originated fire-and-forget dispatch.
+
+        Creates the row synchronously from the chat turn's DB handle so
+        dispatching tools can reference the run_id before the background
+        task has spun up. Stamps config.chat so get_active_chat_dispatches
+        can reconstruct the live-runs view after an API restart.
+        """
+        from rumil.settings import get_settings
+
+        settings = get_settings()
+        config = settings.capture_config()
+        config["chat"] = {
+            "conv_id": conv_id,
+            "tool_use_id": tool_use_id,
+            "call_type": call_type,
+            "headline": headline,
+        }
+        await self._execute(
+            self.client.table("runs").insert(
+                {
+                    "id": new_run_id,
+                    "name": name,
+                    "project_id": self.project_id,
+                    "question_id": question_id,
+                    "config": config,
+                    "staged": self.staged,
+                }
+            )
+        )
+
     async def resolve_link_id(self, link_id: str) -> str | None:
         """Resolve a link ID to a full UUID. Handles both full UUIDs and
         8-char short IDs. Returns the full UUID if found, or None."""

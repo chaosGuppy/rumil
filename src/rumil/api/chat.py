@@ -509,6 +509,32 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "ingest_source",
+        "description": (
+            "Fetch a URL, save it as a Source page in the workspace, and "
+            "optionally run ingest extraction to pull considerations into a "
+            "target question. Costs real money when extraction runs. Use "
+            "when the user shares a URL they want added to the research."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "URL to fetch (http:// or https://).",
+                },
+                "target_question_id": {
+                    "type": "string",
+                    "description": (
+                        "Optional question short ID to run ingest extraction "
+                        "against. Omit to save the source without extraction."
+                    ),
+                },
+            },
+            "required": ["url"],
+        },
+    },
+    {
         "name": "navigate_url",
         "description": (
             "Navigate the user's browser to a rumil URL. Use sparingly — "
@@ -891,6 +917,168 @@ async def _persist_dispatch_completion(
     _publish_conv_event(conv_id, "dispatch_completed", content)
 
 
+async def _bg_run_ingest(
+    *,
+    conv_id: str,
+    tool_use_id: str,
+    new_run_id: str,
+    project_id: str,
+    url: str,
+    target_short: str | None,
+    headline: str,
+) -> None:
+    """Background task: scrape a URL, save as Source page, run ingest if targeted."""
+    from rumil.calls.ingest import IngestCall
+    from rumil.scraper import scrape_url
+
+    settings = get_settings()
+    bg_db = await DB.create(
+        run_id=new_run_id,
+        prod=settings.is_prod_db,
+        project_id=project_id,
+    )
+    await bg_db.init_budget(CHAT_RUN_BUDGET)
+    trace_url = f"/traces/{new_run_id}"
+    content: dict[str, Any]
+    target_question_id: str | None = None
+    source_page_id: str | None = None
+    try:
+        try:
+            scraped = await scrape_url(url)
+            if not scraped:
+                raise RuntimeError(f"failed to fetch URL: {url}")
+
+            source_page = Page(
+                page_type=PageType.SOURCE,
+                layer=PageLayer.SQUIDGY,
+                workspace=Workspace.RESEARCH,
+                headline=scraped.title or url,
+                content=scraped.content,
+                extra={
+                    "url": scraped.url,
+                    "char_count": len(scraped.content),
+                    "fetched_at": scraped.fetched_at,
+                },
+                project_id=project_id,
+            )
+            await bg_db.save_page(source_page)
+            source_page_id = source_page.id
+            summary_parts = [f"Created source {source_page.id[:8]} ({(scraped.title or url)[:60]})"]
+
+            if target_short:
+                full_id = await bg_db.resolve_page_id(target_short)
+                if not full_id:
+                    summary_parts.append(
+                        f"Target '{target_short}' not found — source saved, no extraction."
+                    )
+                else:
+                    target_question_id = full_id
+                    call = await bg_db.create_call(CallType.INGEST, scope_page_id=full_id)
+                    runner = IngestCall(source_page, full_id, call, bg_db)
+                    try:
+                        await runner.run()
+                        summary_parts.append(
+                            f"Ingest extraction {call.id[:8]} on '{headline[:40]}' completed."
+                        )
+                    except Exception as e:
+                        log.exception("Ingest call %s failed", call.id[:8])
+                        summary_parts.append(f"Extraction call failed: {e}")
+            else:
+                summary_parts.append("No target question — source saved, no extraction.")
+
+            content = {
+                "tool_use_id": tool_use_id,
+                "run_id": new_run_id,
+                "call_type": "ingest",
+                "question_id": target_question_id,
+                "headline": headline,
+                "status": "completed",
+                "summary": " — ".join(summary_parts),
+                "trace_url": trace_url,
+                "source_page_id": source_page_id,
+                "url": url,
+            }
+        except Exception as e:
+            log.exception("Ingest for %s failed", url)
+            content = {
+                "tool_use_id": tool_use_id,
+                "run_id": new_run_id,
+                "call_type": "ingest",
+                "question_id": target_question_id,
+                "headline": headline,
+                "status": "failed",
+                "summary": f"Ingest for {url[:60]} failed: {e}",
+                "error": str(e),
+                "trace_url": trace_url,
+                "source_page_id": source_page_id,
+                "url": url,
+            }
+
+        await _persist_dispatch_completion(
+            bg_db,
+            conv_id=conv_id,
+            content=content,
+            question_id=target_question_id,
+        )
+    finally:
+        await bg_db.close()
+
+
+async def _handle_ingest_source(
+    db: DB,
+    tool_input: dict[str, Any],
+    *,
+    conv_id: str,
+    tool_use_id: str,
+) -> str:
+    url = (tool_input.get("url") or "").strip()
+    if not (url.startswith("http://") or url.startswith("https://")):
+        return f"refused: url must start with http:// or https:// (got '{url[:60]}')"
+
+    target_short = tool_input.get("target_question_id")
+    headline = url[:80]
+
+    new_run_id = str(uuid.uuid4())
+    trace_url = f"/traces/{new_run_id}"
+    await db.precreate_chat_run_row(
+        new_run_id=new_run_id,
+        name=f"chat ingest: {url[:80]}",
+        question_id=None,
+        conv_id=conv_id,
+        tool_use_id=tool_use_id,
+        call_type="ingest",
+        headline=headline,
+    )
+    _register_live_run(
+        conv_id,
+        new_run_id,
+        call_type="ingest",
+        headline=headline,
+        tool_use_id=tool_use_id,
+    )
+    _spawn_bg(
+        _bg_run_ingest(
+            conv_id=conv_id,
+            tool_use_id=tool_use_id,
+            new_run_id=new_run_id,
+            project_id=db.project_id,
+            url=url,
+            target_short=target_short,
+            headline=headline,
+        )
+    )
+    target_note = (
+        f" targeting question {target_short}"
+        if target_short
+        else " (no extraction target — source only)"
+    )
+    return (
+        f"Ingest started for {url[:60]}{target_note} "
+        f"(run_id={new_run_id[:8]}). Trace: {trace_url}. Running in "
+        f"background — completion will appear in chat."
+    )
+
+
 async def _bg_run_dispatch(
     *,
     conv_id: str,
@@ -1055,6 +1243,8 @@ async def _handle_tool(
         return _handle_suggest_view(tool_input)
     if name == "dispatch_call":
         return await _handle_dispatch_call(db, tool_input, conv_id=conv_id, tool_use_id=tool_use_id)
+    if name == "ingest_source":
+        return await _handle_ingest_source(db, tool_input, conv_id=conv_id, tool_use_id=tool_use_id)
     return f"Unknown tool: {name}"
 
 

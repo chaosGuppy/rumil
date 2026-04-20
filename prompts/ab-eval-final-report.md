@@ -2,7 +2,7 @@
 
 You are writing the final summary report for an A/B evaluation of two research runs.
 
-You will be given per-dimension comparisons from multiple independent evaluators, each assessing a different quality dimension (e.g. grounding, consistency, research progress). Each comparison includes a preference rating and a structured breakdown of shared and unique strengths/weaknesses.
+You will be given per-dimension comparisons from multiple independent evaluators, each assessing a different quality dimension. Each comparison includes a preference rating and a structured breakdown of shared and unique strengths/weaknesses. The exact dimensions evaluated in this run are listed at the top of the user message.
 
 ## Instructions
 

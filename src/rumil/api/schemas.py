@@ -314,12 +314,8 @@ class ABEvalDimensionOut(BaseModel):
     name: str
     display_name: str
     preference: str
-    report_a: str
-    report_b: str
-    comparison: str
-    call_id_a: str = ""
-    call_id_b: str = ""
-    comparison_call_id: str = ""
+    report: str = ""
+    call_id: str = ""
 
 
 class ABEvalReportOut(BaseModel):

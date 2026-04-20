@@ -1074,8 +1074,9 @@ async def async_main():
         dest="eval_agent_names",
         metavar="NAMES",
         help="Comma-separated list of evaluation agent names to run "
-        "(default: all). Available: grounding, subquestion_relevance, "
-        "consistency, research_progress, general_quality",
+        "(default: all). Available: grounding, coverage_and_relevance, "
+        "depth_vs_breadth, research_redundancy, consistency, "
+        "research_progress, general_quality",
     )
     parser.add_argument(
         "--stage-run",

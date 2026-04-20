@@ -1536,6 +1536,22 @@
             }
           },
           {
+            "name": "staged_run_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Staged Run Id"
+            }
+          },
+          {
             "name": "project_id",
             "in": "query",
             "required": false,
@@ -1644,31 +1660,14 @@
             "type": "string",
             "title": "Preference"
           },
-          "report_a": {
+          "report": {
             "type": "string",
-            "title": "Report A"
-          },
-          "report_b": {
-            "type": "string",
-            "title": "Report B"
-          },
-          "comparison": {
-            "type": "string",
-            "title": "Comparison"
-          },
-          "call_id_a": {
-            "type": "string",
-            "title": "Call Id A",
+            "title": "Report",
             "default": ""
           },
-          "call_id_b": {
+          "call_id": {
             "type": "string",
-            "title": "Call Id B",
-            "default": ""
-          },
-          "comparison_call_id": {
-            "type": "string",
-            "title": "Comparison Call Id",
+            "title": "Call Id",
             "default": ""
           }
         },
@@ -1676,10 +1675,7 @@
         "required": [
           "name",
           "display_name",
-          "preference",
-          "report_a",
-          "report_b",
-          "comparison"
+          "preference"
         ],
         "title": "ABEvalDimensionOut"
       },

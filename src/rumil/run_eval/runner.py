@@ -10,15 +10,19 @@ from pathlib import Path
 from claude_agent_sdk import tool as sdk_tool
 
 from rumil.database import DB
-from rumil.evaluate.explore import explore_page_impl
 from rumil.llm import Tool, text_call
 from rumil.models import Call, CallStatus, CallType
 from rumil.run_eval.agents import EVAL_AGENTS, EvalAgentSpec
 from rumil.run_eval.report import format_run_eval_report, save_run_eval_report
+from rumil.run_eval.seed import build_eval_seed_context
 from rumil.sdk_agent import SdkAgentConfig, run_sdk_agent
 from rumil.tracing.broadcast import Broadcaster
 from rumil.tracing.tracer import CallTrace
-from rumil.workspace_exploration import make_explore_subgraph_tool, make_load_page_tool
+from rumil.workspace_exploration import (
+    make_explore_subgraph_tool,
+    make_load_page_tool,
+    make_search_tool,
+)
 
 log = logging.getLogger(__name__)
 
@@ -108,7 +112,7 @@ async def evaluate_run_with_agent(
     trace = CallTrace(call.id, parent_db, broadcaster=broadcaster)
     await parent_db.update_call_status(call.id, CallStatus.RUNNING)
 
-    initial_context = await explore_page_impl(
+    initial_context = await build_eval_seed_context(
         question_id,
         eval_db,
         highlight_run_id=run_id,
@@ -124,9 +128,11 @@ async def evaluate_run_with_agent(
         trace,
         highlight_run_id=run_id,
     )
+    search_llm_tool = make_search_tool(eval_db, trace)
     mcp_tools = [
         wrap_as_mcp_tool(explore_llm_tool),
         wrap_as_mcp_tool(load_page_llm_tool),
+        wrap_as_mcp_tool(search_llm_tool),
     ]
 
     system_prompt = build_system_prompt(spec, all_agents=all_agents)
@@ -137,12 +143,16 @@ async def evaluate_run_with_agent(
     user_prompt = (
         f"{run_intro}\n\n"
         "Focus on items marked [ADDED BY THIS RUN] -- these are the pages and "
-        "links created by this run.\n\n"
-        f"Here is the local graph around the root question:\n\n{initial_context}"
+        "links created by this run. Use `explore_subgraph` and `load_page` to "
+        "drill into neighbors, and `search_workspace` to find semantically "
+        "related pages elsewhere in the workspace; the seed below is "
+        "intentionally compact.\n\n"
+        f"## Seed context\n\n{initial_context}"
     )
 
     allowed = [
-        f"mcp__{_TOOL_SERVER_NAME}__{t.name}" for t in [explore_llm_tool, load_page_llm_tool]
+        f"mcp__{_TOOL_SERVER_NAME}__{t.name}"
+        for t in [explore_llm_tool, load_page_llm_tool, search_llm_tool]
     ] + list(spec.extra_tools)
 
     config = SdkAgentConfig(

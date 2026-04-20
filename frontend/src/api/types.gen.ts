@@ -21,29 +21,13 @@ export type AbEvalDimensionOut = {
      */
     preference: string;
     /**
-     * Report A
+     * Report
      */
-    report_a: string;
+    report?: string;
     /**
-     * Report B
+     * Call Id
      */
-    report_b: string;
-    /**
-     * Comparison
-     */
-    comparison: string;
-    /**
-     * Call Id A
-     */
-    call_id_a?: string;
-    /**
-     * Call Id B
-     */
-    call_id_b?: string;
-    /**
-     * Comparison Call Id
-     */
-    comparison_call_id?: string;
+    call_id?: string;
 };
 
 /**
@@ -3140,6 +3124,10 @@ export type GetPageRunApiPagesPageIdRunGetData = {
         page_id: string;
     };
     query?: {
+        /**
+         * Staged Run Id
+         */
+        staged_run_id?: string | null;
         /**
          * Project Id
          */

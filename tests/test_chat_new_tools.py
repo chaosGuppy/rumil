@@ -6,6 +6,7 @@ calls. Mutating tools are checked by reading the resulting DB state.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -1328,8 +1329,6 @@ async def test_run_dispatch_without_model_uses_default(tmp_db, seeded_graph, moc
 
 async def test_run_dispatch_receipt_is_immediate(tmp_db, seeded_graph, mocker):
     """The receipt returns before the background call finishes."""
-    import asyncio
-
     from rumil.api.chat import _await_live_dispatches, _run_dispatch
 
     root = seeded_graph["root"]
@@ -1396,6 +1395,48 @@ async def test_run_dispatch_failure_writes_failed_completion(tmp_db, seeded_grap
     content = completions[0].content
     assert content["status"] == "failed"
     assert "synthetic dispatch failure" in content["error"]
+
+
+async def test_run_dispatch_publishes_conv_event(tmp_db, seeded_graph, mocker):
+    """A bg dispatch publishes a dispatch_completed event to subscribers."""
+    from rumil.api.chat import (
+        _await_live_dispatches,
+        _run_dispatch,
+        _subscribe_conv,
+        _unsubscribe_conv,
+    )
+
+    root = seeded_graph["root"]
+
+    async def noop(self):
+        return None
+
+    mocker.patch("rumil.calls.FindConsiderationsCall.run", noop)
+
+    conv = await tmp_db.create_chat_conversation(project_id=tmp_db.project_id, question_id=root.id)
+    q = _subscribe_conv(conv.id)
+    try:
+        await _run_dispatch(
+            tmp_db,
+            {
+                "question_id": root.id,
+                "headline": root.headline,
+                "call_type": "find-considerations",
+                "max_rounds": 1,
+                "model": None,
+            },
+            conv_id=conv.id,
+            tool_use_id="toolu_test_publish",
+        )
+        await _await_live_dispatches()
+        payload = await asyncio.wait_for(q.get(), timeout=2.0)
+    finally:
+        _unsubscribe_conv(conv.id, q)
+
+    assert payload["event"] == "dispatch_completed"
+    data = payload["data"]
+    assert data["tool_use_id"] == "toolu_test_publish"
+    assert data["status"] == "completed"
 
 
 async def test_run_dispatch_missing_conv_returns_error(tmp_db, seeded_graph):

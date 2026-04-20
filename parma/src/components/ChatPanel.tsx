@@ -11,8 +11,15 @@ import {
   deleteChatConversation,
   branchChatConversation,
   fetchPageByShortId,
+  subscribeToConversationEvents,
 } from "@/lib/api";
-import type { ChatToolUse, ChatConversationSummary, ChatTurnCosts, NavigateDirective } from "@/lib/api";
+import type {
+  ChatToolUse,
+  ChatConversationSummary,
+  ChatTurnCosts,
+  NavigateDirective,
+  DispatchCompletion,
+} from "@/lib/api";
 import { SlashCommandDropdown, useSlashCommands, recordRecentCommand, COMMANDS } from "./SlashCommands";
 import { processChildren } from "./NodeRefLink";
 import { useInspectPanel } from "./InspectPanelContext";
@@ -80,14 +87,24 @@ function persistedMessagesToUi(
   // back to its result — otherwise ToolBlock sees an empty result and
   // forever renders "running…" for completed calls loaded from history.
   const resultById = new Map<string, string>();
+  // dispatch_result messages are written out-of-band when a fire-and-forget
+  // dispatch call finishes. Stitch them back to the originating tool_use
+  // bubble so the chip renders on reload without needing a live SSE.
+  const dispatchById = new Map<string, DispatchCompletion>();
   for (const m of raw) {
-    if (m.role !== "tool_result") continue;
-    const results = (m.content?.results ?? []) as Array<{ tool_use_id?: string; content?: unknown }>;
-    for (const r of results) {
-      if (!r.tool_use_id) continue;
-      const content =
-        typeof r.content === "string" ? r.content : JSON.stringify(r.content ?? "");
-      resultById.set(r.tool_use_id, content);
+    if (m.role === "tool_result") {
+      const results = (m.content?.results ?? []) as Array<{ tool_use_id?: string; content?: unknown }>;
+      for (const r of results) {
+        if (!r.tool_use_id) continue;
+        const content =
+          typeof r.content === "string" ? r.content : JSON.stringify(r.content ?? "");
+        resultById.set(r.tool_use_id, content);
+      }
+    } else if (m.role === "dispatch_result") {
+      const c = m.content as unknown as DispatchCompletion;
+      if (c && typeof c.tool_use_id === "string") {
+        dispatchById.set(c.tool_use_id, c);
+      }
     }
   }
 
@@ -112,9 +129,10 @@ function persistedMessagesToUi(
           blocks.push({ type: "text", content: b.text ?? "" });
         } else if (b.type === "tool_use") {
           const result = (b.id && resultById.get(b.id)) ?? "(no result recorded)";
+          const dispatch = b.id ? dispatchById.get(b.id) : undefined;
           blocks.push({
             type: "tool",
-            tool: { name: b.name ?? "", input: b.input ?? {}, result },
+            tool: { id: b.id, name: b.name ?? "", input: b.input ?? {}, result, dispatch },
           });
         }
       }
@@ -238,6 +256,44 @@ function runningVerb(name: string): string {
   return "running";
 }
 
+function DispatchChip({ completion }: { completion: DispatchCompletion }) {
+  const ok = completion.status === "completed";
+  const label = ok ? `\u2713 completed` : `\u2717 failed`;
+  const bg = ok ? "var(--ok-bg, #e6f4ea)" : "var(--err-bg, #fce8e6)";
+  const fg = ok ? "var(--ok-fg, #1e8e3e)" : "var(--err-fg, #c5221f)";
+  return (
+    <span
+      className="chat-dispatch-chip"
+      title={completion.error ?? completion.summary}
+      style={{
+        marginLeft: "6px",
+        padding: "1px 6px",
+        borderRadius: "4px",
+        fontSize: "10px",
+        fontFamily: "var(--font-mono-stack)",
+        letterSpacing: "0.02em",
+        backgroundColor: bg,
+        color: fg,
+      }}
+    >
+      {label}
+      {completion.trace_url && (
+        <>
+          {" \u00b7 "}
+          <a
+            href={completion.trace_url}
+            target="_blank"
+            rel="noreferrer"
+            style={{ color: "inherit", textDecoration: "underline" }}
+          >
+            trace
+          </a>
+        </>
+      )}
+    </span>
+  );
+}
+
 function ToolBlock({ tu }: { tu: ChatToolUse }) {
   const isRunning = !tu.result;
   if (isRunning) {
@@ -266,6 +322,7 @@ function ToolBlock({ tu }: { tu: ChatToolUse }) {
           {` \u2014 ${tu.result.slice(0, 80)}`}
         </span>
       )}
+      {tu.dispatch && <DispatchChip completion={tu.dispatch} />}
     </div>
   );
 }
@@ -547,6 +604,48 @@ export function ChatPanel({
   useEffect(() => {
     if (isOpen) refreshConversations();
   }, [isOpen, refreshConversations]);
+
+  // Long-lived SSE subscription to the active conversation's out-of-band
+  // event stream. Currently delivers `dispatch_completed` events from
+  // fire-and-forget dispatch tool calls that outlive the triggering turn.
+  // Stores the completion on the originating tool block so the chip
+  // renders immediately. Cancels on conversation change or panel close.
+  useEffect(() => {
+    if (!conversationId || !isOpen) return;
+    const controller = new AbortController();
+    (async () => {
+      try {
+        await subscribeToConversationEvents(
+          conversationId,
+          (event) => {
+            if (event.type !== "dispatch_completed") return;
+            const completion = event.data as unknown as DispatchCompletion;
+            if (!completion?.tool_use_id) return;
+            setMessages((prev) =>
+              prev.map((msg) => {
+                if (!msg.blocks) return msg;
+                let changed = false;
+                const blocks = msg.blocks.map((b) => {
+                  if (b.type !== "tool") return b;
+                  if (b.tool.id !== completion.tool_use_id) return b;
+                  changed = true;
+                  return { type: "tool" as const, tool: { ...b.tool, dispatch: completion } };
+                });
+                return changed ? { ...msg, blocks } : msg;
+              }),
+            );
+          },
+          controller.signal,
+        );
+      } catch (e) {
+        if (!controller.signal.aborted) {
+          // eslint-disable-next-line no-console
+          console.warn("conversation events subscription ended:", e);
+        }
+      }
+    })();
+    return () => controller.abort();
+  }, [conversationId, isOpen]);
 
   // Auto-bind the chat to the most-recent conversation in this project.
   // Runs once per project change. Question switches within the same
@@ -960,13 +1059,15 @@ export function ChatPanel({
           updateMsg();
         } else if (event.type === "tool_use_start") {
           currentText = "";
+          const id = (event.data.id as string | undefined) ?? undefined;
           currentBlocks.push({
             type: "tool",
-            tool: { name: event.data.name as string, input: {}, result: "" },
+            tool: { id, name: event.data.name as string, input: {}, result: "" },
           });
           updateMsg();
         } else if (event.type === "tool_use_result") {
           currentText = "";
+          const id = (event.data.id as string | undefined) ?? undefined;
           const name = event.data.name as string;
           const input = (event.data.input as Record<string, unknown>) || {};
           const result = event.data.result as string;
@@ -974,7 +1075,7 @@ export function ChatPanel({
           currentBlocks = currentBlocks.map((b) => {
             if (!matched && b.type === "tool" && b.tool.name === name && !b.tool.result) {
               matched = true;
-              return { type: "tool" as const, tool: { name, input, result } };
+              return { type: "tool" as const, tool: { id: id ?? b.tool.id, name, input, result } };
             }
             return b;
           });

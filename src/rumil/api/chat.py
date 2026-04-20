@@ -2284,6 +2284,44 @@ async def _execute_tool_timed(
 _live_dispatch_tasks: set[asyncio.Task[None]] = set()
 
 
+_conv_brokers: dict[str, set[asyncio.Queue[dict[str, Any]]]] = {}
+
+
+def _publish_conv_event(conv_id: str, event_type: str, data: dict[str, Any]) -> None:
+    """Publish an event to every subscriber of ``conv_id``'s event stream.
+
+    The broker is a simple in-memory fan-out — each subscriber of the
+    conversation's long-lived SSE stream has a queue registered here.
+    Publishing is non-blocking (``put_nowait``); if a subscriber's queue
+    fills up we drop the event for that subscriber rather than block the
+    publisher. Subscribers are removed when their endpoint tears down.
+    """
+    subscribers = _conv_brokers.get(conv_id)
+    if not subscribers:
+        return
+    payload = {"event": event_type, "data": data}
+    for q in list(subscribers):
+        try:
+            q.put_nowait(payload)
+        except asyncio.QueueFull:
+            log.warning("Dropping conv event for full queue (conv %s)", conv_id[:8])
+
+
+def _subscribe_conv(conv_id: str) -> asyncio.Queue[dict[str, Any]]:
+    q: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=64)
+    _conv_brokers.setdefault(conv_id, set()).add(q)
+    return q
+
+
+def _unsubscribe_conv(conv_id: str, q: asyncio.Queue[dict[str, Any]]) -> None:
+    subscribers = _conv_brokers.get(conv_id)
+    if subscribers is None:
+        return
+    subscribers.discard(q)
+    if not subscribers:
+        _conv_brokers.pop(conv_id, None)
+
+
 async def _bg_run_dispatch(
     *,
     conv_id: str,
@@ -2380,6 +2418,7 @@ async def _bg_run_dispatch(
                 new_run_id[:8],
                 conv_id[:8],
             )
+        _publish_conv_event(conv_id, "dispatch_completed", content)
     finally:
         await bg_db.close()
 
@@ -3328,6 +3367,33 @@ def _sse(event: str, data: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
 
+async def handle_conversation_events(conversation_id: str) -> StreamingResponse:
+    """Long-lived SSE stream of out-of-band events for a conversation.
+
+    Events include ``dispatch_completed`` (fire-and-forget research-call
+    completions written by a background task) and, in later phases, other
+    per-conversation signals like orchestrator progress. Unlike
+    ``/api/chat/stream`` this stream has no turn lifetime — it stays open
+    as long as the client holds it. Used for rendering completion chips
+    on tool bubbles that finished after the triggering turn ended.
+    """
+    q = _subscribe_conv(conversation_id)
+
+    async def generate() -> AsyncIterator[str]:
+        try:
+            yield _sse("hello", {"conversation_id": conversation_id})
+            while True:
+                try:
+                    payload = await asyncio.wait_for(q.get(), timeout=15.0)
+                    yield _sse(payload["event"], payload["data"])
+                except TimeoutError:
+                    yield ": keep-alive\n\n"
+        finally:
+            _unsubscribe_conv(conversation_id, q)
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
 async def handle_chat_stream(request: ChatRequest) -> StreamingResponse:
     """Handle a streaming chat request, yielding SSE events."""
     settings = get_settings()
@@ -3441,7 +3507,10 @@ async def handle_chat_stream(request: ChatRequest) -> StreamingResponse:
                                         event_q.put_nowait(
                                             _sse(
                                                 "tool_use_start",
-                                                {"name": event.content_block.name},
+                                                {
+                                                    "id": event.content_block.id,
+                                                    "name": event.content_block.name,
+                                                },
                                             )
                                         )
 
@@ -3540,6 +3609,7 @@ async def handle_chat_stream(request: ChatRequest) -> StreamingResponse:
                             _sse(
                                 "tool_use_result",
                                 {
+                                    "id": tc.id,
                                     "name": tc.name,
                                     "input": tc.input,
                                     "result": result_str[:500],

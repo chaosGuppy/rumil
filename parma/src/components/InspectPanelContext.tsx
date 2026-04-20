@@ -2,7 +2,6 @@
 
 import { createContext, useCallback, useContext, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { InspectPanel } from "./InspectPanel";
 
 interface InspectPanelContextValue {
   openInspect: (shortId: string) => void;
@@ -97,12 +96,6 @@ export function InspectPanelProvider({ children }: { children: ReactNode }) {
       }}
     >
       {children}
-      <InspectPanel
-        shortId={openShortId}
-        onClose={closeInspect}
-        onOpen={openInspect}
-        onPromote={promoteToPane}
-      />
     </InspectPanelCtx.Provider>
   );
 }

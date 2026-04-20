@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import {
   fetchPageByShortId,
   fetchPageDetail,
@@ -46,12 +45,6 @@ export function InspectPanel({
     error: null,
   });
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [dockSlot, setDockSlot] = useState<HTMLElement | null>(null);
-
-  useEffect(() => {
-    if (!shortId) return;
-    setDockSlot(document.getElementById("inspect-slot"));
-  }, [shortId]);
 
   useEffect(() => {
     if (!shortId) {
@@ -112,9 +105,9 @@ export function InspectPanel({
 
   if (!shortId) return null;
 
-  const panel = (
+  return (
     <aside
-      className={`inspect-panel ${dockSlot ? "inspect-panel-docked" : ""}`}
+      className="inspect-panel"
       onClick={(e) => e.stopPropagation()}
       role="dialog"
       aria-label="Inspect page"
@@ -152,16 +145,7 @@ export function InspectPanel({
             <InspectBody detail={state.detail} onOpenRef={onOpen} />
           )}
         </div>
-      </aside>
-  );
-
-  if (dockSlot) {
-    return createPortal(panel, dockSlot);
-  }
-  return (
-    <div className="inspect-backdrop" onClick={onClose}>
-      {panel}
-    </div>
+    </aside>
   );
 }
 

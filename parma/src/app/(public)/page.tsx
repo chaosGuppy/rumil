@@ -12,6 +12,7 @@ import { SuggestionReview } from "@/components/SuggestionReview";
 import { SourcesView } from "@/components/SourcesView";
 import { SectionsView } from "@/components/SectionsView";
 import { SourceDrawer } from "@/components/SourceDrawer";
+import { InspectPanel } from "@/components/InspectPanel";
 import { InlayFrame } from "@/components/InlayFrame";
 import {
   InlaySelector,
@@ -1147,8 +1148,13 @@ function QuestionViewPage({
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
-  const { openInspect, closeInspect, openShortId, registerTraceHandler } =
-    useInspectPanel();
+  const {
+    openInspect,
+    closeInspect,
+    openShortId,
+    promoteToPane,
+    registerTraceHandler,
+  } = useInspectPanel();
 
   const verticalRef = useRef<VerticalViewHandle>(null);
   const [chatOpen, setChatOpen] = useState(false);
@@ -1497,7 +1503,12 @@ const refreshView = useCallback(() => {
           )}
         </div>
       )}
-      <div id="inspect-slot" className="inspect-slot" />
+      <InspectPanel
+        shortId={openShortId}
+        onClose={closeInspect}
+        onOpen={openInspect}
+        onPromote={promoteToPane}
+      />
       <ChatPanel
         questionId={questionId}
         questionHeadline={view.question.headline}

@@ -4488,46 +4488,17 @@ details[open] > .article-supplementary-toggle::before {
 }
 
 /* inspect panel — opens when a node-ref is clicked anywhere in the app.
-   Visually echoes source-drawer but sits on top of it if both are open. */
-.inspect-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.18);
-  z-index: 110;
-  animation: fade-in 0.1s ease-out;
-}
-
+   Docked as a flex sibling between main content and chat so opening it
+   compresses the board rather than covering the chat pane. */
 .inspect-panel {
-  position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: min(560px, 88vw);
+  flex-shrink: 0;
+  width: min(520px, 40vw);
+  min-width: 360px;
+  height: 100vh;
   background: var(--bg-pane);
   border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  box-shadow: -8px 0 40px rgba(0, 0, 0, 0.12);
-  animation: source-drawer-in 0.15s ease-out;
-}
-
-/* Docked variant: portaled into the .inspect-slot between main content and
-   chat, so opening a detail view compresses the board rather than covering
-   the chat pane. */
-.inspect-slot {
-  display: contents;
-}
-
-.inspect-panel-docked {
-  position: relative;
-  top: auto;
-  right: auto;
-  bottom: auto;
-  width: min(520px, 40vw);
-  min-width: 360px;
-  height: 100vh;
-  box-shadow: none;
-  flex-shrink: 0;
   animation: pane-enter 0.15s ease-out;
 }
 

@@ -30,6 +30,7 @@ from rumil.calls.stages import CallRunner
 from rumil.context import build_embedding_based_context
 from rumil.database import DB
 from rumil.embeddings import embed_query, search_pages_by_vector
+from rumil.llm import make_anthropic_client
 from rumil.models import (
     Call,
     CallType,
@@ -45,8 +46,10 @@ from rumil.models import (
     Workspace,
 )
 from rumil.moves.registry import MOVES
+from rumil.observability import llm_boundary
 from rumil.orchestrators import ORCHESTRATORS
 from rumil.pricing import usd_from_usage
+from rumil.run_executor import RunExecutor
 from rumil.scraper import scrape_url
 from rumil.settings import get_settings, override_settings
 from rumil.summary import build_research_tree
@@ -58,7 +61,7 @@ PROMPTS_DIR = Path(__file__).parent.parent.parent.parent / "prompts"
 
 MODEL_MAP: dict[str, str] = {
     "sonnet": "claude-sonnet-4-6",
-    "opus": "claude-opus-4-6",
+    "opus": "claude-opus-4-7",
     "haiku": "claude-haiku-4-5-20251001",
 }
 
@@ -2924,6 +2927,7 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
     path's timeout behavior.
     """
     settings = get_settings()
+    model_id = MODEL_MAP.get(request.model, MODEL_MAP["sonnet"])
     db = await DB.create(
         run_id=str(uuid.uuid4()),
         prod=settings.is_prod_db,
@@ -2933,9 +2937,23 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
     await db.create_run(
         name="chat",
         question_id=None,
-        config={**settings.capture_config(), "origin": "chat"},
+        config={
+            **settings.capture_config(),
+            "origin": "chat",
+            "model": model_id,
+            "chat_model_short": request.model,
+        },
     )
     await db.init_budget(CHAT_RUN_BUDGET)
+    log.info(
+        "chat-turn run=%s ws=%s qid=%s model_short=%s model=%s",
+        db.run_id,
+        request.workspace,
+        request.question_id or "",
+        request.model,
+        model_id,
+    )
+    executor = RunExecutor(db)
 
     async def run_turn() -> ChatResponse:
         full_id = await db.resolve_page_id(request.question_id) if request.question_id else None
@@ -2980,21 +2998,41 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
             f"\n\n---\n\n{preamble}{context_text}"
         )
 
-        model_id = MODEL_MAP.get(request.model, MODEL_MAP["sonnet"])
-        client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
+        client = make_anthropic_client()
         tool_uses_log: list[ToolUseInfo] = []
 
         turn_start_iso = datetime.now(UTC).isoformat()
         turn_chat_usd = 0.0
 
         for _ in range(10):
-            response = await client.messages.create(
+            create_kwargs: dict[str, Any] = {
+                "model": model_id,
+                "max_tokens": 4096,
+                "temperature": 0.7,
+                "system": full_system,
+                "messages": messages,
+                "tools": TOOLS,
+            }
+            exchange_started = datetime.now(UTC)
+            try:
+                response = await client.messages.create(**create_kwargs)  # type: ignore[arg-type]
+            except Exception as exc:
+                await llm_boundary.log_exchange(
+                    source="chat.handle_chat",
+                    model=model_id,
+                    request_payload=create_kwargs,
+                    started_at=exchange_started,
+                    finished_at=datetime.now(UTC),
+                    error=exc,
+                )
+                raise
+            await llm_boundary.log_exchange(
+                source="chat.handle_chat",
                 model=model_id,
-                max_tokens=4096,
-                temperature=0.7,
-                system=full_system,
-                messages=messages,  # type: ignore[arg-type]
-                tools=TOOLS,  # type: ignore[arg-type]
+                request_payload=create_kwargs,
+                started_at=exchange_started,
+                finished_at=datetime.now(UTC),
+                response=response,
             )
             try:
                 turn_chat_usd += usd_from_usage(model_id, response.usage)
@@ -3075,7 +3113,8 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
 
     try:
         try:
-            return await asyncio.wait_for(run_turn(), timeout=CHAT_TURN_TIMEOUT_S)
+            async with executor.tracked_scope(db.run_id):
+                return await asyncio.wait_for(run_turn(), timeout=CHAT_TURN_TIMEOUT_S)
         except TimeoutError:
             log.warning(
                 "chat turn hit CHAT_TURN_TIMEOUT_S (%ss); abandoning",
@@ -3124,6 +3163,7 @@ def _sse(event: str, data: dict[str, Any]) -> str:
 async def handle_chat_stream(request: ChatRequest) -> StreamingResponse:
     """Handle a streaming chat request, yielding SSE events."""
     settings = get_settings()
+    model_id = MODEL_MAP.get(request.model, MODEL_MAP["sonnet"])
     db = await DB.create(
         run_id=str(uuid.uuid4()),
         prod=settings.is_prod_db,
@@ -3133,9 +3173,23 @@ async def handle_chat_stream(request: ChatRequest) -> StreamingResponse:
     await db.create_run(
         name="chat",
         question_id=None,
-        config={**settings.capture_config(), "origin": "chat"},
+        config={
+            **settings.capture_config(),
+            "origin": "chat",
+            "model": model_id,
+            "chat_model_short": request.model,
+        },
     )
     await db.init_budget(CHAT_RUN_BUDGET)
+    log.info(
+        "chat-turn run=%s ws=%s qid=%s model_short=%s model=%s stream=1",
+        db.run_id,
+        request.workspace,
+        request.question_id or "",
+        request.model,
+        model_id,
+    )
+    executor = RunExecutor(db)
 
     full_id = await db.resolve_page_id(request.question_id) if request.question_id else None
     if request.question_id and not full_id:
@@ -3172,8 +3226,7 @@ async def handle_chat_stream(request: ChatRequest) -> StreamingResponse:
     )
     preamble = f"{ui_block}\n\n" if ui_block else ""
     full_system = f"{system_prompt}\n\n{catalog}\n\n---\n\n{preamble}{context_text}"
-    model_id = MODEL_MAP.get(request.model, MODEL_MAP["sonnet"])
-    client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
+    client = make_anthropic_client()
     context_scope_id = full_id or ""
 
     event_q: asyncio.Queue[str | None] = asyncio.Queue()
@@ -3193,118 +3246,153 @@ async def handle_chat_stream(request: ChatRequest) -> StreamingResponse:
         turn_start_iso = datetime.now(UTC).isoformat()
         turn_chat_usd = 0.0
         try:
-            event_q.put_nowait(
-                _sse("conversation", {"conversation_id": conv.id, "title": conv.title})
-            )
-            for _ in range(10):
-                async with client.messages.stream(
-                    model=model_id,
-                    max_tokens=4096,
-                    temperature=0.7,
-                    system=full_system,
-                    messages=messages,  # type: ignore[arg-type]
-                    tools=TOOLS,  # type: ignore[arg-type]
-                ) as stream:
-                    async for event in stream:
-                        if event.type == "content_block_delta":
-                            if isinstance(event.delta, TextDelta):
-                                event_q.put_nowait(_sse("text", {"content": event.delta.text}))
-                        elif event.type == "content_block_start":
-                            if isinstance(event.content_block, ToolUseBlock):
-                                event_q.put_nowait(
-                                    _sse("tool_use_start", {"name": event.content_block.name})
-                                )
-
-                response = await stream.get_final_message()
-                try:
-                    turn_chat_usd += usd_from_usage(model_id, response.usage)
-                except KeyError:
-                    log.warning("No pricing entry for model %s; chat cost not counted", model_id)
-
-                tool_calls = [b for b in response.content if isinstance(b, ToolUseBlock)]
-                is_terminal = not tool_calls
-                assistant_content: dict[str, Any] = {
-                    "blocks": _serialize_assistant_content(response.content),
-                }
-                costs_payload: dict[str, Any] | None = None
-                if is_terminal:
-                    research_usd, research_by_type = await _aggregate_turn_research_cost(
-                        db, turn_start_iso
-                    )
-                    costs_payload = {
-                        "chat_usd": turn_chat_usd,
-                        "research_usd": research_usd,
-                        "research_by_call_type": research_by_type,
+            async with executor.tracked_scope(db.run_id):
+                event_q.put_nowait(
+                    _sse("conversation", {"conversation_id": conv.id, "title": conv.title})
+                )
+                for _ in range(10):
+                    stream_kwargs: dict[str, Any] = {
+                        "model": model_id,
+                        "max_tokens": 4096,
+                        "temperature": 0.7,
+                        "system": full_system,
+                        "messages": messages,
+                        "tools": TOOLS,
                     }
-                    assistant_content["costs"] = costs_payload
+                    exchange_started = datetime.now(UTC)
+                    try:
+                        async with client.messages.stream(**stream_kwargs) as stream:  # type: ignore[arg-type]
+                            async for event in stream:
+                                if event.type == "content_block_delta":
+                                    if isinstance(event.delta, TextDelta):
+                                        event_q.put_nowait(
+                                            _sse("text", {"content": event.delta.text})
+                                        )
+                                elif event.type == "content_block_start":
+                                    if isinstance(event.content_block, ToolUseBlock):
+                                        event_q.put_nowait(
+                                            _sse(
+                                                "tool_use_start",
+                                                {"name": event.content_block.name},
+                                            )
+                                        )
 
-                await db.save_chat_message(
-                    conversation_id=conv.id,
-                    role=ChatMessageRole.ASSISTANT,
-                    content=assistant_content,
-                    question_id=full_id,
-                )
-
-                if is_terminal and costs_payload is not None:
-                    event_q.put_nowait(_sse("turn_costs", costs_payload))
-                    break
-
-                messages.append({"role": "assistant", "content": response.content})
-
-                tool_results = []
-                for tc in tool_calls:
-                    result_str = await _execute_tool_timed(tc.name, tc.input, db, context_scope_id)
-                    has_async = any(f'"{s}"' in result_str for s in _ASYNC_HANDLERS)
-                    if has_async:
-                        progress_q: asyncio.Queue[str] = asyncio.Queue()
-                        task = asyncio.create_task(
-                            _resolve_async(
-                                result_str, db, on_progress=lambda m: progress_q.put_nowait(m)
-                            )
+                        response = await stream.get_final_message()
+                    except Exception as exc:
+                        await llm_boundary.log_exchange(
+                            source="chat.handle_chat_stream",
+                            model=model_id,
+                            request_payload=stream_kwargs,
+                            started_at=exchange_started,
+                            finished_at=datetime.now(UTC),
+                            error=exc,
+                            streamed=True,
                         )
-                        while not task.done():
-                            try:
-                                msg = await asyncio.wait_for(progress_q.get(), timeout=0.5)
-                                event_q.put_nowait(_sse("orchestrator_progress", {"message": msg}))
-                            except TimeoutError:
-                                continue
-                        result_str = await task
-                        while not progress_q.empty():
-                            event_q.put_nowait(
-                                _sse(
-                                    "orchestrator_progress",
-                                    {"message": progress_q.get_nowait()},
+                        raise
+                    await llm_boundary.log_exchange(
+                        source="chat.handle_chat_stream",
+                        model=model_id,
+                        request_payload=stream_kwargs,
+                        started_at=exchange_started,
+                        finished_at=datetime.now(UTC),
+                        response=response,
+                        streamed=True,
+                    )
+                    try:
+                        turn_chat_usd += usd_from_usage(model_id, response.usage)
+                    except KeyError:
+                        log.warning(
+                            "No pricing entry for model %s; chat cost not counted", model_id
+                        )
+
+                    tool_calls = [b for b in response.content if isinstance(b, ToolUseBlock)]
+                    is_terminal = not tool_calls
+                    assistant_content: dict[str, Any] = {
+                        "blocks": _serialize_assistant_content(response.content),
+                    }
+                    costs_payload: dict[str, Any] | None = None
+                    if is_terminal:
+                        research_usd, research_by_type = await _aggregate_turn_research_cost(
+                            db, turn_start_iso
+                        )
+                        costs_payload = {
+                            "chat_usd": turn_chat_usd,
+                            "research_usd": research_usd,
+                            "research_by_call_type": research_by_type,
+                        }
+                        assistant_content["costs"] = costs_payload
+
+                    await db.save_chat_message(
+                        conversation_id=conv.id,
+                        role=ChatMessageRole.ASSISTANT,
+                        content=assistant_content,
+                        question_id=full_id,
+                    )
+
+                    if is_terminal and costs_payload is not None:
+                        event_q.put_nowait(_sse("turn_costs", costs_payload))
+                        break
+
+                    messages.append({"role": "assistant", "content": response.content})
+
+                    tool_results = []
+                    for tc in tool_calls:
+                        result_str = await _execute_tool_timed(
+                            tc.name, tc.input, db, context_scope_id
+                        )
+                        has_async = any(f'"{s}"' in result_str for s in _ASYNC_HANDLERS)
+                        if has_async:
+                            progress_q: asyncio.Queue[str] = asyncio.Queue()
+                            task = asyncio.create_task(
+                                _resolve_async(
+                                    result_str, db, on_progress=lambda m: progress_q.put_nowait(m)
                                 )
                             )
-                    event_q.put_nowait(
-                        _sse(
-                            "tool_use_result",
-                            {
-                                "name": tc.name,
-                                "input": tc.input,
-                                "result": result_str[:500],
-                            },
+                            while not task.done():
+                                try:
+                                    msg = await asyncio.wait_for(progress_q.get(), timeout=0.5)
+                                    event_q.put_nowait(
+                                        _sse("orchestrator_progress", {"message": msg})
+                                    )
+                                except TimeoutError:
+                                    continue
+                            result_str = await task
+                            while not progress_q.empty():
+                                event_q.put_nowait(
+                                    _sse(
+                                        "orchestrator_progress",
+                                        {"message": progress_q.get_nowait()},
+                                    )
+                                )
+                        event_q.put_nowait(
+                            _sse(
+                                "tool_use_result",
+                                {
+                                    "name": tc.name,
+                                    "input": tc.input,
+                                    "result": result_str[:500],
+                                },
+                            )
                         )
+                        tool_results.append(
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": tc.id,
+                                "content": result_str,
+                            }
+                        )
+
+                    await db.save_chat_message(
+                        conversation_id=conv.id,
+                        role=ChatMessageRole.TOOL_RESULT,
+                        content={"results": tool_results},
+                        question_id=full_id,
                     )
-                    tool_results.append(
-                        {
-                            "type": "tool_result",
-                            "tool_use_id": tc.id,
-                            "content": result_str,
-                        }
-                    )
 
-                await db.save_chat_message(
-                    conversation_id=conv.id,
-                    role=ChatMessageRole.TOOL_RESULT,
-                    content={"results": tool_results},
-                    question_id=full_id,
-                )
+                    messages.append({"role": "user", "content": tool_results})
 
-                messages.append({"role": "user", "content": tool_results})
-
-            await db.update_chat_conversation(conv.id, touch=True)
-            event_q.put_nowait(_sse("done", {"conversation_id": conv.id}))
+                await db.update_chat_conversation(conv.id, touch=True)
+                event_q.put_nowait(_sse("done", {"conversation_id": conv.id}))
         except asyncio.CancelledError:
             # This fires when the outer wait_for hits CHAT_TURN_TIMEOUT_S.
             # The client disconnect path does NOT cancel us (we're a

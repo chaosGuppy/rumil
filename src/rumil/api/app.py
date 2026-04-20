@@ -15,6 +15,7 @@ from datetime import UTC, datetime
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from postgrest.types import CountMethod
 from pydantic import BaseModel, TypeAdapter, ValidationError
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -55,6 +56,8 @@ from rumil.api.schemas import (
     GroundCallOut,
     GroundingPipelineSpecOut,
     LinkedPageOut,
+    LlmBoundaryExchangeDetailOut,
+    LlmBoundaryExchangeListItemOut,
     LLMExchangeOut,
     LLMExchangeSummaryOut,
     OrchestratorSpecOut,
@@ -63,6 +66,7 @@ from rumil.api.schemas import (
     PageIterationsOut,
     PageLoadEventOut,
     PageLoadStatsOut,
+    PaginatedLlmBoundaryExchangesOut,
     PaginatedPagesOut,
     ProjectStatsOut,
     ProjectSummaryOut,
@@ -419,6 +423,100 @@ async def update_project(
 @app.get("/api/projects/{project_id}/runs", response_model=list[RunListItemOut])
 async def list_project_runs(project_id: str, db: DB = Depends(_get_db)):
     return await db.list_runs_for_project(project_id)
+
+
+@app.get(
+    "/api/projects/{project_id}/llm-boundary-exchanges",
+    response_model=PaginatedLlmBoundaryExchangesOut,
+)
+async def list_project_boundary_exchanges(
+    project_id: str,
+    limit: int = 50,
+    offset: int = 0,
+    source: str | None = None,
+    model: str | None = None,
+    run_id: str | None = None,
+    error_only: bool = False,
+    since: datetime | None = None,
+    db: DB = Depends(_get_db),
+):
+    """List llm_boundary_exchanges rows for one project.
+
+    Compact list view — heavy `request_json` / `response_json` columns are
+    omitted. Fetch a single row with full payloads via
+    `GET /api/llm-boundary-exchanges/{exchange_id}`.
+
+    Filters:
+      - `source` — prefix match (e.g. `chat`, `llm.call_api`)
+      - `model` — substring match
+      - `run_id` — exact run_id (full UUID)
+      - `error_only` — only rows with a recorded `error_class`
+      - `since` — only rows with `started_at >= since`
+    `limit` is clamped to [1, 500].
+    """
+    limit = max(1, min(limit, 500))
+    offset = max(0, offset)
+
+    select_cols = (
+        "id, project_id, run_id, call_id, started_at, finished_at, latency_ms, "
+        "model, usage, stop_reason, error_class, error_message, http_status, "
+        "source, streamed"
+    )
+    base = db.client.table("llm_boundary_exchanges").select(select_cols)
+    base = base.eq("project_id", project_id)
+    if source:
+        base = base.like("source", f"{source}%")
+    if model:
+        base = base.like("model", f"%{model}%")
+    if run_id:
+        base = base.eq("run_id", run_id)
+    if error_only:
+        base = base.not_.is_("error_class", "null")
+    if since is not None:
+        base = base.gte("started_at", since.isoformat())
+
+    count_q = db.client.table("llm_boundary_exchanges").select("id", count=CountMethod.exact)
+    count_q = count_q.eq("project_id", project_id)
+    if source:
+        count_q = count_q.like("source", f"{source}%")
+    if model:
+        count_q = count_q.like("model", f"%{model}%")
+    if run_id:
+        count_q = count_q.eq("run_id", run_id)
+    if error_only:
+        count_q = count_q.not_.is_("error_class", "null")
+    if since is not None:
+        count_q = count_q.gte("started_at", since.isoformat())
+
+    page = await base.order("started_at", desc=True).range(offset, offset + limit - 1).execute()
+    counts = await count_q.execute()
+
+    items = [LlmBoundaryExchangeListItemOut.model_validate(r) for r in (page.data or [])]
+    return PaginatedLlmBoundaryExchangesOut(
+        items=items,
+        total_count=counts.count or 0,
+        offset=offset,
+        limit=limit,
+    )
+
+
+@app.get(
+    "/api/llm-boundary-exchanges/{exchange_id}",
+    response_model=LlmBoundaryExchangeDetailOut,
+)
+async def get_boundary_exchange(exchange_id: str, db: DB = Depends(_get_db)):
+    """Fetch one boundary exchange row including full request_json + response_json."""
+    result = (
+        await db.client.table("llm_boundary_exchanges")
+        .select("*")
+        .eq("id", exchange_id)
+        .limit(1)
+        .execute()
+    )
+    rows = result.data or []
+    if not rows:
+        raise HTTPException(status_code=404, detail="Exchange not found")
+    return LlmBoundaryExchangeDetailOut.model_validate(rows[0])
 
 
 @app.patch("/api/runs/{run_id}")

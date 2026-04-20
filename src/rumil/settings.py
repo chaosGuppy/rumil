@@ -162,6 +162,8 @@ class Settings(BaseSettings):
     # ID is reused instead of creating a new page).
     subquestion_dedup_similarity_threshold: float = _capture_field(default=0.85)
 
+    log_llm_boundary_enabled: bool = _capture_field(default=True)
+
     @property
     def is_test_mode(self) -> bool:
         return bool(self.rumil_test_mode)

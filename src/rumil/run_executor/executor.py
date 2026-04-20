@@ -42,6 +42,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
+from rumil.observability.llm_boundary import reset_run_context, set_run_context
 from rumil.run_executor.run_spec import RunKind, RunSpec
 from rumil.run_executor.run_state import RunEvent, RunStatus, RunView
 
@@ -250,6 +251,7 @@ class RunExecutor:
         propagates so callers can observe it.
         """
         await self.mark_started(run_id)
+        boundary_tokens = set_run_context(db=self._db, run_id=run_id)
         try:
             yield
         except asyncio.CancelledError:
@@ -272,6 +274,8 @@ class RunExecutor:
                 await self.mark_complete(run_id)
             except Exception:
                 log.exception("tracked_scope: mark_complete failed")
+        finally:
+            reset_run_context(boundary_tokens)
 
     async def start(self, spec: RunSpec) -> str:
         """Integrated path: create run + spawn handler + track lifecycle.

@@ -7,6 +7,7 @@ const NAV_ITEMS = [
   { href: "/traces", label: "traces" },
   { href: "/evaluations", label: "evaluations" },
   { href: "/ab-evals", label: "ab-evals" },
+  { href: "/llm-boundary", label: "llm-boundary" },
 ] as const;
 
 export default function OperatorLayout({

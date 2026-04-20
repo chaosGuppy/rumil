@@ -7,7 +7,7 @@ Composite response types and trace event envelope types. Core models
 
 from collections.abc import Sequence
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -999,3 +999,63 @@ class AdversarialVerdictSummaryOut(BaseModel):
     verdict_created_at: datetime
     expired: bool
     page_created_at: datetime
+
+
+class LlmBoundaryExchangeListItemOut(BaseModel):
+    """One row in the boundary-exchanges list for a workspace.
+
+    Compact view: the heavy ``request_json`` / ``response_json`` columns
+    are omitted; clients fetch them on demand via the detail endpoint.
+    """
+
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    id: str
+    project_id: str | None
+    run_id: str | None
+    call_id: str | None
+    started_at: datetime
+    finished_at: datetime | None
+    latency_ms: int | None
+    model: str
+    usage: dict[str, Any] | None
+    stop_reason: str | None
+    error_class: str | None
+    error_message: str | None
+    http_status: int | None
+    source: str
+    streamed: bool
+
+
+class PaginatedLlmBoundaryExchangesOut(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    items: Sequence[LlmBoundaryExchangeListItemOut]
+    total_count: int
+    offset: int
+    limit: int
+
+
+class LlmBoundaryExchangeDetailOut(BaseModel):
+    """Full row including the verbatim request_json and response_json."""
+
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    id: str
+    project_id: str | None
+    run_id: str | None
+    call_id: str | None
+    started_at: datetime
+    finished_at: datetime | None
+    latency_ms: int | None
+    model: str
+    request_json: dict[str, Any]
+    response_json: dict[str, Any] | None
+    usage: dict[str, Any] | None
+    stop_reason: str | None
+    error_class: str | None
+    error_message: str | None
+    http_status: int | None
+    source: str
+    streamed: bool
+    created_at: datetime

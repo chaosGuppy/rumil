@@ -1930,6 +1930,165 @@ export type LinkedPageOut = {
 };
 
 /**
+ * LlmBoundaryExchangeDetailOut
+ *
+ * Full row including the verbatim request_json and response_json.
+ */
+export type LlmBoundaryExchangeDetailOut = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Project Id
+     */
+    project_id: string | null;
+    /**
+     * Run Id
+     */
+    run_id: string | null;
+    /**
+     * Call Id
+     */
+    call_id: string | null;
+    /**
+     * Started At
+     */
+    started_at: string;
+    /**
+     * Finished At
+     */
+    finished_at: string | null;
+    /**
+     * Latency Ms
+     */
+    latency_ms: number | null;
+    /**
+     * Model
+     */
+    model: string;
+    /**
+     * Request Json
+     */
+    request_json: {
+        [key: string]: unknown;
+    };
+    /**
+     * Response Json
+     */
+    response_json: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Usage
+     */
+    usage: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Stop Reason
+     */
+    stop_reason: string | null;
+    /**
+     * Error Class
+     */
+    error_class: string | null;
+    /**
+     * Error Message
+     */
+    error_message: string | null;
+    /**
+     * Http Status
+     */
+    http_status: number | null;
+    /**
+     * Source
+     */
+    source: string;
+    /**
+     * Streamed
+     */
+    streamed: boolean;
+    /**
+     * Created At
+     */
+    created_at: string;
+};
+
+/**
+ * LlmBoundaryExchangeListItemOut
+ *
+ * One row in the boundary-exchanges list for a workspace.
+ *
+ * Compact view: the heavy ``request_json`` / ``response_json`` columns
+ * are omitted; clients fetch them on demand via the detail endpoint.
+ */
+export type LlmBoundaryExchangeListItemOut = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Project Id
+     */
+    project_id: string | null;
+    /**
+     * Run Id
+     */
+    run_id: string | null;
+    /**
+     * Call Id
+     */
+    call_id: string | null;
+    /**
+     * Started At
+     */
+    started_at: string;
+    /**
+     * Finished At
+     */
+    finished_at: string | null;
+    /**
+     * Latency Ms
+     */
+    latency_ms: number | null;
+    /**
+     * Model
+     */
+    model: string;
+    /**
+     * Usage
+     */
+    usage: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Stop Reason
+     */
+    stop_reason: string | null;
+    /**
+     * Error Class
+     */
+    error_class: string | null;
+    /**
+     * Error Message
+     */
+    error_message: string | null;
+    /**
+     * Http Status
+     */
+    http_status: number | null;
+    /**
+     * Source
+     */
+    source: string;
+    /**
+     * Streamed
+     */
+    streamed: boolean;
+};
+
+/**
  * LoadPageEventOut
  */
 export type LoadPageEventOut = {
@@ -2427,6 +2586,28 @@ export type PageRef = {
  * PageType
  */
 export type PageType = 'source' | 'claim' | 'question' | 'judgement' | 'wiki' | 'view' | 'view_item' | 'view_meta' | 'artifact' | 'model' | 'inlay';
+
+/**
+ * PaginatedLlmBoundaryExchangesOut
+ */
+export type PaginatedLlmBoundaryExchangesOut = {
+    /**
+     * Items
+     */
+    items: Array<LlmBoundaryExchangeListItemOut>;
+    /**
+     * Total Count
+     */
+    total_count: number;
+    /**
+     * Offset
+     */
+    offset: number;
+    /**
+     * Limit
+     */
+    limit: number;
+};
 
 /**
  * PaginatedPagesOut
@@ -4096,6 +4277,100 @@ export type ListProjectRunsApiProjectsProjectIdRunsGetResponses = {
 };
 
 export type ListProjectRunsApiProjectsProjectIdRunsGetResponse = ListProjectRunsApiProjectsProjectIdRunsGetResponses[keyof ListProjectRunsApiProjectsProjectIdRunsGetResponses];
+
+export type ListProjectBoundaryExchangesApiProjectsProjectIdLlmBoundaryExchangesGetData = {
+    body?: never;
+    path: {
+        /**
+         * Project Id
+         */
+        project_id: string;
+    };
+    query?: {
+        /**
+         * Limit
+         */
+        limit?: number;
+        /**
+         * Offset
+         */
+        offset?: number;
+        /**
+         * Source
+         */
+        source?: string | null;
+        /**
+         * Model
+         */
+        model?: string | null;
+        /**
+         * Run Id
+         */
+        run_id?: string | null;
+        /**
+         * Error Only
+         */
+        error_only?: boolean;
+        /**
+         * Since
+         */
+        since?: string | null;
+    };
+    url: '/api/projects/{project_id}/llm-boundary-exchanges';
+};
+
+export type ListProjectBoundaryExchangesApiProjectsProjectIdLlmBoundaryExchangesGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListProjectBoundaryExchangesApiProjectsProjectIdLlmBoundaryExchangesGetError = ListProjectBoundaryExchangesApiProjectsProjectIdLlmBoundaryExchangesGetErrors[keyof ListProjectBoundaryExchangesApiProjectsProjectIdLlmBoundaryExchangesGetErrors];
+
+export type ListProjectBoundaryExchangesApiProjectsProjectIdLlmBoundaryExchangesGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: PaginatedLlmBoundaryExchangesOut;
+};
+
+export type ListProjectBoundaryExchangesApiProjectsProjectIdLlmBoundaryExchangesGetResponse = ListProjectBoundaryExchangesApiProjectsProjectIdLlmBoundaryExchangesGetResponses[keyof ListProjectBoundaryExchangesApiProjectsProjectIdLlmBoundaryExchangesGetResponses];
+
+export type GetBoundaryExchangeApiLlmBoundaryExchangesExchangeIdGetData = {
+    body?: never;
+    path: {
+        /**
+         * Exchange Id
+         */
+        exchange_id: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/llm-boundary-exchanges/{exchange_id}';
+};
+
+export type GetBoundaryExchangeApiLlmBoundaryExchangesExchangeIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetBoundaryExchangeApiLlmBoundaryExchangesExchangeIdGetError = GetBoundaryExchangeApiLlmBoundaryExchangesExchangeIdGetErrors[keyof GetBoundaryExchangeApiLlmBoundaryExchangesExchangeIdGetErrors];
+
+export type GetBoundaryExchangeApiLlmBoundaryExchangesExchangeIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: LlmBoundaryExchangeDetailOut;
+};
+
+export type GetBoundaryExchangeApiLlmBoundaryExchangesExchangeIdGetResponse = GetBoundaryExchangeApiLlmBoundaryExchangesExchangeIdGetResponses[keyof GetBoundaryExchangeApiLlmBoundaryExchangesExchangeIdGetResponses];
 
 export type UpdateRunApiRunsRunIdPatchData = {
     body: UpdateRunRequest;

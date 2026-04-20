@@ -19,6 +19,7 @@ from rumil.nudges import (
     build_applied_event,
     consume_one_shot,
 )
+from rumil.observability.llm_boundary import reset_call_context, set_call_context
 from rumil.tracing.page_load_tracking import page_track_scope
 from rumil.tracing.trace_events import ErrorEvent
 from rumil.tracing.tracer import CallTrace, reset_trace, set_trace
@@ -208,12 +209,14 @@ class CallRunner(ABC):
         self.infra.state.db = call_db
         self.infra.trace.db = call_db
         trace_token = set_trace(self.infra.trace)
+        call_token = set_call_context(self.infra.call.id)
         try:
             await self._run_stages()
         finally:
             try:
                 await call_db.close()
             finally:
+                reset_call_context(call_token)
                 reset_trace(trace_token)
 
     async def _run_stages(self) -> None:

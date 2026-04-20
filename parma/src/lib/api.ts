@@ -9,8 +9,11 @@ import type {
   EvaluationTypeSpecOut,
   GroundingPipelineSpecOut,
   LinkedPageOut,
+  LlmBoundaryExchangeDetailOut,
+  LlmBoundaryExchangeListItemOut,
   LlmExchangeSummaryOut,
   OrchestratorSpecOut,
+  PaginatedLlmBoundaryExchangesOut,
   PageDetailOut,
   PageIterationsOut,
   RefineIterationOut,
@@ -50,6 +53,9 @@ export type Capabilities = CapabilitiesOut;
 export type EvaluationTypeSpec = EvaluationTypeSpecOut;
 export type GroundingPipelineSpec = GroundingPipelineSpecOut;
 export type OrchestratorSpec = OrchestratorSpecOut;
+export type BoundaryExchange = LlmBoundaryExchangeListItemOut;
+export type BoundaryExchangeDetail = LlmBoundaryExchangeDetailOut;
+export type PaginatedBoundaryExchanges = PaginatedLlmBoundaryExchangesOut;
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -1012,6 +1018,41 @@ export async function revokeNudge(nudgeId: string): Promise<RunNudge> {
   const res = await fetch(
     `${API_BASE}/api/nudges/${encodeURIComponent(nudgeId)}/revoke`,
     { method: "PATCH" },
+  );
+  if (!res.ok) throw new Error(await liftFastApiError(res));
+  return res.json();
+}
+
+export async function fetchBoundaryExchanges(params: {
+  projectId: string;
+  limit?: number;
+  offset?: number;
+  source?: string;
+  model?: string;
+  runId?: string;
+  errorOnly?: boolean;
+  since?: string;
+}): Promise<PaginatedBoundaryExchanges> {
+  const qs = new URLSearchParams();
+  qs.set("limit", String(params.limit ?? 50));
+  qs.set("offset", String(params.offset ?? 0));
+  if (params.source) qs.set("source", params.source);
+  if (params.model) qs.set("model", params.model);
+  if (params.runId) qs.set("run_id", params.runId);
+  if (params.errorOnly) qs.set("error_only", "true");
+  if (params.since) qs.set("since", params.since);
+  const res = await fetch(
+    `${API_BASE}/api/projects/${encodeURIComponent(params.projectId)}/llm-boundary-exchanges?${qs}`,
+  );
+  if (!res.ok) throw new Error(await liftFastApiError(res));
+  return res.json();
+}
+
+export async function fetchBoundaryExchangeDetail(
+  exchangeId: string,
+): Promise<BoundaryExchangeDetail> {
+  const res = await fetch(
+    `${API_BASE}/api/llm-boundary-exchanges/${encodeURIComponent(exchangeId)}`,
   );
   if (!res.ok) throw new Error(await liftFastApiError(res));
   return res.json();

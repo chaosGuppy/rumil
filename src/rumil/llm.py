@@ -20,7 +20,7 @@ import sys
 import time
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic, TypeVar, overload
 
@@ -39,6 +39,7 @@ from tenacity import (
     wait_exponential,
 )
 
+from rumil.observability import llm_boundary
 from rumil.pricing import compute_cost
 from rumil.settings import get_settings
 from rumil.tracing.trace_events import ErrorEvent, LLMExchangeEvent
@@ -96,6 +97,19 @@ def _effort_level(model: str) -> str | None:
 PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts"
 
 log = logging.getLogger(__name__)
+
+
+def make_anthropic_client(api_key: str | None = None) -> anthropic.AsyncAnthropic:
+    """Single source of truth for instantiating the Anthropic SDK client.
+
+    All call sites in the codebase should use this factory rather than
+    constructing `anthropic.AsyncAnthropic` directly so that future
+    boundary instrumentation (httpx hooks, retry policy, etc.) has one
+    place to land.
+    """
+    if api_key is None:
+        api_key = get_settings().require_anthropic_key()
+    return anthropic.AsyncAnthropic(api_key=api_key)
 
 
 def _is_retryable(exc: BaseException) -> bool:
@@ -572,9 +586,29 @@ async def call_api(
     @_api_retry
     async def _do_api_call() -> anthropic.types.Message:
         start = time.monotonic()
-        response = await client.messages.create(**kwargs)
+        started_at = datetime.now(UTC)
+        try:
+            response = await client.messages.create(**kwargs)
+        except Exception as exc:
+            await llm_boundary.log_exchange(
+                source="llm.call_api",
+                model=model,
+                request_payload=kwargs,
+                started_at=started_at,
+                finished_at=datetime.now(UTC),
+                error=exc,
+            )
+            raise
         elapsed = int((time.monotonic() - start) * 1000)
         response._elapsed_ms = elapsed  # type: ignore[attr-defined]
+        await llm_boundary.log_exchange(
+            source="llm.call_api",
+            model=model,
+            request_payload=kwargs,
+            started_at=started_at,
+            finished_at=datetime.now(UTC),
+            response=response,
+        )
         return response
 
     try:
@@ -669,9 +703,8 @@ async def text_call(
     trace event against the call identified by `metadata.call_id`.
     """
     settings = get_settings()
-    api_key = settings.require_anthropic_key()
     model = settings.model
-    client = anthropic.AsyncAnthropic(api_key=api_key)
+    client = make_anthropic_client()
     msg_list = messages if messages is not None else [{"role": "user", "content": user_message}]
     if metadata is not None and metadata.user_message is None:
         metadata.user_message = user_message
@@ -728,7 +761,7 @@ async def _structured_call_cached(
     user message and validates the response with pydantic.
     """
     settings = get_settings()
-    client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
+    client = make_anthropic_client()
     schema_text = _schema_instruction(response_model)
     inject_msgs = _inject_into_last_user_message(msg_list, schema_text)
     effective_model = model or settings.model
@@ -850,7 +883,7 @@ async def _structured_call_parse(
 ) -> StructuredCallResult[T]:
     """Structured output via messages.parse (no cache sharing with create)."""
     settings = get_settings()
-    client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
+    client = make_anthropic_client()
     model = model or settings.model
     system_prompt = _with_date_suffix(system_prompt)
 
@@ -876,8 +909,28 @@ async def _structured_call_parse(
     @_api_retry
     async def _do_parse() -> Any:
         t0 = time.monotonic()
-        resp = await client.messages.parse(**parse_kwargs)
+        started_at = datetime.now(UTC)
+        try:
+            resp = await client.messages.parse(**parse_kwargs)
+        except Exception as exc:
+            await llm_boundary.log_exchange(
+                source="llm.structured_call_parse",
+                model=model,
+                request_payload=parse_kwargs,
+                started_at=started_at,
+                finished_at=datetime.now(UTC),
+                error=exc,
+            )
+            raise
         resp._elapsed_ms = int((time.monotonic() - t0) * 1000)  # type: ignore[attr-defined]
+        await llm_boundary.log_exchange(
+            source="llm.structured_call_parse",
+            model=model,
+            request_payload=parse_kwargs,
+            started_at=started_at,
+            finished_at=datetime.now(UTC),
+            response=resp,
+        )
         return resp
 
     response: Any = await _do_parse()

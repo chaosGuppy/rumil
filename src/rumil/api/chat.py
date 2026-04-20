@@ -238,11 +238,14 @@ async def _persist_user_turn(
     request: ChatRequest,
     question_full_id: str | None,
 ) -> None:
-    existing = await db.list_chat_messages(conv.id)
-    persisted_user_turns = sum(1 for m in existing if m.role == ChatMessageRole.USER)
-    incoming_user_turns = [m for m in request.messages if m.get("role") == "user"]
-    for idx, m in enumerate(incoming_user_turns):
-        if idx < persisted_user_turns:
+    """Persist every user message from *request* onto the conversation.
+
+    The contract with the frontend is "send only the new user turn(s) for
+    this request"; the full history is rebuilt on the server from the
+    persisted chat_messages rows. Nothing to dedupe here.
+    """
+    for m in request.messages:
+        if m.get("role") != "user":
             continue
         text = _content_to_text(m.get("content"))
         await db.save_chat_message(
@@ -251,10 +254,6 @@ async def _persist_user_turn(
             content={"text": text},
             question_id=question_full_id,
         )
-
-
-def _user_turns(messages: Sequence[ChatMessage]) -> list[ChatMessage]:
-    return [m for m in messages if m.role == ChatMessageRole.USER]
 
 
 def _replay_messages_for_api(
@@ -1014,12 +1013,8 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
             )
 
         prior_messages = await db.list_chat_messages(conv.id)
-        if prior_messages:
-            replay = _replay_messages_for_api(prior_messages)
-            new_user_turns = request.messages[len(_user_turns(prior_messages)) :]
-            messages: list[dict[str, Any]] = replay + list(new_user_turns)
-        else:
-            messages = list(request.messages)
+        replay = _replay_messages_for_api(prior_messages) if prior_messages else []
+        messages: list[dict[str, Any]] = replay + list(request.messages)
 
         await _persist_user_turn(db, conv, request, full_id)
 
@@ -1142,12 +1137,8 @@ async def handle_chat_stream(request: ChatRequest) -> StreamingResponse:
                 return
 
             prior_messages = await db.list_chat_messages(conv.id)
-            if prior_messages:
-                replay = _replay_messages_for_api(prior_messages)
-                new_user_turns = request.messages[len(_user_turns(prior_messages)) :]
-                messages: list[dict[str, Any]] = replay + list(new_user_turns)
-            else:
-                messages = list(request.messages)
+            replay = _replay_messages_for_api(prior_messages) if prior_messages else []
+            messages: list[dict[str, Any]] = replay + list(request.messages)
 
             await _persist_user_turn(db, conv, request, full_id)
 

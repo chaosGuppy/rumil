@@ -290,22 +290,91 @@ def _replay_messages_for_api(
     return out
 
 
-async def build_chat_context(question_id: str, db: DB) -> str:
-    question = await db.get_page(question_id)
-    if not question:
-        return "Question not found."
+async def build_chat_context(page_id: str, db: DB) -> str:
+    """Render a system-prompt context block scoped to the viewed page.
 
-    parts: list[str] = [f"# Current question: {question.headline}\n"]
-    if question.content:
-        parts.append(f"{question.content}\n")
+    The `page_id` may point to any page type — question, claim, judgement,
+    source, etc. The block leads with the page's own identity and content,
+    then adds page-type-specific details (parent chain for questions,
+    credence badges for claims/judgements), recent calls scoped to the
+    page, and finally an embedding-based neighbour list. Intent: by the
+    time the model sees the first user turn, it already knows what the
+    user is looking at and what's been tried on it.
+    """
+    page = await db.get_page(page_id)
+    if not page:
+        return "Page not found."
 
-    parts.append("## Workspace neighbors (by embedding similarity)\n")
+    parts: list[str] = [
+        f"# {page.page_type.value}: {page.headline}",
+        f"_id: {page.id[:8]}_",
+    ]
+
+    badges: list[str] = []
+    if page.credence is not None:
+        badges.append(f"credence={page.credence}")
+    if page.robustness is not None:
+        badges.append(f"robustness={page.robustness}")
+    if page.epistemic_type:
+        badges.append(f"epistemic={page.epistemic_type}")
+    if badges:
+        parts.append(f"_{' · '.join(badges)}_")
+
+    if page.abstract:
+        parts.append(f"\n**Abstract**\n{page.abstract}")
+    if page.content:
+        content_str = page.content
+        if len(content_str) > 3000:
+            content_str = content_str[:3000] + f"\n… ({len(page.content) - 3000} chars truncated)"
+        parts.append(f"\n**Content**\n{content_str}")
+
+    if page.page_type == PageType.QUESTION:
+        parent = await db.get_parent_question(page_id)
+        if parent:
+            parts.append(f"\n**Parent question** · [{parent.id[:8]}] {parent.headline}")
+        children = await db.get_child_questions(page_id)
+        if children:
+            lines = [f"\n**Child questions** ({len(children)})"]
+            for c in children[:10]:
+                lines.append(f"- [{c.id[:8]}] {c.headline}")
+            if len(children) > 10:
+                lines.append(f"- … and {len(children) - 10} more")
+            parts.append("\n".join(lines))
+
+    call_rows = (
+        await db._execute(
+            db.client.table("calls")
+            .select("id, call_type, status, cost_usd, created_at, result_summary")
+            .eq("scope_page_id", page_id)
+            .eq("project_id", db.project_id)
+            .order("created_at", desc=True)
+            .limit(10)
+        )
+    ).data or []
+    if call_rows:
+        lines = [f"\n**Recent calls on this page** ({len(call_rows)})"]
+        for r in call_rows:
+            cid = (r.get("id") or "")[:8]
+            ct = r.get("call_type") or "?"
+            status = r.get("status") or "?"
+            cost = r.get("cost_usd")
+            cost_str = f" ${cost:.3f}" if cost else ""
+            created = (r.get("created_at") or "")[:10]
+            summary = (r.get("result_summary") or "").strip().replace("\n", " ")
+            if len(summary) > 120:
+                summary = summary[:117] + "…"
+            summary_str = f" — {summary}" if summary else ""
+            lines.append(f"- [{cid}] {ct} {status}{cost_str} ({created}){summary_str}")
+        parts.append("\n".join(lines))
+
+    neighbor_scope = page_id if page.page_type == PageType.QUESTION else None
     neighbor_result = await build_embedding_based_context(
-        question.content or question.headline,
+        page.content or page.abstract or page.headline,
         db,
-        scope_question_id=question_id,
+        scope_question_id=neighbor_scope,
     )
     if neighbor_result.context_text:
+        parts.append("\n**Workspace neighbors (embedding similarity)**")
         parts.append(neighbor_result.context_text)
 
     return "\n".join(parts)
@@ -406,13 +475,22 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "get_recent_activity",
         "description": (
-            "List the N most recent calls run in this project, with their "
-            "call type, scope question, and status."
+            "List the N most recent calls in this project, most recent "
+            "first. If `page_id` is provided, only calls whose scope is "
+            "that page are returned (use this to see what's been tried on "
+            "a specific question/claim)."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "limit": {"type": "integer", "description": "Default 20.", "default": 20},
+                "page_id": {
+                    "type": "string",
+                    "description": (
+                        "Optional page short ID or full UUID. When set, "
+                        "filters to calls scoped to this page only."
+                    ),
+                },
             },
         },
     },
@@ -584,25 +662,51 @@ async def _handle_get_parent_chain(db: DB, tool_input: dict[str, Any]) -> str:
 
 async def _handle_get_recent_activity(db: DB, tool_input: dict[str, Any]) -> str:
     limit = int(tool_input.get("limit", 20))
-    rows = (
-        await db._execute(
-            db.client.table("calls")
-            .select("id, call_type, status, scope_page_id, created_at")
-            .eq("project_id", db.project_id)
-            .order("created_at", desc=True)
-            .limit(limit)
-        )
-    ).data or []
+    page_id_in = tool_input.get("page_id")
+    scope_full: str | None = None
+    if isinstance(page_id_in, str) and page_id_in:
+        scope_full = await db.resolve_page_id(page_id_in)
+        if not scope_full:
+            return f"No page found matching '{page_id_in}'"
+
+    query = (
+        db.client.table("calls")
+        .select("id, call_type, status, scope_page_id, created_at, cost_usd, result_summary")
+        .eq("project_id", db.project_id)
+        .order("created_at", desc=True)
+        .limit(limit)
+    )
+    if scope_full:
+        query = query.eq("scope_page_id", scope_full)
+    rows = (await db._execute(query)).data or []
     if not rows:
-        return "No recent calls."
-    lines = [f"{len(rows)} most recent call(s):\n"]
+        return f"No calls scoped to page {page_id_in}." if scope_full else "No recent calls."
+    header = (
+        f"{len(rows)} call(s) scoped to {page_id_in}:"
+        if scope_full
+        else f"{len(rows)} most recent call(s):"
+    )
+    lines = [header, ""]
     for row in rows:
         scope = row.get("scope_page_id")
         scope_label = "?"
-        if scope:
+        if scope and not scope_full:
             page = await db.get_page(scope)
             scope_label = page.headline[:60] if page else scope[:8]
-        lines.append(f"  [{row['id'][:8]}] {row['call_type']} ({row['status']}) — {scope_label}")
+        cost = row.get("cost_usd")
+        cost_str = f" ${cost:.3f}" if cost else ""
+        summary = (row.get("result_summary") or "").strip().replace("\n", " ")
+        if len(summary) > 100:
+            summary = summary[:97] + "…"
+        summary_str = f" — {summary}" if summary else ""
+        if scope_full:
+            lines.append(
+                f"  [{row['id'][:8]}] {row['call_type']} ({row['status']}){cost_str}{summary_str}"
+            )
+        else:
+            lines.append(
+                f"  [{row['id'][:8]}] {row['call_type']} ({row['status']}){cost_str} — {scope_label}{summary_str}"
+            )
     return "\n".join(lines)
 
 

@@ -19,6 +19,25 @@ import {
 const OPEN_KEY = "rumil.chat.open";
 const ACTIVE_CONV_KEY = "rumil.chat.active_conv";
 const LAST_PROJECT_KEY = "rumil.chat.last_project";
+const MODEL_KEY = "rumil.chat.model";
+
+type ModelShort = "haiku" | "sonnet" | "opus";
+const MODELS: ModelShort[] = ["haiku", "sonnet", "opus"];
+const MODEL_LABEL: Record<ModelShort, string> = {
+  haiku: "haiku 4.5",
+  sonnet: "sonnet 4.6",
+  opus: "opus 4.7",
+};
+const MODEL_DESC: Record<ModelShort, string> = {
+  haiku: "fastest, cheapest",
+  sonnet: "balanced default",
+  opus: "most capable",
+};
+const DEFAULT_MODEL: ModelShort = "sonnet";
+
+function isModelShort(v: string): v is ModelShort {
+  return MODELS.includes(v as ModelShort);
+}
 
 type MessageBlock =
   | { kind: "text"; id: string; text: string }
@@ -292,7 +311,7 @@ function hydrateFromDetail(
 
 export function ChatPanel() {
   const pathname = usePathname();
-  const pageQuestionId = pathToQuestionId(pathname);
+  const focusPageId = pathToQuestionId(pathname);
 
   const [open, setOpen] = useState(false);
   const [conversations, setConversations] = useState<ConversationListItem[]>([]);
@@ -303,9 +322,32 @@ export function ChatPanel() {
   const [error, setError] = useState<string | null>(null);
   const [projectId, setProjectId] = useState<string | null>(null);
   const [showConvList, setShowConvList] = useState(false);
+  const [model, setModel] = useState<ModelShort>(DEFAULT_MODEL);
 
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const setModelAndNote = useCallback((next: ModelShort) => {
+    setModel(next);
+    try {
+      window.localStorage.setItem(MODEL_KEY, next);
+    } catch {
+      // ignore
+    }
+    const note: UiMessage = {
+      id: newId(),
+      role: "assistant",
+      blocks: [
+        {
+          kind: "text",
+          id: newId(),
+          text: `— switched to ${MODEL_LABEL[next]} —`,
+        },
+      ],
+    };
+    setMessages((prev) => [...prev, note]);
+  }, []);
 
   useEffect(() => {
     try {
@@ -315,6 +357,8 @@ export function ChatPanel() {
       if (conv) setActiveConvId(conv);
       const lastProject = window.localStorage.getItem(LAST_PROJECT_KEY);
       if (lastProject && UUID_RE.test(lastProject)) setProjectId(lastProject);
+      const storedModel = window.localStorage.getItem(MODEL_KEY);
+      if (storedModel && isModelShort(storedModel)) setModel(storedModel);
     } catch {
       // localStorage unavailable
     }
@@ -462,9 +506,37 @@ export function ChatPanel() {
     return c?.title || "new chat";
   }, [activeConvId, conversations]);
 
+  const slashPrefix =
+    input.startsWith("/") && !input.includes(" ")
+      ? input.slice(1).toLowerCase()
+      : null;
+  const slashMatches: ModelShort[] =
+    slashPrefix !== null ? MODELS.filter((m) => m.startsWith(slashPrefix)) : [];
+  const showSlashDropdown = slashMatches.length > 0 && slashPrefix !== null;
+  const [slashIndex, setSlashIndex] = useState(0);
+  useEffect(() => {
+    setSlashIndex(0);
+  }, [slashPrefix]);
+
+  const selectSlash = useCallback((name: ModelShort) => {
+    setInput(`/${name}`);
+    textareaRef.current?.focus();
+  }, []);
+
   const handleSend = useCallback(async () => {
     const text = input.trim();
     if (!text || sending) return;
+
+    if (text.startsWith("/")) {
+      const token = text.slice(1).split(/\s+/)[0].toLowerCase();
+      if (isModelShort(token)) {
+        setInput("");
+        setError(null);
+        setModelAndNote(token);
+        return;
+      }
+    }
+
     setInput("");
     setError(null);
     setSending(true);
@@ -497,7 +569,7 @@ export function ChatPanel() {
         }
         const created = await createConversation({
           project_id: pid,
-          question_id: pageQuestionId,
+          question_id: focusPageId,
           title: text.slice(0, 60),
         });
         convId = created.id;
@@ -507,9 +579,11 @@ export function ChatPanel() {
       }
 
       const req = {
-        question_id: pageQuestionId || "",
+        question_id: focusPageId || "",
         messages: [{ role: "user", content: text }],
         conversation_id: convId,
+        model,
+        open_page_ids: focusPageId ? [focusPageId] : [],
       };
 
       setMessages((prev) => ensureInitialAssistant(prev));
@@ -539,7 +613,16 @@ export function ChatPanel() {
     } finally {
       setSending(false);
     }
-  }, [activeConvId, input, pageQuestionId, projectId, sending]);
+  }, [
+    activeConvId,
+    input,
+    focusPageId,
+    projectId,
+    sending,
+    model,
+    pathname,
+    setModelAndNote,
+  ]);
 
   const handleNewConversation = useCallback(() => {
     abortRef.current?.abort();
@@ -667,10 +750,10 @@ export function ChatPanel() {
           {projectId ? (
             <span>
               project <code>{projectId.slice(0, 8)}</code>
-              {pageQuestionId && (
+              {focusPageId && (
                 <>
                   {" · page "}
-                  <code>{pageQuestionId.slice(0, 8)}</code>
+                  <code>{focusPageId.slice(0, 8)}</code>
                 </>
               )}
             </span>
@@ -679,6 +762,17 @@ export function ChatPanel() {
               no project resolved — open a project, page, or trace
             </span>
           )}
+          <button
+            type="button"
+            className="chat-model-btn"
+            onClick={() => {
+              const i = MODELS.indexOf(model);
+              setModelAndNote(MODELS[(i + 1) % MODELS.length]);
+            }}
+            title="Click to cycle · or type /haiku /sonnet /opus"
+          >
+            model <code>{model}</code>
+          </button>
         </div>
 
         <div className="chat-messages" ref={scrollRef}>
@@ -708,13 +802,64 @@ export function ChatPanel() {
             handleSend();
           }}
         >
+          {showSlashDropdown && (
+            <div className="chat-slash-dropdown" role="listbox">
+              {slashMatches.map((name, i) => (
+                <button
+                  key={name}
+                  type="button"
+                  className={
+                    "chat-slash-item" +
+                    (i === slashIndex ? " active" : "") +
+                    (name === model ? " current" : "")
+                  }
+                  onMouseEnter={() => setSlashIndex(i)}
+                  onClick={() => selectSlash(name)}
+                >
+                  <span className="chat-slash-name">/{name}</span>
+                  <span className="chat-slash-label">{MODEL_LABEL[name]}</span>
+                  <span className="chat-slash-desc">{MODEL_DESC[name]}</span>
+                  {name === model && (
+                    <span className="chat-slash-current">current</span>
+                  )}
+                </button>
+              ))}
+              <div className="chat-slash-hint">tab to complete · esc to dismiss</div>
+            </div>
+          )}
           <textarea
+            ref={textareaRef}
             className="chat-input"
-            placeholder={sending ? "…" : "reply"}
+            placeholder={sending ? "…" : "reply — try / for commands"}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             rows={2}
             onKeyDown={(e) => {
+              if (showSlashDropdown) {
+                if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  setSlashIndex((i) => (i + 1) % slashMatches.length);
+                  return;
+                }
+                if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  setSlashIndex(
+                    (i) =>
+                      (i - 1 + slashMatches.length) % slashMatches.length,
+                  );
+                  return;
+                }
+                if (e.key === "Tab") {
+                  e.preventDefault();
+                  selectSlash(slashMatches[slashIndex]);
+                  return;
+                }
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  setInput("");
+                  return;
+                }
+              }
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 handleSend();
@@ -1081,6 +1226,103 @@ const styles = `
 }
 .chat-scope-warn {
   color: var(--type-judgement);
+}
+.chat-scope {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.chat-model-btn {
+  background: none;
+  border: 1px dotted var(--color-border);
+  border-radius: 3px;
+  padding: 0.12rem 0.4rem;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.68rem;
+  color: var(--color-muted);
+  cursor: pointer;
+  letter-spacing: 0.04em;
+}
+.chat-model-btn:hover {
+  border-style: solid;
+  border-color: var(--color-accent);
+  color: var(--foreground);
+}
+.chat-model-btn code {
+  color: var(--type-concept);
+  margin-left: 0.2rem;
+}
+
+.chat-composer {
+  position: relative;
+}
+.chat-slash-dropdown {
+  position: absolute;
+  left: 0.75rem;
+  right: 0.75rem;
+  bottom: calc(100% - 0.1rem);
+  margin-bottom: 0.35rem;
+  background: var(--background);
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  box-shadow: 0 -8px 24px -18px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+  z-index: 2;
+}
+.chat-slash-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  column-gap: 0.5rem;
+  align-items: baseline;
+  width: 100%;
+  background: none;
+  border: none;
+  border-bottom: 1px dotted var(--color-border);
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+  font-family: inherit;
+  color: var(--color-accent);
+  cursor: pointer;
+}
+.chat-slash-item:last-of-type {
+  border-bottom: none;
+}
+.chat-slash-item.active {
+  background: var(--color-surface);
+  color: var(--foreground);
+}
+.chat-slash-item.current .chat-slash-name {
+  color: var(--type-concept);
+}
+.chat-slash-name {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.78rem;
+  color: var(--foreground);
+}
+.chat-slash-label {
+  font-size: 0.76rem;
+  color: var(--color-accent);
+}
+.chat-slash-desc {
+  grid-column: 2 / 3;
+  font-size: 0.68rem;
+  color: var(--color-muted);
+}
+.chat-slash-current {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.66rem;
+  color: var(--type-concept);
+  align-self: center;
+}
+.chat-slash-hint {
+  padding: 0.25rem 0.6rem;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.64rem;
+  color: var(--color-dim);
+  background: var(--color-surface);
+  border-top: 1px dotted var(--color-border);
+  letter-spacing: 0.04em;
 }
 
 .chat-messages {

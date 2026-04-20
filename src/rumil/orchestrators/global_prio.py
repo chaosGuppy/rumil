@@ -387,6 +387,12 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
         self._messages: list[dict] = []
         self._turn_count: int = 0
 
+        variant = get_settings().prioritizer_variant
+        if variant == "experimental":
+            self.summarise_before_assess = ExperimentalOrchestrator.summarise_before_assess
+        elif variant == "two_phase":
+            self.summarise_before_assess = TwoPhaseOrchestrator.summarise_before_assess
+
     async def run(self, root_question_id: str) -> None:
         own_db = await self.db.fork()
         self.db = own_db
@@ -1202,6 +1208,7 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
                     parent_call_id=parent_call_id,
                     broadcaster=self.broadcaster,
                     force=True,
+                    summarise=self.summarise_before_assess,
                 )
                 if call_id:
                     self._global_consumed += 1
@@ -1271,6 +1278,7 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
                     parent_call_id=parent_call_id,
                     broadcaster=self.broadcaster,
                     force=True,
+                    summarise=self.summarise_before_assess,
                 )
                 if call_id:
                     self._global_consumed += 1

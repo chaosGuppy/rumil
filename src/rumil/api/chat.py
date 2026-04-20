@@ -19,7 +19,7 @@ import json
 import logging
 import re
 import uuid
-from collections.abc import AsyncIterator, Callable, Sequence
+from collections.abc import AsyncIterator, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -38,7 +38,6 @@ from rumil.database import DB
 from rumil.embeddings import embed_query, search_pages_by_vector
 from rumil.models import (
     Call,
-    CallStatus,
     CallType,
     ChatConversation,
     ChatMessage,

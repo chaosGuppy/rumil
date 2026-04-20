@@ -1618,11 +1618,7 @@ function CallDetail({
           {call.call_params && Object.keys(call.call_params).length > 0 && (
             <MetaRow
               label="params"
-              value={
-                <span className="trace-detail-mono">
-                  {compactJson(call.call_params)}
-                </span>
-              }
+              value={<ParamsChips params={call.call_params} />}
             />
           )}
         </dl>
@@ -2201,7 +2197,6 @@ function ExchangeRow({
           {detail && (
             <ExchangeDetail
               detail={detail}
-              model={model}
               cacheRead={cacheRead}
               cacheCreate={cacheCreate}
             />
@@ -2241,12 +2236,10 @@ function PromptBadge({
 
 function ExchangeDetail({
   detail,
-  model,
   cacheRead,
   cacheCreate,
 }: {
   detail: LLMExchangeDetail;
-  model: string | null;
   cacheRead: number | null;
   cacheCreate: number | null;
 }) {
@@ -2274,73 +2267,53 @@ function ExchangeDetail({
     return parts.join("\n\n---\n\n");
   }, [detail]);
 
+  const hasCacheInfo =
+    (cacheRead != null && cacheRead > 0) ||
+    (cacheCreate != null && cacheCreate > 0);
+
   return (
     <div className="trace-ex-detail">
-      <div className="trace-ex-header-meta">
-        {model && (
-          <span
-            className="trace-ex-header-model"
-            title={`model: ${model}`}
-          >
-            {shortenModel(model)}
-          </span>
-        )}
-        <span className="trace-ex-header-usage">
-          in: {formatTokenCount(detail.input_tokens)}
+      {hasCacheInfo && (
+        <div className="trace-ex-cache-line">
           {cacheRead != null && cacheRead > 0 && (
-            <>
-              {" "}
-              <span
-                className="trace-ex-header-cache"
-                title={
-                  "Cache-read tokens (input tokens served from an "
-                  + "existing cache-control block — ~90% discount vs "
-                  + "uncached input). Anthropic field: "
-                  + "cache_read_input_tokens."
-                }
-              >
-                (cache: {formatTokenCount(cacheRead)})
-              </span>
-            </>
+            <span
+              title={
+                "Cache-read tokens (input tokens served from an existing "
+                + "cache-control block — ~90% discount vs uncached input)."
+              }
+            >
+              cache-read {formatTokenCount(cacheRead)}
+            </span>
           )}
           {cacheCreate != null && cacheCreate > 0 && (
-            <>
-              {" "}
-              <span
-                className="trace-ex-header-cache"
-                title={
-                  "Cache-write tokens (new cache-control blocks written "
-                  + "this turn — ~25% premium over uncached input, but "
-                  + "subsequent turns pay the cache-read rate). "
-                  + "Anthropic field: cache_creation_input_tokens."
-                }
-              >
-                (cache-w: {formatTokenCount(cacheCreate)})
-              </span>
-            </>
-          )}
-          {" · out: "}
-          {formatTokenCount(detail.output_tokens)}
-          {detail.duration_ms != null &&
-            ` · ${formatMs(detail.duration_ms)}`}
-        </span>
-      </div>
-
-      <div className="trace-ex-sec">
-        <div className="trace-ex-sec-head">
-          <div className="trace-ex-sec-title">SYSTEM PROMPT</div>
-          {detail.system_prompt && (
-            <CopyButton text={detail.system_prompt} label="copy prompt" />
+            <span
+              title={
+                "Cache-write tokens (new cache-control blocks written this "
+                + "turn — ~25% premium over uncached input, subsequent turns "
+                + "pay the cache-read rate)."
+              }
+            >
+              cache-write {formatTokenCount(cacheCreate)}
+            </span>
           )}
         </div>
-        <Collapsible label="show system prompt" defaultOpen={false}>
-          {detail.system_prompt ? (
-            <pre className="trace-code">{detail.system_prompt}</pre>
-          ) : (
-            <div className="trace-detail-dim">none</div>
-          )}
-        </Collapsible>
-      </div>
+      )}
+
+      <Collapsible
+        label="system prompt"
+        defaultOpen={false}
+        trailing={
+          detail.system_prompt ? (
+            <CopyButton text={detail.system_prompt} label="copy" />
+          ) : undefined
+        }
+      >
+        {detail.system_prompt ? (
+          <pre className="trace-code">{detail.system_prompt}</pre>
+        ) : (
+          <div className="trace-detail-dim">none</div>
+        )}
+      </Collapsible>
 
       <Collapsible
         label={`tool calls (${detail.tool_calls.length})`}
@@ -2358,10 +2331,10 @@ function ExchangeDetail({
       </Collapsible>
 
       <div className="trace-ex-messages">
-        <div className="trace-ex-sec-head">
-          <div className="trace-ex-sec-title">MESSAGES</div>
+        <div className="trace-ex-messages-head">
+          <span className="trace-ex-sec-title">messages</span>
           {messagesForCopy && (
-            <CopyButton text={messagesForCopy} label="copy messages" />
+            <CopyButton text={messagesForCopy} label="copy" />
           )}
         </div>
         <MessageBlock role="user" content={detail.user_message} />
@@ -2795,22 +2768,27 @@ function Collapsible({
   label,
   defaultOpen,
   children,
+  trailing,
 }: {
   label: string;
   defaultOpen: boolean;
   children: ReactNode;
+  trailing?: ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
     <div className="trace-coll">
-      <button
-        className="trace-coll-head"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-      >
-        <span className={`trace-caret ${open ? "open" : ""}`}>›</span>
-        <span className="trace-coll-label">{label}</span>
-      </button>
+      <div className="trace-coll-head-row">
+        <button
+          className="trace-coll-head"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+        >
+          <span className={`trace-caret ${open ? "open" : ""}`}>›</span>
+          <span className="trace-coll-label">{label}</span>
+        </button>
+        {trailing}
+      </div>
       {open && <div className="trace-coll-body">{children}</div>}
     </div>
   );
@@ -2938,12 +2916,31 @@ function CopyButton({ text, label = "copy" }: { text: string; label?: string }) 
   );
 }
 
-function compactJson(obj: unknown): string {
+function ParamsChips({ params }: { params: Record<string, unknown> }) {
+  const entries = Object.entries(params);
+  if (entries.length === 0) return null;
+  return (
+    <span className="trace-params-chips">
+      {entries.map(([k, v]) => (
+        <span key={k} className="trace-params-chip">
+          <span className="trace-params-chip-key">{k}</span>
+          <span className="trace-params-chip-eq">=</span>
+          <span className="trace-params-chip-val">{formatParamValue(v)}</span>
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function formatParamValue(v: unknown): string {
+  if (v === null) return "null";
+  if (v === undefined) return "—";
+  if (typeof v === "string") return v;
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
   try {
-    const s = JSON.stringify(obj);
-    return s.length > 80 ? s.slice(0, 77) + "..." : s;
+    return JSON.stringify(v);
   } catch {
-    return "";
+    return String(v);
   }
 }
 

@@ -7384,6 +7384,77 @@ mark.ann-mark.ann-mark-dispute:hover {
   margin-bottom: 6px;
 }
 
+.trace-ex-sec-title {
+  font-family: var(--font-mono-stack);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+}
+
+.trace-ex-cache-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-family: var(--font-mono-stack);
+  font-size: 10px;
+  color: var(--fg-dim);
+  letter-spacing: 0.02em;
+}
+
+.trace-ex-messages-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.trace-copy-btn {
+  font-family: var(--font-mono-stack);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: lowercase;
+  color: var(--fg-muted);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 2px 7px;
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease;
+}
+.trace-copy-btn:hover {
+  color: var(--fg);
+  border-color: var(--fg-dim);
+}
+.trace-copy-btn.is-copied {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.trace-params-chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+}
+.trace-params-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+}
+.trace-params-chip-key {
+  color: var(--fg-dim);
+}
+.trace-params-chip-eq {
+  color: var(--fg-dim);
+}
+.trace-params-chip-val {
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
+
 .trace-ex-tools {
   display: flex;
   flex-direction: column;
@@ -7736,6 +7807,16 @@ mark.ann-mark.ann-mark-dispute:hover {
   border: 1px solid var(--border);
   border-radius: 3px;
   background: var(--bg-pane);
+}
+.trace-coll-head-row {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  padding-right: 10px;
+}
+.trace-coll-head-row .trace-copy-btn {
+  align-self: center;
+  flex-shrink: 0;
 }
 .trace-coll-head {
   display: flex;
@@ -9142,4 +9223,287 @@ mark.ann-mark.ann-mark-dispute:hover {
 .op-span-veto:hover {
   color: var(--danger, #b00);
   border-color: var(--danger, #b00);
+}
+
+/* llm-boundary operator view */
+
+.op-boundary {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px 0;
+}
+
+.op-boundary-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.op-boundary-ws-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-muted);
+}
+
+.op-boundary-ws-select {
+  font-family: var(--font-mono-stack);
+  font-size: 13px;
+  padding: 4px 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--fg);
+  border-radius: 3px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.op-boundary-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px 24px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.op-boundary-filter-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.op-boundary-filter-label {
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-muted);
+}
+
+.op-boundary-filter-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-muted);
+}
+
+.op-boundary-filter-text input {
+  font-family: var(--font-mono-stack);
+  font-size: 12px;
+  padding: 3px 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--fg);
+  border-radius: 3px;
+  text-transform: none;
+  letter-spacing: 0;
+  width: 160px;
+}
+
+.op-boundary-filter-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.op-boundary-pager {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.op-boundary-pager-count {
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+.op-boundary-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono-stack);
+  font-size: 12px;
+}
+
+.op-boundary-table th {
+  text-align: left;
+  font-weight: 500;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-muted);
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.op-boundary-table th.op-boundary-num,
+.op-boundary-table td.op-boundary-num {
+  text-align: right;
+}
+
+.op-boundary-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-faint, var(--border));
+  vertical-align: top;
+}
+
+.op-boundary-row {
+  cursor: pointer;
+}
+
+.op-boundary-row:hover {
+  background: var(--bg-hover, rgba(0, 0, 0, 0.04));
+}
+
+.op-boundary-time,
+.op-boundary-id,
+.op-boundary-tokens {
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+
+.op-boundary-stream-tag {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  color: var(--fg-muted);
+}
+
+.op-boundary-status-ok {
+  color: var(--node-claim, var(--fg));
+}
+
+.op-boundary-status-error {
+  color: var(--danger, #b33);
+}
+
+/* drawer */
+
+.op-boundary-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 60;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.op-boundary-drawer {
+  width: min(900px, 95vw);
+  height: 100vh;
+  background: var(--bg);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.op-boundary-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.op-boundary-drawer-id {
+  font-family: var(--font-mono-stack);
+  font-size: 13px;
+  color: var(--fg);
+}
+
+.op-boundary-drawer-body {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 16px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.op-boundary-meta {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  row-gap: 4px;
+  column-gap: 16px;
+  font-family: var(--font-mono-stack);
+  font-size: 12px;
+}
+
+.op-boundary-meta-row {
+  display: contents;
+}
+
+.op-boundary-meta-label {
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  align-self: center;
+}
+
+.op-boundary-meta-value {
+  color: var(--fg);
+  word-break: break-all;
+}
+
+.op-boundary-json-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.op-boundary-json-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.op-boundary-json-block-header h3 {
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-muted);
+  margin: 0;
+}
+
+.op-boundary-json {
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+  background: var(--bg-alt, rgba(0, 0, 0, 0.03));
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 10px 12px;
+  margin: 0;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--fg);
+  max-height: 60vh;
+  overflow-y: auto;
 }

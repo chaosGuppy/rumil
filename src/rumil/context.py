@@ -13,7 +13,7 @@ from datetime import datetime
 
 from rumil.database import DB
 from rumil.embeddings import embed_query, search_pages_by_vector
-from rumil.models import Page, PageDetail, PageLink, PageType
+from rumil.models import Page, PageDetail, PageType
 from rumil.settings import get_settings
 from rumil.tracing.page_load_tracking import get_page_track_tags
 from rumil.tracing.tracer import get_trace

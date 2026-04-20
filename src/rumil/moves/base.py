@@ -164,13 +164,15 @@ class MoveDef(Generic[S]):
 
 
 HEADLINE_DESCRIPTION = (
-    "10-15 word headline (20 word ceiling). Must be a sharp, "
+    "Target 10-15 word headline (35 word ceiling). Must be a sharp, "
     "self-contained label — not a truncated sentence. Think of it like a newspaper "
     "headline: a reader with no prior context should know at a glance what this page "
     "is about. Name the actual claim or position, e.g. 'Solar payback periods have "
     "fallen below 7 years in most climates'. Never use language that only makes sense "
     "relative to a particular question or investigation — headlines are used for "
-    "retrieval across the whole workspace and must stand alone. Always name the "
+    "retrieval across the whole workspace and must stand alone. When a bare claim "
+    "would be ambiguous out of context, spending up to ~20 extra words naming the "
+    "subject, project, or investigation frame is worthwhile. Always name the "
     "specific subject: 'The election is likely to take place' is broken because it "
     "doesn't say WHICH election. Avoid vague openings like 'There are several "
     "factors...' and context-dependent phrasing like 'This undercuts the premise', "

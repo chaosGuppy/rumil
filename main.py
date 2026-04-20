@@ -581,7 +581,7 @@ def _batch_label(entry: dict) -> str:
     return entry["question"][:70]
 
 
-async def _run_one_batch_entry(entry: dict, index: int, total: int, template_db: DB) -> None:
+async def _run_one_batch_entry(entry: dict, index: int, total: int, template_db: DB) -> str:
     """Run a single batch entry with its own run_id for budget isolation."""
     budget = entry.get("budget", 10)
     label = _batch_label(entry)
@@ -601,9 +601,10 @@ async def _run_one_batch_entry(entry: dict, index: int, total: int, template_db:
         await cmd_new(q, budget, db, ingest_files=entry.get("ingest"))
 
     print(f"\n[{index + 1}/{total}] Done: {label}")
+    return db.run_id
 
 
-async def cmd_batch(batch_file: str, db: DB) -> None:
+async def cmd_batch(batch_file: str, db: DB) -> list[str]:
     path = Path(batch_file)
     if not path.exists():
         print(f"Error: file not found: {batch_file}")
@@ -639,7 +640,7 @@ async def cmd_batch(batch_file: str, db: DB) -> None:
     print("Running concurrently...\n")
 
     tasks = [_run_one_batch_entry(entry, i, len(entries), db) for i, entry in enumerate(entries)]
-    await asyncio.gather(*tasks)
+    return list(await asyncio.gather(*tasks))
 
 
 async def cmd_ab_eval(
@@ -1171,6 +1172,8 @@ async def async_main():
         )
         return
 
+    run_ids: list[str] = []
+
     if args.list:
         await cmd_list(db, args.workspace_name)
         return
@@ -1179,10 +1182,10 @@ async def async_main():
         return
     elif args.ground_call_id:
         await cmd_ground(args.ground_call_id, db, from_stage=args.from_stage)
-        return
+        run_ids.append(db.run_id)
     elif args.feedback_call_id:
         await cmd_feedback_update(args.feedback_call_id, db, investigation_budget=args.budget)
-        return
+        run_ids.append(db.run_id)
     elif args.feedback_file:
         await cmd_feedback_update_from_file(
             args.feedback_file[0],
@@ -1190,7 +1193,7 @@ async def async_main():
             db,
             investigation_budget=args.budget,
         )
-        return
+        run_ids.append(db.run_id)
     elif args.show_evaluation_id:
         await cmd_show_evaluation(args.show_evaluation_id, db)
         return
@@ -1202,6 +1205,7 @@ async def async_main():
             name=args.run_name,
             ingest_files=args.ingest_files,
         )
+        run_ids.append(db.run_id)
     elif args.chat_id:
         await run_chat(args.chat_id, db)
     elif args.add_question:
@@ -1229,8 +1233,9 @@ async def async_main():
             ingest_files=args.ingest_files,
             chat_first=args.chat_first,
         )
+        run_ids.append(db.run_id)
     elif args.batch_file:
-        await cmd_batch(args.batch_file, db)
+        run_ids.extend(await cmd_batch(args.batch_file, db))
     elif args.ingest_files and not args.question:
         await cmd_ingest(args.ingest_files, args.for_question_id, args.budget, db)
     elif args.question:
@@ -1244,6 +1249,7 @@ async def async_main():
             name=args.run_name,
             auto_summary=do_summary,
         )
+        run_ids.append(db.run_id)
         if do_summary:
             await cmd_summary(
                 question_id,
@@ -1253,6 +1259,13 @@ async def async_main():
             )
     else:
         parser.print_help()
+
+    if len(run_ids) == 1:
+        print(f"\nRun ID: {run_ids[0]}")
+    elif run_ids:
+        print("\nRun IDs:")
+        for rid in run_ids:
+            print(f"  {rid}")
 
 
 def main():

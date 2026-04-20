@@ -15,6 +15,7 @@ from rumil.models import Page, PageLink, _all_fields_required
 from rumil.tracing.trace_events import (
     AffectedPagesIdentifiedEvent,
     AgentStartedEvent,
+    AutocompactEvent,
     ClaimReassessedEvent,
     ContextBuiltEvent,
     DispatchesPlannedEvent,
@@ -173,6 +174,10 @@ class ViewCreatedEventOut(ViewCreatedEvent, _TraceEnvelopeMixin):
     pass
 
 
+class AutocompactEventOut(AutocompactEvent, _TraceEnvelopeMixin):
+    pass
+
+
 class PhaseSkippedEventOut(PhaseSkippedEvent, _TraceEnvelopeMixin):
     pass
 
@@ -216,6 +221,7 @@ TraceEventOut = Annotated[
     | LoadPageEventOut
     | LinkSubquestionsCompleteEventOut
     | ViewCreatedEventOut
+    | AutocompactEventOut
     | PhaseSkippedEventOut
     | GlobalPhaseCompletedEventOut
     | UpdateViewPhaseCompletedEventOut

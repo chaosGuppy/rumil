@@ -10,6 +10,8 @@ interface SuggestionReviewProps {
   onAction: () => void;
 }
 
+const EFFECT_LABEL = "if accepted";
+
 function SuggestionPreview({
   type,
   payload,
@@ -24,7 +26,7 @@ function SuggestionPreview({
     if (!headline && !content) return null;
     return (
       <div className="sug-preview">
-        <div className="sug-preview-label">will create</div>
+        <div className="sug-preview-label">{EFFECT_LABEL}: create a new {nodeType}</div>
         <div className="sug-preview-node">
           <span
             className="sug-preview-type"
@@ -48,9 +50,9 @@ function SuggestionPreview({
     if (newImp == null) return null;
     return (
       <div className="sug-preview">
-        <div className="sug-preview-label">importance change</div>
-        <div className="sug-preview-level">
-          <span className="sug-preview-arrow">→ L{String(newImp)}</span>
+        <div className="sug-preview-label">{EFFECT_LABEL}</div>
+        <div className="sug-preview-effect">
+          set importance of this page to <strong>L{String(newImp)}</strong>
         </div>
       </div>
     );
@@ -61,11 +63,10 @@ function SuggestionPreview({
     if (!otherId) return null;
     return (
       <div className="sug-preview">
-        <div className="sug-preview-label">will link as opposes</div>
-        <div className="sug-preview-tension">
-          <span className="sug-preview-id">{otherId.slice(0, 8)}</span>
-          <span className="sug-preview-arrow">↔</span>
-          <span>target</span>
+        <div className="sug-preview-label">{EFFECT_LABEL}</div>
+        <div className="sug-preview-effect">
+          link this page to <span className="sug-preview-id">{otherId.slice(0, 8)}</span> as{" "}
+          <strong>related</strong>
         </div>
       </div>
     );
@@ -77,20 +78,21 @@ function SuggestionPreview({
     if (!keepId && !supersedeId) return null;
     return (
       <div className="sug-preview">
-        <div className="sug-preview-label">will merge</div>
-        <div className="sug-preview-merge">
-          {supersedeId && (
-            <span>
-              <span className="sug-preview-id">{supersedeId.slice(0, 8)}</span>
-              {" → superseded"}
-            </span>
-          )}
-          {keepId && (
-            <span>
+        <div className="sug-preview-label">{EFFECT_LABEL}</div>
+        <div className="sug-preview-effect">
+          {supersedeId && keepId ? (
+            <>
+              supersede <span className="sug-preview-id">{supersedeId.slice(0, 8)}</span> with{" "}
               <span className="sug-preview-id">{keepId.slice(0, 8)}</span>
-              {" kept"}
-            </span>
+            </>
+          ) : supersedeId ? (
+            <>mark <span className="sug-preview-id">{supersedeId.slice(0, 8)}</span> as superseded</>
+          ) : (
+            <>keep <span className="sug-preview-id">{keepId.slice(0, 8)}</span></>
           )}
+        </div>
+        <div className="sug-preview-note">
+          reads of the superseded page will follow the pointer to the kept one
         </div>
       </div>
     );
@@ -106,16 +108,14 @@ function SuggestionPreview({
     );
     return (
       <div className="sug-preview">
-        <div className="sug-preview-label">cascade: dependency changed</div>
-        <div style={{ fontSize: "12px", lineHeight: "1.5", color: "var(--fg-dim)" }}>
+        <div className="sug-preview-label">{EFFECT_LABEL}: mark as reviewed (no state change)</div>
+        <div className="sug-preview-cascade-body">
           <div>
             <strong>{depHl}</strong> depends on <strong>{changedHl}</strong>{" "}
-            <span style={{ opacity: 0.6 }}>[{changedId}]</span>
+            <span className="sug-preview-dim">[{changedId}]</span>
           </div>
           {changeStrs.length > 0 && (
-            <div style={{ marginTop: "4px", fontFamily: "var(--font-mono-stack)", fontSize: "11px" }}>
-              {changeStrs.join(", ")}
-            </div>
+            <div className="sug-preview-changes">{changeStrs.join(", ")}</div>
           )}
         </div>
       </div>
@@ -171,6 +171,64 @@ function SuggestionCard({
   );
 }
 
+// Suggestion types whose "accept" runs no workspace mutation — they're
+// acknowledgement-only. We bubble these to the bottom of the pending list so
+// reviewers see state-changing suggestions first.
+const NO_OP_TYPES = new Set(["cascade_review", "auto_investigate"]);
+
+function isNoOp(s: Suggestion): boolean {
+  return NO_OP_TYPES.has(s.suggestion_type);
+}
+
+function GroupedSuggestions({
+  suggestions,
+  tab,
+  onRespond,
+}: {
+  suggestions: Suggestion[];
+  tab: "pending" | "accepted" | "rejected";
+  onRespond: (id: string, action: "accept" | "reject") => void;
+}) {
+  // Only split in the pending tab — accepted/rejected history reads best
+  // chronologically, without a state-change divider.
+  if (tab !== "pending") {
+    return (
+      <div>
+        {suggestions.map((s) => (
+          <SuggestionCard key={s.id} suggestion={s} onRespond={onRespond} />
+        ))}
+      </div>
+    );
+  }
+  const mutations = suggestions.filter((s) => !isNoOp(s));
+  const noOps = suggestions.filter(isNoOp);
+  return (
+    <div>
+      {mutations.length > 0 && (
+        <section className="review-group">
+          <h3 className="review-group-title">
+            state-changing <span className="review-group-count">{mutations.length}</span>
+          </h3>
+          {mutations.map((s) => (
+            <SuggestionCard key={s.id} suggestion={s} onRespond={onRespond} />
+          ))}
+        </section>
+      )}
+      {noOps.length > 0 && (
+        <section className="review-group review-group-noop">
+          <h3 className="review-group-title">
+            review only · no state change{" "}
+            <span className="review-group-count">{noOps.length}</span>
+          </h3>
+          {noOps.map((s) => (
+            <SuggestionCard key={s.id} suggestion={s} onRespond={onRespond} />
+          ))}
+        </section>
+      )}
+    </div>
+  );
+}
+
 export function SuggestionReview({
   projectId,
   onClose,
@@ -202,7 +260,7 @@ export function SuggestionReview({
   );
 
   return (
-    <div style={{ padding: "32px 36px" }}>
+    <div className="pane-review-inner">
       <div
         style={{
           display: "flex",
@@ -258,15 +316,11 @@ export function SuggestionReview({
           No {tab} suggestions.
         </div>
       ) : (
-        <div>
-          {suggestions.map((s) => (
-            <SuggestionCard
-              key={s.id}
-              suggestion={s}
-              onRespond={handleRespond}
-            />
-          ))}
-        </div>
+        <GroupedSuggestions
+          suggestions={suggestions}
+          tab={tab}
+          onRespond={handleRespond}
+        />
       )}
     </div>
   );

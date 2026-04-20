@@ -3,7 +3,6 @@
 import json
 import logging
 import re
-import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -41,8 +40,6 @@ from rumil.tracing.trace_events import (
 from rumil.tracing.tracer import CallTrace
 
 log = logging.getLogger(__name__)
-
-_MIN_REAL_INPUT_TOKENS = 10
 
 
 @dataclass
@@ -306,21 +303,28 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
                         cache_creation_input_tokens=turn.cache_creation_input_tokens or None,
                         cache_read_input_tokens=turn.cache_read_input_tokens or None,
                     )
+                    await child_trace.record(
+                        LLMExchangeEvent(
+                            exchange_id=exchange_id,
+                            phase="subagent",
+                            round=turn_num,
+                            input_tokens=turn.input_tokens,
+                            output_tokens=turn.output_tokens,
+                            cache_creation_input_tokens=turn.cache_creation_input_tokens or None,
+                            cache_read_input_tokens=turn.cache_read_input_tokens or None,
+                            cost_usd=turn_cost or None,
+                        )
+                    )
                 except Exception as exc:
                     log.error("Failed to save subagent exchange: %s", exc)
-                    exchange_id = str(uuid.uuid4())
-                await child_trace.record(
-                    LLMExchangeEvent(
-                        exchange_id=exchange_id,
-                        phase="subagent",
-                        round=turn_num,
-                        input_tokens=turn.input_tokens,
-                        output_tokens=turn.output_tokens,
-                        cache_creation_input_tokens=turn.cache_creation_input_tokens or None,
-                        cache_read_input_tokens=turn.cache_read_input_tokens or None,
-                        cost_usd=turn_cost or None,
+                    await child_trace.record(
+                        WarningEvent(
+                            message=(
+                                f"Failed to persist subagent exchange "
+                                f"(round {turn_num}): {type(exc).__name__}: {exc}"
+                            )
+                        )
                     )
-                )
         elif child_trace:
             await child_trace.record(
                 WarningEvent(
@@ -495,27 +499,35 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
                             cache_creation_input_tokens=cache_creation,
                             cache_read_input_tokens=cache_read,
                         )
+                        await config.trace.record(
+                            LLMExchangeEvent(
+                                exchange_id=exchange_id,
+                                phase="sdk_agent",
+                                round=turn_counter,
+                                input_tokens=input_tokens,
+                                output_tokens=output_tokens,
+                                cache_creation_input_tokens=cache_creation,
+                                cache_read_input_tokens=cache_read,
+                                cost_usd=cost_usd,
+                                has_thinking=bool(thinking_parts),
+                                tool_uses=tool_uses or None,
+                            )
+                        )
                     except Exception as exc:
                         log.error(
                             "Failed to save SDK agent exchange for call %s: %s",
                             config.call.id[:8],
                             exc,
                         )
-                        exchange_id = str(uuid.uuid4())
-                    await config.trace.record(
-                        LLMExchangeEvent(
-                            exchange_id=exchange_id,
-                            phase="sdk_agent",
-                            round=turn_counter,
-                            input_tokens=input_tokens,
-                            output_tokens=output_tokens,
-                            cache_creation_input_tokens=cache_creation,
-                            cache_read_input_tokens=cache_read,
-                            cost_usd=cost_usd,
-                            has_thinking=bool(thinking_parts),
-                            tool_uses=tool_uses or None,
+                        await config.trace.record(
+                            WarningEvent(
+                                message=(
+                                    f"Failed to persist exchange "
+                                    f"(round {turn_counter}): "
+                                    f"{type(exc).__name__}: {exc}"
+                                )
+                            )
                         )
-                    )
                 if config.output_format:
                     all_messages.append(
                         {

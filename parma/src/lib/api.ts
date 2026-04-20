@@ -12,6 +12,7 @@ import type {
   LlmBoundaryExchangeDetailOut,
   LlmBoundaryExchangeListItemOut,
   LlmExchangeSummaryOut,
+  OrchestratorInfoOut,
   OrchestratorSpecOut,
   PaginatedLlmBoundaryExchangesOut,
   PageDetailOut,
@@ -53,6 +54,7 @@ export type Capabilities = CapabilitiesOut;
 export type EvaluationTypeSpec = EvaluationTypeSpecOut;
 export type GroundingPipelineSpec = GroundingPipelineSpecOut;
 export type OrchestratorSpec = OrchestratorSpecOut;
+export type OrchestratorInfo = OrchestratorInfoOut;
 export type BoundaryExchange = LlmBoundaryExchangeListItemOut;
 export type BoundaryExchangeDetail = LlmBoundaryExchangeDetailOut;
 export type PaginatedBoundaryExchanges = PaginatedLlmBoundaryExchangesOut;
@@ -350,9 +352,30 @@ export async function fetchPageDetail(
 }
 
 export interface ChatToolUse {
+  // Anthropic tool_use id (e.g. "toolu_..."). Used to stitch up
+  // DISPATCH_RESULT messages to the originating tool bubble. Optional
+  // because older persisted messages / ephemeral UI blocks may lack it.
+  id?: string;
   name: string;
   input: Record<string, unknown>;
   result: string;
+  // Populated when a fire-and-forget dispatch tool (dispatch_call) has
+  // produced a DISPATCH_RESULT follow-up message tied back to this tool
+  // use via tool_use_id. Hydrated on conversation load from persisted
+  // dispatch_result rows; updated live from the conversation SSE stream.
+  dispatch?: DispatchCompletion;
+}
+
+export interface DispatchCompletion {
+  tool_use_id: string;
+  run_id: string;
+  call_id?: string;
+  call_type: string;
+  headline?: string;
+  status: "completed" | "failed";
+  summary: string;
+  trace_url: string;
+  error?: string;
 }
 
 export interface ChatResponse {
@@ -605,6 +628,67 @@ export async function branchChatConversation(
   return res.json();
 }
 
+export type ConversationEventType = "dispatch_completed" | "hello";
+
+export interface ConversationEvent {
+  type: ConversationEventType;
+  data: Record<string, unknown>;
+}
+
+/**
+ * Long-lived SSE subscription to a conversation's out-of-band event stream.
+ *
+ * Delivers events (currently ``dispatch_completed``) emitted by background
+ * tasks that outlive the triggering chat turn — e.g. fire-and-forget
+ * dispatch_call completions. Use an AbortController to tear down; the
+ * server drops the subscriber on disconnect.
+ */
+export async function subscribeToConversationEvents(
+  conversationId: string,
+  onEvent: (event: ConversationEvent) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  const res = await fetch(
+    `${API_BASE}/api/chat/conversations/${conversationId}/events`,
+    { signal },
+  );
+  if (!res.ok) throw new Error(`events subscribe failed: ${res.status}`);
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    while (true) {
+      if (signal.aborted) break;
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const blocks = buffer.split("\n\n");
+      buffer = blocks.pop()!;
+      for (const block of blocks) {
+        const lines = block.split("\n");
+        let eventType = "";
+        let data = "";
+        for (const line of lines) {
+          if (line.startsWith("event: ")) eventType = line.slice(7);
+          else if (line.startsWith("data: ")) data = line.slice(6);
+        }
+        if (!eventType || !data) continue;
+        try {
+          onEvent({ type: eventType as ConversationEventType, data: JSON.parse(data) });
+        } catch {
+          /* skip malformed */
+        }
+      }
+    }
+  } finally {
+    if (signal.aborted) {
+      await reader.cancel().catch(() => {});
+    } else {
+      reader.releaseLock();
+    }
+  }
+}
+
 // Trace-related types. Mirror subsets of the API schemas (CallSummary,
 // CallNodeOut, RunTraceTreeOut, TraceEventOut, LLMExchange*). We hand-type
 // these rather than using codegen — parma doesn't share the generated SDK
@@ -736,6 +820,22 @@ export async function fetchAppConfig(): Promise<AppConfig> {
 // of hardcoded lists.
 export async function fetchCapabilities(): Promise<Capabilities> {
   const res = await fetch(`${API_BASE}/api/capabilities`);
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  return res.json();
+}
+
+// Detail info card for one orchestrator variant — overview, mermaid
+// diagram, derived phases, related call types, observed-behavior
+// histogram. Backed by GET /api/orchestrators/{variant}. Pass
+// projectId to scope the observed-behavior histogram to one project.
+export async function fetchOrchestratorInfo(
+  variant: string,
+  projectId?: string,
+): Promise<OrchestratorInfo> {
+  const qs = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
+  const res = await fetch(
+    `${API_BASE}/api/orchestrators/${encodeURIComponent(variant)}${qs}`,
+  );
   if (!res.ok) throw new Error(`API error: ${res.status}`);
   return res.json();
 }

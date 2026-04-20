@@ -73,6 +73,10 @@ class SeedViewPolicy(Policy):
     """
 
     name = "seed_view"
+    description = (
+        "If no view page exists for this question, dispatch create_view "
+        "so downstream policies have somewhere to read gaps from."
+    )
 
     async def decide(self, state: QuestionState) -> Intent | None:
         if state.view is not None:
@@ -100,6 +104,10 @@ class UpdateViewPolicy(Policy):
     """
 
     name = "update_view"
+    description = (
+        "If the most recent call was a mutation (find/assess/ingest/scout/"
+        "web_research), refresh the view on the next iteration."
+    )
 
     async def decide(self, state: QuestionState) -> Intent | None:
         if state.view is None:

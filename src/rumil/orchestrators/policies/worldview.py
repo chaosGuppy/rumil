@@ -65,6 +65,10 @@ class EvaluateModePolicy(Policy):
     """
 
     name = "evaluate_mode"
+    description = (
+        "When a pending CASCADE_REVIEW targets a page inside this "
+        "question's view scope, dispatch an assess on that target."
+    )
 
     def __init__(self, db: DB) -> None:
         self._db = db
@@ -110,6 +114,10 @@ class ExploreModePolicy(Policy):
     """
 
     name = "explore_mode"
+    description = (
+        "Sparse fallback: if page count is under threshold and no "
+        "in-scope cascade is pending, dispatch find_considerations."
+    )
 
     def __init__(self, db: DB, threshold: int = EXPLORE_SPARSE_THRESHOLD) -> None:
         self._db = db

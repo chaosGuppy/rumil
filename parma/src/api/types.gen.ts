@@ -2279,6 +2279,81 @@ export type NudgeSummaryItem = {
 };
 
 /**
+ * ObservedBehaviorOut
+ *
+ * Histogram of call types across recent runs of an orchestrator.
+ *
+ * Lets the UI cross-check the written description against what the
+ * orchestrator actually dispatches — the strongest drift detector.
+ * ``run_count`` is the number of runs the histogram was computed over.
+ */
+export type ObservedBehaviorOut = {
+    /**
+     * Run Count
+     */
+    run_count: number;
+    /**
+     * Call Type Counts
+     */
+    call_type_counts: {
+        [key: string]: number;
+    };
+};
+
+/**
+ * OrchestratorInfoOut
+ *
+ * GET /api/orchestrators/{variant} — detailed info for the popover.
+ *
+ * Superset of OrchestratorSpecOut. Adds overview, phases (derived or
+ * static), mermaid diagram, related call types, and observed behavior
+ * stats.
+ */
+export type OrchestratorInfoOut = {
+    /**
+     * Variant
+     */
+    variant: string;
+    /**
+     * Description
+     */
+    description: string;
+    /**
+     * Stability
+     */
+    stability: string;
+    /**
+     * Cost Band
+     */
+    cost_band: string;
+    /**
+     * Exposed In Chat
+     */
+    exposed_in_chat: boolean;
+    /**
+     * Supports Global Prio
+     */
+    supports_global_prio: boolean;
+    /**
+     * Overview
+     */
+    overview: string;
+    /**
+     * Diagram Mermaid
+     */
+    diagram_mermaid: string;
+    /**
+     * Phases
+     */
+    phases: Array<PhaseOut>;
+    /**
+     * Related Call Types
+     */
+    related_call_types: Array<RelatedCallTypeOut>;
+    observed_behavior: ObservedBehaviorOut;
+};
+
+/**
  * OrchestratorSpecOut
  *
  * One entry in CapabilitiesOut.orchestrators. Mirrors
@@ -2632,6 +2707,32 @@ export type PaginatedPagesOut = {
 };
 
 /**
+ * PhaseOut
+ *
+ * One step in an orchestrator's execution pattern.
+ *
+ * For PolicyOrchestrator-based orchestrators, this is derived directly
+ * from the live ``Policy.name`` / ``Policy.description`` attributes —
+ * so the phase list can't drift from the composition. For hand-coded
+ * orchestrators, ``name`` is absent and ``description`` is the
+ * free-form step text from ``OrchestratorSpec.static_phases``.
+ */
+export type PhaseOut = {
+    /**
+     * Name
+     */
+    name: string | null;
+    /**
+     * Description
+     */
+    description: string;
+    /**
+     * Source
+     */
+    source: string;
+};
+
+/**
  * PhaseSkippedEventOut
  */
 export type PhaseSkippedEventOut = {
@@ -2970,6 +3071,25 @@ export type RefineIterationVerdictOut = {
      * Stronger Side
      */
     stronger_side: 'how_true' | 'how_false' | 'tie';
+};
+
+/**
+ * RelatedCallTypeOut
+ *
+ * A call type linked from an orchestrator info page.
+ *
+ * ``description`` is the one-liner from ``rumil.descriptions`` —
+ * shown as a tooltip / expandable row on the orch info popover.
+ */
+export type RelatedCallTypeOut = {
+    /**
+     * Value
+     */
+    value: string;
+    /**
+     * Description
+     */
+    description: string;
 };
 
 /**
@@ -5328,6 +5448,41 @@ export type GetCapabilitiesApiCapabilitiesGetResponses = {
 };
 
 export type GetCapabilitiesApiCapabilitiesGetResponse = GetCapabilitiesApiCapabilitiesGetResponses[keyof GetCapabilitiesApiCapabilitiesGetResponses];
+
+export type GetOrchestratorInfoApiOrchestratorsVariantGetData = {
+    body?: never;
+    path: {
+        /**
+         * Variant
+         */
+        variant: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/orchestrators/{variant}';
+};
+
+export type GetOrchestratorInfoApiOrchestratorsVariantGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetOrchestratorInfoApiOrchestratorsVariantGetError = GetOrchestratorInfoApiOrchestratorsVariantGetErrors[keyof GetOrchestratorInfoApiOrchestratorsVariantGetErrors];
+
+export type GetOrchestratorInfoApiOrchestratorsVariantGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: OrchestratorInfoOut;
+};
+
+export type GetOrchestratorInfoApiOrchestratorsVariantGetResponse = GetOrchestratorInfoApiOrchestratorsVariantGetResponses[keyof GetOrchestratorInfoApiOrchestratorsVariantGetResponses];
 
 export type PostContinueQuestionApiQuestionsQuestionIdContinuePostData = {
     body: ContinueQuestionIn;

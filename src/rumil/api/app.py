@@ -31,6 +31,7 @@ from rumil.api.chat import (
     _derive_title,
     handle_chat,
     handle_chat_stream,
+    handle_conversation_events,
 )
 from rumil.api.schemas import (
     ABEvalDimensionOut,
@@ -60,6 +61,8 @@ from rumil.api.schemas import (
     LlmBoundaryExchangeListItemOut,
     LLMExchangeOut,
     LLMExchangeSummaryOut,
+    ObservedBehaviorOut,
+    OrchestratorInfoOut,
     OrchestratorSpecOut,
     PageCountsOut,
     PageDetailOut,
@@ -68,6 +71,7 @@ from rumil.api.schemas import (
     PageLoadStatsOut,
     PaginatedLlmBoundaryExchangesOut,
     PaginatedPagesOut,
+    PhaseOut,
     ProjectStatsOut,
     ProjectSummaryOut,
     QuestionStatsOut,
@@ -75,6 +79,7 @@ from rumil.api.schemas import (
     RealtimeConfigOut,
     RefineIterationOut,
     RefineIterationVerdictOut,
+    RelatedCallTypeOut,
     ReputationBucketOut,
     ReputationSummaryOut,
     RunListItemOut,
@@ -1395,6 +1400,126 @@ async def get_capabilities() -> CapabilitiesOut:
     )
 
 
+@app.get("/api/orchestrators/{variant}", response_model=OrchestratorInfoOut)
+async def get_orchestrator_info(
+    variant: str,
+    project_id: str | None = None,
+    db: DB = Depends(_get_db),
+) -> OrchestratorInfoOut:
+    """Return the full info card for one orchestrator variant.
+
+    The ``phases`` list is derived live from the orchestrator's policy
+    composition when one exists (``OrchestratorSpec.policy_factory``),
+    falling back to the static list otherwise. This is the
+    drift-resistant half — edit the policies, the docs update.
+
+    ``observed_behavior`` aggregates call-type counts across recent
+    runs of this orchestrator (optionally scoped to a project). That's
+    the drift-detector half — if the written description says "runs
+    scouts early" but the histogram says otherwise, the mismatch is
+    visible next to the prose.
+    """
+    from rumil.descriptions import CALL_TYPE_DESCRIPTIONS
+    from rumil.orchestrators.registry import ORCHESTRATORS
+
+    spec = ORCHESTRATORS.get(variant)
+    if spec is None:
+        raise HTTPException(status_code=404, detail=f"Unknown orchestrator: {variant}")
+
+    phases: list[PhaseOut] = []
+    if spec.policy_factory is not None:
+        try:
+            policies = spec.policy_factory(db)
+        except Exception as exc:
+            log.warning("orchestrator info: policy_factory raised for %s: %s", variant, exc)
+            policies = []
+        for p in policies:
+            phases.append(
+                PhaseOut(
+                    name=p.name or type(p).__name__,
+                    description=p.description or "(no description)",
+                    source="policy",
+                )
+            )
+    if not phases:
+        phases = [
+            PhaseOut(name=None, description=step, source="static") for step in spec.static_phases
+        ]
+
+    related: list[RelatedCallTypeOut] = [
+        RelatedCallTypeOut(
+            value=ct.value,
+            description=CALL_TYPE_DESCRIPTIONS.get(ct, ""),
+        )
+        for ct in spec.related_call_types
+    ]
+
+    observed = await _observed_behavior_for_variant(db, variant, project_id)
+
+    return OrchestratorInfoOut(
+        variant=spec.variant,
+        description=spec.description,
+        stability=spec.stability,
+        cost_band=spec.cost_band,
+        exposed_in_chat=spec.exposed_in_chat,
+        supports_global_prio=spec.supports_global_prio,
+        overview=spec.overview,
+        diagram_mermaid=spec.diagram_mermaid,
+        phases=phases,
+        related_call_types=related,
+        observed_behavior=observed,
+    )
+
+
+async def _observed_behavior_for_variant(
+    db: DB,
+    variant: str,
+    project_id: str | None,
+    *,
+    run_limit: int = 30,
+) -> ObservedBehaviorOut:
+    """Aggregate call-type counts across recent runs of ``variant``.
+
+    Two-query implementation: list recent runs filtered by
+    ``config->>'prioritizer_variant' == variant`` or
+    ``config->>'orchestrator' == variant``, then fetch calls for those
+    run_ids and histogram by call_type. No RPC needed.
+    """
+    runs_query = db.client.table("runs").select("id, config").order("created_at", desc=True)
+    if project_id:
+        runs_query = runs_query.eq("project_id", project_id)
+    runs_query = runs_query.or_(
+        f"config->>prioritizer_variant.eq.{variant},config->>orchestrator.eq.{variant}"
+    ).limit(run_limit)
+
+    try:
+        run_rows_res = await db._execute(runs_query)
+    except Exception as exc:
+        log.warning("observed_behavior: runs query failed: %s", exc)
+        return ObservedBehaviorOut(run_count=0, call_type_counts={})
+
+    run_rows = run_rows_res.data or []
+    run_ids = [r["id"] for r in run_rows if r.get("id")]
+    if not run_ids:
+        return ObservedBehaviorOut(run_count=0, call_type_counts={})
+
+    try:
+        calls_res = await db._execute(
+            db.client.table("calls").select("call_type").in_("run_id", run_ids)
+        )
+    except Exception as exc:
+        log.warning("observed_behavior: calls query failed: %s", exc)
+        return ObservedBehaviorOut(run_count=len(run_ids), call_type_counts={})
+
+    counts: dict[str, int] = {}
+    for row in calls_res.data or []:
+        ct = row.get("call_type")
+        if ct:
+            counts[ct] = counts.get(ct, 0) + 1
+
+    return ObservedBehaviorOut(run_count=len(run_ids), call_type_counts=counts)
+
+
 @app.post(
     "/api/questions/{question_id}/continue",
     status_code=202,
@@ -2630,6 +2755,17 @@ async def chat(request: ChatRequest) -> ChatResponse:
 @app.post("/api/chat/stream")
 async def chat_stream(request: ChatRequest):
     return await handle_chat_stream(request)
+
+
+@app.get("/api/chat/conversations/{conversation_id}/events")
+async def chat_conversation_events(conversation_id: str):
+    """Long-lived SSE stream of out-of-band events for a conversation.
+
+    Used by the frontend to receive ``dispatch_completed`` events from
+    background tasks spawned by fire-and-forget tool calls (the actual
+    DISPATCH_RESULT row is also persisted so reloads still see the chip).
+    """
+    return await handle_conversation_events(conversation_id)
 
 
 @app.get(

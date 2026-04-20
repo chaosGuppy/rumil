@@ -237,6 +237,72 @@ class CallTypeInfoOut(BaseModel):
     dispatchable: bool
 
 
+class PhaseOut(BaseModel):
+    """One step in an orchestrator's execution pattern.
+
+    For PolicyOrchestrator-based orchestrators, this is derived directly
+    from the live ``Policy.name`` / ``Policy.description`` attributes —
+    so the phase list can't drift from the composition. For hand-coded
+    orchestrators, ``name`` is absent and ``description`` is the
+    free-form step text from ``OrchestratorSpec.static_phases``.
+    """
+
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    name: str | None
+    description: str
+    source: str  # "policy" (derived from code) or "static" (hand-written in registry)
+
+
+class RelatedCallTypeOut(BaseModel):
+    """A call type linked from an orchestrator info page.
+
+    ``description`` is the one-liner from ``rumil.descriptions`` —
+    shown as a tooltip / expandable row on the orch info popover.
+    """
+
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    value: str
+    description: str
+
+
+class ObservedBehaviorOut(BaseModel):
+    """Histogram of call types across recent runs of an orchestrator.
+
+    Lets the UI cross-check the written description against what the
+    orchestrator actually dispatches — the strongest drift detector.
+    ``run_count`` is the number of runs the histogram was computed over.
+    """
+
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    run_count: int
+    call_type_counts: dict[str, int]
+
+
+class OrchestratorInfoOut(BaseModel):
+    """GET /api/orchestrators/{variant} — detailed info for the popover.
+
+    Superset of OrchestratorSpecOut. Adds overview, phases (derived or
+    static), mermaid diagram, related call types, and observed behavior
+    stats."""
+
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    variant: str
+    description: str
+    stability: str
+    cost_band: str
+    exposed_in_chat: bool
+    supports_global_prio: bool
+    overview: str
+    diagram_mermaid: str
+    phases: list[PhaseOut]
+    related_call_types: list[RelatedCallTypeOut]
+    observed_behavior: ObservedBehaviorOut
+
+
 class CapabilitiesOut(BaseModel):
     """GET /api/capabilities response.
 

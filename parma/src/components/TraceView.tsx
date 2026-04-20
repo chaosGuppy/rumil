@@ -13,6 +13,7 @@ import {
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+import OrchestratorInfoPopover from "@/components/OrchestratorInfoPopover";
 import {
   commitRun,
   fetchCallEvents,
@@ -155,6 +156,10 @@ function RunPicker({
   // Bumped whenever a lazily-resolved row lands, so the filter chip set
   // and any cost-sort re-evaluate against the synchronous cache.
   const [resolveTick, setResolveTick] = useState(0);
+  const [orchPopover, setOrchPopover] = useState<{
+    variant: string;
+    anchorEl: HTMLElement;
+  } | null>(null);
 
   useEffect(() => {
     setShowHidden(loadShowHiddenRuns());
@@ -550,15 +555,27 @@ function RunPicker({
                   <RunRowLabel run={r} />
                   {discriminators
                     .filter((d) => d.key === "orchestrator")
-                    .map((d) => (
-                      <span
-                        key={d.key}
-                        className="trace-pick-row-orchestrator"
-                        title={d.title}
-                      >
-                        {d.label}
-                      </span>
-                    ))}
+                    .map((d) => {
+                      const variant = d.title.replace(/^orchestrator:\s*/, "");
+                      return (
+                        <button
+                          key={d.key}
+                          type="button"
+                          className="trace-pick-row-orchestrator trace-pick-row-orchestrator-btn"
+                          title={`${d.title} — click for details`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setOrchPopover({
+                              variant,
+                              anchorEl: e.currentTarget,
+                            });
+                          }}
+                          onMouseDown={(e) => e.stopPropagation()}
+                        >
+                          {d.label}
+                        </button>
+                      );
+                    })}
                   {r.staged && <span className="trace-pick-row-staged">staged</span>}
                   {r.hidden && (
                     <span className="trace-pick-row-hidden">hidden</span>
@@ -633,6 +650,14 @@ function RunPicker({
           </div>
           {abError && <div className="trace-pick-ab-bar-err">{abError}</div>}
         </div>
+      )}
+      {orchPopover && (
+        <OrchestratorInfoPopover
+          variant={orchPopover.variant}
+          projectId={projectId}
+          anchorEl={orchPopover.anchorEl}
+          onClose={() => setOrchPopover(null)}
+        />
       )}
     </div>
   );

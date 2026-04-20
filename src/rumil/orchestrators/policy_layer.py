@@ -203,9 +203,14 @@ class Policy(ABC):
     (e.g., "scouts produced nothing two rounds in a row") store their own
     run-local state as instance attributes — QuestionState is world state,
     not run state.
+
+    ``description`` is a short one-liner shown in the orchestrator info
+    popover. Keep it to a sentence — it's rendered next to the policy
+    name in the derived "phases" list for policy-based orchestrators.
     """
 
     name: str = ""
+    description: str = ""
 
     @abstractmethod
     async def decide(self, state: QuestionState) -> Intent | None: ...
@@ -215,6 +220,7 @@ class BudgetPolicy(Policy):
     """Terminate when budget hits zero. Put this first in the composition."""
 
     name = "budget"
+    description = "Terminate the loop once dollar budget reaches zero."
 
     async def decide(self, state: QuestionState) -> Intent | None:
         if state.budget_remaining <= 0:
@@ -230,6 +236,10 @@ class SparseQuestionPolicy(Policy):
     """
 
     name = "sparse_question"
+    description = (
+        "When the question has fewer than threshold pages, dispatch "
+        "find_considerations to bulk up the research."
+    )
 
     def __init__(self, threshold: int = 3):
         self.threshold = threshold
@@ -264,6 +274,10 @@ class CascadeReviewPolicy(Policy):
     """
 
     name = "cascade_review"
+    description = (
+        "Pop the newest pending CASCADE_REVIEW suggestion and dispatch "
+        "an assess on its target page."
+    )
 
     def __init__(self, db: DB) -> None:
         self._db = db
@@ -297,6 +311,10 @@ class ViewHealthPolicy(Policy):
     """
 
     name = "view_health"
+    description = (
+        "Dispatch assess on the first consideration missing credence, "
+        "then on the first unjudged child question."
+    )
 
     async def decide(self, state: QuestionState) -> Intent | None:
         if state.missing_credence_page_ids:
@@ -333,6 +351,10 @@ class TensionExplorationPolicy(Policy):
     """
 
     name = "tension_exploration"
+    description = (
+        "When two high-credence considerations disagree on the question, "
+        "dispatch an explore_tension call and emit a RESOLVE_TENSION suggestion."
+    )
 
     def __init__(
         self,

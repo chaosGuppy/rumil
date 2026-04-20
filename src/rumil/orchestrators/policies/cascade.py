@@ -54,6 +54,7 @@ class NoMoreCascadesPolicy(Policy):
     """
 
     name = "no_more_cascades"
+    description = "Terminate the loop cleanly once the cascade queue is empty."
 
     def __init__(self, db: DB) -> None:
         self._db = db

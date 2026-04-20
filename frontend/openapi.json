@@ -2007,6 +2007,56 @@
         }
       }
     },
+    "/api/orchestrators/{variant}": {
+      "get": {
+        "summary": "Get Orchestrator Info",
+        "description": "Return the full info card for one orchestrator variant.\n\nThe ``phases`` list is derived live from the orchestrator's policy\ncomposition when one exists (``OrchestratorSpec.policy_factory``),\nfalling back to the static list otherwise. This is the\ndrift-resistant half \u2014 edit the policies, the docs update.\n\n``observed_behavior`` aggregates call-type counts across recent\nruns of this orchestrator (optionally scoped to a project). That's\nthe drift-detector half \u2014 if the written description says \"runs\nscouts early\" but the histogram says otherwise, the mismatch is\nvisible next to the prose.",
+        "operationId": "get_orchestrator_info_api_orchestrators__variant__get",
+        "parameters": [
+          {
+            "name": "variant",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Variant"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrchestratorInfoOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/questions/{question_id}/continue": {
       "post": {
         "summary": "Post Continue Question",
@@ -8328,6 +8378,97 @@
         "title": "NudgeSummaryItem",
         "description": "Summary of one nudge that fired at a safe point.\n\nEmitted under ``NudgeAppliedEvent`` so the trace UI can show which\nhuman-authored nudges influenced this orchestrator tick / call, what\nthey did, and whether any hard filters removed dispatch candidates."
       },
+      "ObservedBehaviorOut": {
+        "properties": {
+          "run_count": {
+            "type": "integer",
+            "title": "Run Count"
+          },
+          "call_type_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Call Type Counts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_count",
+          "call_type_counts"
+        ],
+        "title": "ObservedBehaviorOut",
+        "description": "Histogram of call types across recent runs of an orchestrator.\n\nLets the UI cross-check the written description against what the\norchestrator actually dispatches \u2014 the strongest drift detector.\n``run_count`` is the number of runs the histogram was computed over."
+      },
+      "OrchestratorInfoOut": {
+        "properties": {
+          "variant": {
+            "type": "string",
+            "title": "Variant"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "stability": {
+            "type": "string",
+            "title": "Stability"
+          },
+          "cost_band": {
+            "type": "string",
+            "title": "Cost Band"
+          },
+          "exposed_in_chat": {
+            "type": "boolean",
+            "title": "Exposed In Chat"
+          },
+          "supports_global_prio": {
+            "type": "boolean",
+            "title": "Supports Global Prio"
+          },
+          "overview": {
+            "type": "string",
+            "title": "Overview"
+          },
+          "diagram_mermaid": {
+            "type": "string",
+            "title": "Diagram Mermaid"
+          },
+          "phases": {
+            "items": {
+              "$ref": "#/components/schemas/PhaseOut"
+            },
+            "type": "array",
+            "title": "Phases"
+          },
+          "related_call_types": {
+            "items": {
+              "$ref": "#/components/schemas/RelatedCallTypeOut"
+            },
+            "type": "array",
+            "title": "Related Call Types"
+          },
+          "observed_behavior": {
+            "$ref": "#/components/schemas/ObservedBehaviorOut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "variant",
+          "description",
+          "stability",
+          "cost_band",
+          "exposed_in_chat",
+          "supports_global_prio",
+          "overview",
+          "diagram_mermaid",
+          "phases",
+          "related_call_types",
+          "observed_behavior"
+        ],
+        "title": "OrchestratorInfoOut",
+        "description": "GET /api/orchestrators/{variant} \u2014 detailed info for the popover.\n\nSuperset of OrchestratorSpecOut. Adds overview, phases (derived or\nstatic), mermaid diagram, related call types, and observed behavior\nstats."
+      },
       "OrchestratorSpecOut": {
         "properties": {
           "variant": {
@@ -8940,6 +9081,37 @@
         ],
         "title": "PaginatedPagesOut"
       },
+      "PhaseOut": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "description",
+          "source"
+        ],
+        "title": "PhaseOut",
+        "description": "One step in an orchestrator's execution pattern.\n\nFor PolicyOrchestrator-based orchestrators, this is derived directly\nfrom the live ``Policy.name`` / ``Policy.description`` attributes \u2014\nso the phase list can't drift from the composition. For hand-coded\norchestrators, ``name`` is absent and ``description`` is the\nfree-form step text from ``OrchestratorSpec.static_phases``."
+      },
       "PhaseSkippedEventOut": {
         "properties": {
           "ts": {
@@ -9419,6 +9591,25 @@
         ],
         "title": "RefineIterationVerdictOut",
         "description": "Verdict summary attached to a refine-artifact iteration.\n\nPulled from ``extra['adversarial_verdict']`` on the JUDGEMENT page that\nreviewed the draft. Named after the raw payload shape so the frontend\ndiff panel can render a chip like \"claim_holds at conf 6, 2 dissents\"."
+      },
+      "RelatedCallTypeOut": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "value",
+          "description"
+        ],
+        "title": "RelatedCallTypeOut",
+        "description": "A call type linked from an orchestrator info page.\n\n``description`` is the one-liner from ``rumil.descriptions`` \u2014\nshown as a tooltip / expandable row on the orch info popover."
       },
       "RenderQuestionSubgraphEventOut": {
         "properties": {

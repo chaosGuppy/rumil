@@ -271,7 +271,7 @@ async def score_items_sequentially(
             parent_parts.append("")
 
     parent_context = "\n".join(parent_parts)
-    system_prompt = build_system_prompt(system_prompt_name)
+    system_prompt = build_system_prompt(system_prompt_name, include_citations=False)
     messages: list[dict] = []
     results: list[dict] = []
 

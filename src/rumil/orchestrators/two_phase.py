@@ -399,7 +399,10 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             dispatch_types=list(
                 get_available_calls_preset().initial_prioritization_scouts,
             ),
-            system_prompt=build_system_prompt("two_phase_initial_prioritization"),
+            system_prompt=build_system_prompt(
+                "two_phase_initial_prioritization",
+                include_citations=False,
+            ),
         )
 
         dispatches = list(result.dispatches)
@@ -655,6 +658,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             extra_dispatch_defs=extra_defs or None,
             system_prompt=build_system_prompt(
                 "two_phase_main_phase_prioritization",
+                include_citations=False,
             ),
             dispatch_budget=dispatch_budget,
         )

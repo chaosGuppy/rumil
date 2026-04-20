@@ -34,11 +34,14 @@ import {
   createProject,
   createRootQuestion,
   fetchProjects,
+  fetchProjectRunsSummary,
+  fetchProjectStats,
   fetchProjectsSummary,
   fetchRootQuestions,
   fetchQuestionView,
   updateProject,
 } from "@/lib/api";
+import type { ProjectRunSummary, ProjectStats } from "@/lib/api";
 import type { NavigateDirective } from "@/lib/api";
 import { useDocumentTitle } from "@/lib/useDocumentTitle";
 import type { QuestionView, Page, Project, ProjectSummary } from "@/lib/types";
@@ -918,18 +921,116 @@ function AskQuestionForm({
   );
 }
 
+function WorkspaceOverview({
+  projectId,
+  onViewRuns,
+}: {
+  projectId: string;
+  onViewRuns: () => void;
+}) {
+  const [stats, setStats] = useState<ProjectStats | null>(null);
+  const [runs, setRuns] = useState<ProjectRunSummary[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchProjectStats(projectId)
+      .then((s) => {
+        if (!cancelled) setStats(s);
+      })
+      .catch(() => {});
+    fetchProjectRunsSummary(projectId)
+      .then((r) => {
+        if (!cancelled) setRuns(r);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
+  const claimCount = stats?.pages_by_type?.claim ?? 0;
+  const judgementCount = stats?.pages_by_type?.judgement ?? 0;
+  const questionCount = stats?.pages_by_type?.question ?? 0;
+  const sourceCount = stats?.pages_by_type?.source ?? 0;
+  const runCount = runs?.length ?? 0;
+  const totalSpend = (runs ?? []).reduce(
+    (acc, r) => acc + (r.total_cost_usd ?? 0),
+    0,
+  );
+  const mostRecent =
+    runs && runs.length > 0
+      ? runs.reduce((newest, r) =>
+          r.created_at > newest.created_at ? r : newest,
+        )
+      : null;
+
+  return (
+    <div className="workspace-overview">
+      <div className="workspace-overview-chips">
+        {claimCount > 0 && (
+          <span className="workspace-chip">
+            <span className="workspace-chip-n">{claimCount}</span> claims
+          </span>
+        )}
+        {judgementCount > 0 && (
+          <span className="workspace-chip">
+            <span className="workspace-chip-n">{judgementCount}</span>{" "}
+            judgements
+          </span>
+        )}
+        {questionCount > 0 && (
+          <span className="workspace-chip">
+            <span className="workspace-chip-n">{questionCount}</span> questions
+          </span>
+        )}
+        {sourceCount > 0 && (
+          <span className="workspace-chip">
+            <span className="workspace-chip-n">{sourceCount}</span> sources
+          </span>
+        )}
+        {runCount > 0 && (
+          <button
+            type="button"
+            className="workspace-chip workspace-chip-action"
+            onClick={onViewRuns}
+            title="View all runs in this workspace"
+          >
+            <span className="workspace-chip-n">{runCount}</span> runs
+            {totalSpend > 0 && (
+              <span className="workspace-chip-sub">
+                · ${totalSpend.toFixed(2)}
+              </span>
+            )}
+            <span className="workspace-chip-arrow">→</span>
+          </button>
+        )}
+        {mostRecent && (
+          <span
+            className="workspace-chip workspace-chip-muted"
+            title={new Date(mostRecent.created_at).toLocaleString()}
+          >
+            last run {formatRelative(mostRecent.created_at)}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function QuestionPicker({
   project,
   questions,
   onSelect,
   onBack,
   onCreateQuestion,
+  onViewRuns,
 }: {
   project: Project;
   questions: Page[];
   onSelect: (question: Page) => void;
   onBack: () => void;
   onCreateQuestion: (question: Page) => void;
+  onViewRuns: () => void;
 }) {
   const [creating, setCreating] = useState(false);
   useDocumentTitle([project.name]);
@@ -968,6 +1069,7 @@ function QuestionPicker({
             </button>
           )}
         </div>
+        <WorkspaceOverview projectId={project.id} onViewRuns={onViewRuns} />
       </div>
 
       {creating && (
@@ -1391,7 +1493,7 @@ const refreshView = useCallback(() => {
     <div className="layout-with-chat">
       {showReview ? (
         <div className="pane-container">
-          <div className="pane" style={{ minWidth: "500px" }}>
+          <div className="pane pane-review">
             <SuggestionReview
               projectId={project.id}
               onClose={() => setShowReview(false)}
@@ -1741,6 +1843,7 @@ function AppContent() {
   }
 
   if (questions && questions.length > 0) {
+    const firstQuestion = questions[0];
     return (
       <QuestionPicker
         project={selectedProject}
@@ -1748,6 +1851,14 @@ function AppContent() {
         onSelect={handleSelectQuestion}
         onBack={handleBackToProjects}
         onCreateQuestion={handleCreateQuestion}
+        onViewRuns={() => {
+          setSelectedQuestionId(firstQuestion.id);
+          window.history.replaceState(
+            null,
+            "",
+            `?project=${encodeURIComponent(selectedProject.id)}&q=${encodeURIComponent(firstQuestion.id)}&view=trace`,
+          );
+        }}
       />
     );
   }

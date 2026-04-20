@@ -502,7 +502,7 @@ export function ChatPanel({
     id: "initial",
     role: "assistant",
     content:
-      "Ask me about this view \u2014 I can explain the reasoning behind claims, surface tensions between findings, or discuss what the research might be missing. Try `/search`, `/ask`, `/inspect`, or `/review`; type `/` for the full list.",
+      "Ask me about this research \u2014 I can explain reasoning behind claims, surface tensions between findings, discuss what's missing, or dispatch new calls. I read what's currently open in the UI (pane, trace, inspect panel) at the start of each turn. Try `/search`, `/ask`, `/inspect`, or `/review`; type `/` for the full list.",
     timestamp: new Date(),
   };
   const { openInspect } = useInspectPanel();

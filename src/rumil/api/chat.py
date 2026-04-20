@@ -2323,8 +2323,27 @@ async def _execute_set_view(tool_input: dict[str, Any], db: DB) -> str:
 
     full_run_id: str | None = None
     run_id_short: str | None = None
+    # dispatch_call's receipt text surfaces both `run_id=<short>` and the
+    # call that it produces — LLMs sometimes mix the two up and pass a
+    # call id into set_view's run_id field. If the input doesn't resolve
+    # as a run but does resolve as a call, derive the run from the call
+    # rather than returning a bare 404 that the model has to debug.
     if run_id_in:
         full_run_id = await _resolve_run_id(db, run_id_in)
+        if not full_run_id:
+            maybe_call = await db.resolve_call_id(run_id_in)
+            if maybe_call:
+                call_resp = (
+                    await db.client.table("calls").select("run_id").eq("id", maybe_call).execute()
+                )
+                rows = call_resp.data or []
+                first = rows[0] if rows else None
+                if isinstance(first, dict):
+                    derived_run_id = first.get("run_id")
+                    if isinstance(derived_run_id, str) and derived_run_id:
+                        full_run_id = derived_run_id
+                        if not call_id_in:
+                            call_id_in = maybe_call
         if not full_run_id:
             return json.dumps({"error": f"Run '{run_id_in}' not found."})
         run_id_short = full_run_id[:8]

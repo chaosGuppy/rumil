@@ -1346,6 +1346,61 @@ body {
   line-height: 1.5;
 }
 
+.workspace-overview {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.workspace-overview-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  align-items: center;
+}
+.workspace-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 5px 10px;
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--fg-muted);
+  background: var(--bg-pane);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+.workspace-chip-n {
+  font-family: var(--font-body-stack);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fg);
+  letter-spacing: 0;
+}
+.workspace-chip-sub {
+  color: var(--fg-dim);
+  font-size: 10px;
+}
+.workspace-chip-action {
+  cursor: pointer;
+  transition: border-color 0.1s, background 0.1s, color 0.1s;
+}
+.workspace-chip-action:hover {
+  border-color: var(--border-strong);
+  background: var(--active-0);
+  color: var(--fg);
+}
+.workspace-chip-arrow {
+  margin-left: 2px;
+  color: var(--fg-dim);
+  font-size: 11px;
+}
+.workspace-chip-muted {
+  color: var(--fg-dim);
+  border-color: transparent;
+  background: transparent;
+}
+
 .browser-list {
   display: flex !important;
   flex-direction: column !important;
@@ -2035,6 +2090,48 @@ body {
 
 .review-tab:hover { color: var(--fg-muted); }
 .review-tab-active { color: var(--fg); border-bottom-color: var(--accent); }
+
+/* pane hosting the Review Queue — stretch to fill the viewport (minus the
+   chat panel) instead of the default 520px pane width. flex: 1 1 0 with
+   width:100% forces growth rather than sizing to the inner max-width. */
+.pane-review {
+  flex: 1 1 0;
+  width: 100%;
+  min-width: 520px;
+}
+
+.pane-review-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 32px 48px;
+}
+
+.review-group + .review-group {
+  margin-top: 32px;
+}
+
+.review-group-noop {
+  opacity: 0.72;
+}
+
+.review-group-title {
+  margin: 0 0 12px 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-strong, var(--border));
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  font-weight: 500;
+}
+
+.review-group-count {
+  margin-left: 8px;
+  color: var(--fg-dim);
+  font-weight: 400;
+  font-size: 10px;
+}
 
 .suggestion-card {
   padding: 16px 0;

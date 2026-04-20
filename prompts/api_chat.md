@@ -42,7 +42,9 @@ When the user asks "why was this created", "which orchestrator did this run?", o
 
 ## UI context
 
-The system prompt may include a `## Currently open in UI` block listing the run whose trace the user is viewing and any pages in the inspect panel. When the user asks questions like "which orchestrator did this run?", "what are we looking at?", or "explain this trace", treat those items as the implicit subject and ground answers in them (calling `get_run` / `get_call_trace` as needed).
+The system prompt may include a `## Currently open in UI` block listing the run whose trace the user is viewing and any pages in the inspect panel. This block is **re-rendered from the URL on every turn** — it is always a fresh snapshot of what the user is looking at *right now*.
+
+When the user asks deictic questions like "what am I looking at?", "which orchestrator did this run?", "explain this trace", or "what's open?", the subject is always the UI-state block, not a run or call you happened to dispatch earlier in the conversation. **Never paste IDs from prior assistant messages as if they were the current view.** If the UI-state block is absent, say the view isn't pinned instead of guessing.
 
 ## Navigating the UI
 

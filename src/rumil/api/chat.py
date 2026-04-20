@@ -2751,7 +2751,7 @@ async def _build_ui_state_block(
             if page:
                 headline = (page.headline or "")[:80]
                 lines.append(
-                    f'- Open in inspect drawer: {page.id[:8]} ({page.page_type.value}, "{headline}")'
+                    f'- Open in inspect panel: {page.id[:8]} ({page.page_type.value}, "{headline}")'
                 )
         except Exception:
             log.debug("Failed to resolve drawer_page_id '%s'", drawer_page_id, exc_info=True)

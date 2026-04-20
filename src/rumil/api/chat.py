@@ -286,6 +286,21 @@ def _replay_messages_for_api(
                     ],
                 }
             )
+        elif msg.role == ChatMessageRole.DISPATCH_RESULT:
+            run_id = msg.content.get("run_id") or ""
+            status = msg.content.get("status") or "unknown"
+            summary = msg.content.get("summary") or ""
+            call_type = msg.content.get("call_type") or ""
+            headline = (msg.content.get("headline") or "").strip()
+            hl = f" on '{headline[:60]}'" if headline else ""
+            out.append(
+                {
+                    "role": "user",
+                    "content": (
+                        f"[dispatch update] run {run_id[:8]} ({call_type}{hl}) {status}: {summary}"
+                    ),
+                }
+            )
     return out
 
 
@@ -1127,7 +1142,10 @@ async def handle_chat_stream(request: ChatRequest) -> StreamingResponse:
 
             full_id = await db.resolve_page_id(request.question_id) if request.question_id else None
             conv = await _ensure_conversation(db, request, full_id)
-            yield _sse("conversation", {"conversation_id": conv.id})
+            yield _sse(
+                "conversation",
+                {"conversation_id": conv.id, "title": conv.title},
+            )
 
             if request.question_id and not full_id:
                 yield _sse(

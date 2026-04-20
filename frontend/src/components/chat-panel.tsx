@@ -589,10 +589,15 @@ export function ChatPanel() {
       setMessages((prev) => ensureInitialAssistant(prev));
 
       for await (const frame of streamChatTurn(req, controller.signal)) {
-        handleStreamFrame(frame, setMessages, (cid) => {
+        handleStreamFrame(frame, setMessages, (cid, title) => {
           if (cid && cid !== convId) {
             convId = cid;
             setActiveConvId(cid);
+          }
+          if (cid && title) {
+            setConversations((prev) =>
+              prev.map((c) => (c.id === cid ? { ...c, title } : c)),
+            );
           }
         });
       }
@@ -886,10 +891,10 @@ export function ChatPanel() {
 function handleStreamFrame(
   frame: StreamEvent,
   setMessages: React.Dispatch<React.SetStateAction<UiMessage[]>>,
-  onConversationId: (id: string) => void,
+  onConversation: (id: string, title?: string) => void,
 ) {
   if (frame.event === "conversation") {
-    onConversationId(frame.data.conversation_id);
+    onConversation(frame.data.conversation_id, frame.data.title);
     return;
   }
   if (frame.event === "assistant_text_delta") {

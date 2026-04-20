@@ -8,7 +8,10 @@ import type {
 } from "@/api";
 
 export type StreamEvent =
-  | { event: "conversation"; data: { conversation_id: string } }
+  | {
+      event: "conversation";
+      data: { conversation_id: string; title?: string };
+    }
   | { event: "assistant_text_delta"; data: { text: string } }
   | { event: "tool_use_start"; data: { id: string; name: string } }
   | {

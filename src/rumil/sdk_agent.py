@@ -81,6 +81,8 @@ class _TurnUsage:
     output_tokens: int = 0
     cache_creation_input_tokens: int = 0
     cache_read_input_tokens: int = 0
+    response_text: str | None = None
+    tool_calls: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -119,9 +121,16 @@ def _read_subagent_transcript(transcript_path: str, max_text_len: int = 500) -> 
         except json.JSONDecodeError:
             continue
         if msg.get("type") == "assistant":
+            turn_text_parts: list[str] = []
+            turn_tool_calls: list[dict] = []
             for block in msg.get("message", {}).get("content", []):
                 if block.get("type") == "text":
                     result.last_text = block["text"]
+                    turn_text_parts.append(block["text"])
+                elif block.get("type") == "tool_use":
+                    turn_tool_calls.append(
+                        {"name": block.get("name", ""), "input": block.get("input", {})}
+                    )
             usage = msg.get("message", {}).get("usage")
             if isinstance(usage, dict):
                 turn = _TurnUsage(
@@ -129,6 +138,8 @@ def _read_subagent_transcript(transcript_path: str, max_text_len: int = 500) -> 
                     output_tokens=usage.get("output_tokens", 0),
                     cache_creation_input_tokens=usage.get("cache_creation_input_tokens", 0),
                     cache_read_input_tokens=usage.get("cache_read_input_tokens", 0),
+                    response_text="\n".join(turn_text_parts) if turn_text_parts else None,
+                    tool_calls=turn_tool_calls,
                 )
                 result.turns.append(turn)
                 result.input_tokens += turn.input_tokens
@@ -272,7 +283,7 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
             summary = ""
 
         child_trace = subagent_traces.get(agent_id)
-        if child_trace and transcript.turns:
+        if child_trace and child_call_id and transcript.turns:
             for turn_num, turn in enumerate(transcript.turns, 1):
                 turn_cost = compute_cost(
                     model=settings.model,
@@ -281,9 +292,26 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
                     cache_creation_input_tokens=turn.cache_creation_input_tokens,
                     cache_read_input_tokens=turn.cache_read_input_tokens,
                 )
+                try:
+                    exchange_id = await config.db.save_llm_exchange(
+                        call_id=child_call_id,
+                        phase="subagent",
+                        system_prompt=None,
+                        user_message=None,
+                        response_text=turn.response_text,
+                        tool_calls=turn.tool_calls or None,
+                        input_tokens=turn.input_tokens,
+                        output_tokens=turn.output_tokens,
+                        round_num=turn_num,
+                        cache_creation_input_tokens=turn.cache_creation_input_tokens or None,
+                        cache_read_input_tokens=turn.cache_read_input_tokens or None,
+                    )
+                except Exception as exc:
+                    log.error("Failed to save subagent exchange: %s", exc)
+                    exchange_id = str(uuid.uuid4())
                 await child_trace.record(
                     LLMExchangeEvent(
-                        exchange_id=str(uuid.uuid4()),
+                        exchange_id=exchange_id,
                         phase="subagent",
                         round=turn_num,
                         input_tokens=turn.input_tokens,
@@ -424,35 +452,66 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
                 if text_parts:
                     last_assistant_text = text_parts
                     all_assistant_text.extend(text_parts)
-                input_tokens = 0
-                output_tokens = 0
-                cache_creation = 0
-                cache_read = 0
+                has_content = bool(text_parts) or bool(tool_uses)
+                input_tokens: int | None = None
+                output_tokens: int | None = None
+                cache_creation: int | None = None
+                cache_read: int | None = None
+                cost_usd: float | None = None
                 if message.usage:
                     input_tokens = message.usage.get("input_tokens", 0)
                     output_tokens = message.usage.get("output_tokens", 0)
                     cache_creation = message.usage.get("cache_creation_input_tokens", 0)
                     cache_read = message.usage.get("cache_read_input_tokens", 0)
-                is_real_turn = input_tokens >= _MIN_REAL_INPUT_TOKENS
-                if is_real_turn:
-                    turn_counter += 1
-                    cost_usd = compute_cost(
-                        model=settings.model,
-                        input_tokens=input_tokens,
-                        output_tokens=output_tokens,
-                        cache_creation_input_tokens=cache_creation,
-                        cache_read_input_tokens=cache_read,
+                    cost_usd = (
+                        compute_cost(
+                            model=settings.model,
+                            input_tokens=input_tokens or 0,
+                            output_tokens=output_tokens or 0,
+                            cache_creation_input_tokens=cache_creation or 0,
+                            cache_read_input_tokens=cache_read or 0,
+                        )
+                        or None
                     )
+                if has_content:
+                    turn_counter += 1
+                    response_text = "\n".join(text_parts) if text_parts else None
+                    tool_call_data = [
+                        {"name": block.name, "input": block.input}
+                        for block in message.content
+                        if isinstance(block, ToolUseBlock)
+                    ]
+                    try:
+                        exchange_id = await config.db.save_llm_exchange(
+                            call_id=config.call.id,
+                            phase="sdk_agent",
+                            system_prompt=config.system_prompt if turn_counter == 1 else None,
+                            user_message=config.user_prompt if turn_counter == 1 else None,
+                            response_text=response_text,
+                            tool_calls=tool_call_data,
+                            input_tokens=input_tokens,
+                            output_tokens=output_tokens,
+                            round_num=turn_counter,
+                            cache_creation_input_tokens=cache_creation,
+                            cache_read_input_tokens=cache_read,
+                        )
+                    except Exception as exc:
+                        log.error(
+                            "Failed to save SDK agent exchange for call %s: %s",
+                            config.call.id[:8],
+                            exc,
+                        )
+                        exchange_id = str(uuid.uuid4())
                     await config.trace.record(
                         LLMExchangeEvent(
-                            exchange_id=str(uuid.uuid4()),
+                            exchange_id=exchange_id,
                             phase="sdk_agent",
                             round=turn_counter,
                             input_tokens=input_tokens,
                             output_tokens=output_tokens,
-                            cache_creation_input_tokens=cache_creation or None,
-                            cache_read_input_tokens=cache_read or None,
-                            cost_usd=cost_usd or None,
+                            cache_creation_input_tokens=cache_creation,
+                            cache_read_input_tokens=cache_read,
+                            cost_usd=cost_usd,
                             has_thinking=bool(thinking_parts),
                             tool_uses=tool_uses or None,
                         )

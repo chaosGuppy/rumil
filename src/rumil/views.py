@@ -8,6 +8,7 @@ available. Always works — no update_view pass required — but honors
 curation where it exists.
 """
 
+import asyncio
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
@@ -28,7 +29,7 @@ ViewSource = str  # "graph" | "view_item"
 @dataclass
 class ViewItem:
     page: Page
-    links: list[PageLink]
+    links: Sequence[PageLink]
     section: str
     source: ViewSource = "graph"
 
@@ -83,7 +84,7 @@ class ViewHealth:
 @dataclass
 class View:
     question: Page
-    sections: list[ViewSection]
+    sections: Sequence[ViewSection]
     health: ViewHealth
     stored_view: Page | None = None
 
@@ -104,55 +105,142 @@ _INGEST_CALL_TYPES = {
 async def build_view(db: DB, question_id: str) -> View:
     """Build a structured View of research on a question.
 
-    Merges graph-derived items with stored VIEW_ITEMs when available.
-    Graph items that are cited by a VIEW_ITEM are hidden in favour of
-    the curated version.
+    Thin wrapper around :func:`build_views_many` — prefer that for batched
+    use to avoid per-qid query fan-out.
     """
-    question = await db.get_page(question_id)
-    if not question:
-        raise ValueError(f"Question {question_id} not found")
-    if question.page_type != PageType.QUESTION:
-        raise ValueError(f"Page {question_id[:8]} is {question.page_type.value}, not a question")
+    result = await build_views_many(db, [question_id])
+    return result[question_id]
 
-    considerations, child_questions_with_links, judgements = await _fetch_direct(db, question_id)
 
-    child_question_ids = [p.id for p, _ in child_questions_with_links]
-    child_judgements_by_q = await db.get_judgements_for_questions(child_question_ids)
+async def build_views_many(
+    db: DB,
+    question_ids: Sequence[str],
+) -> dict[str, View]:
+    """Build Views for many questions with batched DB fetches.
 
-    consideration_page_ids = [p.id for p, _ in considerations]
-    outgoing_by_page = await db.get_links_from_many(consideration_page_ids)
+    Round trips are O(1) in the number of questions for the bulk fetches
+    (questions, considerations, child questions, judgements, views, and
+    cross-page outgoing links). View items per stored view and depth BFS
+    per root remain O(N) calls, fired in parallel via ``asyncio.gather``.
+    """
+    if not question_ids:
+        return {}
+
+    qids = list(dict.fromkeys(question_ids))
+
+    questions_map = await db.get_pages_by_ids(qids)
+    for qid in qids:
+        q = questions_map.get(qid)
+        if not q:
+            raise ValueError(f"Question {qid} not found")
+        if q.page_type != PageType.QUESTION:
+            raise ValueError(f"Page {qid[:8]} is {q.page_type.value}, not a question")
+
+    (
+        considerations_by_q,
+        child_qs_with_links_by_q,
+        judgements_by_q,
+        stored_view_by_q,
+    ) = await asyncio.gather(
+        db.get_considerations_for_questions(qids),
+        _get_child_questions_with_links_many(db, qids),
+        db.get_judgements_for_questions(qids),
+        db.get_views_for_questions(qids),
+    )
+
+    all_child_ids: list[str] = []
+    for q_list in child_qs_with_links_by_q.values():
+        all_child_ids.extend(c.id for c, _ in q_list)
+    child_judgements_by_q: dict[str, list[Page]] = {}
+    if all_child_ids:
+        child_judgements_by_q = await db.get_judgements_for_questions(all_child_ids)
+
+    all_consideration_ids: list[str] = []
+    for q_list in considerations_by_q.values():
+        all_consideration_ids.extend(p.id for p, _ in q_list)
+    outgoing_by_consideration = (
+        await db.get_links_from_many(all_consideration_ids) if all_consideration_ids else {}
+    )
     cites_page_ids = {
         pid
-        for pid, links in outgoing_by_page.items()
+        for pid, links in outgoing_by_consideration.items()
         if any(l.link_type == LinkType.CITES for l in links)
     }
 
-    stored_view = await db.get_view_for_question(question_id)
-    stored_items_with_links: list[tuple[Page, PageLink]] = []
-    cited_by_view_items: set[str] = set()
-    if stored_view:
-        stored_items_with_links = await db.get_view_items(stored_view.id)
-        view_item_page_ids = [p.id for p, _ in stored_items_with_links]
-        view_item_outgoing = await db.get_links_from_many(view_item_page_ids)
+    views_with_items = [v for v in stored_view_by_q.values() if v is not None]
+    stored_items_by_view: dict[str, Sequence[tuple[Page, PageLink]]] = {}
+    cited_by_view_items_all: set[str] = set()
+    if views_with_items:
+        items_results = await asyncio.gather(*(db.get_view_items(v.id) for v in views_with_items))
+        stored_items_by_view = dict(zip([v.id for v in views_with_items], items_results))
+        all_view_item_ids = [p.id for items in stored_items_by_view.values() for p, _ in items]
+        view_item_outgoing = (
+            await db.get_links_from_many(all_view_item_ids) if all_view_item_ids else {}
+        )
         for links in view_item_outgoing.values():
             for link in links:
                 if link.link_type in (LinkType.CITES, LinkType.DEPENDS_ON):
-                    cited_by_view_items.add(link.to_page_id)
+                    cited_by_view_items_all.add(link.to_page_id)
 
-    max_depth = await _measure_child_depth(db, question_id)
+    qs_with_active_judgements = [
+        qid for qid in qids if any(j.is_active() for j in judgements_by_q.get(qid, []))
+    ]
+    answers_links_by_q: dict[str, Sequence[tuple[Page, PageLink]]] = {qid: [] for qid in qids}
+    if qs_with_active_judgements:
+        answers_results = await asyncio.gather(
+            *(_get_answers_links(db, qid) for qid in qs_with_active_judgements)
+        )
+        answers_links_by_q.update(dict(zip(qs_with_active_judgements, answers_results)))
 
+    depths = await asyncio.gather(*(_measure_child_depth(db, qid) for qid in qids))
+    depth_by_q = dict(zip(qids, depths))
+
+    result: dict[str, View] = {}
+    for qid in qids:
+        question = questions_map[qid]
+        result[qid] = _assemble_view(
+            question=question,
+            considerations=considerations_by_q.get(qid, []),
+            child_questions_with_links=child_qs_with_links_by_q.get(qid, []),
+            judgements=judgements_by_q.get(qid, []),
+            child_judgements_by_q=child_judgements_by_q,
+            cites_page_ids=cites_page_ids,
+            stored_view=stored_view_by_q.get(qid),
+            stored_items_with_links=(
+                stored_items_by_view.get(stored_view_by_q.get(qid).id, [])  # type: ignore[union-attr]
+                if stored_view_by_q.get(qid)
+                else []
+            ),
+            cited_by_view_items=cited_by_view_items_all,
+            answers_links=answers_links_by_q.get(qid, []),
+            max_depth=depth_by_q[qid],
+        )
+    return result
+
+
+def _assemble_view(
+    *,
+    question: Page,
+    considerations: Sequence[tuple[Page, PageLink]],
+    child_questions_with_links: Sequence[tuple[Page, PageLink]],
+    judgements: Sequence[Page],
+    child_judgements_by_q: dict[str, list[Page]],
+    cites_page_ids: set[str],
+    stored_view: Page | None,
+    stored_items_with_links: Sequence[tuple[Page, PageLink]],
+    cited_by_view_items: set[str],
+    answers_links: Sequence[tuple[Page, PageLink]],
+    max_depth: int,
+) -> View:
     sections_dict: dict[str, ViewSection] = {
         name: ViewSection(name=name) for name in DEFAULT_VIEW_SECTIONS
     }
-
     all_scored_pages: list[Page] = []
 
     active_judgements = [j for j in judgements if j.is_active()]
     if active_judgements:
         latest = max(active_judgements, key=lambda j: j.created_at)
-        judgement_links = [
-            link for p, link in await _get_answers_links(db, question_id) if p.id == latest.id
-        ]
+        judgement_links = [link for p, link in answers_links if p.id == latest.id]
         sections_dict["assessments"].items.append(
             ViewItem(
                 page=latest,
@@ -169,11 +257,7 @@ async def build_view(db: DB, question_id: str) -> View:
         all_scored_pages.append(claim)
         if claim.id in cited_by_view_items:
             continue
-        section = _classify_consideration(
-            claim,
-            link,
-            has_cites=claim.id in cites_page_ids,
-        )
+        section = _classify_consideration(claim, link, has_cites=claim.id in cites_page_ids)
         sections_dict[section].items.append(
             ViewItem(page=claim, links=[link], section=section, source="graph")
         )
@@ -223,20 +307,31 @@ async def build_view(db: DB, question_id: str) -> View:
     )
 
 
-async def _fetch_direct(
-    db: DB, question_id: str
-) -> tuple[
-    list[tuple[Page, PageLink]],
-    list[tuple[Page, PageLink]],
-    list[Page],
-]:
-    considerations = await db.get_considerations_for_question(question_id)
-    child_questions_with_links = await db.get_child_questions_with_links(question_id)
-    judgements = await db.get_judgements_for_question(question_id)
-    return considerations, child_questions_with_links, judgements
+async def _get_child_questions_with_links_many(
+    db: DB,
+    question_ids: Sequence[str],
+) -> dict[str, Sequence[tuple[Page, PageLink]]]:
+    """Batched equivalent of get_child_questions_with_links across many parents."""
+    result: dict[str, Sequence[tuple[Page, PageLink]]] = {qid: [] for qid in question_ids}
+    if not question_ids:
+        return result
+    links_by_parent = await db.get_links_from_many(list(question_ids))
+    child_ids: list[str] = []
+    child_links_by_parent: dict[str, list[PageLink]] = {}
+    for qid in question_ids:
+        kids = [l for l in links_by_parent.get(qid, []) if l.link_type == LinkType.CHILD_QUESTION]
+        if kids:
+            child_links_by_parent[qid] = kids
+            child_ids.extend(l.to_page_id for l in kids)
+    if not child_ids:
+        return result
+    pages = await db.get_pages_by_ids(list(dict.fromkeys(child_ids)))
+    for qid, kids in child_links_by_parent.items():
+        result[qid] = [(pages[l.to_page_id], l) for l in kids if l.to_page_id in pages]
+    return result
 
 
-async def _get_answers_links(db: DB, question_id: str) -> list[tuple[Page, PageLink]]:
+async def _get_answers_links(db: DB, question_id: str) -> Sequence[tuple[Page, PageLink]]:
     links = await db.get_links_to(question_id)
     answers_links = [lk for lk in links if lk.link_type == LinkType.ANSWERS]
     if not answers_links:

@@ -17,7 +17,7 @@ from rumil.models import Page, PageDetail, PageType
 from rumil.settings import get_settings
 from rumil.tracing.page_load_tracking import get_page_track_tags
 from rumil.tracing.tracer import get_trace
-from rumil.views import View, build_view
+from rumil.views import View, build_view, build_views_many
 
 log = logging.getLogger(__name__)
 
@@ -471,12 +471,11 @@ async def render_child_investigation_results(
         return "", []
 
     child_ids = [c.id for c in children]
-    child_views_list, summaries_map, judgements_map = await asyncio.gather(
-        asyncio.gather(*(build_view(db, cid) for cid in child_ids)),
+    child_views_by_id, summaries_map, judgements_map = await asyncio.gather(
+        build_views_many(db, child_ids),
         db.get_latest_summaries_for_questions(child_ids),
         db.get_judgements_for_questions(child_ids),
     )
-    child_views_by_id: dict[str, View] = dict(zip(child_ids, child_views_list))
 
     def _is_new(page: Page) -> bool:
         if last_view_created_at is None:

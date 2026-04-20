@@ -1,7 +1,7 @@
 """Scout Deep Questions call: surface important questions requiring judgement or involved reasoning."""
 
 from rumil.calls.closing_reviewers import StandardClosingReview
-from rumil.calls.context_builders import EmbeddingContext
+from rumil.calls.context_builders import ScoutSiblingAwareContext
 from rumil.calls.page_creators import MultiRoundLoop
 from rumil.calls.stages import (
     CallRunner,
@@ -15,13 +15,13 @@ from rumil.models import CallType
 class ScoutDeepQuestionsCall(CallRunner):
     """Surface important questions that require judgement or involved reasoning."""
 
-    context_builder_cls = EmbeddingContext
+    context_builder_cls = ScoutSiblingAwareContext
     workspace_updater_cls = MultiRoundLoop
     closing_reviewer_cls = StandardClosingReview
     call_type = CallType.SCOUT_DEEP_QUESTIONS
 
     def _make_context_builder(self) -> ContextBuilder:
-        return EmbeddingContext(self.call_type)
+        return ScoutSiblingAwareContext(self.call_type)
 
     def _make_workspace_updater(self) -> WorkspaceUpdater:
         return MultiRoundLoop(

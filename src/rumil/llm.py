@@ -177,13 +177,20 @@ _SCOUT_BUDGET_CALL_TYPES: frozenset[str] = frozenset(
 )
 
 
-def build_system_prompt(call_type: str) -> str:
-    """Combine preamble + call-type instructions + citations into one system prompt."""
+def build_system_prompt(call_type: str, *, include_citations: bool = True) -> str:
+    """Combine preamble + call-type instructions + citations into one system prompt.
+
+    Pass ``include_citations=False`` for calls that do not create any content-bearing
+    pages (e.g. prioritization, scoring) — the inline-citation rules have nothing to
+    attach to in those calls and only add noise.
+    """
     preamble = _load_file("preamble.md")
     instructions = _load_file(f"{call_type}.md")
-    citations = _load_file("citations.md")
     grounding = _load_file("grounding.md")
-    parts = [preamble, instructions, citations, grounding]
+    parts = [preamble, instructions]
+    if include_citations:
+        parts.append(_load_file("citations.md"))
+    parts.append(grounding)
     budget = _experimental_scout_budget.get()
     if budget is not None and call_type in _SCOUT_BUDGET_CALL_TYPES:
         budget_awareness = _load_file("scout_budget_awareness_experimental.md").format(

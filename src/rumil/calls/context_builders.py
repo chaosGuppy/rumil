@@ -23,7 +23,7 @@ from rumil.context import (
     format_page,
 )
 from rumil.database import DB
-from rumil.embeddings import search_pages
+from rumil.embeddings import page_query_text, search_pages
 from rumil.llm import (
     LLMExchangeMetadata,
     build_system_prompt,
@@ -204,6 +204,80 @@ class EmbeddingContext(ContextBuilder):
             context_text=context_text,
             working_page_ids=working_page_ids,
             preloaded_ids=preloaded_ids,
+        )
+
+
+_SIBLING_BLOCK_HEADER = (
+    "## Existing child questions of this parent\n\n"
+    "The parent question already has these direct child questions. Any new "
+    "child question you create must be INDEPENDENT of these existing "
+    "siblings: its impact on the parent question must NOT be largely "
+    "mediated through any of them. If a candidate's contribution to "
+    "resolving the parent question flows mostly via an existing child's "
+    "answer, that candidate is not independent — do not create it.\n\n"
+    "Independence is stronger than non-duplication. Two siblings can have "
+    "different wordings and still fail independence: if answering one "
+    "largely determines the other's impact on the parent, they are not "
+    "independent. Judge by the causal path of the answer's influence on "
+    "the parent, not by surface similarity.\n"
+)
+
+
+async def _format_sibling_children_block(
+    scope_question_id: str,
+    db: DB,
+) -> str:
+    """Return a formatted block listing direct child questions of the scope question.
+
+    Empty string when the scope question has no active child questions. Uses
+    batched queries: one for links+pages (via get_child_questions_with_links)
+    and one for judgements across all children.
+    """
+    children = await db.get_child_questions_with_links(scope_question_id)
+    if not children:
+        return ""
+
+    judgements_by_qid = await db.get_judgements_for_questions([child.id for child, _ in children])
+
+    lines: list[str] = [_SIBLING_BLOCK_HEADER]
+    for child, link in children:
+        scout_tag = child.provenance_call_type or "unknown"
+        impact = link.impact_on_parent_question
+        impact_str = f"{impact}/10" if impact is not None else "unset"
+        judgements = judgements_by_qid.get(child.id, [])
+        if judgements:
+            latest = max(judgements, key=lambda j: j.created_at)
+            cred = latest.credence if latest.credence is not None else "?"
+            rob = latest.robustness if latest.robustness is not None else "?"
+            judgement_str = f"C{cred}/R{rob}"
+        else:
+            judgement_str = "none yet"
+        lines.append(
+            f"- [{scout_tag}] `{child.id[:8]}` — {child.headline}\n"
+            f"  (impact_on_parent: {impact_str}; judgement: {judgement_str})"
+        )
+    return "\n".join(lines) + "\n"
+
+
+class ScoutSiblingAwareContext(EmbeddingContext):
+    """Embedding context with a prepended block listing existing direct child
+    questions of the scope question, so the scout can avoid creating children
+    whose impact on the parent is mediated through an existing sibling.
+    """
+
+    async def build_context(self, infra: CallInfra) -> ContextResult:
+        result = await super().build_context(infra)
+        sibling_block = await _format_sibling_children_block(
+            infra.question_id,
+            infra.db,
+        )
+        if not sibling_block:
+            return result
+        prepended = f"{sibling_block}\n---\n\n{result.context_text}"
+        return ContextResult(
+            context_text=prepended,
+            working_page_ids=result.working_page_ids,
+            preloaded_ids=result.preloaded_ids,
         )
 
 
@@ -661,12 +735,12 @@ async def _find_higher_quality_replacements(
 
     async def _search_for_page(page: Page) -> tuple[Page, list[tuple[Page, float]]]:
         async with _B2_SEMAPHORE:
-            query_text = page.abstract if page.abstract else page.headline
             results = await search_pages(
                 infra.db,
-                query_text,
-                match_threshold=0.6,
+                page_query_text(page),
+                match_threshold=0.85,
                 match_count=5,
+                input_type="document",
             )
         filtered = [(p, score) for p, score in results if p.id not in exclude_ids and p.is_active()]
         return page, filtered

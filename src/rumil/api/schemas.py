@@ -15,6 +15,7 @@ from rumil.models import Page, PageLink, _all_fields_required
 from rumil.tracing.trace_events import (
     AffectedPagesIdentifiedEvent,
     AgentStartedEvent,
+    AutocompactEvent,
     ClaimReassessedEvent,
     ContextBuiltEvent,
     DispatchesPlannedEvent,
@@ -30,6 +31,7 @@ from rumil.tracing.trace_events import (
     LoadPageEvent,
     MovesExecutedEvent,
     PhaseSkippedEvent,
+    QuestionDedupeEvent,
     ReassessTriggeredEvent,
     RenderQuestionSubgraphEvent,
     ReviewCompleteEvent,
@@ -177,6 +179,10 @@ class ViewCreatedEventOut(ViewCreatedEvent, _TraceEnvelopeMixin):
     pass
 
 
+class AutocompactEventOut(AutocompactEvent, _TraceEnvelopeMixin):
+    pass
+
+
 class PhaseSkippedEventOut(PhaseSkippedEvent, _TraceEnvelopeMixin):
     pass
 
@@ -186,6 +192,10 @@ class GlobalPhaseCompletedEventOut(GlobalPhaseCompletedEvent, _TraceEnvelopeMixi
 
 
 class UpdateViewPhaseCompletedEventOut(UpdateViewPhaseCompletedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class QuestionDedupeEventOut(QuestionDedupeEvent, _TraceEnvelopeMixin):
     pass
 
 
@@ -217,9 +227,11 @@ TraceEventOut = Annotated[
     | LoadPageEventOut
     | LinkSubquestionsCompleteEventOut
     | ViewCreatedEventOut
+    | AutocompactEventOut
     | PhaseSkippedEventOut
     | GlobalPhaseCompletedEventOut
-    | UpdateViewPhaseCompletedEventOut,
+    | UpdateViewPhaseCompletedEventOut
+    | QuestionDedupeEventOut,
     Field(discriminator="event"),
 ]
 

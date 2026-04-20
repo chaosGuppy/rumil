@@ -129,7 +129,7 @@ Every page has a headline — the primary label seen throughout the workspace. H
 
 Write headlines like newspaper headlines: a reader with no prior context should know at a glance what the page is about.
 
-* **10–15 words** (20-word ceiling). Sharp label, not a truncated sentence.
+* **Target 10–15 words; 35-word ceiling.** Sharp label, not a truncated sentence. Use the extra room when you genuinely need it to name the subject or specify scope — spending up to ~20 words on context is worthwhile when the bare claim would be ambiguous out of its originating question.
 * **Questions must be phrased as questions.** e.g. "How sensitive is the 2028 timeline to regulatory delays?"
 * **Claims and judgements should name the actual position**, e.g. "Solar payback periods have fallen below 7 years in most climates". Avoid vague openings like "There are several factors…".
 * **Include the key finding or main caveat** if space allows.

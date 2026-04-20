@@ -267,6 +267,11 @@ class ViewCreatedEvent(BaseModel):
     superseded_view_id: str | None = None
 
 
+class AutocompactEvent(BaseModel):
+    event: Literal["autocompact"] = "autocompact"
+    agent_id: str
+
+
 class PhaseSkippedEvent(BaseModel):
     event: Literal["phase_skipped"] = "phase_skipped"
     phase: str = ""
@@ -286,6 +291,25 @@ class UpdateViewPhaseCompletedEvent(BaseModel):
     items_modified: int = 0
     items_created: int = 0
     items_removed: int = 0
+
+
+class DedupeCandidateItem(BaseModel):
+    id: str
+    headline: str = ""
+    similarity: float
+    kept_by_filter: bool = False
+
+
+class QuestionDedupeEvent(BaseModel):
+    event: Literal["question_dedupe"] = "question_dedupe"
+    proposed_headline: str = ""
+    parent_id: str
+    parent_headline: str = ""
+    candidates: list[DedupeCandidateItem] = []
+    outcome: str = ""
+    matched_page_id: str | None = None
+    matched_headline: str = ""
+    decision_reasoning: str = ""
 
 
 TraceEvent = Annotated[
@@ -316,8 +340,10 @@ TraceEvent = Annotated[
     | LoadPageEvent
     | LinkSubquestionsCompleteEvent
     | ViewCreatedEvent
+    | AutocompactEvent
     | PhaseSkippedEvent
     | GlobalPhaseCompletedEvent
-    | UpdateViewPhaseCompletedEvent,
+    | UpdateViewPhaseCompletedEvent
+    | QuestionDedupeEvent,
     Field(discriminator="event"),
 ]

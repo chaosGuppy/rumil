@@ -4511,6 +4511,26 @@ details[open] > .article-supplementary-toggle::before {
   animation: source-drawer-in 0.15s ease-out;
 }
 
+/* Docked variant: portaled into the .inspect-slot between main content and
+   chat, so opening a detail view compresses the board rather than covering
+   the chat pane. */
+.inspect-slot {
+  display: contents;
+}
+
+.inspect-panel-docked {
+  position: relative;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  width: min(520px, 40vw);
+  min-width: 360px;
+  height: 100vh;
+  box-shadow: none;
+  flex-shrink: 0;
+  animation: pane-enter 0.15s ease-out;
+}
+
 .inspect-header {
   display: flex;
   align-items: center;

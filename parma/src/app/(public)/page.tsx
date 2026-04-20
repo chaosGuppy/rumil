@@ -1497,6 +1497,7 @@ const refreshView = useCallback(() => {
           )}
         </div>
       )}
+      <div id="inspect-slot" className="inspect-slot" />
       <ChatPanel
         questionId={questionId}
         questionHeadline={view.question.headline}

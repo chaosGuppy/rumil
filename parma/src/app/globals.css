@@ -7004,6 +7004,23 @@ mark.ann-mark.ann-mark-dispute:hover {
 .ctx-diff-bucket-preloaded {
   color: var(--fg-dim);
 }
+.ctx-diff-col-bucket {
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  padding: 1px 5px;
+  margin-left: 6px;
+  border-radius: 2px;
+  border: 1px solid var(--border);
+}
+.ctx-diff-col-bucket-working {
+  color: var(--fg-muted);
+  border-color: var(--border-strong);
+}
+.ctx-diff-col-bucket-preloaded {
+  color: var(--fg-dim);
+}
 
 /* event timeline */
 .trace-event-list {
@@ -8041,9 +8058,9 @@ mark.ann-mark.ann-mark-dispute:hover {
   color: var(--fg-muted, var(--fg));
 }
 .orch-info-diagram {
-  background: var(--bg-pane);
-  padding: 8px;
-  border-radius: 3px;
+  background: var(--bg);
+  padding: 12px 8px;
+  border-radius: 4px;
   border: 1px solid var(--border);
   overflow-x: auto;
   text-align: center;
@@ -8051,6 +8068,29 @@ mark.ann-mark.ann-mark-dispute:hover {
 .orch-info-diagram svg {
   max-width: 100%;
   height: auto;
+  display: inline-block;
+}
+/* Sharper edges + bolder node strokes than mermaid's defaults so the
+ * flow reads cleanly at 11–12px font size. */
+.orch-info-diagram svg .node rect,
+.orch-info-diagram svg .node polygon,
+.orch-info-diagram svg .node circle,
+.orch-info-diagram svg .node path {
+  stroke-width: 1.25px;
+  rx: 4px;
+  ry: 4px;
+}
+.orch-info-diagram svg .edgePath path {
+  stroke-width: 1.25px;
+}
+.orch-info-diagram svg .edgeLabel {
+  font-size: 10px;
+}
+.orch-info-diagram svg .edgeLabel rect {
+  fill: var(--bg-pane) !important;
+}
+.orch-info-diagram svg .arrowheadPath {
+  fill: var(--fg-muted, currentColor);
 }
 .orch-info-diagram-fallback {
   background: var(--bg-pane);
@@ -8076,6 +8116,34 @@ mark.ann-mark.ann-mark-dispute:hover {
   border-radius: 2px;
   background: var(--bg-pane);
   cursor: help;
+  display: inline-block;
+}
+/* Instant CSS-only tooltip — the native title= attribute has a 500ms+
+ * browser delay that felt sluggish when scanning the call-type list. */
+.orch-info-call-chip-wrap {
+  position: relative;
+  display: inline-block;
+}
+.orch-info-call-chip-wrap[data-tooltip]:hover::after,
+.orch-info-call-chip-wrap[data-tooltip]:focus-within::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 1001;
+  width: max-content;
+  max-width: 320px;
+  padding: 6px 8px;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border-strong, var(--border));
+  border-radius: 3px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  font-family: var(--font-sans-stack, inherit);
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: normal;
+  pointer-events: none;
 }
 .orch-info-call-list {
   list-style: none;

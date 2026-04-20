@@ -12,7 +12,24 @@ interface OrchestratorInfoPopoverProps {
   onClose: () => void;
 }
 
-let mermaidInitialized = false;
+function readPalette(): Record<string, string> {
+  const cs = getComputedStyle(document.documentElement);
+  const get = (name: string, fallback: string) =>
+    cs.getPropertyValue(name).trim() || fallback;
+  return {
+    bg: get("--bg", "#faf8f5"),
+    bgPane: get("--bg-pane", "#ffffff"),
+    fg: get("--fg", "#2c2825"),
+    fgMuted: get("--fg-muted", "#8a8279"),
+    border: get("--border", "#e8e3db"),
+    borderStrong: get("--border-strong", "#d4cdc2"),
+    nodeQuestion: get("--node-question", "#7a5a8a"),
+    nodeQuestionBg: get("--node-question-bg", "#f4f0f6"),
+    nodeJudgement: get("--node-judgement", "#8a5a6a"),
+    nodeClaim: get("--node-claim", "#5a7a6b"),
+    nodeClaimBg: get("--node-claim-bg", "#f0f5f2"),
+  };
+}
 
 function MermaidDiagram({ source }: { source: string }) {
   const ref = useRef<HTMLDivElement | null>(null);
@@ -23,10 +40,40 @@ function MermaidDiagram({ source }: { source: string }) {
     (async () => {
       try {
         const mermaid = (await import("mermaid")).default;
-        if (!mermaidInitialized) {
-          mermaid.initialize({ startOnLoad: false, theme: "neutral" });
-          mermaidInitialized = true;
-        }
+        const p = readPalette();
+        // Re-initialize per-render so palette changes (or reopened popovers
+        // after a theme switch) take effect; mermaid.initialize is idempotent.
+        mermaid.initialize({
+          startOnLoad: false,
+          theme: "base",
+          flowchart: {
+            curve: "basis",
+            htmlLabels: true,
+            padding: 12,
+            nodeSpacing: 36,
+            rankSpacing: 36,
+          },
+          themeVariables: {
+            background: p.bg,
+            primaryColor: p.nodeClaimBg,
+            primaryTextColor: p.fg,
+            primaryBorderColor: p.nodeClaim,
+            secondaryColor: p.nodeQuestionBg,
+            secondaryBorderColor: p.nodeQuestion,
+            tertiaryColor: p.bgPane,
+            tertiaryBorderColor: p.border,
+            lineColor: p.fgMuted,
+            textColor: p.fg,
+            mainBkg: p.nodeClaimBg,
+            nodeBorder: p.nodeClaim,
+            clusterBkg: p.bgPane,
+            clusterBorder: p.border,
+            edgeLabelBackground: p.bgPane,
+            fontFamily:
+              'ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+            fontSize: "12px",
+          },
+        });
         if (cancelled || !ref.current) return;
         const id = `orch-mermaid-${Math.random().toString(36).slice(2, 10)}`;
         const { svg } = await mermaid.render(id, source);
@@ -237,13 +284,13 @@ export default function OrchestratorInfoPopover({
               ) : (
                 <div className="orch-info-call-chips">
                   {info.related_call_types.map((c) => (
-                    <code
+                    <span
                       key={c.value}
-                      className="orch-info-call-chip"
-                      title={c.description}
+                      className="orch-info-call-chip-wrap"
+                      data-tooltip={c.description || "(no description)"}
                     >
-                      {c.value}
-                    </code>
+                      <code className="orch-info-call-chip">{c.value}</code>
+                    </span>
                   ))}
                 </div>
               )}

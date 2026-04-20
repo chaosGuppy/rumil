@@ -1,13 +1,28 @@
 """In-process event bus for workspace lifecycle events.
 
-This module provides a generic publish/subscribe mechanism. Producers `fire`
-typed event payloads, and subscribers register async handlers keyed by the
-event class they care about.
+Producers `fire` typed event payloads; subscribers register async handlers
+keyed by the concrete event class they care about. Distinct from tracing: that
+module captures per-call diagnostics, this one is an extensibility seam for
+optional side effects.
+
+**When to use.** Optional, experiment-style hooks into lifecycle points — e.g.
+auto-create a View when a question is created, tee page events to a future
+orchestrator. Keeps the trigger site ignorant of who is listening.
+
+**When not to use.** Mandatory workflow. If A *must* do X after Y, call X
+directly — an event handler that silently stops running (or is unregistered in
+a test) would break the invariant without noticing.
+
+**Semantics to know before firing.** Dispatch is by *exact type*, not
+`isinstance` — register on the concrete subclass you want. Handlers run
+sequentially in registration order; a raising handler is logged and swallowed
+so it can't block others. Fire events **after** the underlying state is
+persisted so handlers observe committed state. Tests should scope
+registrations with `isolated_bus()` to avoid leaking handlers between cases.
 
 Nothing in this module fires events on its own — integration into concrete
-lifecycle points (page creation, call completion, etc.) happens in follow-up
-work. The default bus ships with no handlers, so importing this module has no
-runtime effect.
+lifecycle points happens in follow-up work. The default bus ships with no
+handlers, so importing this module has no runtime effect.
 """
 
 from __future__ import annotations

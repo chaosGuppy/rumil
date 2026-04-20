@@ -28,6 +28,7 @@ from rumil.constants import (
     SMOKE_TEST_INGEST_MAX_ROUNDS,
     SMOKE_TEST_MAX_ROUNDS,
 )
+from rumil.context import render_view
 from rumil.database import DB
 from rumil.embeddings import embed_and_store_page
 from rumil.models import (
@@ -43,6 +44,7 @@ from rumil.models import (
 )
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
+from rumil.views import build_view
 
 log = logging.getLogger(__name__)
 
@@ -260,15 +262,11 @@ async def score_items_sequentially(
             parent_parts.append(parent_judgement.headline)
         parent_parts.append("")
 
-    view = await db.get_view_for_question(parent_page.id)
-    if view:
-        from rumil.context import render_view
-
-        view_items = await db.get_view_items(view.id, min_importance=2)
-        view_text = await render_view(view, view_items, min_importance=2)
-        if view_text.strip():
-            parent_parts.append(view_text)
-            parent_parts.append("")
+    view = await build_view(db, parent_page.id)
+    view_text = render_view(view, min_importance=2)
+    if view_text.strip():
+        parent_parts.append(view_text)
+        parent_parts.append("")
 
     parent_context = "\n".join(parent_parts)
     system_prompt = build_system_prompt(system_prompt_name)

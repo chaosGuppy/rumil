@@ -17,6 +17,7 @@ from rumil.models import Page, PageDetail, PageLink, PageType
 from rumil.settings import get_settings
 from rumil.tracing.page_load_tracking import get_page_track_tags
 from rumil.tracing.tracer import get_trace
+from rumil.views import View, build_view
 
 log = logging.getLogger(__name__)
 
@@ -414,69 +415,39 @@ async def format_page(
     return "\n".join(lines)
 
 
-async def render_view(
-    view: Page,
-    items_with_links: Sequence[tuple[Page, PageLink]],
-    min_importance: int = 5,
-) -> str:
-    """Render a View page at the given importance threshold.
+def render_view(view: View, *, min_importance: int = 3) -> str:
+    """Render a structured View as markdown for LLM context injection.
 
-    - min_importance=5: NL summary only (no individual items)
-    - min_importance=4: NL summary + programmatic rendering of all items at 4+
-    - min_importance=3: NL summary + all items at 3+
-    - min_importance=2: NL summary + all items at 2+
-
-    Whenever items are rendered programmatically, importance-5 items are
-    always included alongside lower-tier ones.
+    Items below *min_importance* are omitted. Curated VIEW_ITEM content
+    is rendered inline; graph items show headline + scores only. Returns
+    empty string when no sections have items clearing the threshold.
     """
-    parts: list[str] = [f"## View: {view.headline}", ""]
-
-    if view.content:
-        parts.append(view.content)
-        parts.append("")
-
-    if min_importance >= 5:
-        return "\n".join(parts)
-
-    filtered = [
-        (page, link)
-        for page, link in items_with_links
-        if link.importance is not None and link.importance >= min_importance
-    ]
-    if not filtered:
-        return "\n".join(parts)
-
-    sections_order = view.sections or []
-    section_index = {s: i for i, s in enumerate(sections_order)}
-
-    by_section: dict[str, list[tuple[Page, PageLink]]] = {}
-    for page, link in filtered:
-        sec = link.section or "other"
-        by_section.setdefault(sec, []).append((page, link))
-
-    ordered_sections = sorted(
-        by_section.keys(),
-        key=lambda s: section_index.get(s, 999),
-    )
-
-    parts.append("### View Items")
-    parts.append("")
-    for sec in ordered_sections:
-        label = sec.replace("_", " ").title()
-        parts.append(f"#### {label}")
-        parts.append("")
-        items = by_section[sec]
-        items.sort(key=lambda pair: pair[1].position or 0)
-        for page, link in items:
-            imp = link.importance or 0
+    rendered_sections: list[str] = []
+    for section in view.sections:
+        filtered = [
+            item
+            for item in section.items
+            if item.effective_importance is not None and item.effective_importance >= min_importance
+        ]
+        if not filtered:
+            continue
+        lines = [f"#### {section.name.replace('_', ' ').title()}", ""]
+        for item in filtered:
+            page = item.page
             r = page.robustness if page.robustness is not None else "?"
-            parts.append(f"- [R{r} I{imp}] `{page.id[:8]}` — {page.headline}")
-            if page.content:
-                for line in page.content.strip().split("\n"):
-                    parts.append(f"  {line}")
-            parts.append("")
+            imp = item.effective_importance or 0
+            lines.append(f"- [R{r} I{imp}] `{page.id[:8]}` — {page.headline}")
+            if item.source == "view_item" and page.content:
+                for content_line in page.content.strip().split("\n"):
+                    lines.append(f"  {content_line}")
+        rendered_sections.append("\n".join(lines))
 
-    return "\n".join(parts)
+    if not rendered_sections:
+        return ""
+
+    parts = [f"## View: {view.question.headline}", "", "### View Items", ""]
+    parts.append("\n\n".join(rendered_sections))
+    return "\n".join(parts).rstrip() + "\n"
 
 
 async def render_child_investigation_results(
@@ -500,34 +471,22 @@ async def render_child_investigation_results(
         return "", []
 
     child_ids = [c.id for c in children]
-    views_map, summaries_map, judgements_map = await asyncio.gather(
-        db.get_views_for_questions(child_ids),
+    child_views_list, summaries_map, judgements_map = await asyncio.gather(
+        asyncio.gather(*(build_view(db, cid) for cid in child_ids)),
         db.get_latest_summaries_for_questions(child_ids),
         db.get_judgements_for_questions(child_ids),
     )
+    child_views_by_id: dict[str, View] = dict(zip(child_ids, child_views_list))
 
     def _is_new(page: Page) -> bool:
         if last_view_created_at is None:
             return True
         return page.created_at > last_view_created_at
 
-    new_view_ids: list[str] = []
-    for cid in child_ids:
-        v = views_map.get(cid)
-        if v and _is_new(v):
-            new_view_ids.append(v.id)
-    view_items_map: dict[str, list[tuple[Page, PageLink]]] = {}
-    if new_view_ids:
-        items_results = await asyncio.gather(
-            *(db.get_view_items(vid, min_importance=4) for vid in new_view_ids)
-        )
-        for vid, items in zip(new_view_ids, items_results):
-            view_items_map[vid] = items
-
     entries: list[tuple[bool, str, list[str]]] = []
     for child in children:
         cid = child.id
-        view = views_map.get(cid)
+        child_view = child_views_by_id[cid]
         summary = summaries_map.get(cid)
         judgements = judgements_map.get(cid, [])
         latest_judgement = max(judgements, key=lambda p: p.created_at) if judgements else None
@@ -536,32 +495,21 @@ async def render_child_investigation_results(
         page_ids: list[str] = []
         lines: list[str] = [f"### `{cid[:8]}` — {child.headline}"]
 
-        if view:
-            new = _is_new(view)
-            page_ids.append(view.id)
+        has_view_content = bool(child_view.sections) or child_view.stored_view is not None
+
+        if has_view_content:
+            stored = child_view.stored_view
+            if stored:
+                new = _is_new(stored)
+                page_ids.append(stored.id)
             lines.append(f"**Status:** View available{' [NEW]' if new else ''}")
-            if view.content:
-                detail = PageDetail.CONTENT if new else PageDetail.ABSTRACT
-                formatted_view = await format_page(
-                    view,
-                    detail,
-                    linked_detail=None,
-                    db=db,
-                    track=True,
-                    track_tags={"source": "child_investigation"},
-                )
+            view_text = render_view(child_view, min_importance=4 if new else 5)
+            if view_text.strip():
                 lines.append("")
-                lines.append(formatted_view)
-            if new and view.id in view_items_map:
-                items = view_items_map[view.id]
-                if items:
-                    lines.append("")
-                    lines.append("**Key items:**")
-                    for page, link in items:
-                        imp = link.importance or 0
-                        r = page.robustness if page.robustness is not None else "?"
-                        lines.append(f"- [R{r} I{imp}] `{page.id[:8]}` — {page.headline}")
-                        page_ids.append(page.id)
+                lines.append(view_text)
+            for section in child_view.sections:
+                for item in section.items:
+                    page_ids.append(item.page.id)
         elif summary:
             new = _is_new(summary)
             page_ids.append(summary.id)
@@ -683,22 +631,13 @@ async def build_prioritization_context(
     if scope_question_id:
         question = await db.get_page(scope_question_id)
         if question:
-            view = await db.get_view_for_question(scope_question_id)
-            if view:
-                view_items = await db.get_view_items(
-                    view.id,
-                    min_importance=2,
-                )
-                view_text = await render_view(
-                    view,
-                    view_items,
-                    min_importance=2,
-                )
-                if view_text.strip():
-                    parts.append(view_text)
-                    parts.append("")
-                    parts.append("---")
-                    parts.append("")
+            view = await build_view(db, scope_question_id)
+            view_text = render_view(view, min_importance=2)
+            if view_text.strip():
+                parts.append(view_text)
+                parts.append("")
+                parts.append("---")
+                parts.append("")
 
             direct_children = await db.get_child_questions(scope_question_id)
             full_page_ids = {scope_question_id} | {c.id for c in direct_children}

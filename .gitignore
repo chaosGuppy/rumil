@@ -6,6 +6,9 @@ frontend/package-lock.json
 .claude/settings.local.json
 .claude/state/
 CLAUDE.local.md
+.workmux.yaml
+.workmux-offset
+scripts/workmux-offset.sh
 
 # macOS
 .DS_Store

@@ -749,12 +749,25 @@ async def build_embedding_based_context(
     summary_page_similarity_floor: float | None = None,
     require_judgement_for_questions: bool = False,
     exclude_page_ids: set[str] | None = None,
+    input_type: str = "query",
 ) -> EmbeddingBasedContextResult:
     """Build context by embedding-similarity search over the whole workspace.
 
     Pages are ranked by similarity and placed into tiers by descending detail:
     distillation (CONTENT) -> full (CONTENT) -> abstract (ABSTRACT) -> summary
     (HEADLINE). Each tier has its own char budget and similarity floor.
+
+    ``input_type`` defaults to ``"query"`` for the common case where the
+    caller passes a question headline to find pages that bear on it. Pass
+    ``"document"`` when the query text IS itself a page (e.g. a claim being
+    reassessed) — this gives symmetric page-to-page similarity instead of
+    the asymmetric question-to-document similarity Voyage uses by default.
+
+    When ``input_type="document"``, default tier floors are shifted up by
+    ``settings.document_floor_delta`` to account for the score-distribution
+    shift — identical text scores ~0.74 under query-mode but ~1.00 under
+    document-mode against stored documents. Explicit floor overrides are
+    used as-passed and not shifted.
     """
     settings = get_settings()
     if full_page_char_budget is None:
@@ -765,19 +778,20 @@ async def build_embedding_based_context(
         summary_page_char_budget = settings.summary_page_char_budget
     if distillation_page_char_budget is None:
         distillation_page_char_budget = settings.distillation_page_char_budget
+    delta = settings.document_floor_delta if input_type == "document" else 0.0
     if full_page_similarity_floor is None:
-        full_page_similarity_floor = settings.full_page_similarity_floor
+        full_page_similarity_floor = settings.full_page_similarity_floor + delta
     if abstract_page_similarity_floor is None:
-        abstract_page_similarity_floor = settings.abstract_page_similarity_floor
+        abstract_page_similarity_floor = settings.abstract_page_similarity_floor + delta
     if summary_page_similarity_floor is None:
-        summary_page_similarity_floor = settings.summary_page_similarity_floor
+        summary_page_similarity_floor = settings.summary_page_similarity_floor + delta
 
     match_threshold = min(
         full_page_similarity_floor,
         abstract_page_similarity_floor,
         summary_page_similarity_floor,
     )
-    query_embedding = await embed_query(question_text)
+    query_embedding = await embed_query(question_text, input_type=input_type)
     ranked = await search_pages_by_vector(
         db,
         query_embedding,

@@ -1220,6 +1220,53 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
           )}
         </div>
       )}
+      {event.event === "question_dedupe" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">outcome</span>
+            <span className="trace-kv-value">{event.outcome.replace(/_/g, " ")}</span>
+          </div>
+          {event.proposed_headline && (
+            <div className="trace-kv">
+              <span className="trace-kv-key">proposed</span>
+              <span className="trace-kv-value">{event.proposed_headline}</span>
+            </div>
+          )}
+          <div className="trace-kv">
+            <span className="trace-kv-key">parent</span>
+            <span className="trace-kv-value">
+              <code>{event.parent_id.slice(0, 8)}</code>
+              {event.parent_headline ? ` — ${event.parent_headline}` : ""}
+            </span>
+          </div>
+          {event.matched_page_id && (
+            <div className="trace-kv">
+              <span className="trace-kv-key">matched</span>
+              <span className="trace-kv-value">
+                <code>{event.matched_page_id.slice(0, 8)}</code>
+                {event.matched_headline ? ` — ${event.matched_headline}` : ""}
+              </span>
+            </div>
+          )}
+          {event.decision_reasoning && (
+            <div className="trace-kv">
+              <span className="trace-kv-key">reasoning</span>
+              <span className="trace-kv-value">{event.decision_reasoning}</span>
+            </div>
+          )}
+          {(event.candidates ?? []).map((c, i) => (
+            <div key={i} className="trace-score-row">
+              <code>{c.id.slice(0, 8)}</code>
+              <span className="trace-score-headline">
+                {c.headline}
+              </span>
+              <span className="trace-kv-value">
+                {c.similarity.toFixed(2)} · {c.kept_by_filter ? "kept" : "dropped"}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 });

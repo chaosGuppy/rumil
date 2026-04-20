@@ -61,15 +61,11 @@ async def select_seed_questions(
         f"Select up to {limit}, ordered by expected relevance:\n\n" + "\n".join(candidate_lines)
     )
 
-    model = (
-        settings.model if settings.is_test_mode or settings.is_smoke_test else settings.sonnet_model
-    )
-
     result = await structured_call(
         _SYSTEM_PROMPT,
         user_message,
         response_model=TopLevelRelevanceRanking,
-        model=model,
+        model=settings.sonnet_model,
     )
 
     if result.parsed is None:

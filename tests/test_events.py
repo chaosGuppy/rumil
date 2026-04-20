@@ -106,9 +106,7 @@ async def test_raising_handler_does_not_block_others(caplog):
         await bus.fire(_make_event())
 
     assert reached == ["good"]
-    errors = [
-        r for r in caplog.records if r.name == "rumil.events" and r.levelno == logging.ERROR
-    ]
+    errors = [r for r in caplog.records if r.name == "rumil.events" and r.levelno == logging.ERROR]
     assert len(errors) == 1
     record = errors[0]
     assert record.exc_info is not None
@@ -187,10 +185,9 @@ async def test_isolated_bus_restores_even_on_exception():
 
     register(PageCreatedEvent, h)
     try:
-        with pytest.raises(ValueError):
-            with isolated_bus():
-                assert handler_count(PageCreatedEvent) == 0
-                raise ValueError("boom")
+        with pytest.raises(ValueError), isolated_bus():
+            assert handler_count(PageCreatedEvent) == 0
+            raise ValueError("boom")
 
         assert handler_count(PageCreatedEvent) == 1
     finally:

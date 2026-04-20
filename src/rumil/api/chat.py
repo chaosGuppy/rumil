@@ -2217,7 +2217,7 @@ async def _execute_tool(
     if name == "list_running_dispatches":
         if not conv_id:
             return json.dumps({"error": "No conversation in scope.", "runs": []})
-        runs = _list_live_runs(conv_id)
+        runs = await _list_live_runs_with_db_fallback(conv_id, db)
         return json.dumps({"runs": runs, "count": len(runs)})
 
     if name == "nudge_run":
@@ -2228,13 +2228,18 @@ async def _execute_tool(
         hard = bool(tool_input.get("hard", False))
         if not note:
             return "Nudge note cannot be empty."
-        live = _live_runs_by_conv.get(conv_id, {})
+        live_entries = await _list_live_runs_with_db_fallback(conv_id, db)
+        live_ids_list = [e["run_id"] for e in live_entries]
         full_run_id = next(
-            (rid for rid in live if rid == run_short_or_full or rid.startswith(run_short_or_full)),
+            (
+                rid
+                for rid in live_ids_list
+                if rid == run_short_or_full or rid.startswith(run_short_or_full)
+            ),
             None,
         )
         if not full_run_id:
-            live_ids = ", ".join(rid[:8] for rid in live) or "(none)"
+            live_ids = ", ".join(rid[:8] for rid in live_ids_list) or "(none)"
             return (
                 f"Run '{run_short_or_full}' is not in this conversation's "
                 f"live set. Live runs: {live_ids}. Use list_running_dispatches."
@@ -2281,27 +2286,13 @@ async def _execute_tool(
 
 
 async def _resolve_run_id(db: DB, run_id: str) -> str | None:
-    """Resolve a run ID to a full UUID. Accepts full UUIDs or 8-char prefixes.
+    """Resolve a run ID to a full UUID, scoped to the chat's project.
 
-    Scoped to the active project when one is set, so the same short prefix
-    in two projects doesn't collide.
+    Thin wrapper around ``db.resolve_run_id`` that pins the lookup to the
+    conversation's project so a short prefix that matches rows in two
+    projects can't collide across a chat session.
     """
-    if not run_id:
-        return None
-    query = db.client.table("runs").select("id").eq("id", run_id)
-    if db.project_id:
-        query = query.eq("project_id", db.project_id)
-    rows = (await db._execute(query)).data or []
-    if rows:
-        return rows[0]["id"]
-    if len(run_id) <= 8:
-        query = db.client.table("runs").select("id").like("id", f"{run_id}%")
-        if db.project_id:
-            query = query.eq("project_id", db.project_id)
-        rows = (await db._execute(query)).data or []
-        if len(rows) == 1:
-            return rows[0]["id"]
-    return None
+    return await db.resolve_run_id(run_id, project_id=db.project_id or None)
 
 
 async def _execute_set_view(tool_input: dict[str, Any], db: DB) -> str:
@@ -2501,12 +2492,42 @@ def _list_live_runs(conv_id: str) -> list[dict[str, Any]]:
     return list(_live_runs_by_conv.get(conv_id, {}).values())
 
 
+async def _list_live_runs_with_db_fallback(conv_id: str, db: DB) -> list[dict[str, Any]]:
+    """In-memory live runs merged with a DB-backed view.
+
+    The in-memory dict is the primary source (it has the freshest
+    metadata), but it's per-process and disappears on API restart. The DB
+    view (``runs`` tagged with ``config.chat.conv_id`` whose root call is
+    still non-terminal and has no ``DISPATCH_RESULT`` chat message yet)
+    recovers from that state loss. Results are deduped by ``run_id`` with
+    the in-memory entry winning on conflict.
+    """
+    in_memory = _list_live_runs(conv_id)
+    seen = {entry["run_id"] for entry in in_memory}
+    try:
+        db_rows = await db.runs.get_active_chat_dispatches(conv_id)
+    except Exception:
+        log.exception("Failed DB-backed live-runs lookup for conv %s", conv_id[:8])
+        db_rows = []
+    merged = list(in_memory)
+    for entry in db_rows:
+        if entry["run_id"] in seen:
+            continue
+        merged.append(entry)
+        seen.add(entry["run_id"])
+    return merged
+
+
 async def _precreate_run_row(
     db: DB,
     *,
     new_run_id: str,
     name: str,
     question_id: str | None,
+    conv_id: str | None = None,
+    tool_use_id: str | None = None,
+    call_type: str | None = None,
+    headline: str | None = None,
 ) -> None:
     """Insert a ``runs`` row synchronously before spawning a bg handler.
 
@@ -2516,8 +2537,21 @@ async def _precreate_run_row(
     ``create_run`` on its own DB handle. Uses the chat turn's client and
     credentials, writing against ``new_run_id`` directly rather than
     touching ``db.run_id``.
+
+    When the dispatch originates in chat, the caller passes ``conv_id``,
+    ``tool_use_id``, ``call_type``, and ``headline``, which are stashed
+    under ``config.chat`` so ``list_running_dispatches`` can reconstruct
+    its in-memory view from the DB after an API restart.
     """
     settings = get_settings()
+    config = settings.capture_config()
+    if conv_id:
+        config["chat"] = {
+            "conv_id": conv_id,
+            "tool_use_id": tool_use_id or "",
+            "call_type": call_type or "",
+            "headline": headline or "",
+        }
     await db._execute(
         db.client.table("runs").insert(
             {
@@ -2525,7 +2559,7 @@ async def _precreate_run_row(
                 "name": name,
                 "project_id": db.project_id,
                 "question_id": question_id,
-                "config": settings.capture_config(),
+                "config": config,
                 "staged": db.staged,
             }
         )
@@ -2662,6 +2696,10 @@ async def _run_dispatch(
         new_run_id=new_run_id,
         name=f"chat dispatch: {call_type_str} on {headline[:60]}",
         question_id=question_id,
+        conv_id=conv_id,
+        tool_use_id=tool_use_id,
+        call_type=call_type_str,
+        headline=headline,
     )
     _register_live_run(
         conv_id,
@@ -2923,6 +2961,10 @@ async def _run_orchestrate(
         new_run_id=new_run_id,
         name=f"orchestrate (chat): {headline[:90]}",
         question_id=question_id,
+        conv_id=conv_id,
+        tool_use_id=tool_use_id,
+        call_type="orchestrate",
+        headline=headline,
     )
     _register_live_run(
         conv_id,
@@ -3076,6 +3118,10 @@ async def _run_ingest(
         new_run_id=new_run_id,
         name=f"ingest (chat): {headline[:90]}",
         question_id=None,
+        conv_id=conv_id,
+        tool_use_id=tool_use_id,
+        call_type="ingest",
+        headline=headline,
     )
     _register_live_run(
         conv_id,
@@ -3190,6 +3236,10 @@ async def _run_evaluate(
         new_run_id=new_run_id,
         name=f"evaluate (chat, {eval_type}): {headline[:90]}",
         question_id=question_id,
+        conv_id=conv_id,
+        tool_use_id=tool_use_id,
+        call_type="evaluate",
+        headline=headline,
     )
     _register_live_run(
         conv_id,
@@ -3337,17 +3387,22 @@ async def _run_ground(
     new_run_id = str(uuid.uuid4())
     question = await db.get_page(question_id)
     precreate_headline = question.headline if question else question_id[:8]
+    ground_headline = f"{pipeline} on eval {eval_call.id[:8]}"
     await _precreate_run_row(
         db,
         new_run_id=new_run_id,
         name=f"{pipeline} (chat): {precreate_headline[:90]}",
         question_id=question_id,
+        conv_id=conv_id,
+        tool_use_id=tool_use_id,
+        call_type="ground",
+        headline=ground_headline,
     )
     _register_live_run(
         conv_id,
         new_run_id,
         call_type="ground",
-        headline=f"{pipeline} on eval {eval_call.id[:8]}",
+        headline=ground_headline,
         tool_use_id=tool_use_id,
         question_id=question_id,
     )

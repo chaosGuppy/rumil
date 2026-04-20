@@ -929,6 +929,9 @@ class DB:
     async def get_run(self, run_id: str) -> dict[str, Any] | None:
         return await self.runs.get_run(run_id)
 
+    async def resolve_run_id(self, run_id: str, project_id: str | None = None) -> str | None:
+        return await self.runs.resolve_run_id(run_id, project_id=project_id)
+
     async def create_run(
         self,
         name: str,

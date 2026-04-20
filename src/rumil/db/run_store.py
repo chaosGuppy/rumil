@@ -178,6 +178,99 @@ class RunStore:
         )
         return rows[0] if rows else None
 
+    async def resolve_run_id(self, run_id: str, project_id: str | None = None) -> str | None:
+        """Resolve a run ID to a full UUID. Accepts full UUIDs or ≤8-char prefixes.
+
+        When *project_id* is given, the search is scoped to that project so
+        the same short prefix in two projects does not collide. A prefix
+        that matches multiple runs (outside a scope) resolves to None —
+        callers can retry with more characters or a full UUID.
+        """
+        if not run_id:
+            return None
+        query = self.client.table("runs").select("id").eq("id", run_id)
+        if project_id:
+            query = query.eq("project_id", project_id)
+        rows = _rows(await self._db._execute(query))
+        if rows:
+            return rows[0]["id"]
+        if len(run_id) <= 8:
+            query = self.client.table("runs").select("id").like("id", f"{run_id}%")
+            if project_id:
+                query = query.eq("project_id", project_id)
+            rows = _rows(await self._db._execute(query))
+            if len(rows) == 1:
+                return rows[0]["id"]
+        return None
+
+    async def get_active_chat_dispatches(self, conv_id: str) -> list[dict[str, Any]]:
+        """DB-backed live-dispatch query for one chat conversation.
+
+        Returns runs tagged with ``config.chat.conv_id = conv_id`` whose
+        root call has not reached a terminal status (complete/failed) and
+        which have no ``DISPATCH_RESULT`` chat message written for them
+        yet. This is the source-of-truth fallback for the in-memory
+        ``_live_runs_by_conv`` dict, which loses state on API restart.
+
+        Each row is shaped like ``_list_live_runs`` entries so the chat
+        tool can merge the two sources:
+
+        ``{run_id, call_type, headline, tool_use_id, question_id, started_at}``
+        """
+        runs_rows = _rows(
+            await self._db._execute(
+                self.client.table("runs")
+                .select("id, question_id, created_at, config")
+                .filter("config->chat->>conv_id", "eq", conv_id)
+            )
+        )
+        if not runs_rows:
+            return []
+        run_ids = [r["id"] for r in runs_rows]
+        root_call_rows = _rows(
+            await self._db._execute(
+                self.client.table("calls")
+                .select("run_id, status")
+                .in_("run_id", run_ids)
+                .is_("parent_call_id", "null")
+            )
+        )
+        root_status_by_run: dict[str, str] = {r["run_id"]: r["status"] for r in root_call_rows}
+        completed_rows = _rows(
+            await self._db._execute(
+                self.client.table("chat_messages")
+                .select("content")
+                .eq("conversation_id", conv_id)
+                .eq("role", "dispatch_result")
+            )
+        )
+        completed_run_ids = {
+            (row.get("content") or {}).get("run_id")
+            for row in completed_rows
+            if (row.get("content") or {}).get("run_id")
+        }
+        terminal = {"complete", "failed"}
+        live: list[dict[str, Any]] = []
+        for row in runs_rows:
+            rid = row["id"]
+            if rid in completed_run_ids:
+                continue
+            root_status = root_status_by_run.get(rid)
+            if root_status in terminal:
+                continue
+            chat_meta = (row.get("config") or {}).get("chat") or {}
+            live.append(
+                {
+                    "run_id": rid,
+                    "call_type": chat_meta.get("call_type") or "",
+                    "headline": chat_meta.get("headline") or "",
+                    "tool_use_id": chat_meta.get("tool_use_id") or "",
+                    "question_id": row.get("question_id"),
+                    "started_at": row.get("created_at"),
+                }
+            )
+        return live
+
     async def create_run(
         self,
         name: str,

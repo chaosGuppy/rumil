@@ -621,6 +621,9 @@ export function ChatPanel() {
           const path = frame.data.result.slice(NAVIGATE_PREFIX.length).trim();
           if (path.startsWith("/")) {
             router.push(path);
+            // Navigation blurs the textarea; reclaim focus once the
+            // route swap has a chance to apply.
+            setTimeout(() => textareaRef.current?.focus(), 0);
           }
         }
         handleStreamFrame(frame, setMessages, (cid, title) => {
@@ -904,7 +907,7 @@ export function ChatPanel() {
                 handleSend();
               }
             }}
-            disabled={sending}
+            aria-busy={sending}
           />
           <button
             type="submit"

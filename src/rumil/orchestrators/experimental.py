@@ -345,7 +345,21 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         question_id: str,
         parent_call_id: str | None,
     ) -> None:
-        """Re-run the linker if enough pages have been added since the last evaluation."""
+        """Run the linker if needed.
+
+        Fires when the question has never had a completed linker call (e.g.
+        initial prio was skipped because budget was too low), or when enough
+        pages have been added since this orchestrator's last evaluation to
+        invalidate the cache.
+        """
+        counts = await self.db.get_call_counts_by_type(question_id)
+        if counts.get(CallType.LINK_SUBQUESTIONS.value, 0) == 0:
+            log.info(
+                "No prior linker on question=%s, running now",
+                question_id[:8],
+            )
+            await self._run_subquestion_linker(question_id, parent_call_id)
+            return
         if self._last_linker_eval_at is None:
             return
         settings = get_settings()

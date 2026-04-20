@@ -6,7 +6,6 @@ import json
 import logging
 from collections.abc import Sequence
 
-import anthropic
 from anthropic.types import ServerToolUseBlock, ToolUseBlock
 from pydantic import BaseModel, Field
 
@@ -25,6 +24,7 @@ from rumil.llm import (
     build_system_prompt,
     build_user_message,
     call_api,
+    make_anthropic_client,
     structured_call,
 )
 from rumil.models import (
@@ -349,7 +349,7 @@ class WebResearchLoop(WorkspaceUpdater):
     ) -> UpdateResult:
         settings = get_settings()
         max_rounds = 2 if settings.is_smoke_test else 5
-        client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
+        client = make_anthropic_client()
 
         infra.state.context_page_ids = (
             set(context.working_page_ids) | set(context.preloaded_ids) | set(context.phase1_ids)

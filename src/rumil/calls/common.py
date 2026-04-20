@@ -8,7 +8,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-import anthropic
 from anthropic.types import TextBlock, ToolUseBlock
 from pydantic import BaseModel, Field
 
@@ -25,6 +24,7 @@ from rumil.llm import (
     build_system_prompt,
     build_user_message,
     call_api,
+    make_anthropic_client,
     structured_call,
 )
 from rumil.models import (
@@ -188,7 +188,7 @@ async def run_single_call(
     if not user_message and not messages:
         raise ValueError("Either user_message or messages must be provided")
     settings = get_settings()
-    client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
+    client = make_anthropic_client()
     if tools is not None:
         tool_defs, tool_fns = prepare_tools(tools)
     else:
@@ -296,7 +296,7 @@ async def run_agent_loop(
     effective_rounds = (
         max_rounds if max_rounds is not None else (2 if settings.is_smoke_test else 3)
     )
-    client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
+    client = make_anthropic_client()
     if tools is not None:
         tool_defs, tool_fns = prepare_tools(tools)
     else:

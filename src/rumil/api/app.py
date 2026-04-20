@@ -128,6 +128,7 @@ from rumil.models import (
 )
 from rumil.orchestrators import Orchestrator
 from rumil.question_triage import auto_triage_and_save
+from rumil.run_executor import RunExecutor
 from rumil.settings import get_settings
 from rumil.views import View, build_view
 
@@ -1311,7 +1312,9 @@ async def _run_continue_orchestrator(
             question_id=question_id,
             config=get_settings().capture_config(),
         )
-        await dispatch_orchestrator(question_id, db)
+        executor = RunExecutor(db)
+        async with executor.tracked_scope(db.run_id):
+            await dispatch_orchestrator(question_id, db)
     finally:
         await db.close()
 
@@ -1458,7 +1461,9 @@ async def _run_evaluation_background(
             question_id=question_id,
             config=get_settings().capture_config(),
         )
-        await dispatch_evaluation(question_id, db, eval_type=eval_type)
+        executor = RunExecutor(db)
+        async with executor.tracked_scope(db.run_id):
+            await dispatch_evaluation(question_id, db, eval_type=eval_type)
     finally:
         await db.close()
 
@@ -1485,14 +1490,16 @@ async def _run_grounding_background(
             question_id=question_id,
             config=get_settings().capture_config(),
         )
-        await dispatch_grounding_pipeline(
-            pipeline,
-            question_id,
-            evaluation_text,
-            db,
-            from_stage=from_stage,
-            prior_checkpoints=prior_checkpoints,
-        )
+        executor = RunExecutor(db)
+        async with executor.tracked_scope(db.run_id):
+            await dispatch_grounding_pipeline(
+                pipeline,
+                question_id,
+                evaluation_text,
+                db,
+                from_stage=from_stage,
+                prior_checkpoints=prior_checkpoints,
+            )
     finally:
         await db.close()
 
@@ -1537,14 +1544,16 @@ async def _run_dispatch_background(
 
             extra["fruit_threshold"] = DEFAULT_FRUIT_THRESHOLD
             extra["mode"] = FindConsiderationsMode.ALTERNATE
-        await dispatch_single_call(
-            call_type,
-            question_id,
-            db,
-            max_rounds=max_rounds,
-            origin="api-dispatch",
-            extra_runner_kwargs=extra,
-        )
+        executor = RunExecutor(db)
+        async with executor.tracked_scope(db.run_id):
+            await dispatch_single_call(
+                call_type,
+                question_id,
+                db,
+                max_rounds=max_rounds,
+                origin="api-dispatch",
+                extra_runner_kwargs=extra,
+            )
     finally:
         await db.close()
 

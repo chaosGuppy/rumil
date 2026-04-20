@@ -20,7 +20,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-import anthropic
 from anthropic.types import TextBlock, ToolUseBlock
 from pydantic import BaseModel, Field
 
@@ -32,6 +31,7 @@ from rumil.embeddings import search_pages
 from rumil.llm import (
     Tool,
     call_api,
+    make_anthropic_client,
     structured_call,
 )
 from rumil.models import (
@@ -400,7 +400,7 @@ async def _chat_loop(
     without waiting for input, so the LLM responds immediately.
     """
     settings = get_settings()
-    client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
+    client = make_anthropic_client()
     model = settings.model
 
     tool_defs: list[dict] = []

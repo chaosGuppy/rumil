@@ -6,7 +6,6 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-import anthropic
 from anthropic.types import ServerToolUseBlock, TextBlock
 from claude_agent_sdk import AgentDefinition, tool
 from pydantic import BaseModel, Field
@@ -25,6 +24,7 @@ from rumil.explore_tool import make_explore_tool
 from rumil.llm import (
     LLMExchangeMetadata,
     call_api,
+    make_anthropic_client,
     structured_call,
 )
 from rumil.models import (
@@ -356,7 +356,7 @@ async def _run_web_search_task(
 ) -> str:
     """Run a single web search task and return findings as text."""
     settings = get_settings()
-    client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
+    client = make_anthropic_client()
     system_prompt = (_PROMPTS_DIR / "grounding-web-research.md").read_text()
 
     server_tools: list[dict] = [
@@ -456,7 +456,7 @@ async def _build_identification_user_message(
     )
 
     settings = get_settings()
-    client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
+    client = make_anthropic_client()
     meta = LLMExchangeMetadata(
         call_id=call.id,
         phase="grounding_briefing_generation",

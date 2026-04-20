@@ -55,7 +55,7 @@ interface ChatPanelProps {
   openPageIds?: string[];
   viewMode?: string;
   openCallId?: string;
-  drawerPageId?: string;
+  inspectPageId?: string;
   activeSection?: string;
   reviewOpen?: boolean;
   // Invoked when a `tool_use_result` event carries a `__navigate__` directive
@@ -436,7 +436,7 @@ export function ChatPanel({
   openPageIds,
   viewMode,
   openCallId,
-  drawerPageId,
+  inspectPageId,
   activeSection,
   reviewOpen,
   onNavigate,
@@ -1031,7 +1031,7 @@ export function ChatPanel({
         openPageIds,
         viewMode,
         openCallId,
-        drawerPageId,
+        inspectPageId,
         activeSection,
         reviewOpen,
       }, controller.signal);
@@ -1068,7 +1068,7 @@ export function ChatPanel({
         streamAbortRef.current = null;
       }
     }
-  }, [input, isLoading, messages, questionId, onMessageSent, onNodeRef, workspace, onShowReview, conversationId, model, refreshConversations, openInspect, openRunId, openPageIds, viewMode, openCallId, drawerPageId, activeSection, reviewOpen]);
+  }, [input, isLoading, messages, questionId, onMessageSent, onNodeRef, workspace, onShowReview, conversationId, model, refreshConversations, openInspect, openRunId, openPageIds, viewMode, openCallId, inspectPageId, activeSection, reviewOpen]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {

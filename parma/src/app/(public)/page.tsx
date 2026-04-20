@@ -1510,7 +1510,7 @@ const refreshView = useCallback(() => {
         openPageIds={openPaneIds}
         viewMode={viewMode}
         openCallId={traceCallId ?? undefined}
-        drawerPageId={openShortId ?? undefined}
+        inspectPageId={openShortId ?? undefined}
         reviewOpen={showReview}
         onNavigate={applyNavigate}
       />

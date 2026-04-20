@@ -426,7 +426,7 @@ export interface ChatUiSnapshot {
   openRunId?: string;
   openCallId?: string;
   openPageIds?: string[];
-  drawerPageId?: string;
+  inspectPageId?: string;
   activeSection?: string;
   reviewOpen?: boolean;
 }
@@ -454,7 +454,7 @@ export async function streamChatMessage(
       open_page_ids: ui?.openPageIds ?? [],
       view_mode: ui?.viewMode ?? null,
       open_call_id: ui?.openCallId ?? null,
-      drawer_page_id: ui?.drawerPageId ?? null,
+      drawer_page_id: ui?.inspectPageId ?? null,
       active_section: ui?.activeSection ?? null,
       review_open: ui?.reviewOpen ?? false,
     }),

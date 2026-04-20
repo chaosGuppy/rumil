@@ -16,6 +16,7 @@ from rumil.run_eval.agents import EVAL_AGENTS, EvalAgentSpec
 from rumil.run_eval.runner import evaluate_run_with_agent
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
+from rumil.tracing.trace_events import AgentStartedEvent
 from rumil.tracing.tracer import CallTrace, reset_trace, set_trace
 
 log = logging.getLogger(__name__)
@@ -98,6 +99,12 @@ async def _traced_text_call(
 
     token = set_trace(trace)
     try:
+        await trace.record(
+            AgentStartedEvent(
+                system_prompt=system_prompt,
+                user_message=user_message,
+            )
+        )
         response_text = await text_call(
             system_prompt=system_prompt,
             user_message=user_message,

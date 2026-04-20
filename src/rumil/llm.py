@@ -145,13 +145,21 @@ def _load_file(name: str) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def build_system_prompt(call_type: str) -> str:
-    """Combine preamble + call-type instructions + citations into one system prompt."""
+def build_system_prompt(call_type: str, *, include_citations: bool = True) -> str:
+    """Combine preamble + call-type instructions + citations into one system prompt.
+
+    Pass ``include_citations=False`` for calls that do not create any content-bearing
+    pages (e.g. prioritization, scoring) — the inline-citation rules have nothing to
+    attach to in those calls and only add noise.
+    """
     preamble = _load_file("preamble.md")
     instructions = _load_file(f"{call_type}.md")
-    citations = _load_file("citations.md")
     grounding = _load_file("grounding.md")
-    return f"{preamble}\n\n---\n\n{instructions}\n\n---\n\n{citations}\n\n---\n\n{grounding}"
+    parts = [preamble, instructions]
+    if include_citations:
+        parts.append(_load_file("citations.md"))
+    parts.append(grounding)
+    return "\n\n---\n\n".join(parts)
 
 
 def build_user_message(context_text: str, task_description: str) -> str:

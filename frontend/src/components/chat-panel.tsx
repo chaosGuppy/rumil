@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import type { ConversationListItem } from "@/api";
+import { CLIENT_API_BASE } from "@/api-config";
 import {
   createConversation,
   deleteConversation,
@@ -15,9 +16,9 @@ import {
   type StreamEvent,
 } from "@/lib/chat-api";
 
-const DEFAULT_PROJECT = "default";
 const OPEN_KEY = "rumil.chat.open";
 const ACTIVE_CONV_KEY = "rumil.chat.active_conv";
+const LAST_PROJECT_KEY = "rumil.chat.last_project";
 
 type MessageBlock =
   | { kind: "text"; id: string; text: string }
@@ -55,6 +56,65 @@ function pathToQuestionId(pathname: string | null): string | null {
   if (!pathname) return null;
   const m = pathname.match(/^\/pages\/([0-9a-f-]+)/i);
   return m ? m[1] : null;
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+async function resolveProjectFromPath(
+  pathname: string | null,
+): Promise<string | null> {
+  if (!pathname) return null;
+
+  const projectMatch = pathname.match(/^\/projects\/([0-9a-f-]+)/i);
+  if (projectMatch && UUID_RE.test(projectMatch[1])) {
+    return projectMatch[1];
+  }
+
+  const pageMatch = pathname.match(/^\/pages\/([0-9a-f-]+)/i);
+  if (pageMatch) {
+    try {
+      const res = await fetch(`${CLIENT_API_BASE}/api/pages/${pageMatch[1]}`);
+      if (res.ok) {
+        const page = (await res.json()) as { project_id?: string };
+        if (page.project_id && UUID_RE.test(page.project_id)) {
+          return page.project_id;
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  const traceMatch = pathname.match(/^\/traces\/([0-9a-f-]+)/i);
+  if (traceMatch) {
+    try {
+      const res = await fetch(
+        `${CLIENT_API_BASE}/api/runs/${traceMatch[1]}/trace-tree`,
+      );
+      if (res.ok) {
+        const tree = (await res.json()) as {
+          question?: { project_id?: string } | null;
+        };
+        const pid = tree.question?.project_id;
+        if (pid && UUID_RE.test(pid)) return pid;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  return null;
+}
+
+async function fetchFirstProjectId(): Promise<string | null> {
+  try {
+    const res = await fetch(`${CLIENT_API_BASE}/api/projects`);
+    if (!res.ok) return null;
+    const projects = (await res.json()) as Array<{ id: string }>;
+    return projects[0]?.id ?? null;
+  } catch {
+    return null;
+  }
 }
 
 function previewInput(input: Record<string, unknown> | undefined): string {
@@ -253,10 +313,41 @@ export function ChatPanel() {
       if (raw === "1") setOpen(true);
       const conv = window.localStorage.getItem(ACTIVE_CONV_KEY);
       if (conv) setActiveConvId(conv);
+      const lastProject = window.localStorage.getItem(LAST_PROJECT_KEY);
+      if (lastProject && UUID_RE.test(lastProject)) setProjectId(lastProject);
     } catch {
       // localStorage unavailable
     }
   }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    (async () => {
+      const fromPath = await resolveProjectFromPath(pathname);
+      if (cancelled) return;
+      if (fromPath) {
+        setProjectId(fromPath);
+        return;
+      }
+      if (projectId) return;
+      const first = await fetchFirstProjectId();
+      if (!cancelled && first) setProjectId(first);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, pathname, projectId]);
+
+  useEffect(() => {
+    try {
+      if (projectId && UUID_RE.test(projectId)) {
+        window.localStorage.setItem(LAST_PROJECT_KEY, projectId);
+      }
+    } catch {
+      // ignore
+    }
+  }, [projectId]);
 
   useEffect(() => {
     try {
@@ -279,19 +370,13 @@ export function ChatPanel() {
   }, [activeConvId]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || !projectId) return;
     let cancelled = false;
     (async () => {
       try {
-        const convs = await listConversations(
-          projectId || DEFAULT_PROJECT,
-          { limit: 30 },
-        );
+        const convs = await listConversations(projectId, { limit: 30 });
         if (cancelled) return;
         setConversations(convs);
-        if (convs.length > 0 && !projectId) {
-          setProjectId(convs[0].project_id);
-        }
       } catch (e) {
         console.warn("Failed to load conversations", e);
       }
@@ -398,12 +483,20 @@ export function ChatPanel() {
     try {
       let convId = activeConvId;
       if (!convId) {
-        if (!projectId) {
-          const convs = await listConversations(DEFAULT_PROJECT, { limit: 1 });
-          if (convs.length > 0) setProjectId(convs[0].project_id);
+        let pid = projectId;
+        if (!pid) {
+          pid =
+            (await resolveProjectFromPath(pathname)) ||
+            (await fetchFirstProjectId());
+          if (pid) setProjectId(pid);
+        }
+        if (!pid) {
+          throw new Error(
+            "no project available — open a project or page first",
+          );
         }
         const created = await createConversation({
-          project_id: projectId || DEFAULT_PROJECT,
+          project_id: pid,
           question_id: pageQuestionId,
           title: text.slice(0, 60),
         });
@@ -571,12 +664,20 @@ export function ChatPanel() {
         )}
 
         <div className="chat-scope">
-          {pageQuestionId ? (
+          {projectId ? (
             <span>
-              scoped to page <code>{pageQuestionId.slice(0, 8)}</code>
+              project <code>{projectId.slice(0, 8)}</code>
+              {pageQuestionId && (
+                <>
+                  {" · page "}
+                  <code>{pageQuestionId.slice(0, 8)}</code>
+                </>
+              )}
             </span>
           ) : (
-            <span>no page scope</span>
+            <span className="chat-scope-warn">
+              no project resolved — open a project, page, or trace
+            </span>
           )}
         </div>
 
@@ -977,6 +1078,9 @@ const styles = `
 }
 .chat-scope code {
   color: var(--color-accent);
+}
+.chat-scope-warn {
+  color: var(--type-judgement);
 }
 
 .chat-messages {

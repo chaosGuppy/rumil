@@ -1256,7 +1256,8 @@ async def test_dispatch_call_tool_schema_includes_model_enum():
 
 
 async def test_run_dispatch_applies_model_override(tmp_db, seeded_graph, mocker):
-    from rumil.api.chat import _run_dispatch
+    from rumil.api.chat import _await_live_dispatches, _run_dispatch
+    from rumil.models import ChatMessageRole
     from rumil.settings import get_settings
 
     root = seeded_graph["root"]
@@ -1267,6 +1268,7 @@ async def test_run_dispatch_applies_model_override(tmp_db, seeded_graph, mocker)
 
     mocker.patch("rumil.calls.FindConsiderationsCall.run", fake_run)
 
+    conv = await tmp_db.create_chat_conversation(project_id=tmp_db.project_id, question_id=root.id)
     result = await _run_dispatch(
         tmp_db,
         {
@@ -1276,14 +1278,25 @@ async def test_run_dispatch_applies_model_override(tmp_db, seeded_graph, mocker)
             "max_rounds": 1,
             "model": "claude-opus-4-6",
         },
+        conv_id=conv.id,
+        tool_use_id="toolu_test_override",
     )
 
-    assert "completed" in result
+    assert "started" in result.lower()
+    assert "/traces/" in result
+
+    await _await_live_dispatches()
     assert captured["model"] == "claude-opus-4-6"
+
+    messages = await tmp_db.list_chat_messages(conv.id)
+    completions = [m for m in messages if m.role == ChatMessageRole.DISPATCH_RESULT]
+    assert len(completions) == 1
+    assert completions[0].content["tool_use_id"] == "toolu_test_override"
+    assert completions[0].content["status"] == "completed"
 
 
 async def test_run_dispatch_without_model_uses_default(tmp_db, seeded_graph, mocker):
-    from rumil.api.chat import _run_dispatch
+    from rumil.api.chat import _await_live_dispatches, _run_dispatch
     from rumil.settings import get_settings
 
     root = seeded_graph["root"]
@@ -1295,6 +1308,7 @@ async def test_run_dispatch_without_model_uses_default(tmp_db, seeded_graph, moc
 
     mocker.patch("rumil.calls.FindConsiderationsCall.run", fake_run)
 
+    conv = await tmp_db.create_chat_conversation(project_id=tmp_db.project_id, question_id=root.id)
     await _run_dispatch(
         tmp_db,
         {
@@ -1304,9 +1318,102 @@ async def test_run_dispatch_without_model_uses_default(tmp_db, seeded_graph, moc
             "max_rounds": 1,
             "model": None,
         },
+        conv_id=conv.id,
+        tool_use_id="toolu_test_default",
     )
 
+    await _await_live_dispatches()
     assert captured["model"] == default_model
+
+
+async def test_run_dispatch_receipt_is_immediate(tmp_db, seeded_graph, mocker):
+    """The receipt returns before the background call finishes."""
+    import asyncio
+
+    from rumil.api.chat import _await_live_dispatches, _run_dispatch
+
+    root = seeded_graph["root"]
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def slow_run(self):
+        started.set()
+        await release.wait()
+
+    mocker.patch("rumil.calls.FindConsiderationsCall.run", slow_run)
+
+    conv = await tmp_db.create_chat_conversation(project_id=tmp_db.project_id, question_id=root.id)
+
+    result = await _run_dispatch(
+        tmp_db,
+        {
+            "question_id": root.id,
+            "headline": root.headline,
+            "call_type": "find-considerations",
+            "max_rounds": 1,
+            "model": None,
+        },
+        conv_id=conv.id,
+        tool_use_id="toolu_test_nonblock",
+    )
+    assert "started" in result.lower()
+
+    await asyncio.wait_for(started.wait(), timeout=2.0)
+    release.set()
+    await _await_live_dispatches()
+
+
+async def test_run_dispatch_failure_writes_failed_completion(tmp_db, seeded_graph, mocker):
+    from rumil.api.chat import _await_live_dispatches, _run_dispatch
+    from rumil.models import ChatMessageRole
+
+    root = seeded_graph["root"]
+
+    async def boom(self):
+        raise RuntimeError("synthetic dispatch failure")
+
+    mocker.patch("rumil.calls.FindConsiderationsCall.run", boom)
+
+    conv = await tmp_db.create_chat_conversation(project_id=tmp_db.project_id, question_id=root.id)
+    await _run_dispatch(
+        tmp_db,
+        {
+            "question_id": root.id,
+            "headline": root.headline,
+            "call_type": "find-considerations",
+            "max_rounds": 1,
+            "model": None,
+        },
+        conv_id=conv.id,
+        tool_use_id="toolu_test_failure",
+    )
+
+    await _await_live_dispatches()
+
+    messages = await tmp_db.list_chat_messages(conv.id)
+    completions = [m for m in messages if m.role == ChatMessageRole.DISPATCH_RESULT]
+    assert len(completions) == 1
+    content = completions[0].content
+    assert content["status"] == "failed"
+    assert "synthetic dispatch failure" in content["error"]
+
+
+async def test_run_dispatch_missing_conv_returns_error(tmp_db, seeded_graph):
+    from rumil.api.chat import _run_dispatch
+
+    root = seeded_graph["root"]
+    result = await _run_dispatch(
+        tmp_db,
+        {
+            "question_id": root.id,
+            "headline": root.headline,
+            "call_type": "find-considerations",
+            "max_rounds": 1,
+            "model": None,
+        },
+    )
+    assert "Internal error" in result
+    assert "conversation context" in result
 
 
 async def test_execute_tool_dispatch_envelope_forwards_validated_model(tmp_db, seeded_graph):

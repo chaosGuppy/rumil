@@ -293,7 +293,13 @@ TOOLS: list[dict[str, Any]] = [
             "Fire a rumil research call against a question. This runs the "
             "full investigation pipeline (LLM calls, context building, etc.) "
             "and COSTS REAL MONEY. Confirm with the user before calling. "
-            "The call runs in the background — results appear in the view. "
+            "This tool is FIRE-AND-FORGET: it returns immediately with a "
+            "'started' receipt (run_id and trace URL). The actual call runs "
+            "in a detached background task. Do NOT wait for or invent a "
+            "result in this turn — tell the user the call has been kicked "
+            "off, then end your turn or move on to the next action. When "
+            "the call finishes, a completion note will be persisted to the "
+            "conversation and you'll see it on the next turn. "
             "Available call types: find-considerations, assess, web-research, "
             "scout-subquestions, scout-hypotheses, scout-estimates, scout-analogies. "
             "Effort is controlled by `max_rounds` (default "
@@ -2275,19 +2281,128 @@ async def _execute_tool_timed(
         raise
 
 
-async def _run_dispatch(
-    db: DB,
-    params: dict[str, Any],
-    on_progress: Callable[[str], Any] | None = None,
-) -> str:
-    """Run a single call inline via ``dispatch_single_call``.
+_live_dispatch_tasks: set[asyncio.Task[None]] = set()
 
-    Broad try/except so the chat never loses a tool_result — a runner
-    construction failure still returns an error string to Claude, which
-    continues the conversation instead of 400'ing on the next turn.
+
+async def _bg_run_dispatch(
+    *,
+    conv_id: str,
+    tool_use_id: str,
+    new_run_id: str,
+    project_id: str,
+    question_id: str,
+    headline: str,
+    call_type_str: str,
+    max_rounds: int,
+    model: str | None,
+) -> None:
+    """Background task: run one dispatch call and persist completion.
+
+    Uses a fresh DB connection because the chat turn's DB closes when the
+    turn ends. Writes a ``DISPATCH_RESULT`` message onto the conversation
+    on completion (or failure) so the next chat turn sees the outcome and
+    the UI can render a chip. Never raises — errors become a failed
+    completion row.
     """
     from rumil.dispatch import dispatch_single_call
 
+    if call_type_str not in _CALL_TYPE_MAP:
+        log.error("Background dispatch got unknown call_type %r", call_type_str)
+        return
+    call_type, _cls = _CALL_TYPE_MAP[call_type_str]
+
+    settings = get_settings()
+    bg_db = await DB.create(
+        run_id=new_run_id,
+        prod=settings.is_prod_db,
+        project_id=project_id,
+    )
+    trace_url = f"/traces/{new_run_id}"
+    content: dict[str, Any]
+    try:
+        await bg_db.create_run(
+            name=f"chat dispatch: {call_type_str} on {headline[:60]}",
+            question_id=question_id,
+            config=settings.capture_config(),
+        )
+        extra: dict[str, Any] = {}
+        if call_type == CallType.FIND_CONSIDERATIONS:
+            extra["fruit_threshold"] = 4
+        try:
+            call = await dispatch_single_call(
+                call_type,
+                question_id,
+                bg_db,
+                max_rounds=max_rounds,
+                model=model,
+                extra_runner_kwargs=extra,
+            )
+            content = {
+                "tool_use_id": tool_use_id,
+                "run_id": new_run_id,
+                "call_id": call.id,
+                "call_type": call_type_str,
+                "question_id": question_id,
+                "headline": headline,
+                "status": "completed",
+                "summary": (f"{call_type_str} call {call.id[:8]} on '{headline[:40]}' completed."),
+                "trace_url": trace_url,
+            }
+        except Exception as e:
+            log.exception(
+                "Background dispatch %s failed (run %s)",
+                call_type_str,
+                new_run_id[:8],
+            )
+            content = {
+                "tool_use_id": tool_use_id,
+                "run_id": new_run_id,
+                "call_type": call_type_str,
+                "question_id": question_id,
+                "headline": headline,
+                "status": "failed",
+                "summary": f"{call_type_str} call failed: {e}",
+                "error": str(e),
+                "trace_url": trace_url,
+            }
+
+        try:
+            await bg_db.save_chat_message(
+                conversation_id=conv_id,
+                role=ChatMessageRole.DISPATCH_RESULT,
+                content=content,
+                question_id=question_id,
+            )
+            await bg_db.update_chat_conversation(conv_id, touch=True)
+        except Exception:
+            log.exception(
+                "Failed to persist dispatch completion for run %s conv %s",
+                new_run_id[:8],
+                conv_id[:8],
+            )
+    finally:
+        await bg_db.close()
+
+
+async def _run_dispatch(
+    db: DB,
+    params: dict[str, Any],
+    *,
+    conv_id: str | None = None,
+    tool_use_id: str | None = None,
+    on_progress: Callable[[str], Any] | None = None,
+) -> str:
+    """Fire-and-forget dispatch.
+
+    Spawns a detached background task that runs ``dispatch_single_call``
+    and writes a ``DISPATCH_RESULT`` message on completion. Returns a
+    receipt string immediately — this is what the LLM sees as the
+    tool_result for this turn.
+
+    ``on_progress`` is accepted for uniform handler signature but unused:
+    progress events of an in-flight dispatch land on the per-conversation
+    SSE channel (phase 2), not this turn's event queue.
+    """
     question_id = params["question_id"]
     headline = params.get("headline", question_id[:8])
     call_type_str = params["call_type"]
@@ -2296,35 +2411,54 @@ async def _run_dispatch(
 
     if call_type_str not in _CALL_TYPE_MAP:
         return f"Unknown call type: {call_type_str}"
-    call_type, _cls = _CALL_TYPE_MAP[call_type_str]
+    if not conv_id or not tool_use_id:
+        return (
+            f"Internal error: dispatch of {call_type_str} is missing "
+            f"conversation context. Not running."
+        )
+    if not db.project_id:
+        return f"Internal error: dispatch of {call_type_str} has no project scope."
 
-    extra: dict[str, Any] = {}
-    if call_type == CallType.FIND_CONSIDERATIONS:
-        extra["fruit_threshold"] = 4
+    new_run_id = str(uuid.uuid4())
+    trace_url = f"/traces/{new_run_id}"
 
-    try:
-        call = await dispatch_single_call(
-            call_type,
-            question_id,
-            db,
+    task = asyncio.create_task(
+        _bg_run_dispatch(
+            conv_id=conv_id,
+            tool_use_id=tool_use_id,
+            new_run_id=new_run_id,
+            project_id=db.project_id,
+            question_id=question_id,
+            headline=headline,
+            call_type_str=call_type_str,
             max_rounds=max_rounds,
             model=model,
-            on_progress=(lambda msg: on_progress(msg)) if on_progress else None,
-            extra_runner_kwargs=extra,
         )
-        return (
-            f"{call_type_str} call {call.id[:8]} on '{headline[:40]}' completed. "
-            f"Refresh the view to see new findings."
-        )
-    except Exception as e:
-        log.exception("Dispatch call %s failed", call_type_str)
-        return f"{call_type_str} call failed: {e}"
+    )
+    _live_dispatch_tasks.add(task)
+    task.add_done_callback(_live_dispatch_tasks.discard)
+
+    return (
+        f"{call_type_str} call on '{headline[:40]}' started in background. "
+        f"Trace: {trace_url}. A completion note will appear in chat once "
+        f"the call finishes — you will not see the result in this turn."
+    )
+
+
+async def _await_live_dispatches() -> None:
+    """Test helper: wait for all in-flight background dispatch tasks."""
+    tasks = list(_live_dispatch_tasks)
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 async def _run_orchestrate(
     db: DB,
     params: dict[str, Any],
     on_progress: Callable[[str], Any] | None = None,
+    *,
+    conv_id: str | None = None,
+    tool_use_id: str | None = None,
 ) -> str:
     """Run a real rumil orchestrator via dispatch_orchestrator.
 
@@ -2460,6 +2594,9 @@ async def _run_ingest(
     db: DB,
     params: dict[str, Any],
     on_progress: Callable[[str], Any] | None = None,
+    *,
+    conv_id: str | None = None,
+    tool_use_id: str | None = None,
 ) -> str:
     """Scrape a URL, save it as a source page, and run an ingest call.
 
@@ -2524,6 +2661,9 @@ async def _run_evaluate(
     db: DB,
     params: dict[str, Any],
     on_progress: Callable[[str], Any] | None = None,
+    *,
+    conv_id: str | None = None,
+    tool_use_id: str | None = None,
 ) -> str:
     """Run an evaluation agent against a question via dispatch_evaluation.
 
@@ -2574,6 +2714,9 @@ async def _run_ground(
     db: DB,
     params: dict[str, Any],
     on_progress: Callable[[str], Any] | None = None,
+    *,
+    conv_id: str | None = None,
+    tool_use_id: str | None = None,
 ) -> str:
     """Apply a grounding/feedback pipeline to an existing evaluation call."""
     from rumil.dispatch import dispatch_grounding_pipeline
@@ -2659,12 +2802,27 @@ async def _resolve_async(
     result_str: str,
     db: DB,
     on_progress: Callable[[str], Any] | None = None,
+    *,
+    conv_id: str | None = None,
+    tool_use_id: str | None = None,
 ) -> str:
-    """If result contains an async sentinel, run the handler inline. Otherwise pass through."""
+    """If result contains an async sentinel, run the handler. Otherwise pass through.
+
+    ``conv_id`` and ``tool_use_id`` are plumbed through so handlers that
+    fire-and-forget (currently only ``_run_dispatch``) can link a
+    background-written ``DISPATCH_RESULT`` message back to its originating
+    tool-use bubble. Handlers that still block ignore these kwargs.
+    """
     for sentinel, handler in _ASYNC_HANDLERS.items():
         if f'"{sentinel}"' in result_str:
             params = json.loads(result_str)
-            return await handler(db, params, on_progress=on_progress)
+            return await handler(
+                db,
+                params,
+                on_progress=on_progress,
+                conv_id=conv_id,
+                tool_use_id=tool_use_id,
+            )
     return result_str
 
 
@@ -3079,7 +3237,9 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
             tool_results = []
             for tc in tool_calls:
                 result_str = await _execute_tool_timed(tc.name, tc.input, db, context_scope_id)
-                result_str = await _resolve_async(result_str, db)
+                result_str = await _resolve_async(
+                    result_str, db, conv_id=conv.id, tool_use_id=tc.id
+                )
                 tool_uses_log.append(
                     ToolUseInfo(
                         name=tc.name,
@@ -3153,6 +3313,14 @@ def _replay_messages_for_api(prior: Sequence[ChatMessage]) -> list[dict[str, Any
         elif m.role == ChatMessageRole.TOOL_RESULT:
             results = m.content.get("results", []) if isinstance(m.content, dict) else []
             out.append({"role": "user", "content": results})
+        elif m.role == ChatMessageRole.DISPATCH_RESULT:
+            content = m.content if isinstance(m.content, dict) else {}
+            status = content.get("status", "completed")
+            summary = content.get("summary", "")
+            run_short = (content.get("run_id") or "")[:8]
+            trace_url = content.get("trace_url", "")
+            text = f"[dispatch completed] run {run_short} {status}: {summary} ({trace_url})"
+            out.append({"role": "user", "content": text})
     return out
 
 
@@ -3345,7 +3513,11 @@ async def handle_chat_stream(request: ChatRequest) -> StreamingResponse:
                             progress_q: asyncio.Queue[str] = asyncio.Queue()
                             task = asyncio.create_task(
                                 _resolve_async(
-                                    result_str, db, on_progress=lambda m: progress_q.put_nowait(m)
+                                    result_str,
+                                    db,
+                                    on_progress=lambda m: progress_q.put_nowait(m),
+                                    conv_id=conv.id,
+                                    tool_use_id=tc.id,
                                 )
                             )
                             while not task.done():

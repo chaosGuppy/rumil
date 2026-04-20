@@ -676,6 +676,7 @@ class ChatMessageRole(str, Enum):
     TOOL_USE = "tool_use"
     TOOL_RESULT = "tool_result"
     SYSTEM = "system"
+    DISPATCH_RESULT = "dispatch_result"
 
 
 class ChatConversation(BaseModel):

@@ -116,6 +116,21 @@ async def tmp_db():
     db.project_id = project.id
     await db.init_budget(100)
     yield db
+    # Tests that spawn fire-and-forget dispatch (or orchestrate) background
+    # tasks create extra runs tied to the project. Sweep those before the
+    # main cleanup so the project delete doesn't trip FK constraints.
+    other_run_rows = (
+        await db._execute(db.client.table("runs").select("id").eq("project_id", db.project_id))
+    ).data or []
+    for row in other_run_rows:
+        other_id = row["id"]
+        if other_id == db.run_id:
+            continue
+        aux = await DB.create(run_id=other_id, project_id=db.project_id)
+        try:
+            await aux.delete_run_data()
+        finally:
+            await aux.close()
     await db.delete_run_data(delete_project=True)
 
 

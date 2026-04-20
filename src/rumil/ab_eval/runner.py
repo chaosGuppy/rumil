@@ -1,4 +1,4 @@
-"""Orchestration for A/B evaluation: run agents, compare, report."""
+"""Orchestration for A/B evaluation: run one agent per dimension that produces a direct comparison."""
 
 import asyncio
 import logging
@@ -9,11 +9,18 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from rumil.ab_eval.arm_tools import (
+    make_arm_explore_subgraph_tool,
+    make_arm_load_page_tool,
+    make_arm_search_tool,
+)
 from rumil.database import DB
 from rumil.llm import LLMExchangeMetadata, text_call
 from rumil.models import Call, CallStatus, CallType
 from rumil.run_eval.agents import EVAL_AGENTS, EvalAgentSpec
-from rumil.run_eval.runner import evaluate_run_with_agent
+from rumil.run_eval.runner import wrap_as_mcp_tool
+from rumil.run_eval.seed import build_eval_seed_context
+from rumil.sdk_agent import SdkAgentConfig, run_sdk_agent
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
 from rumil.tracing.trace_events import AgentStartedEvent
@@ -22,6 +29,7 @@ from rumil.tracing.tracer import CallTrace, reset_trace, set_trace
 log = logging.getLogger(__name__)
 
 _PROMPTS_DIR = Path(__file__).resolve().parents[3] / "prompts"
+_TOOL_SERVER_NAME = "ab-eval-tools"
 
 
 def _frontend_trace_url(run_id: str, call_id: str | None = None) -> str:
@@ -62,16 +70,12 @@ def _print_exception_group(label: str, eg: BaseExceptionGroup) -> None:
 
 @dataclass
 class ABEvalResult:
-    """Result from a single evaluation agent comparing runs A and B."""
+    """Result from a single evaluation agent that directly compared A and B."""
 
     agent_name: str
-    report_a: str
-    report_b: str
-    comparison: str
     preference: str
-    call_id_a: str = ""
-    call_id_b: str = ""
-    comparison_call_id: str = ""
+    report: str
+    call_id: str = ""
 
 
 async def _traced_text_call(
@@ -85,12 +89,7 @@ async def _traced_text_call(
     broadcaster: Broadcaster | None,
     announce_label: str | None = None,
 ) -> tuple[str, Call]:
-    """Run a single-turn text LLM call wrapped in a Call + CallTrace.
-
-    The call record is created before the LLM request is issued so the trace
-    URL can be printed immediately (when *announce_label* is set). Exchanges
-    and trace events are persisted against *db*.
-    """
+    """Run a single-turn text LLM call wrapped in a Call + CallTrace."""
     call = await db.create_call(call_type=call_type, scope_page_id=scope_page_id)
     trace = CallTrace(call.id, db, broadcaster=broadcaster)
     await db.update_call_status(call.id, CallStatus.RUNNING)
@@ -148,35 +147,28 @@ def _extract_preference(text: str) -> str:
     return "Could not determine preference"
 
 
-async def _run_comparison(
+def _build_comparison_system_prompt(
     spec: EvalAgentSpec,
-    report_a: str,
-    report_b: str,
-    db: DB,
-    scope_page_id: str | None,
-    broadcaster: Broadcaster | None,
-) -> tuple[str, str, Call]:
-    """Run the comparison LLM call as a traced call. Returns (text, preference, call)."""
-    comparison_prompt = (_PROMPTS_DIR / "ab-eval-comparison.md").read_text()
-    user_message = (
-        f"## Evaluation Dimension: {spec.display_name}\n\n"
-        "## Run A Report\n\n"
-        f"{report_a}\n\n"
-        "---\n\n"
-        "## Run B Report\n\n"
-        f"{report_b}"
-    )
-    comparison_text, call = await _traced_text_call(
-        db,
-        call_type=CallType.AB_EVAL_COMPARISON,
-        scope_page_id=scope_page_id,
-        system_prompt=comparison_prompt,
-        user_message=user_message,
-        phase=f"ab_eval_comparison_{spec.name}",
-        broadcaster=broadcaster,
-        announce_label=f"compare {spec.name}",
-    )
-    return comparison_text, _extract_preference(comparison_text), call
+    all_agents: Sequence[EvalAgentSpec],
+) -> str:
+    """Build system prompt = preamble + ab-eval-dimension shell with dimension body."""
+    preamble = (_PROMPTS_DIR / "preamble.md").read_text()
+    shell = (_PROMPTS_DIR / "ab-eval-dimension.md").read_text()
+    dim_prompt = (_PROMPTS_DIR / spec.prompt_file).read_text()
+    if "{other_dimensions}" in dim_prompt:
+        others = [
+            f"- **{s.display_name}** (evaluated separately)"
+            for s in all_agents
+            if s.name != spec.name
+        ]
+        replacement = (
+            "\n".join(others)
+            if others
+            else "(No other dimensions are being evaluated in this run.)"
+        )
+        dim_prompt = dim_prompt.replace("{other_dimensions}", replacement)
+    shell = shell.replace("{dimension_task}", dim_prompt)
+    return preamble + "\n\n" + shell
 
 
 async def run_single_eval_agent(
@@ -189,68 +181,137 @@ async def run_single_eval_agent(
     broadcaster: Broadcaster | None = None,
     all_agents: Sequence[EvalAgentSpec] = (),
 ) -> ABEvalResult:
-    """Run one evaluation agent: evaluate A and B concurrently, then compare."""
+    """Run one evaluation agent that directly compares A and B.
 
-    async def _eval_arm(run_id: str, question_id: str, label: str) -> tuple[str, Call]:
-        arm_call = await db.create_call(
-            call_type=CallType.AB_EVAL,
-            scope_page_id=question_id,
-        )
-        _announce_call(f"{spec.name} {label}", db.run_id, arm_call.id)
-        return await evaluate_run_with_agent(
-            spec,
-            run_id,
-            question_id,
-            db,
-            broadcaster,
-            call_type=CallType.AB_EVAL,
-            label=label,
-            all_agents=all_agents,
-            call=arm_call,
-        )
+    Builds two staged DBs (one per arm), wraps the exploration tools so the
+    agent selects an arm per call, seeds the context with both arms'
+    1-hop subgraphs side-by-side, and runs a single agent to produce the
+    comparison report. The preference label is extracted from the report.
+    """
+    eval_db_a = await DB.create(
+        run_id=run_id_a,
+        prod=db._prod,
+        project_id=db.project_id,
+        staged=True,
+    )
+    eval_db_b = await DB.create(
+        run_id=run_id_b,
+        prod=db._prod,
+        project_id=db.project_id,
+        staged=True,
+    )
+
+    call = await db.create_call(
+        call_type=CallType.AB_EVAL,
+        scope_page_id=question_id_a,
+    )
+    trace = CallTrace(call.id, db, broadcaster=broadcaster)
+    await db.update_call_status(call.id, CallStatus.RUNNING)
+    _announce_call(f"compare {spec.name}", db.run_id, call.id)
+
+    seed_a = await build_eval_seed_context(
+        question_id_a,
+        eval_db_a,
+        highlight_run_id=run_id_a,
+    )
+    seed_b = await build_eval_seed_context(
+        question_id_b,
+        eval_db_b,
+        highlight_run_id=run_id_b,
+    )
+
+    explore_tool = make_arm_explore_subgraph_tool(
+        eval_db_a,
+        eval_db_b,
+        trace,
+        run_id_a=run_id_a,
+        run_id_b=run_id_b,
+    )
+    load_page_tool = make_arm_load_page_tool(
+        eval_db_a,
+        eval_db_b,
+        trace,
+        run_id_a=run_id_a,
+        run_id_b=run_id_b,
+    )
+    search_tool = make_arm_search_tool(eval_db_a, eval_db_b, trace)
+    mcp_tools = [
+        wrap_as_mcp_tool(explore_tool),
+        wrap_as_mcp_tool(load_page_tool),
+        wrap_as_mcp_tool(search_tool),
+    ]
+
+    system_prompt = _build_comparison_system_prompt(spec, all_agents)
+    user_prompt = (
+        f"Compare Run A and Run B on the dimension **{spec.display_name}**.\n\n"
+        f"Run A question ID: `{question_id_a}`\n"
+        f"Run B question ID: `{question_id_b}`\n\n"
+        "Focus on items marked `[ADDED BY THIS RUN]` in each arm's seed -- "
+        "those are the pages and links created by that run. Use the "
+        "`explore_subgraph`, `load_page`, and `search_workspace` tools "
+        "with the `arm` field set to 'A' or 'B' to drill into either "
+        "workspace. Running the same `search_workspace` query against "
+        "both arms is a good way to check whether a topic was covered "
+        "on both sides.\n\n"
+        f"## Run A seed\n\n{seed_a}\n\n"
+        "---\n\n"
+        f"## Run B seed\n\n{seed_b}"
+    )
+
+    allowed = [
+        f"mcp__{_TOOL_SERVER_NAME}__{t.name}" for t in [explore_tool, load_page_tool, search_tool]
+    ] + list(spec.extra_tools)
+
+    config = SdkAgentConfig(
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        server_name=_TOOL_SERVER_NAME,
+        mcp_tools=mcp_tools,
+        call=call,
+        call_type=CallType.AB_EVAL,
+        scope_page_id=question_id_a,
+        db=db,
+        trace=trace,
+        broadcaster=broadcaster,
+        allowed_tools=allowed,
+        disallowed_tools=["Write", "Edit", "Glob"],
+    )
 
     try:
-        async with asyncio.TaskGroup() as tg:
-            task_a = tg.create_task(_eval_arm(run_id_a, question_id_a, "A"))
-            task_b = tg.create_task(_eval_arm(run_id_b, question_id_b, "B"))
-    except* Exception as eg:
-        _print_exception_group(f"eval agent {spec.name}", eg)
+        result = await run_sdk_agent(config)
+        report_text = "\n\n".join(result.all_assistant_text)
+        call.status = CallStatus.COMPLETE
+        call.completed_at = datetime.now(UTC)
+        call.result_summary = report_text[:500]
+        if trace.total_cost_usd > 0:
+            call.cost_usd = trace.total_cost_usd
+        await db.save_call(call)
+    except Exception as exc:
+        log.exception("AB eval agent %s failed (runs %s vs %s)", spec.name, run_id_a, run_id_b)
+        _print_error(f"ab eval {spec.name}", exc)
+        await db.update_call_status(call.id, CallStatus.FAILED)
         raise
-    report_a, call_a = task_a.result()
-    report_b, call_b = task_b.result()
-
-    comparison, preference, comparison_call = await _run_comparison(
-        spec,
-        report_a,
-        report_b,
-        db,
-        scope_page_id=question_id_a,
-        broadcaster=broadcaster,
-    )
 
     return ABEvalResult(
         agent_name=spec.name,
-        report_a=report_a,
-        report_b=report_b,
-        comparison=comparison,
-        preference=preference,
-        call_id_a=call_a.id,
-        call_id_b=call_b.id,
-        comparison_call_id=comparison_call.id,
+        preference=_extract_preference(report_text),
+        report=report_text,
+        call_id=call.id,
     )
 
 
 async def _generate_overall_assessment(
-    agent_reports: Sequence[tuple[EvalAgentSpec, str, str, str, str]],
+    agent_reports: Sequence[tuple[EvalAgentSpec, str, str]],
     db: DB,
     scope_page_id: str | None,
     broadcaster: Broadcaster | None,
 ) -> tuple[str, Call]:
     """Generate an LLM-written overall assessment. Returns (text, call)."""
     final_prompt = (_PROMPTS_DIR / "ab-eval-final-report.md").read_text()
-    sections: list[str] = []
-    for spec, _ra, _rb, comparison, preference in agent_reports:
-        sections.append(f"### {spec.display_name}\n\n**Preference: {preference}**\n\n{comparison}")
+    dim_list = ", ".join(spec.display_name for spec, _, _ in agent_reports)
+    sections: list[str] = [f"The dimensions evaluated in this run are: {dim_list}."]
+    for spec, report, preference in agent_reports:
+        sections.append(f"### {spec.display_name}\n\n**Preference: {preference}**\n\n{report}")
     user_message = "\n\n---\n\n".join(sections)
     return await _traced_text_call(
         db,
@@ -314,29 +375,31 @@ async def run_ab_eval(
         raise
     results = [t.result() for t in tasks]
 
-    agent_reports = [
-        (spec, r.report_a, r.report_b, r.comparison, r.preference)
-        for spec, r in zip(agents, results)
-    ]
+    agent_reports = [(spec, r.report, r.preference) for spec, r in zip(agents, results)]
 
-    overall_assessment, overall_call = await _generate_overall_assessment(
-        agent_reports,
-        db,
-        scope_page_id=question_id_a,
-        broadcaster=broadcaster,
-    )
+    if len(agent_reports) == 1:
+        spec, _, preference = agent_reports[0]
+        overall_assessment = (
+            f"Only one dimension was evaluated in this run: **{spec.display_name}** "
+            f"(preference: {preference}). See the dimension report below for the full comparison."
+        )
+        overall_call_id: str | None = None
+    else:
+        overall_assessment, overall_call = await _generate_overall_assessment(
+            agent_reports,
+            db,
+            scope_page_id=question_id_a,
+            broadcaster=broadcaster,
+        )
+        overall_call_id = overall_call.id
 
     dimension_rows = [
         {
             "name": spec.name,
             "display_name": spec.display_name,
             "preference": r.preference,
-            "report_a": r.report_a,
-            "report_b": r.report_b,
-            "comparison": r.comparison,
-            "call_id_a": r.call_id_a,
-            "call_id_b": r.call_id_b,
-            "comparison_call_id": r.comparison_call_id,
+            "report": r.report,
+            "call_id": r.call_id,
         }
         for spec, r in zip(agents, results)
     ]
@@ -347,7 +410,7 @@ async def run_ab_eval(
         question_id_b=question_id_b,
         overall_assessment=overall_assessment,
         dimension_reports=dimension_rows,
-        overall_assessment_call_id=overall_call.id,
+        overall_assessment_call_id=overall_call_id,
     )
 
     print(_frontend_ab_eval_url(report_id), flush=True)

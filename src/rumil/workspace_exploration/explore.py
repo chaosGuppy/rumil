@@ -88,6 +88,7 @@ async def render_subgraph(
     exclude_ids: set[str] | None = None,
     include_impact: bool = False,
     global_impact: dict[str, float] | None = None,
+    highlight_run_id: str | None = None,
 ) -> str:
     """Render a full subgraph rooted at *page_id*.
 
@@ -107,6 +108,7 @@ async def render_subgraph(
         include_impact=include_impact,
         global_impact=global_impact,
         questions_only=False,
+        highlight_run_id=highlight_run_id,
     )
     return result.text
 

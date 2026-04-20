@@ -503,12 +503,8 @@ async def get_ab_eval(eval_id: str, db: DB = Depends(_get_db)):
                 name=d.get("name", ""),
                 display_name=d.get("display_name", ""),
                 preference=d.get("preference", ""),
-                report_a=d.get("report_a", ""),
-                report_b=d.get("report_b", ""),
-                comparison=d.get("comparison", ""),
-                call_id_a=d.get("call_id_a", ""),
-                call_id_b=d.get("call_id_b", ""),
-                comparison_call_id=d.get("comparison_call_id", ""),
+                report=d.get("report", ""),
+                call_id=d.get("call_id", ""),
             )
             for d in dims
         ],

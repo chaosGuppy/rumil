@@ -26,7 +26,7 @@ Look for anything that seems "off", "broken", "a bit weird", or "buggy" about th
 
 - **Epistemic hygiene**: Does the run distinguish between inference and evidence? Does it flag uncertainty appropriately? Does it avoid the failure modes described in the preamble (restating questions as analysis, performative hedging, etc.)?
 
-These are not exhaustive -- use your judgement to flag any quality issues you notice beyond the four excluded dimensions.
+These are not exhaustive -- use your judgement to flag any quality issues you notice beyond the excluded dimensions listed above.
 
 ## How to work
 
@@ -35,12 +35,14 @@ These are not exhaustive -- use your judgement to flag any quality issues you no
 3. Note anything that strikes you as a quality issue
 4. Be specific -- cite page IDs and give concrete examples
 
+You must continue to explore until your assessment of this dimension has converged.
+
 ## Output format
 
 Produce a structured evaluation report with:
 
 - **Summary**: 2-3 sentence overview of general quality
-- **Strengths**: What this run did well (outside the four excluded dimensions)
+- **Strengths**: What this run did well (outside the excluded dimensions)
 - **Issues found**: Specific quality problems, each with a page ID and description
 - **Patterns**: Any recurring quality patterns (good or bad)
 - **Overall assessment**: A paragraph synthesizing your evaluation

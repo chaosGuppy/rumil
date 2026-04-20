@@ -196,13 +196,13 @@ scripts/ab_branch.sh \
 | `--eval-branch` | No (default: current branch) | Branch to run evaluation agents from |
 | `--workspace` | No | Workspace name passed to main.py |
 
-The script runs 5 concurrent evaluation agents that compare the runs on: grounding & factual correctness, subquestion relevance, consistency, research progress, and general quality. Each agent independently evaluates both arms, then a comparison LLM produces a structured preference rating (7-point scale from "A strongly preferred" to "B strongly preferred"). A final LLM synthesizes all comparisons into an overall assessment.
+The script runs concurrent evaluation agents that compare the runs on: grounding & factual correctness, coverage & relevance, depth vs breadth, research redundancy, consistency, research progress, and general quality. Each agent independently evaluates both arms, then a comparison LLM produces a structured preference rating (7-point scale from "A strongly preferred" to "B strongly preferred"). A final LLM synthesizes all comparisons into an overall assessment.
 
 Reports are saved to `data/ab-reports/` and to the `ab_eval_reports` database table. View them in the frontend at `/ab-evals`.
 
 ### Single-run evaluation
 
-Evaluate a single staged run across all quality dimensions (grounding, subquestion relevance, consistency, research progress, general quality):
+Evaluate a single staged run across all quality dimensions (grounding, coverage & relevance, depth vs breadth, research redundancy, consistency, research progress, general quality):
 
 ```bash
 uv run python main.py --run-eval RUN_ID

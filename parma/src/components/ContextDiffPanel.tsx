@@ -43,12 +43,26 @@ interface ContextSnapshot {
   byId: Map<string, "working" | "preloaded">;
 }
 
+function coerceIds(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  for (const item of raw) {
+    if (typeof item === "string") {
+      out.push(item);
+    } else if (item && typeof item === "object" && "id" in item) {
+      const id = (item as { id: unknown }).id;
+      if (typeof id === "string") out.push(id);
+    }
+  }
+  return out;
+}
+
 function snapshotFromEvents(events: TraceEvent[] | null): ContextSnapshot | null {
   if (!events) return null;
   const ctx = events.find((e) => e.event === "context_built");
   if (!ctx) return null;
-  const working = (ctx.working_context_page_ids as string[] | undefined) ?? [];
-  const preloaded = (ctx.preloaded_page_ids as string[] | undefined) ?? [];
+  const working = coerceIds(ctx.working_context_page_ids);
+  const preloaded = coerceIds(ctx.preloaded_page_ids);
   const byId = new Map<string, "working" | "preloaded">();
   for (const id of preloaded) byId.set(id, "preloaded");
   // Working takes precedence — if the same id appears in both, we surface

@@ -1499,3 +1499,118 @@ async def test_execute_tool_dispatch_envelope_drops_unknown_model(tmp_db, seeded
 
     assert payload["__async_dispatch__"] is True
     assert payload["model"] is None
+
+
+async def test_list_running_dispatches_surfaces_in_flight_runs(tmp_db, seeded_graph, mocker):
+    """list_running_dispatches returns conversation-scoped in-flight runs."""
+    import json
+
+    from rumil.api.chat import _await_live_dispatches, _run_dispatch
+
+    root = seeded_graph["root"]
+
+    release = asyncio.Event()
+
+    async def slow_run(self):
+        await release.wait()
+
+    mocker.patch("rumil.calls.FindConsiderationsCall.run", slow_run)
+
+    conv = await tmp_db.create_chat_conversation(project_id=tmp_db.project_id, question_id=root.id)
+    await _run_dispatch(
+        tmp_db,
+        {
+            "question_id": root.id,
+            "headline": root.headline,
+            "call_type": "find-considerations",
+            "max_rounds": 1,
+            "model": None,
+        },
+        conv_id=conv.id,
+        tool_use_id="toolu_list_running",
+    )
+
+    result = await _execute_tool("list_running_dispatches", {}, tmp_db, conv_id=conv.id)
+    payload = json.loads(result)
+    assert payload["count"] == 1
+    run = payload["runs"][0]
+    assert run["call_type"] == "find-considerations"
+    assert run["tool_use_id"] == "toolu_list_running"
+
+    release.set()
+    await _await_live_dispatches()
+
+    result_after = await _execute_tool("list_running_dispatches", {}, tmp_db, conv_id=conv.id)
+    assert json.loads(result_after)["count"] == 0
+
+
+async def test_nudge_run_creates_and_revokes(tmp_db, seeded_graph, mocker):
+    """nudge_run creates a nudge on a live run, revoke_nudge revokes it."""
+    import json
+
+    from rumil.api.chat import _await_live_dispatches, _run_dispatch
+
+    root = seeded_graph["root"]
+
+    release = asyncio.Event()
+
+    async def slow_run(self):
+        await release.wait()
+
+    mocker.patch("rumil.calls.FindConsiderationsCall.run", slow_run)
+
+    conv = await tmp_db.create_chat_conversation(project_id=tmp_db.project_id, question_id=root.id)
+    await _run_dispatch(
+        tmp_db,
+        {
+            "question_id": root.id,
+            "headline": root.headline,
+            "call_type": "find-considerations",
+            "max_rounds": 1,
+            "model": None,
+        },
+        conv_id=conv.id,
+        tool_use_id="toolu_nudge",
+    )
+
+    list_result = json.loads(
+        await _execute_tool("list_running_dispatches", {}, tmp_db, conv_id=conv.id)
+    )
+    run_id = list_result["runs"][0]["run_id"]
+
+    nudge_result = json.loads(
+        await _execute_tool(
+            "nudge_run",
+            {"run_id": run_id[:8], "note": "focus on empirical results"},
+            tmp_db,
+            conv_id=conv.id,
+        )
+    )
+    assert nudge_result["hard"] is False
+    assert "focus on empirical" in nudge_result["note"]
+    nudge_id = nudge_result["nudge_id"]
+
+    nudges = await tmp_db.nudges.list_nudges_for_run(run_id)
+    assert len(nudges) == 1
+    assert nudges[0].id == nudge_id
+    assert nudges[0].soft_text == "focus on empirical results"
+
+    revoke_result = await _execute_tool(
+        "revoke_nudge", {"nudge_id": nudge_id}, tmp_db, conv_id=conv.id
+    )
+    assert "Revoked" in revoke_result
+
+    release.set()
+    await _await_live_dispatches()
+
+
+async def test_nudge_run_rejects_unknown_run(tmp_db):
+    """nudge_run refuses when the run_id isn't in the conversation's live set."""
+    conv = await tmp_db.create_chat_conversation(project_id=tmp_db.project_id, question_id=None)
+    result = await _execute_tool(
+        "nudge_run",
+        {"run_id": "deadbeef", "note": "test"},
+        tmp_db,
+        conv_id=conv.id,
+    )
+    assert "not in this conversation" in result

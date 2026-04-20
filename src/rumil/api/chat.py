@@ -1015,6 +1015,77 @@ TOOLS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "name": "list_running_dispatches",
+        "description": (
+            "List the fire-and-forget dispatches (dispatch_call, orchestrate, "
+            "ingest, evaluate, ground_evaluation) that are currently running "
+            "for this conversation. Use this when the user asks about work in "
+            "progress, or before firing a nudge_run — you need a live run_id. "
+            "Free / read-only."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "nudge_run",
+        "description": (
+            "Steer an in-flight research run mid-execution by attaching a "
+            "soft-note nudge that the orchestrator / prioritization layer "
+            "will read on its next step. Useful when the user realizes the "
+            "run is heading the wrong way and wants to redirect without "
+            "cancelling. Pass a run_id from `list_running_dispatches`. The "
+            "nudge text is free-form guidance ('focus on empirical scaling "
+            "results, not policy framing'). Hard nudges (hard=true) block "
+            "the next dispatch until consumed — use sparingly. Returns the "
+            "created nudge id, which can be passed to revoke_nudge to undo."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "run_id": {
+                    "type": "string",
+                    "description": (
+                        "Short (8-char) or full UUID of the run to nudge. Must be "
+                        "an in-flight run in this conversation — use "
+                        "`list_running_dispatches` first."
+                    ),
+                },
+                "note": {
+                    "type": "string",
+                    "description": "Soft-note text for the orchestrator to read.",
+                },
+                "hard": {
+                    "type": "boolean",
+                    "description": (
+                        "If true, blocks the next dispatch until the nudge is "
+                        "consumed. Defaults to false (soft)."
+                    ),
+                },
+            },
+            "required": ["run_id", "note"],
+        },
+    },
+    {
+        "name": "revoke_nudge",
+        "description": (
+            "Revoke an active nudge by id. Use when a previously-issued nudge "
+            "is no longer wanted (run moved past the relevant step, user "
+            "changed their mind). Returns a short status string."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "nudge_id": {
+                    "type": "string",
+                    "description": "Full UUID of the nudge (returned by nudge_run).",
+                },
+            },
+            "required": ["nudge_id"],
+        },
+    },
 ]
 
 _VALID_VIEW_MODES = {"panes", "article", "vertical", "sections", "sources", "trace"}
@@ -1209,6 +1280,8 @@ async def _execute_tool(
     tool_input: dict[str, Any],
     db: DB,
     scope_question_id: str = "",
+    *,
+    conv_id: str | None = None,
 ) -> str:
     """Execute a tool call and return the result as a string."""
     if name == "search_workspace":
@@ -2141,6 +2214,69 @@ async def _execute_tool(
     if name == "set_view":
         return await _execute_set_view(tool_input, db)
 
+    if name == "list_running_dispatches":
+        if not conv_id:
+            return json.dumps({"error": "No conversation in scope.", "runs": []})
+        runs = _list_live_runs(conv_id)
+        return json.dumps({"runs": runs, "count": len(runs)})
+
+    if name == "nudge_run":
+        if not conv_id:
+            return "Cannot nudge: no conversation in scope."
+        run_short_or_full = str(tool_input["run_id"])
+        note = str(tool_input["note"]).strip()
+        hard = bool(tool_input.get("hard", False))
+        if not note:
+            return "Nudge note cannot be empty."
+        live = _live_runs_by_conv.get(conv_id, {})
+        full_run_id = next(
+            (rid for rid in live if rid == run_short_or_full or rid.startswith(run_short_or_full)),
+            None,
+        )
+        if not full_run_id:
+            live_ids = ", ".join(rid[:8] for rid in live) or "(none)"
+            return (
+                f"Run '{run_short_or_full}' is not in this conversation's "
+                f"live set. Live runs: {live_ids}. Use list_running_dispatches."
+            )
+        from rumil.models import (
+            NudgeAuthorKind,
+            NudgeDurability,
+            NudgeKind,
+            NudgeScope,
+        )
+
+        nudge = await db.nudges.create_nudge(
+            run_id=full_run_id,
+            kind=NudgeKind.INJECT_NOTE,
+            durability=NudgeDurability.PERSISTENT,
+            author_kind=NudgeAuthorKind.CLAUDE,
+            author_note="via chat nudge_run tool",
+            soft_text=note,
+            hard=hard,
+            scope=NudgeScope(),
+        )
+        return json.dumps(
+            {
+                "nudge_id": nudge.id,
+                "run_id": full_run_id[:8],
+                "hard": hard,
+                "note": note,
+                "message": (
+                    f"Nudge {nudge.id[:8]} attached to run {full_run_id[:8]} "
+                    f"({'hard' if hard else 'soft'}). The orchestrator will pick "
+                    f"it up on its next step."
+                ),
+            }
+        )
+
+    if name == "revoke_nudge":
+        nudge_id = str(tool_input["nudge_id"])
+        revoked = await db.nudges.revoke_nudge(nudge_id)
+        if not revoked:
+            return f"Nudge {nudge_id[:8]} not found."
+        return f"Revoked nudge {nudge_id[:8]}."
+
     return f"Unknown tool: {name}"
 
 
@@ -2256,6 +2392,8 @@ async def _execute_tool_timed(
     tool_input: dict[str, Any],
     db: DB,
     scope_question_id: str = "",
+    *,
+    conv_id: str | None = None,
 ) -> str:
     """Call _execute_tool, logging client-disconnect cancellations with timing.
 
@@ -2265,7 +2403,7 @@ async def _execute_tool_timed(
     """
     t0 = time.monotonic()
     try:
-        return await _execute_tool(name, tool_input, db, scope_question_id)
+        return await _execute_tool(name, tool_input, db, scope_question_id, conv_id=conv_id)
     except asyncio.CancelledError:
         elapsed_ms = (time.monotonic() - t0) * 1000
         log.warning(
@@ -2322,6 +2460,78 @@ def _unsubscribe_conv(conv_id: str, q: asyncio.Queue[dict[str, Any]]) -> None:
         _conv_brokers.pop(conv_id, None)
 
 
+# Per-conversation tracking of fire-and-forget runs that are still in
+# flight. Phase-4 tools read from this to surface running work to the
+# model (list_running_dispatches) and to scope nudges (nudge_run takes
+# a run_id that must belong to the current conversation). Entries are
+# added when a bg handler spawns and removed when it writes the
+# DISPATCH_RESULT row.
+_live_runs_by_conv: dict[str, dict[str, dict[str, Any]]] = {}
+
+
+def _register_live_run(
+    conv_id: str,
+    run_id: str,
+    *,
+    call_type: str,
+    headline: str,
+    tool_use_id: str,
+    question_id: str | None = None,
+) -> None:
+    _live_runs_by_conv.setdefault(conv_id, {})[run_id] = {
+        "run_id": run_id,
+        "call_type": call_type,
+        "headline": headline,
+        "tool_use_id": tool_use_id,
+        "question_id": question_id,
+        "started_at": datetime.now(UTC).isoformat(),
+    }
+
+
+def _deregister_live_run(conv_id: str, run_id: str) -> None:
+    runs = _live_runs_by_conv.get(conv_id)
+    if not runs:
+        return
+    runs.pop(run_id, None)
+    if not runs:
+        _live_runs_by_conv.pop(conv_id, None)
+
+
+def _list_live_runs(conv_id: str) -> list[dict[str, Any]]:
+    return list(_live_runs_by_conv.get(conv_id, {}).values())
+
+
+async def _precreate_run_row(
+    db: DB,
+    *,
+    new_run_id: str,
+    name: str,
+    question_id: str | None,
+) -> None:
+    """Insert a ``runs`` row synchronously before spawning a bg handler.
+
+    The bg task operates on ``new_run_id``, but we need the row to exist
+    up-front so ``nudge_run`` (and any other tool that FKs into ``runs``)
+    works immediately — even before the bg task has had a chance to call
+    ``create_run`` on its own DB handle. Uses the chat turn's client and
+    credentials, writing against ``new_run_id`` directly rather than
+    touching ``db.run_id``.
+    """
+    settings = get_settings()
+    await db._execute(
+        db.client.table("runs").insert(
+            {
+                "id": new_run_id,
+                "name": name,
+                "project_id": db.project_id,
+                "question_id": question_id,
+                "config": settings.capture_config(),
+                "staged": db.staged,
+            }
+        )
+    )
+
+
 async def _bg_run_dispatch(
     *,
     conv_id: str,
@@ -2358,11 +2568,6 @@ async def _bg_run_dispatch(
     trace_url = f"/traces/{new_run_id}"
     content: dict[str, Any]
     try:
-        await bg_db.create_run(
-            name=f"chat dispatch: {call_type_str} on {headline[:60]}",
-            question_id=question_id,
-            config=settings.capture_config(),
-        )
         extra: dict[str, Any] = {}
         if call_type == CallType.FIND_CONSIDERATIONS:
             extra["fruit_threshold"] = 4
@@ -2452,6 +2657,20 @@ async def _run_dispatch(
     new_run_id = str(uuid.uuid4())
     trace_url = f"/traces/{new_run_id}"
 
+    await _precreate_run_row(
+        db,
+        new_run_id=new_run_id,
+        name=f"chat dispatch: {call_type_str} on {headline[:60]}",
+        question_id=question_id,
+    )
+    _register_live_run(
+        conv_id,
+        new_run_id,
+        call_type=call_type_str,
+        headline=headline,
+        tool_use_id=tool_use_id,
+        question_id=question_id,
+    )
     _spawn_bg(
         _bg_run_dispatch(
             conv_id=conv_id,
@@ -2467,9 +2686,10 @@ async def _run_dispatch(
     )
 
     return (
-        f"{call_type_str} call on '{headline[:40]}' started in background. "
-        f"Trace: {trace_url}. A completion note will appear in chat once "
-        f"the call finishes — you will not see the result in this turn."
+        f"{call_type_str} call on '{headline[:40]}' started in background "
+        f"(run_id={new_run_id[:8]}). Trace: {trace_url}. A completion note "
+        f"will appear in chat once the call finishes — you will not see "
+        f"the result in this turn."
     )
 
 
@@ -2493,6 +2713,9 @@ async def _persist_dispatch_completion(
     shape and broker notification stay uniform. Swallows DB errors (and
     logs) so a persistence blip can't crash the background task — the
     broker still gets the event.
+
+    Also deregisters the run from the per-conversation live-run map so
+    ``list_running_dispatches`` stops surfacing it.
     """
     try:
         await bg_db.save_chat_message(
@@ -2508,6 +2731,9 @@ async def _persist_dispatch_completion(
             (content.get("run_id") or "")[:8],
             conv_id[:8],
         )
+    run_id = content.get("run_id")
+    if run_id:
+        _deregister_live_run(conv_id, run_id)
     _publish_conv_event(conv_id, "dispatch_completed", content)
 
 
@@ -2591,11 +2817,6 @@ async def _bg_run_orchestrate(
     content: dict[str, Any]
     try:
         await new_db.init_budget(budget)
-        await new_db.create_run(
-            name=f"orchestrate (chat): {headline[:90]}",
-            question_id=question_id,
-            config=settings.capture_config(),
-        )
         if subscribed_event is not None:
             try:
                 await asyncio.wait_for(subscribed_event.wait(), timeout=3.0)
@@ -2697,6 +2918,20 @@ async def _run_orchestrate(
     settings = get_settings()
     variant_label = variant or settings.prioritizer_variant
 
+    await _precreate_run_row(
+        db,
+        new_run_id=new_run_id,
+        name=f"orchestrate (chat): {headline[:90]}",
+        question_id=question_id,
+    )
+    _register_live_run(
+        conv_id,
+        new_run_id,
+        call_type="orchestrate",
+        headline=headline,
+        tool_use_id=tool_use_id,
+        question_id=question_id,
+    )
     _spawn_bg(
         _bg_run_orchestrate(
             conv_id=conv_id,
@@ -2714,7 +2949,7 @@ async def _run_orchestrate(
     )
     return (
         f"Orchestrator run started on '{headline[:40]}' "
-        f"(variant={variant_label}, budget={budget}). "
+        f"(variant={variant_label}, budget={budget}, run_id={new_run_id[:8]}). "
         f"Trace: /traces/{new_run_id}. Running in background — you will "
         f"not see results in this turn."
     )
@@ -2741,11 +2976,6 @@ async def _bg_run_ingest(
     content: dict[str, Any]
     target_question_id: str | None = None
     try:
-        await bg_db.create_run(
-            name=f"ingest (chat): {headline[:90]}",
-            question_id=None,
-            config=settings.capture_config(),
-        )
         try:
             scraped = await scrape_url(url)
             if not scraped:
@@ -2841,6 +3071,19 @@ async def _run_ingest(
         return "Internal error: ingest tool has no project scope."
 
     new_run_id = str(uuid.uuid4())
+    await _precreate_run_row(
+        db,
+        new_run_id=new_run_id,
+        name=f"ingest (chat): {headline[:90]}",
+        question_id=None,
+    )
+    _register_live_run(
+        conv_id,
+        new_run_id,
+        call_type="ingest",
+        headline=headline,
+        tool_use_id=tool_use_id,
+    )
     _spawn_bg(
         _bg_run_ingest(
             conv_id=conv_id,
@@ -2853,8 +3096,9 @@ async def _run_ingest(
         )
     )
     return (
-        f"Ingest started for {url[:80]}. Trace: /traces/{new_run_id}. "
-        f"Running in background — completion will appear in chat."
+        f"Ingest started for {url[:80]} (run_id={new_run_id[:8]}). "
+        f"Trace: /traces/{new_run_id}. Running in background — completion "
+        f"will appear in chat."
     )
 
 
@@ -2880,11 +3124,6 @@ async def _bg_run_evaluate(
     trace_url = f"/traces/{new_run_id}"
     content: dict[str, Any]
     try:
-        await bg_db.create_run(
-            name=f"evaluate (chat, {eval_type}): {headline[:90]}",
-            question_id=question_id,
-            config=settings.capture_config(),
-        )
         try:
             call = await dispatch_evaluation(question_id, bg_db, eval_type=eval_type)
             content = {
@@ -2946,6 +3185,20 @@ async def _run_evaluate(
         return "Internal error: evaluate tool has no project scope."
 
     new_run_id = str(uuid.uuid4())
+    await _precreate_run_row(
+        db,
+        new_run_id=new_run_id,
+        name=f"evaluate (chat, {eval_type}): {headline[:90]}",
+        question_id=question_id,
+    )
+    _register_live_run(
+        conv_id,
+        new_run_id,
+        call_type="evaluate",
+        headline=headline,
+        tool_use_id=tool_use_id,
+        question_id=question_id,
+    )
     _spawn_bg(
         _bg_run_evaluate(
             conv_id=conv_id,
@@ -2958,9 +3211,9 @@ async def _run_evaluate(
         )
     )
     return (
-        f"Evaluation started on '{headline[:40]}' (eval_type={eval_type}). "
-        f"Trace: /traces/{new_run_id}. Running in background — "
-        f"completion will appear in chat."
+        f"Evaluation started on '{headline[:40]}' (eval_type={eval_type}, "
+        f"run_id={new_run_id[:8]}). Trace: /traces/{new_run_id}. Running in "
+        f"background — completion will appear in chat."
     )
 
 
@@ -2990,11 +3243,6 @@ async def _bg_run_ground(
     try:
         question = await bg_db.get_page(question_id)
         headline = question.headline if question else question_id[:8]
-        await bg_db.create_run(
-            name=f"{pipeline} (chat): {headline[:90]}",
-            question_id=question_id,
-            config=settings.capture_config(),
-        )
         try:
             call = await dispatch_grounding_pipeline(
                 pipeline,
@@ -3087,6 +3335,22 @@ async def _run_ground(
     prior_checkpoints = (eval_call.call_params or {}).get("checkpoints") if from_stage > 1 else None
 
     new_run_id = str(uuid.uuid4())
+    question = await db.get_page(question_id)
+    precreate_headline = question.headline if question else question_id[:8]
+    await _precreate_run_row(
+        db,
+        new_run_id=new_run_id,
+        name=f"{pipeline} (chat): {precreate_headline[:90]}",
+        question_id=question_id,
+    )
+    _register_live_run(
+        conv_id,
+        new_run_id,
+        call_type="ground",
+        headline=f"{pipeline} on eval {eval_call.id[:8]}",
+        tool_use_id=tool_use_id,
+        question_id=question_id,
+    )
     _spawn_bg(
         _bg_run_ground(
             conv_id=conv_id,
@@ -3101,9 +3365,9 @@ async def _run_ground(
         )
     )
     return (
-        f"{pipeline} pipeline started on eval {eval_call.id[:8]} from stage {from_stage}. "
-        f"Trace: /traces/{new_run_id}. Running in background — "
-        f"completion will appear in chat."
+        f"{pipeline} pipeline started on eval {eval_call.id[:8]} from stage {from_stage} "
+        f"(run_id={new_run_id[:8]}). Trace: /traces/{new_run_id}. Running in "
+        f"background — completion will appear in chat."
     )
 
 
@@ -3554,7 +3818,9 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
 
             tool_results = []
             for tc in tool_calls:
-                result_str = await _execute_tool_timed(tc.name, tc.input, db, context_scope_id)
+                result_str = await _execute_tool_timed(
+                    tc.name, tc.input, db, context_scope_id, conv_id=conv.id
+                )
                 result_str = await _resolve_async(
                     result_str, db, conv_id=conv.id, tool_use_id=tc.id
                 )
@@ -3854,7 +4120,7 @@ async def handle_chat_stream(request: ChatRequest) -> StreamingResponse:
                     tool_results = []
                     for tc in tool_calls:
                         result_str = await _execute_tool_timed(
-                            tc.name, tc.input, db, context_scope_id
+                            tc.name, tc.input, db, context_scope_id, conv_id=conv.id
                         )
                         has_async = any(f'"{s}"' in result_str for s in _ASYNC_HANDLERS)
                         if has_async:

@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import type { PageDetailOut, QuestionStatsOut, Project } from "@/api";
 
 import { CLIENT_API_BASE as API_BASE } from "@/api-config";
+import StagedBanner from "@/components/staged-banner";
 import { WorkspaceIndicator } from "@/components/workspace-indicator";
 import { StatsView } from "@/components/stats-view";
 import { SubgraphView } from "@/components/subgraph-view";
@@ -229,6 +230,13 @@ export default function QuestionStatsPage() {
       {projectId ? (
         <WorkspaceIndicator projectId={projectId} projectName={projectName} />
       ) : null}
+
+      {stagedRunId && (
+        <StagedBanner
+          runId={stagedRunId}
+          pageUrl={`/pages/${pageId}/stats`}
+        />
+      )}
 
       <div className="stats-header">
         <div>

@@ -5,8 +5,15 @@
 -- get_root_questions): when the parameter is NULL only baseline rows are
 -- visible; when it names a run, baseline rows plus that run's staged rows
 -- are visible. Pages/links whose effects are overlayed by mutation_events
--- for that run (supersede_page, delete_link) are excluded so counts
--- reflect the staged-run view the UI shows elsewhere.
+-- for that run are overlayed in SQL so counts and histograms match what
+-- `_apply_page_events` / `_apply_link_events` produce in Python:
+--   supersede_page  → page excluded
+--   delete_link     → link excluded
+--   set_credence    → page.credence replaced with the event's latest value
+--   set_robustness  → page.robustness replaced with the event's latest value
+-- update_page_content and change_link_role are not overlayed: neither
+-- touches any column the stats blob exposes (content is not shown in
+-- stats, and link role isn't surfaced either).
 
 DROP FUNCTION IF EXISTS compute_project_stats(UUID);
 
@@ -30,9 +37,35 @@ LANGUAGE sql STABLE AS $$
           AND run_id = p_staged_run_id
           AND event_type = 'delete_link'
     ),
+    latest_credence_overrides AS (
+        SELECT DISTINCT ON (target_id) target_id,
+               (payload->>'value')::int AS value
+        FROM mutation_events
+        WHERE p_staged_run_id IS NOT NULL
+          AND run_id = p_staged_run_id
+          AND event_type = 'set_credence'
+          AND payload->>'value' IS NOT NULL
+        ORDER BY target_id, created_at DESC
+    ),
+    latest_robustness_overrides AS (
+        SELECT DISTINCT ON (target_id) target_id,
+               (payload->>'value')::int AS value
+        FROM mutation_events
+        WHERE p_staged_run_id IS NOT NULL
+          AND run_id = p_staged_run_id
+          AND event_type = 'set_robustness'
+          AND payload->>'value' IS NOT NULL
+        ORDER BY target_id, created_at DESC
+    ),
     active_pages AS (
-        SELECT id, page_type, credence, robustness, headline
+        SELECT p.id,
+               p.page_type,
+               COALESCE(lco.value, p.credence) AS credence,
+               COALESCE(lro.value, p.robustness) AS robustness,
+               p.headline
         FROM pages p
+        LEFT JOIN latest_credence_overrides lco ON lco.target_id = p.id
+        LEFT JOIN latest_robustness_overrides lro ON lro.target_id = p.id
         WHERE p.project_id = p_project_id
           AND p.is_superseded = FALSE
           AND (p.staged = FALSE OR p.run_id = p_staged_run_id)
@@ -252,6 +285,26 @@ LANGUAGE sql STABLE AS $$
           AND run_id = p_staged_run_id
           AND event_type = 'delete_link'
     ),
+    latest_credence_overrides AS (
+        SELECT DISTINCT ON (target_id) target_id,
+               (payload->>'value')::int AS value
+        FROM mutation_events
+        WHERE p_staged_run_id IS NOT NULL
+          AND run_id = p_staged_run_id
+          AND event_type = 'set_credence'
+          AND payload->>'value' IS NOT NULL
+        ORDER BY target_id, created_at DESC
+    ),
+    latest_robustness_overrides AS (
+        SELECT DISTINCT ON (target_id) target_id,
+               (payload->>'value')::int AS value
+        FROM mutation_events
+        WHERE p_staged_run_id IS NOT NULL
+          AND run_id = p_staged_run_id
+          AND event_type = 'set_robustness'
+          AND payload->>'value' IS NOT NULL
+        ORDER BY target_id, created_at DESC
+    ),
     hood(page_id, depth) AS (
         SELECT p_question_id, 0
         UNION
@@ -273,10 +326,16 @@ LANGUAGE sql STABLE AS $$
         GROUP BY page_id
     ),
     active_pages AS (
-        SELECT p.id, p.page_type, p.credence, p.robustness, p.headline,
+        SELECT p.id,
+               p.page_type,
+               COALESCE(lco.value, p.credence) AS credence,
+               COALESCE(lro.value, p.robustness) AS robustness,
+               p.headline,
                hd.depth
         FROM pages p
         JOIN hood_depths hd ON hd.page_id = p.id
+        LEFT JOIN latest_credence_overrides lco ON lco.target_id = p.id
+        LEFT JOIN latest_robustness_overrides lro ON lro.target_id = p.id
         WHERE p.is_superseded = FALSE
           AND (p.staged = FALSE OR p.run_id = p_staged_run_id)
           AND p.id NOT IN (SELECT target_id FROM superseded_by_events)

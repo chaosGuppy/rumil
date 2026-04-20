@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import type { ProjectStatsOut, Project } from "@/api";
 
 import { CLIENT_API_BASE as API_BASE } from "@/api-config";
+import StagedBanner from "@/components/staged-banner";
 import { WorkspaceIndicator } from "@/components/workspace-indicator";
 import { StatsView } from "@/components/stats-view";
 import { useDocumentTitle } from "@/lib/use-document-title";
@@ -122,6 +123,13 @@ export default function ProjectStatsPage() {
       `}</style>
 
       <WorkspaceIndicator projectId={projectId} projectName={projectName} />
+
+      {stagedRunId && (
+        <StagedBanner
+          runId={stagedRunId}
+          pageUrl={`/projects/${projectId}/stats`}
+        />
+      )}
 
       <div className="stats-header">
         <div>

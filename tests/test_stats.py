@@ -364,3 +364,34 @@ async def test_project_stats_staged_run_includes_own_pages(tmp_db):
     finally:
         await staged.delete_run_data()
         await staged.close()
+
+
+@pytest.mark.asyncio
+async def test_project_stats_overlays_staged_credence_events(tmp_db):
+    """A staged run that rewrites credence via set_credence events should
+    see the histogram bucketed by the overlayed value, not the baseline."""
+    claim = await _make_page(
+        tmp_db, page_type=PageType.CLAIM, headline="c", credence=3, robustness=2
+    )
+
+    staged = await DB.create(run_id=tmp_db.run_id + "-staged3", staged=True)
+    staged.project_id = tmp_db.project_id
+    try:
+        await staged.update_epistemic_score(
+            claim.id,
+            credence=8,
+            credence_reasoning="reconsidered",
+            robustness=7,
+            robustness_reasoning="stronger evidence",
+        )
+
+        baseline_blob = await tmp_db.get_project_stats(tmp_db.project_id)
+        staged_blob = await staged.get_project_stats(tmp_db.project_id)
+
+        assert baseline_blob["credence_histogram"] == {"3": 1}
+        assert baseline_blob["robustness_histogram"] == {"2": 1}
+        assert staged_blob["credence_histogram"] == {"8": 1}
+        assert staged_blob["robustness_histogram"] == {"7": 1}
+    finally:
+        await staged.delete_run_data()
+        await staged.close()

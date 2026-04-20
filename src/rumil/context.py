@@ -501,6 +501,8 @@ async def render_child_investigation_results(
             if stored:
                 new = _is_new(stored)
                 page_ids.append(stored.id)
+            else:
+                new = True
             lines.append(f"**Status:** View available{' [NEW]' if new else ''}")
             view_text = render_view(child_view, min_importance=4 if new else 5)
             if view_text.strip():

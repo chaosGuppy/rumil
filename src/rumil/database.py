@@ -25,6 +25,9 @@ from rumil.models import (
     CallSequence,
     CallStatus,
     CallType,
+    ChatConversation,
+    ChatMessage,
+    ChatMessageRole,
     ConsiderationDirection,
     LinkRole,
     LinkType,
@@ -201,6 +204,36 @@ def _row_to_call_sequence(row: dict[str, Any]) -> CallSequence:
         scope_question_id=row.get("scope_question_id"),
         position_in_batch=row.get("position_in_batch", 0),
         created_at=datetime.fromisoformat(row["created_at"]),
+    )
+
+
+def _row_to_chat_conversation(row: dict[str, Any]) -> ChatConversation:
+    return ChatConversation(
+        id=row["id"],
+        project_id=row["project_id"],
+        question_id=row.get("question_id"),
+        title=row.get("title") or "",
+        created_at=datetime.fromisoformat(row["created_at"]),
+        updated_at=datetime.fromisoformat(row["updated_at"]),
+        deleted_at=(datetime.fromisoformat(row["deleted_at"]) if row.get("deleted_at") else None),
+        staged=bool(row.get("staged", False)),
+        run_id=row.get("run_id"),
+        parent_conversation_id=row.get("parent_conversation_id"),
+        branched_at_seq=row.get("branched_at_seq"),
+    )
+
+
+def _row_to_chat_message(row: dict[str, Any]) -> ChatMessage:
+    return ChatMessage(
+        id=row["id"],
+        conversation_id=row["conversation_id"],
+        role=ChatMessageRole(row["role"]),
+        content=row.get("content") or {},
+        seq=row.get("seq") or 0,
+        ts=datetime.fromisoformat(row["ts"]),
+        staged=bool(row.get("staged", False)),
+        run_id=row.get("run_id"),
+        question_id=row.get("question_id"),
     )
 
 
@@ -2774,3 +2807,239 @@ class DB:
         await self._execute(self.client.table("runs").delete().eq("id", self.run_id))
         if delete_project and self.project_id:
             await self._execute(self.client.table("projects").delete().eq("id", self.project_id))
+
+    async def create_chat_conversation(
+        self,
+        project_id: str,
+        question_id: str | None = None,
+        title: str = "",
+    ) -> ChatConversation:
+        """Create a new chat conversation row."""
+        conv = ChatConversation(
+            project_id=project_id,
+            question_id=question_id,
+            title=title,
+            staged=self.staged,
+            run_id=self.run_id if self.staged else None,
+        )
+        await self._execute(
+            self.client.table("chat_conversations").insert(
+                {
+                    "id": conv.id,
+                    "project_id": conv.project_id,
+                    "question_id": conv.question_id,
+                    "title": conv.title,
+                    "created_at": conv.created_at.isoformat(),
+                    "updated_at": conv.updated_at.isoformat(),
+                    "staged": conv.staged,
+                    "run_id": conv.run_id,
+                }
+            )
+        )
+        return conv
+
+    async def get_chat_conversation(self, conversation_id: str) -> ChatConversation | None:
+        """Fetch a single conversation (staged-run-aware, excludes soft-deleted)."""
+        query = (
+            self.client.table("chat_conversations")
+            .select("*")
+            .eq("id", conversation_id)
+            .is_("deleted_at", "null")
+        )
+        query = self._staged_filter(query)
+        rows = _rows(await self._execute(query))
+        return _row_to_chat_conversation(rows[0]) if rows else None
+
+    async def list_chat_conversations(
+        self,
+        project_id: str,
+        limit: int = 50,
+        offset: int = 0,
+        question_id: str | None = None,
+    ) -> Sequence[ChatConversation]:
+        """List conversations for a project, most-recently-updated first."""
+        query = (
+            self.client.table("chat_conversations")
+            .select("*")
+            .eq("project_id", project_id)
+            .is_("deleted_at", "null")
+        )
+        if question_id:
+            query = query.eq("question_id", question_id)
+        query = self._staged_filter(query).order("updated_at", desc=True)
+        query = query.range(offset, offset + max(0, limit - 1))
+        rows = _rows(await self._execute(query))
+        return [_row_to_chat_conversation(r) for r in rows]
+
+    async def update_chat_conversation(
+        self,
+        conversation_id: str,
+        title: str | None = None,
+        touch: bool = False,
+    ) -> None:
+        """Rename or touch updated_at on a conversation."""
+        update: dict[str, Any] = {}
+        if title is not None:
+            update["title"] = title
+        if touch or title is not None:
+            update["updated_at"] = datetime.now(UTC).isoformat()
+        if not update:
+            return
+        await self._execute(
+            self.client.table("chat_conversations").update(update).eq("id", conversation_id)
+        )
+
+    async def soft_delete_chat_conversation(self, conversation_id: str) -> None:
+        """Mark a conversation as soft-deleted."""
+        await self._execute(
+            self.client.table("chat_conversations")
+            .update({"deleted_at": datetime.now(UTC).isoformat()})
+            .eq("id", conversation_id)
+        )
+
+    async def save_chat_message(
+        self,
+        conversation_id: str,
+        role: ChatMessageRole,
+        content: dict,
+        seq: int | None = None,
+        question_id: str | None = None,
+    ) -> ChatMessage:
+        """Append a message to a conversation. Auto-assigns seq if omitted."""
+        if seq is None:
+            seq = await self._next_chat_message_seq(conversation_id)
+        msg = ChatMessage(
+            conversation_id=conversation_id,
+            role=role,
+            content=content,
+            seq=seq,
+            staged=self.staged,
+            run_id=self.run_id if self.staged else None,
+            question_id=question_id,
+        )
+        await self._execute(
+            self.client.table("chat_messages").insert(
+                {
+                    "id": msg.id,
+                    "conversation_id": msg.conversation_id,
+                    "role": msg.role.value,
+                    "content": msg.content,
+                    "seq": msg.seq,
+                    "ts": msg.ts.isoformat(),
+                    "staged": msg.staged,
+                    "run_id": msg.run_id,
+                    "question_id": msg.question_id,
+                }
+            )
+        )
+        return msg
+
+    async def _next_chat_message_seq(self, conversation_id: str) -> int:
+        """Return the next sequence number for a conversation."""
+        rows = _rows(
+            await self._execute(
+                self.client.table("chat_messages")
+                .select("seq")
+                .eq("conversation_id", conversation_id)
+                .order("seq", desc=True)
+                .limit(1)
+            )
+        )
+        return (rows[0]["seq"] + 1) if rows else 0
+
+    async def list_chat_messages(
+        self,
+        conversation_id: str,
+    ) -> Sequence[ChatMessage]:
+        """List all messages in a conversation in order."""
+        query = (
+            self.client.table("chat_messages").select("*").eq("conversation_id", conversation_id)
+        )
+        query = self._staged_filter(query).order("seq", desc=False)
+        rows = _rows(await self._execute(query))
+        return [_row_to_chat_message(r) for r in rows]
+
+    async def branch_chat_conversation(
+        self,
+        source_conversation_id: str,
+        at_seq: int,
+        title: str | None = None,
+    ) -> ChatConversation:
+        """Branch a conversation at ``at_seq``, copying messages 0..at_seq into a new convo.
+
+        Non-destructive — the source is left untouched, a new conversation is created
+        with ``parent_conversation_id`` pointing back to the source.
+        """
+        source = await self.get_chat_conversation(source_conversation_id)
+        if source is None:
+            raise ValueError(f"source conversation {source_conversation_id} not found")
+        if at_seq < 0:
+            raise ValueError(f"at_seq must be >= 0, got {at_seq}")
+
+        messages = await self.list_chat_messages(source_conversation_id)
+        if not messages:
+            raise ValueError(
+                f"at_seq={at_seq} does not correspond to any message in "
+                f"conversation {source_conversation_id}"
+            )
+        max_seq = messages[-1].seq
+        if at_seq > max_seq:
+            raise ValueError(
+                f"at_seq={at_seq} does not correspond to any message in "
+                f"conversation {source_conversation_id} (max seq is {max_seq})"
+            )
+        to_copy = [m for m in messages if m.seq <= at_seq]
+        if not to_copy:
+            raise ValueError(
+                f"at_seq={at_seq} does not correspond to any message in "
+                f"conversation {source_conversation_id}"
+            )
+
+        effective_seq = to_copy[-1].seq
+        derived_title = title or f"branch of {source.title or '(untitled)'} @ msg {effective_seq}"
+
+        new_conv = ChatConversation(
+            project_id=source.project_id,
+            question_id=source.question_id,
+            title=derived_title,
+            staged=self.staged,
+            run_id=self.run_id if self.staged else None,
+            parent_conversation_id=source.id,
+            branched_at_seq=effective_seq,
+        )
+        await self._execute(
+            self.client.table("chat_conversations").insert(
+                {
+                    "id": new_conv.id,
+                    "project_id": new_conv.project_id,
+                    "question_id": new_conv.question_id,
+                    "title": new_conv.title,
+                    "created_at": new_conv.created_at.isoformat(),
+                    "updated_at": new_conv.updated_at.isoformat(),
+                    "staged": new_conv.staged,
+                    "run_id": new_conv.run_id,
+                    "parent_conversation_id": new_conv.parent_conversation_id,
+                    "branched_at_seq": new_conv.branched_at_seq,
+                }
+            )
+        )
+
+        now_iso = datetime.now(UTC).isoformat()
+        new_rows = [
+            {
+                "id": str(uuid.uuid4()),
+                "conversation_id": new_conv.id,
+                "role": m.role.value,
+                "content": m.content,
+                "seq": m.seq,
+                "ts": now_iso,
+                "staged": new_conv.staged,
+                "run_id": new_conv.run_id,
+                "question_id": m.question_id,
+            }
+            for m in to_copy
+        ]
+        if new_rows:
+            await self._execute(self.client.table("chat_messages").insert(new_rows))
+
+        return new_conv

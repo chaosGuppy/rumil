@@ -426,3 +426,40 @@ class Call(BaseModel):
     sequence_id: str | None = None
     sequence_position: int | None = None
     cost_usd: float | None = None
+
+
+class ChatMessageRole(str, Enum):
+    USER = "user"
+    ASSISTANT = "assistant"
+    TOOL_USE = "tool_use"
+    TOOL_RESULT = "tool_result"
+    SYSTEM = "system"
+    DISPATCH_RESULT = "dispatch_result"
+
+
+class ChatConversation(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    project_id: str
+    question_id: str | None = None
+    title: str = ""
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    deleted_at: datetime | None = None
+    staged: bool = False
+    run_id: str | None = None
+    parent_conversation_id: str | None = None
+    branched_at_seq: int | None = None
+
+
+class ChatMessage(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    conversation_id: str
+    role: ChatMessageRole
+    content: dict = Field(default_factory=dict)
+    seq: int = 0
+    ts: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    staged: bool = False
+    run_id: str | None = None
+    question_id: str | None = None

@@ -273,21 +273,23 @@ async def get_page_counts(page_id: str, db: DB = Depends(_get_db)):
 
 
 @app.get("/api/projects/{project_id}/stats", response_model=ProjectStatsOut)
-async def get_project_stats(project_id: str, db: DB = Depends(_get_db)):
+async def get_project_stats(project_id: str, db: DB = Depends(_get_db_maybe_staged)):
     """Aggregate stats over all pages/links/calls in a project.
 
-    v1 is baseline-only: rows with staged=true or is_superseded=true are excluded,
-    and staged_run_id is not accepted.
+    Baseline rows are always included; when `staged_run_id` is provided as a
+    query param, rows from that staged run are also included and its mutation
+    events (supersede_page, delete_link) are overlayed.
     """
     blob = await db.get_project_stats(project_id)
     return ProjectStatsOut(project_id=project_id, **blob)
 
 
 @app.get("/api/pages/{page_id}/stats", response_model=QuestionStatsOut)
-async def get_question_stats(page_id: str, db: DB = Depends(_get_db)):
+async def get_question_stats(page_id: str, db: DB = Depends(_get_db_maybe_staged)):
     """Aggregate stats over the 2-hop undirected neighborhood around a question.
 
-    Returns 404 if the target page is not a question. v1 is baseline-only.
+    Returns 404 if the target page is not a question. Staged-run visibility
+    matches get_project_stats.
     """
     page = await db.get_page(page_id)
     if not page:

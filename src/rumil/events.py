@@ -53,8 +53,8 @@ class PageCreatedEvent(Event):
     event_type: Literal["page_created"] = "page_created"
     page_id: str
     page_type: PageType
-    run_id: str | None = None
-    staged: bool = False
+    run_id: str | None
+    staged: bool
 
 
 E = TypeVar("E", bound=Event)

@@ -574,7 +574,7 @@ def get_realtime_config():
     "/api/pages/{page_id}/run",
     response_model=RunSummaryOut | None,
 )
-async def get_page_run(page_id: str, db: DB = Depends(_get_db)):
+async def get_page_run(page_id: str, db: DB = Depends(_get_db_maybe_staged)):
     run = await db.get_run_for_page(page_id)
     if not run:
         return None

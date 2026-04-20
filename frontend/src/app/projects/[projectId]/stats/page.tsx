@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { ProjectStatsOut, Project } from "@/api";
 
@@ -10,9 +10,16 @@ import { WorkspaceIndicator } from "@/components/workspace-indicator";
 import { StatsView } from "@/components/stats-view";
 import { useDocumentTitle } from "@/lib/use-document-title";
 
+function stagedQs(stagedRunId: string | null): string {
+  return stagedRunId ? `?staged_run_id=${stagedRunId}` : "";
+}
+
 export default function ProjectStatsPage() {
   const params = useParams<{ projectId: string }>();
   const projectId = params.projectId;
+  const searchParams = useSearchParams();
+  const stagedRunId = searchParams.get("staged_run_id");
+  const stagedQ = stagedQs(stagedRunId);
 
   const [projectName, setProjectName] = useState<string>();
   const [data, setData] = useState<ProjectStatsOut | null>(null);
@@ -32,7 +39,9 @@ export default function ProjectStatsPage() {
   useEffect(() => {
     setLoading(true);
     setError(null);
-    fetch(`${API_BASE}/api/projects/${projectId}/stats`, { cache: "no-store" })
+    fetch(`${API_BASE}/api/projects/${projectId}/stats${stagedQ}`, {
+      cache: "no-store",
+    })
       .then(async (res) => {
         if (!res.ok) throw new Error(`${res.status}`);
         return (await res.json()) as ProjectStatsOut;
@@ -45,7 +54,7 @@ export default function ProjectStatsPage() {
         setError(String(e));
         setLoading(false);
       });
-  }, [projectId]);
+  }, [projectId, stagedQ]);
 
   return (
     <main className="stats-page">
@@ -120,7 +129,7 @@ export default function ProjectStatsPage() {
           <div className="subtitle">project overview</div>
         </div>
         <div className="stats-nav">
-          <Link href={`/projects/${projectId}`}>Pages</Link>
+          <Link href={`/projects/${projectId}${stagedQ}`}>Pages</Link>
         </div>
       </div>
 

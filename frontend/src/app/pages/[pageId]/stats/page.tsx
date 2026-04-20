@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { PageDetailOut, QuestionStatsOut, Project } from "@/api";
 
@@ -11,6 +11,10 @@ import { StatsView } from "@/components/stats-view";
 import { SubgraphView } from "@/components/subgraph-view";
 import { useDocumentTitle } from "@/lib/use-document-title";
 import { truncateHeadline } from "@/lib/page-titles";
+
+function stagedQs(stagedRunId: string | null): string {
+  return stagedRunId ? `?staged_run_id=${stagedRunId}` : "";
+}
 
 type LoadState =
   | { kind: "loading" }
@@ -27,6 +31,9 @@ type LoadState =
 export default function QuestionStatsPage() {
   const params = useParams<{ pageId: string }>();
   const pageId = params.pageId;
+  const searchParams = useSearchParams();
+  const stagedRunId = searchParams.get("staged_run_id");
+  const stagedQ = stagedQs(stagedRunId);
 
   const [projectName, setProjectName] = useState<string>();
   const [projectId, setProjectId] = useState<string>();
@@ -44,7 +51,7 @@ export default function QuestionStatsPage() {
     async function load() {
       try {
         const detailRes = await fetch(
-          `${API_BASE}/api/pages/${pageId}/detail`,
+          `${API_BASE}/api/pages/${pageId}/detail${stagedQ}`,
           { cache: "no-store" },
         );
         if (detailRes.status === 404) {
@@ -66,7 +73,7 @@ export default function QuestionStatsPage() {
         }
 
         const statsRes = await fetch(
-          `${API_BASE}/api/pages/${pageId}/stats`,
+          `${API_BASE}/api/pages/${pageId}/stats${stagedQ}`,
           { cache: "no-store" },
         );
         if (!statsRes.ok) throw new Error(`stats ${statsRes.status}`);
@@ -88,7 +95,7 @@ export default function QuestionStatsPage() {
     return () => {
       cancelled = true;
     };
-  }, [pageId]);
+  }, [pageId, stagedQ]);
 
   useEffect(() => {
     if (!projectId) return;
@@ -229,9 +236,11 @@ export default function QuestionStatsPage() {
           <div className="subtitle">question neighborhood · 2 hops</div>
         </div>
         <div className="stats-nav">
-          <Link href={`/pages/${pageId}`}>Page</Link>
+          <Link href={`/pages/${pageId}${stagedQ}`}>Page</Link>
           {projectId && (
-            <Link href={`/projects/${projectId}/stats`}>Project stats</Link>
+            <Link href={`/projects/${projectId}/stats${stagedQ}`}>
+              Project stats
+            </Link>
           )}
         </div>
       </div>

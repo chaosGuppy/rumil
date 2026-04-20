@@ -20,15 +20,15 @@ import {
   fetchCallLLMExchanges,
   fetchLLMExchange,
   fetchPagesByIds,
+  fetchProjectRunsSummary,
   fetchRunSpend,
   fetchRunTraceTree,
-  fetchProjectRuns,
   stageRun,
   startAbEval,
   updateRunHidden,
   type LLMExchangeDetail,
   type LLMExchangeSummary,
-  type RunListItem,
+  type ProjectRunSummary,
   type RunSpend,
   type RunTraceTree,
   type TraceCallNode,
@@ -135,7 +135,7 @@ function RunPicker({
   projectId: string;
   onSelect: (runId: string) => void;
 }) {
-  const [rows, setRows] = useState<RunListItem[] | null>(null);
+  const [rows, setRows] = useState<ProjectRunSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showHidden, setShowHidden] = useState(false);
   const [busyRunId, setBusyRunId] = useState<string | null>(null);
@@ -153,9 +153,6 @@ function RunPicker({
     () => new Set(),
   );
   const [sortMode, setSortMode] = useState<RunPickerSortMode>("recency");
-  // Bumped whenever a lazily-resolved row lands, so the filter chip set
-  // and any cost-sort re-evaluate against the synchronous cache.
-  const [resolveTick, setResolveTick] = useState(0);
   const [orchPopover, setOrchPopover] = useState<{
     variant: string;
     anchorEl: HTMLElement;
@@ -174,7 +171,7 @@ function RunPicker({
 
   useEffect(() => {
     let cancelled = false;
-    fetchProjectRuns(projectId)
+    fetchProjectRunsSummary(projectId)
       .then((r) => {
         if (!cancelled) setRows(r);
       })
@@ -197,7 +194,7 @@ function RunPicker({
   }, []);
 
   const handleToggleHidden = useCallback(
-    async (run: RunListItem) => {
+    async (run: ProjectRunSummary) => {
       if (!run.run_id || busyRunId) return;
       const nextHidden = !run.hidden;
       setBusyRunId(run.run_id);
@@ -288,29 +285,6 @@ function RunPicker({
     setActiveCallTypes(new Set());
   }, []);
 
-  // Prefetch resolutions for generic rows so the chip filter populates
-  // with real call_types (instead of just the handful we know synchronously
-  // from row.name). Also lets cost-sort work for resolved rows. Deduped by
-  // the module-level cache — each run is fetched at most once per page load.
-  useEffect(() => {
-    if (!rows) return;
-    let cancelled = false;
-    for (const r of rows) {
-      if (!r.run_id) continue;
-      const baseName = r.name || "";
-      const isGeneric = baseName === "" || baseName === "chat";
-      if (!isGeneric) continue;
-      if (runRowResolvedValues.has(r.run_id)) continue;
-      resolveRunRow(r.run_id).then((resolved) => {
-        if (cancelled || !resolved) return;
-        setResolveTick((t) => t + 1);
-      });
-    }
-    return () => {
-      cancelled = true;
-    };
-  }, [rows]);
-
   if (error) return <div className="trace-pick-error">Failed to load runs: {error}</div>;
   if (!rows) return <div className="trace-pick-loading">Loading runs...</div>;
 
@@ -326,10 +300,8 @@ function RunPicker({
     );
   }
 
-  // Distinct call_types among the currently-visible rows, resolved or
-  // synchronously known. `resolveTick` triggers recomputation as lazy
-  // resolutions land. Sorted alphabetically for stable chip order.
-  void resolveTick;
+  // Distinct call_types among the currently-visible rows. Sorted
+  // alphabetically for stable chip order.
   const availableCallTypes: string[] = [
     ...new Set(
       visible
@@ -338,7 +310,7 @@ function RunPicker({
     ),
   ].sort();
 
-  let filtered: RunListItem[] = visible;
+  let filtered: ProjectRunSummary[] = visible;
   if (debouncedQuery) {
     filtered = filtered.filter((r) => matchesRunQuery(r, debouncedQuery));
   }
@@ -354,8 +326,8 @@ function RunPicker({
   if (sortMode === "cost") {
     // Resolved rows first, sorted by cost desc; unresolved rows tail in
     // original (recency) order so newly-arrived runs don't jump around.
-    const withCost: Array<{ r: RunListItem; cost: number }> = [];
-    const noCost: RunListItem[] = [];
+    const withCost: Array<{ r: ProjectRunSummary; cost: number }> = [];
+    const noCost: ProjectRunSummary[] = [];
     for (const r of filtered) {
       const c = getRowCostUsd(r);
       if (c !== null) withCost.push({ r, cost: c });
@@ -584,11 +556,11 @@ function RunPicker({
                 {r.question_summary && (
                   <div className="trace-pick-row-q">{r.question_summary}</div>
                 )}
-                <RunRowResolvedQuestion run={r} />
                 <div className="trace-pick-row-meta">
                   <span>{r.run_id!.slice(0, 8)}</span>
                   <span>·</span>
                   <span>{formatWhen(r.created_at)}</span>
+                  <RunRowSummaryChips run={r} />
                   {discriminators
                     .filter((d) => d.key !== "orchestrator")
                     .map((d) => (
@@ -596,7 +568,6 @@ function RunPicker({
                         {d.label}
                       </span>
                     ))}
-                  <RunRowResolvedModelChip run={r} />
                   {(disambiguatorsByRunId.get(r.run_id!) ?? []).map((d) => (
                     <span
                       key={`disamb-${d.key}`}
@@ -663,89 +634,22 @@ function RunPicker({
   );
 }
 
-// Resolved-from-tree details surfaced for generic runs ("chat",
-// find_considerations, ...) so their rows read like the orchestrator rows
-// (which already get name/question/model from run.config). We pull:
-//  - call_type (from the root call in the tree)
-//  - question headline (fall back to the root call's scope_page_summary
-//    when the run has no question_id)
-//  - model (from tree.config or the first llm_exchange event on the root)
-// All optional — any fetch failure drops back to the plain name.
-interface RunRowResolved {
-  callType: string;
-  question: string | null;
-  model: string | null;
-  costUsd: number | null;
-}
-
-// Module-level cache so RunRowLabel + RunRowResolvedQuestion +
-// RunRowResolvedModelChip share one outstanding promise per run. Each row
-// calls the hook up to 3 times; without this the picker would triple-fetch.
-const runRowResolveCache = new Map<string, Promise<RunRowResolved | null>>();
-// Synchronous mirror of the resolved values so the RunPicker's filter/sort
-// logic can read them without awaiting. Populated as promises resolve.
-const runRowResolvedValues = new Map<string, RunRowResolved>();
-
-function resolveRunRow(runId: string): Promise<RunRowResolved | null> {
-  const cached = runRowResolveCache.get(runId);
-  if (cached) return cached;
-  const promise = (async () => {
-    try {
-      const tree = await fetchRunTraceTree(runId);
-      const root =
-        tree.calls.find((c) => !c.call.parent_call_id) ?? tree.calls[0];
-      if (!root) return null;
-      const question =
-        tree.question?.headline ?? root.scope_page_summary ?? null;
-      const configModel =
-        tree.config && typeof tree.config["model"] === "string"
-          ? (tree.config["model"] as string)
-          : null;
-      let model = configModel;
-      if (!model) {
-        try {
-          const events = await fetchCallEvents(root.call.id);
-          model = modelFromEvents(events);
-        } catch {
-          // silent — model chip is nice-to-have
-        }
-      }
-      const resolved: RunRowResolved = {
-        callType: root.call.call_type,
-        question,
-        model,
-        costUsd: tree.cost_usd,
-      };
-      runRowResolvedValues.set(runId, resolved);
-      return resolved;
-    } catch {
-      return null;
-    }
-  })();
-  runRowResolveCache.set(runId, promise);
-  return promise;
-}
-
-// Best-effort synchronous call-type reader. Returns the resolved call_type
-// if we've cached it, otherwise the base name if it's not the generic
-// "chat"/empty placeholder, otherwise null — matches the behavior of the
-// label component so filter chips line up with what the user sees.
-function getRowCallType(run: RunListItem): string | null {
-  if (run.run_id) {
-    const resolved = runRowResolvedValues.get(run.run_id);
-    if (resolved) return resolved.callType;
-  }
+// Per-run call_type resolved eagerly from the summary endpoint, falling
+// back to the run's display name when the backend didn't find a root call
+// (brand-new runs, or runs whose only call hasn't landed yet).
+function getRowCallType(run: ProjectRunSummary): string | null {
+  if (run.root_call_type) return run.root_call_type;
   const name = run.name || "";
   if (!name || name === "chat") return null;
   return name;
 }
 
-function getRowCostUsd(run: RunListItem): number | null {
+function getRowCostUsd(run: ProjectRunSummary): number | null {
   if (!run.run_id) return null;
-  return runRowResolvedValues.get(run.run_id)?.costUsd ?? null;
+  return run.total_cost_usd ?? null;
 }
 
-function matchesRunQuery(run: RunListItem, query: string): boolean {
+function matchesRunQuery(run: ProjectRunSummary, query: string): boolean {
   const q = query.toLowerCase();
   if (run.name && run.name.toLowerCase().includes(q)) return true;
   if (run.run_id && run.run_id.toLowerCase().includes(q)) return true;
@@ -754,45 +658,24 @@ function matchesRunQuery(run: RunListItem, query: string): boolean {
   return false;
 }
 
-// Shared lazy-fetch hook so RunRowLabel and RunRowExtras stay aligned on
-// one outstanding request per row.
-function useResolvedRunRow(run: RunListItem): RunRowResolved | null {
+function RunRowLabel({ run }: { run: ProjectRunSummary }) {
   const baseName = run.name || "";
   const isGeneric = baseName === "" || baseName === "chat";
-  const [resolved, setResolved] = useState<RunRowResolved | null>(null);
   const runId = run.run_id;
-
-  useEffect(() => {
-    if (!isGeneric || !runId) return;
-    let cancelled = false;
-    resolveRunRow(runId).then((r) => {
-      if (!cancelled && r) setResolved(r);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [isGeneric, runId]);
-
-  return resolved;
-}
-
-function RunRowLabel({ run }: { run: RunListItem }) {
-  const baseName = run.name || "";
-  const isGeneric = baseName === "" || baseName === "chat";
-  const resolved = useResolvedRunRow(run);
-  const runId = run.run_id;
+  const resolvedType = run.root_call_type;
 
   const label =
-    resolved?.callType ??
-    (baseName || (runId ? runId.slice(0, 8) : "(unknown)"));
-  const isSubstituted = isGeneric && resolved !== null;
+    (isGeneric && resolvedType) ||
+    baseName ||
+    (runId ? runId.slice(0, 8) : "(unknown)");
+  const isSubstituted = isGeneric && !!resolvedType;
 
   return (
     <span
       className={`trace-pick-row-name ${isSubstituted ? "is-resolved" : ""}`}
       title={
         isSubstituted && baseName
-          ? `${baseName} — primary call: ${resolved?.callType}`
+          ? `${baseName} — primary call: ${resolvedType}`
           : undefined
       }
     >
@@ -801,31 +684,52 @@ function RunRowLabel({ run }: { run: RunListItem }) {
   );
 }
 
-// Surface resolved question (if the run had no question_summary) and model
-// for generic runs. Parity with orchestrator rows — those already get a
-// headline via run.question_summary and a model chip via
-// extractRunDiscriminators(run.config).
-function RunRowResolvedQuestion({ run }: { run: RunListItem }) {
-  const resolved = useResolvedRunRow(run);
-  if (!resolved?.question) return null;
-  if (run.question_summary) return null;
-  return <div className="trace-pick-row-q">{resolved.question}</div>;
+function formatUsd(usd: number): string {
+  if (usd >= 1) return `$${usd.toFixed(2)}`;
+  if (usd >= 0.01) return `$${usd.toFixed(3)}`;
+  return `$${usd.toFixed(4)}`;
 }
 
-function RunRowResolvedModelChip({ run }: { run: RunListItem }) {
-  const resolved = useResolvedRunRow(run);
-  // Only render when the base config didn't already supply a model chip —
-  // otherwise extractRunDiscriminators() above is doing the job.
-  const baseHasModel =
-    run.config && typeof run.config["model"] === "string" && run.config["model"];
-  if (!resolved?.model || baseHasModel) return null;
+function formatDurationMs(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  return rem ? `${m}m ${rem}s` : `${m}m`;
+}
+
+function RunRowSummaryChips({ run }: { run: ProjectRunSummary }) {
+  const cost = run.total_cost_usd ?? 0;
+  const dur = run.total_duration_ms ?? 0;
+  const status = run.status;
+  const calls = run.total_calls ?? 0;
   return (
-    <span
-      className="trace-pick-row-meta-chip"
-      title={`model: ${resolved.model}`}
-    >
-      {shortenModel(resolved.model)}
-    </span>
+    <>
+      {status && (
+        <span
+          className={`trace-pick-row-status trace-pick-row-status-${status}`}
+          title={`status: ${status}`}
+        >
+          {status}
+        </span>
+      )}
+      {cost > 0 && (
+        <span className="trace-pick-row-meta-chip" title="total run cost (USD)">
+          {formatUsd(cost)}
+        </span>
+      )}
+      {dur > 0 && (
+        <span className="trace-pick-row-meta-chip" title="total call duration">
+          {formatDurationMs(dur)}
+        </span>
+      )}
+      {calls > 0 && (
+        <span className="trace-pick-row-meta-chip" title={`${calls} calls in run`}>
+          {calls} {calls === 1 ? "call" : "calls"}
+        </span>
+      )}
+    </>
   );
 }
 
@@ -880,10 +784,10 @@ function extractRunDiscriminators(
 //  - Otherwise fall back to a "#N / M" ordinal (stable by creation order).
 // Group size 1 → no disambiguation.
 function computeRunRowDisambiguators(
-  rows: RunListItem[],
+  rows: ProjectRunSummary[],
 ): Map<string, Array<{ key: string; label: string; title: string }>> {
   const out = new Map<string, Array<{ key: string; label: string; title: string }>>();
-  const groups = new Map<string, RunListItem[]>();
+  const groups = new Map<string, ProjectRunSummary[]>();
   for (const r of rows) {
     if (!r.run_id) continue;
     const minute = r.created_at.slice(0, 16);
@@ -1070,6 +974,10 @@ function TraceHeader({
   // looking at.
   const shortRunId = tree.run_id.slice(0, 8);
   const discriminators = extractRunDiscriminators(tree.config);
+  const [orchPopover, setOrchPopover] = useState<{
+    variant: string;
+    anchorEl: HTMLElement;
+  } | null>(null);
   return (
     <header className="trace-head">
       <div className="trace-head-row">

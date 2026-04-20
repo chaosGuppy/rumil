@@ -445,6 +445,75 @@ class RunStore:
         results.sort(key=lambda r: r.get("created_at", ""), reverse=True)
         return results[:limit]
 
+    async def list_runs_summary_for_project(
+        self, project_id: str, limit: int = 50
+    ) -> list[dict[str, Any]]:
+        """Like ``list_runs_for_project`` but adds per-run aggregates:
+        ``status``, ``root_call_type``, ``total_cost_usd``,
+        ``total_duration_ms``, ``total_calls``.
+
+        Uses two project-scoped queries (runs + calls) + one pages fetch,
+        regardless of run count. Avoids the N trace-tree round-trips the
+        parma runs-index used to do per-card.
+        """
+        runs = await self.list_runs_for_project(project_id, limit=limit)
+        if not runs:
+            return runs
+
+        run_ids = [r["run_id"] for r in runs if r.get("run_id")]
+        call_rows = _rows(
+            await self._db._execute(
+                self.client.table("calls")
+                .select("id, run_id, call_type, parent_call_id, created_at, completed_at, cost_usd")
+                .eq("project_id", project_id)
+                .in_("run_id", run_ids)
+            )
+        )
+
+        by_run: dict[str, list[dict[str, Any]]] = {}
+        for row in call_rows:
+            by_run.setdefault(row["run_id"], []).append(row)
+
+        status_rows = _rows(
+            await self._db._execute(
+                self.client.table("runs").select("id, status").in_("id", run_ids)
+            )
+        )
+        status_by_run = {row["id"]: row.get("status") for row in status_rows}
+
+        for run in runs:
+            rid = run.get("run_id")
+            if not rid:
+                continue
+            calls = by_run.get(rid, [])
+            total_cost = 0.0
+            total_duration_ms = 0
+            root_call_type: str | None = None
+            root_created_at: str | None = None
+            for c in calls:
+                total_cost += c.get("cost_usd") or 0.0
+                created = c.get("created_at")
+                completed = c.get("completed_at")
+                if completed and created:
+                    delta_ms = int(
+                        (
+                            datetime.fromisoformat(completed) - datetime.fromisoformat(created)
+                        ).total_seconds()
+                        * 1000
+                    )
+                    if delta_ms > 0:
+                        total_duration_ms += delta_ms
+                if c.get("parent_call_id") is None:
+                    if root_created_at is None or (created and created < root_created_at):
+                        root_call_type = c.get("call_type")
+                        root_created_at = created
+            run["status"] = status_by_run.get(rid)
+            run["root_call_type"] = root_call_type
+            run["total_cost_usd"] = round(total_cost, 6)
+            run["total_duration_ms"] = total_duration_ms
+            run["total_calls"] = len(calls)
+        return runs
+
     async def delete_run_data(self, delete_project: bool = False) -> None:
         """Delete all data for this run_id. Used by test teardown."""
         await self._db._execute(

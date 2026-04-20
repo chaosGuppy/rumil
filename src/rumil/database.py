@@ -1237,6 +1237,11 @@ class DB:
     async def list_runs_for_project(self, project_id: str, limit: int = 50) -> list[dict[str, Any]]:
         return await self.runs.list_runs_for_project(project_id, limit=limit)
 
+    async def list_runs_summary_for_project(
+        self, project_id: str, limit: int = 50
+    ) -> list[dict[str, Any]]:
+        return await self.runs.list_runs_summary_for_project(project_id, limit=limit)
+
     async def delete_run_data(self, delete_project: bool = False) -> None:
         return await self.runs.delete_run_data(delete_project=delete_project)
 

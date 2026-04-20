@@ -686,6 +686,22 @@ class RunListItemOut(BaseModel):
     hidden: bool = False
 
 
+class ProjectRunSummaryOut(RunListItemOut):
+    """Eager runs-index card: ``RunListItemOut`` + aggregates needed to
+    render a run's status, cost, duration, and root call_type without a
+    per-run trace-tree fetch. Populated from one calls query across the
+    project in ``list_runs_summary_for_project``.
+    """
+
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    status: str | None = None
+    root_call_type: str | None = None
+    total_cost_usd: float = 0.0
+    total_duration_ms: int = 0
+    total_calls: int = 0
+
+
 class RunSpendByCallTypeOut(BaseModel):
     """One row of the per-call-type spend breakdown for a run."""
 

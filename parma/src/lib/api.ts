@@ -17,6 +17,7 @@ import type {
   PaginatedLlmBoundaryExchangesOut,
   PageDetailOut,
   PageIterationsOut,
+  ProjectRunSummaryOut,
   RefineIterationOut,
   RefineIterationVerdictOut,
   RunListItemOut,
@@ -36,6 +37,7 @@ import type {
 // alongside so the rest of this file can alias to them without cluttering
 // each section with its own import.
 export type RunListItem = RunListItemOut;
+export type ProjectRunSummary = ProjectRunSummaryOut;
 export type CreateProjectResult = CreateProjectOut;
 export type LinkedPage = LinkedPageOut;
 export type PageDetail = PageDetailOut;
@@ -790,6 +792,20 @@ export async function fetchProjectRuns(
   projectId: string,
 ): Promise<RunListItem[]> {
   const res = await fetch(`${API_BASE}/api/projects/${projectId}/runs`);
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  return res.json();
+}
+
+// Eager runs-index: same rows as fetchProjectRuns plus per-run aggregates
+// (status, root_call_type, total_cost_usd, total_duration_ms, total_calls)
+// so the runs index can render cost/duration/status/headline per card
+// without N trace-tree fetches.
+export async function fetchProjectRunsSummary(
+  projectId: string,
+): Promise<ProjectRunSummary[]> {
+  const res = await fetch(
+    `${API_BASE}/api/projects/${projectId}/runs-summary`,
+  );
   if (!res.ok) throw new Error(`API error: ${res.status}`);
   return res.json();
 }

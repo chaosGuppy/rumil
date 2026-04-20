@@ -72,6 +72,7 @@ from rumil.api.schemas import (
     PaginatedLlmBoundaryExchangesOut,
     PaginatedPagesOut,
     PhaseOut,
+    ProjectRunSummaryOut,
     ProjectStatsOut,
     ProjectSummaryOut,
     QuestionStatsOut,
@@ -429,6 +430,21 @@ async def update_project(
 @app.get("/api/projects/{project_id}/runs", response_model=list[RunListItemOut])
 async def list_project_runs(project_id: str, db: DB = Depends(_get_db)):
     return await db.list_runs_for_project(project_id)
+
+
+@app.get(
+    "/api/projects/{project_id}/runs-summary",
+    response_model=list[ProjectRunSummaryOut],
+)
+async def list_project_runs_summary(project_id: str, db: DB = Depends(_get_db)):
+    """Eager per-run card data for the parma runs index.
+
+    Replaces N per-run ``/api/runs/<id>/trace-tree`` calls the frontend used
+    to make with one project-scoped aggregation. Returns the same rows as
+    ``/api/projects/{project_id}/runs`` plus ``status``, ``root_call_type``,
+    ``total_cost_usd``, ``total_duration_ms``, and ``total_calls``.
+    """
+    return await db.list_runs_summary_for_project(project_id)
 
 
 @app.get(

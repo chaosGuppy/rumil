@@ -306,6 +306,50 @@
         }
       }
     },
+    "/api/projects/{project_id}/runs-summary": {
+      "get": {
+        "summary": "List Project Runs Summary",
+        "description": "Eager per-run card data for the parma runs index.\n\nReplaces N per-run ``/api/runs/<id>/trace-tree`` calls the frontend used\nto make with one project-scoped aggregation. Returns the same rows as\n``/api/projects/{project_id}/runs`` plus ``status``, ``root_call_type``,\n``total_cost_usd``, ``total_duration_ms``, and ``total_calls``.",
+        "operationId": "list_project_runs_summary_api_projects__project_id__runs_summary_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProjectRunSummaryOut"
+                  },
+                  "title": "Response List Project Runs Summary Api Projects  Project Id  Runs Summary Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{project_id}/llm-boundary-exchanges": {
       "get": {
         "summary": "List Project Boundary Exchanges",
@@ -3950,6 +3994,44 @@
           },
           "required": true
         },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/chat/conversations/{conversation_id}/events": {
+      "get": {
+        "summary": "Chat Conversation Events",
+        "description": "Long-lived SSE stream of out-of-band events for a conversation.\n\nUsed by the frontend to receive ``dispatch_completed`` events from\nbackground tasks spawned by fire-and-forget tool calls (the actual\nDISPATCH_RESULT row is also persisted so reloads still see the chip).",
+        "operationId": "chat_conversation_events_api_chat_conversations__conversation_id__events_get",
+        "parameters": [
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Conversation Id"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -9178,6 +9260,117 @@
           "hidden"
         ],
         "title": "Project"
+      },
+      "ProjectRunSummaryOut": {
+        "properties": {
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "default": ""
+          },
+          "config": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config"
+          },
+          "question_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question Summary"
+          },
+          "staged": {
+            "type": "boolean",
+            "title": "Staged",
+            "default": false
+          },
+          "hidden": {
+            "type": "boolean",
+            "title": "Hidden",
+            "default": false
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "root_call_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Root Call Type"
+          },
+          "total_cost_usd": {
+            "type": "number",
+            "title": "Total Cost Usd",
+            "default": 0.0
+          },
+          "total_duration_ms": {
+            "type": "integer",
+            "title": "Total Duration Ms",
+            "default": 0
+          },
+          "total_calls": {
+            "type": "integer",
+            "title": "Total Calls",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "created_at",
+          "name",
+          "config",
+          "question_summary",
+          "staged",
+          "hidden",
+          "status",
+          "root_call_type",
+          "total_cost_usd",
+          "total_duration_ms",
+          "total_calls"
+        ],
+        "title": "ProjectRunSummaryOut",
+        "description": "Eager runs-index card: ``RunListItemOut`` + aggregates needed to\nrender a run's status, cost, duration, and root call_type without a\nper-run trace-tree fetch. Populated from one calls query across the\nproject in ``list_runs_summary_for_project``."
       },
       "ProjectStatsOut": {
         "properties": {

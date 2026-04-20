@@ -6512,6 +6512,8 @@ mark.ann-mark.ann-mark-dispute:hover {
   background: var(--bg-pane);
   border: 1px solid var(--border);
   border-radius: 2px;
+  max-height: 60vh;
+  overflow-y: auto;
 }
 .trace-head-config-group + .trace-head-config-group {
   margin-top: 12px;
@@ -6525,6 +6527,15 @@ mark.ann-mark.ann-mark-dispute:hover {
   text-transform: uppercase;
   color: var(--fg-dim);
   margin-bottom: 4px;
+}
+
+.trace-head-config-body .tc-row {
+  align-items: flex-start;
+}
+.trace-head-config-body .tc-row-key {
+  width: 220px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .trace-head-spend {
@@ -7827,6 +7838,33 @@ mark.ann-mark.ann-mark-dispute:hover {
   border: 1px solid var(--node-judgement);
   padding: 1px 5px;
   border-radius: 2px;
+}
+.trace-pick-row-status {
+  font-family: var(--font-mono-stack);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 1px 5px;
+  border-radius: 2px;
+  border: 1px solid transparent;
+}
+.trace-pick-row-status-complete {
+  color: var(--node-claim);
+  border-color: var(--node-claim);
+  background: var(--node-claim-bg);
+}
+.trace-pick-row-status-running,
+.trace-pick-row-status-pending,
+.trace-pick-row-status-paused {
+  color: var(--node-hypothesis);
+  border-color: var(--node-hypothesis);
+  background: var(--node-hypothesis-bg);
+}
+.trace-pick-row-status-failed,
+.trace-pick-row-status-cancelled {
+  color: var(--node-uncertainty);
+  border-color: var(--node-uncertainty);
+  background: var(--node-uncertainty-bg);
 }
 .trace-pick-row-q {
   font-family: var(--font-body-stack);

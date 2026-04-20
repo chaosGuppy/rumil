@@ -2781,6 +2781,67 @@ export type Project = {
 };
 
 /**
+ * ProjectRunSummaryOut
+ *
+ * Eager runs-index card: ``RunListItemOut`` + aggregates needed to
+ * render a run's status, cost, duration, and root call_type without a
+ * per-run trace-tree fetch. Populated from one calls query across the
+ * project in ``list_runs_summary_for_project``.
+ */
+export type ProjectRunSummaryOut = {
+    /**
+     * Run Id
+     */
+    run_id: string | null;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Config
+     */
+    config: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Question Summary
+     */
+    question_summary: string | null;
+    /**
+     * Staged
+     */
+    staged: boolean;
+    /**
+     * Hidden
+     */
+    hidden: boolean;
+    /**
+     * Status
+     */
+    status: string | null;
+    /**
+     * Root Call Type
+     */
+    root_call_type: string | null;
+    /**
+     * Total Cost Usd
+     */
+    total_cost_usd: number;
+    /**
+     * Total Duration Ms
+     */
+    total_duration_ms: number;
+    /**
+     * Total Calls
+     */
+    total_calls: number;
+};
+
+/**
  * ProjectStatsOut
  */
 export type ProjectStatsOut = {
@@ -4397,6 +4458,38 @@ export type ListProjectRunsApiProjectsProjectIdRunsGetResponses = {
 };
 
 export type ListProjectRunsApiProjectsProjectIdRunsGetResponse = ListProjectRunsApiProjectsProjectIdRunsGetResponses[keyof ListProjectRunsApiProjectsProjectIdRunsGetResponses];
+
+export type ListProjectRunsSummaryApiProjectsProjectIdRunsSummaryGetData = {
+    body?: never;
+    path: {
+        /**
+         * Project Id
+         */
+        project_id: string;
+    };
+    query?: never;
+    url: '/api/projects/{project_id}/runs-summary';
+};
+
+export type ListProjectRunsSummaryApiProjectsProjectIdRunsSummaryGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListProjectRunsSummaryApiProjectsProjectIdRunsSummaryGetError = ListProjectRunsSummaryApiProjectsProjectIdRunsSummaryGetErrors[keyof ListProjectRunsSummaryApiProjectsProjectIdRunsSummaryGetErrors];
+
+export type ListProjectRunsSummaryApiProjectsProjectIdRunsSummaryGetResponses = {
+    /**
+     * Response List Project Runs Summary Api Projects  Project Id  Runs Summary Get
+     *
+     * Successful Response
+     */
+    200: Array<ProjectRunSummaryOut>;
+};
+
+export type ListProjectRunsSummaryApiProjectsProjectIdRunsSummaryGetResponse = ListProjectRunsSummaryApiProjectsProjectIdRunsSummaryGetResponses[keyof ListProjectRunsSummaryApiProjectsProjectIdRunsSummaryGetResponses];
 
 export type ListProjectBoundaryExchangesApiProjectsProjectIdLlmBoundaryExchangesGetData = {
     body?: never;
@@ -6710,6 +6803,34 @@ export type ChatStreamApiChatStreamPostErrors = {
 export type ChatStreamApiChatStreamPostError = ChatStreamApiChatStreamPostErrors[keyof ChatStreamApiChatStreamPostErrors];
 
 export type ChatStreamApiChatStreamPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type ChatConversationEventsApiChatConversationsConversationIdEventsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Conversation Id
+         */
+        conversation_id: string;
+    };
+    query?: never;
+    url: '/api/chat/conversations/{conversation_id}/events';
+};
+
+export type ChatConversationEventsApiChatConversationsConversationIdEventsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ChatConversationEventsApiChatConversationsConversationIdEventsGetError = ChatConversationEventsApiChatConversationsConversationIdEventsGetErrors[keyof ChatConversationEventsApiChatConversationsConversationIdEventsGetErrors];
+
+export type ChatConversationEventsApiChatConversationsConversationIdEventsGetResponses = {
     /**
      * Successful Response
      */

@@ -572,6 +572,12 @@
   font-size: 12px;
 }
 
+.trace-info-text {
+  color: #4a7a8a;
+  font-size: 13px;
+  font-style: italic;
+}
+
 .trace-warning-text {
   color: #8a6508;
   font-size: 13px;
@@ -1294,6 +1300,7 @@
   .trace-cache-pct { color: #4dd88a; }
   .trace-token-count { color: #666; }
   .trace-duration { color: #666; }
+  .trace-info-text { color: #5ba8b8; }
   .trace-warning-text { color: #d4a017; }
   .trace-error-text { color: #e55; }
   .trace-error-phase { background: #3a1c1c; color: #e88; }

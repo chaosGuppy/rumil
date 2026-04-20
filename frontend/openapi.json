@@ -748,7 +748,7 @@
     "/api/projects/{project_id}/stats": {
       "get": {
         "summary": "Get Project Stats",
-        "description": "Aggregate stats over all pages/links/calls in a project.\n\nv1 is baseline-only: rows with staged=true or is_superseded=true are excluded,\nand staged_run_id is not accepted.",
+        "description": "Aggregate stats over all pages/links/calls in a project.\n\nBaseline rows are always included; when `staged_run_id` is provided as a\nquery param, rows from that staged run are also included and its mutation\nevents (supersede_page, delete_link) are overlayed.",
         "operationId": "get_project_stats_api_projects__project_id__stats_get",
         "parameters": [
           {
@@ -758,6 +758,22 @@
             "schema": {
               "type": "string",
               "title": "Project Id"
+            }
+          },
+          {
+            "name": "staged_run_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Staged Run Id"
             }
           }
         ],
@@ -788,7 +804,7 @@
     "/api/pages/{page_id}/stats": {
       "get": {
         "summary": "Get Question Stats",
-        "description": "Aggregate stats over the 2-hop undirected neighborhood around a question.\n\nReturns 404 if the target page is not a question. v1 is baseline-only.",
+        "description": "Aggregate stats over the 2-hop undirected neighborhood around a question.\n\nReturns 404 if the target page is not a question. Staged-run visibility\nmatches get_project_stats.",
         "operationId": "get_question_stats_api_pages__page_id__stats_get",
         "parameters": [
           {
@@ -798,6 +814,22 @@
             "schema": {
               "type": "string",
               "title": "Page Id"
+            }
+          },
+          {
+            "name": "staged_run_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Staged Run Id"
             }
           },
           {
@@ -1210,6 +1242,9 @@
                         "$ref": "#/components/schemas/ViewCreatedEventOut"
                       },
                       {
+                        "$ref": "#/components/schemas/AutocompactEventOut"
+                      },
+                      {
                         "$ref": "#/components/schemas/PhaseSkippedEventOut"
                       },
                       {
@@ -1248,6 +1283,7 @@
                         "load_page": "#/components/schemas/LoadPageEventOut",
                         "link_subquestions_complete": "#/components/schemas/LinkSubquestionsCompleteEventOut",
                         "view_created": "#/components/schemas/ViewCreatedEventOut",
+                        "autocompact": "#/components/schemas/AutocompactEventOut",
                         "phase_skipped": "#/components/schemas/PhaseSkippedEventOut",
                         "global_phase_completed": "#/components/schemas/GlobalPhaseCompletedEventOut",
                         "update_view_phase_completed": "#/components/schemas/UpdateViewPhaseCompletedEventOut"
@@ -1875,6 +1911,36 @@
           "user_message"
         ],
         "title": "AgentStartedEventOut"
+      },
+      "AutocompactEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "autocompact",
+            "title": "Event",
+            "default": "autocompact"
+          },
+          "agent_id": {
+            "type": "string",
+            "title": "Agent Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "agent_id"
+        ],
+        "title": "AutocompactEventOut"
       },
       "Call": {
         "properties": {

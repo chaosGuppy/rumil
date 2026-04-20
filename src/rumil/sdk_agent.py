@@ -31,6 +31,7 @@ from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
 from rumil.tracing.trace_events import (
     AgentStartedEvent,
+    AutocompactEvent,
     LLMExchangeEvent,
     SubagentCompletedEvent,
     SubagentStartedEvent,
@@ -271,6 +272,17 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
     ) -> SyncHookJSONOutput:
         agent_id: str = input_data.get("agent_id", "")  # type: ignore[call-overload]
         child_call_id = subagent_calls.get(agent_id)
+
+        if not child_call_id:
+            # No matching SubagentStart — this is an internal Claude Code
+            # agent (e.g. compaction) that we didn't dispatch.
+            log.info(
+                "Auto-compaction detected (agent %s) — context was condensed mid-run",
+                agent_id,
+            )
+            await config.trace.record(AutocompactEvent(agent_id=agent_id))
+            return SyncHookJSONOutput()
+
         transcript_path: str = input_data.get("agent_transcript_path", "")  # type: ignore[call-overload]
         transcript = _read_subagent_transcript(transcript_path)
         summary = input_data.get("agent_result", "")  # type: ignore[call-overload]
@@ -280,7 +292,7 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
             summary = ""
 
         child_trace = subagent_traces.get(agent_id)
-        if child_trace and child_call_id and transcript.turns:
+        if child_trace and transcript.turns:
             for turn_num, turn in enumerate(transcript.turns, 1):
                 turn_cost = compute_cost(
                     model=settings.model,
@@ -349,21 +361,20 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
                 )
                 or None
             )
-        if child_call_id:
-            if child_trace and child_trace.total_cost_usd > 0:
-                child_call_cost: float | None = child_trace.total_cost_usd
-            else:
-                child_call_cost = cost_usd
-            await config.db.update_call_status(
-                child_call_id,
-                CallStatus.COMPLETE,
-                result_summary=summary if isinstance(summary, str) else "",
-                cost_usd=child_call_cost,
-            )
+        if child_trace and child_trace.total_cost_usd > 0:
+            child_call_cost: float | None = child_trace.total_cost_usd
+        else:
+            child_call_cost = cost_usd
+        await config.db.update_call_status(
+            child_call_id,
+            CallStatus.COMPLETE,
+            result_summary=summary if isinstance(summary, str) else "",
+            cost_usd=child_call_cost,
+        )
         await config.trace.record(
             SubagentCompletedEvent(
                 agent_id=agent_id,
-                child_call_id=child_call_id or "",
+                child_call_id=child_call_id,
                 summary=summary if isinstance(summary, str) else "",
                 input_tokens=transcript.input_tokens if has_usage else None,
                 output_tokens=transcript.output_tokens if has_usage else None,

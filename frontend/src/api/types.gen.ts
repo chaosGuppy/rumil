@@ -219,6 +219,28 @@ export type AgentStartedEventOut = {
 };
 
 /**
+ * AutocompactEventOut
+ */
+export type AutocompactEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'autocompact';
+    /**
+     * Agent Id
+     */
+    agent_id: string;
+};
+
+/**
  * Call
  */
 export type Call = {
@@ -2613,7 +2635,12 @@ export type GetProjectStatsApiProjectsProjectIdStatsGetData = {
          */
         project_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Staged Run Id
+         */
+        staged_run_id?: string | null;
+    };
     url: '/api/projects/{project_id}/stats';
 };
 
@@ -2644,6 +2671,10 @@ export type GetQuestionStatsApiPagesPageIdStatsGetData = {
         page_id: string;
     };
     query?: {
+        /**
+         * Staged Run Id
+         */
+        staged_run_id?: string | null;
         /**
          * Project Id
          */
@@ -2933,6 +2964,8 @@ export type GetCallEventsApiCallsCallIdEventsGetResponses = {
     } & LinkSubquestionsCompleteEventOut) | ({
         event: 'view_created';
     } & ViewCreatedEventOut) | ({
+        event: 'autocompact';
+    } & AutocompactEventOut) | ({
         event: 'phase_skipped';
     } & PhaseSkippedEventOut) | ({
         event: 'global_phase_completed';

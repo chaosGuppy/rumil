@@ -856,6 +856,12 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
         </div>
       )}
 
+      {event.event === "autocompact" && (
+        <div className="trace-event-body trace-info-text">
+          Context was automatically condensed mid-run (agent {event.agent_id.slice(0, 8)})
+        </div>
+      )}
+
       {event.event === "warning" && (
         <div className="trace-event-body trace-warning-text">
           {event.message}

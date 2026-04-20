@@ -256,6 +256,11 @@ class ViewCreatedEvent(BaseModel):
     superseded_view_id: str | None = None
 
 
+class AutocompactEvent(BaseModel):
+    event: Literal["autocompact"] = "autocompact"
+    agent_id: str
+
+
 class PhaseSkippedEvent(BaseModel):
     event: Literal["phase_skipped"] = "phase_skipped"
     phase: str = ""
@@ -304,6 +309,7 @@ TraceEvent = Annotated[
     | LoadPageEvent
     | LinkSubquestionsCompleteEvent
     | ViewCreatedEvent
+    | AutocompactEvent
     | PhaseSkippedEvent
     | GlobalPhaseCompletedEvent
     | UpdateViewPhaseCompletedEvent,

@@ -46,7 +46,7 @@ class MoveResult:
 
 
 class MoveState:
-    """Tracks what happened during a run_call."""
+    """Tracks what happened during a call's workspace-update stage."""
 
     def __init__(self, call: Call, db: DB):
         self.call = call

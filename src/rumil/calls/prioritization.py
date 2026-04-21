@@ -37,7 +37,7 @@ async def run_prioritization_call(
 ) -> RunCallResult:
     """Run a prioritization call with tool use (single LLM round).
 
-    Binds dispatch tools and available moves. No phase-1 page loading.
+    Binds dispatch tools and available moves.
     """
     log.info(
         "run_prioritization_call: call=%s, scope=%s",

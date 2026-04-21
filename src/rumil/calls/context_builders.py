@@ -12,8 +12,6 @@ from pydantic import BaseModel, Field
 from rumil.calls.common import (
     ABSTRACT_INSTRUCTION,
     PageSummaryItem,
-    _format_loaded_pages,
-    _run_phase1,
     resolve_page_refs,
     save_page_abstracts,
 )
@@ -60,26 +58,6 @@ async def _record_context_built(
             source_page_id=source_page_id,
         )
     )
-
-
-async def _do_phase1(
-    infra: CallInfra,
-    call_type: CallType,
-    context_text: str,
-) -> tuple[str, list[str]]:
-    """Run phase1 page loading and return (updated context_text, phase1_ids)."""
-    system_prompt = build_system_prompt(call_type.value)
-    phase1_ids = await _run_phase1(
-        system_prompt,
-        context_text,
-        infra.call.id,
-        infra.state,
-        infra.db,
-    )
-    if phase1_ids:
-        extra_text = await _format_loaded_pages(phase1_ids, infra.db)
-        context_text += "\n\n## Loaded Pages\n\n" + extra_text
-    return context_text, phase1_ids
 
 
 class CreateViewContext(ContextBuilder):
@@ -154,7 +132,7 @@ class CreateViewContext(ContextBuilder):
 
 
 class EmbeddingContext(ContextBuilder):
-    """Embedding-based context (no phase1). Used by embedding variants."""
+    """Embedding-based context. Used by embedding variants."""
 
     def __init__(
         self,

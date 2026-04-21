@@ -11,9 +11,7 @@ from anthropic.types import ServerToolUseBlock, ToolUseBlock
 from pydantic import BaseModel, Field
 
 from rumil.calls.common import (
-    RunCallResult,
     execute_tool_uses,
-    extract_loaded_page_ids,
     prepare_tools,
     record_round_moves,
     run_agent_loop,
@@ -34,6 +32,7 @@ from rumil.models import (
 from rumil.moves.create_claim import (
     execute_with_source_creation,
 )
+from rumil.moves.load_page import LoadPagePayload
 from rumil.moves.registry import MOVES
 from rumil.settings import get_settings
 
@@ -67,9 +66,7 @@ class SimpleAgentLoop(WorkspaceUpdater):
         if max_rounds is None:
             max_rounds = 1 if settings.is_smoke_test else 3
 
-        infra.state.context_page_ids = (
-            set(context.working_page_ids) | set(context.preloaded_ids) | set(context.phase1_ids)
-        )
+        infra.state.context_page_ids = set(context.working_page_ids) | set(context.preloaded_ids)
         moves_list = (
             list(self._available_moves) if self._available_moves is not None else list(MoveType)
         )
@@ -99,18 +96,16 @@ class SimpleAgentLoop(WorkspaceUpdater):
             len(infra.state.moves),
         )
 
-        result = RunCallResult(
-            created_page_ids=infra.state.created_page_ids,
-            dispatches=infra.state.dispatches,
-            moves=infra.state.moves,
-            phase1_page_ids=context.phase1_ids,
-            agent_result=agent_result,
-        )
-
-        phase2_loaded = await extract_loaded_page_ids(result, infra.db)
-        all_loaded_ids = list(
-            dict.fromkeys([*context.preloaded_ids, *context.phase1_ids, *phase2_loaded])
-        )
+        loaded_raw: list[str] = []
+        for move in infra.state.moves:
+            if move.move_type is MoveType.LOAD_PAGE and isinstance(move.payload, LoadPagePayload):
+                loaded_raw.append(move.payload.page_id)
+        resolved_loaded: list[str] = []
+        for raw in loaded_raw:
+            full = await infra.db.resolve_page_id(raw)
+            if full:
+                resolved_loaded.append(full)
+        all_loaded_ids = list(dict.fromkeys([*context.preloaded_ids, *resolved_loaded]))
 
         return UpdateResult(
             created_page_ids=infra.state.created_page_ids,
@@ -171,9 +166,7 @@ class MultiRoundLoop(WorkspaceUpdater):
         infra: CallInfra,
         context: ContextResult,
     ) -> UpdateResult:
-        infra.state.context_page_ids = (
-            set(context.working_page_ids) | set(context.preloaded_ids) | set(context.phase1_ids)
-        )
+        infra.state.context_page_ids = set(context.working_page_ids) | set(context.preloaded_ids)
         moves_list = (
             list(self._available_moves) if self._available_moves is not None else list(MoveType)
         )
@@ -315,9 +308,7 @@ class WebResearchLoop(WorkspaceUpdater):
         max_rounds = 2 if settings.is_smoke_test else 5
         client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
 
-        infra.state.context_page_ids = (
-            set(context.working_page_ids) | set(context.preloaded_ids) | set(context.phase1_ids)
-        )
+        infra.state.context_page_ids = set(context.working_page_ids) | set(context.preloaded_ids)
         server_tools = self._build_server_tools()
         moves_list = (
             list(self._available_moves)

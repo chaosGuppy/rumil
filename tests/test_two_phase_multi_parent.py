@@ -1,16 +1,8 @@
-"""Multi-parent behaviour pins.
+"""Multi-parent dedup invariants (post-rearch).
 
-Today, a question with two parents gets dispatched twice when each
-parent's prioritizer independently targets it — there is no
-subscription or dedup layer. The prioritizer rearch will introduce
-subscriptions so that one investigation can reuse another's result.
-
-These tests split into two groups:
-* **Current behaviour (non-xfail)** — pins duplicate dispatch so we
-  notice if it silently changes.
-* **Rearch target (xfail)** — specifies the post-rearch semantics.
-  When the rearch lands, these should start passing; the rearch
-  author should flip ``strict=False`` → ``strict=True``.
+After the V1 prioritiser rearch, a question with two parents is
+dispatched exactly once across the run: the prioritiser registry (per
+root DB) dedups non-scope dispatches on a shared target.
 """
 
 import pytest
@@ -64,49 +56,6 @@ async def _link_child(db, parent: Page, child: Page) -> None:
 
 
 @pytest.mark.asyncio
-async def test_multi_parent_child_gets_dispatched_twice_today(tmp_db, prio_harness):
-    """Two parents each prioritizing the same child → two scout calls on that child.
-
-    This pins *current* behavior. When the rearch introduces subscriptions,
-    this test will start failing — at which point the rearch author should
-    delete this test and un-xfail the sibling target-behavior test.
-    """
-    p1 = await _make_question(tmp_db, "Parent one.")
-    p2 = await _make_question(tmp_db, "Parent two.")
-    child = await _make_question(tmp_db, "Shared child.")
-    await _link_child(tmp_db, p1, child)
-    await _link_child(tmp_db, p2, child)
-
-    await tmp_db.init_budget(30)
-    prio_harness.prio_queue = [
-        RunCallResult(dispatches=[_scout_dispatch(p1.id, "seed p1")]),
-        RunCallResult(dispatches=[_scout_dispatch(child.id, "p1 targets child")]),
-        RunCallResult(dispatches=[]),
-        RunCallResult(dispatches=[_scout_dispatch(p2.id, "seed p2")]),
-        RunCallResult(dispatches=[_scout_dispatch(child.id, "p2 targets child")]),
-        RunCallResult(dispatches=[]),
-    ]
-
-    orch_p1 = TwoPhaseOrchestrator(tmp_db)
-    await orch_p1.run(p1.id)
-    orch_p2 = TwoPhaseOrchestrator(tmp_db)
-    await orch_p2.run(p2.id)
-
-    child_scouts = [
-        d
-        for d in prio_harness.dispatched
-        if d["question_id"] == child.id and d["call_type"] == CallType.FIND_CONSIDERATIONS.value
-    ]
-    assert len(child_scouts) >= 2, (
-        f"expected ≥2 scout dispatches on shared child (today's behavior), got {len(child_scouts)}"
-    )
-
-
-@pytest.mark.xfail(
-    reason="rearch target: subscriptions should dedup cross-parent dispatches",
-    strict=False,
-)
-@pytest.mark.asyncio
 async def test_multi_parent_dedup_across_parents(tmp_db, prio_harness):
     """Post-rearch target: a shared child should be investigated exactly once across parents.
 
@@ -144,19 +93,14 @@ async def test_multi_parent_dedup_across_parents(tmp_db, prio_harness):
     )
 
 
-@pytest.mark.xfail(
-    reason="rearch target: concurrent prio on the same question should subscribe, not duplicate",
-    strict=False,
-)
 @pytest.mark.asyncio
 async def test_prio_on_question_with_running_prio_uses_subscription(
     tmp_db, question_page, prio_harness
 ):
-    """Post-rearch: a second prioritizer targeting an in-flight question subscribes to the first.
+    """A second prioritizer targeting an in-flight question subscribes to the first.
 
-    Exact subscription shape is TBD by the rearch. This placeholder asserts
-    the minimum required invariant: no duplicate PRIORITIZATION call row is
-    created on the same question when one is already running.
+    Asserts the minimum required invariant: no duplicate PRIORITIZATION call
+    row is created on the same question when one is already running.
     """
     await tmp_db.init_budget(30)
     prio_harness.prio_queue = [

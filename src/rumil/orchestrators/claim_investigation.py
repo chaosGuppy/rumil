@@ -115,12 +115,22 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
 
     async def run(self, root_question_id: str) -> None:
         claim_id = root_question_id
+        registry = self.db.prioritiser_registry()
+        prio, is_new = await registry.get_or_acquire(claim_id, kind="claim")
+        if not is_new:
+            log.info(
+                "ClaimInvestigationOrchestrator: claim %s already has a prioritiser; awaiting",
+                claim_id[:8],
+            )
+            await prio.await_completion()
+            return
         own_db = await self.db.fork()
         self.db = own_db
         await self._setup()
         remaining = await self.db.budget_remaining()
         effective = self._effective_budget(remaining)
         if effective < MIN_TWOPHASE_BUDGET:
+            await prio.mark_done()
             raise ValueError(
                 "ClaimInvestigationOrchestrator requires a budget of at least "
                 f"{MIN_TWOPHASE_BUDGET}, got {effective}"
@@ -208,6 +218,7 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
                 if last_call:
                     break
         finally:
+            await prio.mark_done()
             await self._teardown()
             await own_db.close()
 

@@ -1,11 +1,11 @@
 """
-Registry-based dispatch handling for BaseOrchestrator._execute_dispatch.
+Registry-based dispatch handling for DispatchRunner._execute_dispatch.
 
 Each payload type in DISPATCH_HANDLERS maps to an async handler that performs
-the actual dispatch: invoking the right call-side helper or _run_simple_call_dispatch
-with the right CallType / CallRunner class. Adding a new dispatchable call type
-means adding an entry to DISPATCH_HANDLERS; no changes to BaseOrchestrator are
-required.
+the actual dispatch: invoking the right call-side helper or
+``dispatcher._run_simple_call_dispatch`` with the right CallType / CallRunner
+class. Adding a new dispatchable call type means adding an entry to
+DISPATCH_HANDLERS; no changes to DispatchRunner are required.
 """
 
 import logging
@@ -29,6 +29,7 @@ from rumil.calls.scout_paradigm_cases import ScoutParadigmCasesCall
 from rumil.calls.scout_subquestions import ScoutSubquestionsCall
 from rumil.calls.scout_web_questions import ScoutWebQuestionsCall
 from rumil.calls.stages import CallRunner
+from rumil.database import DB
 from rumil.models import (
     AssessDispatchPayload,
     BaseDispatchPayload,
@@ -60,9 +61,10 @@ from rumil.orchestrators.common import (
     update_view_for_question,
     web_research_question,
 )
+from rumil.tracing.broadcast import Broadcaster
 
 if TYPE_CHECKING:
-    from rumil.orchestrators.base import BaseOrchestrator
+    from rumil.prioritisers.dispatch import DispatchRunner
 
 
 log = logging.getLogger(__name__)
@@ -72,13 +74,17 @@ log = logging.getLogger(__name__)
 class DispatchContext:
     """Bundle of per-dispatch state passed to each handler.
 
-    Carries the orchestrator itself (so handlers can call
-    _run_simple_call_dispatch, access self.db, etc.), the resolved
-    target question ID, and the infrastructure fields that need to
-    flow into the underlying call-side helper.
+    Carries the infra fields that underlying call-side helpers need
+    (db, broadcaster, summarise_before_assess), the dispatcher reference
+    (for recursive ``_run_simple_call_dispatch`` use inside scout-family
+    handlers), the resolved target question ID, and the sequence/parent
+    bookkeeping.
     """
 
-    orchestrator: "BaseOrchestrator"
+    db: DB
+    broadcaster: Broadcaster | None
+    summarise_before_assess: bool
+    dispatcher: "DispatchRunner"
     resolved_question_id: str
     parent_call_id: str | None
     force: bool
@@ -104,12 +110,12 @@ async def _handle_find_considerations(
     )
     _, child_ids = await find_considerations_until_done(
         ctx.resolved_question_id,
-        ctx.orchestrator.db,
+        ctx.db,
         max_rounds=payload.max_rounds,
         fruit_threshold=payload.fruit_threshold,
         parent_call_id=ctx.parent_call_id,
         context_page_ids=payload.context_page_ids,
-        broadcaster=ctx.orchestrator.broadcaster,
+        broadcaster=ctx.broadcaster,
         force=ctx.force,
         call_id=ctx.call_id,
         sequence_id=ctx.sequence_id,
@@ -125,8 +131,7 @@ async def _handle_assess(ctx: DispatchContext, payload: BaseDispatchPayload) -> 
     (incremental view update). Otherwise run a normal assess call.
     """
     assert isinstance(payload, AssessDispatchPayload)
-    db = ctx.orchestrator.db
-    existing_view = await db.get_view_for_question(ctx.resolved_question_id)
+    existing_view = await ctx.db.get_view_for_question(ctx.resolved_question_id)
     if existing_view:
         log.info(
             "Dispatch: assess redirected to update_view for %s (has view) — %s",
@@ -135,10 +140,10 @@ async def _handle_assess(ctx: DispatchContext, payload: BaseDispatchPayload) -> 
         )
         return await update_view_for_question(
             ctx.resolved_question_id,
-            db,
+            ctx.db,
             parent_call_id=ctx.parent_call_id,
             context_page_ids=payload.context_page_ids,
-            broadcaster=ctx.orchestrator.broadcaster,
+            broadcaster=ctx.broadcaster,
             force=ctx.force,
             call_id=ctx.call_id,
             sequence_id=ctx.sequence_id,
@@ -147,15 +152,15 @@ async def _handle_assess(ctx: DispatchContext, payload: BaseDispatchPayload) -> 
     log.info("Dispatch: assess on %s — %s", ctx.d_label, payload.reason)
     return await assess_question(
         ctx.resolved_question_id,
-        db,
+        ctx.db,
         parent_call_id=ctx.parent_call_id,
         context_page_ids=payload.context_page_ids,
-        broadcaster=ctx.orchestrator.broadcaster,
+        broadcaster=ctx.broadcaster,
         force=ctx.force,
         call_id=ctx.call_id,
         sequence_id=ctx.sequence_id,
         sequence_position=ctx.sequence_position,
-        summarise=ctx.orchestrator.summarise_before_assess,
+        summarise=ctx.summarise_before_assess,
     )
 
 
@@ -164,10 +169,10 @@ async def _handle_create_view(ctx: DispatchContext, payload: BaseDispatchPayload
     log.info("Dispatch: create_view on %s — %s", ctx.d_label, payload.reason)
     return await create_view_for_question(
         ctx.resolved_question_id,
-        ctx.orchestrator.db,
+        ctx.db,
         parent_call_id=ctx.parent_call_id,
         context_page_ids=payload.context_page_ids,
-        broadcaster=ctx.orchestrator.broadcaster,
+        broadcaster=ctx.broadcaster,
         force=ctx.force,
         call_id=ctx.call_id,
         sequence_id=ctx.sequence_id,
@@ -180,9 +185,9 @@ async def _handle_web_research(ctx: DispatchContext, payload: BaseDispatchPayloa
     log.info("Dispatch: web_research on %s — %s", ctx.d_label, payload.reason)
     return await web_research_question(
         ctx.resolved_question_id,
-        ctx.orchestrator.db,
+        ctx.db,
         parent_call_id=ctx.parent_call_id,
-        broadcaster=ctx.orchestrator.broadcaster,
+        broadcaster=ctx.broadcaster,
         force=ctx.force,
         call_id=ctx.call_id,
         sequence_id=ctx.sequence_id,
@@ -198,8 +203,8 @@ def _make_scout_handler(
     """Factory for the 15 scope-only scout-family handlers.
 
     Each scout-family dispatch reduces to the same call:
-    _run_simple_call_dispatch(resolved, call_type, call_cls, ...) with
-    max_rounds/fruit_threshold carried from the payload. Only the
+    ``dispatcher._run_simple_call_dispatch(resolved, call_type, call_cls, ...)``
+    with max_rounds/fruit_threshold carried from the payload. Only the
     (call_type, call_cls, log_label) triple varies between them.
     """
 
@@ -212,7 +217,7 @@ def _make_scout_handler(
             payload.max_rounds,
             payload.reason,
         )
-        return await ctx.orchestrator._run_simple_call_dispatch(
+        return await ctx.dispatcher._run_simple_call_dispatch(
             ctx.resolved_question_id,
             call_type,
             call_cls,

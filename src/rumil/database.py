@@ -35,6 +35,7 @@ from rumil.models import (
     Project,
     Workspace,
 )
+from rumil.prioritisers.registry import PrioritiserRegistry
 from rumil.settings import get_settings
 from supabase import AsyncClient, acreate_client
 
@@ -244,6 +245,7 @@ class DB:
         self._semaphore = asyncio.Semaphore(get_settings().db_max_concurrent_queries)
         self._prod: bool = False
         self._mutation_cache: MutationState | None = None
+        self._prioritiser_registry: PrioritiserRegistry | None = None
 
     @classmethod
     async def create(
@@ -272,6 +274,9 @@ class DB:
         Shares run_id, project_id, and staged flag with the parent but gets
         its own HTTP connection. Use this to scope connections to a single
         call, avoiding HTTP/2 stream exhaustion on long-running jobs.
+
+        The prioritiser registry is lazily initialised on the parent and
+        shared with the fork so sibling orchestrators can coordinate dedup.
         """
         url, key = get_settings().get_supabase_credentials(self._prod)
         client = await acreate_client(url, key, options=AsyncClientOptions(schema="public"))
@@ -282,7 +287,16 @@ class DB:
             staged=self.staged,
         )
         db._prod = self._prod
+        if self._prioritiser_registry is None:
+            self._prioritiser_registry = PrioritiserRegistry()
+        db._prioritiser_registry = self._prioritiser_registry
         return db
+
+    def prioritiser_registry(self) -> PrioritiserRegistry:
+        """Return the per-root-DB prioritiser registry, initialising on first access."""
+        if self._prioritiser_registry is None:
+            self._prioritiser_registry = PrioritiserRegistry()
+        return self._prioritiser_registry
 
     async def close(self) -> None:
         """Close the underlying HTTP connections."""

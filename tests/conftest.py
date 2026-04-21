@@ -24,7 +24,7 @@ from rumil.models import (
     PageType,
     Workspace,
 )
-from rumil.orchestrators.base import BaseOrchestrator
+from rumil.prioritisers.dispatch import DispatchRunner
 from rumil.settings import override_settings
 
 
@@ -337,6 +337,6 @@ async def prio_harness(tmp_db, mocker):
         kwargs["parent_call_id"] = parent_call_id
         return await harness.simulate_dispatch(call_type, question_id, **kwargs)
 
-    mocker.patch.object(BaseOrchestrator, "_run_simple_call_dispatch", _fake_simple)
+    mocker.patch.object(DispatchRunner, "_run_simple_call_dispatch", _fake_simple)
 
     return harness

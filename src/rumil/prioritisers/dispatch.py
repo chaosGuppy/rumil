@@ -1,0 +1,272 @@
+"""DispatchRunner: shared dispatch plumbing.
+
+Lifted from the old ``BaseOrchestrator`` so that both the per-question
+``Prioritiser`` actors and the (shrunken) orchestrator facades can reuse
+the same dispatch machinery. The mixin owns:
+
+* ``_run_simple_call_dispatch`` — singleton-call dispatch path used by
+  the scout-family handlers.
+* ``_run_dispatch_sequence`` / ``_run_sequences`` — multi-step
+  sequence runners (scout → auto-assess etc.).
+* ``_execute_dispatch`` — resolves the target, applies the non-scope
+  dedup check on the shared registry, and invokes the handler
+  registered in ``DISPATCH_HANDLERS``.
+* ``_paced_budget`` / ``_pacing_params`` — budget pacing helpers.
+
+Tests patch ``_run_simple_call_dispatch`` at class-attribute level via
+``mocker.patch.object(DispatchRunner, ...)``.
+"""
+
+import asyncio
+import logging
+import uuid
+from collections.abc import Sequence
+
+from rumil.calls.stages import CallRunner
+from rumil.constants import SMOKE_TEST_MAX_ROUNDS, compute_round_budget
+from rumil.database import DB
+from rumil.models import (
+    AssessDispatchPayload,
+    CallType,
+    Dispatch,
+)
+from rumil.orchestrators.dispatch_handlers import (
+    DISPATCH_HANDLERS,
+    DispatchContext,
+)
+from rumil.settings import get_settings
+from rumil.tracing.broadcast import Broadcaster
+from rumil.tracing.trace_events import DispatchExecutedEvent
+from rumil.tracing.tracer import get_trace
+
+log = logging.getLogger(__name__)
+
+
+class DispatchRunner:
+    """Mixin providing dispatch execution primitives.
+
+    Concrete mixers must expose ``self.db``, ``self.broadcaster``, and
+    ``self.summarise_before_assess`` as attributes.
+    """
+
+    db: DB
+    broadcaster: Broadcaster | None
+    summarise_before_assess: bool
+
+    async def _pacing_params(self) -> tuple[int, int]:
+        """Return (total, used) for budget pacing.
+
+        Subclasses with budget_cap should override to use their local scope.
+        """
+        return await self.db.get_budget()
+
+    async def _paced_budget(self, effective: int) -> int:
+        """Apply budget pacing to an effective budget, if enabled."""
+        if not get_settings().budget_pacing_enabled:
+            return effective
+        total, used = await self._pacing_params()
+        paced = min(effective, compute_round_budget(total, used))
+        log.info("Budget pacing: effective=%d, round_allocation=%d", effective, paced)
+        return paced
+
+    async def _run_simple_call_dispatch(
+        self,
+        question_id: str,
+        call_type: CallType,
+        cls: type[CallRunner],
+        parent_call_id: str | None,
+        force: bool = False,
+        call_id: str | None = None,
+        sequence_id: str | None = None,
+        sequence_position: int | None = None,
+        max_rounds: int = 5,
+        fruit_threshold: int = 4,
+    ) -> str | None:
+        """Run a call dispatch with optional multi-round support.
+
+        Budget consumption is handled internally by MultiRoundLoop
+        (one unit per round), matching how find_considerations works.
+        """
+        if get_settings().is_smoke_test:
+            max_rounds = min(max_rounds, SMOKE_TEST_MAX_ROUNDS)
+
+        if force and await self.db.budget_remaining() <= 0:
+            await self.db.add_budget(1)
+
+        call = await self.db.create_call(
+            call_type,
+            scope_page_id=question_id,
+            parent_call_id=parent_call_id,
+            call_id=call_id,
+            sequence_id=sequence_id,
+            sequence_position=sequence_position,
+        )
+        instance = cls(
+            question_id,
+            call,
+            self.db,
+            broadcaster=self.broadcaster,
+            max_rounds=max_rounds,
+            fruit_threshold=fruit_threshold,
+        )
+        await instance.run()
+        return call.id
+
+    async def _run_dispatch_sequence(
+        self,
+        sequence: Sequence[Dispatch],
+        scope_question_id: str,
+        parent_call_id: str | None,
+        base_index: int,
+        position_in_batch: int = 0,
+    ) -> bool:
+        """Run dispatches in a sequence sequentially. Returns True if any executed.
+
+        All dispatches in the sequence are guaranteed to run: if budget
+        is exhausted mid-sequence, subsequent dispatches force-consume
+        so that trailing calls (e.g. auto-assess) are never skipped.
+
+        Child call IDs are pre-generated so that DispatchExecutedEvents
+        can be recorded before execution begins, making dispatch links
+        clickable in the trace frontend immediately.
+        """
+        is_multi_step = len(sequence) > 1
+        seq_id: str | None = None
+        if is_multi_step:
+            call_sequence = await self.db.create_call_sequence(
+                parent_call_id=parent_call_id,
+                scope_question_id=scope_question_id,
+                position_in_batch=position_in_batch,
+            )
+            seq_id = call_sequence.id
+
+        pre_ids = [str(uuid.uuid4()) for _ in sequence]
+        raw_qids = [d.payload.question_id for d in sequence]
+        resolved_map = await self.db.resolve_page_ids(raw_qids)
+        resolves = [resolved_map.get(qid) or scope_question_id for qid in raw_qids]
+        pages = await self.db.get_pages_by_ids([r for r in resolves if r is not None])
+        headlines = [pages[r].headline if r in pages else "" for r in resolves]
+
+        trace = get_trace()
+        if trace:
+            for i, dispatch in enumerate(sequence):
+                await trace.record(
+                    DispatchExecutedEvent(
+                        index=base_index + i,
+                        child_call_type=dispatch.call_type.value,
+                        question_id=resolves[i],
+                        question_headline=headlines[i],
+                        child_call_id=pre_ids[i],
+                    )
+                )
+
+        executed = False
+        seq_pos = 0
+        for i, dispatch in enumerate(sequence):
+            force = i > 0 and await self.db.budget_remaining() <= 0
+            await self._execute_dispatch(
+                dispatch,
+                scope_question_id,
+                parent_call_id,
+                force=force,
+                call_id=pre_ids[i],
+                sequence_id=seq_id,
+                sequence_position=seq_pos if is_multi_step else None,
+            )
+            if isinstance(dispatch.payload, AssessDispatchPayload):
+                seq_pos += 2 if self.summarise_before_assess else 1
+            else:
+                seq_pos += 1
+            executed = True
+        return executed
+
+    async def _execute_dispatch(
+        self,
+        dispatch: Dispatch,
+        scope_question_id: str,
+        parent_call_id: str | None,
+        *,
+        force: bool = False,
+        call_id: str | None = None,
+        sequence_id: str | None = None,
+        sequence_position: int | None = None,
+    ) -> tuple[str, str | None]:
+        """Execute a single dispatch.
+
+        When *force* is True, budget is expanded if needed so the call
+        always proceeds (used for trailing dispatches in a committed batch).
+
+        When *call_id* is provided, the child call will be created with
+        that ID (for eager link creation in traces).
+
+        Returns (resolved_question_id, child_call_id).
+        """
+        p = dispatch.payload
+
+        resolved = await self.db.resolve_page_id(p.question_id)
+        if not resolved:
+            log.warning(
+                "Dispatch question ID not found: %s, falling back to scope",
+                p.question_id[:8],
+            )
+            resolved = scope_question_id
+
+        if resolved != scope_question_id:
+            registry = self.db.prioritiser_registry()
+            if not await registry.should_execute_non_scope_dispatch(resolved, dispatch.call_type):
+                log.info(
+                    "Skipping duplicate non-scope dispatch: %s on %s (already dispatched)",
+                    dispatch.call_type.value,
+                    resolved[:8],
+                )
+                return resolved, None
+
+        d_label = await self.db.page_label(resolved)
+
+        handler = DISPATCH_HANDLERS.get(type(p))
+        if handler is None:
+            log.warning(
+                "No dispatch handler registered for payload type %s",
+                type(p).__name__,
+            )
+            return resolved, None
+
+        ctx = DispatchContext(
+            db=self.db,
+            broadcaster=self.broadcaster,
+            summarise_before_assess=self.summarise_before_assess,
+            dispatcher=self,
+            resolved_question_id=resolved,
+            parent_call_id=parent_call_id,
+            force=force,
+            call_id=call_id,
+            sequence_id=sequence_id,
+            sequence_position=sequence_position,
+            d_label=d_label,
+        )
+        child_call_id = await handler(ctx, p)
+        return resolved, child_call_id
+
+    async def _run_sequences(
+        self,
+        sequences: Sequence[Sequence[Dispatch]],
+        scope_question_id: str,
+        call_id: str | None,
+    ) -> bool:
+        """Run multiple dispatch sequences concurrently. Returns True if any executed."""
+        base_index = 0
+        tasks = []
+        for batch_pos, seq in enumerate(sequences):
+            tasks.append(
+                self._run_dispatch_sequence(
+                    seq,
+                    scope_question_id,
+                    call_id,
+                    base_index,
+                    position_in_batch=batch_pos,
+                )
+            )
+            base_index += len(seq)
+
+        sequence_results = await asyncio.gather(*tasks)
+        return any(sequence_results)

@@ -125,12 +125,22 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         return p_call.id
 
     async def run(self, root_question_id: str) -> None:
+        registry = self.db.prioritiser_registry()
+        prio, is_new = await registry.get_or_acquire(root_question_id)
+        if not is_new:
+            log.info(
+                "ExperimentalOrchestrator: question %s already has a prioritiser; awaiting",
+                root_question_id[:8],
+            )
+            await prio.await_completion()
+            return
         own_db = await self.db.fork()
         self.db = own_db
         await self._setup()
         remaining = await self.db.budget_remaining()
         effective = self._effective_budget(remaining)
         if effective < MIN_TWOPHASE_BUDGET:
+            await prio.mark_done()
             raise ValueError(
                 "ExperimentalOrchestrator requires a budget of at least "
                 f"{MIN_TWOPHASE_BUDGET}, got {effective}"
@@ -214,6 +224,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
                         self._seq_position += 1
         finally:
             reset_experimental_scout_budget(budget_token)
+            await prio.mark_done()
             await self._teardown()
             await own_db.close()
 

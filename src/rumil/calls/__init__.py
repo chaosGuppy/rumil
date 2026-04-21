@@ -6,6 +6,7 @@ from rumil.calls.create_view import CreateViewCall
 from rumil.calls.find_considerations import FindConsiderationsCall
 from rumil.calls.ingest import IngestCall
 from rumil.calls.link_subquestions import LinkSubquestionsCall
+from rumil.calls.red_team import RedTeamCall
 from rumil.calls.scout_analogies import ScoutAnalogiesCall
 from rumil.calls.scout_c_cruxes import ScoutCCruxesCall
 from rumil.calls.scout_c_how_false import ScoutCHowFalseCall
@@ -18,7 +19,6 @@ from rumil.calls.scout_deep_questions import ScoutDeepQuestionsCall
 from rumil.calls.scout_estimates import ScoutEstimatesCall
 from rumil.calls.scout_factchecks import ScoutFactchecksCall
 from rumil.calls.scout_hypotheses import ScoutHypothesesCall
-from rumil.calls.red_team import RedTeamCall
 from rumil.calls.scout_paradigm_cases import ScoutParadigmCasesCall
 from rumil.calls.scout_subquestions import ScoutSubquestionsCall
 from rumil.calls.scout_web_questions import ScoutWebQuestionsCall

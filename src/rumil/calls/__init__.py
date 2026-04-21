@@ -18,6 +18,7 @@ from rumil.calls.scout_deep_questions import ScoutDeepQuestionsCall
 from rumil.calls.scout_estimates import ScoutEstimatesCall
 from rumil.calls.scout_factchecks import ScoutFactchecksCall
 from rumil.calls.scout_hypotheses import ScoutHypothesesCall
+from rumil.calls.red_team import RedTeamCall
 from rumil.calls.scout_paradigm_cases import ScoutParadigmCasesCall
 from rumil.calls.scout_subquestions import ScoutSubquestionsCall
 from rumil.calls.scout_web_questions import ScoutWebQuestionsCall
@@ -34,6 +35,7 @@ __all__ = [
     "FindConsiderationsCall",
     "IngestCall",
     "LinkSubquestionsCall",
+    "RedTeamCall",
     "ScoutAnalogiesCall",
     "ScoutCCruxesCall",
     "ScoutCHowFalseCall",

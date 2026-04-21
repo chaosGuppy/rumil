@@ -630,6 +630,34 @@ async def update_view_for_question(
     return call.id
 
 
+async def red_team_question(
+    question_id: str,
+    db: DB,
+    parent_call_id: str | None = None,
+    broadcaster=None,
+    force: bool = False,
+    sequence_id: str | None = None,
+    sequence_position: int | None = None,
+) -> str | None:
+    """Run a red-team call on a question. Returns call ID, or None if no budget."""
+    from rumil.calls.red_team import RedTeamCall
+
+    log.info("red_team_question: question=%s", question_id[:8])
+    if not await _consume_budget(db, force=force):
+        return None
+
+    call = await db.create_call(
+        CallType.RED_TEAM,
+        scope_page_id=question_id,
+        parent_call_id=parent_call_id,
+        sequence_id=sequence_id,
+        sequence_position=sequence_position,
+    )
+    instance = RedTeamCall(question_id, call, db, broadcaster=broadcaster)
+    await instance.run()
+    return call.id
+
+
 async def web_research_question(
     question_id: str,
     db: DB,

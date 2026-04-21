@@ -1026,6 +1026,13 @@ async def async_main():
         help="Smoke-test mode: use Haiku, fewer rounds, lower budget defaults",
     )
     parser.add_argument(
+        "--red-team",
+        dest="red_team",
+        action="store_true",
+        help="Enable red-teaming: structurally challenge the investigation's "
+        "overall picture after View creation",
+    )
+    parser.add_argument(
         "--force-twophase-recurse",
         dest="force_twophase_recurse",
         action="store_true",
@@ -1131,6 +1138,8 @@ async def async_main():
         get_settings().use_prod_db = "1"
     if args.no_trace:
         get_settings().tracing_enabled = False
+    if args.red_team:
+        get_settings().enable_red_team = True
     if args.force_twophase_recurse:
         get_settings().force_twophase_recurse = True
 

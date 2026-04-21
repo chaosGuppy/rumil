@@ -140,6 +140,14 @@ PRESETS: dict[str, AvailableMoves] = {
             MoveType.LOAD_PAGE,
             MoveType.PROPOSE_VIEW_ITEM,
         ],
+        CallType.RED_TEAM: [
+            MoveType.CREATE_CLAIM,
+            MoveType.CREATE_QUESTION,
+            MoveType.LINK_CONSIDERATION,
+            MoveType.LINK_CHILD_QUESTION,
+            MoveType.LOAD_PAGE,
+            MoveType.UPDATE_EPISTEMIC,
+        ],
         CallType.CREATE_VIEW: [
             MoveType.CREATE_VIEW_ITEM,
             MoveType.LOAD_PAGE,
@@ -281,6 +289,14 @@ PRESETS: dict[str, AvailableMoves] = {
             MoveType.LINK_CONSIDERATION,
             MoveType.LOAD_PAGE,
             MoveType.PROPOSE_VIEW_ITEM,
+        ],
+        CallType.RED_TEAM: [
+            MoveType.CREATE_CLAIM,
+            MoveType.CREATE_QUESTION,
+            MoveType.LINK_CONSIDERATION,
+            MoveType.LINK_CHILD_QUESTION,
+            MoveType.LOAD_PAGE,
+            MoveType.UPDATE_EPISTEMIC,
         ],
         CallType.CREATE_VIEW: [
             MoveType.CREATE_VIEW_ITEM,

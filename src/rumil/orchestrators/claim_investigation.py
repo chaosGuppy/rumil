@@ -20,7 +20,6 @@ from rumil.context import build_prioritization_context
 from rumil.database import DB
 from rumil.llm import build_system_prompt
 from rumil.models import (
-    AssessDispatchPayload,
     Call,
     CallType,
     Dispatch,
@@ -33,7 +32,6 @@ from rumil.orchestrators.base import BaseOrchestrator
 from rumil.orchestrators.common import (
     ClaimScore,
     PrioritizationResult,
-    assess_question,
     compute_priority_score,
     score_items_sequentially,
 )
@@ -50,6 +48,7 @@ from rumil.tracing.trace_events import (
     ScoringCompletedEvent,
 )
 from rumil.tracing.tracer import CallTrace, set_trace
+from rumil.views import get_active_view
 
 log = logging.getLogger(__name__)
 
@@ -193,7 +192,8 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
                 self._executed_since_last_plan = True
 
                 if self._invocation > 1 or last_call:
-                    await assess_question(
+                    view = get_active_view()
+                    await view.refresh(
                         claim_id,
                         self.db,
                         parent_call_id=self._parent_call_id,
@@ -203,7 +203,7 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
                         sequence_position=self._seq_position,
                     )
                     if self._sequence_id is not None:
-                        self._seq_position += 2
+                        self._seq_position += 1
 
                 if last_call:
                     break
@@ -628,17 +628,8 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
                     d.payload.budget,
                     d.payload.reason,
                 )
-            elif d.payload.question_id == claim_id:
-                sequences.append([d])
             else:
-                assess = Dispatch(
-                    call_type=CallType.ASSESS,
-                    payload=AssessDispatchPayload(
-                        question_id=d.payload.question_id,
-                        reason="Auto-assess after phase-2 dispatch",
-                    ),
-                )
-                sequences.append([d, assess])
+                sequences.append([d])
 
         all_dispatches = [d for seq in sequences for d in seq]
         all_trace_items = [

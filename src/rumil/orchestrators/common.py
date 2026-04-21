@@ -277,15 +277,12 @@ async def score_items_sequentially(
             parent_parts.append(parent_judgement.headline)
         parent_parts.append("")
 
-    view = await db.get_view_for_question(parent_page.id)
-    if view:
-        from rumil.context import render_view
+    from rumil.views import get_active_view
 
-        view_items = await db.get_view_items(view.id, min_importance=2)
-        view_text = await render_view(view, view_items, min_importance=2)
-        if view_text.strip():
-            parent_parts.append(view_text)
-            parent_parts.append("")
+    view_text = await get_active_view().render_for_parent_scoring(parent_page.id, db)
+    if view_text:
+        parent_parts.append(view_text)
+        parent_parts.append("")
 
     parent_context = "\n".join(parent_parts)
     system_prompt = build_system_prompt(system_prompt_name, include_citations=False)
@@ -577,70 +574,6 @@ async def assess_question(
     cls = ASSESS_CALL_CLASSES[get_settings().assess_call_variant]
     assess = cls(question_id, call, db, broadcaster=broadcaster)
     await assess.run()
-    return call.id
-
-
-async def create_view_for_question(
-    question_id: str,
-    db: DB,
-    parent_call_id: str | None = None,
-    context_page_ids: Sequence[str] | None = None,
-    broadcaster=None,
-    force: bool = False,
-    call_id: str | None = None,
-    sequence_id: str | None = None,
-    sequence_position: int | None = None,
-) -> str | None:
-    """Run a CreateView call on a question. Returns call ID, or None if no budget."""
-    from rumil.calls.create_view import CreateViewCall
-
-    log.info("create_view_for_question: question=%s", question_id[:8])
-    if not await _consume_budget(db, force=force):
-        return None
-
-    call = await db.create_call(
-        CallType.CREATE_VIEW,
-        scope_page_id=question_id,
-        parent_call_id=parent_call_id,
-        context_page_ids=context_page_ids,
-        call_id=call_id,
-        sequence_id=sequence_id,
-        sequence_position=sequence_position,
-    )
-    instance = CreateViewCall(question_id, call, db, broadcaster=broadcaster)
-    await instance.run()
-    return call.id
-
-
-async def update_view_for_question(
-    question_id: str,
-    db: DB,
-    parent_call_id: str | None = None,
-    context_page_ids: Sequence[str] | None = None,
-    broadcaster=None,
-    force: bool = False,
-    call_id: str | None = None,
-    sequence_id: str | None = None,
-    sequence_position: int | None = None,
-) -> str | None:
-    """Run an UpdateView call on a question with an existing View. Returns call ID."""
-    from rumil.calls.update_view import UpdateViewCall
-
-    log.info("update_view_for_question: question=%s", question_id[:8])
-    if not await _consume_budget(db, force=force):
-        return None
-
-    call = await db.create_call(
-        CallType.UPDATE_VIEW,
-        scope_page_id=question_id,
-        parent_call_id=parent_call_id,
-        context_page_ids=context_page_ids,
-        call_id=call_id,
-        sequence_id=sequence_id,
-        sequence_position=sequence_position,
-    )
-    instance = UpdateViewCall(question_id, call, db, broadcaster=broadcaster)
-    await instance.run()
     return call.id
 
 

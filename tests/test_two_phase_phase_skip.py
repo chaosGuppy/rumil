@@ -1,11 +1,11 @@
 """Phase-skip invariants for ``TwoPhaseOrchestrator``.
 
-When the scope question already has a judgement or a view, the
-orchestrator must skip ``_initial_prioritization`` and proceed directly
-to main-phase on the next loop iteration. An eagerly-created initial
-call is marked complete with a ``PhaseSkippedEvent`` rather than left
-PENDING. These invariants are easy to break during a rewrite because
-they straddle the two-phase entry logic and the eager-call-creation
+When the scope question's active ``View`` variant already has data,
+the orchestrator must skip ``_initial_prioritization`` and proceed
+directly to main-phase on the next loop iteration. An eagerly-created
+initial call is marked complete with a ``PhaseSkippedEvent`` rather
+than left PENDING. These invariants are easy to break during a rewrite
+because they straddle the two-phase entry logic and the eager-call-creation
 optimization.
 """
 
@@ -25,6 +25,7 @@ from rumil.models import (
     Workspace,
 )
 from rumil.orchestrators.two_phase import TwoPhaseOrchestrator
+from rumil.settings import override_settings
 
 
 def _scout_dispatch(question_id: str, reason: str = "") -> Dispatch:
@@ -78,7 +79,7 @@ async def _seed_view(db, question_id: str) -> Page:
 
 @pytest.mark.asyncio
 async def test_initial_prio_skipped_when_judgement_exists(tmp_db, question_page, prio_harness):
-    """A pre-existing judgement on the scope question causes initial prio to be skipped."""
+    """Under the judgement view variant, a pre-existing judgement skips initial prio."""
     await _seed_judgement(tmp_db, question_page.id)
     await tmp_db.init_budget(20)
     prio_harness.prio_queue = [
@@ -86,8 +87,9 @@ async def test_initial_prio_skipped_when_judgement_exists(tmp_db, question_page,
         RunCallResult(dispatches=[]),
     ]
 
-    orch = TwoPhaseOrchestrator(tmp_db)
-    await orch.run(question_page.id)
+    with override_settings(view_variant="judgement"):
+        orch = TwoPhaseOrchestrator(tmp_db)
+        await orch.run(question_page.id)
 
     tasks_from_prio = [c.get("task", "") for c in prio_harness.prio_calls]
     initial_tasks = [t for t in tasks_from_prio if "fan out exploratory research" in t]
@@ -122,8 +124,9 @@ async def test_main_phase_proceeds_after_skipped_initial(tmp_db, question_page, 
         RunCallResult(dispatches=[]),
     ]
 
-    orch = TwoPhaseOrchestrator(tmp_db)
-    await orch.run(question_page.id)
+    with override_settings(view_variant="judgement"):
+        orch = TwoPhaseOrchestrator(tmp_db)
+        await orch.run(question_page.id)
 
     post_skip_scouts = [
         d
@@ -146,9 +149,10 @@ async def test_eagerly_created_initial_call_is_marked_complete_on_skip(
         RunCallResult(dispatches=[]),
     ]
 
-    orch = TwoPhaseOrchestrator(tmp_db)
-    eager_id = await orch.create_initial_call(question_page.id)
-    await orch.run(question_page.id)
+    with override_settings(view_variant="judgement"):
+        orch = TwoPhaseOrchestrator(tmp_db)
+        eager_id = await orch.create_initial_call(question_page.id)
+        await orch.run(question_page.id)
 
     refreshed = await tmp_db.get_call(eager_id)
     assert refreshed is not None

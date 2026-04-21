@@ -495,109 +495,60 @@ async def render_child_investigation_results(
     - NEW Summary/Judgement: full content
     - Old Summary/Judgement: abstract only
     """
+    from rumil.views import get_active_view
+
     children = await db.get_child_questions(parent_question_id)
     if not children:
         return "", []
 
     child_ids = [c.id for c in children]
-    views_map, summaries_map, judgements_map = await asyncio.gather(
-        db.get_views_for_questions(child_ids),
-        db.get_latest_summaries_for_questions(child_ids),
-        db.get_judgements_for_questions(child_ids),
-    )
+    summaries_map = await db.get_latest_summaries_for_questions(child_ids)
 
     def _is_new(page: Page) -> bool:
         if last_view_created_at is None:
             return True
         return page.created_at > last_view_created_at
 
-    new_view_ids: list[str] = []
-    for cid in child_ids:
-        v = views_map.get(cid)
-        if v and _is_new(v):
-            new_view_ids.append(v.id)
-    view_items_map: dict[str, list[tuple[Page, PageLink]]] = {}
-    if new_view_ids:
-        items_results = await asyncio.gather(
-            *(db.get_view_items(vid, min_importance=4) for vid in new_view_ids)
+    view = get_active_view()
+    view_renders = await asyncio.gather(
+        *(
+            view.render_for_child_investigation_results(
+                cid, db, last_view_created_at=last_view_created_at
+            )
+            for cid in child_ids
         )
-        for vid, items in zip(new_view_ids, items_results):
-            view_items_map[vid] = items
+    )
 
     entries: list[tuple[bool, str, list[str]]] = []
-    for child in children:
+    for child, view_render in zip(children, view_renders):
         cid = child.id
-        view = views_map.get(cid)
-        summary = summaries_map.get(cid)
-        judgements = judgements_map.get(cid, [])
-        latest_judgement = max(judgements, key=lambda p: p.created_at) if judgements else None
+        header = f"### `{cid[:8]}` — {child.headline}"
 
-        new = False
-        page_ids: list[str] = []
-        lines: list[str] = [f"### `{cid[:8]}` — {child.headline}"]
-
-        if view:
-            new = _is_new(view)
-            page_ids.append(view.id)
-            lines.append(f"**Status:** View available{' [NEW]' if new else ''}")
-            if view.content:
-                detail = PageDetail.CONTENT if new else PageDetail.ABSTRACT
-                formatted_view = await format_page(
-                    view,
-                    detail,
-                    linked_detail=None,
-                    db=db,
-                    track=True,
-                    track_tags={"source": "child_investigation"},
-                )
-                lines.append("")
-                lines.append(formatted_view)
-            if new and view.id in view_items_map:
-                items = view_items_map[view.id]
-                if items:
-                    lines.append("")
-                    lines.append("**Key items:**")
-                    for page, link in items:
-                        imp = link.importance or 0
-                        r = page.robustness if page.robustness is not None else "?"
-                        lines.append(f"- [R{r} I{imp}] `{page.id[:8]}` — {page.headline}")
-                        page_ids.append(page.id)
-        elif summary:
-            new = _is_new(summary)
-            page_ids.append(summary.id)
-            detail = PageDetail.CONTENT if new else PageDetail.ABSTRACT
-            lines.append(f"**Status:** Summary available{' [NEW]' if new else ''}")
-            lines.append("")
-            lines.append(
-                await format_page(
-                    summary,
-                    detail,
-                    linked_detail=None,
-                    db=db,
-                    track=True,
-                    track_tags={"source": "child_investigation"},
-                )
-            )
-        elif latest_judgement:
-            new = _is_new(latest_judgement)
-            page_ids.append(latest_judgement.id)
-            detail = PageDetail.CONTENT if new else PageDetail.ABSTRACT
-            lines.append(f"**Status:** Judgement available{' [NEW]' if new else ''}")
-            lines.append("")
-            lines.append(
-                await format_page(
-                    latest_judgement,
-                    detail,
-                    linked_detail=None,
-                    db=db,
-                    track=True,
-                    track_tags={"source": "child_investigation"},
-                )
-            )
-        else:
+        if view_render is not None:
+            is_new, rendered, page_ids = view_render
+            entries.append((is_new, header + "\n" + rendered, list(page_ids)))
             continue
 
-        entries.append((new, "\n".join(lines), page_ids))
+        summary = summaries_map.get(cid)
+        if not summary:
+            continue
+
+        new = _is_new(summary)
+        detail = PageDetail.CONTENT if new else PageDetail.ABSTRACT
+        lines = [
+            header,
+            f"**Status:** Summary available{' [NEW]' if new else ''}",
+            "",
+            await format_page(
+                summary,
+                detail,
+                linked_detail=None,
+                db=db,
+                track=True,
+                track_tags={"source": "child_investigation"},
+            ),
+        ]
+        entries.append((new, "\n".join(lines), [summary.id]))
 
     if not entries:
         return "", []
@@ -681,24 +632,16 @@ async def build_prioritization_context(
     short_id_map: dict[str, str] = {}
 
     if scope_question_id:
+        from rumil.views import get_active_view
+
         question = await db.get_page(scope_question_id)
         if question:
-            view = await db.get_view_for_question(scope_question_id)
-            if view:
-                view_items = await db.get_view_items(
-                    view.id,
-                    min_importance=2,
-                )
-                view_text = await render_view(
-                    view,
-                    view_items,
-                    min_importance=2,
-                )
-                if view_text.strip():
-                    parts.append(view_text)
-                    parts.append("")
-                    parts.append("---")
-                    parts.append("")
+            view_text = await get_active_view().render_for_prioritization(scope_question_id, db)
+            if view_text:
+                parts.append(view_text)
+                parts.append("")
+                parts.append("---")
+                parts.append("")
 
             direct_children = await db.get_child_questions(scope_question_id)
             full_page_ids = {scope_question_id} | {c.id for c in direct_children}

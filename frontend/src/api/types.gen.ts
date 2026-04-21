@@ -379,7 +379,7 @@ export type CallSummary = {
 /**
  * CallType
  */
-export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'ab_eval' | 'ab_eval_comparison' | 'ab_eval_summary' | 'run_eval' | 'create_view' | 'global_prioritization' | 'update_view' | 'claude_code_direct';
+export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'ab_eval' | 'ab_eval_comparison' | 'ab_eval_summary' | 'run_eval' | 'create_view' | 'global_prioritization' | 'update_view' | 'process_envelope' | 'claude_code_direct';
 
 /**
  * CallTypeFruitScoreItem
@@ -1409,6 +1409,88 @@ export type PhaseSkippedEventOut = {
      * Reason
      */
     reason: string;
+};
+
+/**
+ * ProcessCompletedEventOut
+ */
+export type ProcessCompletedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'process_completed';
+    /**
+     * Process Type
+     */
+    process_type: string;
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * Self Report
+     */
+    self_report: string;
+    /**
+     * Delta
+     */
+    delta: {
+        [key: string]: unknown;
+    };
+    /**
+     * Signals
+     */
+    signals: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Usage
+     */
+    usage: {
+        [key: string]: unknown;
+    };
+};
+
+/**
+ * ProcessStartedEventOut
+ */
+export type ProcessStartedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'process_started';
+    /**
+     * Process Type
+     */
+    process_type: string;
+    /**
+     * Scope
+     */
+    scope: {
+        [key: string]: unknown;
+    };
+    /**
+     * Budgets
+     */
+    budgets: {
+        [key: string]: unknown;
+    };
 };
 
 /**
@@ -3071,7 +3153,11 @@ export type GetCallEventsApiCallsCallIdEventsGetResponses = {
         event: 'update_view_phase_completed';
     } & UpdateViewPhaseCompletedEventOut) | ({
         event: 'question_dedupe';
-    } & QuestionDedupeEventOut)>;
+    } & QuestionDedupeEventOut) | ({
+        event: 'process_started';
+    } & ProcessStartedEventOut) | ({
+        event: 'process_completed';
+    } & ProcessCompletedEventOut)>;
 };
 
 export type GetCallEventsApiCallsCallIdEventsGetResponse = GetCallEventsApiCallsCallIdEventsGetResponses[keyof GetCallEventsApiCallsCallIdEventsGetResponses];

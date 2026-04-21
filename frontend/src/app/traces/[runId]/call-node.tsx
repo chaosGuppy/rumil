@@ -1305,9 +1305,304 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
           ))}
         </div>
       )}
+      {event.event === "process_started" && (
+        <ProcessStartedBody
+          processType={event.process_type}
+          scope={event.scope ?? {}}
+          budgets={event.budgets ?? {}}
+        />
+      )}
+      {event.event === "process_completed" && (
+        <ProcessCompletedBody
+          processType={event.process_type}
+          status={event.status}
+          selfReport={event.self_report}
+          delta={event.delta ?? {}}
+          signals={event.signals ?? []}
+          usage={event.usage ?? {}}
+        />
+      )}
     </div>
   );
 });
+
+function ProcessStatusBadge({ status }: { status: string }) {
+  return (
+    <span className={`trace-process-status trace-process-status-${status}`}>
+      {status}
+    </span>
+  );
+}
+
+function ProcessTypeBadge({ type }: { type: string }) {
+  return <span className="trace-process-type">{type}</span>;
+}
+
+function ScopeChip({ scope }: { scope: Record<string, unknown> }) {
+  const kind = String(scope.kind ?? "unknown");
+  const { activeStagedRunId } = useStagedRun();
+  const hrefFor = (id: string) =>
+    activeStagedRunId ? `/pages/${id}?staged_run_id=${activeStagedRunId}` : `/pages/${id}`;
+
+  if (kind === "question" && typeof scope.question_id === "string") {
+    return (
+      <Link href={hrefFor(scope.question_id)} className="trace-page-chip">
+        question {scope.question_id.slice(0, 8)}
+      </Link>
+    );
+  }
+  if (kind === "claim" && typeof scope.claim_id === "string") {
+    return (
+      <Link href={hrefFor(scope.claim_id)} className="trace-page-chip">
+        claim {scope.claim_id.slice(0, 8)}
+      </Link>
+    );
+  }
+  if (kind === "subgraph" && Array.isArray(scope.root_ids)) {
+    return (
+      <span className="trace-kv-value">
+        subgraph ({(scope.root_ids as string[]).length} roots, depth {String(scope.depth ?? "?")})
+      </span>
+    );
+  }
+  if (kind === "project") {
+    return (
+      <span className="trace-kv-value">project {String(scope.project_id ?? "").slice(0, 8)}</span>
+    );
+  }
+  return <span className="trace-kv-value">{kind}</span>;
+}
+
+function BudgetRow({ budgets }: { budgets: Record<string, unknown> }) {
+  const entries = Object.entries(budgets).filter(([, v]) => v != null);
+  if (entries.length === 0) return null;
+  return (
+    <div className="trace-kv">
+      <span className="trace-kv-key">budgets</span>
+      <span className="trace-process-budgets">
+        {entries.map(([k, v]) => (
+          <span key={k} className="trace-process-budget-chip">
+            <span className="trace-process-budget-label">{k.replace(/_/g, " ")}</span>
+            <span className="trace-process-budget-value">{String(v)}</span>
+          </span>
+        ))}
+      </span>
+    </div>
+  );
+}
+
+function ProcessStartedBody({
+  processType,
+  scope,
+  budgets,
+}: {
+  processType: string;
+  scope: Record<string, unknown>;
+  budgets: Record<string, unknown>;
+}) {
+  return (
+    <div className="trace-event-body">
+      <div className="trace-kv">
+        <span className="trace-kv-key">process</span>
+        <ProcessTypeBadge type={processType} />
+      </div>
+      <div className="trace-kv">
+        <span className="trace-kv-key">scope</span>
+        <ScopeChip scope={scope} />
+      </div>
+      <BudgetRow budgets={budgets} />
+    </div>
+  );
+}
+
+function UsageRow({ usage }: { usage: Record<string, unknown> }) {
+  const entries = Object.entries(usage).filter(([, v]) => {
+    if (v == null) return false;
+    if (typeof v === "number") return v > 0;
+    return true;
+  });
+  if (entries.length === 0) return null;
+  return (
+    <div className="trace-kv">
+      <span className="trace-kv-key">usage</span>
+      <span className="trace-process-budgets">
+        {entries.map(([k, v]) => {
+          const display =
+            k === "wallclock_seconds" && typeof v === "number"
+              ? `${v.toFixed(2)}s`
+              : String(v);
+          return (
+            <span key={k} className="trace-process-budget-chip">
+              <span className="trace-process-budget-label">{k.replace(/_/g, " ")}</span>
+              <span className="trace-process-budget-value">{display}</span>
+            </span>
+          );
+        })}
+      </span>
+    </div>
+  );
+}
+
+function ProcessDeltaSummary({ delta }: { delta: Record<string, unknown> }) {
+  const kind = String(delta.kind ?? "delta");
+  const newPages = Array.isArray(delta.new_pages) ? delta.new_pages.length : 0;
+  const newLinks = Array.isArray(delta.new_links) ? delta.new_links.length : 0;
+  const supersedes = Array.isArray(delta.supersedes) ? delta.supersedes.length : 0;
+  const cited = Array.isArray(delta.cited_page_ids) ? delta.cited_page_ids.length : 0;
+
+  const { activeStagedRunId } = useStagedRun();
+  const hrefFor = (id: string) =>
+    activeStagedRunId ? `/pages/${id}?staged_run_id=${activeStagedRunId}` : `/pages/${id}`;
+
+  const distinguishedId =
+    (kind === "view" && typeof delta.view_page_id === "string" ? delta.view_page_id : null) ||
+    (kind === "map" && typeof delta.map_view_id === "string" ? delta.map_view_id : null);
+  const distinguishedLabel = kind === "view" ? "View" : kind === "map" ? "Map view" : "Artifact";
+
+  const variantIds = Array.isArray(delta.variant_ids) ? (delta.variant_ids as string[]) : [];
+  const sourceClaimId = typeof delta.source_claim_id === "string" ? delta.source_claim_id : null;
+
+  return (
+    <div className="trace-process-delta">
+      <div className="trace-kv">
+        <span className="trace-kv-key">delta</span>
+        <span className="trace-kv-value">{kind}</span>
+      </div>
+      {distinguishedId && (
+        <div className="trace-kv">
+          <span className="trace-kv-key">{distinguishedLabel.toLowerCase()}</span>
+          <Link href={hrefFor(distinguishedId)} className="trace-page-chip">
+            {distinguishedId.slice(0, 8)}
+          </Link>
+        </div>
+      )}
+      {sourceClaimId && (
+        <div className="trace-kv">
+          <span className="trace-kv-key">source claim</span>
+          <Link href={hrefFor(sourceClaimId)} className="trace-page-chip">
+            {sourceClaimId.slice(0, 8)}
+          </Link>
+        </div>
+      )}
+      {variantIds.length > 0 && (
+        <div className="trace-kv">
+          <span className="trace-kv-key">variants</span>
+          <span className="trace-page-list">
+            {variantIds.map((id) => (
+              <Link key={id} href={hrefFor(id)} className="trace-page-chip">
+                {id.slice(0, 8)}
+              </Link>
+            ))}
+          </span>
+        </div>
+      )}
+      <div className="trace-kv">
+        <span className="trace-kv-key">counts</span>
+        <span className="trace-process-budgets">
+          <span className="trace-process-budget-chip">
+            <span className="trace-process-budget-label">new pages</span>
+            <span className="trace-process-budget-value">{newPages}</span>
+          </span>
+          <span className="trace-process-budget-chip">
+            <span className="trace-process-budget-label">new links</span>
+            <span className="trace-process-budget-value">{newLinks}</span>
+          </span>
+          {supersedes > 0 && (
+            <span className="trace-process-budget-chip">
+              <span className="trace-process-budget-label">supersedes</span>
+              <span className="trace-process-budget-value">{supersedes}</span>
+            </span>
+          )}
+          {cited > 0 && (
+            <span className="trace-process-budget-chip">
+              <span className="trace-process-budget-label">cited</span>
+              <span className="trace-process-budget-value">{cited}</span>
+            </span>
+          )}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function SignalItem({ signal }: { signal: Record<string, unknown> }) {
+  const kind = String(signal.kind ?? "signal");
+  const reason = typeof signal.reason === "string" ? signal.reason : "";
+  const { activeStagedRunId } = useStagedRun();
+  const hrefFor = (id: string) =>
+    activeStagedRunId ? `/pages/${id}?staged_run_id=${activeStagedRunId}` : `/pages/${id}`;
+
+  const targets: string[] = [];
+  if (typeof signal.question_id === "string") targets.push(signal.question_id);
+  if (typeof signal.page_id === "string") targets.push(signal.page_id);
+  if (typeof signal.claim_id === "string") targets.push(signal.claim_id);
+  if (typeof signal.changed_page_id === "string") targets.push(signal.changed_page_id);
+  if (Array.isArray(signal.page_ids)) {
+    for (const id of signal.page_ids as unknown[]) if (typeof id === "string") targets.push(id);
+  }
+
+  return (
+    <div className="trace-process-signal">
+      <span className={`trace-process-signal-kind trace-process-signal-kind-${kind}`}>{kind}</span>
+      <div className="trace-process-signal-body">
+        {targets.length > 0 && (
+          <span className="trace-page-list">
+            {targets.map((id) => (
+              <Link key={id} href={hrefFor(id)} className="trace-page-chip">
+                {id.slice(0, 8)}
+              </Link>
+            ))}
+          </span>
+        )}
+        {reason && <span className="trace-process-signal-reason">{reason}</span>}
+      </div>
+    </div>
+  );
+}
+
+function ProcessCompletedBody({
+  processType,
+  status,
+  selfReport,
+  delta,
+  signals,
+  usage,
+}: {
+  processType: string;
+  status: string;
+  selfReport: string;
+  delta: Record<string, unknown>;
+  signals: Array<Record<string, unknown>>;
+  usage: Record<string, unknown>;
+}) {
+  return (
+    <div className="trace-event-body">
+      <div className="trace-kv">
+        <span className="trace-kv-key">process</span>
+        <ProcessTypeBadge type={processType} />
+        <ProcessStatusBadge status={status} />
+      </div>
+      {selfReport && (
+        <div className="trace-kv">
+          <span className="trace-kv-key">report</span>
+          <span className="trace-kv-value">{selfReport}</span>
+        </div>
+      )}
+      <ProcessDeltaSummary delta={delta} />
+      {signals.length > 0 && (
+        <div className="trace-kv trace-kv-block">
+          <span className="trace-kv-key">signals ({signals.length})</span>
+          <div className="trace-process-signals">
+            {signals.map((sig, i) => (
+              <SignalItem key={i} signal={sig} />
+            ))}
+          </div>
+        </div>
+      )}
+      <UsageRow usage={usage} />
+    </div>
+  );
+}
 
 const SEQUENCE_COLORS = [
   "#5b8def", "#a07cdf", "#4dab6f", "#c4884d", "#c46b6b",

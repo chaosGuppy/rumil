@@ -84,6 +84,9 @@ class CallType(str, Enum):
     CREATE_VIEW = "create_view"
     GLOBAL_PRIORITIZATION = "global_prioritization"
     UPDATE_VIEW = "update_view"
+    # Envelope call for a typed Process run (Investigator / Robustifier /
+    # Surveyor / ...). Process lifecycle events attach to this call.
+    PROCESS_ENVELOPE = "process_envelope"
     # Envelope call for mutations made from Claude Code's broader context
     # (not a rumil-internal call with carefully scoped prompt). Never
     # dispatchable from prioritization — only created by .claude/ skills.

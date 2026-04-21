@@ -312,6 +312,32 @@ class QuestionDedupeEvent(BaseModel):
     decision_reasoning: str = ""
 
 
+class ProcessStartedEvent(BaseModel):
+    """A typed Process run has started (Investigator / Robustifier / Surveyor / ...)."""
+
+    event: Literal["process_started"] = "process_started"
+    process_type: str
+    scope: dict[str, Any] = {}
+    budgets: dict[str, Any] = {}
+
+
+class ProcessCompletedEvent(BaseModel):
+    """A typed Process run has finished. Carries the full Result for display.
+
+    The delta, signals, and usage are serialised as dicts to avoid a circular
+    import between tracing and the processes package. Consumers re-validate
+    against the typed schemas if needed.
+    """
+
+    event: Literal["process_completed"] = "process_completed"
+    process_type: str
+    status: str
+    self_report: str = ""
+    delta: dict[str, Any] = {}
+    signals: list[dict[str, Any]] = []
+    usage: dict[str, Any] = {}
+
+
 TraceEvent = Annotated[
     ContextBuiltEvent
     | MovesExecutedEvent
@@ -344,6 +370,8 @@ TraceEvent = Annotated[
     | PhaseSkippedEvent
     | GlobalPhaseCompletedEvent
     | UpdateViewPhaseCompletedEvent
-    | QuestionDedupeEvent,
+    | QuestionDedupeEvent
+    | ProcessStartedEvent
+    | ProcessCompletedEvent,
     Field(discriminator="event"),
 ]

@@ -346,8 +346,9 @@ async def format_page(
 
     _exclude = exclude_page_ids or set()
     if linked_detail is not None and db and page.page_type == PageType.QUESTION:
-        linked_items: list[tuple[float, datetime, str]] = []
+        sections: list[str] = []
 
+        con_items: list[tuple[float, datetime, str]] = []
         considerations = await db.get_considerations_for_question(page.id)
         for claim, link in considerations:
             if claim.id in _exclude:
@@ -359,57 +360,78 @@ async def format_page(
                 and claim.run_id != highlight_run_id
             )
             link_tag = " [LINKED BY THIS RUN]" if _link_highlighted else ""
-            line = (
-                "- "
-                + await format_page(
-                    claim,
-                    linked_detail,
-                    db=db,
-                    linked_detail=None,
-                    highlight_run_id=highlight_run_id,
-                )
-                + link_tag
+            rendered = await format_page(
+                claim,
+                linked_detail,
+                db=db,
+                linked_detail=None,
+                highlight_run_id=highlight_run_id,
             )
+            line = "- " + rendered + link_tag
             if link.reasoning:
                 line += f"\n  Reasoning: {link.reasoning}"
-            linked_items.append((link.strength or 0.0, claim.created_at, line))
+            con_items.append((link.strength or 0.0, claim.created_at, line))
+        if con_items:
+            con_items.sort(key=lambda x: (-x[0], x[1]))
+            sections.append(
+                "#### Considerations linked to this question\n\n"
+                "_Claims the workspace has linked as bearing on this question._\n\n"
+                + "\n".join(line for _, _, line in con_items)
+            )
 
+        j_items: list[tuple[datetime, str]] = []
         judgements = await db.get_judgements_for_question(page.id)
         for j in judgements:
             if j.id in _exclude:
                 continue
-            line = "- " + await format_page(
+            rendered = await format_page(
                 j,
                 linked_detail,
                 db=db,
                 linked_detail=None,
                 highlight_run_id=highlight_run_id,
             )
-            linked_items.append((0.0, j.created_at, line))
+            j_items.append((j.created_at, "- " + rendered))
+        if j_items:
+            j_items.sort(key=lambda x: x[0])
+            sections.append(
+                "#### Judgements on this question\n\n"
+                "_Standing answers the workspace has recorded for this question._\n\n"
+                + "\n".join(line for _, line in j_items)
+            )
 
         children = await db.get_child_questions(page.id)
         child_judgements = await db.get_judgements_for_questions(
             [child.id for child in children if child.id not in _exclude]
         )
+        child_blocks: list[str] = []
         for child in children:
             if child.id in _exclude:
                 continue
-            for j in child_judgements.get(child.id, []):
-                if j.id in _exclude:
-                    continue
-                line = f"- *On: {child.headline} (`{child.id[:8]}`)*  " + await format_page(
+            child_js = [j for j in child_judgements.get(child.id, []) if j.id not in _exclude]
+            if not child_js:
+                continue
+            sub_lines = [f"- On sub-question `{child.id[:8]}` — {child.headline}:"]
+            for j in sorted(child_js, key=lambda x: x.created_at):
+                rendered = await format_page(
                     j,
                     linked_detail,
                     db=db,
                     linked_detail=None,
                     highlight_run_id=highlight_run_id,
                 )
-                linked_items.append((0.0, j.created_at, line))
+                sub_lines.append(f"  - {rendered}")
+            child_blocks.append("\n".join(sub_lines))
+        if child_blocks:
+            sections.append(
+                "#### Judgements on sub-questions\n\n"
+                "_Answers recorded on questions nested under this one "
+                "(not judgements of this question itself)._\n\n" + "\n".join(child_blocks)
+            )
 
-        if linked_items:
-            linked_items.sort(key=lambda x: (-x[0], x[1]))
+        if sections:
             lines.append("")
-            lines.append("\n".join(line for _, _, line in linked_items))
+            lines.append("\n\n".join(sections))
 
     return "\n".join(lines)
 

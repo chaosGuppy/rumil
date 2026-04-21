@@ -35,6 +35,30 @@ def _test_settings():
         yield
 
 
+@pytest.fixture(autouse=True)
+def _block_real_llm_calls(request, monkeypatch):
+    """Fail loudly if a non-LLM test reaches an unmocked LLM path.
+
+    Every Anthropic client construction in rumil routes through
+    ``Settings.require_anthropic_key``. Tests marked ``llm`` need a real
+    key; everything else should be fully mocked. If a supposedly-mocked
+    test still reaches this chokepoint, it's silently making real API
+    calls — raise instead.
+    """
+    if request.node.get_closest_marker("llm"):
+        return
+    from rumil.settings import Settings
+
+    def _raise(self):
+        raise RuntimeError(
+            f"Test {request.node.nodeid} reached an unmocked LLM call. "
+            "Add the missing mock (see prio_harness for orchestrator patterns) "
+            "or mark the test with @pytest.mark.llm."
+        )
+
+    monkeypatch.setattr(Settings, "require_anthropic_key", _raise)
+
+
 def pytest_addoption(parser):
     parser.addoption(
         "--llm",
@@ -281,6 +305,10 @@ async def prio_harness(tmp_db, mocker):
         "rumil.orchestrators.two_phase.run_prioritization_call",
         side_effect=_fake_prio,
     )
+    mocker.patch(
+        "rumil.orchestrators.claim_investigation.run_prioritization_call",
+        side_effect=_fake_prio,
+    )
 
     async def _fake_fc(question_id, db, **kwargs):
         cid = await harness.simulate_dispatch(CallType.FIND_CONSIDERATIONS, question_id, **kwargs)
@@ -325,6 +353,10 @@ async def prio_harness(tmp_db, mocker):
     )
     mocker.patch(
         "rumil.orchestrators.two_phase.score_items_sequentially",
+        return_value=[],
+    )
+    mocker.patch(
+        "rumil.orchestrators.claim_investigation.score_items_sequentially",
         return_value=[],
     )
 

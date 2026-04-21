@@ -141,8 +141,8 @@ class Settings(BaseSettings):
         if status is not None:
             override = getattr(self, f"max_api_retries_{status}", None)
             if override is not None:
-                return override
-        return self.max_api_retries
+                return min(override, 3) if self.is_test_mode else override
+        return min(self.max_api_retries, 3) if self.is_test_mode else self.max_api_retries
 
     @property
     def is_prod_db(self) -> bool:

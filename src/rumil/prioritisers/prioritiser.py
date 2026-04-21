@@ -1,23 +1,38 @@
-"""Per-question Prioritiser (V1 skeleton).
+"""Per-question Prioritiser actor.
 
-V1 shape: each Prioritiser represents the completion of research work on
-one question under one registry. It exposes a completion ``asyncio.Event``
-plus budget/cumulative-spent counters and a subscription list so V2 can
-add the round loop and transfer+subscribe semantics without re-shaping
-callers.
+Each Prioritiser owns its local budget, subscription list, and cumulative
+spend counter for one question under one registry. Concrete subclasses
+implement ``_run_round`` (one prioritisation round) and
+``_fire_subscription`` (how to deliver the per-subscriber result).
 
-The ``run_body`` callable is the orchestrator-specific work (e.g. the
-TwoPhase round loop). V1 runs it inline under the claim lock; V2 will
-dispatch it to an ``asyncio.Task`` owned by the Prioritiser.
+The round loop runs rounds while ``budget > 0``. When budget drains, the
+loop exits naturally — the task terminates but the prioritiser *object*
+stays in the registry. Subsequent ``receive_budget`` calls respawn a
+fresh task via ``start()``. This avoids keeping an idle task per node
+alive across the whole run, while still supporting Scenario B
+collisions: parent2 can transfer budget after parent1's allocation has
+been drained, and a fresh task picks up from the existing
+``cumulative_spent`` / subscription state.
+
+Explicit ``mark_done()`` is the only way to *permanently* close a
+prioritiser. ``registry.teardown()`` calls it on all known prios at run
+end so pending subscriptions get force-fired via the subclass hook and
+any parent awaits unblock.
+
+``run_body`` is kept for V1 facade compatibility — it runs the supplied
+coroutine body and marks done on exit.
 """
 
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
+from typing import Literal
 
 from rumil.prioritisers.subscription import Subscription
 
 log = logging.getLogger(__name__)
+
+PrioritiserState = Literal["idle", "running", "done"]
 
 
 class Prioritiser:
@@ -28,12 +43,18 @@ class Prioritiser:
         self.cumulative_spent: int = 0
         self.subscriptions: list[Subscription] = []
         self.done: asyncio.Event = asyncio.Event()
+        self.state: PrioritiserState = "idle"
         self._lock: asyncio.Lock = asyncio.Lock()
         self._last_delivered_call_id: str | None = None
+        self._task: asyncio.Task | None = None
 
     async def receive_budget(self, amount: int) -> None:
         async with self._lock:
             self.budget += amount
+            already_done = self.state == "done"
+        if already_done:
+            return
+        await self.start()
 
     async def subscribe(
         self,
@@ -48,7 +69,7 @@ class Prioritiser:
             subscriber=subscriber,
         )
         async with self._lock:
-            if self.cumulative_spent >= threshold:
+            if self.cumulative_spent >= threshold or self.state == "done":
                 sub.resolve(self._last_delivered_call_id)
             else:
                 self.subscriptions.append(sub)
@@ -77,11 +98,14 @@ class Prioritiser:
 
     async def mark_done(self, delivered_call_id: str | None = None) -> None:
         async with self._lock:
+            if self.state == "done":
+                return
             if delivered_call_id is not None:
                 self._last_delivered_call_id = delivered_call_id
             for sub in self.subscriptions:
                 sub.resolve(self._last_delivered_call_id)
             self.subscriptions = []
+            self.state = "done"
             self.done.set()
 
     async def await_completion(self) -> None:
@@ -91,8 +115,86 @@ class Prioritiser:
         self,
         body: Callable[[], Awaitable[None]],
     ) -> None:
-        """Execute an orchestrator body under the claim lock, mark done on exit."""
+        """Execute an orchestrator body directly, mark done on exit.
+
+        Kept for V1 facade compatibility. V2 callers should use the
+        actor round loop via ``start()`` instead.
+        """
         try:
             await body()
         finally:
             await self.mark_done()
+
+    async def _run_round(self, round_budget: int) -> None:
+        """Run one prioritisation round. Subclass hook.
+
+        Invoked outside the claim lock so implementations are free to
+        perform LLM calls and dispatches. Budget accounting is the
+        subclass's responsibility (via ``on_dispatch_completed``).
+        """
+        raise NotImplementedError
+
+    async def _fire_subscription(self, subscription: Subscription) -> None:
+        """Produce a deliverable for a subscription and resolve its future.
+
+        Subclass hook. Default implementation resolves the subscription
+        with the most-recent delivered call id (``None`` if there's never
+        been one). Subclasses may override to force a fresh view/assess
+        call when a subscription fires with no recorded deliverable.
+        """
+        subscription.resolve(self._last_delivered_call_id)
+
+    async def start(self) -> None:
+        """Spawn the round-loop task if one isn't already running.
+
+        Idempotent: repeated calls while a task is running are no-ops.
+        Callers should invoke this after ``receive_budget`` or
+        ``subscribe`` when they want the actor loop to process the new
+        state — ``receive_budget`` does this automatically.
+        """
+        async with self._lock:
+            if self.state == "done":
+                return
+            if self._task is not None and not self._task.done():
+                return
+            self._task = asyncio.create_task(
+                self._round_loop(),
+                name=f"prio:{self.question_id[:8]}",
+            )
+
+    async def _round_loop(self) -> None:
+        """The actor round loop.
+
+        Runs rounds while there's budget. Exits naturally when budget
+        drains, leaving the prioritiser in ``idle`` state and its
+        ``subscriptions`` list intact. A subsequent ``receive_budget``
+        will respawn this loop via ``start()`` — so the prioritiser
+        *object* persists in the registry but the *task* only exists
+        while work is being done.
+
+        Only ``mark_done()`` transitions the prioritiser to the terminal
+        ``done`` state; teardown is the usual caller.
+        """
+        while True:
+            async with self._lock:
+                self._fire_ready_locked()
+                if self.state == "done":
+                    return
+                if self.budget <= 0:
+                    self.state = "idle"
+                    return
+                self.state = "running"
+                round_budget = self.budget
+            try:
+                await self._run_round(round_budget)
+            except Exception:
+                log.exception(
+                    "Prioritiser %s round failed; marking done",
+                    self.question_id[:8],
+                )
+                await self.mark_done()
+                return
+            async with self._lock:
+                self._fire_ready_locked()
+                if self.state != "done":
+                    self.state = "idle"

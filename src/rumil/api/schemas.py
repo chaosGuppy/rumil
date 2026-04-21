@@ -16,6 +16,7 @@ from rumil.tracing.trace_events import (
     AffectedPagesIdentifiedEvent,
     AgentStartedEvent,
     AutocompactEvent,
+    BudgetTransferredEvent,
     ClaimReassessedEvent,
     ContextBuiltEvent,
     DispatchesPlannedEvent,
@@ -38,6 +39,8 @@ from rumil.tracing.trace_events import (
     ScoringCompletedEvent,
     SubagentCompletedEvent,
     SubagentStartedEvent,
+    SubscriptionCreatedEvent,
+    SubscriptionFiredEvent,
     ToolCallEvent,
     UpdatePlanCreatedEvent,
     UpdateSubgraphComputedEvent,
@@ -199,6 +202,18 @@ class QuestionDedupeEventOut(QuestionDedupeEvent, _TraceEnvelopeMixin):
     pass
 
 
+class BudgetTransferredEventOut(BudgetTransferredEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class SubscriptionCreatedEventOut(SubscriptionCreatedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class SubscriptionFiredEventOut(SubscriptionFiredEvent, _TraceEnvelopeMixin):
+    pass
+
+
 TraceEventOut = Annotated[
     ContextBuiltEventOut
     | MovesExecutedEventOut
@@ -231,7 +246,10 @@ TraceEventOut = Annotated[
     | PhaseSkippedEventOut
     | GlobalPhaseCompletedEventOut
     | UpdateViewPhaseCompletedEventOut
-    | QuestionDedupeEventOut,
+    | QuestionDedupeEventOut
+    | BudgetTransferredEventOut
+    | SubscriptionCreatedEventOut
+    | SubscriptionFiredEventOut,
     Field(discriminator="event"),
 ]
 

@@ -309,6 +309,10 @@ async def prio_harness(tmp_db, mocker):
         "rumil.orchestrators.claim_investigation.run_prioritization_call",
         side_effect=_fake_prio,
     )
+    mocker.patch(
+        "rumil.prioritisers.question_prioritiser.run_prioritization_call",
+        side_effect=_fake_prio,
+    )
 
     async def _fake_fc(question_id, db, **kwargs):
         cid = await harness.simulate_dispatch(CallType.FIND_CONSIDERATIONS, question_id, **kwargs)
@@ -365,6 +369,18 @@ async def prio_harness(tmp_db, mocker):
     )
     mocker.patch(
         "rumil.orchestrators.claim_investigation.score_items_sequentially",
+        return_value=[],
+    )
+    mocker.patch(
+        "rumil.prioritisers.question_prioritiser.update_view_for_question",
+        side_effect=_fake_update_view,
+    )
+    mocker.patch(
+        "rumil.prioritisers.question_prioritiser.create_view_for_question",
+        side_effect=_fake_create_view,
+    )
+    mocker.patch(
+        "rumil.prioritisers.question_prioritiser.score_items_sequentially",
         return_value=[],
     )
 

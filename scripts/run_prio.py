@@ -1,4 +1,8 @@
-"""Run TwoPhaseOrchestrator._get_next_batch on a question and print the result.
+"""Run a single prioritisation batch on a question and print the result.
+
+Drives a ``QuestionPrioritiser`` directly (the same actor the facade
+uses) and invokes its private planner so we can see the dispatches a
+single round would plan without kicking off recurse tasks.
 
 Usage:
     uv run python scripts/run_prio.py --question-id <UUID> --budget 10
@@ -17,7 +21,7 @@ import logging
 import uuid
 
 from rumil.database import DB
-from rumil.orchestrators import TwoPhaseOrchestrator
+from rumil.prioritisers.question_prioritiser import QuestionPrioritiser
 from rumil.settings import get_settings
 
 
@@ -58,13 +62,10 @@ async def run(args: argparse.Namespace) -> None:
         config=settings.capture_config(),
     )
 
-    orch = TwoPhaseOrchestrator(db)
-    await orch._setup()
+    prio = QuestionPrioritiser(args.question_id)
+    prio.attach(db)
 
-    try:
-        result = await orch._get_next_batch(args.question_id, args.budget)
-    finally:
-        await orch._teardown()
+    result = await prio._get_next_batch(args.budget, total_remaining=args.budget)
 
     print("\n=== PrioritizationResult ===")
     print(f"call_id: {result.call_id}")
@@ -75,10 +76,13 @@ async def run(args: argparse.Namespace) -> None:
             dump = json.loads(dispatch.model_dump_json())
             print(f"    [{j}] {dump}")
 
-    if result.children:
-        print(f"\nchildren: {len(result.children)}")
-        for _child_orch, child_qid in result.children:
-            print(f"  child question: {child_qid}")
+    if result.recurses:
+        print(f"\nrecurses: {len(result.recurses)}")
+        for rspec in result.recurses:
+            print(
+                f"  {rspec.kind} {rspec.target_question_id} "
+                f"budget={rspec.budget} reason={rspec.reason!r}"
+            )
 
 
 def main() -> None:

@@ -225,6 +225,36 @@ export type AutocompactEventOut = {
 };
 
 /**
+ * BudgetTransferredEventOut
+ */
+export type BudgetTransferredEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'budget_transferred';
+    /**
+     * From Question Id
+     */
+    from_question_id: string | null;
+    /**
+     * To Question Id
+     */
+    to_question_id: string;
+    /**
+     * Amount
+     */
+    amount: number;
+};
+
+/**
  * Call
  */
 export type Call = {
@@ -2004,6 +2034,62 @@ export type SubquestionScoreItem = {
 };
 
 /**
+ * SubscriptionCreatedEventOut
+ */
+export type SubscriptionCreatedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'subscription_created';
+    /**
+     * Target Question Id
+     */
+    target_question_id: string;
+    /**
+     * Trigger Threshold
+     */
+    trigger_threshold: number;
+    /**
+     * Subscriber
+     */
+    subscriber: string | null;
+};
+
+/**
+ * SubscriptionFiredEventOut
+ */
+export type SubscriptionFiredEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'subscription_fired';
+    /**
+     * Target Question Id
+     */
+    target_question_id: string;
+    /**
+     * Delivered Call Id
+     */
+    delivered_call_id: string | null;
+};
+
+/**
  * ToolCallEventOut
  */
 export type ToolCallEventOut = {
@@ -3071,7 +3157,13 @@ export type GetCallEventsApiCallsCallIdEventsGetResponses = {
         event: 'update_view_phase_completed';
     } & UpdateViewPhaseCompletedEventOut) | ({
         event: 'question_dedupe';
-    } & QuestionDedupeEventOut)>;
+    } & QuestionDedupeEventOut) | ({
+        event: 'budget_transferred';
+    } & BudgetTransferredEventOut) | ({
+        event: 'subscription_created';
+    } & SubscriptionCreatedEventOut) | ({
+        event: 'subscription_fired';
+    } & SubscriptionFiredEventOut)>;
 };
 
 export type GetCallEventsApiCallsCallIdEventsGetResponse = GetCallEventsApiCallsCallIdEventsGetResponses[keyof GetCallEventsApiCallsCallIdEventsGetResponses];

@@ -3,7 +3,7 @@
 import pytest
 
 from rumil.constants import compute_round_budget
-from rumil.orchestrators.two_phase import TwoPhaseOrchestrator
+from rumil.prioritisers.question_prioritiser import QuestionPrioritiser
 
 
 @pytest.mark.parametrize(
@@ -60,15 +60,17 @@ async def test_paced_budget_uses_budget_cap_in_nested_orchestrator(tmp_db):
     await tmp_db.init_budget(100)
     await tmp_db.consume_budget(40)
 
-    capped = TwoPhaseOrchestrator(tmp_db, budget_cap=20)
+    capped = QuestionPrioritiser("qid")
+    capped.attach(tmp_db, budget_cap=20)
     capped._consumed = 5
     total, used = await capped._pacing_params()
     assert (total, used) == (20, 5), (
-        f"capped orch should pace from (budget_cap, _consumed); got ({total}, {used})"
+        f"capped prio should pace from (budget_cap, _consumed); got ({total}, {used})"
     )
 
-    uncapped = TwoPhaseOrchestrator(tmp_db)
+    uncapped = QuestionPrioritiser("qid2")
+    uncapped.attach(tmp_db)
     g_total, g_used = await uncapped._pacing_params()
     assert (g_total, g_used) == (100, 40), (
-        f"uncapped orch should pace from global budget; got ({g_total}, {g_used})"
+        f"uncapped prio should pace from global budget; got ({g_total}, {g_used})"
     )

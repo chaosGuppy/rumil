@@ -84,7 +84,10 @@ def test_dispatch_context_fields():
     # Build a context with a stand-in orchestrator. This is just a
     # structural smoke test — no behaviour is exercised.
     ctx = DispatchContext(
-        orchestrator=None,  # type: ignore[arg-type]
+        db=None,  # type: ignore[arg-type]
+        broadcaster=None,
+        summarise_before_assess=True,
+        dispatcher=None,  # type: ignore[arg-type]
         resolved_question_id="q1",
         parent_call_id="p1",
         force=False,
@@ -93,6 +96,7 @@ def test_dispatch_context_fields():
         sequence_position=3,
         d_label="label",
     )
+    assert ctx.summarise_before_assess is True
     assert ctx.resolved_question_id == "q1"
     assert ctx.parent_call_id == "p1"
     assert ctx.force is False

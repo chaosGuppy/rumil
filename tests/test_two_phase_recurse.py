@@ -1,10 +1,10 @@
-"""Recurse → child-orchestrator-spawn invariants.
+"""Recurse → child-prioritiser invariants.
 
-The recurse path is the closest analog of what the prioritizer rearch
-replaces: today, a recurse dispatch spawns a new ``TwoPhaseOrchestrator``
-(or ``ClaimInvestigationOrchestrator``) with its own ``budget_cap``.
-These tests pin the current contract so the rearch author can tell when
-they've accidentally dropped it.
+V2: a recurse dispatch transfers budget into a child prioritiser in the
+shared registry (not spawning a child orchestrator). These tests pin
+the per-node actor contract: the target question gets its own
+``QuestionPrioritiser`` (or ``ClaimPrioritiser``) with the requested
+budget applied as its ``_budget_cap``.
 """
 
 import pytest
@@ -24,8 +24,9 @@ from rumil.models import (
     ScoutDispatchPayload,
     Workspace,
 )
-from rumil.orchestrators.claim_investigation import ClaimInvestigationOrchestrator
 from rumil.orchestrators.two_phase import TwoPhaseOrchestrator
+from rumil.prioritisers.claim_prioritiser import ClaimPrioritiser
+from rumil.prioritisers.question_prioritiser import QuestionPrioritiser
 
 
 def _scout_dispatch(question_id: str, reason: str = "") -> Dispatch:
@@ -58,11 +59,10 @@ def _patch_init(mocker, cls):
 
 
 @pytest.mark.asyncio
-async def test_recurse_dispatch_spawns_child_twophase_with_budget_cap(
-    tmp_db, question_page, child_question_page, prio_harness, mocker
+async def test_recurse_dispatch_creates_child_question_prioritiser(
+    tmp_db, question_page, child_question_page, prio_harness
 ):
-    """A RecurseDispatchPayload → a new TwoPhaseOrchestrator with the right budget_cap."""
-    instances = _patch_init(mocker, TwoPhaseOrchestrator)
+    """A RecurseDispatchPayload → child QuestionPrioritiser in the registry with matching budget_cap."""
     await tmp_db.init_budget(30)
     recurse = Dispatch(
         call_type=CallType.PRIORITIZATION,
@@ -82,16 +82,18 @@ async def test_recurse_dispatch_spawns_child_twophase_with_budget_cap(
     parent = TwoPhaseOrchestrator(tmp_db)
     await parent.run(question_page.id)
 
-    child_entries = [i for i in instances if i["instance"] is not parent]
-    assert len(child_entries) >= 1
-    assert child_entries[0]["budget_cap"] == MIN_TWOPHASE_BUDGET
+    registry = tmp_db.prioritiser_registry()
+    child = await registry.get(child_question_page.id)
+    assert child is not None, "child prioritiser was not created for recurse target"
+    assert isinstance(child, QuestionPrioritiser)
+    assert child._budget_cap == MIN_TWOPHASE_BUDGET
 
 
 @pytest.mark.asyncio
-async def test_recurse_claim_dispatch_spawns_claim_investigation_orchestrator(
-    tmp_db, question_page, prio_harness, mocker
+async def test_recurse_claim_dispatch_creates_claim_prioritiser(
+    tmp_db, question_page, prio_harness
 ):
-    """A RecurseClaimDispatchPayload → a new ClaimInvestigationOrchestrator with budget_cap."""
+    """A RecurseClaimDispatchPayload → child ClaimPrioritiser with matching budget_cap."""
     claim = Page(
         page_type=PageType.CLAIM,
         layer=PageLayer.SQUIDGY,
@@ -107,9 +109,6 @@ async def test_recurse_claim_dispatch_spawns_claim_investigation_orchestrator(
             link_type=LinkType.CONSIDERATION,
         )
     )
-
-    claim_instances = _patch_init(mocker, ClaimInvestigationOrchestrator)
-    _patch_init(mocker, TwoPhaseOrchestrator)
 
     await tmp_db.init_budget(30)
     recurse_claim = Dispatch(
@@ -130,8 +129,11 @@ async def test_recurse_claim_dispatch_spawns_claim_investigation_orchestrator(
     parent = TwoPhaseOrchestrator(tmp_db)
     await parent.run(question_page.id)
 
-    assert len(claim_instances) >= 1
-    assert claim_instances[0]["budget_cap"] == MIN_TWOPHASE_BUDGET
+    registry = tmp_db.prioritiser_registry()
+    child = await registry.get(claim.id)
+    assert child is not None, "claim prioritiser was not created for recurse_claim target"
+    assert isinstance(child, ClaimPrioritiser)
+    assert child._budget_cap == MIN_TWOPHASE_BUDGET
 
 
 @pytest.mark.asyncio

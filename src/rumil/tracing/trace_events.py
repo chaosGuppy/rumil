@@ -312,6 +312,26 @@ class QuestionDedupeEvent(BaseModel):
     decision_reasoning: str = ""
 
 
+class BudgetTransferredEvent(BaseModel):
+    event: Literal["budget_transferred"] = "budget_transferred"
+    from_question_id: str | None = None
+    to_question_id: str
+    amount: int
+
+
+class SubscriptionCreatedEvent(BaseModel):
+    event: Literal["subscription_created"] = "subscription_created"
+    target_question_id: str
+    trigger_threshold: int
+    subscriber: str | None = None
+
+
+class SubscriptionFiredEvent(BaseModel):
+    event: Literal["subscription_fired"] = "subscription_fired"
+    target_question_id: str
+    delivered_call_id: str | None = None
+
+
 TraceEvent = Annotated[
     ContextBuiltEvent
     | MovesExecutedEvent
@@ -344,6 +364,9 @@ TraceEvent = Annotated[
     | PhaseSkippedEvent
     | GlobalPhaseCompletedEvent
     | UpdateViewPhaseCompletedEvent
-    | QuestionDedupeEvent,
+    | QuestionDedupeEvent
+    | BudgetTransferredEvent
+    | SubscriptionCreatedEvent
+    | SubscriptionFiredEvent,
     Field(discriminator="event"),
 ]

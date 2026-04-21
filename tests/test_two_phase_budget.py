@@ -21,6 +21,7 @@ from rumil.models import (
     ScoutDispatchPayload,
 )
 from rumil.orchestrators.two_phase import TwoPhaseOrchestrator
+from rumil.prioritisers.question_prioritiser import QuestionPrioritiser
 
 
 def _scout_dispatch(question_id: str, reason: str = "") -> Dispatch:
@@ -55,15 +56,21 @@ async def test_twophase_raises_when_below_min_budget(tmp_db, question_page, prio
 
 
 def test_twophase_effective_budget_respects_cap(tmp_db):
-    """Pins the _effective_budget formula: min(global_remaining, cap - consumed)."""
-    orch = TwoPhaseOrchestrator(tmp_db, budget_cap=5)
-    assert orch._effective_budget(100) == 5
-    orch._consumed = 3
-    assert orch._effective_budget(100) == 2
-    orch._consumed = 5
-    assert orch._effective_budget(100) == 0
-    orch._consumed = 10
-    assert orch._effective_budget(100) < 0
+    """Pins the _effective_budget formula: min(global_remaining, cap - consumed).
+
+    Budget accounting now lives on the ``QuestionPrioritiser`` (the
+    facade delegates to it via ``receive_budget``). The formula is the
+    same; the owning object changed.
+    """
+    prio = QuestionPrioritiser("q1")
+    prio._budget_cap = 5
+    assert prio._effective_budget(100) == 5
+    prio._consumed = 3
+    assert prio._effective_budget(100) == 2
+    prio._consumed = 5
+    assert prio._effective_budget(100) == 0
+    prio._consumed = 10
+    assert prio._effective_budget(100) < 0
 
 
 @pytest.mark.asyncio
@@ -82,7 +89,9 @@ async def test_twophase_budget_cap_limits_rounds(tmp_db, question_page, prio_har
     orch = TwoPhaseOrchestrator(tmp_db, budget_cap=budget_cap)
     await orch.run(question_page.id)
 
-    assert orch._consumed <= budget_cap, f"_consumed={orch._consumed} exceeded cap={budget_cap}"
+    prio = orch._prio
+    assert prio is not None
+    assert prio._consumed <= budget_cap, f"_consumed={prio._consumed} exceeded cap={budget_cap}"
     assert len(prio_harness.prio_queue) > 0, (
         "prio queue was fully drained — budget_cap did not bound the number of rounds"
     )

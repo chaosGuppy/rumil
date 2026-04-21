@@ -1305,6 +1305,59 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
           ))}
         </div>
       )}
+
+      {event.event === "budget_transferred" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">amount</span>
+            <span className="trace-kv-value">{event.amount}</span>
+          </div>
+          {event.from_question_id && (
+            <div className="trace-kv">
+              <span className="trace-kv-key">from</span>
+              <code>{event.from_question_id.slice(0, 8)}</code>
+            </div>
+          )}
+          <div className="trace-kv">
+            <span className="trace-kv-key">to</span>
+            <code>{event.to_question_id.slice(0, 8)}</code>
+          </div>
+        </div>
+      )}
+
+      {event.event === "subscription_created" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">target</span>
+            <code>{event.target_question_id.slice(0, 8)}</code>
+          </div>
+          <div className="trace-kv">
+            <span className="trace-kv-key">threshold</span>
+            <span className="trace-kv-value">{event.trigger_threshold}</span>
+          </div>
+          {event.subscriber && (
+            <div className="trace-kv">
+              <span className="trace-kv-key">subscriber</span>
+              <span className="trace-kv-value">{event.subscriber}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {event.event === "subscription_fired" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">target</span>
+            <code>{event.target_question_id.slice(0, 8)}</code>
+          </div>
+          {event.delivered_call_id && (
+            <div className="trace-kv">
+              <span className="trace-kv-key">delivered</span>
+              <code>{event.delivered_call_id.slice(0, 8)}</code>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 });

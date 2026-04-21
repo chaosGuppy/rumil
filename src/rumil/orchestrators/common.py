@@ -346,10 +346,21 @@ async def score_items_sequentially(
 
 
 @dataclass
+class RecurseSpec:
+    """Planned recurse into a child question/claim via the prioritiser registry."""
+
+    target_question_id: str
+    budget: int
+    kind: str = "question"
+    reason: str = ""
+
+
+@dataclass
 class PrioritizationResult:
     dispatch_sequences: Sequence[Sequence[Dispatch]]
     call_id: str | None = None
     children: Sequence[tuple["BaseOrchestrator", str]] = ()
+    recurses: Sequence[RecurseSpec] = ()
 
 
 async def create_root_question(

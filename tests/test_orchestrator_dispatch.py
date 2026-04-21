@@ -260,21 +260,18 @@ async def test_concurrent_dispatch_failure_recorded_in_trace(
     question_page,
     mocker,
 ):
-    """When a dispatch raises during the TwoPhaseOrchestrator's concurrent
-    gather, an ErrorEvent should be recorded on the prioritization call's trace.
+    """When a dispatch raises during the round loop's concurrent gather, an
+    ErrorEvent should be recorded on the prioritization call's trace.
     """
     p_call = await tmp_db.create_call(
         CallType.PRIORITIZATION,
         scope_page_id=question_page.id,
     )
 
-    orch = TwoPhaseOrchestrator(tmp_db)
-    orch._call_id = p_call.id
-
     dispatches = [[_assess_dispatch(question_page.id)]]
     call_count = 0
 
-    async def fake_get_next_batch(question_id, budget, parent_call_id=None, **kwargs):
+    async def fake_get_next_batch(self, budget, total_remaining=None, last_call=False):
         nonlocal call_count
         call_count += 1
         if call_count == 1:
@@ -284,13 +281,16 @@ async def test_concurrent_dispatch_failure_recorded_in_trace(
             )
         return PrioritizationResult(dispatch_sequences=[])
 
-    mocker.patch.object(orch, "_get_next_batch", side_effect=fake_get_next_batch)
+    from rumil.prioritisers.question_prioritiser import QuestionPrioritiser
+
+    mocker.patch.object(QuestionPrioritiser, "_get_next_batch", fake_get_next_batch)
     mocker.patch.object(
         DB,
         "resolve_page_id",
         side_effect=ConnectionError("Simulated connection failure"),
     )
 
+    orch = TwoPhaseOrchestrator(tmp_db)
     await orch.run(question_page.id)
 
     rows = await tmp_db.client.table("calls").select("trace_json").eq("id", p_call.id).execute()

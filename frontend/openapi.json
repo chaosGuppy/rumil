@@ -1258,6 +1258,15 @@
                       },
                       {
                         "$ref": "#/components/schemas/QuestionDedupeEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/BudgetTransferredEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/SubscriptionCreatedEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/SubscriptionFiredEventOut"
                       }
                     ],
                     "discriminator": {
@@ -1294,7 +1303,10 @@
                         "phase_skipped": "#/components/schemas/PhaseSkippedEventOut",
                         "global_phase_completed": "#/components/schemas/GlobalPhaseCompletedEventOut",
                         "update_view_phase_completed": "#/components/schemas/UpdateViewPhaseCompletedEventOut",
-                        "question_dedupe": "#/components/schemas/QuestionDedupeEventOut"
+                        "question_dedupe": "#/components/schemas/QuestionDedupeEventOut",
+                        "budget_transferred": "#/components/schemas/BudgetTransferredEventOut",
+                        "subscription_created": "#/components/schemas/SubscriptionCreatedEventOut",
+                        "subscription_fired": "#/components/schemas/SubscriptionFiredEventOut"
                       }
                     }
                   },
@@ -1945,6 +1957,53 @@
           "agent_id"
         ],
         "title": "AutocompactEventOut"
+      },
+      "BudgetTransferredEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "budget_transferred",
+            "title": "Event",
+            "default": "budget_transferred"
+          },
+          "from_question_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Question Id"
+          },
+          "to_question_id": {
+            "type": "string",
+            "title": "To Question Id"
+          },
+          "amount": {
+            "type": "integer",
+            "title": "Amount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "from_question_id",
+          "to_question_id",
+          "amount"
+        ],
+        "title": "BudgetTransferredEventOut"
       },
       "Call": {
         "properties": {
@@ -4993,6 +5052,95 @@
           "question_id"
         ],
         "title": "SubquestionScoreItem"
+      },
+      "SubscriptionCreatedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "subscription_created",
+            "title": "Event",
+            "default": "subscription_created"
+          },
+          "target_question_id": {
+            "type": "string",
+            "title": "Target Question Id"
+          },
+          "trigger_threshold": {
+            "type": "integer",
+            "title": "Trigger Threshold"
+          },
+          "subscriber": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subscriber"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "target_question_id",
+          "trigger_threshold",
+          "subscriber"
+        ],
+        "title": "SubscriptionCreatedEventOut"
+      },
+      "SubscriptionFiredEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "subscription_fired",
+            "title": "Event",
+            "default": "subscription_fired"
+          },
+          "target_question_id": {
+            "type": "string",
+            "title": "Target Question Id"
+          },
+          "delivered_call_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivered Call Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "target_question_id",
+          "delivered_call_id"
+        ],
+        "title": "SubscriptionFiredEventOut"
       },
       "ToolCallEventOut": {
         "properties": {

@@ -383,11 +383,11 @@ def mocked_helpers(mocker):
             return_value="child-web-id",
         ),
         "create_view": mocker.patch(
-            "rumil.orchestrators.dispatch_handlers.create_view_for_question",
+            "rumil.views.sectioned.create_view_for_question",
             return_value="child-view-id",
         ),
         "update_view": mocker.patch(
-            "rumil.orchestrators.dispatch_handlers.update_view_for_question",
+            "rumil.views.sectioned.update_view_for_question",
             return_value="child-update-view-id",
         ),
         "simple": mocker.patch.object(

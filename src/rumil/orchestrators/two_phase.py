@@ -20,7 +20,6 @@ from rumil.context import build_prioritization_context
 from rumil.database import DB
 from rumil.llm import build_system_prompt
 from rumil.models import (
-    AssessDispatchPayload,
     Call,
     CallType,
     Dispatch,
@@ -34,9 +33,7 @@ from rumil.orchestrators.common import (
     PrioritizationResult,
     SubquestionScore,
     compute_priority_score,
-    create_view_for_question,
     score_items_sequentially,
-    update_view_for_question,
 )
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
@@ -53,6 +50,7 @@ from rumil.tracing.trace_events import (
     SubquestionScoreItem,
 )
 from rumil.tracing.tracer import CallTrace, set_trace
+from rumil.views import get_active_view
 
 log = logging.getLogger(__name__)
 
@@ -200,27 +198,16 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                 self._executed_since_last_plan = True
 
                 if self._invocation > 1 or last_call:
-                    existing_view = await self.db.get_view_for_question(root_question_id)
-                    if existing_view:
-                        await update_view_for_question(
-                            root_question_id,
-                            self.db,
-                            parent_call_id=self._parent_call_id,
-                            broadcaster=self.broadcaster,
-                            force=True,
-                            sequence_id=self._sequence_id,
-                            sequence_position=self._seq_position,
-                        )
-                    else:
-                        await create_view_for_question(
-                            root_question_id,
-                            self.db,
-                            parent_call_id=self._parent_call_id,
-                            broadcaster=self.broadcaster,
-                            force=True,
-                            sequence_id=self._sequence_id,
-                            sequence_position=self._seq_position,
-                        )
+                    view = get_active_view()
+                    await view.refresh(
+                        root_question_id,
+                        self.db,
+                        parent_call_id=self._parent_call_id,
+                        broadcaster=self.broadcaster,
+                        force=True,
+                        sequence_id=self._sequence_id,
+                        sequence_position=self._seq_position,
+                    )
                     if self._sequence_id is not None:
                         self._seq_position += 1
 
@@ -250,12 +237,9 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         return result
 
     async def _needs_initial_prioritization(self, question_id: str) -> bool:
-        """Run initial_prioritization iff no judgement or view answers the question yet."""
-        judgements = await self.db.get_judgements_for_question(question_id)
-        if judgements:
-            return False
-        view = await self.db.get_view_for_question(question_id)
-        return view is None
+        """Run initial_prioritization iff no view answers the question yet."""
+        view = get_active_view()
+        return not await view.exists(question_id, self.db)
 
     async def _cancel_initial_call(self) -> None:
         """Mark the eagerly-created initial_prioritization call as complete when it is skipped."""
@@ -623,8 +607,8 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             "Multi-round scouts (find_considerations, scout_*) cost between 1 and "
             "max_rounds budget units depending on early stopping. Dispatches "
             "targeting a **subquestion** (not the scope question) will have an "
-            "automatic assess appended, adding 1 to the cost. So a scout with "
-            "max_rounds=3 targeting a subquestion costs up to 4 budget units. "
+            "automatic view refresh appended, adding 1 to the cost. So a scout "
+            "with max_rounds=3 targeting a subquestion costs up to 4 budget units. "
             "Web research and assess dispatches cost exactly 1 each. "
             "Recurse costs exactly the budget you assign.\n\n"
             "Plan conservatively: your total worst-case cost across all dispatches "
@@ -710,17 +694,8 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                     d.payload.budget,
                     d.payload.reason,
                 )
-            elif d.payload.question_id == question_id:
-                sequences.append([d])
             else:
-                assess = Dispatch(
-                    call_type=CallType.ASSESS,
-                    payload=AssessDispatchPayload(
-                        question_id=d.payload.question_id,
-                        reason="Auto-assess after main_phase_prioritization dispatch",
-                    ),
-                )
-                sequences.append([d, assess])
+                sequences.append([d])
 
         all_dispatches = [d for seq in sequences for d in seq]
         all_trace_items = [

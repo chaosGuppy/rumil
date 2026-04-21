@@ -56,7 +56,6 @@ from rumil.models import (
 from rumil.moves.base import MoveState
 from rumil.moves.registry import MOVES
 from rumil.orchestrators.base import BaseOrchestrator
-from rumil.orchestrators.common import assess_question
 from rumil.orchestrators.experimental import ExperimentalOrchestrator
 from rumil.orchestrators.two_phase import TwoPhaseOrchestrator
 from rumil.settings import get_settings
@@ -70,6 +69,7 @@ from rumil.tracing.trace_events import (
     GlobalPhaseCompletedEvent,
 )
 from rumil.tracing.tracer import CallTrace, set_trace
+from rumil.views import get_active_view
 from rumil.workspace_exploration import (
     make_explore_subgraph_tool,
     make_load_page_tool,
@@ -1183,28 +1183,28 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
             return 0
 
         assessed = 0
+        view = get_active_view()
         for qid in stale_ids:
             if self._global_consumed >= self._global_cap:
                 break
             try:
-                call_id = await assess_question(
+                call_id = await view.refresh(
                     qid,
                     self.db,
                     parent_call_id=parent_call_id,
                     broadcaster=self.broadcaster,
                     force=True,
-                    summarise=self.summarise_before_assess,
                 )
                 if call_id:
                     self._global_consumed += 1
                     assessed += 1
                     log.info(
-                        "Global post-dispatch assess: question=%s",
+                        "Global post-dispatch refresh: question=%s",
                         qid[:8],
                     )
             except Exception:
                 log.warning(
-                    "Global post-dispatch assess failed: %s",
+                    "Global post-dispatch refresh failed: %s",
                     qid[:8],
                     exc_info=True,
                 )
@@ -1253,28 +1253,28 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
             return 0
 
         reassessed = 0
+        view = get_active_view()
         for qid in ordered_nodes:
             if self._global_consumed >= self._global_cap:
                 break
             try:
-                call_id = await assess_question(
+                call_id = await view.refresh(
                     qid,
                     self.db,
                     parent_call_id=parent_call_id,
                     broadcaster=self.broadcaster,
                     force=True,
-                    summarise=self.summarise_before_assess,
                 )
                 if call_id:
                     self._global_consumed += 1
                     reassessed += 1
                     log.info(
-                        "Global propagation: re-assessed question %s",
+                        "Global propagation: refreshed question %s",
                         qid[:8],
                     )
             except Exception:
                 log.warning(
-                    "Global propagation: failed to re-assess %s",
+                    "Global propagation: failed to refresh %s",
                     qid[:8],
                     exc_info=True,
                 )

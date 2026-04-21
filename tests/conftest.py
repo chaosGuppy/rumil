@@ -336,28 +336,20 @@ async def prio_harness(tmp_db, mocker):
         side_effect=_fake_assess,
     )
     mocker.patch(
-        "rumil.orchestrators.claim_investigation.assess_question",
+        "rumil.views.judgement.assess_question",
         side_effect=_fake_assess,
     )
     mocker.patch(
-        "rumil.orchestrators.dispatch_handlers.create_view_for_question",
+        "rumil.views.sectioned.create_view_for_question",
         side_effect=_fake_create_view,
     )
     mocker.patch(
-        "rumil.orchestrators.dispatch_handlers.update_view_for_question",
+        "rumil.views.sectioned.update_view_for_question",
         side_effect=_fake_update_view,
     )
     mocker.patch(
         "rumil.orchestrators.dispatch_handlers.web_research_question",
         side_effect=_fake_web,
-    )
-    mocker.patch(
-        "rumil.orchestrators.two_phase.update_view_for_question",
-        side_effect=_fake_update_view,
-    )
-    mocker.patch(
-        "rumil.orchestrators.two_phase.create_view_for_question",
-        side_effect=_fake_create_view,
     )
     mocker.patch(
         "rumil.orchestrators.two_phase.score_items_sequentially",

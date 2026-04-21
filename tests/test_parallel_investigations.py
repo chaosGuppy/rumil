@@ -362,11 +362,11 @@ async def test_concurrent_recursive_children_dont_overspend_global_budget(tmp_db
         return None
 
     mocker.patch(
-        "rumil.orchestrators.two_phase.create_view_for_question",
+        "rumil.views.sectioned.create_view_for_question",
         side_effect=_noop_view,
     )
     mocker.patch(
-        "rumil.orchestrators.two_phase.update_view_for_question",
+        "rumil.views.sectioned.update_view_for_question",
         side_effect=_noop_view,
     )
 

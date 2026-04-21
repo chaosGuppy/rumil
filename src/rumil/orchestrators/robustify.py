@@ -20,8 +20,8 @@ from rumil.calls.scout_c_strengthen import ScoutCStrengthenCall
 from rumil.calls.stages import CallRunner
 from rumil.database import DB
 from rumil.models import CallType
-from rumil.orchestrators.common import assess_question
 from rumil.tracing.broadcast import Broadcaster
+from rumil.views import get_active_view
 
 log = logging.getLogger(__name__)
 
@@ -204,7 +204,8 @@ class RobustifyOrchestrator:
 
         await asyncio.gather(how_true_runner.run(), how_false_runner.run())
 
-        await assess_question(
+        view = get_active_view()
+        await view.refresh(
             variant_id,
             db,
             broadcaster=self.broadcaster,

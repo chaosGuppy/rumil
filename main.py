@@ -1010,6 +1010,13 @@ async def async_main():
         help="Available-calls preset name (default: 'default'). Controls which scout/dispatch types the two-phase orchestrator uses.",
     )
     parser.add_argument(
+        "--view-variant",
+        dest="view_variant",
+        default=None,
+        help="View variant (default: 'sectioned'). Options: 'sectioned' "
+        "(importance-scored items), 'judgement' (flat NL judgement).",
+    )
+    parser.add_argument(
         "--ingest-num-claims",
         dest="ingest_num_claims",
         type=int,
@@ -1125,6 +1132,8 @@ async def async_main():
         get_settings().available_moves = args.available_moves
     if args.available_calls is not None:
         get_settings().available_calls = args.available_calls
+    if args.view_variant is not None:
+        get_settings().view_variant = args.view_variant
     if args.ingest_num_claims is not None:
         get_settings().ingest_num_claims = args.ingest_num_claims
     if args.smoke_test:

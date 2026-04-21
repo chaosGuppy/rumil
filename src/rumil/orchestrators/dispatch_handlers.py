@@ -55,11 +55,10 @@ from rumil.models import (
 )
 from rumil.orchestrators.common import (
     assess_question,
-    create_view_for_question,
     find_considerations_until_done,
-    update_view_for_question,
     web_research_question,
 )
+from rumil.views import get_active_view
 
 if TYPE_CHECKING:
     from rumil.orchestrators.base import BaseOrchestrator
@@ -119,21 +118,22 @@ async def _handle_find_considerations(
 
 
 async def _handle_assess(ctx: DispatchContext, payload: BaseDispatchPayload) -> str | None:
-    """Assess dispatch with view-redirect.
+    """Assess dispatch with view-refresh shortcut.
 
-    If the target question already has a view, redirect to update_view_for_question
-    (incremental view update). Otherwise run a normal assess call.
+    If the active view variant already has data for the target, refresh it
+    (for sectioned: UpdateView; for judgement: a fresh assess). Otherwise
+    run a normal assess call.
     """
     assert isinstance(payload, AssessDispatchPayload)
     db = ctx.orchestrator.db
-    existing_view = await db.get_view_for_question(ctx.resolved_question_id)
-    if existing_view:
+    view = get_active_view()
+    if await view.exists(ctx.resolved_question_id, db):
         log.info(
-            "Dispatch: assess redirected to update_view for %s (has view) — %s",
+            "Dispatch: assess redirected to view.refresh for %s — %s",
             ctx.d_label,
             payload.reason,
         )
-        return await update_view_for_question(
+        return await view.refresh(
             ctx.resolved_question_id,
             db,
             parent_call_id=ctx.parent_call_id,
@@ -160,6 +160,8 @@ async def _handle_assess(ctx: DispatchContext, payload: BaseDispatchPayload) -> 
 
 
 async def _handle_create_view(ctx: DispatchContext, payload: BaseDispatchPayload) -> str | None:
+    from rumil.views.sectioned import create_view_for_question
+
     assert isinstance(payload, CreateViewDispatchPayload)
     log.info("Dispatch: create_view on %s — %s", ctx.d_label, payload.reason)
     return await create_view_for_question(

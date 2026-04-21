@@ -56,6 +56,7 @@ class Settings(BaseSettings):
 
     assess_call_variant: str = _capture_field(default="default")
     prioritizer_variant: str = _capture_field(default="two_phase")
+    view_variant: str = _capture_field(default="sectioned")
 
     available_moves: str = _capture_field(default="default")
     available_calls: str = _capture_field(default="default")

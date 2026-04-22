@@ -86,6 +86,10 @@ class DispatchContext:
     sequence_position: int | None
     d_label: str
 
+    @property
+    def pool_question_id(self) -> str | None:
+        return self.orchestrator.pool_question_id
+
 
 DispatchHandler = Callable[[DispatchContext, BaseDispatchPayload], Awaitable[str | None]]
 
@@ -113,6 +117,7 @@ async def _handle_find_considerations(
         call_id=ctx.call_id,
         sequence_id=ctx.sequence_id,
         sequence_position=ctx.sequence_position,
+        pool_question_id=ctx.pool_question_id,
     )
     return child_ids[0] if child_ids else None
 
@@ -143,6 +148,7 @@ async def _handle_assess(ctx: DispatchContext, payload: BaseDispatchPayload) -> 
             call_id=ctx.call_id,
             sequence_id=ctx.sequence_id,
             sequence_position=ctx.sequence_position,
+            pool_question_id=ctx.pool_question_id,
         )
     log.info("Dispatch: assess on %s — %s", ctx.d_label, payload.reason)
     return await assess_question(
@@ -156,6 +162,7 @@ async def _handle_assess(ctx: DispatchContext, payload: BaseDispatchPayload) -> 
         sequence_id=ctx.sequence_id,
         sequence_position=ctx.sequence_position,
         summarise=ctx.orchestrator.summarise_before_assess,
+        pool_question_id=ctx.pool_question_id,
     )
 
 
@@ -189,6 +196,7 @@ async def _handle_web_research(ctx: DispatchContext, payload: BaseDispatchPayloa
         call_id=ctx.call_id,
         sequence_id=ctx.sequence_id,
         sequence_position=ctx.sequence_position,
+        pool_question_id=ctx.pool_question_id,
     )
 
 

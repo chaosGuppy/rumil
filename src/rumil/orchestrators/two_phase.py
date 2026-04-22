@@ -137,10 +137,14 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             )
             self._sequence_id = seq.id
             self._seq_position = 0
+        self.pool_question_id = root_question_id
+        contribution = self._budget_cap if self._budget_cap is not None else effective
+        await self.db.qbp_register(root_question_id, contribution)
         try:
             while True:
                 remaining = await self.db.budget_remaining()
-                effective = self._effective_budget(remaining)
+                pool = await self.db.qbp_get(root_question_id)
+                effective = min(self._effective_budget(remaining), pool.remaining)
                 if effective <= 0:
                     break
 
@@ -214,8 +218,11 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                 if last_call:
                     break
         finally:
-            await self._teardown()
-            await own_db.close()
+            try:
+                await self.db.qbp_unregister(root_question_id)
+            finally:
+                await self._teardown()
+                await own_db.close()
 
     async def _run_dispatch_sequence(
         self,
@@ -320,6 +327,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         context_text, short_id_map = await build_prioritization_context(
             self.db,
             scope_question_id=question_id,
+            current_call_id=self._initial_call.id if self._initial_call else None,
         )
         if self._initial_call is not None:
             p_call = self._initial_call
@@ -578,9 +586,16 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             fruit_lines.append("")
             scores_text += "\n".join(fruit_lines)
 
+        # Take the authoritative pool snapshot here — between this point and
+        # the LLM dispatching, peer cycles can only consume more from the pool.
+        # Using a fresh snapshot ensures the budget line and the Coordination
+        # context section agree on what's available.
+        fresh_pool = await self.db.qbp_get(question_id)
+        budget = min(budget, max(fresh_pool.remaining, 0))
         context_text, short_id_map = await build_prioritization_context(
             self.db,
             scope_question_id=question_id,
+            current_call_id=p_call.id,
         )
         dispatch_budget = budget if last_call else budget - 1
         budget_line = f"You have a budget of **{dispatch_budget} budget units** to allocate."
@@ -660,6 +675,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                         d.payload.question_id[:8],
                     )
                     continue
+                await self.db.qbp_consume(question_id, d.payload.budget)
                 child_claim = ClaimInvestigationOrchestrator(
                     self.db,
                     self.broadcaster,
@@ -681,6 +697,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                         d.payload.question_id[:8],
                     )
                     continue
+                await self.db.qbp_consume(question_id, d.payload.budget)
                 child = TwoPhaseOrchestrator(
                     self.db,
                     self.broadcaster,

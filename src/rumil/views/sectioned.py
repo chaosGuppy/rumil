@@ -38,6 +38,7 @@ class SectionedView(View):
         call_id: str | None = None,
         sequence_id: str | None = None,
         sequence_position: int | None = None,
+        pool_question_id: str | None = None,
     ) -> str | None:
         if await self.exists(question_id, db):
             return await update_view_for_question(
@@ -50,6 +51,7 @@ class SectionedView(View):
                 call_id=call_id,
                 sequence_id=sequence_id,
                 sequence_position=sequence_position,
+                pool_question_id=pool_question_id,
             )
         return await create_view_for_question(
             question_id,
@@ -61,6 +63,7 @@ class SectionedView(View):
             call_id=call_id,
             sequence_id=sequence_id,
             sequence_position=sequence_position,
+            pool_question_id=pool_question_id,
         )
 
     async def render_for_prioritization(self, question_id: str, db: DB) -> str | None:
@@ -137,10 +140,11 @@ async def create_view_for_question(
     call_id: str | None = None,
     sequence_id: str | None = None,
     sequence_position: int | None = None,
+    pool_question_id: str | None = None,
 ) -> str | None:
     """Run a CreateView call. Returns call ID, or None if no budget."""
     log.info("create_view_for_question: question=%s", question_id[:8])
-    if not await _consume_budget(db, force=force):
+    if not await _consume_budget(db, force=force, pool_question_id=pool_question_id):
         return None
 
     call = await db.create_call(
@@ -168,10 +172,11 @@ async def update_view_for_question(
     call_id: str | None = None,
     sequence_id: str | None = None,
     sequence_position: int | None = None,
+    pool_question_id: str | None = None,
 ) -> str | None:
     """Run an UpdateView call. Returns call ID, or None if no budget."""
     log.info("update_view_for_question: question=%s", question_id[:8])
-    if not await _consume_budget(db, force=force):
+    if not await _consume_budget(db, force=force, pool_question_id=pool_question_id):
         return None
 
     call = await db.create_call(

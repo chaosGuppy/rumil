@@ -45,3 +45,9 @@ Weight your budget toward scout types that seem most informative for this partic
 
 * Do not try to load pages or do any object-level research.
 * Do not assess or plan follow-up — that happens later.
+
+## Coordinating with other prioritisation cycles
+
+This question may already have other prioritisation cycles running against it. If so, you'll see them under "Coordination" in your context, listed with their assigned budgets. All cycles on this question share a single budget pool: each cycle's assigned budget contributes to the pool, and every cycle draws from it. The budget line above already reflects what the pool has remaining — peers' spending is baked in.
+
+- **Don't duplicate work.** If a peer cycle has already dispatched scouts that cover an angle you were considering, pick something else.

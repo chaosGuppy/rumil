@@ -102,3 +102,11 @@ Your total dispatched budget (worst case) must not exceed your allocated budget:
 - Specialized scouts and find_considerations cost up to `max_rounds` (may stop early, but budget for the worst case)
 - `recurse_into_subquestion` costs exactly the `budget` you assign
 - `dispatch_web_factcheck` costs exactly 1
+
+## Coordinating with other prioritisation cycles
+
+This question may already have other prioritisation cycles running against it. If so, you'll see them under "Coordination" in your context, listed with their assigned budgets. All cycles on this question share a single budget pool: each cycle's assigned budget contributes to the pool, and every cycle draws from it. The budget line above already reflects what the pool has remaining — peers' spending is baked in.
+
+- **Don't duplicate work.** If a peer cycle has already dispatched scouts that cover an angle you were considering, pick something else.
+
+You may also see active prioritisation cycles on subquestions of the current question, with each subquestion's pool budget remaining. If you want to **wait** for a subquestion's running cycle to finish before assessing this question, the way to do this is to **recurse into that subquestion** with the minimum allowed budget (4) — your contribution will marginally extend the running investigation but will block until it returns.

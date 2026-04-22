@@ -34,6 +34,7 @@ class View(ABC):
         call_id: str | None = None,
         sequence_id: str | None = None,
         sequence_position: int | None = None,
+        pool_question_id: str | None = None,
     ) -> str | None:
         """Create-if-missing or update. Single entry point for all refresh sites.
 

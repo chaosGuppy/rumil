@@ -189,8 +189,10 @@ class MultiRoundLoop(WorkspaceUpdater):
         rounds_completed = 0
         last_fruit_score: int | None = None
 
+        from rumil.orchestrators.common import _consume_budget
+
         for i in range(self._max_rounds):
-            if not await infra.db.consume_budget(1):
+            if not await _consume_budget(infra.db, pool_question_id=infra.pool_question_id):
                 log.info(
                     "Budget exhausted, stopping scout session at round %d",
                     i,

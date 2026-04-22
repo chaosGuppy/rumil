@@ -29,6 +29,10 @@ class CallInfra:
     db: DB
     trace: CallTrace
     state: MoveState
+    # The parent prio cycle's root question — when set, per-round budget
+    # consumption also debits this question's budget pool. Left None for
+    # rumil-mediated dispatch and other paths outside a prio cycle.
+    pool_question_id: str | None = None
 
 
 @dataclass
@@ -100,6 +104,7 @@ class CallRunner(ABC):
         up_to_stage: CallStage | None = None,
         max_rounds: int = 5,
         fruit_threshold: int = 4,
+        pool_question_id: str | None = None,
     ):
         self.infra = CallInfra(
             question_id=question_id,
@@ -107,6 +112,7 @@ class CallRunner(ABC):
             db=db,
             trace=CallTrace(call.id, db, broadcaster=broadcaster),
             state=MoveState(call, db),
+            pool_question_id=pool_question_id,
         )
         self.up_to_stage = up_to_stage
         self._max_rounds = max_rounds

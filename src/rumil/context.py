@@ -640,12 +640,19 @@ async def _build_dependency_signal(db: DB) -> str | None:
 async def build_prioritization_context(
     db: DB,
     scope_question_id: str | None = None,
+    *,
+    current_call_id: str | None = None,
 ) -> tuple[str, dict[str, str]]:
     """Build context for a prioritization call.
 
     Includes the current View (importance 2+) for the scope question,
     then appends the scope question and its direct children (at ABSTRACT
-    detail) and a dependency signal.
+    detail), a dependency signal, and (when ``scope_question_id`` is set)
+    a coordination section listing other in-flight calls on the scope
+    question and active prioritisation pools on its subquestions.
+
+    The coordination section is placed last so it doesn't interfere with
+    the cacheable prefix above it.
 
     Returns (context_text, short_id_map) where short_id_map maps 8-char
     short IDs to full UUIDs.
@@ -688,7 +695,91 @@ async def build_prioritization_context(
         parts.append(dep_section)
         parts.append("")
 
+    if scope_question_id:
+        coord_section = await _build_coordination_section(
+            db,
+            scope_question_id,
+            current_call_id=current_call_id,
+        )
+        if coord_section:
+            parts.append(coord_section)
+            parts.append("")
+
     return "\n".join(parts), short_id_map
+
+
+async def _build_coordination_section(
+    db: DB,
+    scope_question_id: str,
+    *,
+    current_call_id: str | None,
+) -> str:
+    """Render the coordination section for prio prompts.
+
+    Shows in-flight calls on the scope question (with assigned budgets) and
+    active prio pools on subquestions (with remaining budget). Returns an
+    empty string when nothing is in flight, so the section is omitted.
+    """
+    in_flight = await db.get_active_calls_for_question(
+        scope_question_id,
+        exclude_call_id=current_call_id,
+    )
+    sub_pools = await db.get_active_prio_pools_for_subquestions(scope_question_id)
+
+    if not in_flight and not sub_pools:
+        return ""
+
+    lines: list[str] = ["## Coordination: in-flight work on this question and its subquestions", ""]
+
+    if in_flight:
+        lines.append("### Calls in flight against this question")
+        lines.append("")
+        lines.append(
+            "Other calls currently dispatched against this question (excluding "
+            "your own). Their assigned budgets contribute to the same shared "
+            "pool you're drawing from — your budget line above already accounts "
+            "for what they've consumed:"
+        )
+        lines.append("")
+        for c in in_flight:
+            assigned = (
+                f"assigned budget {c.budget_allocated}"
+                if c.budget_allocated is not None
+                else "assigned budget —"
+            )
+            lines.append(f"- `[{c.id[:8]}]` {c.call_type.value.upper()} — {assigned}")
+        lines.append("")
+
+    if sub_pools:
+        sub_ids = [sub_id for sub_id, _ in sub_pools]
+        sub_pages = await db.get_pages_by_ids(sub_ids)
+        lines.append("### Active prioritisation cycles on subquestions")
+        lines.append("")
+        for sub_id, sub_pool in sub_pools:
+            page = sub_pages.get(sub_id)
+            headline = page.headline if page else ""
+            cycles_label = (
+                "1 active cycle"
+                if sub_pool.active_calls == 1
+                else f"{sub_pool.active_calls} active cycles"
+            )
+            lines.append(
+                f'- `[{sub_id[:8]}]` "{headline}" — '
+                f"**{max(sub_pool.remaining, 0)} budget remaining** "
+                f"({cycles_label})"
+            )
+        lines.append("")
+        lines.append(
+            "If you want to wait for one of these subquestion investigations to "
+            "finish before assessing this question, recurse into that "
+            "subquestion. If you want to wait without doing additional work "
+            "beyond what the running cycle is already doing, recurse with the "
+            "minimum allowed budget — your contribution will marginally extend "
+            "the running investigation but will block until the subquestion's "
+            "pool is exhausted."
+        )
+
+    return "\n".join(lines)
 
 
 def _filter_summary_pages(

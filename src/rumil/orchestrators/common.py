@@ -380,13 +380,22 @@ async def create_root_question(
     return page.id
 
 
-async def _consume_budget(db: DB, force: bool = False) -> bool:
+async def _consume_budget(
+    db: DB,
+    force: bool = False,
+    *,
+    pool_question_id: str | None = None,
+) -> bool:
     """Consume one unit of global budget. Returns False if exhausted.
 
     When *force* is True the call always succeeds: if normal consumption
     fails, budget is temporarily expanded so the dispatch can proceed.
     This is used to guarantee that every dispatch in a committed batch
     runs, even if it means slightly exceeding the original budget.
+
+    When *pool_question_id* is set, also debit the per-question budget pool
+    for that question. The pool debit never refuses; the run-level budget
+    is the authoritative gate.
     """
     ok = await db.consume_budget(1)
     if not ok:
@@ -396,6 +405,8 @@ async def _consume_budget(db: DB, force: bool = False) -> bool:
         if not ok:
             remaining = await db.budget_remaining()
             log.info("Budget exhausted (remaining: %d)", remaining)
+    if ok and pool_question_id is not None:
+        await db.qbp_consume(pool_question_id, 1)
     return ok
 
 
@@ -411,6 +422,7 @@ async def find_considerations_until_done(
     call_id: str | None = None,
     sequence_id: str | None = None,
     sequence_position: int | None = None,
+    pool_question_id: str | None = None,
 ) -> tuple[int, list[str]]:
     """Run a cache-aware find-considerations session.
 
@@ -452,6 +464,7 @@ async def find_considerations_until_done(
         fruit_threshold=fruit_threshold,
         context_page_ids=context_page_ids,
         broadcaster=broadcaster,
+        pool_question_id=pool_question_id,
     )
     await scout.run()
 
@@ -471,6 +484,7 @@ async def ingest_until_done(
     fruit_threshold: int = DEFAULT_INGEST_FRUIT_THRESHOLD,
     parent_call_id: str | None = None,
     broadcaster=None,
+    pool_question_id: str | None = None,
 ) -> int:
     """
     Run Ingest rounds on a source/question pair until remaining_fruit falls below
@@ -492,7 +506,7 @@ async def ingest_until_done(
     )
     rounds = 0
     for i in range(max_rounds):
-        if not await _consume_budget(db):
+        if not await _consume_budget(db, pool_question_id=pool_question_id):
             break
 
         call = await db.create_call(
@@ -537,6 +551,7 @@ async def assess_question(
     sequence_id: str | None = None,
     sequence_position: int | None = None,
     summarise: bool = True,
+    pool_question_id: str | None = None,
 ) -> str | None:
     """Run one Assess call on a question. Returns call ID, or None if no budget.
 
@@ -547,7 +562,7 @@ async def assess_question(
     step is skipped and the assess call sits at ``sequence_position``.
     """
     log.info("assess_question: question=%s", question_id[:8])
-    if not await _consume_budget(db, force=force):
+    if not await _consume_budget(db, force=force, pool_question_id=pool_question_id):
         return None
 
     if summarise:
@@ -587,10 +602,11 @@ async def web_research_question(
     call_id: str | None = None,
     sequence_id: str | None = None,
     sequence_position: int | None = None,
+    pool_question_id: str | None = None,
 ) -> str | None:
     """Run one web research call on a question. Returns call ID, or None if no budget."""
     log.info("web_research_question: question=%s", question_id[:8])
-    if not await _consume_budget(db, force=force):
+    if not await _consume_budget(db, force=force, pool_question_id=pool_question_id):
         return None
 
     call = await db.create_call(

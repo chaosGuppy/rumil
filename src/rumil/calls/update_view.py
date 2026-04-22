@@ -2,6 +2,7 @@
 
 import logging
 import re
+import uuid
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Literal
@@ -216,18 +217,29 @@ def _render_item_full(
 
 
 class UpdateViewContext(ContextBuilder):
-    """Context for View update: embedding-based with raised similarity floors."""
+    """Context for View update: embedding-based with raised similarity floors.
 
-    def __init__(self, view_id: str, old_view_id: str | None = None) -> None:
-        self._view_id = view_id
-        self._old_view_id = old_view_id
+    The new view page doesn't exist yet at build_context time (it's created
+    at update_workspace time so ``--up-to-stage build_context`` stays
+    side-effect-free). We read items from the *old* view — the pending copy
+    preserves each item's target page, importance, section, and position, so
+    the context is byte-identical to what the new view would expose.
+    """
+
+    def __init__(self) -> None:
+        pass
 
     async def build_context(self, infra: CallInfra) -> ContextResult:
         question = await infra.db.get_page(infra.question_id)
         query = question.headline if question else infra.question_id
 
-        old_view = await infra.db.get_page(self._old_view_id) if self._old_view_id else None
-        last_view_created_at = old_view.created_at if old_view else None
+        old_view = await infra.db.get_view_for_question(infra.question_id)
+        if not old_view:
+            raise RuntimeError(
+                f"UpdateViewContext requires an existing View for question "
+                f"{infra.question_id[:8]}, but none was found."
+            )
+        last_view_created_at = old_view.created_at
 
         child_section, child_page_ids = await render_child_investigation_results(
             infra.db,
@@ -235,7 +247,7 @@ class UpdateViewContext(ContextBuilder):
             last_view_created_at,
         )
 
-        items = await infra.db.get_view_items(self._view_id)
+        items = await infra.db.get_view_items(old_view.id)
         item_ids = [page.id for page, _ in items]
         links_by_item = await infra.db.get_links_from_many(item_ids) if item_ids else {}
         cited_ids: set[str] = set()
@@ -270,17 +282,101 @@ class UpdateViewContext(ContextBuilder):
 
 
 class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
-    """Multi-phase workspace updater for incremental View updates."""
+    """Multi-phase workspace updater for incremental View updates.
+
+    Materializes the new view page + copies items from the old view at the
+    start of ``update_workspace``, then runs the multi-phase review. This
+    keeps view-creation inside the workspace_update stage rather than ahead
+    of build_context, so ``--up-to-stage build_context`` is a clean preview.
+    """
 
     def __init__(self, view_id: str, call_type: CallType) -> None:
         self._view_id = view_id
         self._call_type = call_type
+
+    async def materialize(self, infra: CallInfra) -> tuple[str, str]:
+        """Create the new view page, supersede the old one, and copy
+        VIEW_ITEM links across. Returns ``(old_view_id, new_view_id)``.
+
+        Exposed as a public method so tests can exercise the materialization
+        step directly without running the full LLM-driven updater.
+        """
+        db = infra.db
+        question_id = infra.question_id
+        existing_view = await db.get_view_for_question(question_id)
+        if not existing_view:
+            raise RuntimeError(
+                f"UpdateViewCall requires an existing View for question "
+                f"{question_id[:8]}, but none was found."
+            )
+
+        question = await db.get_page(question_id)
+        q_headline = question.headline if question else question_id[:8]
+
+        new_view = Page(
+            id=self._view_id,
+            page_type=PageType.VIEW,
+            layer=PageLayer.WIKI,
+            workspace=Workspace.RESEARCH,
+            content="",
+            headline=f"View: {q_headline}",
+            sections=list(DEFAULT_VIEW_SECTIONS),
+            provenance_call_type=self._call_type.value,
+            provenance_call_id=infra.call.id,
+            provenance_model=get_settings().model,
+        )
+        await db.save_page(new_view)
+
+        await db.save_link(
+            PageLink(
+                from_page_id=new_view.id,
+                to_page_id=question_id,
+                link_type=LinkType.VIEW_OF,
+            )
+        )
+
+        await db.supersede_page(existing_view.id, new_view.id)
+
+        old_links = await db.get_links_from(existing_view.id)
+        copied = 0
+        for link in old_links:
+            if link.link_type == LinkType.VIEW_ITEM:
+                await db.save_link(
+                    PageLink(
+                        from_page_id=new_view.id,
+                        to_page_id=link.to_page_id,
+                        link_type=LinkType.VIEW_ITEM,
+                        importance=link.importance,
+                        section=link.section,
+                        position=link.position,
+                    )
+                )
+                copied += 1
+
+        log.info(
+            "Created new view %s (superseding %s) with %d copied items",
+            new_view.id[:8],
+            existing_view.id[:8],
+            copied,
+        )
+
+        await infra.trace.record_strict(
+            ViewCreatedEvent(
+                view_id=new_view.id,
+                view_headline=new_view.headline,
+                question_id=question_id,
+                superseded_view_id=existing_view.id,
+            )
+        )
+        return existing_view.id, new_view.id
 
     async def update_workspace(
         self,
         infra: CallInfra,
         context: ContextResult,
     ) -> UpdateResult:
+        await self.materialize(infra)
+
         sections = _load_prompt_sections()
         system_prompt = _build_update_view_system_prompt(sections.get("context", ""))
 
@@ -999,87 +1095,15 @@ class UpdateViewCall(CallRunner):
     call_type = CallType.UPDATE_VIEW
 
     def __init__(self, question_id: str, call: Call, db: DB, **kwargs) -> None:
-        self._view_id: str = ""
-        self._old_view_id: str = ""
+        # Mint the new view UUID up front so factories can bind to it. The
+        # actual save_page + supersede + link-copy runs at update_workspace
+        # time (inside UpdateViewWorkspaceUpdater.materialize), so
+        # --up-to-stage build_context doesn't mutate the workspace.
+        self._view_id: str = str(uuid.uuid4())
         super().__init__(question_id, call, db, **kwargs)
 
-    async def _run_stages(self) -> None:
-        """Create new View page, copy items, then run phases."""
-        self._old_view_id, self._view_id = await self._create_new_view_and_copy_items()
-        self.context_builder = self._make_context_builder()
-        self.workspace_updater = self._make_workspace_updater()
-        self.closing_reviewer = self._make_closing_reviewer()
-        await super()._run_stages()
-
-    async def _create_new_view_and_copy_items(self) -> tuple[str, str]:
-        """Create a new View page, supersede the old one, copy all VIEW_ITEM links."""
-        existing_view = await self.infra.db.get_view_for_question(self.infra.question_id)
-        if not existing_view:
-            raise RuntimeError(
-                f"UpdateViewCall requires an existing View for question "
-                f"{self.infra.question_id[:8]}, but none was found."
-            )
-
-        question = await self.infra.db.get_page(self.infra.question_id)
-        q_headline = question.headline if question else self.infra.question_id[:8]
-
-        new_view = Page(
-            page_type=PageType.VIEW,
-            layer=PageLayer.WIKI,
-            workspace=Workspace.RESEARCH,
-            content="",
-            headline=f"View: {q_headline}",
-            sections=list(DEFAULT_VIEW_SECTIONS),
-            provenance_call_type=self.call_type.value,
-            provenance_call_id=self.infra.call.id,
-            provenance_model=get_settings().model,
-        )
-        await self.infra.db.save_page(new_view)
-
-        await self.infra.db.save_link(
-            PageLink(
-                from_page_id=new_view.id,
-                to_page_id=self.infra.question_id,
-                link_type=LinkType.VIEW_OF,
-            )
-        )
-
-        await self.infra.db.supersede_page(existing_view.id, new_view.id)
-
-        old_links = await self.infra.db.get_links_from(existing_view.id)
-        for link in old_links:
-            if link.link_type == LinkType.VIEW_ITEM:
-                await self.infra.db.save_link(
-                    PageLink(
-                        from_page_id=new_view.id,
-                        to_page_id=link.to_page_id,
-                        link_type=LinkType.VIEW_ITEM,
-                        importance=link.importance,
-                        section=link.section,
-                        position=link.position,
-                    )
-                )
-
-        log.info(
-            "Created new view %s (superseding %s) with %d copied items",
-            new_view.id[:8],
-            existing_view.id[:8],
-            sum(1 for l in old_links if l.link_type == LinkType.VIEW_ITEM),
-        )
-
-        await self.infra.trace.record_strict(
-            ViewCreatedEvent(
-                view_id=new_view.id,
-                view_headline=new_view.headline,
-                question_id=self.infra.question_id,
-                superseded_view_id=existing_view.id,
-            )
-        )
-
-        return existing_view.id, new_view.id
-
     def _make_context_builder(self) -> ContextBuilder:
-        return UpdateViewContext(self._view_id, old_view_id=self._old_view_id)
+        return UpdateViewContext()
 
     def _make_workspace_updater(self) -> WorkspaceUpdater:
         return UpdateViewWorkspaceUpdater(self._view_id, self.call_type)

@@ -9,7 +9,6 @@ from rumil.calls.update_view import (
     ItemReview,
     ProposedItem,
     UnscoredItemScore,
-    UpdateViewCall,
     UpdateViewWorkspaceUpdater,
     _parse_prompt_sections,
     _render_item_compact,
@@ -204,22 +203,36 @@ def test_render_item_full_without_citations():
     assert "Cited evidence" not in rendered
 
 
-async def test_create_new_view_and_copy_items(tmp_db, view_setup):
-    """UpdateViewCall should create a new View, supersede the old one,
-    and copy all VIEW_ITEM links."""
-    q, old_view, items = view_setup
+async def _materialize(tmp_db, question_id: str) -> tuple[str, str]:
+    """Drive UpdateViewWorkspaceUpdater.materialize directly using a real
+    CallInfra. Returns (old_view_id, new_view_id).
+    """
+    import uuid as _uuid
 
     call = Call(
         call_type=CallType.UPDATE_VIEW,
         workspace=Workspace.RESEARCH,
-        scope_page_id=q.id,
+        scope_page_id=question_id,
         status=CallStatus.PENDING,
     )
     await tmp_db.save_call(call)
+    infra = CallInfra(
+        question_id=question_id,
+        call=call,
+        db=tmp_db,
+        trace=CallTrace(call.id, tmp_db),
+        state=MoveState(call, tmp_db),
+    )
+    updater = UpdateViewWorkspaceUpdater(str(_uuid.uuid4()), CallType.UPDATE_VIEW)
+    return await updater.materialize(infra)
 
-    runner = UpdateViewCall(q.id, call, tmp_db)
 
-    old_id, new_id = await runner._create_new_view_and_copy_items()
+async def test_materialize_creates_new_view_and_copies_items(tmp_db, view_setup):
+    """UpdateViewWorkspaceUpdater.materialize should create a new View,
+    supersede the old one, and copy all VIEW_ITEM links."""
+    q, old_view, items = view_setup
+
+    old_id, new_id = await _materialize(tmp_db, q.id)
 
     assert old_id == old_view.id
     assert new_id != old_view.id
@@ -247,7 +260,7 @@ async def test_create_new_view_and_copy_items(tmp_db, view_setup):
     assert found_view.id == new_id
 
 
-async def test_create_new_view_preserves_link_metadata(tmp_db):
+async def test_materialize_preserves_link_metadata(tmp_db):
     """Link metadata (importance, section, position) should survive the copy."""
     q = _question()
     v = _view()
@@ -272,16 +285,7 @@ async def test_create_new_view_preserves_link_metadata(tmp_db):
         )
     )
 
-    call = Call(
-        call_type=CallType.UPDATE_VIEW,
-        workspace=Workspace.RESEARCH,
-        scope_page_id=q.id,
-        status=CallStatus.PENDING,
-    )
-    await tmp_db.save_call(call)
-    runner = UpdateViewCall(q.id, call, tmp_db)
-
-    _, new_id = await runner._create_new_view_and_copy_items()
+    _, new_id = await _materialize(tmp_db, q.id)
     new_items = await tmp_db.get_view_items(new_id)
     assert len(new_items) == 1
     _, link = new_items[0]
@@ -290,8 +294,22 @@ async def test_create_new_view_preserves_link_metadata(tmp_db):
     assert link.position == 7
 
 
-async def test_create_new_view_raises_without_existing_view(tmp_db):
-    """UpdateViewCall should raise if there's no existing View to update."""
+async def test_materialize_raises_without_existing_view(tmp_db):
+    """UpdateViewWorkspaceUpdater.materialize should raise if there's no
+    existing View to update."""
+    q = _question()
+    await tmp_db.save_page(q)
+    with pytest.raises(RuntimeError, match="requires an existing View"):
+        await _materialize(tmp_db, q.id)
+
+
+async def test_build_context_uses_stageable_guard_without_view(tmp_db):
+    """UpdateViewContext should refuse to build context when no View exists —
+    build_context runs before materialize, so it has to fetch the old view
+    directly and enforce the same precondition.
+    """
+    from rumil.calls.update_view import UpdateViewContext
+
     q = _question()
     await tmp_db.save_page(q)
     call = Call(
@@ -301,9 +319,43 @@ async def test_create_new_view_raises_without_existing_view(tmp_db):
         status=CallStatus.PENDING,
     )
     await tmp_db.save_call(call)
-    runner = UpdateViewCall(q.id, call, tmp_db)
+    infra = CallInfra(
+        question_id=q.id,
+        call=call,
+        db=tmp_db,
+        trace=CallTrace(call.id, tmp_db),
+        state=MoveState(call, tmp_db),
+    )
+    builder = UpdateViewContext()
     with pytest.raises(RuntimeError, match="requires an existing View"):
-        await runner._create_new_view_and_copy_items()
+        await builder.build_context(infra)
+
+
+async def test_create_view_updater_mints_view_id_but_defers_persist(tmp_db):
+    """CreateViewCall mints the view UUID in __init__ but doesn't persist the
+    view until update_workspace runs; verify the Page isn't present after
+    construction.
+    """
+    from rumil.calls.create_view import CreateViewCall
+
+    q = _question()
+    await tmp_db.save_page(q)
+    call = Call(
+        call_type=CallType.CREATE_VIEW,
+        workspace=Workspace.RESEARCH,
+        scope_page_id=q.id,
+        status=CallStatus.PENDING,
+    )
+    await tmp_db.save_call(call)
+
+    runner = CreateViewCall(q.id, call, tmp_db)
+    assert runner._view_id, "CreateViewCall should mint a view_id in __init__"
+
+    # Construction alone must not create any View page.
+    page_before = await tmp_db.get_page(runner._view_id)
+    assert page_before is None
+    found_view = await tmp_db.get_view_for_question(q.id)
+    assert found_view is None
 
 
 async def test_apply_item_score_updates_link(tmp_db, view_setup, call_infra):

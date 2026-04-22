@@ -611,6 +611,27 @@ class DB:
             return None
         return pages[0]
 
+    async def get_page_staging_info(self, page_id: str) -> tuple[bool, str, str] | None:
+        """Return (staged, run_id, project_id) for a page, bypassing the staged
+        visibility filter. Returns None if the page doesn't exist.
+
+        Callers use this to discover whether a page is staged under another run
+        before deciding which run_id/staged combination to open a DB with.
+        """
+        rows = _rows(
+            await self._execute(
+                self.client.table("pages").select("staged, run_id, project_id").eq("id", page_id)
+            )
+        )
+        if not rows:
+            return None
+        row = rows[0]
+        return (
+            bool(row.get("staged")),
+            row.get("run_id") or "",
+            row.get("project_id") or "",
+        )
+
     async def get_pages_by_ids(self, page_ids: Sequence[str]) -> dict[str, Page]:
         """Bulk-fetch pages by ID. Returns {id: Page} for pages that exist."""
         if not page_ids:

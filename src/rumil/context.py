@@ -258,8 +258,12 @@ async def format_page(
     When *track* is True, the page load is recorded via the ambient
     ``CallTrace`` (if one exists).  Ambient tags from ``page_track_scope``
     are merged with any explicit *track_tags* (explicit wins on conflict).
-    Recursive calls (supersession, linked items) do NOT track — only the
-    caller's top-level invocation is recorded.
+    Supersession replacement renders are not tracked separately (they
+    represent the same logical page). Linked-item renders (considerations,
+    judgements, child-question judgements for QUESTION pages) DO track
+    when *track* is True, using source tags ``linked_consideration`` /
+    ``linked_judgement`` / ``linked_child_judgement`` — this is how
+    scope-question linked items become visible in ``page_format_events``.
     """
     if track:
         trace = get_trace()
@@ -366,6 +370,8 @@ async def format_page(
                 db=db,
                 linked_detail=None,
                 highlight_run_id=highlight_run_id,
+                track=track,
+                track_tags={"source": "linked_consideration"},
             )
             line = "- " + rendered + link_tag
             if link.reasoning:
@@ -390,6 +396,8 @@ async def format_page(
                 db=db,
                 linked_detail=None,
                 highlight_run_id=highlight_run_id,
+                track=track,
+                track_tags={"source": "linked_judgement"},
             )
             j_items.append((j.created_at, "- " + rendered))
         if j_items:
@@ -419,6 +427,8 @@ async def format_page(
                     db=db,
                     linked_detail=None,
                     highlight_run_id=highlight_run_id,
+                    track=track,
+                    track_tags={"source": "linked_child_judgement"},
                 )
                 sub_lines.append(f"  - {rendered}")
             child_blocks.append("\n".join(sub_lines))

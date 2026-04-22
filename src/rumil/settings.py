@@ -32,7 +32,15 @@ def _capture_field(**kwargs: Any) -> Any:
 
 
 class Settings(BaseSettings):
-    model_config = {"env_file": ".env", "extra": "ignore", "validate_assignment": True}
+    # ".env" is the shared (often symlinked) project env; ".env.local" is a
+    # worktree-local override file written by the workmux post_create hook
+    # (see /Users/chaos-guppy/differential/.workmux.yaml). Later files in the
+    # tuple override earlier ones, so .env.local wins.
+    model_config = {
+        "env_file": (".env", ".env.local"),
+        "extra": "ignore",
+        "validate_assignment": True,
+    }
 
     anthropic_api_key: str = ""
     rumil_test_mode: str = ""

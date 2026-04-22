@@ -48,16 +48,57 @@ data/         # generated; gitignored. essays/ JSON, *.jsonl for everything else
 
 ```bash
 uv venv && uv pip install -e .
-export OPENROUTER_API_KEY=...   # required for any model call
+export OPENROUTER_API_KEY=...   # required for OpenRouter-based runs
+export ANTHROPIC_API_KEY=...    # required for rumil-style judges (run_rumil_judgments.py)
 
 uv run scripts/fetch_essays.py
 uv run scripts/run_paraphrases.py
 uv run scripts/run_completions.py   # also synthesizes paraphrase-remainder rows
-uv run scripts/run_judgments.py
+uv run scripts/run_judgments.py         # OpenRouter judges
+uv run scripts/run_rumil_judgments.py   # Anthropic-direct judges (see below)
 uv run scripts/serve_ui.py          # UI at http://127.0.0.1:8765
 ```
 
 Each script is idempotent. Re-running just fills gaps.
+
+## Rumil-style judges
+
+`scripts/run_rumil_judgments.py` runs pairwise judgments via a direct
+Anthropic client (no OpenRouter, no `anthropic` SDK — just httpx). Rumil
+itself deliberately uses Anthropic directly for prompts and
+orchestration, so its judges do too. Results land in the same
+`data/judgments.jsonl` with `judge_model = "anthropic:<model>"` and flow
+through to the `/results` UI alongside OpenRouter judges unchanged.
+
+Models are read from `config.yaml` under `judging.anthropic_models`, or
+can be passed ad-hoc: `--model claude-opus-4-7 --model claude-sonnet-4-6`.
+Also supports `--limit N` and `--dry-run`.
+
+**Env resolution.** `ANTHROPIC_API_KEY` (and `OPENROUTER_API_KEY`) are
+resolved from this cascade, highest precedence first:
+
+1. `versus/.env`
+2. `<rumil-root>/.env`
+3. process environment
+
+Files override the process env so per-project `.env` files take
+precedence over stale shell exports. No extra dep — `envcascade.py` has
+a 20-line parser. Whichever source supplied each key is reported on
+missing-key errors.
+
+### Planned: workspace-aware variant
+
+The above is the *no-workspace* rumil judge — a text-only Anthropic call,
+structurally equivalent to OpenRouter judges but on a different model
+axis. The more interesting variant (deferred) is **workspace-aware**:
+multi-turn agent with `search_workspace` + `load_page` tools bound to a
+rumil workspace loaded with essay-topic-adjacent material. That tests
+the hypothesis that rumil's discrimination on pairwise judging benefits
+from relevant workspace context — something a single-shot judge
+structurally can't leverage. When added, it will live in the same
+`rumil_judge.py` module with a `--workspace <name>` flag; `judge_model`
+will become `rumil:<model>:<ws_short_id>` so dedup keys differ per
+workspace.
 
 ## UI
 

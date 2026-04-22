@@ -1,5 +1,5 @@
 {
   "venvPath": ".",
   "venv": ".venv",
-  "extraPaths": ["src", ".claude/lib"]
+  "extraPaths": ["src", ".claude/lib", "versus/src"]
 }

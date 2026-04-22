@@ -47,13 +47,17 @@ paraphrasing:
     # - id: anthropic/claude-opus-4-7
 
 judging:
-  models:
+  models:                         # OpenRouter judges, used by scripts/run_judgments.py
     - google/gemini-3-flash-preview
     - openai/gpt-5.4-mini
     - openai/gpt-5.4
     # Same list for the judge axis of the gen-model × judge-model matrix:
     # - anthropic/claude-haiku-4-5
     # - anthropic/claude-opus-4-7
+  anthropic_models:               # Rumil-style judges (direct Anthropic), used by run_rumil_judgments.py
+    - claude-opus-4-7
+    - claude-sonnet-4-6
+    # - claude-haiku-4-5
   criteria:                       # one judgment per criterion per pair per judge
     - standalone_quality          # blind quality: clearer thinking, better writing
     - informativeness             # which is more informative, all things considered

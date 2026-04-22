@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import Link from "next/link";
 import type { LinkedPageOut, PageLink } from "@/api";
+import { withStagedRun } from "@/lib/staged-run-href";
 
 const TYPE_CONFIG: Record<
   string,
@@ -80,9 +81,7 @@ function LinkMeta({ link }: { link: PageLink }) {
 function LinkedCard({ lp, stagedRunId }: { lp: LinkedPageOut; stagedRunId?: string }) {
   const cfg = TYPE_CONFIG[lp.page.page_type] || TYPE_CONFIG.source;
   const isSuperseded = lp.page.is_superseded;
-  const href = stagedRunId
-    ? `/pages/${lp.page.id}?staged_run_id=${stagedRunId}`
-    : `/pages/${lp.page.id}`;
+  const href = withStagedRun(`/pages/${lp.page.id}`, stagedRunId);
   return (
     <Link
       href={href}

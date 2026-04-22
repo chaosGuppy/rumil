@@ -14,6 +14,7 @@ import type {
 } from "@/api/types.gen";
 import { CLIENT_API_BASE as QUERY_API_BASE } from "@/api-config";
 import { useStagedRun } from "@/lib/staged-run-context";
+import { withStagedRun } from "@/lib/staged-run-href";
 import { traceKeys } from "@/lib/queries";
 import type { SequenceNode } from "./trace-viewer";
 
@@ -152,9 +153,7 @@ function PageChip({ page }: { page: PageRef }) {
   const short = page.id.slice(0, 8);
   const label = page.headline || short;
   const { activeStagedRunId } = useStagedRun();
-  const href = activeStagedRunId
-    ? `/pages/${page.id}?staged_run_id=${activeStagedRunId}`
-    : `/pages/${page.id}`;
+  const href = withStagedRun(`/pages/${page.id}`, activeStagedRunId);
   return (
     <Link href={href} className="trace-page-chip" title={short}>
       {label}
@@ -1239,12 +1238,9 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
         <div className="trace-event-body">
           <div className="trace-kv">
             <span className="trace-kv-key">view</span>
-            <Link
-              href={`/pages/${event.view_id}`}
-              className="trace-page-chip"
-            >
-              {event.view_headline || event.view_id.slice(0, 8)}
-            </Link>
+            <span className="trace-kv-value">
+              <PageChip page={{ id: event.view_id, headline: event.view_headline }} />
+            </span>
           </div>
         </div>
       )}

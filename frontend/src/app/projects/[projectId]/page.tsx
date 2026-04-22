@@ -7,6 +7,7 @@ import type { Page, PageType, PaginatedPagesOut, Project, RunListItemOut } from 
 
 import { CLIENT_API_BASE as API_BASE } from "@/api-config";
 import { useStagedRun } from "@/lib/staged-run-context";
+import { withStagedRun } from "@/lib/staged-run-href";
 import { WorkspaceIndicator } from "@/components/workspace-indicator";
 import { useDocumentTitle } from "@/lib/use-document-title";
 
@@ -68,8 +69,7 @@ const TYPE_CONFIG: Record<
 };
 
 function pageHref(page: Page, stagedRunId?: string | null): string {
-  if (stagedRunId) return `/pages/${page.id}?staged_run_id=${stagedRunId}`;
-  return `/pages/${page.id}`;
+  return withStagedRun(`/pages/${page.id}`, stagedRunId);
 }
 
 function epistemicLabel(page: Page) {

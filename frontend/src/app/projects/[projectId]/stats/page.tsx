@@ -10,17 +10,13 @@ import StagedBanner from "@/components/staged-banner";
 import { WorkspaceIndicator } from "@/components/workspace-indicator";
 import { StatsView } from "@/components/stats-view";
 import { useDocumentTitle } from "@/lib/use-document-title";
-
-function stagedQs(stagedRunId: string | null): string {
-  return stagedRunId ? `?staged_run_id=${stagedRunId}` : "";
-}
+import { withStagedRun } from "@/lib/staged-run-href";
 
 export default function ProjectStatsPage() {
   const params = useParams<{ projectId: string }>();
   const projectId = params.projectId;
   const searchParams = useSearchParams();
   const stagedRunId = searchParams.get("staged_run_id");
-  const stagedQ = stagedQs(stagedRunId);
 
   const [projectName, setProjectName] = useState<string>();
   const [data, setData] = useState<ProjectStatsOut | null>(null);
@@ -40,7 +36,7 @@ export default function ProjectStatsPage() {
   useEffect(() => {
     setLoading(true);
     setError(null);
-    fetch(`${API_BASE}/api/projects/${projectId}/stats${stagedQ}`, {
+    fetch(withStagedRun(`${API_BASE}/api/projects/${projectId}/stats`, stagedRunId), {
       cache: "no-store",
     })
       .then(async (res) => {
@@ -55,7 +51,7 @@ export default function ProjectStatsPage() {
         setError(String(e));
         setLoading(false);
       });
-  }, [projectId, stagedQ]);
+  }, [projectId, stagedRunId]);
 
   return (
     <main className="stats-page">
@@ -137,7 +133,7 @@ export default function ProjectStatsPage() {
           <div className="subtitle">project overview</div>
         </div>
         <div className="stats-nav">
-          <Link href={`/projects/${projectId}${stagedQ}`}>Pages</Link>
+          <Link href={withStagedRun(`/projects/${projectId}`, stagedRunId)}>Pages</Link>
         </div>
       </div>
 

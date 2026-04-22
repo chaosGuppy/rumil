@@ -1,0 +1,62 @@
+{% extends "_base.html" %}
+{% block body %}
+<header>
+  <strong>versus</strong>
+  <span class="muted">/</span>
+  <span>judge: <strong>{{ name }}</strong></span>
+  <span class="muted">/</span>
+  <span>criterion: <span class="pill">{{ criterion }}</span></span>
+  <div class="grow"></div>
+  <span class="progress">{{ done_count }} / {{ total }}</span>
+  <span class="muted">switch criterion:</span>
+  {% for c in criteria %}
+    {% if c != criterion %}
+      <a href="/?name={{ name }}&criterion={{ c }}">{{ c }}</a>
+    {% endif %}
+  {% endfor %}
+</header>
+<main>
+  <h1>{{ pair.title }}</h1>
+  <p class="muted">{{ criterion_desc }}</p>
+
+  <details>
+    <summary>Essay opening (click to reveal)</summary>
+    <div class="card prose" style="margin-top: 8px;">{{ pair.prefix_text }}</div>
+  </details>
+
+  <h2>Two continuations — which is better?</h2>
+
+  <form method="post" action="/judge">
+    <input type="hidden" name="name" value="{{ name }}">
+    <input type="hidden" name="criterion" value="{{ criterion }}">
+    <input type="hidden" name="essay_id" value="{{ pair.essay_id }}">
+    <input type="hidden" name="prefix_hash" value="{{ pair.prefix_hash }}">
+    <input type="hidden" name="a" value="{{ pair.a }}">
+    <input type="hidden" name="b" value="{{ pair.b }}">
+    <input type="hidden" name="first_source" value="{{ pair.first_source }}">
+    <input type="hidden" name="second_source" value="{{ pair.second_source }}">
+
+    <div class="two-col">
+      <div class="card">
+        <h2 style="margin-top: 0;">Continuation A</h2>
+        <div class="prose">{{ pair.first_text }}</div>
+      </div>
+      <div class="card">
+        <h2 style="margin-top: 0;">Continuation B</h2>
+        <div class="prose">{{ pair.second_text }}</div>
+      </div>
+    </div>
+
+    <div style="margin-top: 20px;">
+      <textarea name="note" rows="2" placeholder="Optional note on your reasoning" style="width: 100%;"></textarea>
+    </div>
+
+    <div class="stack" style="margin-top: 16px;">
+      <button type="submit" name="verdict" value="A">A is better</button>
+      <button type="submit" name="verdict" value="B">B is better</button>
+      <button type="submit" name="verdict" value="tie">Tie</button>
+      <button type="submit" name="verdict" value="skip" style="margin-left: auto; color: var(--muted);">Skip</button>
+    </div>
+  </form>
+</main>
+{% endblock %}

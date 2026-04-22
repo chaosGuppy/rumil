@@ -1,0 +1,68 @@
+from __future__ import annotations
+
+import pathlib
+
+import pydantic
+import yaml
+
+
+class EssaysCfg(pydantic.BaseModel):
+    source: str = "forethought"
+    max_recent: int = 5
+    cache_dir: pathlib.Path = pathlib.Path("data/essays")
+
+
+class PrefixCfg(pydantic.BaseModel):
+    n_paragraphs: int = 3
+    include_headers: bool = True
+
+
+class ModelCfg(pydantic.BaseModel):
+    id: str
+    temperature: float = 0.7
+    max_tokens: int = 4000
+    top_p: float | None = None
+
+
+class CompletionCfg(pydantic.BaseModel):
+    length_tolerance: float = 0.10
+    models: list[ModelCfg]
+
+
+class ParaphrasingCfg(pydantic.BaseModel):
+    enabled: bool = True
+    models: list[ModelCfg] = pydantic.Field(default_factory=list)
+
+
+class JudgingCfg(pydantic.BaseModel):
+    models: list[str]
+    criteria: list[str] = pydantic.Field(default_factory=lambda: ["standalone_quality"])
+    include_human_as_contestant: bool = True
+    max_tokens: int = 32000
+
+
+class StorageCfg(pydantic.BaseModel):
+    completions_log: pathlib.Path = pathlib.Path("data/completions.jsonl")
+    judgments_log: pathlib.Path = pathlib.Path("data/judgments.jsonl")
+    paraphrases_log: pathlib.Path = pathlib.Path("data/paraphrases.jsonl")
+
+
+class UICfg(pydantic.BaseModel):
+    port: int = 8765
+
+
+class Config(pydantic.BaseModel):
+    essays: EssaysCfg
+    prefix: PrefixCfg
+    completion: CompletionCfg
+    paraphrasing: ParaphrasingCfg = pydantic.Field(default_factory=ParaphrasingCfg)
+    judging: JudgingCfg
+    storage: StorageCfg
+    ui: UICfg
+    concurrency: int = 20
+
+
+def load(path: str | pathlib.Path = "config.yaml") -> Config:
+    with open(path) as f:
+        data = yaml.safe_load(f)
+    return Config.model_validate(data)

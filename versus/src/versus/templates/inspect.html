@@ -1,0 +1,81 @@
+{% extends "_base.html" %}
+{% block body %}
+<header>
+  <strong>versus</strong>
+  <span class="muted">/</span>
+  <span>inspector</span>
+  <div class="grow"></div>
+  <form method="get" action="/inspect" class="stack">
+    <label for="essay" class="muted">essay</label>
+    <select id="essay" name="essay" onchange="this.form.submit()">
+      {% for id, title in essays %}
+        <option value="{{ id }}" {% if selected and selected.id == id %}selected{% endif %}>
+          {{ title }}
+        </option>
+      {% endfor %}
+    </select>
+  </form>
+  <a href="/">back</a>
+</header>
+<main>
+  {% if not view %}
+    <p class="muted">No essays found yet. Run <code>uv run scripts/fetch_essays.py</code> first.</p>
+  {% else %}
+    <h1>{{ selected.title }}</h1>
+    <p class="muted">
+      prefix_config_hash: <code>{{ view.prefix_config_hash }}</code> ·
+      target words for completion: <strong>{{ view.target_words }}</strong>
+    </p>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-top: 16px;">
+      <section>
+        <h2>Original essay (normalized markdown)</h2>
+        <div class="card prose" style="max-height: 80vh; overflow: auto;"><pre style="white-space: pre-wrap; font-family: Georgia, serif; margin: 0;">{{ view.essay_markdown }}</pre></div>
+      </section>
+      <section>
+        <h2>Completion prompt</h2>
+        <p class="muted">What each completion model receives.</p>
+        <div class="card" style="max-height: 80vh; overflow: auto;"><pre style="white-space: pre-wrap; font-family: ui-monospace, Menlo, monospace; font-size: 13px; margin: 0;">{{ view.completion_prompt }}</pre></div>
+      </section>
+      <section>
+        <h2>Judge prompt template</h2>
+        <p class="muted">Criterion shown: <code>{{ view.criteria[0] }}</code>. Placeholders are substituted at run time.</p>
+        <div class="card" style="max-height: 80vh; overflow: auto;"><pre style="white-space: pre-wrap; font-family: ui-monospace, Menlo, monospace; font-size: 13px; margin: 0;">{{ view.judge_prompt_template }}</pre></div>
+      </section>
+    </div>
+
+    <h2 style="margin-top: 30px;">Paraphrase prompt template</h2>
+    <p class="muted">Sent once per essay × paraphrase model; the output becomes a new contestant <code>paraphrase:&lt;model&gt;</code>.</p>
+    <div class="card" style="max-height: 60vh; overflow: auto;"><pre style="white-space: pre-wrap; font-family: ui-monospace, Menlo, monospace; font-size: 13px; margin: 0;">{{ view.paraphrase_prompt_template }}</pre></div>
+
+    {% if view.sources %}
+      <h2 style="margin-top: 36px;">Generated sources side-by-side</h2>
+      <p class="muted">
+        Each column is a "contestant" that the judges pair up. Target was
+        <strong>{{ view.target_words }}</strong> words.
+      </p>
+      <div style="display: grid; grid-template-columns: repeat({{ view.sources|length }}, 1fr); gap: 14px; margin-top: 8px;">
+        {% for s in view.sources %}
+          <section>
+            <div class="stack" style="margin-bottom: 6px; align-items: baseline;">
+              <span class="pill">{{ s.kind }}</span>
+              <code style="font-size: 13px;">{{ s.source_id }}</code>
+              <span class="muted" style="margin-left: auto; font-size: 12px;">
+                {{ s.words }} w
+                {% if s.target %}
+                  <span style="color: {% if s.words < s.target * 0.8 or s.words > s.target * 1.2 %}#b14{% else %}#1a8{% endif %}">
+                    ({{ "%+.0f"|format((s.words - s.target) / s.target * 100) }}%)
+                  </span>
+                {% endif %}
+              </span>
+            </div>
+            <div class="card prose" style="max-height: 70vh; overflow: auto; font-size: 14px;">
+              <pre style="white-space: pre-wrap; font-family: Georgia, serif; margin: 0;">{{ s.text }}</pre>
+            </div>
+          </section>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endif %}
+</main>
+{% endblock %}

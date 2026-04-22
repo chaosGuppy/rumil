@@ -34,6 +34,7 @@ class FindConsiderationsCall(CallRunner):
         context_page_ids: Sequence[str] | None = None,
         broadcaster=None,
         up_to_stage: CallStage | None = None,
+        pool_question_id: str | None = None,
     ):
         call.call_params = {
             **(call.call_params or {}),
@@ -43,7 +44,14 @@ class FindConsiderationsCall(CallRunner):
         self._max_rounds = max_rounds
         self._fruit_threshold = fruit_threshold
         self._context_page_ids = context_page_ids
-        super().__init__(question_id, call, db, broadcaster=broadcaster, up_to_stage=up_to_stage)
+        super().__init__(
+            question_id,
+            call,
+            db,
+            broadcaster=broadcaster,
+            up_to_stage=up_to_stage,
+            pool_question_id=pool_question_id,
+        )
 
     @property
     def rounds_completed(self) -> int:

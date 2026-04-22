@@ -38,6 +38,7 @@ class JudgementView(View):
         call_id: str | None = None,
         sequence_id: str | None = None,
         sequence_position: int | None = None,
+        pool_question_id: str | None = None,
     ) -> str | None:
         return await assess_question(
             question_id,
@@ -50,6 +51,7 @@ class JudgementView(View):
             sequence_id=sequence_id,
             sequence_position=sequence_position,
             summarise=False,
+            pool_question_id=pool_question_id,
         )
 
     async def render_for_prioritization(self, question_id: str, db: DB) -> str | None:

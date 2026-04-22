@@ -246,6 +246,7 @@ class PrioHarness:
         **kwargs,
     ) -> str | None:
         force = kwargs.get("force", False)
+        pool_question_id = kwargs.get("pool_question_id")
         ok = await self.db.consume_budget(1)
         if not ok:
             if force:
@@ -253,6 +254,8 @@ class PrioHarness:
                 ok = await self.db.consume_budget(1)
             if not ok:
                 return None
+        if pool_question_id is not None:
+            await self.db.qbp_consume(pool_question_id, 1)
         call = await self.db.create_call(
             call_type,
             scope_page_id=question_id,

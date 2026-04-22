@@ -41,6 +41,10 @@ class BaseOrchestrator(ABC):
         self.broadcaster: Broadcaster | None = broadcaster
         self._owns_broadcaster: bool = False
         self.ingest_hint: str = ""
+        # Set by prio orchestrators to their root question ID. Sub-call
+        # budget consumption debits this question's pool. None for
+        # orchestrators outside a per-question prio cycle.
+        self.pool_question_id: str | None = None
 
     async def _pacing_params(self) -> tuple[int, int]:
         """Return (total, used) for budget pacing.
@@ -115,6 +119,7 @@ class BaseOrchestrator(ABC):
             broadcaster=self.broadcaster,
             max_rounds=max_rounds,
             fruit_threshold=fruit_threshold,
+            pool_question_id=self.pool_question_id,
         )
         await instance.run()
         return call.id
@@ -214,6 +219,7 @@ class BaseOrchestrator(ABC):
                     force=True,
                     sequence_id=seq_id,
                     sequence_position=seq_pos if is_multi_step else None,
+                    pool_question_id=self.pool_question_id,
                 )
                 seq_pos += 1
         return executed

@@ -120,7 +120,8 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                         "TwoPhaseOrchestrator: prioritiser task for %s failed",
                         root_question_id[:8],
                     )
-            await self.db.prioritiser_registry().teardown()
+            if self._parent_call_id is None:
+                await self.db.prioritiser_registry().teardown()
         finally:
             await self._teardown()
             await own_db.close()

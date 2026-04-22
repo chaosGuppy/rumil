@@ -137,6 +137,75 @@ async def test_recurse_claim_dispatch_creates_claim_prioritiser(
 
 
 @pytest.mark.asyncio
+async def test_recurse_claim_drives_phase1_dispatches(tmp_db, question_page, prio_harness):
+    """A claim recurse from a question prio must actually drive phase-1 scouts.
+
+    Pre-V2-port regression: ClaimPrioritiser had no ``_run_round``, so a claim
+    recurse created a prioritiser that errored out on first loop iteration and
+    the phase-1 scouts were never dispatched. This test pins that the claim's
+    round loop actually runs phase-1 and the scouts land in the harness.
+    """
+    claim = Page(
+        page_type=PageType.CLAIM,
+        layer=PageLayer.SQUIDGY,
+        workspace=Workspace.RESEARCH,
+        content="Claim to investigate via recurse.",
+        headline="Claim to investigate via recurse.",
+    )
+    await tmp_db.save_page(claim)
+    await tmp_db.save_link(
+        PageLink(
+            from_page_id=claim.id,
+            to_page_id=question_page.id,
+            link_type=LinkType.CONSIDERATION,
+        )
+    )
+
+    await tmp_db.init_budget(30)
+    recurse_claim = Dispatch(
+        call_type=CallType.PRIORITIZATION,
+        payload=RecurseClaimDispatchPayload(
+            question_id=claim.id,
+            budget=MIN_TWOPHASE_BUDGET,
+            reason="investigate claim",
+        ),
+    )
+    claim_phase1_scout = Dispatch(
+        call_type=CallType.SCOUT_C_HOW_TRUE,
+        payload=ScoutDispatchPayload(
+            question_id=claim.id,
+            max_rounds=1,
+            reason="phase1 scout",
+        ),
+    )
+    prio_harness.prio_queue = [
+        RunCallResult(dispatches=[_scout_dispatch(question_page.id, "seed")]),
+        RunCallResult(dispatches=[recurse_claim]),
+        RunCallResult(dispatches=[claim_phase1_scout]),
+        RunCallResult(dispatches=[]),
+        RunCallResult(dispatches=[]),
+        RunCallResult(dispatches=[]),
+    ]
+
+    parent = TwoPhaseOrchestrator(tmp_db)
+    await parent.run(question_page.id)
+
+    # Dispatch handlers route by payload class, not call_type — the scripted
+    # SCOUT_C_HOW_TRUE + ScoutDispatchPayload lands in the FIND_CONSIDERATIONS
+    # handler. What matters for this regression is that *some* phase-1 scout
+    # dispatched (i.e. a non-ASSESS call on the claim); the last_call branch
+    # also runs a terminal ASSESS which we want to exclude.
+    claim_scouts = [
+        d
+        for d in prio_harness.dispatched
+        if d.get("question_id") == claim.id and d.get("call_type") != CallType.ASSESS.value
+    ]
+    assert claim_scouts, (
+        "ClaimPrioritiser did not dispatch phase-1 scouts — its round loop was never executed"
+    )
+
+
+@pytest.mark.asyncio
 async def test_recurse_with_missing_question_id_skips_cleanly(
     tmp_db, question_page, prio_harness, mocker
 ):

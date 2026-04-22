@@ -606,3 +606,80 @@ async def test_prioritiser_mark_done_during_active_round_terminates_cleanly():
     assert f.done()
     assert f.result() == "forced-during-round"
     assert prio.rounds == [5]
+
+
+@pytest.mark.asyncio
+async def test_registry_recurse_detects_direct_cycle_and_skips_subscription():
+    """A→B then B→A must not deadlock: the cycle-forming recurse returns a pre-resolved future."""
+    reg = PrioritiserRegistry()
+    f_a_to_b = await reg.recurse(
+        "B",
+        budget=5,
+        factory=_RecordingPrioritiser,
+        subscriber="A",
+    )
+    b_prio = await reg.get("B")
+    assert b_prio is not None
+    assert isinstance(b_prio, _RecordingPrioritiser)
+    assert len(b_prio.subscriptions) == 1
+    assert b_prio.subscriptions[0].subscriber == "A"
+    # Drive A into the registry so the cycle check has an A to walk from.
+    reg._by_question["A"] = _RecordingPrioritiser("A")
+
+    f_b_to_a = await reg.recurse(
+        "A",
+        budget=5,
+        factory=_RecordingPrioritiser,
+        subscriber="B",
+    )
+    assert f_b_to_a.done()
+    assert f_b_to_a.result() is None
+    a_prio = await reg.get("A")
+    assert a_prio is not None
+    assert all(sub.subscriber != "B" for sub in a_prio.subscriptions)
+
+    await asyncio.wait_for(f_a_to_b, timeout=1.0)
+    await a_prio.mark_done()
+    await b_prio.mark_done()
+
+
+@pytest.mark.asyncio
+async def test_registry_recurse_self_subscription_is_treated_as_cycle():
+    reg = PrioritiserRegistry()
+    future = await reg.recurse(
+        "A",
+        budget=5,
+        factory=_RecordingPrioritiser,
+        subscriber="A",
+    )
+    assert future.done()
+    assert future.result() is None
+    prio = await reg.get("A")
+    assert prio is not None
+    await prio.mark_done()
+
+
+@pytest.mark.asyncio
+async def test_registry_recurse_detects_transitive_cycle():
+    """A→B→C exists; adding C→A must be detected as a cycle."""
+    reg = PrioritiserRegistry()
+    await reg.recurse("B", budget=5, factory=_RecordingPrioritiser, subscriber="A")
+    await reg.recurse("C", budget=5, factory=_RecordingPrioritiser, subscriber="B")
+    reg._by_question["A"] = _RecordingPrioritiser("A")
+
+    f_c_to_a = await reg.recurse(
+        "A",
+        budget=5,
+        factory=_RecordingPrioritiser,
+        subscriber="C",
+    )
+    assert f_c_to_a.done()
+    assert f_c_to_a.result() is None
+    a_prio = await reg.get("A")
+    assert a_prio is not None
+    assert all(sub.subscriber != "C" for sub in a_prio.subscriptions)
+
+    for qid in ("A", "B", "C"):
+        p = await reg.get(qid)
+        if p is not None:
+            await p.mark_done()

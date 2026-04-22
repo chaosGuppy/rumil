@@ -16,6 +16,7 @@ Shared across all forks of a root DB. The registry supports:
 
 import asyncio
 import logging
+import weakref
 from typing import TYPE_CHECKING
 
 from rumil.models import CallType
@@ -33,12 +34,21 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
+_ALL_REGISTRIES: "weakref.WeakSet[PrioritiserRegistry]" = weakref.WeakSet()
+
+
+def all_registries() -> list["PrioritiserRegistry"]:
+    """Snapshot of live PrioritiserRegistry instances. For diagnostics only."""
+    return list(_ALL_REGISTRIES)
+
+
 class PrioritiserRegistry:
     def __init__(self) -> None:
         self._by_question: dict[str, Prioritiser] = {}
         self._non_scope_dispatched: set[tuple[str, str]] = set()
         self._lock: asyncio.Lock = asyncio.Lock()
         self._pending_trace_tasks: set[asyncio.Task] = set()
+        _ALL_REGISTRIES.add(self)
 
     async def get_or_acquire(
         self,
@@ -58,6 +68,45 @@ class PrioritiserRegistry:
     async def get(self, question_id: str) -> Prioritiser | None:
         async with self._lock:
             return self._by_question.get(question_id)
+
+    def _would_create_subscription_cycle(
+        self,
+        subscriber_question_id: str | None,
+        target_question_id: str,
+    ) -> bool:
+        """Does adding subscriber→target create a cycle in the subscription graph?
+
+        An edge X→Y means X is awaiting Y (X has a pending subscription
+        *on* Y, recorded in Y.subscriptions with sub.subscriber=X).
+        A cycle appears when we add subscriber→target and there is
+        already a path target→…→subscriber, because both tasks then
+        block forever on each other inside ``asyncio.gather``.
+
+        We DFS from ``target`` along outgoing edges; outgoing from a
+        node X is the set of Y whose ``subscriptions`` list contains a
+        sub with ``subscriber == X``.
+
+        Caller must hold ``self._lock``.
+        """
+        if subscriber_question_id is None:
+            return False
+        if subscriber_question_id == target_question_id:
+            return True
+        seen: set[str] = set()
+        stack: list[str] = [target_question_id]
+        while stack:
+            current = stack.pop()
+            if current in seen:
+                continue
+            seen.add(current)
+            for y_qid, y_prio in self._by_question.items():
+                if y_qid in seen:
+                    continue
+                if any(sub.subscriber == current for sub in y_prio.subscriptions):
+                    if y_qid == subscriber_question_id:
+                        return True
+                    stack.append(y_qid)
+        return False
 
     async def should_execute_non_scope_dispatch(
         self,
@@ -108,13 +157,41 @@ class PrioritiserRegistry:
         if trace is not None:
             await trace.record(
                 BudgetTransferredEvent(
+                    from_question_id=subscriber,
                     to_question_id=target_question_id,
                     amount=budget,
                 )
             )
-        await prio.receive_budget(budget)
+        # Cycle detection: if subscribing here would create a cycle in
+        # the subscription graph (A→B plus an existing B→...→A chain),
+        # both round tasks would block on each other's subscription
+        # future inside asyncio.gather and deadlock. Transfer the budget
+        # but skip the subscription; return a pre-resolved future so the
+        # parent's gather proceeds.
+        async with self._lock:
+            cycle = self._would_create_subscription_cycle(subscriber, target_question_id)
+        # Snapshot cumulative_spent and grow budget atomically so the
+        # threshold = pre_cumulative + budget represents "our contributed
+        # B has been spent", even if a round overspends (which clamps
+        # budget to 0 and would otherwise drop cumulative+budget below
+        # the real spend-level by the time we compute it).
         async with prio._lock:
-            threshold = prio.cumulative_spent + prio.budget
+            pre_cumulative = prio.cumulative_spent
+            prio.budget += budget
+            already_done = prio.state == "done"
+            threshold = pre_cumulative + budget
+        if not already_done:
+            await prio.start()
+        if cycle:
+            log.info(
+                "Registry.recurse: skipping subscription from %s to %s to avoid cycle",
+                (subscriber or "<root>")[:8],
+                target_question_id[:8],
+            )
+            loop = asyncio.get_running_loop()
+            pre_resolved: asyncio.Future = loop.create_future()
+            pre_resolved.set_result(None)
+            return pre_resolved
         if trace is not None:
             await trace.record(
                 SubscriptionCreatedEvent(
@@ -166,4 +243,4 @@ class PrioritiserRegistry:
                     "Teardown force-fire failed for prio %s",
                     prio.question_id[:8],
                 )
-            await prio.mark_done()
+            await prio.mark_done(reason="teardown")

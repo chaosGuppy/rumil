@@ -44,6 +44,8 @@ class Prioritiser:
         self.subscriptions: list[Subscription] = []
         self.done: asyncio.Event = asyncio.Event()
         self.state: PrioritiserState = "idle"
+        self.crashed: bool = False
+        self.crash_exc: BaseException | None = None
         self._lock: asyncio.Lock = asyncio.Lock()
         self._last_delivered_call_id: str | None = None
         self._task: asyncio.Task | None = None
@@ -67,10 +69,14 @@ class Prioritiser:
             trigger_threshold=threshold,
             future=future,
             subscriber=subscriber,
+            target_question_id=self.question_id,
         )
         async with self._lock:
             if self.cumulative_spent >= threshold or self.state == "done":
-                sub.resolve(self._last_delivered_call_id)
+                sub.resolve(
+                    self._last_delivered_call_id,
+                    reason="already-satisfied" if self.state != "done" else "marked-done",
+                )
             else:
                 self.subscriptions.append(sub)
         return future
@@ -91,19 +97,48 @@ class Prioritiser:
         still_pending: list[Subscription] = []
         for sub in self.subscriptions:
             if sub.is_ready(self.cumulative_spent):
-                sub.resolve(self._last_delivered_call_id)
+                sub.resolve(self._last_delivered_call_id, reason="budget-spent")
             else:
                 still_pending.append(sub)
         self.subscriptions = still_pending
 
-    async def mark_done(self, delivered_call_id: str | None = None) -> None:
+    async def forfeit_remaining_budget(self) -> None:
+        """Close out leftover budget without spending it, preserving conservation.
+
+        Why: subscriptions are created at ``threshold = pre_cumulative + budget_granted``
+        on the assumption that the grant will eventually be spent. A raw
+        ``self.budget = 0`` (e.g. on last_call exit) breaks that invariant —
+        budget disappears without ``cumulative_spent`` rising, so subscribers
+        block forever. Forfeiting charges the lost budget to cumulative_spent
+        so pending subs whose thresholds fall inside the granted amount fire
+        normally.
+        """
+        async with self._lock:
+            forfeit = self.budget
+            if forfeit <= 0:
+                return
+            self.budget = 0
+            self.cumulative_spent += forfeit
+            self._fire_ready_locked()
+
+    async def mark_done(
+        self,
+        delivered_call_id: str | None = None,
+        reason: str = "marked-done",
+    ) -> None:
         async with self._lock:
             if self.state == "done":
                 return
             if delivered_call_id is not None:
                 self._last_delivered_call_id = delivered_call_id
+            if reason == "crashed":
+                fire_reason = "crashed"
+            elif reason == "teardown":
+                fire_reason = "teardown"
+            else:
+                fire_reason = "marked-done"
             for sub in self.subscriptions:
-                sub.resolve(self._last_delivered_call_id)
+                sub.resolve(self._last_delivered_call_id, reason=fire_reason)
             self.subscriptions = []
             self.state = "done"
             self.done.set()
@@ -187,12 +222,21 @@ class Prioritiser:
                 round_budget = self.budget
             try:
                 await self._run_round(round_budget)
-            except Exception:
-                log.exception(
-                    "Prioritiser %s round failed; marking done",
+            except Exception as exc:
+                log.error(
+                    "Prioritiser CRASHED: %s(%s) kind=%s budget=%d spent=%d pending_subs=%d exc=%r",
+                    type(self).__name__,
                     self.question_id[:8],
+                    self.kind,
+                    self.budget,
+                    self.cumulative_spent,
+                    len(self.subscriptions),
+                    exc,
+                    exc_info=True,
                 )
-                await self.mark_done()
+                self.crashed = True
+                self.crash_exc = exc
+                await self.mark_done(reason="crashed")
                 return
             async with self._lock:
                 self._fire_ready_locked()

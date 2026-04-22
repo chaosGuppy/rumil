@@ -54,6 +54,7 @@ from rumil.orchestrators.common import (
     score_items_sequentially,
     update_view_for_question,
 )
+from rumil.prioritisers.claim_prioritiser import ClaimPrioritiser
 from rumil.prioritisers.dispatch import DispatchRunner
 from rumil.prioritisers.prioritiser import Prioritiser
 from rumil.prioritisers.subscription import Subscription
@@ -273,9 +274,7 @@ class QuestionPrioritiser(DispatchRunner, Prioritiser):
         recurse_costs: list[int] = []
         registry = self.db.prioritiser_registry()
         for recurse in result.recurses:
-            factory = (
-                QuestionPrioritiser if recurse.kind == "question" else _resolve_claim_prioritiser()
-            )
+            factory = QuestionPrioritiser if recurse.kind == "question" else ClaimPrioritiser
             future = await registry.recurse(
                 recurse.target_question_id,
                 budget=recurse.budget,
@@ -341,7 +340,7 @@ class QuestionPrioritiser(DispatchRunner, Prioritiser):
         await self.on_dispatch_completed(cost=round_spend, delivered_call_id=delivered)
 
         if last_call:
-            self.budget = 0
+            await self.forfeit_remaining_budget()
 
     async def _get_next_batch(
         self,
@@ -792,10 +791,9 @@ class QuestionPrioritiser(DispatchRunner, Prioritiser):
 
         recurse_base = len(all_dispatches)
         registry = self.db.prioritiser_registry()
+        child_pages = await self.db.get_pages_by_ids([r.target_question_id for r in recurses])
         for ci, recurse in enumerate(recurses):
-            factory = (
-                QuestionPrioritiser if recurse.kind == "question" else _resolve_claim_prioritiser()
-            )
+            factory = QuestionPrioritiser if recurse.kind == "question" else ClaimPrioritiser
             child_prio, is_new = await registry.get_or_acquire(
                 recurse.target_question_id,
                 kind=recurse.kind,
@@ -814,7 +812,7 @@ class QuestionPrioritiser(DispatchRunner, Prioritiser):
                 )
             else:
                 child_call_id = None
-            child_page = await self.db.get_page(recurse.target_question_id)
+            child_page = child_pages.get(recurse.target_question_id)
             await trace.record(
                 DispatchExecutedEvent(
                     index=recurse_base + ci,
@@ -874,9 +872,3 @@ class QuestionPrioritiser(DispatchRunner, Prioritiser):
             call_id = None
         self._last_delivered_call_id = call_id
         subscription.resolve(call_id)
-
-
-def _resolve_claim_prioritiser() -> type[Prioritiser]:
-    from rumil.prioritisers.claim_prioritiser import ClaimPrioritiser
-
-    return ClaimPrioritiser

@@ -1,6 +1,10 @@
 """Shared fixtures for tests."""
 
+import asyncio
+import contextlib
+import os
 import sys
+import traceback
 import uuid
 from pathlib import Path
 
@@ -25,7 +29,104 @@ from rumil.models import (
     Workspace,
 )
 from rumil.prioritisers.dispatch import DispatchRunner
+from rumil.prioritisers.registry import all_registries
 from rumil.settings import override_settings
+
+_HANG_TIMEOUT_SECONDS = float(os.environ.get("RUMIL_TEST_HANG_TIMEOUT", "15"))
+
+
+def _dump_hang_diagnostics(test_id: str) -> None:
+    """Dump pending asyncio tasks and prioritiser state to stderr.
+
+    Called by ``_hang_watchdog`` when an async test exceeds
+    ``RUMIL_TEST_HANG_TIMEOUT``. The goal is to make "why is this test
+    hanging?" a one-glance answer: every pending coroutine with its
+    await-site, plus every prioritiser's (state, budget, spent, subs).
+    """
+    current = asyncio.current_task()
+    lines: list[str] = []
+    lines.append("")
+    lines.append("=" * 70)
+    lines.append(f"HANG DETECTED after {_HANG_TIMEOUT_SECONDS}s in {test_id}")
+    lines.append("=" * 70)
+
+    lines.append("")
+    lines.append("-- Pending asyncio tasks --")
+    pending = [t for t in asyncio.all_tasks() if not t.done() and t is not current]
+    if not pending:
+        lines.append("  (none — hang is likely inside synchronous code)")
+    for t in pending:
+        coro = t.get_coro()
+        name = getattr(coro, "__qualname__", repr(coro))
+        lines.append(f"  TASK: {name}")
+        for frame in t.get_stack(limit=6):
+            lines.append(
+                f"    {frame.f_code.co_filename}:{frame.f_lineno} in {frame.f_code.co_name}"
+            )
+
+    lines.append("")
+    lines.append("-- Prioritiser registries --")
+    registries = all_registries()
+    if not registries:
+        lines.append("  (no live registries)")
+    for reg in registries:
+        prios = list(reg._by_question.items())
+        if not prios:
+            lines.append(f"  registry {id(reg):#x}: <empty>")
+            continue
+        lines.append(f"  registry {id(reg):#x}:")
+        for qid, prio in prios:
+            subs = [
+                (s.trigger_threshold, (s.subscriber or "<root>")[:8]) for s in prio.subscriptions
+            ]
+            lines.append(
+                f"    {type(prio).__name__}({qid[:8]}) "
+                f"state={prio.state} budget={prio.budget} "
+                f"spent={prio.cumulative_spent} "
+                f"done={prio.done.is_set()} "
+                f"task={'alive' if prio._task and not prio._task.done() else 'none'} "
+                f"subs={subs}"
+            )
+
+    lines.append("=" * 70)
+    print("\n".join(lines), file=sys.stderr, flush=True)
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _hang_watchdog(request):
+    """Fail async tests fast on hangs, with a full diagnostic dump.
+
+    Spawns a watchdog that sleeps for ``RUMIL_TEST_HANG_TIMEOUT`` (default
+    15s). If the test is still running at that point, we dump pending
+    asyncio tasks and prioritiser state to stderr, then cancel the test
+    task. Integration/LLM tests opt out by marker.
+    """
+    if request.node.get_closest_marker("llm") or request.node.get_closest_marker("integration"):
+        yield
+        return
+
+    async def _watchdog() -> None:
+        try:
+            await asyncio.sleep(_HANG_TIMEOUT_SECONDS)
+        except asyncio.CancelledError:
+            return
+        try:
+            _dump_hang_diagnostics(request.node.nodeid)
+        except Exception:
+            traceback.print_exc(file=sys.stderr)
+        current = asyncio.current_task()
+        for t in asyncio.all_tasks():
+            if t.done() or t is current:
+                continue
+            t.cancel()
+
+    watchdog = asyncio.create_task(_watchdog(), name=f"hang-watchdog[{request.node.nodeid}]")
+    try:
+        yield
+    finally:
+        watchdog.cancel()
+        with contextlib.suppress(asyncio.CancelledError, BaseException):
+            await watchdog
 
 
 @pytest.fixture(autouse=True, scope="session")
@@ -302,15 +403,11 @@ async def prio_harness(tmp_db, mocker):
         return RunCallResult()
 
     mocker.patch(
-        "rumil.orchestrators.two_phase.run_prioritization_call",
-        side_effect=_fake_prio,
-    )
-    mocker.patch(
-        "rumil.orchestrators.claim_investigation.run_prioritization_call",
-        side_effect=_fake_prio,
-    )
-    mocker.patch(
         "rumil.prioritisers.question_prioritiser.run_prioritization_call",
+        side_effect=_fake_prio,
+    )
+    mocker.patch(
+        "rumil.prioritisers.claim_prioritiser.run_prioritization_call",
         side_effect=_fake_prio,
     )
 
@@ -340,7 +437,7 @@ async def prio_harness(tmp_db, mocker):
         side_effect=_fake_assess,
     )
     mocker.patch(
-        "rumil.orchestrators.claim_investigation.assess_question",
+        "rumil.prioritisers.claim_prioritiser.assess_question",
         side_effect=_fake_assess,
     )
     mocker.patch(
@@ -356,22 +453,6 @@ async def prio_harness(tmp_db, mocker):
         side_effect=_fake_web,
     )
     mocker.patch(
-        "rumil.orchestrators.two_phase.update_view_for_question",
-        side_effect=_fake_update_view,
-    )
-    mocker.patch(
-        "rumil.orchestrators.two_phase.create_view_for_question",
-        side_effect=_fake_create_view,
-    )
-    mocker.patch(
-        "rumil.orchestrators.two_phase.score_items_sequentially",
-        return_value=[],
-    )
-    mocker.patch(
-        "rumil.orchestrators.claim_investigation.score_items_sequentially",
-        return_value=[],
-    )
-    mocker.patch(
         "rumil.prioritisers.question_prioritiser.update_view_for_question",
         side_effect=_fake_update_view,
     )
@@ -381,6 +462,10 @@ async def prio_harness(tmp_db, mocker):
     )
     mocker.patch(
         "rumil.prioritisers.question_prioritiser.score_items_sequentially",
+        return_value=[],
+    )
+    mocker.patch(
+        "rumil.prioritisers.claim_prioritiser.score_items_sequentially",
         return_value=[],
     )
 

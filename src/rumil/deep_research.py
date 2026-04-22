@@ -89,6 +89,7 @@ def poll_until_terminal(
     interaction_id: str,
     *,
     interval: float = 10.0,
+    timeout_seconds: float = 7200.0,
     client: genai.Client | None = None,
     on_status: Callable[[str], None] | None = None,
 ) -> Any:
@@ -96,9 +97,11 @@ def poll_until_terminal(
 
     Calls ``on_status(status)`` each time the status changes. ``requires_action``
     returns the current state rather than blocking forever (collaborative planning).
+    Raises ``TimeoutError`` if the run stays non-terminal past ``timeout_seconds``.
     """
     c = client or make_client()
     last_status = None
+    deadline = time.monotonic() + timeout_seconds
     while True:
         interaction = c.interactions.get(interaction_id)
         status = interaction.status
@@ -108,6 +111,11 @@ def poll_until_terminal(
             last_status = status
         if status in TERMINAL_STATUSES or status == "requires_action":
             return interaction
+        if time.monotonic() >= deadline:
+            raise TimeoutError(
+                f"interaction {interaction_id} still at status '{status}' "
+                f"after {timeout_seconds:.0f}s"
+            )
         time.sleep(interval)
 
 

@@ -28,6 +28,7 @@ import asyncio
 import json
 import signal
 import sys
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -149,7 +150,7 @@ async def _finalize(
     state_dir = _state_dir(interaction_id)
     meta = _read_meta(state_dir)
     # meta can be empty when resuming an interaction that was fired outside the skill
-    # (e.g. via scripts/gdr.py). That's fine — we just lose the --for tag.
+    # (e.g. via scripts/run_deep_research.py). That's fine — we just lose the --for tag.
 
     print_event("•", f"polling {interaction_id} (interval {POLL_INTERVAL:.0f}s)")
     interaction = await asyncio.to_thread(
@@ -209,7 +210,7 @@ def _derive_label(prompt: str | None, interaction_id: str) -> str:
     return f"deep-research: {truncate(base, 90)} [{interaction_id[-12:]}]"
 
 
-def _load_annotations(path: Path) -> list[Any]:
+def _load_annotations(path: Path) -> Sequence[Any]:
     if not path.exists():
         return []
     try:

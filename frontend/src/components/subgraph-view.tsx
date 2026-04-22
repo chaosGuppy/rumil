@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import type { Subgraph, SubgraphNode } from "@/api";
+import { useStagedRun } from "@/lib/staged-run-context";
+import { withStagedRun } from "@/lib/staged-run-href";
 
 // Page types that have dedicated CSS color vars in globals.css. Unknown types
 // fall back to neutral muted colors so the canvas still renders cleanly.
@@ -43,6 +45,7 @@ export function SubgraphView({
   anchorId: string;
 }) {
   const router = useRouter();
+  const { activeStagedRunId } = useStagedRun();
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   const { laidOut, positions, maxDepth } = useMemo(() => {
@@ -286,7 +289,7 @@ export function SubgraphView({
                   key={n.id}
                   transform={`translate(${n.x}, ${n.y})`}
                   onMouseEnter={() => setHoveredId(n.id)}
-                  onClick={() => router.push(`/pages/${n.id}`)}
+                  onClick={() => router.push(withStagedRun(`/pages/${n.id}`, activeStagedRunId))}
                   style={{
                     cursor: "pointer",
                     opacity: dim ? 0.18 : 1,

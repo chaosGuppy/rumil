@@ -9,6 +9,7 @@ import { API_BASE, serverFetch } from "@/lib/api-base";
 import { WorkspaceIndicator } from "@/components/workspace-indicator";
 import { fetchProjectName } from "@/lib/fetch-project-name";
 import { truncateHeadline } from "@/lib/page-titles";
+import { withStagedRun } from "@/lib/staged-run-href";
 
 async function getRunTraceTree(runId: string): Promise<RunTraceTreeOut | null> {
   const res = await serverFetch(`${API_BASE}/api/runs/${runId}/trace-tree`, {
@@ -85,7 +86,10 @@ export default async function TracePage({
       <header className="trace-header">
         {trace.question && (
           <Link
-            href={`/pages/${trace.question.id}`}
+            href={withStagedRun(
+              `/pages/${trace.question.id}`,
+              trace.staged ? runId : null,
+            )}
             className="trace-back-link"
           >
             &larr; {trace.question.headline}

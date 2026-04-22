@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { CallsForQuestion, Subgraph } from "@/api";
+import { useStagedRun } from "@/lib/staged-run-context";
+import { withStagedRun } from "@/lib/staged-run-href";
 
 export type FocusColorMap = Record<string, string>;
 
@@ -318,6 +320,7 @@ export function SubquestionFocusGrid({
     () => subquestionIdsFromSubgraph(subgraph, anchorId),
     [subgraph, anchorId],
   );
+  const { activeStagedRunId } = useStagedRun();
   const [limit, setLimit] = useState(6);
 
   if (subquestionIds.length === 0) {
@@ -441,7 +444,7 @@ export function SubquestionFocusGrid({
                   ) : null}
                 </div>
                 <div className="subq-headline">
-                  <Link href={`/pages/${qid}/stats`}>{headline}</Link>
+                  <Link href={withStagedRun(`/pages/${qid}/stats`, activeStagedRunId)}>{headline}</Link>
                 </div>
               </div>
               {entry ? (

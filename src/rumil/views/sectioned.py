@@ -8,12 +8,12 @@ import logging
 from collections.abc import Sequence
 from datetime import datetime
 
+from rumil.budget import _consume_budget
 from rumil.calls.create_view import CreateViewCall
 from rumil.calls.update_view import UpdateViewCall
 from rumil.context import format_page, render_view
 from rumil.database import DB
 from rumil.models import CallType, PageDetail
-from rumil.orchestrators.common import _consume_budget
 from rumil.tracing.broadcast import Broadcaster
 from rumil.views.base import View
 

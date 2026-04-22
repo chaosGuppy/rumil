@@ -12,10 +12,7 @@ import { StatsView } from "@/components/stats-view";
 import { SubgraphView } from "@/components/subgraph-view";
 import { useDocumentTitle } from "@/lib/use-document-title";
 import { truncateHeadline } from "@/lib/page-titles";
-
-function stagedQs(stagedRunId: string | null): string {
-  return stagedRunId ? `?staged_run_id=${stagedRunId}` : "";
-}
+import { withStagedRun } from "@/lib/staged-run-href";
 
 type LoadState =
   | { kind: "loading" }
@@ -34,7 +31,6 @@ export default function QuestionStatsPage() {
   const pageId = params.pageId;
   const searchParams = useSearchParams();
   const stagedRunId = searchParams.get("staged_run_id");
-  const stagedQ = stagedQs(stagedRunId);
 
   const [projectName, setProjectName] = useState<string>();
   const [projectId, setProjectId] = useState<string>();
@@ -52,7 +48,7 @@ export default function QuestionStatsPage() {
     async function load() {
       try {
         const detailRes = await fetch(
-          `${API_BASE}/api/pages/${pageId}/detail${stagedQ}`,
+          withStagedRun(`${API_BASE}/api/pages/${pageId}/detail`, stagedRunId),
           { cache: "no-store" },
         );
         if (detailRes.status === 404) {
@@ -74,7 +70,7 @@ export default function QuestionStatsPage() {
         }
 
         const statsRes = await fetch(
-          `${API_BASE}/api/pages/${pageId}/stats${stagedQ}`,
+          withStagedRun(`${API_BASE}/api/pages/${pageId}/stats`, stagedRunId),
           { cache: "no-store" },
         );
         if (!statsRes.ok) throw new Error(`stats ${statsRes.status}`);
@@ -96,7 +92,7 @@ export default function QuestionStatsPage() {
     return () => {
       cancelled = true;
     };
-  }, [pageId, stagedQ]);
+  }, [pageId, stagedRunId]);
 
   useEffect(() => {
     if (!projectId) return;
@@ -244,9 +240,9 @@ export default function QuestionStatsPage() {
           <div className="subtitle">question neighborhood · 2 hops</div>
         </div>
         <div className="stats-nav">
-          <Link href={`/pages/${pageId}${stagedQ}`}>Page</Link>
+          <Link href={withStagedRun(`/pages/${pageId}`, stagedRunId)}>Page</Link>
           {projectId && (
-            <Link href={`/projects/${projectId}/stats${stagedQ}`}>
+            <Link href={withStagedRun(`/projects/${projectId}/stats`, stagedRunId)}>
               Project stats
             </Link>
           )}

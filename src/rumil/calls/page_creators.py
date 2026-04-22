@@ -10,6 +10,7 @@ import anthropic
 from anthropic.types import ServerToolUseBlock, ToolUseBlock
 from pydantic import BaseModel, Field
 
+from rumil.budget import _consume_budget
 from rumil.calls.common import (
     execute_tool_uses,
     prepare_tools,
@@ -188,8 +189,6 @@ class MultiRoundLoop(WorkspaceUpdater):
         resume_messages: list[dict] = []
         rounds_completed = 0
         last_fruit_score: int | None = None
-
-        from rumil.orchestrators.common import _consume_budget
 
         for i in range(self._max_rounds):
             if not await _consume_budget(infra.db, pool_question_id=infra.pool_question_id):

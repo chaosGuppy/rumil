@@ -10,6 +10,7 @@ import { API_BASE } from "@/lib/api-base";
 import { WorkspaceIndicator } from "@/components/workspace-indicator";
 import { fetchProjectName } from "@/lib/fetch-project-name";
 import { truncateHeadline } from "@/lib/page-titles";
+import { withStagedRun } from "@/lib/staged-run-href";
 
 const TYPE_CONFIG: Record<
   string,
@@ -65,16 +66,12 @@ const TYPE_CONFIG: Record<
   },
 };
 
-function stagedQs(stagedRunId?: string): string {
-  return stagedRunId ? `?staged_run_id=${stagedRunId}` : "";
-}
-
 async function getPageDetail(
   pageId: string,
   stagedRunId?: string,
 ): Promise<PageDetailOut | null> {
   const res = await fetch(
-    `${API_BASE}/api/pages/${pageId}/detail${stagedQs(stagedRunId)}`,
+    withStagedRun(`${API_BASE}/api/pages/${pageId}/detail`, stagedRunId),
     { cache: "no-store" },
   );
   if (!res.ok) return null;
@@ -86,7 +83,7 @@ async function getPageHeadline(
   stagedRunId?: string,
 ): Promise<{ headline: string; page_type: string } | null> {
   const res = await fetch(
-    `${API_BASE}/api/pages/${pageId}/detail${stagedQs(stagedRunId)}`,
+    withStagedRun(`${API_BASE}/api/pages/${pageId}/detail`, stagedRunId),
     { cache: "no-store" },
   );
   if (!res.ok) return null;
@@ -95,8 +92,7 @@ async function getPageHeadline(
 }
 
 function pageHref(page: Page, stagedRunId?: string): string {
-  if (stagedRunId) return `/pages/${page.id}?staged_run_id=${stagedRunId}`;
-  return `/pages/${page.id}`;
+  return withStagedRun(`/pages/${page.id}`, stagedRunId);
 }
 
 const ALL_CITATIONS_RE = /\[([a-f0-9]{8}(?:,\s*[a-f0-9]{8})*)\]/g;
@@ -125,11 +121,10 @@ async function buildCitationMap(
   const cited = extractCitedIds(content);
   const missing = [...cited].filter((id) => !map.has(id));
   if (missing.length > 0) {
-    const qs = stagedQs(stagedRunId);
     const results = await Promise.all(
       missing.map(async (shortId) => {
         const res = await fetch(
-          `${API_BASE}/api/pages/short/${shortId}${qs}`,
+          withStagedRun(`${API_BASE}/api/pages/short/${shortId}`, stagedRunId),
           { cache: "no-store" },
         );
         if (!res.ok) return null;
@@ -174,7 +169,7 @@ async function getPageRun(
   stagedRunId?: string,
 ): Promise<RunSummaryOut | null> {
   const res = await fetch(
-    `${API_BASE}/api/pages/${pageId}/run${stagedQs(stagedRunId)}`,
+    withStagedRun(`${API_BASE}/api/pages/${pageId}/run`, stagedRunId),
     { cache: "no-store" },
   );
   if (!res.ok) return null;
@@ -232,7 +227,7 @@ function ViewItemsSection({
                 return (
                   <Link
                     key={lp.page.id}
-                    href={`/pages/${lp.page.id}${stagedRunId ? `?staged_run_id=${stagedRunId}` : ""}`}
+                    href={withStagedRun(`/pages/${lp.page.id}`, stagedRunId)}
                     className={`view-item-card${imp != null && imp >= 5 ? " view-item-important" : ""}`}
                   >
                     <div
@@ -462,7 +457,7 @@ export default async function PageDetailPage({
             <span className="page-id">{page.id.slice(0, 8)}</span>
             {page.is_superseded && page.superseded_by && supersedingPage ? (
               <Link
-                href={`/pages/${page.superseded_by}${stagedRunId ? `?staged_run_id=${stagedRunId}` : ""}`}
+                href={withStagedRun(`/pages/${page.superseded_by}`, stagedRunId)}
                 className="superseded-link"
                 title={supersedingPage.headline}
               >
@@ -477,7 +472,7 @@ export default async function PageDetailPage({
             ) : null}
             {page.page_type === "question" && (
               <Link
-                href={`/pages/${pageId}/stats${stagedRunId ? `?staged_run_id=${stagedRunId}` : ""}`}
+                href={withStagedRun(`/pages/${pageId}/stats`, stagedRunId)}
                 className="page-stats-link"
               >
                 Stats

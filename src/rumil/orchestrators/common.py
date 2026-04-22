@@ -380,34 +380,11 @@ async def create_root_question(
     return page.id
 
 
-async def _consume_budget(
-    db: DB,
-    force: bool = False,
-    *,
-    pool_question_id: str | None = None,
-) -> bool:
-    """Consume one unit of global budget. Returns False if exhausted.
-
-    When *force* is True the call always succeeds: if normal consumption
-    fails, budget is temporarily expanded so the dispatch can proceed.
-    This is used to guarantee that every dispatch in a committed batch
-    runs, even if it means slightly exceeding the original budget.
-
-    When *pool_question_id* is set, also debit the per-question budget pool
-    for that question. The pool debit never refuses; the run-level budget
-    is the authoritative gate.
-    """
-    ok = await db.consume_budget(1)
-    if not ok:
-        if force:
-            await db.add_budget(1)
-            ok = await db.consume_budget(1)
-        if not ok:
-            remaining = await db.budget_remaining()
-            log.info("Budget exhausted (remaining: %d)", remaining)
-    if ok and pool_question_id is not None:
-        await db.qbp_consume(pool_question_id, 1)
-    return ok
+# _consume_budget lives in rumil.budget so that rumil.calls.page_creators
+# can import it without forming a cycle (page_creators is reached *via*
+# this module's own imports of FindConsiderationsCall etc.). Re-exported
+# here for callers that already imported from this location.
+from rumil.budget import _consume_budget  # noqa: E402
 
 
 async def find_considerations_until_done(

@@ -48,6 +48,68 @@
     <p class="muted">Sent once per essay × paraphrase model; the output becomes a new contestant <code>paraphrase:&lt;model&gt;</code>.</p>
     <div class="card" style="max-height: 60vh; overflow: auto;"><pre style="white-space: pre-wrap; font-family: ui-monospace, Menlo, monospace; font-size: 13px; margin: 0;">{{ view.paraphrase_prompt_template }}</pre></div>
 
+    {% if view.judgments %}
+      <h2 style="margin-top: 36px;">Judgments for this essay</h2>
+      <p class="muted">
+        One row per judgment. Rumil-path judges show the raw 7-point preference label and a link to the rumil trace.
+      </p>
+      <div class="card" style="padding: 0; overflow: auto;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+          <thead>
+            <tr style="background: #f6f6f0; text-align: left;">
+              <th style="padding: 8px 10px;">judge</th>
+              <th style="padding: 8px 10px;">criterion</th>
+              <th style="padding: 8px 10px;">pair</th>
+              <th style="padding: 8px 10px;">verdict</th>
+              <th style="padding: 8px 10px;">rumil label</th>
+              <th style="padding: 8px 10px;">trace</th>
+              <th style="padding: 8px 10px;">reasoning (preview)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for j in view.judgments %}
+              <tr style="border-top: 1px solid #eee; {% if j.is_rumil %}background: #fdfaf3;{% endif %}">
+                <td style="padding: 6px 10px; font-family: ui-monospace, Menlo, monospace; white-space: nowrap;">
+                  {% if j.is_rumil %}<span class="pill" style="background: #e4d7a8;">rumil</span>{% endif %}
+                  {{ j.judge_model }}
+                </td>
+                <td style="padding: 6px 10px;">{{ j.criterion }}</td>
+                <td style="padding: 6px 10px; font-family: ui-monospace, Menlo, monospace; font-size: 12px;">
+                  {{ j.source_a }} vs {{ j.source_b }}
+                </td>
+                <td style="padding: 6px 10px;">
+                  <strong>{{ j.verdict or "?" }}</strong>
+                  {% if j.winner_source and j.winner_source != "tie" and j.verdict != "tie" %}
+                    <span class="muted">({{ j.winner_source }})</span>
+                  {% endif %}
+                </td>
+                <td style="padding: 6px 10px; font-size: 12px;">
+                  {% if j.rumil_preference_label %}
+                    {{ j.rumil_preference_label }}
+                  {% else %}
+                    <span class="muted">-</span>
+                  {% endif %}
+                </td>
+                <td style="padding: 6px 10px; font-size: 12px;">
+                  {% if j.rumil_trace_url %}
+                    <a href="{{ j.rumil_trace_url }}" target="_blank">trace</a>
+                    {% if j.rumil_cost_usd %}
+                      <span class="muted">${{ "%.3f"|format(j.rumil_cost_usd) }}</span>
+                    {% endif %}
+                  {% else %}
+                    <span class="muted">-</span>
+                  {% endif %}
+                </td>
+                <td style="padding: 6px 10px; max-width: 420px;">
+                  <span class="muted" style="font-family: Georgia, serif; font-size: 12px;">{{ j.reasoning_preview }}{% if j.reasoning_preview|length >= 400 %}…{% endif %}</span>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+
     {% if view.sources %}
       <h2 style="margin-top: 36px;">Generated sources side-by-side</h2>
       <p class="muted">

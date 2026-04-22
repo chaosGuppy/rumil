@@ -13,7 +13,6 @@ import fastapi.templating
 
 from versus import analyze, config, fetch, jsonl, judge, prepare
 
-
 app = fastapi.FastAPI(title="versus")
 templates = fastapi.templating.Jinja2Templates(
     directory=str(pathlib.Path(__file__).parent / "templates")
@@ -41,6 +40,7 @@ def _enumerate_pairs():
     essays_dir = cfg().essays.cache_dir
     if essays_dir.exists():
         import json as _json
+
         for p in essays_dir.glob("*.json"):
             with open(p) as f:
                 d = _json.load(f)
@@ -158,7 +158,7 @@ def submit(
     b: str = fastapi.Form(...),
     first_source: str = fastapi.Form(...),
     second_source: str = fastapi.Form(...),
-    verdict: str = fastapi.Form(...),   # "A" | "B" | "tie" | "skip"
+    verdict: str = fastapi.Form(...),  # "A" | "B" | "tie" | "skip"
     note: str = fastapi.Form(""),
 ):
     judge_model = human_judge_id(name)
@@ -203,6 +203,7 @@ def submit(
 
 def _load_essays() -> list[fetch.Essay]:
     import json as _json
+
     essays: list[fetch.Essay] = []
     essays_dir = cfg().essays.cache_dir
     if not essays_dir.exists():
@@ -231,7 +232,8 @@ def inspect(request: fastapi.Request, essay: str | None = None):
     essay_options = [(e.id, e.title) for e in essays]
     if not essays:
         return templates.TemplateResponse(
-            request, "inspect.html",
+            request,
+            "inspect.html",
             {"essays": essay_options, "selected": None, "view": None},
         )
     selected_id = essay or essays[0].id
@@ -254,6 +256,7 @@ def inspect(request: fastapi.Request, essay: str | None = None):
         source_b_text="{{ CONTINUATION B }}",
     )
     from versus import paraphrase as _para
+
     paraphrase_prompt_template = _para.PARAPHRASE_INSTRUCTIONS.replace(
         "{markdown}", "{{ FULL ESSAY MARKDOWN }}"
     )
@@ -263,14 +266,43 @@ def inspect(request: fastapi.Request, essay: str | None = None):
     for row in jsonl.read(cfg().storage.completions_log):
         if row["essay_id"] != selected.id or row["prefix_config_hash"] != task.prefix_config_hash:
             continue
-        sources.append({
-            "source_id": row["source_id"],
-            "kind": row.get("source_kind", "?"),
-            "text": row.get("response_text") or "",
-            "words": row.get("response_words") or 0,
-            "target": row.get("target_words") or 0,
-        })
+        sources.append(
+            {
+                "source_id": row["source_id"],
+                "kind": row.get("source_kind", "?"),
+                "text": row.get("response_text") or "",
+                "words": row.get("response_words") or 0,
+                "target": row.get("target_words") or 0,
+            }
+        )
     sources.sort(key=lambda s: (s["source_id"] != "human", s["source_id"]))
+
+    judgments: list[dict] = []
+    for row in jsonl.read(cfg().storage.judgments_log):
+        if row.get("essay_id") != selected.id:
+            continue
+        if row.get("prefix_config_hash") != task.prefix_config_hash:
+            continue
+        judgments.append(
+            {
+                "judge_model": row.get("judge_model", ""),
+                "criterion": row.get("criterion", ""),
+                "source_a": row.get("source_a", ""),
+                "source_b": row.get("source_b", ""),
+                "display_first": row.get("display_first", ""),
+                "display_second": row.get("display_second", ""),
+                "verdict": row.get("verdict"),
+                "winner_source": row.get("winner_source"),
+                "reasoning_preview": (row.get("reasoning_text") or "")[:400],
+                "is_rumil": str(row.get("judge_model", "")).startswith("rumil:"),
+                "rumil_trace_url": row.get("rumil_trace_url"),
+                "rumil_preference_label": row.get("rumil_preference_label"),
+                "rumil_question_id": row.get("rumil_question_id"),
+                "rumil_call_id": row.get("rumil_call_id"),
+                "rumil_cost_usd": row.get("rumil_cost_usd"),
+            }
+        )
+    judgments.sort(key=lambda j: (j["judge_model"], j["criterion"], j["source_a"], j["source_b"]))
 
     view = {
         "essay_markdown": selected.markdown,
@@ -281,9 +313,11 @@ def inspect(request: fastapi.Request, essay: str | None = None):
         "prefix_config_hash": task.prefix_config_hash,
         "criteria": cfg().judging.criteria,
         "sources": sources,
+        "judgments": judgments,
     }
     return templates.TemplateResponse(
-        request, "inspect.html",
+        request,
+        "inspect.html",
         {"essays": essay_options, "selected": selected, "view": view},
     )
 
@@ -291,10 +325,10 @@ def inspect(request: fastapi.Request, essay: str | None = None):
 def _cell_color(pct: float) -> str:
     """Linear gradient: 0 → orange (model preferred), 50 → light gray, 100 → green (human preferred)."""
     if pct <= 0.5:
-        t = pct / 0.5            # 0..1 over 0..50
+        t = pct / 0.5  # 0..1 over 0..50
         r, g, b = 255, int(111 + (238 - 111) * t), int(67 + (238 - 67) * t)
     else:
-        t = (pct - 0.5) / 0.5    # 0..1 over 50..100
+        t = (pct - 0.5) / 0.5  # 0..1 over 50..100
         r = int(238 - (238 - 110) * t)
         g = int(238 - (238 - 199) * t)
         b = int(238 - (238 - 120) * t)
@@ -361,8 +395,11 @@ def results(
         {
             "condition": cond,
             "meta": COND_META[cond],
-            "cells": {(g, j): build_cell(g, j, cond, active_crit)
-                      for g in gen_models for j in judge_models},
+            "cells": {
+                (g, j): build_cell(g, j, cond, active_crit)
+                for g in gen_models
+                for j in judge_models
+            },
         }
         for cond in conditions
     ]
@@ -370,6 +407,7 @@ def results(
     # Content-test matrix: (paraphrase:J, completion:G) judged by J.
     # Same axes: gen_model (rows) × judge_model (cols). Judge is the paraphrase author.
     content_data = analyze.content_test_matrix(cfg().storage.judgments_log)
+
     def build_content_cell(gen, jmod, crit_filter):
         hs, ns = 0.0, 0
         for (g, j, cr), (pct, n) in content_data.items():
@@ -385,6 +423,7 @@ def results(
             "bg": _cell_color(pct) if pct is not None else "#f4f4f0",
             "fg": _text_color(pct) if pct is not None else "#999",
         }
+
     content_matrix = {
         "condition": "content-test",
         "meta": {
@@ -393,8 +432,9 @@ def results(
             "cell_meaning": "cell: % J picks its own human-content-baseline. On the diagonal (G=J), style is held at J; off-diagonal mixes styles.",
             "value_picks": "J's paraphrase (= human content in J's voice)",
         },
-        "cells": {(g, j): build_content_cell(g, j, active_crit)
-                  for g in gen_models for j in judge_models},
+        "cells": {
+            (g, j): build_content_cell(g, j, active_crit) for g in gen_models for j in judge_models
+        },
     }
 
     # grid rows = condition, cols = criterion (used for the facet grid)
@@ -404,8 +444,11 @@ def results(
             "per_crit": [
                 {
                     "criterion": crit,
-                    "cells": {(g, j): build_cell(g, j, cond, crit)
-                              for g in gen_models for j in judge_models},
+                    "cells": {
+                        (g, j): build_cell(g, j, cond, crit)
+                        for g in gen_models
+                        for j in judge_models
+                    },
                 }
                 for crit in criteria
             ],
@@ -413,17 +456,22 @@ def results(
         for cond in conditions
     ]
     # Also facet the content-test per criterion.
-    small_grid.append({
-        "condition": "content-test",
-        "per_crit": [
-            {
-                "criterion": crit,
-                "cells": {(g, j): build_content_cell(g, j, crit)
-                          for g in gen_models for j in judge_models},
-            }
-            for crit in criteria
-        ],
-    })
+    small_grid.append(
+        {
+            "condition": "content-test",
+            "per_crit": [
+                {
+                    "criterion": crit,
+                    "cells": {
+                        (g, j): build_content_cell(g, j, crit)
+                        for g in gen_models
+                        for j in judge_models
+                    },
+                }
+                for crit in criteria
+            ],
+        }
+    )
 
     # raw judgments grouped for explorer
     rows = []
@@ -458,12 +506,14 @@ def results(
     sources_summary = []
     for sid, s in sorted(source_stats.items(), key=lambda x: (x[0] != "human", x[0])):
         n = s["n"]
-        sources_summary.append({
-            "source_id": sid,
-            "n": n,
-            "avg_words": (s["words"] // n) if n else 0,
-            "avg_delta_pct": (s["delta"] / n * 100) if n else 0.0,
-        })
+        sources_summary.append(
+            {
+                "source_id": sid,
+                "n": n,
+                "avg_words": (s["words"] // n) if n else 0,
+                "avg_delta_pct": (s["delta"] / n * 100) if n else 0.0,
+            }
+        )
 
     return templates.TemplateResponse(
         request,
@@ -486,6 +536,7 @@ def results(
 
 def main() -> None:
     import uvicorn
+
     uvicorn.run("versus.ui:app", host="127.0.0.1", port=cfg().ui.port, reload=False)
 
 

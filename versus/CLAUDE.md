@@ -86,19 +86,40 @@ precedence over stale shell exports. No extra dep — `envcascade.py` has
 a 20-line parser. Whichever source supplied each key is reported on
 missing-key errors.
 
-### Planned: workspace-aware variant
+### Workspace-aware and orchestrator variants
 
-The above is the *no-workspace* rumil judge — a text-only Anthropic call,
-structurally equivalent to OpenRouter judges but on a different model
-axis. The more interesting variant (deferred) is **workspace-aware**:
-multi-turn agent with `search_workspace` + `load_page` tools bound to a
-rumil workspace loaded with essay-topic-adjacent material. That tests
-the hypothesis that rumil's discrimination on pairwise judging benefits
-from relevant workspace context — something a single-shot judge
-structurally can't leverage. When added, it will live in the same
-`rumil_judge.py` module with a `--workspace <name>` flag; `judge_model`
-will become `rumil:<model>:<ws_short_id>` so dedup keys differ per
-workspace.
+Beyond the text-only path above, `run_rumil_judgments.py --variant ws`
+and `--variant orch` run judgments through rumil's actual machinery:
+
+- **`ws`** — one `VERSUS_JUDGE` rumil agent call per pair, using
+  single-arm workspace-exploration tools (`search_workspace`,
+  `load_page`, `explore_subgraph`) scoped to a user-chosen workspace.
+  Dimension prompts live in `prompts/versus-<name>.md` (essay-adapted
+  versions of rumil's run-eval dimensions); default is
+  `general_quality`. `--versus-criterion <name>` substitutes a versus
+  criterion prompt instead, for direct comparison with OpenRouter
+  judges on the same criterion axis. `judge_model` = `rumil:ws:<model>:<ws_short>:<task>`.
+
+- **`orch`** — per-pair Question creation, then
+  `TwoPhaseOrchestrator.run()` at configurable budget, then a closing
+  call extracts the 7-point label. Produces a full research trace per
+  pair. `judge_model` = `rumil:orch:<model>:<ws_short>:b<N>:<task>`.
+
+Both variants:
+- Require a running local Supabase (rumil's DB).
+- Use rumil's configured `settings.model` (defaults to
+  `claude-opus-4-7`) — model is derived from rumil's test/smoke-mode
+  flags, not per-call configurable from versus.
+- Write back into `data/judgments.jsonl` with extra fields
+  (`rumil_trace_url`, `rumil_preference_label`, `rumil_call_id`,
+  `rumil_run_id`, `rumil_question_id`, `rumil_cost_usd`) so the
+  versus `/inspect` page can link to rumil traces.
+- Create Question pages in the chosen workspace tagged
+  `extra.source = "versus"` for filterability. Expect some noise in
+  that workspace's question list.
+
+See `.claude/skills/rumil-versus-judge/SKILL.md` for invocation, cost
+estimates, and confirmation thresholds.
 
 ## UI
 

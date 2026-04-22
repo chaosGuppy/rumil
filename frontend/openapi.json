@@ -2304,7 +2304,8 @@
           "create_view",
           "global_prioritization",
           "update_view",
-          "claude_code_direct"
+          "claude_code_direct",
+          "versus_judge"
         ],
         "title": "CallType"
       },

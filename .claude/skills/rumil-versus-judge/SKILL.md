@@ -148,8 +148,18 @@ All variants print:
 - `[run] <trace_url>` (ws session-level; orch per-pair)
 - `[err ] <key>: <msg>` on failure (run continues for other pairs)
 
-Surface any printed trace URLs to the user immediately. After a run
-completes, suggest the versus UI in the rumil frontend
+Surface any printed trace URLs to the user immediately. For `ws` and
+`orch` runs this is a hard requirement, not a nice-to-have — the user
+wants to follow along live. Specifically:
+
+- If foregrounded, report `[run] <url>` lines as they stream.
+- If backgrounded (logfile pattern below), poll the logfile for `[run]`
+  lines (`grep '^\[run\]' /tmp/versus-run-<id>.log`) and post the URL
+  to the user as soon as one appears — do not wait for the run to
+  finish. For `orch` there's one `[run]` URL per pair; post each new
+  one as it shows up.
+
+After a run completes, suggest the versus UI in the rumil frontend
 (`http://localhost:300X/versus/inspect?essay=<id>`, served by the
 running rumil dev server) — the `/inspect` page shows rumil judgments
 per essay with trace links that navigate in-app to `/traces/[runId]`.

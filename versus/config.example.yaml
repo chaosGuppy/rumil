@@ -21,12 +21,14 @@ completion:
     - id: openai/gpt-5.4
       temperature: 0.8
       max_tokens: 64000    # reasoning model: reasoning tokens count against this
-    # Uncomment for the full matrix run. Each added model re-runs only itself
-    # thanks to per-row caching; existing rows stay untouched.
+    - id: anthropic/claude-sonnet-4-6
+      temperature: 0.8
+      max_tokens: 32000
+    - id: anthropic/claude-opus-4-7
+      temperature: 0.8
+      max_tokens: 32000    # opus may reject explicit temperature via
+                           # OpenRouter; adjust if we see 400s
     # - id: anthropic/claude-haiku-4-5
-    #   temperature: 0.8
-    #   max_tokens: 32000
-    # - id: anthropic/claude-opus-4-7
     #   temperature: 0.8
     #   max_tokens: 32000
 

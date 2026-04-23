@@ -360,6 +360,7 @@ async def run_ws(
     essay_ids: Sequence[str] | None = None,
     contestants: Sequence[str] | None = None,
     vs_human: bool = False,
+    persist: bool = False,
 ) -> None:
     """Run the workspace-aware rumil judge against pending pairs.
 
@@ -388,7 +389,7 @@ async def run_ws(
         return
 
     run_id = str(uuid.uuid4())
-    db = await DB.create(run_id=run_id, prod=False, staged=False)
+    db = await DB.create(run_id=run_id, prod=False, staged=not persist)
     project = await db.get_or_create_project(workspace)
     db.project_id = project.id
     ws_short = project.id[:8]
@@ -441,6 +442,7 @@ async def run_ws(
             "dimensions": list(dimensions),
             "versus_criteria": list(versus_criteria),
             "num_pairs": len(tasks),
+            "staged": not persist,
         },
     )
     print(f"[run] {settings.frontend_url.rstrip('/')}/traces/{run_id}")
@@ -503,6 +505,7 @@ async def run_orch(
     essay_ids: Sequence[str] | None = None,
     contestants: Sequence[str] | None = None,
     vs_human: bool = False,
+    persist: bool = False,
 ) -> None:
     """Run the orchestrator rumil judge against pending pairs.
 
@@ -525,6 +528,8 @@ async def run_orch(
         print("[info] no dimensions or versus criteria specified for orch variant; nothing to do")
         return
 
+    # Probe is always non-staged: it only calls get_or_create_project,
+    # which should be visible across runs (project lookup isn't per-run).
     probe_db = await DB.create(run_id=str(uuid.uuid4()), prod=False, staged=False)
     project = await probe_db.get_or_create_project(workspace)
     ws_short = project.id[:8]
@@ -572,7 +577,7 @@ async def run_orch(
     for pair, task_name, is_versus_crit, judge_model in tasks:
         t0 = time.time()
         run_id = str(uuid.uuid4())
-        db = await DB.create(run_id=run_id, prod=False, project_id=project.id, staged=False)
+        db = await DB.create(run_id=run_id, prod=False, project_id=project.id, staged=not persist)
         try:
             task_body = _resolve_task_body(task_name, is_versus_crit)
             effective_task = f"versus_{task_name}" if is_versus_crit else task_name
@@ -600,6 +605,7 @@ async def run_orch(
                     "essay_id": pair.essay_id,
                     "source_a": pair.source_a_id,
                     "source_b": pair.source_b_id,
+                    "staged": not persist,
                 },
             )
             print(f"[run] {settings.frontend_url.rstrip('/')}/traces/{run_id}")

@@ -91,9 +91,16 @@ This plans exactly 3 pairs: (flash, human), (gpt-5.4, human),
 The `--workspace <name>` argument maps to a rumil Project — no
 default; the user must name one. For the `ws` / `orch` variants to do
 better than text-only judgment, that workspace should have material
-relevant to the essays' topics. Versus Question pages created during
-judging land in that project; they're tagged `extra.source = "versus"`
-for later filtering but do show up in that project's question list.
+relevant to the essays' topics.
+
+By default `ws` / `orch` runs are **staged** (`staged=True` on
+rumil's DB). The agent still reads baseline workspace material
+normally, but any pages versus creates during the run (the per-pair
+Question, plus the orchestrator's research subtree for `orch`) are
+scoped to the run's staged view — invisible to other readers of the
+workspace. Pass `--persist` to disable staging and write pages to the
+baseline. Pages are also tagged `extra.source = "versus"` in both
+modes, so filtering after the fact is possible.
 
 Supabase must be running locally (`supabase start` in the rumil repo)
 for both `ws` and `orch` variants.
@@ -203,9 +210,11 @@ over-read any single number:
 
 ## Other caveats
 
-- **`ws` puts Question pages in the chosen workspace**. Tagged
-  `extra.source = "versus"` for filterability, but they will appear in
-  the project's question list. Accept or clean up after.
+- **`ws` / `orch` stage their workspace additions by default.** Versus
+  Question pages (and, for `orch`, the orchestrator's research
+  subtree) are scoped to the staged run and invisible to baseline
+  readers of the workspace. Pass `--persist` to write them to the
+  baseline instead. Either way they're tagged `extra.source = "versus"`.
 - **`orch` creates a rumil Run per pair.** Each shows up on
   `/traces`. Use a low `--limit` initially. Minimum budget is 4
   (`TwoPhaseOrchestrator` rejects anything smaller with a clear

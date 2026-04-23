@@ -148,6 +148,17 @@ def main() -> None:
         action="store_true",
         help="Only emit pairs where one side is 'human'. ws/orch only.",
     )
+    ap.add_argument(
+        "--persist",
+        action="store_true",
+        help=(
+            "Persist versus-created pages to the workspace baseline instead "
+            "of staging them (ws/orch only). Default is staged: the agent "
+            "still reads baseline workspace material but its Question pages "
+            "and (for orch) research subtree are scoped to the run's staged "
+            "view -- invisible to other readers of the workspace."
+        ),
+    )
     args = ap.parse_args()
 
     contestants = (
@@ -186,6 +197,7 @@ def main() -> None:
                 essay_ids=args.essay,
                 contestants=contestants,
                 vs_human=args.vs_human,
+                persist=args.persist,
             )
         )
     elif args.variant == "orch":
@@ -201,6 +213,7 @@ def main() -> None:
                 essay_ids=args.essay,
                 contestants=contestants,
                 vs_human=args.vs_human,
+                persist=args.persist,
             )
         )
 

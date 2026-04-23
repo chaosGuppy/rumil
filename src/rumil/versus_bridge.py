@@ -68,7 +68,10 @@ _TOOL_SERVER_NAME = "versus-judge-tools"
 # bridge itself. Bump when that happens, and update the PR's
 # "Blind judging" section with the reason.
 # v2 (2026-04-23): fixes #3 (headline leak) and #4 (page.extra leak).
-BLIND_JUDGE_VERSION = 2
+# v3 (2026-04-23): essay markdown re-imported with fetch SCHEMA_VERSION=4
+# (nested-list dedup, footnote-marker strip, emphasis preservation, caption
+# skip). Old judgments judge old text, new judgments judge new text.
+BLIND_JUDGE_VERSION = 3
 
 PREFERENCE_LABELS: Sequence[str] = (
     "A strongly preferred",

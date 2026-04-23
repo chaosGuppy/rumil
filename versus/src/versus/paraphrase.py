@@ -26,7 +26,7 @@ from versus import config, fetch, jsonl, openrouter
 # below so each paraphrase key forks on edit. Paraphrases are keyed on
 # (essay_id, model_id, sampling_hash), so a bump here produces fresh
 # keys without clobbering.
-PARAPHRASE_PROMPT_VERSION = 2
+PARAPHRASE_PROMPT_VERSION = 3
 
 
 PARAPHRASE_INSTRUCTIONS = """\

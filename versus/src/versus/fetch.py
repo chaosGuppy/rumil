@@ -22,7 +22,7 @@ import httpx
 RSS_URL = "https://www.forethought.org/feed"
 
 # Version tag for parsed-essay cache. Bump when this module's output format changes.
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 HEADING_COMPONENTS = {
     "Markdown-article-h1": "h1",
@@ -32,6 +32,7 @@ HEADING_COMPONENTS = {
 LIST_COMPONENTS = {"Markdown-ul", "Markdown-ol"}
 PARA_COMPONENTS = {"Markdown-p"}
 QUOTE_COMPONENTS = {"Markdown-blockquote"}
+SUP_COMPONENTS = {"Markdown-sup"}
 
 ACK_PATTERNS = [
     re.compile(r"^\s*thanks to\b", re.IGNORECASE),
@@ -70,7 +71,96 @@ class Essay:
 
 
 def _clean(s: str) -> str:
-    return re.sub(r"\s+", " ", s).strip()
+    s = re.sub(r"\s+", " ", s).strip()
+    # Collapse whitespace inserted before closing punctuation (artifact of
+    # ``get_text(" ")`` putting a separator between a closing inline tag and
+    # the trailing comma/period/etc).
+    s = re.sub(r"\s+([,.;:!?\)\]])", r"\1", s)
+    s = re.sub(r"([\(\[])\s+", r"\1", s)
+    # Collapse the same artifact when a markdown emphasis marker sits between
+    # text and punctuation (e.g. ``**Bold** :`` -> ``**Bold**:``).
+    s = re.sub(r"(\*+)\s+([,.;:!?\)\]])", r"\1\2", s)
+    return s
+
+
+def _render_inline(node: bs4.PageElement) -> str:
+    """Render a node's text content with bold/italic preserved as markdown.
+
+    Skips nested ``Markdown-ul``/``Markdown-ol`` subtrees so list rendering can
+    handle them separately. Footnote ``Markdown-sup`` markers are expected to
+    have been removed beforehand.
+    """
+    if isinstance(node, bs4.NavigableString):
+        return str(node)
+    if not isinstance(node, bs4.element.Tag):
+        return ""
+    if node.get("data-component") in LIST_COMPONENTS:
+        return ""
+    inner = "".join(_render_inline(c) for c in node.children)
+    if node.name in ("strong", "b"):
+        stripped = inner.strip()
+        return f" **{stripped}** " if stripped else ""
+    if node.name in ("em", "i"):
+        stripped = inner.strip()
+        return f" *{stripped}* " if stripped else ""
+    return inner
+
+
+def _render_text(el: bs4.element.Tag) -> str:
+    return _clean(_render_inline(el))
+
+
+def _direct_li_children(list_el: bs4.element.Tag) -> list[bs4.element.Tag]:
+    """Return li's whose nearest Markdown-ul/ol ancestor is ``list_el``."""
+    out: list[bs4.element.Tag] = []
+    for li in list_el.find_all(attrs={"data-component": "Markdown-li"}):
+        p = li.parent
+        while p is not None:
+            if isinstance(p, bs4.element.Tag) and p.get("data-component") in LIST_COMPONENTS:
+                if p is list_el:
+                    out.append(li)
+                break
+            p = p.parent
+    return out
+
+
+def _direct_sublists(li: bs4.element.Tag) -> list[bs4.element.Tag]:
+    """Return Markdown-ul/ol's whose nearest Markdown-li ancestor is ``li``."""
+    out: list[bs4.element.Tag] = []
+    for sub in li.find_all(attrs={"data-component": list(LIST_COMPONENTS)}):
+        p = sub.parent
+        while p is not None:
+            if isinstance(p, bs4.element.Tag) and p.get("data-component") == "Markdown-li":
+                if p is li:
+                    out.append(sub)
+                break
+            p = p.parent
+    return out
+
+
+def _is_caption_only_para(p: bs4.element.Tag) -> bool:
+    """A Markdown-p is treated as an image caption if every non-whitespace
+    text node inside it is a descendant of an ``<em>`` tag.
+
+    Matches the pattern used by forethought for image attribution lines —
+    they sit beside a ``Markdown-img`` block and consist entirely of
+    italicized text (often wrapped in a link to the source image).
+    """
+    has_text = False
+    for s in p.find_all(string=True):
+        if not s.strip():
+            continue
+        has_text = True
+        ancestor = s.parent
+        in_em = False
+        while ancestor is not None and ancestor is not p:
+            if isinstance(ancestor, bs4.element.Tag) and ancestor.name in ("em", "i"):
+                in_em = True
+                break
+            ancestor = ancestor.parent
+        if not in_em:
+            return False
+    return has_text
 
 
 def parse_rss(xml_text: str) -> list[dict]:
@@ -91,21 +181,36 @@ def parse_rss(xml_text: str) -> list[dict]:
     return items
 
 
-def _render_list(el: bs4.element.Tag, ordered: bool) -> str:
+def _render_list(el: bs4.element.Tag, ordered: bool, depth: int = 0) -> str:
     lines: list[str] = []
-    for i, li in enumerate(el.find_all(attrs={"data-component": "Markdown-li"}), start=1):
+    indent = "  " * depth
+    for i, li in enumerate(_direct_li_children(el), start=1):
         prefix = f"{i}. " if ordered else "- "
-        lines.append(prefix + _clean(li.get_text(" ")))
+        text = _render_text(li)
+        if text:
+            lines.append(indent + prefix + text)
+        else:
+            lines.append(indent + prefix.rstrip())
+        for sub in _direct_sublists(li):
+            sub_ordered = sub.get("data-component") == "Markdown-ol"
+            sub_text = _render_list(sub, ordered=sub_ordered, depth=depth + 1)
+            if sub_text:
+                lines.append(sub_text)
     return "\n".join(lines)
 
 
 def _render_blockquote(el: bs4.element.Tag) -> str:
-    text = _clean(el.get_text(" "))
+    text = _render_text(el)
     return "\n".join("> " + line for line in text.splitlines() or [text])
 
 
 def parse_article_html(html: str) -> list[Block]:
     soup = bs4.BeautifulSoup(html, "lxml")
+    # Strip footnote markers up front; their bodies live in a separate
+    # ``Footnotes`` section that ``clean_blocks`` drops, so any reference
+    # left in the body would dangle as a bare digit.
+    for sup in soup.find_all(attrs={"data-component": list(SUP_COMPONENTS)}):
+        sup.decompose()
     containers = soup.find_all(attrs={"data-component": "Markdown"})
     if not containers:
         return []
@@ -121,7 +226,7 @@ def parse_article_html(html: str) -> list[Block]:
             if not comp:
                 continue
             if comp in HEADING_COMPONENTS:
-                text = _clean(el.get_text(" "))
+                text = _render_text(el)
                 if text:
                     blocks.append(Block(type=HEADING_COMPONENTS[comp], text=text))
                 seen.add(id(el))
@@ -142,7 +247,12 @@ def parse_article_html(html: str) -> list[Block]:
                 if el.find(attrs={"data-component": "Markdown-img"}) is not None:
                     _mark_subtree(el, seen)
                     continue
-                text = _clean(el.get_text(" "))
+                # Skip image attribution captions (fully-italicized paragraphs
+                # adjacent to a Markdown-img block).
+                if _is_caption_only_para(el):
+                    _mark_subtree(el, seen)
+                    continue
+                text = _render_text(el)
                 if text and text.lower() != "image":
                     blocks.append(Block(type="p", text=text))
                 _mark_subtree(el, seen)

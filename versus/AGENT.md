@@ -83,3 +83,18 @@ Model for ws/orch/rumil-text is passed explicitly through the bridge (`--rumil-m
 - Length tolerance is a prompt hint, not a hard constraint. Some models consistently undershoot — real signal, not to silently correct.
 - `fetch.SCHEMA_VERSION` invalidates the essay JSON cache. Raw HTML stays cached separately so we don't re-download.
 - Refused / content-filtered completions are excluded from pair enumeration (see `judge.is_refusal`).
+- Re-imports auto-run a Sonnet validator (`validate_essay.py`) that blocks the import on scraping artifacts (nested-list duplication, orphan footnote digits, caption leakage, etc.). Verdicts cache to `data/essays/<id>.verdict.json` keyed on essay content hash + `VALIDATOR_VERSION`. Pass `--no-validate` to bypass, `--revalidate` to re-run on cached essays.
+
+## State staleness
+
+Essay re-imports change `prefix_config_hash` (because `_content_hash(essay)` is folded in via `prepare.py`). Existing rows in `completions.jsonl` / `paraphrases.jsonl` / `judgments.jsonl` keep their old hashes — they aren't deleted, but they no longer match what `prepare()` would produce today. Topup runs against stale rows judge OLD essay text, not the current one.
+
+Run before any topup or new judging work:
+
+```bash
+uv run python scripts/status.py
+```
+
+Exits 2 with a `STALE` banner when cached rows don't match current essays. To regenerate against current essays, run `run_paraphrases.py` + `run_completions.py` + `run_judgments.py` in order — old rows stay in the jsonls as historical record; new rows write under the new keys.
+
+Same logic applies when `PARAPHRASE_PROMPT_VERSION`, `JUDGE_PROMPT_VERSION`, or `BLIND_JUDGE_VERSION` is bumped — the status check picks up paraphrase staleness via `sampling_hash`; judge-prompt/version bumps surface as a different `judge_model` column in analyze tables.

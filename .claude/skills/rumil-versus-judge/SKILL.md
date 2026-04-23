@@ -46,6 +46,21 @@ Versus must already have completions cached
 `versus/scripts/fetch_essays.py` + `run_paraphrases.py` +
 `run_completions.py` first — flag that and stop.
 
+**Before any topup run, check for staleness:**
+
+```bash
+uv run python versus/scripts/status.py
+```
+
+This compares cached completion / paraphrase / judgment rows against the
+current essay markdown (`prefix_config_hash`) and current paraphrase
+prompt version. Exit code 2 + a `STALE` banner means an essay re-import
+or version bump happened and the existing rows judge OLD essay text. A
+topup will silently keep extending those stale pairs unless the user
+first re-runs `run_paraphrases.py` + `run_completions.py` to write fresh
+rows under the new keys. Surface the warning to the user; don't proceed
+on stale data without confirmation.
+
 ## Env & config
 
 - `ANTHROPIC_API_KEY` resolves from `versus/.env`, then

@@ -208,6 +208,149 @@ def test_render_item_full_without_citations():
     assert "Cited evidence" not in rendered
 
 
+def test_render_item_full_surfaces_uncited_parent_considerations():
+    page = _view_item("Equity is table-stakes")
+    link = _view_item_link("view-id", page.id)
+
+    cited_claim = _claim("40-60% giveback is normative")
+    cite_link = PageLink(
+        from_page_id=page.id,
+        to_page_id=cited_claim.id,
+        link_type=LinkType.DEPENDS_ON,
+    )
+    uncited_claim = _claim(
+        "Moskovitz departed Facebook with 0 percent giveback",
+        abstract="Paradigm counter-example to the giveback norm.",
+    )
+
+    rendered = _render_item_full(
+        page,
+        link,
+        cited_pages={cited_claim.id: cited_claim},
+        item_links=[cite_link],
+        related_considerations=[cited_claim, uncited_claim],
+    )
+
+    assert "Related considerations on the parent question" in rendered
+    assert uncited_claim.id[:8] in rendered
+    assert "Moskovitz" in rendered
+    related_section = rendered.split("Related considerations on the parent question")[1]
+    assert cited_claim.id[:8] not in related_section
+
+
+def test_render_item_full_omits_related_block_when_all_cited():
+    page = _view_item("Solo item")
+    link = _view_item_link("view-id", page.id)
+
+    cited = _claim("Already cited")
+    cite_link = PageLink(
+        from_page_id=page.id,
+        to_page_id=cited.id,
+        link_type=LinkType.DEPENDS_ON,
+    )
+    rendered = _render_item_full(
+        page,
+        link,
+        cited_pages={cited.id: cited},
+        item_links=[cite_link],
+        related_considerations=[cited],
+    )
+    assert "Related considerations on the parent question" not in rendered
+
+
+async def test_render_claim_investigation_findings_surfaces_new_findings(tmp_db):
+    """New considerations on a claim linked to the question should appear."""
+    from datetime import datetime, timedelta, timezone
+
+    from rumil.context import render_claim_investigation_findings
+
+    question = _question("Scope question")
+    claim = _claim("Consideration on scope")
+    finding = _claim(
+        "Moskovitz paradigm case",
+        abstract="Departed Facebook with 0% giveback; undermines norm framing.",
+    )
+
+    await tmp_db.save_page(question)
+    await tmp_db.save_page(claim)
+    await tmp_db.save_page(finding)
+
+    await tmp_db.save_link(
+        PageLink(
+            from_page_id=claim.id,
+            to_page_id=question.id,
+            link_type=LinkType.CONSIDERATION,
+        )
+    )
+    await tmp_db.save_link(
+        PageLink(
+            from_page_id=finding.id,
+            to_page_id=claim.id,
+            link_type=LinkType.CONSIDERATION,
+        )
+    )
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=365)
+    text, page_ids = await render_claim_investigation_findings(
+        tmp_db, question.id, cutoff
+    )
+
+    assert finding.id in page_ids
+    assert "Moskovitz" in text
+    assert claim.id[:8] in text
+    assert "[NEW]" in text
+
+
+async def test_render_claim_investigation_findings_filters_old_findings(tmp_db):
+    """Findings older than last_view_created_at should be excluded."""
+    from datetime import datetime, timedelta, timezone
+
+    from rumil.context import render_claim_investigation_findings
+
+    question = _question("Scope question")
+    claim = _claim("Consideration")
+    old_finding = _claim("Stale finding")
+
+    await tmp_db.save_page(question)
+    await tmp_db.save_page(claim)
+    await tmp_db.save_page(old_finding)
+
+    await tmp_db.save_link(
+        PageLink(
+            from_page_id=claim.id,
+            to_page_id=question.id,
+            link_type=LinkType.CONSIDERATION,
+        )
+    )
+    await tmp_db.save_link(
+        PageLink(
+            from_page_id=old_finding.id,
+            to_page_id=claim.id,
+            link_type=LinkType.CONSIDERATION,
+        )
+    )
+
+    cutoff = datetime.now(timezone.utc) + timedelta(days=1)
+    text, page_ids = await render_claim_investigation_findings(
+        tmp_db, question.id, cutoff
+    )
+
+    assert page_ids == []
+    assert text == ""
+
+
+async def test_render_claim_investigation_findings_no_considerations(tmp_db):
+    """Returns empty when the question has no considerations."""
+    from rumil.context import render_claim_investigation_findings
+
+    question = _question("Lonely question")
+    await tmp_db.save_page(question)
+
+    text, page_ids = await render_claim_investigation_findings(tmp_db, question.id, None)
+    assert text == ""
+    assert page_ids == []
+
+
 async def test_create_new_view_and_copy_items(tmp_db, view_setup):
     """UpdateViewCall should create a new View, supersede the old one,
     and copy all VIEW_ITEM links."""

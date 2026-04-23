@@ -593,6 +593,74 @@ async def render_child_investigation_results(
     return "\n".join(parts), all_page_ids
 
 
+async def render_claim_investigation_findings(
+    db: DB,
+    parent_question_id: str,
+    last_view_created_at: datetime | None,
+) -> tuple[str, list[str]]:
+    """Surface new findings from claim investigations rooted at the question's considerations.
+
+    A claim investigation's scouts link their findings back to the target
+    claim via CONSIDERATION. This walks the question's considerations and,
+    for each, surfaces that claim's own considerations whose creation time
+    is newer than *last_view_created_at*. Returns ("", []) if nothing new.
+    """
+    question_considerations = await db.get_considerations_for_question(parent_question_id)
+    if not question_considerations:
+        return "", []
+
+    claim_ids = [claim.id for claim, _ in question_considerations]
+    findings_by_claim = await db.get_considerations_for_questions(claim_ids)
+
+    def _is_new(page: Page) -> bool:
+        if last_view_created_at is None:
+            return True
+        return page.created_at > last_view_created_at
+
+    entries: list[str] = []
+    all_page_ids: list[str] = []
+    for claim, _ in question_considerations:
+        findings = findings_by_claim.get(claim.id, [])
+        new_findings = [(p, l) for p, l in findings if _is_new(p)]
+        if not new_findings:
+            continue
+
+        entry_lines = [
+            f"### Findings on consideration `{claim.id[:8]}` — {claim.headline}",
+            "",
+        ]
+        for page, _ in new_findings:
+            rendered = await format_page(
+                page,
+                PageDetail.ABSTRACT,
+                linked_detail=None,
+                db=db,
+                track=True,
+                track_tags={"source": "claim_investigation_findings"},
+            )
+            entry_lines.append(f"- [NEW] {rendered}")
+            all_page_ids.append(page.id)
+        entries.append("\n".join(entry_lines))
+
+    if not entries:
+        return "", []
+
+    parts = [
+        "## Recent findings from claim investigations",
+        "",
+        "The following claims were produced by claim investigations rooted at "
+        "considerations of this question, and have not yet been integrated into "
+        "the View. Consider whether any should update, complicate, or contradict "
+        "existing View items.",
+        "",
+    ]
+    for entry in entries:
+        parts.append(entry)
+        parts.append("")
+
+    return "\n".join(parts), all_page_ids
+
+
 async def _build_dependency_signal(db: DB) -> str | None:
     """Build a section listing the most-depended-on pages in the workspace.
 

@@ -20,7 +20,11 @@ from rumil.calls.stages import (
     WorkspaceUpdater,
 )
 from rumil.constants import DEFAULT_VIEW_SECTIONS
-from rumil.context import build_embedding_based_context, render_child_investigation_results
+from rumil.context import (
+    build_embedding_based_context,
+    render_child_investigation_results,
+    render_claim_investigation_findings,
+)
 from rumil.database import DB
 from rumil.embeddings import embed_and_store_page
 from rumil.llm import LLMExchangeMetadata, structured_call
@@ -200,6 +204,7 @@ def _render_item_full(
     link: PageLink,
     cited_pages: dict[str, Page] | None = None,
     item_links: Sequence[PageLink] | None = None,
+    related_considerations: Sequence[Page] = (),
 ) -> str:
     """Full rendering with cited pages for deep review."""
     imp = f"I{link.importance}" if link.importance is not None else "I?"
@@ -209,11 +214,13 @@ def _render_item_full(
         page.content or "(no content)",
     ]
 
+    cited_ids: set[str] = set()
     if cited_pages and item_links:
         cite_ids = {
             l.to_page_id for l in item_links if l.link_type in (LinkType.CITES, LinkType.DEPENDS_ON)
         }
         cited = [cited_pages[cid] for cid in cite_ids if cid in cited_pages]
+        cited_ids = {cp.id for cp in cited}
         if cited:
             parts.append("")
             parts.append("**Cited evidence:**")
@@ -227,6 +234,23 @@ def _render_item_full(
                 parts.append(f"- `{cp.id[:8]}` [{cp.page_type.value}]{score_str} — {cp.headline}")
                 if cp.abstract:
                     parts.append(f"  {cp.abstract[:200]}")
+
+    uncited = [c for c in related_considerations if c.id not in cited_ids and c.id != page.id]
+    if uncited:
+        parts.append("")
+        parts.append(
+            "**Related considerations on the parent question (not cited by this item):**"
+        )
+        for cp in uncited:
+            score_parts = []
+            if cp.credence is not None:
+                score_parts.append(f"C{cp.credence}")
+            if cp.robustness is not None:
+                score_parts.append(f"R{cp.robustness}")
+            score_str = f" {'/'.join(score_parts)}" if score_parts else ""
+            parts.append(f"- `{cp.id[:8]}`{score_str} — {cp.headline}")
+            if cp.abstract:
+                parts.append(f"  {cp.abstract[:200]}")
 
     return "\n".join(parts)
 
@@ -251,6 +275,12 @@ class UpdateViewContext(ContextBuilder):
             last_view_created_at,
         )
 
+        claim_section, claim_page_ids = await render_claim_investigation_findings(
+            infra.db,
+            infra.question_id,
+            last_view_created_at,
+        )
+
         items = await infra.db.get_view_items(self._view_id)
         item_ids = [page.id for page, _ in items]
         links_by_item = await infra.db.get_links_from_many(item_ids) if item_ids else {}
@@ -260,7 +290,7 @@ class UpdateViewContext(ContextBuilder):
                 if link.link_type in (LinkType.CITES, LinkType.DEPENDS_ON):
                     cited_ids.add(link.to_page_id)
 
-        exclude_ids = cited_ids | set(item_ids) | set(child_page_ids)
+        exclude_ids = cited_ids | set(item_ids) | set(child_page_ids) | set(claim_page_ids)
 
         result = await build_embedding_based_context(
             query,
@@ -274,13 +304,15 @@ class UpdateViewContext(ContextBuilder):
         )
 
         context_text = result.context_text
+        if claim_section:
+            context_text = claim_section + "\n\n" + context_text
         if child_section:
             context_text = child_section + "\n\n" + context_text
 
         preloaded_ids = list(infra.call.context_page_ids or [])
         return ContextResult(
             context_text=context_text,
-            working_page_ids=result.page_ids + child_page_ids,
+            working_page_ids=result.page_ids + child_page_ids + claim_page_ids,
             preloaded_ids=preloaded_ids,
         )
 
@@ -560,6 +592,9 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
             await infra.db.get_pages_by_ids(list(cited_page_ids)) if cited_page_ids else {}
         )
 
+        parent_considerations = await infra.db.get_considerations_for_question(infra.question_id)
+        related_considerations = [claim for claim, _ in parent_considerations]
+
         batch_sizes = _split_into_batches(len(flagged), DEEP_REVIEW_BATCH_SIZE)
         created_page_ids: list[str] = []
         adjust_count = 0
@@ -573,7 +608,15 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
             item_blocks = []
             for page, link in batch:
                 item_links = links_by_item.get(page.id, [])
-                item_blocks.append(_render_item_full(page, link, cited_pages, item_links))
+                item_blocks.append(
+                    _render_item_full(
+                        page,
+                        link,
+                        cited_pages,
+                        item_links,
+                        related_considerations=related_considerations,
+                    )
+                )
 
             batch_text = (
                 f"## Batch {batch_idx + 1}/{len(batch_sizes)} "

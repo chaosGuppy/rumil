@@ -2304,6 +2304,7 @@
           "create_view",
           "global_prioritization",
           "update_view",
+          "red_team",
           "claude_code_direct"
         ],
         "title": "CallType"

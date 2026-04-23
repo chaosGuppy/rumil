@@ -6,6 +6,7 @@ from rumil.calls.create_view import CreateViewCall
 from rumil.calls.find_considerations import FindConsiderationsCall
 from rumil.calls.ingest import IngestCall
 from rumil.calls.link_subquestions import LinkSubquestionsCall
+from rumil.calls.red_team import RedTeamCall
 from rumil.calls.scout_analogies import ScoutAnalogiesCall
 from rumil.calls.scout_c_cruxes import ScoutCCruxesCall
 from rumil.calls.scout_c_how_false import ScoutCHowFalseCall
@@ -34,6 +35,7 @@ __all__ = [
     "FindConsiderationsCall",
     "IngestCall",
     "LinkSubquestionsCall",
+    "RedTeamCall",
     "ScoutAnalogiesCall",
     "ScoutCCruxesCall",
     "ScoutCHowFalseCall",

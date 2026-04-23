@@ -33,6 +33,7 @@ from rumil.orchestrators.common import (
     PrioritizationResult,
     SubquestionScore,
     compute_priority_score,
+    red_team_question,
     score_items_sequentially,
 )
 from rumil.settings import get_settings
@@ -223,6 +224,19 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                     )
                     if self._sequence_id is not None:
                         self._seq_position += 1
+
+                    if get_settings().enable_red_team:
+                        await red_team_question(
+                            root_question_id,
+                            self.db,
+                            parent_call_id=self._parent_call_id,
+                            broadcaster=self.broadcaster,
+                            sequence_id=self._sequence_id,
+                            sequence_position=self._seq_position,
+                            pool_question_id=self.pool_question_id,
+                        )
+                        if self._sequence_id is not None:
+                            self._seq_position += 1
 
                 if last_call:
                     break

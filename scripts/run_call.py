@@ -35,6 +35,7 @@ import uuid
 from rumil.calls.call_registry import ASSESS_CALL_CLASSES
 from rumil.calls.find_considerations import FindConsiderationsCall
 from rumil.calls.link_subquestions import LinkSubquestionsCall
+from rumil.calls.red_team import RedTeamCall
 from rumil.calls.scout_analogies import ScoutAnalogiesCall
 from rumil.calls.scout_deep_questions import ScoutDeepQuestionsCall
 from rumil.calls.scout_estimates import ScoutEstimatesCall
@@ -137,6 +138,19 @@ async def run_call(args: argparse.Namespace, db: DB, question_id: str) -> None:
         )
         await linker.run()
 
+    elif call_type == "red-team":
+        call = await db.create_call(
+            CallType.RED_TEAM,
+            scope_page_id=question_id,
+        )
+        instance = RedTeamCall(
+            question_id,
+            call,
+            db,
+            up_to_stage=up_to_stage,
+        )
+        await instance.run()
+
     elif call_type == "robustify":
         if up_to_stage:
             print("--up-to-stage is not supported for robustify.")
@@ -220,6 +234,7 @@ def main() -> None:
         choices=[
             "find-considerations",
             "assess",
+            "red-team",
             "robustify",
             "web-research",
             "link-subquestions",

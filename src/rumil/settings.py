@@ -95,6 +95,7 @@ class Settings(BaseSettings):
     scope_subquestion_linker_subgraph_max_pages: int = _capture_field(default=40)
     linker_cache_invalidation_threshold: int = _capture_field(default=100)
     subquestion_linker_enabled: bool = _capture_field(default=True)
+    enable_red_team: bool = _capture_field(default=False)
 
     max_db_retries: int = _capture_field(default=10)
     max_api_retries: int = _capture_field(default=10)

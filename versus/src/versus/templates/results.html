@@ -167,7 +167,9 @@
   .topbar form { margin: 0; }
   .topbar select { padding: 4px 8px; font-size: 13px; }
   h3 { font-size: 13px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 24px 0 8px; }
-  .main-matrices { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 12px; }
+  .main-matrices { display: flex; flex-direction: column; gap: 18px; }
+  .main-matrices section { width: 100%; overflow-x: auto; }
+  .main-matrices table.matrix { width: 100%; }
   .cond-head { margin-bottom: 4px; display: flex; align-items: baseline; gap: 8px; }
   .cond-title { font-weight: 500; font-size: 13px; }
   .cond-desc { color: var(--muted); font-size: 12px; line-height: 1.4; margin-bottom: 2px; }

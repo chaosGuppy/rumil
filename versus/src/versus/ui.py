@@ -322,6 +322,77 @@ def inspect(request: fastapi.Request, essay: str | None = None):
     )
 
 
+def _judge_sort_key(judge: str) -> tuple:
+    """Order judge columns: family → weak→strong within family → bare/rumil/ws/orch variant.
+
+    Families (left to right): gemini, openai, anthropic, other.
+    Variants for a given base model: bare (openrouter) < rumil text (`anthropic:`) <
+    rumil ws < rumil orch. Human judges pinned to the end.
+    """
+    low = judge.lower()
+
+    if low.startswith("human:"):
+        return (99, 99, "", 99, judge)
+
+    if low.startswith("rumil:orch:"):
+        variant = 3
+        base = judge.split(":")[2] if len(judge.split(":")) >= 3 else judge
+    elif low.startswith("rumil:ws:"):
+        variant = 2
+        base = judge.split(":")[2] if len(judge.split(":")) >= 3 else judge
+    elif low.startswith("anthropic:"):
+        variant = 1
+        base = judge.split(":", 1)[1]
+    elif "/" in judge:
+        variant = 0
+        base = judge.split("/", 1)[1]
+    else:
+        variant = 0
+        base = judge
+    base_low = base.lower()
+
+    if "gemini" in base_low or low.startswith("google/"):
+        family = 0
+        if "flash-lite" in base_low:
+            strength = 0
+        elif "flash" in base_low:
+            strength = 1
+        elif "pro" in base_low:
+            strength = 2
+        else:
+            strength = 5
+    elif "gpt" in base_low or low.startswith("openai/"):
+        family = 1
+        if "nano" in base_low:
+            strength = 0
+        elif "mini" in base_low:
+            strength = 1
+        else:
+            strength = 2
+    elif (
+        "claude" in base_low
+        or "haiku" in base_low
+        or "sonnet" in base_low
+        or "opus" in base_low
+        or low.startswith("anthropic")
+        or low.startswith("rumil:")
+    ):
+        family = 2
+        if "haiku" in base_low:
+            strength = 0
+        elif "sonnet" in base_low:
+            strength = 1
+        elif "opus" in base_low:
+            strength = 2
+        else:
+            strength = 5
+    else:
+        family = 3
+        strength = 5
+
+    return (family, strength, base_low, variant, judge)
+
+
 def _cell_color(pct: float) -> str:
     """Linear gradient: 0 → orange (model preferred), 50 → light gray, 100 → green (human preferred)."""
     if pct <= 0.5:
@@ -357,8 +428,7 @@ def results(
     present_judges = {k[1] for k in data if k[2] in conditions}
     gen_models = [m.id for m in cfg().completion.models if m.id in present_gens]
     gen_models += sorted(g for g in present_gens if g not in gen_models)  # orphans last
-    judge_models = [j for j in cfg().judging.models if j in present_judges]
-    judge_models += sorted(j for j in present_judges if j not in judge_models)
+    judge_models = sorted(present_judges, key=_judge_sort_key)
 
     def build_cell(gen, jmod, cond, crit_filter):
         hs, ns = 0.0, 0

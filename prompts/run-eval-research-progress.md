@@ -28,6 +28,8 @@ Assess the following dimensions:
 4. Look for moments where the analysis took a non-obvious turn that paid off
 5. Consider the overall trajectory: did the run make the workspace significantly more knowledgeable?
 
+You must continue to explore until your assessment of this dimension has converged.
+
 ## Output format
 
 Produce a structured evaluation report with:

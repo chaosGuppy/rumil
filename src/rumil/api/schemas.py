@@ -15,12 +15,14 @@ from rumil.models import Page, PageLink, _all_fields_required
 from rumil.tracing.trace_events import (
     AffectedPagesIdentifiedEvent,
     AgentStartedEvent,
+    AutocompactEvent,
     ClaimReassessedEvent,
     ContextBuiltEvent,
     DispatchesPlannedEvent,
     DispatchExecutedEvent,
     ErrorEvent,
     EvaluationCompleteEvent,
+    ExperimentalScoringCompletedEvent,
     ExplorePageEvent,
     GlobalPhaseCompletedEvent,
     GroundingTasksGeneratedEvent,
@@ -29,6 +31,7 @@ from rumil.tracing.trace_events import (
     LoadPageEvent,
     MovesExecutedEvent,
     PhaseSkippedEvent,
+    QuestionDedupeEvent,
     ReassessTriggeredEvent,
     RenderQuestionSubgraphEvent,
     ReviewCompleteEvent,
@@ -93,6 +96,10 @@ class ErrorEventOut(ErrorEvent, _TraceEnvelopeMixin):
 
 
 class ScoringCompletedEventOut(ScoringCompletedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class ExperimentalScoringCompletedEventOut(ExperimentalScoringCompletedEvent, _TraceEnvelopeMixin):
     pass
 
 
@@ -172,6 +179,10 @@ class ViewCreatedEventOut(ViewCreatedEvent, _TraceEnvelopeMixin):
     pass
 
 
+class AutocompactEventOut(AutocompactEvent, _TraceEnvelopeMixin):
+    pass
+
+
 class PhaseSkippedEventOut(PhaseSkippedEvent, _TraceEnvelopeMixin):
     pass
 
@@ -184,6 +195,10 @@ class UpdateViewPhaseCompletedEventOut(UpdateViewPhaseCompletedEvent, _TraceEnve
     pass
 
 
+class QuestionDedupeEventOut(QuestionDedupeEvent, _TraceEnvelopeMixin):
+    pass
+
+
 TraceEventOut = Annotated[
     ContextBuiltEventOut
     | MovesExecutedEventOut
@@ -192,6 +207,7 @@ TraceEventOut = Annotated[
     | WarningEventOut
     | ErrorEventOut
     | ScoringCompletedEventOut
+    | ExperimentalScoringCompletedEventOut
     | DispatchesPlannedEventOut
     | DispatchExecutedEventOut
     | ExplorePageEventOut
@@ -211,9 +227,11 @@ TraceEventOut = Annotated[
     | LoadPageEventOut
     | LinkSubquestionsCompleteEventOut
     | ViewCreatedEventOut
+    | AutocompactEventOut
     | PhaseSkippedEventOut
     | GlobalPhaseCompletedEventOut
-    | UpdateViewPhaseCompletedEventOut,
+    | UpdateViewPhaseCompletedEventOut
+    | QuestionDedupeEventOut,
     Field(discriminator="event"),
 ]
 
@@ -308,12 +326,8 @@ class ABEvalDimensionOut(BaseModel):
     name: str
     display_name: str
     preference: str
-    report_a: str
-    report_b: str
-    comparison: str
-    call_id_a: str = ""
-    call_id_b: str = ""
-    comparison_call_id: str = ""
+    report: str = ""
+    call_id: str = ""
 
 
 class ABEvalReportOut(BaseModel):

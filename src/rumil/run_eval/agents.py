@@ -22,9 +22,19 @@ EVAL_AGENTS: Sequence[EvalAgentSpec] = [
         extra_tools=["WebSearch"],
     ),
     EvalAgentSpec(
-        name="subquestion_relevance",
-        display_name="Subquestion Relevance",
-        prompt_file="run-eval-subquestion-relevance.md",
+        name="coverage_and_relevance",
+        display_name="Coverage & Relevance",
+        prompt_file="run-eval-coverage-and-relevance.md",
+    ),
+    EvalAgentSpec(
+        name="depth_vs_breadth",
+        display_name="Depth vs Breadth",
+        prompt_file="run-eval-depth-vs-breadth.md",
+    ),
+    EvalAgentSpec(
+        name="research_redundancy",
+        display_name="Research Redundancy",
+        prompt_file="run-eval-research-redundancy.md",
     ),
     EvalAgentSpec(
         name="consistency",

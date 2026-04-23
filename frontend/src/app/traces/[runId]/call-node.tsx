@@ -14,6 +14,7 @@ import type {
 } from "@/api/types.gen";
 import { CLIENT_API_BASE as QUERY_API_BASE } from "@/api-config";
 import { useStagedRun } from "@/lib/staged-run-context";
+import { withStagedRun } from "@/lib/staged-run-href";
 import { traceKeys } from "@/lib/queries";
 import type { SequenceNode } from "./trace-viewer";
 
@@ -152,9 +153,7 @@ function PageChip({ page }: { page: PageRef }) {
   const short = page.id.slice(0, 8);
   const label = page.headline || short;
   const { activeStagedRunId } = useStagedRun();
-  const href = activeStagedRunId
-    ? `/pages/${page.id}?staged_run_id=${activeStagedRunId}`
-    : `/pages/${page.id}`;
+  const href = withStagedRun(`/pages/${page.id}`, activeStagedRunId);
   return (
     <Link href={href} className="trace-page-chip" title={short}>
       {label}
@@ -787,6 +786,44 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
         </div>
       )}
 
+      {event.event === "experimental_scoring_completed" && (
+        <div className="trace-event-body">
+          {(event.subquestion_scores ?? []).length > 0 && (
+            <div className="trace-scoring-section">
+              <div className="trace-kv">
+                <span className="trace-kv-key">subquestion scores</span>
+              </div>
+              {(event.subquestion_scores ?? []).map((s, i) => (
+                <div key={i} className="trace-score-row">
+                  <span className="trace-score-headline">{s.headline || s.question_id.slice(0, 8)}</span>
+                  {s.impact_curve && (
+                    <span className="trace-score-reasoning" style={{ whiteSpace: 'pre-wrap' }}>{s.impact_curve}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          {(event.per_type_fruit ?? []).length > 0 && (
+            <div className="trace-scoring-section">
+              <div className="trace-kv">
+                <span className="trace-kv-key">per-scout-type fruit</span>
+              </div>
+              {(event.per_type_fruit ?? []).map((s, i) => (
+                <div key={i} className="trace-fruit-type-row">
+                  <div className="trace-fruit-type-header">
+                    <span className="trace-score-headline">{s.call_type}</span>
+                    <span className="trace-kv-value">{s.fruit}/10</span>
+                  </div>
+                  {s.reasoning && (
+                    <div className="trace-score-reasoning">{s.reasoning}</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {event.event === "scoring_completed" && (
         <div className="trace-event-body">
           {(event.subquestion_scores ?? []).length > 0 && (
@@ -853,6 +890,12 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {event.event === "autocompact" && (
+        <div className="trace-event-body trace-info-text">
+          Context was automatically condensed mid-run (agent {event.agent_id.slice(0, 8)})
         </div>
       )}
 
@@ -1195,12 +1238,9 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
         <div className="trace-event-body">
           <div className="trace-kv">
             <span className="trace-kv-key">view</span>
-            <Link
-              href={`/pages/${event.view_id}`}
-              className="trace-page-chip"
-            >
-              {event.view_headline || event.view_id.slice(0, 8)}
-            </Link>
+            <span className="trace-kv-value">
+              <PageChip page={{ id: event.view_id, headline: event.view_headline }} />
+            </span>
           </div>
         </div>
       )}
@@ -1212,6 +1252,53 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
               <span className="trace-kv-value">{event.outcome}</span>
             </div>
           )}
+        </div>
+      )}
+      {event.event === "question_dedupe" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">outcome</span>
+            <span className="trace-kv-value">{event.outcome.replace(/_/g, " ")}</span>
+          </div>
+          {event.proposed_headline && (
+            <div className="trace-kv">
+              <span className="trace-kv-key">proposed</span>
+              <span className="trace-kv-value">{event.proposed_headline}</span>
+            </div>
+          )}
+          <div className="trace-kv">
+            <span className="trace-kv-key">parent</span>
+            <span className="trace-kv-value">
+              <code>{event.parent_id.slice(0, 8)}</code>
+              {event.parent_headline ? ` — ${event.parent_headline}` : ""}
+            </span>
+          </div>
+          {event.matched_page_id && (
+            <div className="trace-kv">
+              <span className="trace-kv-key">matched</span>
+              <span className="trace-kv-value">
+                <code>{event.matched_page_id.slice(0, 8)}</code>
+                {event.matched_headline ? ` — ${event.matched_headline}` : ""}
+              </span>
+            </div>
+          )}
+          {event.decision_reasoning && (
+            <div className="trace-kv">
+              <span className="trace-kv-key">reasoning</span>
+              <span className="trace-kv-value">{event.decision_reasoning}</span>
+            </div>
+          )}
+          {(event.candidates ?? []).map((c, i) => (
+            <div key={i} className="trace-score-row">
+              <code>{c.id.slice(0, 8)}</code>
+              <span className="trace-score-headline">
+                {c.headline}
+              </span>
+              <span className="trace-kv-value">
+                {c.similarity.toFixed(2)} · {c.kept_by_filter ? "kept" : "dropped"}
+              </span>
+            </div>
+          ))}
         </div>
       )}
     </div>

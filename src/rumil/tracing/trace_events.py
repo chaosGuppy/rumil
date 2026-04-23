@@ -43,7 +43,6 @@ class ContextBuiltEvent(BaseModel):
     preloaded_page_ids: PageRefList = []
     source_page_id: str | None = None
     budget: int | None = None
-    scout_mode: str | None = None
 
 
 class MovesExecutedEvent(BaseModel):
@@ -118,6 +117,18 @@ class ScoringCompletedEvent(BaseModel):
     parent_fruit_reasoning: str = ""
     per_type_fruit: list[CallTypeFruitScoreItem] = []
     dispatch_guidance: str = ""
+
+
+class ExperimentalSubquestionScoreItem(BaseModel):
+    question_id: str
+    headline: str = ""
+    impact_curve: str = ""
+
+
+class ExperimentalScoringCompletedEvent(BaseModel):
+    event: Literal["experimental_scoring_completed"] = "experimental_scoring_completed"
+    subquestion_scores: list[ExperimentalSubquestionScoreItem] = []
+    per_type_fruit: list[CallTypeFruitScoreItem] = []
 
 
 class DispatchesPlannedEvent(BaseModel):
@@ -256,6 +267,11 @@ class ViewCreatedEvent(BaseModel):
     superseded_view_id: str | None = None
 
 
+class AutocompactEvent(BaseModel):
+    event: Literal["autocompact"] = "autocompact"
+    agent_id: str
+
+
 class PhaseSkippedEvent(BaseModel):
     event: Literal["phase_skipped"] = "phase_skipped"
     phase: str = ""
@@ -277,6 +293,25 @@ class UpdateViewPhaseCompletedEvent(BaseModel):
     items_removed: int = 0
 
 
+class DedupeCandidateItem(BaseModel):
+    id: str
+    headline: str = ""
+    similarity: float
+    kept_by_filter: bool = False
+
+
+class QuestionDedupeEvent(BaseModel):
+    event: Literal["question_dedupe"] = "question_dedupe"
+    proposed_headline: str = ""
+    parent_id: str
+    parent_headline: str = ""
+    candidates: list[DedupeCandidateItem] = []
+    outcome: str = ""
+    matched_page_id: str | None = None
+    matched_headline: str = ""
+    decision_reasoning: str = ""
+
+
 TraceEvent = Annotated[
     ContextBuiltEvent
     | MovesExecutedEvent
@@ -285,6 +320,7 @@ TraceEvent = Annotated[
     | WarningEvent
     | ErrorEvent
     | ScoringCompletedEvent
+    | ExperimentalScoringCompletedEvent
     | DispatchesPlannedEvent
     | DispatchExecutedEvent
     | ExplorePageEvent
@@ -304,8 +340,10 @@ TraceEvent = Annotated[
     | LoadPageEvent
     | LinkSubquestionsCompleteEvent
     | ViewCreatedEvent
+    | AutocompactEvent
     | PhaseSkippedEvent
     | GlobalPhaseCompletedEvent
-    | UpdateViewPhaseCompletedEvent,
+    | UpdateViewPhaseCompletedEvent
+    | QuestionDedupeEvent,
     Field(discriminator="event"),
 ]

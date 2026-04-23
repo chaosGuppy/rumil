@@ -1,18 +1,22 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { ProjectStatsOut, Project } from "@/api";
 
 import { CLIENT_API_BASE as API_BASE } from "@/api-config";
+import StagedBanner from "@/components/staged-banner";
 import { WorkspaceIndicator } from "@/components/workspace-indicator";
 import { StatsView } from "@/components/stats-view";
 import { useDocumentTitle } from "@/lib/use-document-title";
+import { withStagedRun } from "@/lib/staged-run-href";
 
 export default function ProjectStatsPage() {
   const params = useParams<{ projectId: string }>();
   const projectId = params.projectId;
+  const searchParams = useSearchParams();
+  const stagedRunId = searchParams.get("staged_run_id");
 
   const [projectName, setProjectName] = useState<string>();
   const [data, setData] = useState<ProjectStatsOut | null>(null);
@@ -32,7 +36,9 @@ export default function ProjectStatsPage() {
   useEffect(() => {
     setLoading(true);
     setError(null);
-    fetch(`${API_BASE}/api/projects/${projectId}/stats`, { cache: "no-store" })
+    fetch(withStagedRun(`${API_BASE}/api/projects/${projectId}/stats`, stagedRunId), {
+      cache: "no-store",
+    })
       .then(async (res) => {
         if (!res.ok) throw new Error(`${res.status}`);
         return (await res.json()) as ProjectStatsOut;
@@ -45,7 +51,7 @@ export default function ProjectStatsPage() {
         setError(String(e));
         setLoading(false);
       });
-  }, [projectId]);
+  }, [projectId, stagedRunId]);
 
   return (
     <main className="stats-page">
@@ -114,13 +120,20 @@ export default function ProjectStatsPage() {
 
       <WorkspaceIndicator projectId={projectId} projectName={projectName} />
 
+      {stagedRunId && (
+        <StagedBanner
+          runId={stagedRunId}
+          pageUrl={`/projects/${projectId}/stats`}
+        />
+      )}
+
       <div className="stats-header">
         <div>
           <h1>Statistics</h1>
           <div className="subtitle">project overview</div>
         </div>
         <div className="stats-nav">
-          <Link href={`/projects/${projectId}`}>Pages</Link>
+          <Link href={withStagedRun(`/projects/${projectId}`, stagedRunId)}>Pages</Link>
         </div>
       </div>
 

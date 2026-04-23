@@ -164,12 +164,6 @@ class CallStage(str, Enum):
     CLOSING_REVIEW = "closing_review"
 
 
-class FindConsiderationsMode(str, Enum):
-    ALTERNATE = "alternate"
-    ABSTRACT = "abstract"
-    CONCRETE = "concrete"
-
-
 class LinkRole(str, Enum):
     DIRECT = "direct"
     STRUCTURAL = "structural"
@@ -203,20 +197,11 @@ class MultiRoundFields(BaseModel):
     )
 
 
-class _ScoutFields(MultiRoundFields):
-    mode: FindConsiderationsMode = Field(
-        description=(
-            "Scout mode: 'alternate' alternates abstract and concrete "
-            "each round; 'abstract' for all-abstract; 'concrete' for all-concrete."
-        ),
-    )
-
-
 class PrioritizationFields(BaseModel):
     budget: int = Field(description="Budget to allocate for the sub-investigation")
 
 
-class ScoutDispatchPayload(BaseDispatchPayload, _ScoutFields):
+class ScoutDispatchPayload(BaseDispatchPayload, MultiRoundFields):
     pass
 
 

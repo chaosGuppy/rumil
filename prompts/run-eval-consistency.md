@@ -28,6 +28,8 @@ Assess the following dimensions:
 4. Check whether contradictions are acknowledged and handled
 5. Pay special attention to cases where contradictory evidence supports the same conclusion
 
+You must continue to explore until your assessment of this dimension has converged.
+
 ## Output format
 
 Produce a structured evaluation report with:

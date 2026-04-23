@@ -92,8 +92,9 @@ export const getPageCountsApiPagesPageIdCountsGet = <ThrowOnError extends boolea
  *
  * Aggregate stats over all pages/links/calls in a project.
  *
- * v1 is baseline-only: rows with staged=true or is_superseded=true are excluded,
- * and staged_run_id is not accepted.
+ * Baseline rows are always included; when `staged_run_id` is provided as a
+ * query param, rows from that staged run are also included and its mutation
+ * events (supersede_page, delete_link) are overlayed.
  */
 export const getProjectStatsApiProjectsProjectIdStatsGet = <ThrowOnError extends boolean = false>(options: Options<GetProjectStatsApiProjectsProjectIdStatsGetData, ThrowOnError>) => (options.client ?? client).get<GetProjectStatsApiProjectsProjectIdStatsGetResponses, GetProjectStatsApiProjectsProjectIdStatsGetErrors, ThrowOnError>({ url: '/api/projects/{project_id}/stats', ...options });
 
@@ -102,7 +103,8 @@ export const getProjectStatsApiProjectsProjectIdStatsGet = <ThrowOnError extends
  *
  * Aggregate stats over the 2-hop undirected neighborhood around a question.
  *
- * Returns 404 if the target page is not a question. v1 is baseline-only.
+ * Returns 404 if the target page is not a question. Staged-run visibility
+ * matches get_project_stats.
  */
 export const getQuestionStatsApiPagesPageIdStatsGet = <ThrowOnError extends boolean = false>(options: Options<GetQuestionStatsApiPagesPageIdStatsGetData, ThrowOnError>) => (options.client ?? client).get<GetQuestionStatsApiPagesPageIdStatsGetResponses, GetQuestionStatsApiPagesPageIdStatsGetErrors, ThrowOnError>({ url: '/api/pages/{page_id}/stats', ...options });
 

@@ -14,6 +14,7 @@ from rumil.database import DB
 from rumil.models import (
     AssessDispatchPayload,
     CallType,
+    CreateViewDispatchPayload,
     Dispatch,
 )
 from rumil.orchestrators.common import (
@@ -27,6 +28,7 @@ from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
 from rumil.tracing.trace_events import DispatchExecutedEvent
 from rumil.tracing.tracer import get_trace
+from rumil.views import get_active_view
 
 log = logging.getLogger(__name__)
 
@@ -39,6 +41,10 @@ class BaseOrchestrator(ABC):
         self.broadcaster: Broadcaster | None = broadcaster
         self._owns_broadcaster: bool = False
         self.ingest_hint: str = ""
+        # Set by prio orchestrators to their root question ID. Sub-call
+        # budget consumption debits this question's pool. None for
+        # orchestrators outside a per-question prio cycle.
+        self.pool_question_id: str | None = None
 
     async def _pacing_params(self) -> tuple[int, int]:
         """Return (total, used) for budget pacing.
@@ -113,6 +119,7 @@ class BaseOrchestrator(ABC):
             broadcaster=self.broadcaster,
             max_rounds=max_rounds,
             fruit_threshold=fruit_threshold,
+            pool_question_id=self.pool_question_id,
         )
         await instance.run()
         return call.id
@@ -127,15 +134,39 @@ class BaseOrchestrator(ABC):
     ) -> bool:
         """Run dispatches in a sequence sequentially. Returns True if any executed.
 
+        Any dispatch targeting a *non-scope* question triggers a post-sequence
+        ``view.refresh(...)`` for that target (deduped), so the subquestion's
+        ever-evolving summary stays up-to-date with whatever the dispatch just
+        produced. ASSESS and CREATE_VIEW dispatches already update the view
+        themselves, so they don't double-fire.
+
         All dispatches in the sequence are guaranteed to run: if budget
         is exhausted mid-sequence, subsequent dispatches force-consume
-        so that trailing calls (e.g. auto-assess) are never skipped.
+        so that trailing calls (e.g. auto-refresh) are never skipped.
 
         Child call IDs are pre-generated so that DispatchExecutedEvents
         can be recorded before execution begins, making dispatch links
         clickable in the trace frontend immediately.
         """
-        is_multi_step = len(sequence) > 1
+        pre_ids = [str(uuid.uuid4()) for _ in sequence]
+        raw_qids = [d.payload.question_id for d in sequence]
+        resolved_map = await self.db.resolve_page_ids(raw_qids)
+        resolves = [resolved_map.get(qid) or scope_question_id for qid in raw_qids]
+        pages = await self.db.get_pages_by_ids([r for r in resolves if r is not None])
+        headlines = [pages[r].headline if r in pages else "" for r in resolves]
+
+        refresh_targets: list[str] = []
+        seen_targets: set[str] = set()
+        for i, dispatch in enumerate(sequence):
+            target = resolves[i]
+            if target == scope_question_id or target in seen_targets:
+                continue
+            if isinstance(dispatch.payload, (AssessDispatchPayload, CreateViewDispatchPayload)):
+                continue
+            seen_targets.add(target)
+            refresh_targets.append(target)
+
+        is_multi_step = (len(sequence) + len(refresh_targets)) > 1
         seq_id: str | None = None
         if is_multi_step:
             call_sequence = await self.db.create_call_sequence(
@@ -144,13 +175,6 @@ class BaseOrchestrator(ABC):
                 position_in_batch=position_in_batch,
             )
             seq_id = call_sequence.id
-
-        pre_ids = [str(uuid.uuid4()) for _ in sequence]
-        raw_qids = [d.payload.question_id for d in sequence]
-        resolved_map = await self.db.resolve_page_ids(raw_qids)
-        resolves = [resolved_map.get(qid) or scope_question_id for qid in raw_qids]
-        pages = await self.db.get_pages_by_ids([r for r in resolves if r is not None])
-        headlines = [pages[r].headline if r in pages else "" for r in resolves]
 
         trace = get_trace()
         if trace:
@@ -183,6 +207,21 @@ class BaseOrchestrator(ABC):
             else:
                 seq_pos += 1
             executed = True
+
+        if refresh_targets:
+            view = get_active_view()
+            for target in refresh_targets:
+                await view.refresh(
+                    target,
+                    self.db,
+                    parent_call_id=parent_call_id,
+                    broadcaster=self.broadcaster,
+                    force=True,
+                    sequence_id=seq_id,
+                    sequence_position=seq_pos if is_multi_step else None,
+                    pool_question_id=self.pool_question_id,
+                )
+                seq_pos += 1
         return executed
 
     async def _execute_dispatch(

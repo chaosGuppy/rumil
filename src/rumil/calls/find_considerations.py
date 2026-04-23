@@ -12,7 +12,7 @@ from rumil.calls.stages import (
     WorkspaceUpdater,
 )
 from rumil.database import DB
-from rumil.models import Call, CallStage, CallType, FindConsiderationsMode
+from rumil.models import Call, CallStage, CallType
 
 
 class FindConsiderationsCall(CallRunner):
@@ -31,22 +31,27 @@ class FindConsiderationsCall(CallRunner):
         *,
         max_rounds: int,
         fruit_threshold: int,
-        mode: FindConsiderationsMode = FindConsiderationsMode.ALTERNATE,
         context_page_ids: Sequence[str] | None = None,
         broadcaster=None,
         up_to_stage: CallStage | None = None,
+        pool_question_id: str | None = None,
     ):
         call.call_params = {
             **(call.call_params or {}),
-            "mode": mode.value,
             "max_rounds": max_rounds,
             "fruit_threshold": fruit_threshold,
         }
-        self._mode = mode
         self._max_rounds = max_rounds
         self._fruit_threshold = fruit_threshold
         self._context_page_ids = context_page_ids
-        super().__init__(question_id, call, db, broadcaster=broadcaster, up_to_stage=up_to_stage)
+        super().__init__(
+            question_id,
+            call,
+            db,
+            broadcaster=broadcaster,
+            up_to_stage=up_to_stage,
+            pool_question_id=pool_question_id,
+        )
 
     @property
     def rounds_completed(self) -> int:
@@ -55,13 +60,12 @@ class FindConsiderationsCall(CallRunner):
         return 0
 
     def _make_context_builder(self) -> ContextBuilder:
-        return EmbeddingContext(self.call_type)
+        return EmbeddingContext(self.call_type, require_judgement_for_questions=True)
 
     def _make_workspace_updater(self) -> WorkspaceUpdater:
         return MultiRoundLoop(
             self._max_rounds,
             self._fruit_threshold,
-            self._mode,
             available_moves=self._resolve_available_moves(),
         )
 
@@ -70,7 +74,8 @@ class FindConsiderationsCall(CallRunner):
 
     def task_description(self) -> str:
         return (
-            "Scout for missing considerations on this question.\n\n"
+            "Generate considerations that would most improve the next judgement "
+            "on this question.\n\n"
             "Question ID (use this when linking considerations): "
             f"`{self.infra.question_id}`"
         )

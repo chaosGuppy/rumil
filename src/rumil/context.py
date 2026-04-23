@@ -346,8 +346,9 @@ async def format_page(
 
     _exclude = exclude_page_ids or set()
     if linked_detail is not None and db and page.page_type == PageType.QUESTION:
-        linked_items: list[tuple[float, datetime, str]] = []
+        sections: list[str] = []
 
+        con_items: list[tuple[float, datetime, str]] = []
         considerations = await db.get_considerations_for_question(page.id)
         for claim, link in considerations:
             if claim.id in _exclude:
@@ -359,57 +360,78 @@ async def format_page(
                 and claim.run_id != highlight_run_id
             )
             link_tag = " [LINKED BY THIS RUN]" if _link_highlighted else ""
-            line = (
-                "- "
-                + await format_page(
-                    claim,
-                    linked_detail,
-                    db=db,
-                    linked_detail=None,
-                    highlight_run_id=highlight_run_id,
-                )
-                + link_tag
+            rendered = await format_page(
+                claim,
+                linked_detail,
+                db=db,
+                linked_detail=None,
+                highlight_run_id=highlight_run_id,
             )
+            line = "- " + rendered + link_tag
             if link.reasoning:
                 line += f"\n  Reasoning: {link.reasoning}"
-            linked_items.append((link.strength or 0.0, claim.created_at, line))
+            con_items.append((link.strength or 0.0, claim.created_at, line))
+        if con_items:
+            con_items.sort(key=lambda x: (-x[0], x[1]))
+            sections.append(
+                "#### Considerations linked to this question\n\n"
+                "_Claims the workspace has linked as bearing on this question._\n\n"
+                + "\n".join(line for _, _, line in con_items)
+            )
 
+        j_items: list[tuple[datetime, str]] = []
         judgements = await db.get_judgements_for_question(page.id)
         for j in judgements:
             if j.id in _exclude:
                 continue
-            line = "- " + await format_page(
+            rendered = await format_page(
                 j,
                 linked_detail,
                 db=db,
                 linked_detail=None,
                 highlight_run_id=highlight_run_id,
             )
-            linked_items.append((0.0, j.created_at, line))
+            j_items.append((j.created_at, "- " + rendered))
+        if j_items:
+            j_items.sort(key=lambda x: x[0])
+            sections.append(
+                "#### Judgements on this question\n\n"
+                "_Standing answers the workspace has recorded for this question._\n\n"
+                + "\n".join(line for _, line in j_items)
+            )
 
         children = await db.get_child_questions(page.id)
         child_judgements = await db.get_judgements_for_questions(
             [child.id for child in children if child.id not in _exclude]
         )
+        child_blocks: list[str] = []
         for child in children:
             if child.id in _exclude:
                 continue
-            for j in child_judgements.get(child.id, []):
-                if j.id in _exclude:
-                    continue
-                line = f"- *On: {child.headline} (`{child.id[:8]}`)*  " + await format_page(
+            child_js = [j for j in child_judgements.get(child.id, []) if j.id not in _exclude]
+            if not child_js:
+                continue
+            sub_lines = [f"- On sub-question `{child.id[:8]}` — {child.headline}:"]
+            for j in sorted(child_js, key=lambda x: x.created_at):
+                rendered = await format_page(
                     j,
                     linked_detail,
                     db=db,
                     linked_detail=None,
                     highlight_run_id=highlight_run_id,
                 )
-                linked_items.append((0.0, j.created_at, line))
+                sub_lines.append(f"  - {rendered}")
+            child_blocks.append("\n".join(sub_lines))
+        if child_blocks:
+            sections.append(
+                "#### Judgements on sub-questions\n\n"
+                "_Answers recorded on questions nested under this one "
+                "(not judgements of this question itself)._\n\n" + "\n".join(child_blocks)
+            )
 
-        if linked_items:
-            linked_items.sort(key=lambda x: (-x[0], x[1]))
+        if sections:
             lines.append("")
-            lines.append("\n".join(line for _, _, line in linked_items))
+            lines.append("\n\n".join(sections))
 
     return "\n".join(lines)
 
@@ -495,109 +517,60 @@ async def render_child_investigation_results(
     - NEW Summary/Judgement: full content
     - Old Summary/Judgement: abstract only
     """
+    from rumil.views import get_active_view
+
     children = await db.get_child_questions(parent_question_id)
     if not children:
         return "", []
 
     child_ids = [c.id for c in children]
-    views_map, summaries_map, judgements_map = await asyncio.gather(
-        db.get_views_for_questions(child_ids),
-        db.get_latest_summaries_for_questions(child_ids),
-        db.get_judgements_for_questions(child_ids),
-    )
+    summaries_map = await db.get_latest_summaries_for_questions(child_ids)
 
     def _is_new(page: Page) -> bool:
         if last_view_created_at is None:
             return True
         return page.created_at > last_view_created_at
 
-    new_view_ids: list[str] = []
-    for cid in child_ids:
-        v = views_map.get(cid)
-        if v and _is_new(v):
-            new_view_ids.append(v.id)
-    view_items_map: dict[str, list[tuple[Page, PageLink]]] = {}
-    if new_view_ids:
-        items_results = await asyncio.gather(
-            *(db.get_view_items(vid, min_importance=4) for vid in new_view_ids)
+    view = get_active_view()
+    view_renders = await asyncio.gather(
+        *(
+            view.render_for_child_investigation_results(
+                cid, db, last_view_created_at=last_view_created_at
+            )
+            for cid in child_ids
         )
-        for vid, items in zip(new_view_ids, items_results):
-            view_items_map[vid] = items
+    )
 
     entries: list[tuple[bool, str, list[str]]] = []
-    for child in children:
+    for child, view_render in zip(children, view_renders):
         cid = child.id
-        view = views_map.get(cid)
-        summary = summaries_map.get(cid)
-        judgements = judgements_map.get(cid, [])
-        latest_judgement = max(judgements, key=lambda p: p.created_at) if judgements else None
+        header = f"### `{cid[:8]}` — {child.headline}"
 
-        new = False
-        page_ids: list[str] = []
-        lines: list[str] = [f"### `{cid[:8]}` — {child.headline}"]
-
-        if view:
-            new = _is_new(view)
-            page_ids.append(view.id)
-            lines.append(f"**Status:** View available{' [NEW]' if new else ''}")
-            if view.content:
-                detail = PageDetail.CONTENT if new else PageDetail.ABSTRACT
-                formatted_view = await format_page(
-                    view,
-                    detail,
-                    linked_detail=None,
-                    db=db,
-                    track=True,
-                    track_tags={"source": "child_investigation"},
-                )
-                lines.append("")
-                lines.append(formatted_view)
-            if new and view.id in view_items_map:
-                items = view_items_map[view.id]
-                if items:
-                    lines.append("")
-                    lines.append("**Key items:**")
-                    for page, link in items:
-                        imp = link.importance or 0
-                        r = page.robustness if page.robustness is not None else "?"
-                        lines.append(f"- [R{r} I{imp}] `{page.id[:8]}` — {page.headline}")
-                        page_ids.append(page.id)
-        elif summary:
-            new = _is_new(summary)
-            page_ids.append(summary.id)
-            detail = PageDetail.CONTENT if new else PageDetail.ABSTRACT
-            lines.append(f"**Status:** Summary available{' [NEW]' if new else ''}")
-            lines.append("")
-            lines.append(
-                await format_page(
-                    summary,
-                    detail,
-                    linked_detail=None,
-                    db=db,
-                    track=True,
-                    track_tags={"source": "child_investigation"},
-                )
-            )
-        elif latest_judgement:
-            new = _is_new(latest_judgement)
-            page_ids.append(latest_judgement.id)
-            detail = PageDetail.CONTENT if new else PageDetail.ABSTRACT
-            lines.append(f"**Status:** Judgement available{' [NEW]' if new else ''}")
-            lines.append("")
-            lines.append(
-                await format_page(
-                    latest_judgement,
-                    detail,
-                    linked_detail=None,
-                    db=db,
-                    track=True,
-                    track_tags={"source": "child_investigation"},
-                )
-            )
-        else:
+        if view_render is not None:
+            is_new, rendered, page_ids = view_render
+            entries.append((is_new, header + "\n" + rendered, list(page_ids)))
             continue
 
-        entries.append((new, "\n".join(lines), page_ids))
+        summary = summaries_map.get(cid)
+        if not summary:
+            continue
+
+        new = _is_new(summary)
+        detail = PageDetail.CONTENT if new else PageDetail.ABSTRACT
+        lines = [
+            header,
+            f"**Status:** Summary available{' [NEW]' if new else ''}",
+            "",
+            await format_page(
+                summary,
+                detail,
+                linked_detail=None,
+                db=db,
+                track=True,
+                track_tags={"source": "child_investigation"},
+            ),
+        ]
+        entries.append((new, "\n".join(lines), [summary.id]))
 
     if not entries:
         return "", []
@@ -667,12 +640,19 @@ async def _build_dependency_signal(db: DB) -> str | None:
 async def build_prioritization_context(
     db: DB,
     scope_question_id: str | None = None,
+    *,
+    current_call_id: str | None = None,
 ) -> tuple[str, dict[str, str]]:
     """Build context for a prioritization call.
 
     Includes the current View (importance 2+) for the scope question,
     then appends the scope question and its direct children (at ABSTRACT
-    detail) and a dependency signal.
+    detail), a dependency signal, and (when ``scope_question_id`` is set)
+    a coordination section listing other in-flight calls on the scope
+    question and active prioritisation pools on its subquestions.
+
+    The coordination section is placed last so it doesn't interfere with
+    the cacheable prefix above it.
 
     Returns (context_text, short_id_map) where short_id_map maps 8-char
     short IDs to full UUIDs.
@@ -681,24 +661,16 @@ async def build_prioritization_context(
     short_id_map: dict[str, str] = {}
 
     if scope_question_id:
+        from rumil.views import get_active_view
+
         question = await db.get_page(scope_question_id)
         if question:
-            view = await db.get_view_for_question(scope_question_id)
-            if view:
-                view_items = await db.get_view_items(
-                    view.id,
-                    min_importance=2,
-                )
-                view_text = await render_view(
-                    view,
-                    view_items,
-                    min_importance=2,
-                )
-                if view_text.strip():
-                    parts.append(view_text)
-                    parts.append("")
-                    parts.append("---")
-                    parts.append("")
+            view_text = await get_active_view().render_for_prioritization(scope_question_id, db)
+            if view_text:
+                parts.append(view_text)
+                parts.append("")
+                parts.append("---")
+                parts.append("")
 
             direct_children = await db.get_child_questions(scope_question_id)
             full_page_ids = {scope_question_id} | {c.id for c in direct_children}
@@ -723,7 +695,91 @@ async def build_prioritization_context(
         parts.append(dep_section)
         parts.append("")
 
+    if scope_question_id:
+        coord_section = await _build_coordination_section(
+            db,
+            scope_question_id,
+            current_call_id=current_call_id,
+        )
+        if coord_section:
+            parts.append(coord_section)
+            parts.append("")
+
     return "\n".join(parts), short_id_map
+
+
+async def _build_coordination_section(
+    db: DB,
+    scope_question_id: str,
+    *,
+    current_call_id: str | None,
+) -> str:
+    """Render the coordination section for prio prompts.
+
+    Shows in-flight calls on the scope question (with assigned budgets) and
+    active prio pools on subquestions (with remaining budget). Returns an
+    empty string when nothing is in flight, so the section is omitted.
+    """
+    in_flight = await db.get_active_calls_for_question(
+        scope_question_id,
+        exclude_call_id=current_call_id,
+    )
+    sub_pools = await db.get_active_prio_pools_for_subquestions(scope_question_id)
+
+    if not in_flight and not sub_pools:
+        return ""
+
+    lines: list[str] = ["## Coordination: in-flight work on this question and its subquestions", ""]
+
+    if in_flight:
+        lines.append("### Calls in flight against this question")
+        lines.append("")
+        lines.append(
+            "Other calls currently dispatched against this question (excluding "
+            "your own). Their assigned budgets contribute to the same shared "
+            "pool you're drawing from — your budget line above already accounts "
+            "for what they've consumed:"
+        )
+        lines.append("")
+        for c in in_flight:
+            assigned = (
+                f"assigned budget {c.budget_allocated}"
+                if c.budget_allocated is not None
+                else "assigned budget —"
+            )
+            lines.append(f"- `[{c.id[:8]}]` {c.call_type.value.upper()} — {assigned}")
+        lines.append("")
+
+    if sub_pools:
+        sub_ids = [sub_id for sub_id, _ in sub_pools]
+        sub_pages = await db.get_pages_by_ids(sub_ids)
+        lines.append("### Active prioritisation cycles on subquestions")
+        lines.append("")
+        for sub_id, sub_pool in sub_pools:
+            page = sub_pages.get(sub_id)
+            headline = page.headline if page else ""
+            cycles_label = (
+                "1 active cycle"
+                if sub_pool.active_calls == 1
+                else f"{sub_pool.active_calls} active cycles"
+            )
+            lines.append(
+                f'- `[{sub_id[:8]}]` "{headline}" — '
+                f"**{max(sub_pool.remaining, 0)} budget remaining** "
+                f"({cycles_label})"
+            )
+        lines.append("")
+        lines.append(
+            "If you want to wait for one of these subquestion investigations to "
+            "finish before assessing this question, recurse into that "
+            "subquestion. If you want to wait without doing additional work "
+            "beyond what the running cycle is already doing, recurse with the "
+            "minimum allowed budget — your contribution will marginally extend "
+            "the running investigation but will block until the subquestion's "
+            "pool is exhausted."
+        )
+
+    return "\n".join(lines)
 
 
 def _filter_summary_pages(
@@ -749,12 +805,25 @@ async def build_embedding_based_context(
     summary_page_similarity_floor: float | None = None,
     require_judgement_for_questions: bool = False,
     exclude_page_ids: set[str] | None = None,
+    input_type: str = "query",
 ) -> EmbeddingBasedContextResult:
     """Build context by embedding-similarity search over the whole workspace.
 
     Pages are ranked by similarity and placed into tiers by descending detail:
     distillation (CONTENT) -> full (CONTENT) -> abstract (ABSTRACT) -> summary
     (HEADLINE). Each tier has its own char budget and similarity floor.
+
+    ``input_type`` defaults to ``"query"`` for the common case where the
+    caller passes a question headline to find pages that bear on it. Pass
+    ``"document"`` when the query text IS itself a page (e.g. a claim being
+    reassessed) — this gives symmetric page-to-page similarity instead of
+    the asymmetric question-to-document similarity Voyage uses by default.
+
+    When ``input_type="document"``, default tier floors are shifted up by
+    ``settings.document_floor_delta`` to account for the score-distribution
+    shift — identical text scores ~0.74 under query-mode but ~1.00 under
+    document-mode against stored documents. Explicit floor overrides are
+    used as-passed and not shifted.
     """
     settings = get_settings()
     if full_page_char_budget is None:
@@ -765,19 +834,20 @@ async def build_embedding_based_context(
         summary_page_char_budget = settings.summary_page_char_budget
     if distillation_page_char_budget is None:
         distillation_page_char_budget = settings.distillation_page_char_budget
+    delta = settings.document_floor_delta if input_type == "document" else 0.0
     if full_page_similarity_floor is None:
-        full_page_similarity_floor = settings.full_page_similarity_floor
+        full_page_similarity_floor = settings.full_page_similarity_floor + delta
     if abstract_page_similarity_floor is None:
-        abstract_page_similarity_floor = settings.abstract_page_similarity_floor
+        abstract_page_similarity_floor = settings.abstract_page_similarity_floor + delta
     if summary_page_similarity_floor is None:
-        summary_page_similarity_floor = settings.summary_page_similarity_floor
+        summary_page_similarity_floor = settings.summary_page_similarity_floor + delta
 
     match_threshold = min(
         full_page_similarity_floor,
         abstract_page_similarity_floor,
         summary_page_similarity_floor,
     )
-    query_embedding = await embed_query(question_text)
+    query_embedding = await embed_query(question_text, input_type=input_type)
     ranked = await search_pages_by_vector(
         db,
         query_embedding,

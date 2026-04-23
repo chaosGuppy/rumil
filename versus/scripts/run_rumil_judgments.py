@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import pathlib
 import sys
 
@@ -40,6 +41,12 @@ envcascade.apply(
 from versus import config, rumil_judge  # noqa: E402
 
 DEFAULT_DIMENSIONS = ("general_quality",)
+
+RUMIL_MODEL_ALIASES = {
+    "opus": "claude-opus-4-7",
+    "sonnet": "claude-sonnet-4-6",
+    "haiku": "claude-haiku-4-5-20251001",
+}
 
 
 def main() -> None:
@@ -64,7 +71,18 @@ def main() -> None:
     ap.add_argument(
         "--workspace",
         default=None,
-        help="Rumil workspace (project) name for ws/orch variants (e.g. 'redwood').",
+        help="Rumil workspace (project) name for ws/orch variants. Required for those variants; no default.",
+    )
+    ap.add_argument(
+        "--rumil-model",
+        choices=tuple(RUMIL_MODEL_ALIASES.keys()),
+        default=None,
+        help=(
+            "Override rumil's configured model for ws/orch variants "
+            "(opus=claude-opus-4-7, sonnet=claude-sonnet-4-6, "
+            "haiku=claude-haiku-4-5). Sets RUMIL_MODEL_OVERRIDE before "
+            "rumil imports. Default: whatever rumil's settings.model resolves to."
+        ),
     )
     ap.add_argument(
         "--dimension",
@@ -116,6 +134,9 @@ def main() -> None:
 
     if not args.workspace:
         ap.error(f"--workspace is required for --variant {args.variant}")
+
+    if args.rumil_model:
+        os.environ["RUMIL_MODEL_OVERRIDE"] = RUMIL_MODEL_ALIASES[args.rumil_model]
     dimensions = tuple(args.dimension) if args.dimension else DEFAULT_DIMENSIONS
     versus_criteria = tuple(args.versus_criterion) if args.versus_criterion else ()
 

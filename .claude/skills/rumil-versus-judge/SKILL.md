@@ -62,12 +62,12 @@ Versus must already have completions cached
 
 ## Workspace requirement (ws / orch)
 
-The `--workspace <name>` argument maps to a rumil Project — typically
-the user names an existing one that has material relevant to the
-essays' topics (e.g. `redwood` for AI-epistemics-related essays).
-Versus Question pages created during judging land in that project;
-they're tagged `extra.source = "versus"` for later filtering but do
-show up in that project's question list.
+The `--workspace <name>` argument maps to a rumil Project — no
+default; the user must name one. For the `ws` / `orch` variants to do
+better than text-only judgment, that workspace should have material
+relevant to the essays' topics. Versus Question pages created during
+judging land in that project; they're tagged `extra.source = "versus"`
+for later filtering but do show up in that project's question list.
 
 Supabase must be running locally (`supabase start` in the rumil repo)
 for both `ws` and `orch` variants.
@@ -81,13 +81,14 @@ cd /Users/brian/code/rumil && uv run --with httpx --with pydantic --with pyyaml 
 Versus has its own `pyproject.toml` and isn't installed in rumil's
 `.venv`, so we pass its runtime deps explicitly to `uv run --with`.
 
-Typical invocations:
+Typical invocations (substitute the user's chosen workspace for `<WS>`):
 
 - `--variant text --dry-run` — list pending Anthropic-text judgments
-- `--variant ws --workspace redwood --dry-run` — list pending ws judgments
-- `--variant ws --workspace redwood --limit 5` — run 5 ws judgments
-- `--variant ws --workspace redwood --dimension grounding --versus-criterion standalone_quality --limit 5` — mix tasks
-- `--variant orch --workspace redwood --budget 1 --limit 3` — 3 orch judgments at minimum budget
+- `--variant ws --workspace <WS> --dry-run` — list pending ws judgments
+- `--variant ws --workspace <WS> --limit 5` — run 5 ws judgments
+- `--variant ws --workspace <WS> --rumil-model sonnet --limit 5` — run on sonnet instead of opus
+- `--variant ws --workspace <WS> --dimension grounding --versus-criterion standalone_quality --limit 5` — mix tasks
+- `--variant orch --workspace <WS> --budget 1 --limit 3` — 3 orch judgments at minimum budget
 
 ## What to surface
 
@@ -112,15 +113,21 @@ Rough per-judgment estimates:
 
 | Variant | Model | $/judgment (rough) | 100 judgments |
 |---|---|---|---|
-| text | claude-sonnet-4-6 | $0.03-0.08 | $3-8 |
-| text | claude-opus-4-7 | $0.20-0.40 | $20-40 |
-| ws | claude-opus-4-7 | $0.50-2.00 (multi-turn + tool use) | $50-200 |
-| orch | claude-opus-4-7, budget=1 | $1.00-5.00 (research + closer) | $100-500 |
+| text | sonnet (4-6) | $0.03-0.08 | $3-8 |
+| text | opus (4-7) | $0.20-0.40 | $20-40 |
+| ws | haiku (4-5) | $0.05-0.25 | $5-25 |
+| ws | sonnet (4-6) | $0.15-0.75 | $15-75 |
+| ws | opus (4-7) | $0.50-2.00 | $50-200 |
+| orch | sonnet, budget=1 | $0.25-1.50 | $25-150 |
+| orch | opus, budget=1 | $1.00-5.00 | $100-500 |
 
-The `ws` and `orch` cost ranges are especially wide because they
-depend on how much the agent/orchestrator uses workspace tools. For
-first runs, always start with `--limit 3` or `--limit 5` to get actual
-numbers before scaling.
+For `ws` and `orch`, costs are especially wide because they depend on
+how much the agent/orchestrator uses workspace tools and how deep the
+research subtree grows. Pair `--rumil-model sonnet` (or `haiku`) with
+the `ws` variant for a much cheaper first pass that's still a real test
+of workspace-access discrimination. For the expensive paths, always
+start with `--limit 3` or `--limit 5` and confirm actual per-judgment
+cost from the first results before scaling.
 
 ## Other caveats
 

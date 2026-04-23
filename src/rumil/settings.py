@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     rumil_test_mode: str = ""
     rumil_smoke_test: str = ""
+    # Optional full model id ("claude-sonnet-4-6", etc.) that overrides
+    # the default derived by the `model` property. Set via
+    # RUMIL_MODEL_OVERRIDE env var. Intended for entry points (e.g.
+    # versus judging) that want to pick a model per invocation.
+    rumil_model_override: str = ""
     force_twophase_recurse: bool = False
     use_prod_db: str = ""
     tracing_enabled: bool = True
@@ -132,6 +137,8 @@ class Settings(BaseSettings):
 
     @property
     def model(self) -> str:
+        if self.rumil_model_override:
+            return self.rumil_model_override
         return (
             "claude-haiku-4-5-20251001"
             if self.is_test_mode or self.is_smoke_test

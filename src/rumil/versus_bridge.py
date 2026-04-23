@@ -178,12 +178,16 @@ def _frontend_trace_url(run_id: str, call_id: str | None = None) -> str:
 
 
 def _versus_extra(pair: PairContext) -> dict:
+    # IMPORTANT: every key in page.extra is rendered verbatim by
+    # rumil.context.format_page() (as "key: value" lines inline with
+    # the page body). So anything disclosing source identity leaks
+    # to the agent. Keep only neutral tags; source_a_id / source_b_id
+    # are NOT stored here -- the judgment row in versus's
+    # judgments.jsonl carries them for post-hoc analysis.
     return {
         "source": "versus",
         "essay_id": pair.essay_id,
         "prefix_hash": pair.prefix_hash,
-        "source_a_id": pair.source_a_id,
-        "source_b_id": pair.source_b_id,
         "task_name": pair.task_name,
     }
 

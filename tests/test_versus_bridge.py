@@ -230,9 +230,35 @@ def test_ensure_versus_question_headline_does_not_leak_source_ids():
     # Neither raw source id should appear in the headline.
     assert "human" not in page.headline.lower()
     assert "anthropic/claude-opus-4-7" not in page.headline
-    # But the agent-visible content must NOT leak either.
+    # And the agent-visible content must NOT leak either.
     assert "anthropic/claude-opus-4-7" not in page.content
-    # Source ids ARE preserved in extra for post-hoc filtering; that's
-    # the only place they may appear.
-    assert page.extra.get("source_a_id") == "human"
-    assert page.extra.get("source_b_id") == "anthropic/claude-opus-4-7"
+
+
+def test_ensure_versus_question_extra_does_not_leak_source_ids():
+    # rumil.context.format_page() renders every key in page.extra as
+    # "key: value" lines inline with the page body, so anything in
+    # extra is agent-visible. Guard against source ids being stored
+    # there (they were, in an early version, which leaked to orch's
+    # generated views).
+    pair = _make_pair(
+        continuation_a_id="human",
+        source_a_id="human",
+        continuation_b_id="anthropic/claude-opus-4-7",
+        source_b_id="anthropic/claude-opus-4-7",
+        task_name="general_quality",
+    )
+    page = _make_question_page_synchronously(pair)
+
+    # Explicit keys that would leak source identity must not be
+    # present -- even under safe-sounding names like "source_a_id".
+    extra = page.extra
+    forbidden_keys = {"source_a_id", "source_b_id", "source_a", "source_b"}
+    assert not (extra.keys() & forbidden_keys), (
+        f"page.extra must not carry source-identifying keys; got {sorted(extra.keys() & forbidden_keys)}"
+    )
+    # And no value in extra should be a raw source id either.
+    for v in extra.values():
+        assert "anthropic/claude-opus-4-7" not in str(v)
+        # "human" is a common substring so we guard only the exact
+        # token as a value, not substring.
+        assert v != "human"

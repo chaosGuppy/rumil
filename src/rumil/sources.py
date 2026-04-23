@@ -135,6 +135,42 @@ async def _create_source_page_from_url(url: str, db: DB) -> Page | None:
     return page
 
 
+async def create_source_page_from_text(
+    content: str,
+    label: str,
+    db: DB,
+    *,
+    extra: dict | None = None,
+) -> Page:
+    """Persist already-fetched text as a Source page.
+
+    Parallel to ``create_source_page`` for callers that produced the content
+    themselves (e.g. a Google Deep Research run) and don't want the scraper
+    or file reader to re-fetch. Still auto-summarises via the LLM.
+    """
+    print(f"  Summarising {label}...")
+    summary = await generate_source_summary(content, label)
+    page_extra = {"filename": label, "char_count": len(content)}
+    if extra:
+        page_extra.update(extra)
+    page = Page(
+        page_type=PageType.SOURCE,
+        layer=PageLayer.SQUIDGY,
+        workspace=Workspace.RESEARCH,
+        content=content,
+        headline=summary,
+        provenance_model="human",
+        provenance_call_type="ingest",
+        provenance_call_id="manual",
+        extra=page_extra,
+    )
+    await db.save_page(page)
+    print(f"\nSource created: {page.id}")
+    print(f"Label:          {label} ({len(content):,} chars)")
+    print(f"Summary:        {summary[:120]}{'…' if len(summary) > 120 else ''}")
+    return page
+
+
 async def run_ingest_calls(source_pages: Sequence[Page], question_id: str, db: DB) -> int:
     """Run ingest extraction calls for each source against a question. Returns calls made."""
     made = 0

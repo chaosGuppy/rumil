@@ -185,6 +185,9 @@ def load_sources_by_essay(
     return groups, prefix_text_by_group
 
 
+JUDGE_TEMPERATURE = 0.0
+
+
 def _call_one_judgment(
     essay_id,
     prefix_hash,
@@ -203,7 +206,7 @@ def _call_one_judgment(
     resp = openrouter.chat(
         model=judge_model,
         messages=[{"role": "user", "content": prompt}],
-        temperature=0.2,
+        temperature=JUDGE_TEMPERATURE,
         max_tokens=max_tokens,
         client=client,
     )
@@ -233,6 +236,7 @@ def _call_one_judgment(
         "ts": dt.datetime.utcnow().isoformat() + "Z",
         "duration_s": round(time.time() - t0, 2),
         "raw_response": resp,
+        "sampling": {"temperature": JUDGE_TEMPERATURE, "max_tokens": max_tokens},
     }
 
 

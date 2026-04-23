@@ -50,7 +50,7 @@ from rumil.models import (
 from rumil.orchestrators.two_phase import TwoPhaseOrchestrator
 from rumil.run_eval.runner import wrap_as_mcp_tool
 from rumil.sdk_agent import SdkAgentConfig, run_sdk_agent
-from rumil.settings import get_settings
+from rumil.settings import get_settings, override_settings
 from rumil.tracing.broadcast import Broadcaster
 from rumil.tracing.tracer import CallTrace, reset_trace, set_trace
 from rumil.workspace_exploration.explore import make_explore_subgraph_tool
@@ -248,6 +248,7 @@ async def judge_pair_ws_aware(
     pair: PairContext,
     *,
     task_body: str,
+    model: str,
     broadcaster: Broadcaster | None = None,
 ) -> JudgeResult:
     """Run a single VERSUS_JUDGE agent call with single-arm workspace tools.
@@ -256,7 +257,25 @@ async def judge_pair_ws_aware(
     dimension prompt (see :func:`get_rumil_dimension_body`) or a versus
     criterion prompt. It is slotted into ``prompts/versus-judge-shell.md``
     to produce the final system prompt.
+
+    ``model`` is the Anthropic model id passed through to the agent via
+    a scoped :func:`override_settings` block so downstream rumil code
+    (sdk_agent, text_call, any nested calls) reads the same value. No
+    env-var gymnastics.
     """
+    with override_settings(rumil_model_override=model):
+        return await _judge_pair_ws_aware_inner(
+            db, pair, task_body=task_body, broadcaster=broadcaster
+        )
+
+
+async def _judge_pair_ws_aware_inner(
+    db: DB,
+    pair: PairContext,
+    *,
+    task_body: str,
+    broadcaster: Broadcaster | None,
+) -> JudgeResult:
     question_id = await ensure_versus_question(db, pair)
     call = await db.create_call(
         call_type=CallType.VERSUS_JUDGE,
@@ -405,6 +424,7 @@ async def judge_pair_orch(
     pair: PairContext,
     *,
     task_body: str,
+    model: str,
     budget: int = 1,
     broadcaster: Broadcaster | None = None,
 ) -> JudgeResult:
@@ -412,30 +432,33 @@ async def judge_pair_orch(
     fire a closing call to extract the 7-point label.
 
     ``budget`` is the orchestrator's research call budget; defaults to the
-    minimum (1).
+    minimum (1). ``model`` scopes a :func:`override_settings` block around
+    the entire orchestrator run + closer call so the orchestrator's
+    internal LLM calls all see the caller's chosen model.
     """
-    question_id = await ensure_versus_question(db, pair)
-    await db.init_budget(budget)
+    with override_settings(rumil_model_override=model):
+        question_id = await ensure_versus_question(db, pair)
+        await db.init_budget(budget)
 
-    orch = TwoPhaseOrchestrator(db=db, broadcaster=broadcaster, budget_cap=budget)
-    try:
-        await orch.run(question_id)
-    except Exception:
-        log.exception(
-            "versus orch failed (essay=%s, pair=%s/%s, task=%s)",
-            pair.essay_id,
-            pair.source_a_id,
-            pair.source_b_id,
-            pair.task_name,
+        orch = TwoPhaseOrchestrator(db=db, broadcaster=broadcaster, budget_cap=budget)
+        try:
+            await orch.run(question_id)
+        except Exception:
+            log.exception(
+                "versus orch failed (essay=%s, pair=%s/%s, task=%s)",
+                pair.essay_id,
+                pair.source_a_id,
+                pair.source_b_id,
+                pair.task_name,
+            )
+            raise
+
+        report_text, closer_call = await _run_orch_closer(
+            db,
+            question_id,
+            task_body=task_body,
+            broadcaster=broadcaster,
         )
-        raise
-
-    report_text, closer_call = await _run_orch_closer(
-        db,
-        question_id,
-        task_body=task_body,
-        broadcaster=broadcaster,
-    )
 
     label = extract_preference(report_text)
     run_calls = await db.get_calls_for_run(db.run_id)

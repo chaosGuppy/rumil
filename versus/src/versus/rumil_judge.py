@@ -52,9 +52,11 @@ def _call_one(
 ) -> dict:
     t0 = time.time()
     # claude-opus-4-7 deprecates temperature on the Messages API;
-    # omit for opus, keep 0.2 for sonnet/haiku so existing anthropic:*
-    # rows at 0.2 don't silently fork.
-    use_temp = None if model.startswith("claude-opus-4-7") else 0.2
+    # omit for opus, use 0 for sonnet/haiku. Existing rows that ran at
+    # 0.2 before this default change are NOT invalidated (temperature
+    # isn't in the judge_model dedup key) — they persist at the row
+    # level. If you need forks, add a version knob here or re-run.
+    use_temp = None if model.startswith("claude-opus-4-7") else 0.0
     resp = anthropic_client.chat(
         model=model,
         messages=[{"role": "user", "content": prompt}],
@@ -95,18 +97,30 @@ def _call_one(
 def _plan_tasks(
     cfg: config.Config,
     models: Sequence[str],
+    *,
+    essay_ids: Sequence[str] | None = None,
+    contestants: Sequence[str] | None = None,
+    vs_human: bool = False,
 ) -> list[tuple]:
+    essay_id_set = set(essay_ids) if essay_ids else None
+    contestants_set = set(contestants) if contestants else None
     groups, prefix_texts = judge.load_sources_by_essay(cfg.storage.completions_log)
     existing = jsonl.keys(cfg.storage.judgments_log)
     tasks: list[tuple] = []
     for (essay_id, prefix_hash), sources in groups.items():
+        if essay_id_set is not None and essay_id not in essay_id_set:
+            continue
         source_ids = list(sources.keys())
         if not cfg.judging.include_human_as_contestant:
             source_ids = [s for s in source_ids if s != "human"]
+        if contestants_set is not None:
+            source_ids = [s for s in source_ids if s in contestants_set]
         if len(source_ids) < 2:
             continue
         prefix_text = prefix_texts.get((essay_id, prefix_hash), "")
         for a_id, b_id in itertools.combinations(sorted(source_ids), 2):
+            if vs_human and "human" not in (a_id, b_id):
+                continue
             src_a = judge.Source(a_id, sources[a_id])
             src_b = judge.Source(b_id, sources[b_id])
             first, second = judge.order_pair(essay_id, src_a, src_b)
@@ -148,6 +162,9 @@ def run(
     *,
     limit: int | None = None,
     dry_run: bool = False,
+    essay_ids: Sequence[str] | None = None,
+    contestants: Sequence[str] | None = None,
+    vs_human: bool = False,
 ) -> None:
     if not models:
         print(
@@ -155,7 +172,13 @@ def run(
             "(judging.anthropic_models empty and no --model passed); nothing to do"
         )
         return
-    tasks = _plan_tasks(cfg, models)
+    tasks = _plan_tasks(
+        cfg,
+        models,
+        essay_ids=essay_ids,
+        contestants=contestants,
+        vs_human=vs_human,
+    )
     if limit is not None:
         tasks = tasks[:limit]
     if not tasks:
@@ -357,6 +380,7 @@ async def run_ws(
     cfg: config.Config,
     *,
     workspace: str,
+    model: str,
     dimensions: Sequence[str],
     versus_criteria: Sequence[str] = (),
     limit: int | None = None,
@@ -368,6 +392,11 @@ async def run_ws(
     persist: bool = False,
 ) -> None:
     """Run the workspace-aware rumil judge against pending pairs.
+
+    ``model`` is the Anthropic model id the bridge runs the agent on;
+    passed explicitly so versus controls it without env-var ordering
+    gymnastics. It's the caller's job to resolve aliases (opus/sonnet/
+    haiku) to full ids.
 
     ``dimensions`` is a list of essay-adapted rumil dimension names
     (e.g. ``general_quality``, ``grounding``) -- each maps to a prompt
@@ -385,7 +414,6 @@ async def run_ws(
     from rumil.versus_bridge import PairContext, judge_pair_ws_aware
 
     settings = get_settings()
-    model = settings.model
     tasks_spec: list[tuple[str, bool]] = [(d, False) for d in dimensions] + [
         (c, True) for c in versus_criteria
     ]
@@ -482,7 +510,7 @@ async def run_ws(
                     source_b_id=pair.source_b_id,
                     task_name=effective_task,
                 )
-                result = await judge_pair_ws_aware(db, pair_ctx, task_body=task_body)
+                result = await judge_pair_ws_aware(db, pair_ctx, task_body=task_body, model=model)
             except Exception as e:
                 print(f"[err ] {pair.essay_id} {task_name}: {type(e).__name__}: {e}")
                 return
@@ -503,6 +531,7 @@ async def run_orch(
     cfg: config.Config,
     *,
     workspace: str,
+    model: str,
     dimensions: Sequence[str],
     versus_criteria: Sequence[str] = (),
     budget: int = 1,
@@ -515,6 +544,10 @@ async def run_orch(
 ) -> None:
     """Run the orchestrator rumil judge against pending pairs.
 
+    ``model`` is the Anthropic model id the bridge (and the
+    orchestrator's nested LLM calls) runs on; passed explicitly so
+    versus controls it without env-var ordering gymnastics.
+
     Each pair × task gets its own rumil Run with a fresh run_id so the
     orchestrator's trace hangs naturally under /traces/<run_id>. The
     closing call's call_id is what lands in the mirrored row.
@@ -526,7 +559,6 @@ async def run_orch(
     from rumil.versus_bridge import PairContext, judge_pair_orch
 
     settings = get_settings()
-    model = settings.model
     tasks_spec: list[tuple[str, bool]] = [(d, False) for d in dimensions] + [
         (c, True) for c in versus_criteria
     ]
@@ -615,7 +647,9 @@ async def run_orch(
                 },
             )
             print(f"[run] {settings.frontend_url.rstrip('/')}/traces/{run_id}")
-            result = await judge_pair_orch(db, pair_ctx, task_body=task_body, budget=budget)
+            result = await judge_pair_orch(
+                db, pair_ctx, task_body=task_body, model=model, budget=budget
+            )
         except Exception as e:
             print(f"[err ] {pair.essay_id} {task_name}: {type(e).__name__}: {e}")
             continue

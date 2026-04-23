@@ -367,6 +367,7 @@ def get_essay(essay_id: str) -> EssayDetail:
         essay,
         n_paragraphs=cfg.prefix.n_paragraphs,
         include_headers=cfg.prefix.include_headers,
+        length_tolerance=cfg.completion.length_tolerance,
     )
     completion_prompt = versus_prepare.render_prompt(
         task,
@@ -408,6 +409,7 @@ def get_essay_sources(essay_id: str) -> list[Source]:
         essay,
         n_paragraphs=cfg.prefix.n_paragraphs,
         include_headers=cfg.prefix.include_headers,
+        length_tolerance=cfg.completion.length_tolerance,
     )
     # Multiple completion rows can share the same source_id (different
     # sampling_hash); collapse to one per source_id, last-row-wins, to match
@@ -436,6 +438,7 @@ def get_essay_judgments(essay_id: str) -> list[Judgment]:
         essay,
         n_paragraphs=cfg.prefix.n_paragraphs,
         include_headers=cfg.prefix.include_headers,
+        length_tolerance=cfg.completion.length_tolerance,
     )
     judgments: list[Judgment] = []
     for row in versus_jsonl.read(_resolve_path(cfg.storage.judgments_log)):

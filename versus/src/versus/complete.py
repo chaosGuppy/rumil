@@ -13,7 +13,6 @@ import httpx
 
 from versus import config, fetch, jsonl, openrouter, prepare
 
-
 HUMAN_SOURCE_ID = "human"
 
 
@@ -146,6 +145,7 @@ def run(cfg: config.Config, essays: list[fetch.Essay]) -> None:
             essay,
             n_paragraphs=cfg.prefix.n_paragraphs,
             include_headers=cfg.prefix.include_headers,
+            length_tolerance=cfg.completion.length_tolerance,
         )
         ensure_human_baseline(task, log, existing)
         ensure_paraphrase_rows(task, paraphrase_rows, cfg.prefix.n_paragraphs, log, existing)

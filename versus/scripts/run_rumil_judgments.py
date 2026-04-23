@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import os
 import pathlib
 import sys
 
@@ -87,12 +86,13 @@ def main() -> None:
     ap.add_argument(
         "--rumil-model",
         choices=tuple(RUMIL_MODEL_ALIASES.keys()),
-        default=None,
+        default="opus",
         help=(
-            "Override rumil's configured model for ws/orch variants "
+            "Anthropic model for ws/orch/rumil-text variants "
             "(opus=claude-opus-4-7, sonnet=claude-sonnet-4-6, "
-            "haiku=claude-haiku-4-5). Sets RUMIL_MODEL_OVERRIDE before "
-            "rumil imports. Default: whatever rumil's settings.model resolves to."
+            "haiku=claude-haiku-4-5). Passed explicitly to the bridge "
+            "via a scoped settings override -- no env-var ordering. "
+            "Default: opus."
         ),
     )
     ap.add_argument(
@@ -180,7 +180,15 @@ def main() -> None:
 
     if args.variant == "text":
         models = args.model if args.model else list(cfg.judging.anthropic_models)
-        rumil_judge.run(cfg, models, limit=args.limit, dry_run=args.dry_run)
+        rumil_judge.run(
+            cfg,
+            models,
+            limit=args.limit,
+            dry_run=args.dry_run,
+            essay_ids=args.essay,
+            contestants=contestants,
+            vs_human=args.vs_human,
+        )
         return
 
     if args.variant == "rumil-text":
@@ -210,8 +218,7 @@ def main() -> None:
     if not args.workspace:
         ap.error(f"--workspace is required for --variant {args.variant}")
 
-    if args.rumil_model:
-        os.environ["RUMIL_MODEL_OVERRIDE"] = RUMIL_MODEL_ALIASES[args.rumil_model]
+    model_id = RUMIL_MODEL_ALIASES[args.rumil_model]
     dimensions = tuple(args.dimension) if args.dimension else DEFAULT_DIMENSIONS
     versus_criteria = tuple(args.versus_criterion) if args.versus_criterion else ()
 
@@ -220,6 +227,7 @@ def main() -> None:
             rumil_judge.run_ws(
                 cfg,
                 workspace=args.workspace,
+                model=model_id,
                 dimensions=dimensions,
                 versus_criteria=versus_criteria,
                 limit=args.limit,
@@ -236,6 +244,7 @@ def main() -> None:
             rumil_judge.run_orch(
                 cfg,
                 workspace=args.workspace,
+                model=model_id,
                 dimensions=dimensions,
                 versus_criteria=versus_criteria,
                 budget=args.budget,

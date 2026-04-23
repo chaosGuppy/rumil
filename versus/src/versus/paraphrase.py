@@ -21,6 +21,13 @@ import httpx
 
 from versus import config, fetch, jsonl, openrouter
 
+# Bump when ``PARAPHRASE_INSTRUCTIONS`` changes in a way that should
+# invalidate existing paraphrase rows. Folded into ``sampling_hash``
+# below so each paraphrase key forks on edit. Paraphrases are keyed on
+# (essay_id, model_id, sampling_hash), so a bump here produces fresh
+# keys without clobbering.
+PARAPHRASE_PROMPT_VERSION = 2
+
 
 PARAPHRASE_INSTRUCTIONS = """\
 Rewrite the following essay in your own prose style while preserving the content exactly.
@@ -45,7 +52,11 @@ HEADING_RE = re.compile(r"^(#{2,4})\s+(.+?)\s*$")
 
 
 def sampling_hash(model_cfg: config.ModelCfg) -> str:
-    blob = json.dumps(model_cfg.model_dump(exclude={"id"}), sort_keys=True)
+    payload = {
+        "params": model_cfg.model_dump(exclude={"id"}),
+        "prompt_version": PARAPHRASE_PROMPT_VERSION,
+    }
+    blob = json.dumps(payload, sort_keys=True)
     return hashlib.sha256(blob.encode()).hexdigest()[:10]
 
 

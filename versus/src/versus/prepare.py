@@ -8,6 +8,13 @@ from dataclasses import dataclass
 
 from versus.fetch import Block, Essay, blocks_to_markdown
 
+# Bump when ``render_prompt`` text changes in a way that should invalidate
+# existing completion rows. Folded into ``prefix_config_hash`` below so
+# every downstream key (completions AND judgments keyed on prefix_hash)
+# forks naturally. Edit the prompt without bumping this and old rows
+# silently persist.
+COMPLETION_PROMPT_VERSION = 2
+
 
 @dataclass
 class PreparedTask:
@@ -15,10 +22,10 @@ class PreparedTask:
     title: str
     prefix_blocks: list[Block]
     remaining_headers: list[Block]
-    prefix_markdown: str             # rendered md for the prefix (no title)
-    remainder_markdown: str          # rendered md for the remainder (used as human baseline)
+    prefix_markdown: str  # rendered md for the prefix (no title)
+    remainder_markdown: str  # rendered md for the remainder (used as human baseline)
     target_words: int
-    prefix_config_hash: str          # stable hash of (essay content, n_paragraphs, include_headers)
+    prefix_config_hash: str  # stable hash of (essay content, n_paragraphs, include_headers, length_tolerance, COMPLETION_PROMPT_VERSION)
 
 
 def _word_count(text: str) -> int:
@@ -28,7 +35,8 @@ def _word_count(text: str) -> int:
 def _content_hash(essay: Essay) -> str:
     payload = json.dumps(
         [{"type": b.type, "text": b.text} for b in essay.blocks],
-        sort_keys=True, ensure_ascii=False,
+        sort_keys=True,
+        ensure_ascii=False,
     )
     return hashlib.sha256(payload.encode()).hexdigest()[:10]
 
@@ -37,6 +45,7 @@ def prepare(
     essay: Essay,
     n_paragraphs: int,
     include_headers: bool,
+    length_tolerance: float,
 ) -> PreparedTask:
     prefix_blocks: list[Block] = []
     remainder_blocks: list[Block] = []
@@ -57,7 +66,9 @@ def prepare(
     cfg_key = {
         "n_paragraphs": n_paragraphs,
         "include_headers": include_headers,
+        "length_tolerance": length_tolerance,
         "content_hash": _content_hash(essay),
+        "prompt_version": COMPLETION_PROMPT_VERSION,
     }
     prefix_config_hash = hashlib.sha256(
         (essay.id + "|" + json.dumps(cfg_key, sort_keys=True)).encode()

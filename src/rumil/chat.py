@@ -29,6 +29,7 @@ from rumil.constants import MIN_TWOPHASE_BUDGET
 from rumil.context import build_embedding_based_context, format_page
 from rumil.database import DB
 from rumil.embeddings import search_pages
+from rumil.events import PageCreatedEvent, fire
 from rumil.llm import (
     Tool,
     call_api,
@@ -658,6 +659,18 @@ async def run_scoping_chat(
     if source_pages:
         print(f"Ingesting {len(source_pages)} source file(s)...")
         await run_ingest_calls(list(source_pages), page.id, db)
+
+    # Fire AFTER ingest so any registered hook (e.g. auto-CreateView) sees the
+    # ingested considerations in context rather than a bare question.
+    await fire(
+        PageCreatedEvent(
+            page_id=page.id,
+            page_type=PageType.QUESTION,
+            run_id=db.run_id,
+            staged=db.staged,
+            db=db,
+        )
+    )
 
     await Orchestrator(db).run(page.id)
 

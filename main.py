@@ -25,6 +25,8 @@ from rumil.clean import run_feedback_update, run_grounding_feedback
 from rumil.constants import MIN_TWOPHASE_BUDGET
 from rumil.database import DB
 from rumil.evaluate.runner import run_evaluation
+from rumil.events import PageCreatedEvent, fire
+from rumil.hooks import register_default_hooks
 from rumil.models import (
     Call,
     CallStatus,
@@ -111,6 +113,15 @@ async def cmd_add_question(
         extra={"status": "open"},
     )
     await db.save_page(page)
+    await fire(
+        PageCreatedEvent(
+            page_id=page.id,
+            page_type=PageType.QUESTION,
+            run_id=db.run_id,
+            staged=db.staged,
+            db=db,
+        )
+    )
 
     if parent_id:
         parent = await db.get_page(parent_id)
@@ -1133,6 +1144,8 @@ async def async_main():
         get_settings().tracing_enabled = False
     if args.force_twophase_recurse:
         get_settings().force_twophase_recurse = True
+
+    register_default_hooks()
 
     db = await DB.create(run_id=str(uuid.uuid4()), prod=args.prod_db, staged=args.staged)
 

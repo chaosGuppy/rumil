@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from rumil.database import DB
 from rumil.embeddings import embed_and_store_page
+from rumil.events import PageCreatedEvent, fire
 from rumil.llm import LLMExchangeMetadata, Tool, structured_call
 from rumil.models import (
     Call,
@@ -371,6 +372,15 @@ async def create_page(
         f"Created [{page.id[:8]}]: {payload.headline}"
         if payload.headline
         else f"Created [{page.id[:8]}]"
+    )
+    await fire(
+        PageCreatedEvent(
+            page_id=page.id,
+            page_type=page_type,
+            run_id=db.run_id,
+            staged=db.staged,
+            db=db,
+        )
     )
     return MoveResult(message=message, created_page_id=page.id)
 

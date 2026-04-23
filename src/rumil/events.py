@@ -34,6 +34,7 @@ from typing import Literal, TypeVar
 
 from pydantic import BaseModel
 
+from rumil.database import DB
 from rumil.models import PageType
 
 log = logging.getLogger(__name__)
@@ -50,11 +51,22 @@ class Event(BaseModel):
 
 
 class PageCreatedEvent(Event):
+    """Fired after a page row has been persisted.
+
+    `db` is the live DB instance the producer used. Handlers call methods on
+    it directly rather than reconstructing one from `run_id` / `staged`, which
+    would lose `project_id` and `prod`. For in-process bus-mechanics tests
+    that don't need a real DB, `db` may be `None`.
+    """
+
+    model_config = {"arbitrary_types_allowed": True}
+
     event_type: Literal["page_created"] = "page_created"
     page_id: str
     page_type: PageType
     run_id: str | None
     staged: bool
+    db: DB | None = None
 
 
 E = TypeVar("E", bound=Event)

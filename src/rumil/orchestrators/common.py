@@ -30,6 +30,7 @@ from rumil.constants import (
 )
 from rumil.database import DB
 from rumil.embeddings import embed_and_store_page
+from rumil.events import PageCreatedEvent, fire
 from rumil.models import (
     CallType,
     Dispatch,
@@ -363,6 +364,15 @@ async def create_root_question(
             page.id[:8],
             exc_info=True,
         )
+    await fire(
+        PageCreatedEvent(
+            page_id=page.id,
+            page_type=PageType.QUESTION,
+            run_id=db.run_id,
+            staged=db.staged,
+            db=db,
+        )
+    )
     return page.id
 
 

@@ -40,6 +40,7 @@ from rumil.api.schemas import (
     TraceEventOut,
 )
 from rumil.database import DB, _row_to_call, _rows
+from rumil.hooks import register_default_hooks
 from rumil.models import Call, Page, PageLink, PageType, Project, Workspace
 from rumil.settings import get_settings
 
@@ -52,6 +53,8 @@ app = FastAPI(
     version="0.1.0",
     description="Read-only API for the Rumil research workspace.",
 )
+
+register_default_hooks()
 
 _AUTH_PASSWORD = os.environ.get("RUMIL_AUTH_PASSWORD", "")
 

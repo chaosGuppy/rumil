@@ -10,6 +10,12 @@ View items are **not themselves claims** — they are curated observations about
 
 Think of the View as the workspace's collective intelligence on this question, distilled into its most useful form. It should orient future instances toward productive work and away from redundant investigation.
 
+## When There Is Little or No Research Yet
+
+Sometimes you are creating the View very early — the question has just been posed and the workspace has not yet accumulated considerations, claims, or judgements specific to it. In that case, do not wait for evidence to appear before producing anything. Your job shifts toward giving the workspace's **best all-things-considered initial take**: what is this question really asking, what framings matter, what hypotheses deserve attention, what would count as evidence, and where do you already have a prior worth recording?
+
+Items created in this mode should carry **low robustness scores** (typically R1–R2), and their content should make the epistemic gloss honest about that — "initial take, not yet investigated" is a perfectly good robustness reasoning. Mark live hypotheses as `live_hypotheses`, not `confident_views`. Think of the View as a scaffold that future research will refine, not a summary of settled findings.
+
 ## Sections
 
 Items are organized into these sections:

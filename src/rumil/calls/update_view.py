@@ -137,6 +137,22 @@ class PruneDecision(BaseModel):
     reasoning: str = ""
 
 
+def _is_explicit_duplicate(page: Page) -> bool:
+    """True if the item's content is explicitly marked as a duplicate."""
+    return "[Duplicate of" in (page.content or "")
+
+
+def _prune_candidates(
+    items: Sequence[tuple[Page, PageLink]],
+) -> list[tuple[Page, PageLink]]:
+    """Items eligible for the prune phase: low-importance plus explicit duplicates."""
+    return [
+        (p, l)
+        for p, l in items
+        if l.importance is not None and (l.importance <= 2 or _is_explicit_duplicate(p))
+    ]
+
+
 def _parse_prompt_sections(text: str) -> dict[str, str]:
     """Split prompt text on <!-- PHASE:xxx --> markers into {name: content}."""
     parts = PHASE_MARKER_RE.split(text)
@@ -275,6 +291,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
     def __init__(self, view_id: str, call_type: CallType) -> None:
         self._view_id = view_id
         self._call_type = call_type
+        self._phase_lines: list[str] = []
 
     async def update_workspace(
         self,
@@ -319,6 +336,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
             moves=[],
             all_loaded_ids=[],
             messages=messages,
+            phase_summary="\n".join(self._phase_lines),
         )
 
     async def _phase_score_unscored(
@@ -335,6 +353,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
             await infra.trace.record(
                 PhaseSkippedEvent(phase="score_unscored", reason="No unscored items")
             )
+            self._phase_lines.append("score_unscored: skipped (no unscored items)")
             return messages
 
         link_by_target = {page.id: link for page, link in items}
@@ -422,6 +441,9 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
                 items_modified=modified_count,
             )
         )
+        self._phase_lines.append(
+            f"score_unscored: scored {len(unscored)} item(s), modified {modified_count}"
+        )
         return messages
 
     async def _phase_triage(
@@ -436,6 +458,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
 
         if not scored:
             await infra.trace.record(PhaseSkippedEvent(phase="triage", reason="No scored items"))
+            self._phase_lines.append("triage: skipped (no scored items)")
             return messages, []
 
         batch_sizes = _split_into_batches(len(scored), TRIAGE_BATCH_SIZE)
@@ -500,6 +523,9 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
                 items_modified=len(flagged_ids),
             )
         )
+        self._phase_lines.append(
+            f"triage: reviewed {len(scored)} item(s), flagged {len(flagged_ids)} for deep review"
+        )
         return messages, flagged_ids
 
     async def _phase_deep_review(
@@ -518,6 +544,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
             await infra.trace.record(
                 PhaseSkippedEvent(phase="deep_review", reason="No flagged items found")
             )
+            self._phase_lines.append("deep_review: skipped (no flagged items)")
             return messages, []
 
         link_by_target = {page.id: link for page, link in items}
@@ -535,7 +562,8 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
 
         batch_sizes = _split_into_batches(len(flagged), DEEP_REVIEW_BATCH_SIZE)
         created_page_ids: list[str] = []
-        modified_count = 0
+        adjust_count = 0
+        supersede_count = 0
         offset = 0
 
         for batch_idx, batch_size in enumerate(batch_sizes):
@@ -595,7 +623,10 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
                         continue
                     changed = await self._apply_item_review(infra, review, resolved, page, link)
                     if changed:
-                        modified_count += 1
+                        if review.action == "supersede":
+                            supersede_count += 1
+                        elif review.action == "adjust":
+                            adjust_count += 1
                     if review.action == "supersede" and resolved in link_by_target:
                         del link_by_target[resolved]
 
@@ -608,9 +639,14 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
             UpdateViewPhaseCompletedEvent(
                 phase="deep_review",
                 items_processed=len(flagged),
-                items_modified=modified_count,
+                items_modified=adjust_count + supersede_count,
                 items_created=len(created_page_ids),
             )
+        )
+        self._phase_lines.append(
+            f"deep_review: reviewed {len(flagged)} item(s), "
+            f"superseded {supersede_count}, adjusted {adjust_count}, "
+            f"proposed {len(created_page_ids)} new item(s)"
         )
         return messages, created_page_ids
 
@@ -631,6 +667,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
 
         any_enforced = False
         first_call = True
+        total_demotions = 0
         for level in [5, 4, 3, 2]:
             items = await infra.db.get_view_items(self._view_id)
             at_level = [
@@ -704,6 +741,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
                         )
                         continue
                     await self._apply_demotion(infra.db, demotion, resolved, link)
+                    total_demotions += 1
 
         if not any_enforced:
             await infra.trace.record(
@@ -711,6 +749,11 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
                     phase="enforce_caps",
                     reason="All importance levels within caps",
                 )
+            )
+            self._phase_lines.append("enforce_caps: skipped (all levels within caps)")
+        else:
+            self._phase_lines.append(
+                f"enforce_caps: demoted {total_demotions} item(s) to respect importance caps"
             )
 
         return messages
@@ -723,21 +766,31 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
         messages: list[dict],
     ) -> list[dict]:
         items = await infra.db.get_view_items(self._view_id)
-        low = [(p, l) for p, l in items if l.importance is not None and l.importance <= 2]
+        candidates = _prune_candidates(items)
 
-        if not low:
-            await infra.trace.record(
-                PhaseSkippedEvent(phase="prune", reason="No I1/I2 items to prune")
-            )
+        if not candidates:
+            await infra.trace.record(PhaseSkippedEvent(phase="prune", reason="No prune candidates"))
+            self._phase_lines.append("prune: skipped (no prune candidates)")
             return messages
+
+        dup_count = sum(1 for p, _ in candidates if _is_explicit_duplicate(p))
 
         link_by_target = {page.id: link for page, link in items}
 
-        compact_lines = [_render_item_compact(page, link) for page, link in low]
+        compact_lines = [_render_item_compact(page, link) for page, link in candidates]
+        header = (
+            f"## Prune candidates ({len(candidates)} items — "
+            f"low-importance plus {dup_count} marked as duplicates)"
+            if dup_count
+            else f"## Prune candidates ({len(candidates)} items)"
+        )
         batch_text = (
-            f"## Low-importance items ({len(low)} items)\n\n"
+            header
+            + "\n\n"
             + "\n".join(compact_lines)
-            + "\n\nDecide which items to keep and which to remove."
+            + "\n\nDecide which items to keep and which to remove. "
+            "Items whose content explicitly marks them as duplicates "
+            "(e.g. '[Duplicate of ...]') should almost always be removed."
         )
 
         user_content = sections.get("prune", "") + "\n\n" + batch_text
@@ -790,9 +843,14 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
         await infra.trace.record(
             UpdateViewPhaseCompletedEvent(
                 phase="prune",
-                items_processed=len(low),
+                items_processed=len(candidates),
                 items_removed=removed,
             )
+        )
+        self._phase_lines.append(
+            f"prune: considered {len(candidates)} item(s)"
+            + (f" ({dup_count} marked duplicate)" if dup_count else "")
+            + f", removed {removed}"
         )
         return messages
 

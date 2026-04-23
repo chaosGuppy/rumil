@@ -3,7 +3,9 @@
 import pytest
 import pytest_asyncio
 
-from rumil.calls.stages import CallInfra
+from rumil.calls.closing_reviewers import StandardClosingReview, ViewClosingReview
+from rumil.calls.common import format_moves_for_review
+from rumil.calls.stages import CallInfra, UpdateResult
 from rumil.calls.update_view import (
     DemotionChoice,
     ItemReview,
@@ -11,7 +13,9 @@ from rumil.calls.update_view import (
     UnscoredItemScore,
     UpdateViewCall,
     UpdateViewWorkspaceUpdater,
+    _is_explicit_duplicate,
     _parse_prompt_sections,
+    _prune_candidates,
     _render_item_compact,
     _render_item_full,
 )
@@ -709,6 +713,124 @@ async def test_phase_enforce_caps_skips_within_limits(
         messages,
     )
     assert len(result_messages) == len(messages)
+
+
+def test_is_explicit_duplicate_detects_marker():
+    page_dup = _view_item("Dup", content="[Duplicate of abc123, created in error.]")
+    page_normal = _view_item("Normal", content="Some normal observation.")
+    assert _is_explicit_duplicate(page_dup)
+    assert not _is_explicit_duplicate(page_normal)
+
+
+def test_prune_candidates_includes_duplicates_at_any_importance():
+    """Duplicates should be routed through prune even if their importance is above I2."""
+    dup_high = _view_item("Dup at I5", content="[Duplicate of c9060eb4, created in error.]")
+    dup_link = _view_item_link("view-id", dup_high.id, importance=5, section="confident_views")
+    low = _view_item("Low I1", content="Minor note.")
+    low_link = _view_item_link("view-id", low.id, importance=1, section="other")
+    mid = _view_item("Mid I3", content="Useful background.")
+    mid_link = _view_item_link("view-id", mid.id, importance=3, section="key_evidence")
+    unscored = _view_item("Unscored", content="Not scored yet.")
+    unscored_link = _view_item_link("view-id", unscored.id, importance=None, section="other")
+
+    candidates = _prune_candidates(
+        [(dup_high, dup_link), (low, low_link), (mid, mid_link), (unscored, unscored_link)]
+    )
+    ids = {p.id for p, _ in candidates}
+    assert dup_high.id in ids, "duplicate-marked item must be a prune candidate at any importance"
+    assert low.id in ids, "low-importance item must be a prune candidate"
+    assert mid.id not in ids, "mid-importance non-duplicate must not be a prune candidate"
+    assert unscored.id not in ids, "unscored item must not be a prune candidate"
+
+
+async def test_phase_score_unscored_skip_populates_phase_summary(tmp_db, view_setup, call_infra):
+    """Skipping phase 1 should append a phase_lines entry so closing review can see it."""
+    _, v, _ = view_setup
+    updater = UpdateViewWorkspaceUpdater(v.id, CallType.UPDATE_VIEW)
+
+    messages = [
+        {"role": "user", "content": "context"},
+        {"role": "assistant", "content": "Understood."},
+    ]
+    await updater._phase_score_unscored(call_infra, "system", {}, messages)
+
+    assert len(updater._phase_lines) == 1
+    assert "score_unscored" in updater._phase_lines[0]
+    assert "skipped" in updater._phase_lines[0]
+
+
+async def test_phase_enforce_caps_skip_populates_phase_summary(tmp_db, view_setup, call_infra):
+    _, v, _ = view_setup
+    updater = UpdateViewWorkspaceUpdater(v.id, CallType.UPDATE_VIEW)
+
+    messages = [
+        {"role": "user", "content": "context"},
+        {"role": "assistant", "content": "Understood."},
+    ]
+    await updater._phase_enforce_caps(call_infra, "system", {}, messages)
+
+    assert any("enforce_caps" in line and "skipped" in line for line in updater._phase_lines)
+
+
+async def test_phase_prune_skip_populates_phase_summary(tmp_db, view_setup, call_infra):
+    _, v, _ = view_setup
+    updater = UpdateViewWorkspaceUpdater(v.id, CallType.UPDATE_VIEW)
+
+    messages = [
+        {"role": "user", "content": "context"},
+        {"role": "assistant", "content": "Understood."},
+    ]
+    await updater._phase_prune(call_infra, "system", {}, messages)
+
+    assert any("prune" in line and "skipped" in line for line in updater._phase_lines)
+
+
+def _make_update_result(*, phase_summary: str = "") -> UpdateResult:
+    return UpdateResult(
+        created_page_ids=[],
+        moves=[],
+        all_loaded_ids=[],
+        phase_summary=phase_summary,
+    )
+
+
+def test_format_moves_for_review_empty_flags_out_of_band_work():
+    """Empty moves should not just say '(no moves)'.
+
+    The closing-review LLM previously mistook the literal '(no moves)' for
+    'the call did nothing' — even for update_view, whose real work lives
+    in phase edits rather than moves. The empty-moves message must warn
+    the LLM that absence-of-moves is not absence-of-work.
+    """
+    rendered = format_moves_for_review([])
+    assert "no moves" not in rendered.lower() or "not" in rendered.lower()
+    assert rendered != "(no moves)"
+    assert "phase" in rendered.lower() or "outside" in rendered.lower()
+
+
+def test_view_closing_review_prefers_phase_summary_over_moves():
+    """ViewClosingReview must render phase_summary (not '(no moves)') when moves is empty."""
+    reviewer = ViewClosingReview(CallType.UPDATE_VIEW, view_id="view-id")
+    creation = _make_update_result(
+        phase_summary=(
+            "score_unscored: scored 3 item(s), modified 3\n"
+            "triage: reviewed 5 item(s), flagged 2 for deep review\n"
+            "deep_review: reviewed 2 item(s), superseded 1, adjusted 1, proposed 1 new item(s)"
+        )
+    )
+    rendered = reviewer._review_context(creation)
+    assert "score_unscored" in rendered
+    assert "superseded 1" in rendered
+    assert "(no moves)" not in rendered
+
+
+def test_view_closing_review_falls_back_to_moves_when_no_phase_summary():
+    """If phase_summary is empty, fall back to the default moves rendering."""
+    reviewer = ViewClosingReview(CallType.UPDATE_VIEW, view_id="view-id")
+    creation = _make_update_result(phase_summary="")
+    rendered = reviewer._review_context(creation)
+    default_rendered = StandardClosingReview(CallType.UPDATE_VIEW)._review_context(creation)
+    assert rendered == default_rendered
 
 
 async def test_view_setup_with_unscored_items(tmp_db):

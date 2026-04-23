@@ -27,6 +27,7 @@ itself) to mirror wherever it likes.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -165,7 +166,6 @@ def compute_prompt_hash(task_body: str) -> str:
     ``prefix_config_hash`` / ``sampling_hash`` discipline. 8 hex chars is
     enough to distinguish prompt versions without cluttering the key.
     """
-    import hashlib
 
     shell = (_PROMPTS_DIR / "versus-judge-shell.md").read_text()
     return hashlib.sha256((shell + task_body).encode()).hexdigest()[:8]
@@ -263,7 +263,7 @@ async def judge_pair_ws_aware(
 
     system_prompt = build_system_prompt(task_body)
     user_prompt = (
-        f"Compare Continuation A and Continuation B on the dimension "
+        "Compare Continuation A and Continuation B on the dimension "
         f"**{pair.task_name}**.\n\n"
         f"The scope question (`{question_id}`) contains the essay "
         "prefix, continuation A, and continuation B. Read it with "
@@ -425,6 +425,8 @@ async def judge_pair_orch(
     )
 
     label = extract_preference(report_text)
+    run_calls = await db.get_calls_for_run(db.run_id)
+    total_cost = sum((c.cost_usd or 0.0) for c in run_calls)
     return JudgeResult(
         verdict=label_to_verdict(label),
         preference_label=label,
@@ -433,5 +435,5 @@ async def judge_pair_orch(
         call_id=closer_call.id,
         run_id=db.run_id,
         question_id=question_id,
-        cost_usd=(closer_call.cost_usd or 0.0),
+        cost_usd=total_cost,
     )

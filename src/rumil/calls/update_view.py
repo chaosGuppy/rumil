@@ -286,7 +286,16 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
 
         messages: list[dict] = [
             {"role": "user", "content": context.context_text},
-            {"role": "assistant", "content": "Understood. Ready to review View items."},
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Understood. Ready to review View items.",
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ],
+            },
         ]
 
         created_page_ids: list[str] = []
@@ -378,7 +387,6 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
                 metadata=LLMExchangeMetadata(
                     call_id=infra.call.id,
                     phase=f"score_unscored_batch_{batch_idx}",
-                    user_messages=[{"role": "user", "content": user_content}],
                 ),
                 db=infra.db,
             )
@@ -468,7 +476,6 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
                 metadata=LLMExchangeMetadata(
                     call_id=infra.call.id,
                     phase=f"triage_batch_{batch_idx}",
-                    user_messages=[{"role": "user", "content": user_content}],
                 ),
                 db=infra.db,
             )
@@ -563,7 +570,6 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
                 metadata=LLMExchangeMetadata(
                     call_id=infra.call.id,
                     phase=f"deep_review_batch_{batch_idx}",
-                    user_messages=[{"role": "user", "content": user_content}],
                 ),
                 db=infra.db,
             )
@@ -670,7 +676,6 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
                 metadata=LLMExchangeMetadata(
                     call_id=infra.call.id,
                     phase=f"enforce_caps_i{level}",
-                    user_messages=[{"role": "user", "content": user_content}],
                 ),
                 db=infra.db,
             )
@@ -755,7 +760,6 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
             metadata=LLMExchangeMetadata(
                 call_id=infra.call.id,
                 phase="prune",
-                user_messages=[{"role": "user", "content": user_content}],
             ),
             db=infra.db,
         )

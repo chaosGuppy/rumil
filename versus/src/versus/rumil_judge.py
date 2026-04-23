@@ -356,7 +356,7 @@ async def run_ws(
     versus_criteria: Sequence[str] = (),
     limit: int | None = None,
     dry_run: bool = False,
-    concurrency: int = 2,
+    concurrency: int | None = None,
     essay_ids: Sequence[str] | None = None,
     contestants: Sequence[str] | None = None,
     vs_human: bool = False,
@@ -418,9 +418,10 @@ async def run_ws(
         print("[info] no pending rumil ws judgments")
         return
 
+    effective_concurrency = concurrency if concurrency is not None else 2
     print(
         f"[plan] {len(tasks)} rumil ws-aware judgments "
-        f"(model={model}, workspace={workspace}, concurrency={concurrency})"
+        f"(model={model}, workspace={workspace}, concurrency={effective_concurrency})"
     )
     if dry_run:
         for pair, task_name, is_versus_crit, judge_model in tasks[:20]:
@@ -447,7 +448,7 @@ async def run_ws(
     )
     print(f"[run] {settings.frontend_url.rstrip('/')}/traces/{run_id}")
 
-    sem = asyncio.Semaphore(concurrency)
+    sem = asyncio.Semaphore(effective_concurrency)
     done = 0
     total = len(tasks)
     lock = asyncio.Lock()
@@ -655,6 +656,7 @@ def run_rumil_text(
     essay_ids: Sequence[str] | None = None,
     contestants: Sequence[str] | None = None,
     vs_human: bool = False,
+    concurrency: int | None = None,
 ) -> None:
     """Run the single-turn rumil-prompt judge against pending pairs.
 
@@ -685,6 +687,8 @@ def run_rumil_text(
     prompt_hash_cache = {k: compute_prompt_hash(b) for k, b in task_body_cache.items()}
     system_prompt_cache = {k: build_system_prompt(b) for k, b in task_body_cache.items()}
 
+    effective_concurrency = concurrency if concurrency is not None else cfg.concurrency
+
     def _compose(task_name: str, is_versus_crit: bool) -> str:
         ph = prompt_hash_cache[(task_name, is_versus_crit)]
         return f"rumil:text:{anthropic_model}:{task_name}:p{ph}"
@@ -705,7 +709,7 @@ def run_rumil_text(
 
     print(
         f"[plan] {len(tasks)} rumil-text judgments "
-        f"(model={anthropic_model}, concurrency={cfg.concurrency})"
+        f"(model={anthropic_model}, concurrency={effective_concurrency})"
     )
     if dry_run:
         for pair, task_name, _is_versus_crit, judge_model in tasks[:20]:
@@ -774,7 +778,7 @@ def run_rumil_text(
 
     client = httpx.Client(timeout=600.0)
     try:
-        with ThreadPoolExecutor(max_workers=cfg.concurrency) as pool:
+        with ThreadPoolExecutor(max_workers=effective_concurrency) as pool:
             futures = {
                 pool.submit(
                     _call_one_rumil_text, pair, task_name, judge_model, client

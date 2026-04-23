@@ -128,8 +128,11 @@ def main() -> None:
     ap.add_argument(
         "--concurrency",
         type=int,
-        default=2,
-        help="Concurrent ws-variant judgments (default: 2).",
+        default=None,
+        help=(
+            "Concurrent judgments per LLM call. If unset, the variant picks "
+            "its own default: ws=2, rumil-text=cfg.concurrency (usually 8)."
+        ),
     )
     ap.add_argument("--limit", type=int, default=None, help="Cap on number of judgments.")
     ap.add_argument("--dry-run", action="store_true", help="List pending keys and exit.")
@@ -200,6 +203,7 @@ def main() -> None:
             essay_ids=args.essay,
             contestants=contestants,
             vs_human=args.vs_human,
+            concurrency=args.concurrency,
         )
         return
 

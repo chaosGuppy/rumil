@@ -393,9 +393,15 @@ async def run_ws(
     db.project_id = project.id
     ws_short = project.id[:8]
 
+    task_body_cache = {(t, v): _resolve_task_body(t, v) for t, v in tasks_spec}
+    from rumil.versus_bridge import compute_prompt_hash
+
+    prompt_hash_cache = {k: compute_prompt_hash(b) for k, b in task_body_cache.items()}
+
     def _compose(task_name: str, is_versus_crit: bool) -> str:
         suffix = f"versus_{task_name}" if is_versus_crit else task_name
-        return f"rumil:ws:{model}:{ws_short}:{suffix}"
+        ph = prompt_hash_cache[(task_name, is_versus_crit)]
+        return f"rumil:ws:{model}:{ws_short}:{suffix}:p{ph}"
 
     tasks = _plan_rumil_pairs(
         cfg,
@@ -523,9 +529,15 @@ async def run_orch(
     project = await probe_db.get_or_create_project(workspace)
     ws_short = project.id[:8]
 
+    task_body_cache = {(t, v): _resolve_task_body(t, v) for t, v in tasks_spec}
+    from rumil.versus_bridge import compute_prompt_hash
+
+    prompt_hash_cache = {k: compute_prompt_hash(b) for k, b in task_body_cache.items()}
+
     def _compose(task_name: str, is_versus_crit: bool) -> str:
         suffix = f"versus_{task_name}" if is_versus_crit else task_name
-        return f"rumil:orch:{model}:{ws_short}:b{budget}:{suffix}"
+        ph = prompt_hash_cache[(task_name, is_versus_crit)]
+        return f"rumil:orch:{model}:{ws_short}:b{budget}:{suffix}:p{ph}"
 
     tasks = _plan_rumil_pairs(
         cfg,

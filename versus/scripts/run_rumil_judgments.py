@@ -50,6 +50,13 @@ RUMIL_MODEL_ALIASES = {
 
 
 def main() -> None:
+    # Enable line-buffering on stdout so progress prints land in the
+    # logfile immediately when this script is backgrounded with
+    # `... > logfile 2>&1`. Without this, Python block-buffers (~8 KiB)
+    # against the redirected file and `[plan]` / `[run]` / `[done]`
+    # lines sit invisible for the duration of a long run.
+    sys.stdout.reconfigure(line_buffering=True)  # pyright: ignore[reportAttributeAccessIssue]
+
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--config", default=str(VERSUS_ROOT / "config.yaml"))
     ap.add_argument(

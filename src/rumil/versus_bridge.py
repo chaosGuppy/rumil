@@ -157,6 +157,20 @@ def build_system_prompt(task_body: str) -> str:
     return shell.replace("{task_body}", task_body)
 
 
+def compute_prompt_hash(task_body: str) -> str:
+    """Return a short hash of the composed system prompt.
+
+    Covers both the shell and the task body, so any edit to either file
+    invalidates judge_model dedup keys naturally -- mirroring versus's
+    ``prefix_config_hash`` / ``sampling_hash`` discipline. 8 hex chars is
+    enough to distinguish prompt versions without cluttering the key.
+    """
+    import hashlib
+
+    shell = (_PROMPTS_DIR / "versus-judge-shell.md").read_text()
+    return hashlib.sha256((shell + task_body).encode()).hexdigest()[:8]
+
+
 def _frontend_trace_url(run_id: str, call_id: str | None = None) -> str:
     base = get_settings().frontend_url.rstrip("/")
     anchor = f"#call-{call_id[:8]}" if call_id else ""

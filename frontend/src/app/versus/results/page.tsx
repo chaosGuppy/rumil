@@ -1,8 +1,8 @@
-import Link from "next/link";
 import type { Metadata } from "next";
 import type { ResultsBundle } from "@/api/types.gen";
 import { API_BASE, serverFetch } from "@/lib/api-base";
 import { AutoSubmitSelect } from "@/components/versus/AutoSubmitSelect";
+import { JudgmentRowsTable } from "@/components/versus/JudgmentRowsTable";
 import { MatrixTable } from "@/components/versus/MatrixTable";
 import { VersusHeader } from "@/components/versus/VersusHeader";
 import "../versus.css";
@@ -185,40 +185,7 @@ export default async function VersusResultsPage({
 
         <details className="collapsible">
           <summary>All judgments ({rows.length})</summary>
-          <div style={{ overflowX: "auto", marginTop: 6 }}>
-            <table className="log">
-              <thead>
-                <tr>
-                  <th>essay</th>
-                  <th>source_a</th>
-                  <th>source_b</th>
-                  <th>criterion</th>
-                  <th>judge</th>
-                  <th>verdict</th>
-                  <th>winner</th>
-                  <th>ts</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r, i) => (
-                  <tr key={i}>
-                    <td className="versus-mono">
-                      <Link href={`/versus/inspect?essay=${encodeURIComponent(r.essay_id)}`}>
-                        {r.essay_id}
-                      </Link>
-                    </td>
-                    <td className="versus-mono">{r.source_a}</td>
-                    <td className="versus-mono">{r.source_b}</td>
-                    <td>{r.criterion}</td>
-                    <td className="versus-mono">{r.judge_model}</td>
-                    <td>{r.verdict}</td>
-                    <td className="versus-mono">{r.winner}</td>
-                    <td className="versus-muted">{r.ts}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <JudgmentRowsTable rows={rows} />
         </details>
       </main>
     </div>

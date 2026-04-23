@@ -2,7 +2,7 @@ import type { Cell, GenJudgeCell, JudgeLabel } from "@/api/types.gen";
 import { JudgeHeader, shortName } from "./JudgeHeader";
 
 function cellKey(g: string, j: string): string {
-  return `${g}${j}`;
+  return `${g}\t${j}`;
 }
 
 export function buildCellMap(cells: GenJudgeCell[]): Map<string, Cell> {
@@ -43,21 +43,23 @@ export function MatrixTable({
             <th title={g}>{shortName(g)}</th>
             {judgeModels.map((j) => {
               const c = map.get(cellKey(g, j));
-              if (!c) return <td key={j}></td>;
+              if (!c) return <td key={j} className="matrix-cell-empty"></td>;
+              const noData = c.pct === null || c.pct === undefined;
+              if (noData) {
+                return (
+                  <td key={j} className="matrix-cell-empty">
+                    <span className="versus-muted">—</span>
+                  </td>
+                );
+              }
               return (
                 <td key={j} style={{ background: c.bg, color: c.fg }}>
-                  {c.pct === null || c.pct === undefined ? (
-                    <span className="versus-muted">—</span>
+                  {small ? (
+                    Math.round(c.pct! * 100)
                   ) : (
-                    <>
-                      {small ? (
-                        Math.round(c.pct * 100)
-                      ) : (
-                        <strong>{Math.round(c.pct * 100)}</strong>
-                      )}
-                      <span className="n">{c.n}</span>
-                    </>
+                    <strong>{Math.round(c.pct! * 100)}</strong>
                   )}
+                  <span className="n">{c.n}</span>
                 </td>
               );
             })}

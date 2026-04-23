@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import type { ResultsBundle } from "@/api/types.gen";
 import { API_BASE, serverFetch } from "@/lib/api-base";
+import { AutoSubmitSelect } from "@/components/versus/AutoSubmitSelect";
 import { MatrixTable } from "@/components/versus/MatrixTable";
 import { VersusHeader } from "@/components/versus/VersusHeader";
 import "../versus.css";
@@ -85,17 +86,16 @@ export default async function VersusResultsPage({
             %-picks-human · gen × judge
           </h2>
           <form method="get" action="/versus/results">
-            <select
+            <AutoSubmitSelect
               name="criterion"
               defaultValue={active_criterion ?? ""}
               className="versus-select"
               style={{ padding: "4px 8px", fontSize: 13 }}
-            >
-              <option value="">avg across criteria</option>
-              {criteria.map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
+              options={[
+                { value: "", label: "avg across criteria" },
+                ...criteria.map((c) => ({ value: c, label: c })),
+              ]}
+            />
             <noscript>
               <button type="submit" className="versus-button">apply</button>
             </noscript>

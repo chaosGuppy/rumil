@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import type { EssayDetail, EssayMeta, Judgment, Source } from "@/api/types.gen";
 import { API_BASE, serverFetch } from "@/lib/api-base";
+import { AutoSubmitSelect } from "@/components/versus/AutoSubmitSelect";
 import { VersusHeader } from "@/components/versus/VersusHeader";
 import "../versus.css";
 
@@ -56,17 +57,14 @@ export default async function VersusInspectPage({
   const essaySelector = (
     <form method="get" action="/versus/inspect" style={{ display: "flex", gap: 8, alignItems: "center" }}>
       <label htmlFor="essay" className="versus-muted">essay</label>
-      <select
+      <AutoSubmitSelect
         id="essay"
         name="essay"
         defaultValue={selectedId ?? ""}
         className="versus-select"
         style={{ padding: "4px 8px", fontSize: 13 }}
-      >
-        {essays.map((e) => (
-          <option key={e.id} value={e.id}>{e.title}</option>
-        ))}
-      </select>
+        options={essays.map((e) => ({ value: e.id, label: e.title }))}
+      />
       <noscript>
         <button type="submit" className="versus-button">go</button>
       </noscript>

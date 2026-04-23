@@ -209,11 +209,12 @@ async def ensure_versus_question(db: DB, pair: PairContext) -> str:
     No reuse: each judgment invocation gets its own question. Dedup
     happens one layer up (at the versus judgments.jsonl level), so in
     practice we only create a question when a judgment is actually
-    pending. Tagged ``extra.source="versus"`` for filterability.
+    pending. Tagged ``extra.source="versus"`` for filterability; raw
+    source ids stay in ``extra`` only and are NOT put in the headline
+    or content (those render into the question's view / get loaded by
+    the agent's tools, so any leak there defeats blind judging).
     """
-    headline = (
-        f"Versus: {pair.task_name} -- {pair.source_a_id} vs {pair.source_b_id} ({pair.essay_id})"
-    )
+    headline = f"Versus judgment: {pair.task_name} on {pair.essay_id}"
     page = Page(
         page_type=PageType.QUESTION,
         layer=PageLayer.SQUIDGY,

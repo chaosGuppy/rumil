@@ -178,3 +178,61 @@ def test_format_pair_content_includes_essay_prefix_and_dimension():
     content = _format_pair_content(pair)
     assert "PREFIX_SIGIL" in content
     assert "grounding" in content
+
+
+# Question-page headline regression ----------------------------------------
+#
+# Earlier bug: ensure_versus_question composed the Question headline as
+# ``Versus: <task> -- <source_a_id> vs <source_b_id> (<essay>)`` which
+# renders into the question's view and gets loaded by the agent's tools.
+# That defeated blind judging -- observed when an orch run's generated
+# view started reasoning about "Opus vs human" explicitly. The fix moved
+# source ids out of the headline (and out of the content) into
+# ``extra`` only. Guard against regression.
+
+
+def _make_question_page_synchronously(pair: PairContext):
+    """Compose a Page the same way ensure_versus_question does, but
+    without touching the DB. Lets us unit-test the headline / content
+    shape without async + supabase."""
+    from unittest.mock import MagicMock
+
+    import rumil.versus_bridge as vb
+
+    # Stand in for the DB's project_id / run_id fields that
+    # ensure_versus_question reads off ``db``.
+    fake_db = MagicMock()
+    fake_db.project_id = "proj-xyz"
+    fake_db.run_id = "run-xyz"
+    fake_db.save_page = MagicMock()
+
+    import asyncio
+
+    async def _call_save_page(page):  # pragma: no cover
+        fake_db._last_page = page
+
+    fake_db.save_page.side_effect = _call_save_page
+
+    asyncio.run(vb.ensure_versus_question(fake_db, pair))
+    return fake_db._last_page
+
+
+def test_ensure_versus_question_headline_does_not_leak_source_ids():
+    pair = _make_pair(
+        continuation_a_id="human",
+        source_a_id="human",
+        continuation_b_id="anthropic/claude-opus-4-7",
+        source_b_id="anthropic/claude-opus-4-7",
+        task_name="general_quality",
+    )
+    page = _make_question_page_synchronously(pair)
+
+    # Neither raw source id should appear in the headline.
+    assert "human" not in page.headline.lower()
+    assert "anthropic/claude-opus-4-7" not in page.headline
+    # But the agent-visible content must NOT leak either.
+    assert "anthropic/claude-opus-4-7" not in page.content
+    # Source ids ARE preserved in extra for post-hoc filtering; that's
+    # the only place they may appear.
+    assert page.extra.get("source_a_id") == "human"
+    assert page.extra.get("source_b_id") == "anthropic/claude-opus-4-7"

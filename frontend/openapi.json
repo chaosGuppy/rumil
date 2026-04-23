@@ -3656,6 +3656,44 @@
             "type": "string",
             "title": "Judge Model"
           },
+          "judge_model_base": {
+            "type": "string",
+            "title": "Judge Model Base"
+          },
+          "prompt_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Hash"
+          },
+          "judge_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Judge Version"
+          },
+          "sampling": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sampling"
+          },
           "criterion": {
             "type": "string",
             "title": "Criterion"
@@ -3787,6 +3825,10 @@
         "type": "object",
         "required": [
           "judge_model",
+          "judge_model_base",
+          "prompt_hash",
+          "judge_version",
+          "sampling",
           "criterion",
           "source_a",
           "source_b",
@@ -3844,6 +3886,44 @@
           "judge_model": {
             "type": "string",
             "title": "Judge Model"
+          },
+          "judge_model_base": {
+            "type": "string",
+            "title": "Judge Model Base"
+          },
+          "prompt_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Hash"
+          },
+          "judge_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Judge Version"
+          },
+          "sampling": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sampling"
           },
           "verdict": {
             "anyOf": [
@@ -4020,6 +4100,10 @@
           "display_second",
           "criterion",
           "judge_model",
+          "judge_model_base",
+          "prompt_hash",
+          "judge_version",
+          "sampling",
           "verdict",
           "winner_source",
           "is_rumil",

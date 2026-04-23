@@ -257,6 +257,24 @@ function PromptPane({
   );
 }
 
+function JudgeVersionTags({ j }: { j: Judgment }) {
+  const bits: string[] = [];
+  if (j.prompt_hash) bits.push(j.prompt_hash);
+  if (j.judge_version) bits.push(j.judge_version);
+  if (j.sampling) {
+    const t = j.sampling["temperature"];
+    const m = j.sampling["max_tokens"];
+    if (t !== undefined && t !== null) bits.push(`T=${t}`);
+    if (m !== undefined && m !== null) bits.push(`mt=${m}`);
+  }
+  if (bits.length === 0) return null;
+  return (
+    <div className="versus-muted" style={{ fontSize: 11, marginTop: 2 }}>
+      {bits.join(" · ")}
+    </div>
+  );
+}
+
 function JudgmentRow({ j }: { j: Judgment }) {
   const localPath = localTracePath(j.rumil_trace_url);
   const rowClass = j.contamination_note
@@ -279,7 +297,8 @@ function JudgmentRow({ j }: { j: Judgment }) {
           </span>
         )}
         {j.is_rumil && <span className="versus-pill rumil">rumil</span>}{" "}
-        {j.judge_model}
+        {j.judge_model_base}
+        <JudgeVersionTags j={j} />
       </td>
       <td>{j.criterion}</td>
       <td style={{ fontFamily: "ui-monospace, Menlo, monospace", fontSize: 12 }}>

@@ -250,6 +250,7 @@ def main() -> None:
                 budget=args.budget,
                 limit=args.limit,
                 dry_run=args.dry_run,
+                concurrency=args.concurrency,
                 essay_ids=args.essay,
                 contestants=contestants,
                 vs_human=args.vs_human,

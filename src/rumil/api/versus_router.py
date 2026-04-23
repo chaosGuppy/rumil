@@ -113,6 +113,10 @@ class Judgment(pydantic.BaseModel):
     """One pairwise judgment row, shaped for the inspect view."""
 
     judge_model: str
+    judge_model_base: str
+    prompt_hash: str | None
+    judge_version: str | None
+    sampling: dict | None
     criterion: str
     source_a: str
     source_b: str
@@ -149,6 +153,10 @@ class JudgmentDetail(pydantic.BaseModel):
     display_second: str
     criterion: str
     judge_model: str
+    judge_model_base: str
+    prompt_hash: str | None
+    judge_version: str | None
+    sampling: dict | None
     verdict: str | None
     winner_source: str | None
     is_rumil: bool
@@ -446,9 +454,15 @@ def get_essay_judgments(essay_id: str) -> list[Judgment]:
             continue
         if row.get("prefix_config_hash") != task.prefix_config_hash:
             continue
+        jm = str(row.get("judge_model", ""))
+        base, phash, version = versus_judge.parse_judge_model_suffix(jm)
         judgments.append(
             Judgment(
-                judge_model=row.get("judge_model", ""),
+                judge_model=jm,
+                judge_model_base=base,
+                prompt_hash=phash,
+                judge_version=version,
+                sampling=row.get("sampling"),
                 criterion=row.get("criterion", ""),
                 source_a=row.get("source_a", ""),
                 source_b=row.get("source_b", ""),
@@ -457,7 +471,7 @@ def get_essay_judgments(essay_id: str) -> list[Judgment]:
                 verdict=row.get("verdict"),
                 winner_source=row.get("winner_source"),
                 reasoning_preview=(row.get("reasoning_text") or "")[:400],
-                is_rumil=str(row.get("judge_model", "")).startswith("rumil:"),
+                is_rumil=jm.startswith("rumil:"),
                 rumil_trace_url=row.get("rumil_trace_url"),
                 rumil_preference_label=row.get("rumil_preference_label"),
                 rumil_question_id=row.get("rumil_question_id"),
@@ -802,6 +816,8 @@ def get_judgment_by_key(key: str) -> JudgmentDetail:
     for row in versus_jsonl.read(_resolve_path(cfg.storage.judgments_log)):
         if row.get("key") != key:
             continue
+        jm = str(row.get("judge_model", ""))
+        base, phash, version = versus_judge.parse_judge_model_suffix(jm)
         return JudgmentDetail(
             key=row["key"],
             essay_id=row.get("essay_id", ""),
@@ -811,10 +827,14 @@ def get_judgment_by_key(key: str) -> JudgmentDetail:
             display_first=row.get("display_first", ""),
             display_second=row.get("display_second", ""),
             criterion=row.get("criterion", ""),
-            judge_model=row.get("judge_model", ""),
+            judge_model=jm,
+            judge_model_base=base,
+            prompt_hash=phash,
+            judge_version=version,
+            sampling=row.get("sampling"),
             verdict=row.get("verdict"),
             winner_source=row.get("winner_source"),
-            is_rumil=str(row.get("judge_model", "")).startswith("rumil:"),
+            is_rumil=jm.startswith("rumil:"),
             contamination_note=row.get("contamination_note"),
             prompt=row.get("prompt"),
             reasoning_text=row.get("reasoning_text"),

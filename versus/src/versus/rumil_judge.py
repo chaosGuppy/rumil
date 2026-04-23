@@ -45,6 +45,7 @@ def _call_one(
     second: judge.Source,
     criterion: str,
     model: str,
+    judge_model: str,
     prompt: str,
     k: str,
     max_tokens: int,
@@ -82,7 +83,7 @@ def _call_one(
         "display_first": first.source_id,
         "display_second": second.source_id,
         "criterion": criterion,
-        "judge_model": f"anthropic:{model}",
+        "judge_model": judge_model,
         "verdict": verdict,
         "winner_source": winner_source,
         "reasoning_text": text,
@@ -126,7 +127,7 @@ def _plan_tasks(
             first, second = judge.order_pair(essay_id, src_a, src_b)
             for criterion in cfg.judging.criteria:
                 for model in models:
-                    judge_model = f"anthropic:{model}"
+                    judge_model = judge.compose_judge_model(f"anthropic:{model}", criterion)
                     k = judge.judgment_key(
                         essay_id, prefix_hash, a_id, b_id, criterion, judge_model
                     )
@@ -148,6 +149,7 @@ def _plan_tasks(
                             second,
                             criterion,
                             model,
+                            judge_model,
                             prompt,
                             k,
                         )
@@ -188,7 +190,7 @@ def run(
     print(f"[plan] {len(tasks)} anthropic judgment calls (concurrency={cfg.concurrency})")
     if dry_run:
         for t in tasks[:20]:
-            print(f"  * {t[9]}")
+            print(f"  * {t[10]}")
         if len(tasks) > 20:
             print(f"  ... and {len(tasks) - 20} more")
         return
@@ -197,7 +199,7 @@ def run(
     try:
         with ThreadPoolExecutor(max_workers=cfg.concurrency) as pool:
             futures = {
-                pool.submit(_call_one, *t, cfg.judging.max_tokens, client): t[9]  # pyright: ignore[reportCallIssue]
+                pool.submit(_call_one, *t, cfg.judging.max_tokens, client): t[10]  # pyright: ignore[reportCallIssue]
                 for t in tasks
             }
             done = 0
@@ -466,6 +468,13 @@ async def run_ws(
             print(f"  ... and {len(tasks) - 20} more")
         return
 
+    # runs.config is surfaced via the traces UI but is NOT fed to the
+    # agent during the run (agent reads pages via load_page / search /
+    # explore_subgraph; it never reads the runs row). Safe to embed
+    # judge identity here for forensic traceability. Do NOT add per-pair
+    # content like essay_id / source ids at the run level for ws — pairs
+    # share one run, so there's nothing pair-specific to record.
+    prompt_hashes = {(f"versus_{t}" if v else t): prompt_hash_cache[(t, v)] for t, v in tasks_spec}
     await db.create_run(
         name=f"versus-rumil-ws:{workspace}",
         question_id=None,
@@ -473,8 +482,11 @@ async def run_ws(
             "origin": "versus",
             "variant": "ws",
             "workspace": workspace,
+            "model": model,
             "dimensions": list(dimensions),
             "versus_criteria": list(versus_criteria),
+            "prompt_hash_by_task": prompt_hashes,
+            "blind_judge_version": BLIND_JUDGE_VERSION,
             "num_pairs": len(tasks),
             "staged": not persist,
         },
@@ -537,6 +549,7 @@ async def run_orch(
     budget: int = 1,
     limit: int | None = None,
     dry_run: bool = False,
+    concurrency: int | None = None,
     essay_ids: Sequence[str] | None = None,
     contestants: Sequence[str] | None = None,
     vs_human: bool = False,
@@ -596,9 +609,11 @@ async def run_orch(
         print("[info] no pending rumil orch judgments")
         return
 
+    effective_concurrency = concurrency if concurrency is not None else 1
     print(
         f"[plan] {len(tasks)} rumil orch judgments "
-        f"(model={model}, workspace={workspace}, budget={budget})"
+        f"(model={model}, workspace={workspace}, budget={budget}, "
+        f"concurrency={effective_concurrency})"
     )
     if dry_run:
         for pair, task_name, is_versus_crit, judge_model in tasks[:20]:
@@ -612,55 +627,83 @@ async def run_orch(
 
     done = 0
     total = len(tasks)
-    for pair, task_name, is_versus_crit, judge_model in tasks:
-        t0 = time.time()
-        run_id = str(uuid.uuid4())
-        db = await DB.create(run_id=run_id, prod=False, project_id=project.id, staged=not persist)
-        try:
-            task_body = _resolve_task_body(task_name, is_versus_crit)
-            effective_task = f"versus_{task_name}" if is_versus_crit else task_name
-            pair_ctx = PairContext(
-                essay_id=pair.essay_id,
-                prefix_hash=pair.prefix_hash,
-                prefix_text=pair.prefix_text,
-                continuation_a_id=pair.display_first_id,
-                continuation_a_text=pair.display_first_text,
-                continuation_b_id=pair.display_second_id,
-                continuation_b_text=pair.display_second_text,
-                source_a_id=pair.source_a_id,
-                source_b_id=pair.source_b_id,
-                task_name=effective_task,
+    sem = asyncio.Semaphore(effective_concurrency)
+    lock = asyncio.Lock()
+
+    async def _exec_one(
+        pair: _PendingPair,
+        task_name: str,
+        is_versus_crit: bool,
+        judge_model: str,
+    ) -> None:
+        nonlocal done
+        async with sem:
+            t0 = time.time()
+            run_id = str(uuid.uuid4())
+            # Each pair gets its own run_id + its own DB. Staging is
+            # per-run so concurrent pairs don't contaminate each other's
+            # staged views.
+            db = await DB.create(
+                run_id=run_id, prod=False, project_id=project.id, staged=not persist
             )
-            await db.create_run(
-                name=f"versus-rumil-orch:{workspace}:{pair.essay_id}",
-                question_id=None,
-                config={
-                    "origin": "versus",
-                    "variant": "orch",
-                    "workspace": workspace,
-                    "budget": budget,
-                    "task_name": effective_task,
-                    "essay_id": pair.essay_id,
-                    "source_a": pair.source_a_id,
-                    "source_b": pair.source_b_id,
-                    "staged": not persist,
-                },
-            )
-            print(f"[run] {settings.frontend_url.rstrip('/')}/traces/{run_id}")
-            result = await judge_pair_orch(
-                db, pair_ctx, task_body=task_body, model=model, budget=budget
-            )
-        except Exception as e:
-            print(f"[err ] {pair.essay_id} {task_name}: {type(e).__name__}: {e}")
-            continue
-        criterion_value = f"versus_{task_name}" if is_versus_crit else f"rumil_{task_name}"
-        row = _mirror_row(pair, judge_model, criterion_value, result, t0=t0)
-        jsonl.append(cfg.storage.judgments_log, row)
-        done += 1
-        print(
-            f"[done {done}/{total}] {row['key']}  "
-            f"label={result.preference_label!r}  trace={result.trace_url}"
-        )
+            try:
+                task_body = _resolve_task_body(task_name, is_versus_crit)
+                effective_task = f"versus_{task_name}" if is_versus_crit else task_name
+                pair_ctx = PairContext(
+                    essay_id=pair.essay_id,
+                    prefix_hash=pair.prefix_hash,
+                    prefix_text=pair.prefix_text,
+                    continuation_a_id=pair.display_first_id,
+                    continuation_a_text=pair.display_first_text,
+                    continuation_b_id=pair.display_second_id,
+                    continuation_b_text=pair.display_second_text,
+                    source_a_id=pair.source_a_id,
+                    source_b_id=pair.source_b_id,
+                    task_name=effective_task,
+                )
+                # runs.config is surfaced via the traces UI but is NOT
+                # fed to the agent during the run (agent reads pages via
+                # load_page / search / explore_subgraph; it never reads
+                # the runs row). Safe to embed judge identity AND
+                # per-pair metadata for forensic traceability of an
+                # individual orch run.
+                ph = prompt_hash_cache[(task_name, is_versus_crit)]
+                await db.create_run(
+                    name=f"versus-rumil-orch:{workspace}:{pair.essay_id}",
+                    question_id=None,
+                    config={
+                        "origin": "versus",
+                        "variant": "orch",
+                        "workspace": workspace,
+                        "model": model,
+                        "budget": budget,
+                        "task_name": effective_task,
+                        "prompt_hash": ph,
+                        "blind_judge_version": BLIND_JUDGE_VERSION,
+                        "essay_id": pair.essay_id,
+                        "source_a": pair.source_a_id,
+                        "source_b": pair.source_b_id,
+                        "staged": not persist,
+                    },
+                )
+                print(f"[run] {settings.frontend_url.rstrip('/')}/traces/{run_id}")
+                result = await judge_pair_orch(
+                    db, pair_ctx, task_body=task_body, model=model, budget=budget
+                )
+            except Exception as e:
+                print(f"[err ] {pair.essay_id} {task_name}: {type(e).__name__}: {e}")
+                return
+            criterion_value = f"versus_{task_name}" if is_versus_crit else f"rumil_{task_name}"
+            row = _mirror_row(pair, judge_model, criterion_value, result, t0=t0)
+            async with lock:
+                jsonl.append(cfg.storage.judgments_log, row)
+                done += 1
+                print(
+                    f"[done {done}/{total}] {row['key']}  "
+                    f"label={result.preference_label!r}  trace={result.trace_url}"
+                )
+
+    await asyncio.gather(*[_exec_one(*t) for t in tasks])
 
 
 def _build_rumil_text_user_message(pair: _PendingPair, task_name: str) -> str:

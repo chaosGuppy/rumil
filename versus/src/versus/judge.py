@@ -15,6 +15,13 @@ import httpx
 
 from versus import config, jsonl, openrouter
 
+# Bump when ``render_judge_prompt`` or ``CRITERION_PROMPTS`` change in a
+# way that should invalidate existing OpenRouter / ``anthropic:<model>``
+# judge rows. The rumil judge variants (rumil:ws, rumil:orch, rumil:text)
+# have their own version knobs in ``rumil.versus_bridge``.
+JUDGE_PROMPT_VERSION = 1
+
+
 CRITERION_PROMPTS: dict[str, str] = {
     "standalone_quality": (
         "Judge on standalone quality. Which continuation reads as better, clearer,"
@@ -74,6 +81,71 @@ def judgment_key(
 
 
 VERDICT_RE = re.compile(r"<\s*verdict\s*>\s*(A|B|tie)\s*<\s*/\s*verdict\s*>", re.IGNORECASE)
+
+_JUDGE_MODEL_SUFFIX_RE = re.compile(r":p[0-9a-f]{8}(?::v\d+)?$")
+
+
+def base_judge_model(judge_model: str) -> str:
+    """Strip ``:p<hash>[:v<N>]`` version suffix to recover the raw model id.
+
+    Use wherever downstream code needs to match the judge_model against a
+    source_id (e.g. ``paraphrase:<model>``) or render a column header that
+    groups across prompt versions.
+    """
+    return _JUDGE_MODEL_SUFFIX_RE.sub("", judge_model)
+
+
+_PHASH_TAG_RE = re.compile(r"^p[0-9a-f]{8}$")
+_VERSION_TAG_RE = re.compile(r"^v\d+$")
+
+
+def parse_judge_model_suffix(judge_model: str) -> tuple[str, str | None, str | None]:
+    """Split a judge_model into ``(base, phash, version)``.
+
+    ``phash`` and ``version`` are the ``p<sha8>`` and ``v<N>`` tags if
+    present, else None. Used by the API to expose version fragments as
+    separate columns in the inspect view without the frontend parsing
+    strings.
+    """
+    parts = judge_model.split(":")
+    version = None
+    if parts and _VERSION_TAG_RE.match(parts[-1]):
+        version = parts[-1]
+        parts = parts[:-1]
+    phash = None
+    if parts and _PHASH_TAG_RE.match(parts[-1]):
+        phash = parts[-1]
+        parts = parts[:-1]
+    return ":".join(parts), phash, version
+
+
+def compute_judge_prompt_hash(criterion: str) -> str:
+    """Short hash of the rendered judge prompt for ``criterion``.
+
+    Hashes the shell + the criterion-specific text with fixed placeholders
+    so the hash covers prompt surface without mixing in pair content. Any
+    edit to ``render_judge_prompt`` or ``CRITERION_PROMPTS[criterion]``
+    forks the hash.
+    """
+    rendered = render_judge_prompt(
+        prefix_text="__PREFIX__",
+        criterion=criterion,
+        source_a_text="__A__",
+        source_b_text="__B__",
+    )
+    payload = f"v{JUDGE_PROMPT_VERSION}|{rendered}"
+    return hashlib.sha256(payload.encode()).hexdigest()[:8]
+
+
+def compose_judge_model(base_model: str, criterion: str) -> str:
+    """Append the judge-prompt version suffix to ``base_model``.
+
+    Produces ``<base_model>:p<hash>:v<N>``. Used for OpenRouter bare-model
+    judges and ``anthropic:<model>`` judges so their dedup keys fork when
+    the judge prompt changes.
+    """
+    ph = compute_judge_prompt_hash(criterion)
+    return f"{base_model}:p{ph}:v{JUDGE_PROMPT_VERSION}"
 
 
 def parse_verdict(text: str) -> str | None:
@@ -196,6 +268,7 @@ def _call_one_judgment(
     first,
     second,
     criterion,
+    base_model,
     judge_model,
     prompt,
     k,
@@ -204,7 +277,7 @@ def _call_one_judgment(
 ):
     t0 = time.time()
     resp = openrouter.chat(
-        model=judge_model,
+        model=base_model,
         messages=[{"role": "user", "content": prompt}],
         temperature=JUDGE_TEMPERATURE,
         max_tokens=max_tokens,
@@ -287,7 +360,8 @@ def run(
             src_b = Source(b_id, sources[b_id])
             first, second = order_pair(essay_id, src_a, src_b)
             for criterion in effective_criteria:
-                for judge_model in effective_judges:
+                for base_model in effective_judges:
+                    judge_model = compose_judge_model(base_model, criterion)
                     k = judgment_key(essay_id, prefix_hash, a_id, b_id, criterion, judge_model)
                     if k in existing:
                         continue
@@ -306,6 +380,7 @@ def run(
                             first,
                             second,
                             criterion,
+                            base_model,
                             judge_model,
                             prompt,
                             k,
@@ -322,7 +397,7 @@ def run(
     print(f"[plan] {len(tasks_to_run)} judgment calls (concurrency={cfg.concurrency})")
     if dry_run:
         for t in tasks_to_run[:20]:
-            essay_id, _, a_id, b_id, _, _, crit, jm, _, _ = t
+            essay_id, _, a_id, b_id, _, _, crit, _, jm, _, _ = t
             print(f"  * {essay_id} {a_id} vs {b_id} [{crit}] -> {jm}")
         if len(tasks_to_run) > 20:
             print(f"  ... and {len(tasks_to_run) - 20} more")
@@ -332,8 +407,8 @@ def run(
         with ThreadPoolExecutor(max_workers=cfg.concurrency) as pool:
             futures = {
                 pool.submit(_call_one_judgment, *t, cfg.judging.max_tokens, client): t[
-                    9
-                ]  # key is 10th element
+                    10
+                ]  # key is 11th element
                 for t in tasks_to_run
             }
             done = 0

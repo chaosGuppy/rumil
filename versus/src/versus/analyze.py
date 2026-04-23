@@ -6,7 +6,7 @@ import collections
 import pathlib
 import re
 
-from versus import jsonl
+from versus import jsonl, judge
 
 HUMAN = "human"
 
@@ -91,13 +91,27 @@ _PROMPT_HASH_RE = re.compile(r"^p[0-9a-f]{8}$")
 _VERSION_TAG_RE = re.compile(r"^v\d+$")
 
 
+def _strip_phash_version(parts: list[str]) -> tuple[list[str], str | None, str | None]:
+    """Peel trailing ``:v<N>`` then ``:p<hash>`` off a split judge_model."""
+    version = None
+    if parts and _VERSION_TAG_RE.match(parts[-1]):
+        version = parts[-1]
+        parts = parts[:-1]
+    phash = None
+    if parts and _PROMPT_HASH_RE.match(parts[-1]):
+        phash = parts[-1]
+        parts = parts[:-1]
+    return parts, phash, version
+
+
 def judge_label(judge: str) -> dict:
     """Break a judge_model id into stacked header parts.
 
     Returns {variant, model, task, phash}. `phash` is the `:p<sha8>` prompt
-    version suffix (present on post-hash rumil judgments; absent on legacy
-    pre-hash data). A `:v<N>` BLIND_JUDGE_VERSION suffix (after the phash)
-    is folded into `variant` so the phash remains separable.
+    version suffix (present on post-hash judgments; absent on legacy
+    pre-hash data). A `:v<N>` version suffix (after the phash) is folded
+    into `variant` so the phash remains separable. Applies to all
+    variants: rumil:*, anthropic:*, and OpenRouter bare-provider form.
     """
     if judge.startswith("human:"):
         return {"variant": "human", "model": judge.split(":", 1)[1], "task": None, "phash": None}
@@ -106,15 +120,7 @@ def judge_label(judge: str) -> dict:
         or judge.startswith("rumil:ws:")
         or judge.startswith("rumil:text:")
     ):
-        parts = judge.split(":")
-        version = None
-        if parts and _VERSION_TAG_RE.match(parts[-1]):
-            version = parts[-1]
-            parts = parts[:-1]
-        phash = None
-        if parts and _PROMPT_HASH_RE.match(parts[-1]):
-            phash = parts[-1]
-            parts = parts[:-1]
+        parts, phash, version = _strip_phash_version(judge.split(":"))
         variant = f"{parts[0]}:{parts[1]}"
         model = parts[2] if len(parts) >= 3 else judge
         if parts[1] == "text":
@@ -129,15 +135,16 @@ def judge_label(judge: str) -> dict:
         task = ":".join(tail) if tail else None
         return {"variant": variant, "model": model, "task": task, "phash": phash}
     if judge.startswith("anthropic:"):
-        return {
-            "variant": "anthropic",
-            "model": judge.split(":", 1)[1],
-            "task": None,
-            "phash": None,
-        }
+        parts, phash, version = _strip_phash_version(judge.split(":"))
+        model = ":".join(parts[1:]) if len(parts) > 1 else judge
+        variant = f"anthropic {version}" if version else "anthropic"
+        return {"variant": variant, "model": model, "task": None, "phash": phash}
     if "/" in judge:
-        provider, model = judge.split("/", 1)
-        return {"variant": provider, "model": model, "task": None, "phash": None}
+        parts, phash, version = _strip_phash_version(judge.split(":"))
+        base = ":".join(parts)
+        provider, model = base.split("/", 1)
+        variant = f"{provider} {version}" if version else provider
+        return {"variant": variant, "model": model, "task": None, "phash": phash}
     return {"variant": None, "model": judge, "task": None, "phash": None}
 
 
@@ -191,7 +198,10 @@ def content_test_matrix(
         if not include_contaminated and row.get("contamination_note"):
             continue
         j = row["judge_model"]
-        baseline = f"paraphrase:{j}"
+        # Strip any :p<hash>:v<N> suffix so the paraphrase source id match
+        # works across prompt versions of the same OpenRouter model.
+        j_base = judge.base_judge_model(j)
+        baseline = f"paraphrase:{j_base}"
         a, b = row["source_a"], row["source_b"]
         if baseline not in (a, b):
             continue

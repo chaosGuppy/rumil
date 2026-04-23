@@ -75,8 +75,10 @@ Versus must already have completions cached
   `standalone_quality`, `informativeness`, `substance_and_bite`). Not
   applicable to `rumil-text`.
 - `--concurrency N` — concurrent LLM calls. Defaults: `ws` = 2,
-  `text` / `rumil-text` = `cfg.concurrency` (usually 8). `orch` runs
-  serially regardless (per-pair orchestrator run + DB traffic).
+  `text` / `rumil-text` = `cfg.concurrency` (usually 8), `orch` = 1
+  (serial). Raise `orch` concurrency cautiously (each pair fires a full
+  TwoPhaseOrchestrator with lots of DB traffic); 2 is usually fine and
+  roughly halves wall time.
 
 ## Targeted pair selection (ws / orch)
 

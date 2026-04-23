@@ -1067,6 +1067,24 @@ export type Judgment = {
      */
     judge_model: string;
     /**
+     * Judge Model Base
+     */
+    judge_model_base: string;
+    /**
+     * Prompt Hash
+     */
+    prompt_hash: string | null;
+    /**
+     * Judge Version
+     */
+    judge_version: string | null;
+    /**
+     * Sampling
+     */
+    sampling: {
+        [key: string]: unknown;
+    } | null;
+    /**
      * Criterion
      */
     criterion: string;
@@ -1179,6 +1197,24 @@ export type JudgmentDetail = {
      * Judge Model
      */
     judge_model: string;
+    /**
+     * Judge Model Base
+     */
+    judge_model_base: string;
+    /**
+     * Prompt Hash
+     */
+    prompt_hash: string | null;
+    /**
+     * Judge Version
+     */
+    judge_version: string | null;
+    /**
+     * Sampling
+     */
+    sampling: {
+        [key: string]: unknown;
+    } | null;
     /**
      * Verdict
      */

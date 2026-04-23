@@ -286,7 +286,19 @@ async def score_items_sequentially(
 
     parent_context = "\n".join(parent_parts)
     system_prompt = build_system_prompt(system_prompt_name, include_citations=False)
-    messages: list[dict] = []
+    messages: list[dict] = [
+        {"role": "user", "content": parent_context},
+        {
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Understood. Ready to score batches.",
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
+        },
+    ]
     results: list[dict] = []
 
     batch_sizes = _split_into_batches(len(items), SCORING_BATCH_SIZE)
@@ -314,9 +326,7 @@ async def score_items_sequentially(
             + "\n\nScore all items in this batch now."
         )
 
-        user_content = parent_context + "\n" + batch_text if batch_idx == 0 else batch_text
-
-        messages.append({"role": "user", "content": user_content})
+        messages.append({"role": "user", "content": batch_text})
 
         result = await structured_call(
             system_prompt,
@@ -326,7 +336,6 @@ async def score_items_sequentially(
             metadata=LLMExchangeMetadata(
                 call_id=call_id,
                 phase=f"score_batch_{batch_idx}",
-                user_messages=[{"role": "user", "content": user_content}],
             ),
             db=db,
         )

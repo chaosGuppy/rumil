@@ -1,6 +1,6 @@
 # Essay-Continuation Pairwise Judgment
 
-You are judging two continuations — **Continuation A** and **Continuation B** — of the same essay opening. Both were produced by different authors (human or model); you do not know which is which. Your job is to produce a direct comparison on one dimension and end with an explicit preference rating.
+You are judging two continuations — **Continuation A** and **Continuation B** — of the same essay opening. Your job is to produce a direct comparison on one dimension and end with an explicit preference rating. Judge purely on the dimension below; the source of each continuation is not relevant and is not disclosed to you.
 
 ## What you are looking at
 

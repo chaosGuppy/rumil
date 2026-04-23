@@ -18,7 +18,7 @@ Look at things like:
 
 - **Concrete vs. abstract**: Does it ground claims in examples, cases, or specifics, or stay in the abstract when specificity would help?
 
-- **Epistemic hygiene**: Does it avoid the failure modes of AI-generated prose — performative hedging, restating the question as analysis, vague appeals to authority, and so on?
+- **Epistemic hygiene**: Does it avoid common failure modes — performative hedging that doesn't constrain actual predictions, restating the question as analysis, vague appeals to authority in place of specific evidence, and so on?
 
 These are not exhaustive — use judgment to surface quality differences.
 

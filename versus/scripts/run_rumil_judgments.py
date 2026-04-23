@@ -108,8 +108,11 @@ def main() -> None:
     ap.add_argument(
         "--budget",
         type=int,
-        default=1,
-        help="Orchestrator research-call budget per pair (orch variant only). Default: 1.",
+        default=4,
+        help=(
+            "Orchestrator research-call budget per pair (orch variant only). "
+            "TwoPhaseOrchestrator requires a minimum of 4. Default: 4."
+        ),
     )
     ap.add_argument(
         "--concurrency",

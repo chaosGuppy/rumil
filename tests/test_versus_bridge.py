@@ -18,17 +18,29 @@ Focus here is the surfaces that carry real correctness risk:
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 import pytest
 
 from rumil.versus_bridge import (
+    BLIND_JUDGE_VERSION,
     PREFERENCE_LABELS,
+    JudgeResult,
     PairContext,
     _format_pair_content,
+    _versus_extra,
     build_system_prompt,
     compute_prompt_hash,
     extract_preference,
     label_to_verdict,
 )
+
+_VERSUS_SRC = Path(__file__).resolve().parents[1] / "versus" / "src"
+if str(_VERSUS_SRC) not in sys.path:
+    sys.path.insert(0, str(_VERSUS_SRC))
+
+from versus.rumil_judge import _build_rumil_text_user_message, _PendingPair  # noqa: E402
 
 
 def _make_pair(**overrides) -> PairContext:
@@ -262,3 +274,137 @@ def test_ensure_versus_question_extra_does_not_leak_source_ids():
         # "human" is a common substring so we guard only the exact
         # token as a value, not substring.
         assert v != "human"
+
+
+# BLIND_JUDGE_VERSION smoke guard ------------------------------------------
+
+
+def test_blind_judge_version_is_positive_int():
+    assert isinstance(BLIND_JUDGE_VERSION, int)
+    assert BLIND_JUDGE_VERSION >= 1
+
+
+# Prompt hash forks on shell edit ------------------------------------------
+
+
+def test_compute_prompt_hash_changes_when_shell_file_changes(tmp_path, monkeypatch):
+    import rumil.versus_bridge as vb
+
+    body = "Stable task body."
+    baseline = compute_prompt_hash(body)
+
+    (tmp_path / "versus-judge-shell.md").write_text(
+        "Totally different shell wording here.\n\n{task_body}\n"
+    )
+    monkeypatch.setattr(vb, "_PROMPTS_DIR", tmp_path)
+    forked = compute_prompt_hash(body)
+
+    assert baseline != forked
+
+
+# Shell composition: exact placeholder token ------------------------------
+
+
+def test_build_system_prompt_inserts_at_known_placeholder():
+    body = "SENTINEL_BODY_TOKEN_7q"
+    composed = build_system_prompt(body)
+    shell_raw = (
+        Path(__file__).resolve().parents[1] / "prompts" / "versus-judge-shell.md"
+    ).read_text()
+    assert "{task_body}" in shell_raw
+    expected = shell_raw.replace("{task_body}", body)
+    assert composed == expected
+
+
+# Question page extra metadata: no source id disclosure -------------------
+
+
+@pytest.mark.parametrize(
+    ("a_id", "b_id"),
+    [
+        ("human", "anthropic/claude-opus-4-7"),
+        ("openai/gpt-5.4", "human"),
+        ("anthropic/claude-sonnet-4-5", "openai/gpt-5.4"),
+    ],
+)
+def test_versus_extra_does_not_leak_source_ids(a_id, b_id):
+    pair = _make_pair(
+        continuation_a_id=a_id,
+        continuation_b_id=b_id,
+        source_a_id=a_id,
+        source_b_id=b_id,
+    )
+    extra = _versus_extra(pair)
+
+    assert set(extra.keys()) == {"source", "essay_id", "prefix_hash", "task_name"}
+    for v in extra.values():
+        assert v != a_id
+        assert v != b_id
+        assert "human" not in str(v).split(":")
+
+
+# rumil-text inline user message: no source id disclosure ------------------
+
+
+def test_build_rumil_text_user_message_does_not_leak_source_ids():
+    pair = _PendingPair(
+        essay_id="essay-xyz",
+        prefix_hash="prefix-abc",
+        prefix_text="PREFIX_SIGIL",
+        source_a_id="human",
+        source_a_text="CONT_HUMAN_TEXT",
+        source_b_id="anthropic/claude-opus-4-7",
+        source_b_text="CONT_OPUS_TEXT",
+        display_first_id="anthropic/claude-opus-4-7",
+        display_first_text="CONT_OPUS_TEXT",
+        display_second_id="human",
+        display_second_text="CONT_HUMAN_TEXT",
+    )
+    msg = _build_rumil_text_user_message(pair, "general_quality")
+
+    assert "anthropic/claude-opus-4-7" not in msg
+    assert "source_id" not in msg
+    assert "source_a" not in msg
+    assert "source_b" not in msg
+
+    a_idx = msg.index("CONT_OPUS_TEXT")
+    b_idx = msg.index("CONT_HUMAN_TEXT")
+    assert a_idx < b_idx
+    assert "PREFIX_SIGIL" in msg
+    assert "general_quality" in msg
+
+
+# JudgeResult contract guard -----------------------------------------------
+
+
+def test_judge_result_requires_all_fields():
+    result = JudgeResult(
+        verdict="A",
+        preference_label="A strongly preferred",
+        reasoning_text="because",
+        trace_url="http://example/traces/run-1",
+        call_id="call-1",
+        run_id="run-1",
+        question_id="q-1",
+        cost_usd=0.0,
+    )
+    assert result.verdict == "A"
+    assert result.preference_label == "A strongly preferred"
+
+    with pytest.raises(TypeError):
+        JudgeResult(verdict="A")  # pyright: ignore[reportCallIssue]
+
+
+# PREFERENCE_LABELS ordering ------------------------------------------------
+
+
+def test_preference_labels_are_in_scale_order():
+    assert list(PREFERENCE_LABELS) == [
+        "A strongly preferred",
+        "A somewhat preferred",
+        "A slightly preferred",
+        "Approximately indifferent between A and B",
+        "B slightly preferred",
+        "B somewhat preferred",
+        "B strongly preferred",
+    ]

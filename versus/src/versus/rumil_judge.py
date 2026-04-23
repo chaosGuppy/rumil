@@ -400,14 +400,14 @@ async def run_ws(
     ws_short = project.id[:8]
 
     task_body_cache = {(t, v): _resolve_task_body(t, v) for t, v in tasks_spec}
-    from rumil.versus_bridge import compute_prompt_hash
+    from rumil.versus_bridge import BLIND_JUDGE_VERSION, compute_prompt_hash
 
     prompt_hash_cache = {k: compute_prompt_hash(b) for k, b in task_body_cache.items()}
 
     def _compose(task_name: str, is_versus_crit: bool) -> str:
         suffix = f"versus_{task_name}" if is_versus_crit else task_name
         ph = prompt_hash_cache[(task_name, is_versus_crit)]
-        return f"rumil:ws:{model}:{ws_short}:{suffix}:p{ph}"
+        return f"rumil:ws:{model}:{ws_short}:{suffix}:p{ph}:v{BLIND_JUDGE_VERSION}"
 
     tasks = _plan_rumil_pairs(
         cfg,
@@ -541,14 +541,14 @@ async def run_orch(
     ws_short = project.id[:8]
 
     task_body_cache = {(t, v): _resolve_task_body(t, v) for t, v in tasks_spec}
-    from rumil.versus_bridge import compute_prompt_hash
+    from rumil.versus_bridge import BLIND_JUDGE_VERSION, compute_prompt_hash
 
     prompt_hash_cache = {k: compute_prompt_hash(b) for k, b in task_body_cache.items()}
 
     def _compose(task_name: str, is_versus_crit: bool) -> str:
         suffix = f"versus_{task_name}" if is_versus_crit else task_name
         ph = prompt_hash_cache[(task_name, is_versus_crit)]
-        return f"rumil:orch:{model}:{ws_short}:b{budget}:{suffix}:p{ph}"
+        return f"rumil:orch:{model}:{ws_short}:b{budget}:{suffix}:p{ph}:v{BLIND_JUDGE_VERSION}"
 
     tasks = _plan_rumil_pairs(
         cfg,

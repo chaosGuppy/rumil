@@ -301,6 +301,7 @@ def inspect(request: fastapi.Request, essay: str | None = None):
                 "rumil_question_id": row.get("rumil_question_id"),
                 "rumil_call_id": row.get("rumil_call_id"),
                 "rumil_cost_usd": row.get("rumil_cost_usd"),
+                "contamination_note": row.get("contamination_note"),
             }
         )
     judgments.sort(key=lambda j: (j["judge_model"], j["criterion"], j["source_a"], j["source_b"]))

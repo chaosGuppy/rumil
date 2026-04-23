@@ -120,6 +120,22 @@ Think it through in as much detail as you want: weigh specific passages, note st
 Only the last such tag in your response is read; feel free to revise as you think."""
 
 
+REFUSAL_NATIVE_REASONS = {"refusal", "content_filter", "safety", "blocked"}
+REFUSAL_FINISH_REASONS = {"content_filter"}
+
+
+def is_refusal(row: dict) -> bool:
+    """True if this completion row ended in a provider refusal / content filter."""
+    rr = row.get("raw_response") or {}
+    choices = rr.get("choices") or []
+    if not choices:
+        return False
+    ch = choices[0] or {}
+    fr = ch.get("finish_reason")
+    nfr = ch.get("native_finish_reason")
+    return fr in REFUSAL_FINISH_REASONS or nfr in REFUSAL_NATIVE_REASONS
+
+
 def _prefix_text_from_completion_row(row: dict) -> str:
     """Recover the prefix text that was shown in the completion prompt.
 
@@ -136,19 +152,36 @@ def _prefix_text_from_completion_row(row: dict) -> str:
     return prompt[start + len("BEGIN ESSAY\n===\n") : end].strip()
 
 
-def load_sources_by_essay(log_path: pathlib.Path, prefix_hash_filter: str | None = None):
-    """Group completion rows by (essay_id, prefix_config_hash)."""
+def load_sources_by_essay(
+    log_path: pathlib.Path,
+    prefix_hash_filter: str | None = None,
+    *,
+    exclude_refusals: bool = True,
+):
+    """Group completion rows by (essay_id, prefix_config_hash).
+
+    Refused / content-filtered completions are excluded from the returned groups by
+    default so they don't show up in pair enumeration for judging. Prefix-text
+    recovery still uses the row (prefix text is unaffected by refusal).
+    """
     groups: dict[tuple[str, str], dict] = {}
     prefix_text_by_group: dict[tuple[str, str], str] = {}
+    skipped: list[tuple[str, str]] = []
     for row in jsonl.read(log_path):
         k = (row["essay_id"], row["prefix_config_hash"])
         if prefix_hash_filter and row["prefix_config_hash"] != prefix_hash_filter:
             continue
-        groups.setdefault(k, {})[row["source_id"]] = row["response_text"]
         if row["source_id"] != "human" and k not in prefix_text_by_group:
             pt = _prefix_text_from_completion_row(row)
             if pt:
                 prefix_text_by_group[k] = pt
+        if exclude_refusals and is_refusal(row):
+            skipped.append((row["essay_id"], row["source_id"]))
+            continue
+        groups.setdefault(k, {})[row["source_id"]] = row["response_text"]
+    if skipped:
+        for essay_id, source_id in skipped:
+            print(f"[skip-refusal] {essay_id} / {source_id}")
     return groups, prefix_text_by_group
 
 

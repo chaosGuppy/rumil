@@ -7,7 +7,6 @@ import pathlib
 
 from versus import jsonl
 
-
 HUMAN = "human"
 
 
@@ -34,6 +33,8 @@ def content_test_matrix(judgments_log: pathlib.Path) -> dict:
     for row in jsonl.read(judgments_log):
         if row.get("verdict") is None:
             continue
+        if row.get("contamination_note"):
+            continue
         j = row["judge_model"]
         baseline = f"paraphrase:{j}"
         a, b = row["source_a"], row["source_b"]
@@ -55,17 +56,24 @@ def content_test_matrix(judgments_log: pathlib.Path) -> dict:
 def matrix(
     judgments_log: pathlib.Path,
     criterion: str | None = None,
+    include_contaminated: bool = False,
 ) -> dict:
     """Compute %-picks-human per (gen_model, judge_model, condition).
 
     Only counts pairs where one side is human. Ties count as 0.5 for human.
+
+    ``include_contaminated``: by default, rows tagged with a
+    ``contamination_note`` field are excluded from the aggregate
+    (produced before a blind-judge leak fix; the verdict doesn't
+    measure what the matrix claims to measure). Pass True to include
+    them and see the pre-fix distribution.
     """
     # counts[(gen_model, judge_model, condition, criterion)] = [human_points, total]
-    counts: dict[tuple[str, str, str, str], list[float]] = collections.defaultdict(
-        lambda: [0.0, 0]
-    )
+    counts: dict[tuple[str, str, str, str], list[float]] = collections.defaultdict(lambda: [0.0, 0])
     for row in jsonl.read(judgments_log):
         if row.get("verdict") is None:
+            continue
+        if not include_contaminated and row.get("contamination_note"):
             continue
         if criterion is not None and row.get("criterion") != criterion:
             continue
@@ -114,17 +122,26 @@ def format_matrix(
     col_w = max([len(j) for j in judge_models] + [10])
     gen_w = max([len(g) for g in gen_models] + [10])
     lines = []
-    header_label = f"condition={condition}" + (f"  criterion={criterion}" if criterion else "  (avg over criteria)")
+    header_label = f"condition={condition}" + (
+        f"  criterion={criterion}" if criterion else "  (avg over criteria)"
+    )
     lines.append(header_label)
     lines.append("")
     header = " " * gen_w + " | " + " | ".join(j.rjust(col_w) for j in judge_models)
     lines.append(header)
     lines.append("-" * len(header))
     for g in gen_models:
-        row = g.ljust(gen_w) + " | " + " | ".join(
-            (f"{cell[(g,j)][0]*100:5.1f}% ({cell[(g,j)][1]})".rjust(col_w)
-             if cell[(g,j)][1] else "  -  ".rjust(col_w))
-            for j in judge_models
+        row = (
+            g.ljust(gen_w)
+            + " | "
+            + " | ".join(
+                (
+                    f"{cell[(g, j)][0] * 100:5.1f}% ({cell[(g, j)][1]})".rjust(col_w)
+                    if cell[(g, j)][1]
+                    else "  -  ".rjust(col_w)
+                )
+                for j in judge_models
+            )
         )
         lines.append(row)
     return "\n".join(lines)

@@ -68,8 +68,9 @@
           </thead>
           <tbody>
             {% for j in view.judgments %}
-              <tr style="border-top: 1px solid #eee; {% if j.is_rumil %}background: #fdfaf3;{% endif %}">
+              <tr style="border-top: 1px solid #eee; {% if j.contamination_note %}background: #fde8e8; opacity: 0.65;{% elif j.is_rumil %}background: #fdfaf3;{% endif %}">
                 <td style="padding: 6px 10px; font-family: ui-monospace, Menlo, monospace; white-space: nowrap;">
+                  {% if j.contamination_note %}<span class="pill" style="background: #c63d3d; color: white;" title="{{ j.contamination_note }}">⚠ contaminated</span>{% endif %}
                   {% if j.is_rumil %}<span class="pill" style="background: #e4d7a8;">rumil</span>{% endif %}
                   {{ j.judge_model }}
                 </td>

@@ -62,6 +62,14 @@ log = logging.getLogger(__name__)
 _PROMPTS_DIR = Path(__file__).resolve().parents[2] / "prompts"
 _TOOL_SERVER_NAME = "versus-judge-tools"
 
+# Manual version tag that goes into ws / orch judge_model strings so
+# dedup keys fork when we ship a known-semantics change that isn't
+# captured by the prompt hash -- e.g. a blind-judge leak fix in the
+# bridge itself. Bump when that happens, and update the PR's
+# "Blind judging" section with the reason.
+# v2 (2026-04-23): fixes #3 (headline leak) and #4 (page.extra leak).
+BLIND_JUDGE_VERSION = 2
+
 PREFERENCE_LABELS: Sequence[str] = (
     "A strongly preferred",
     "A somewhat preferred",

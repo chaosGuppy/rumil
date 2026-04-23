@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime as dt
 import itertools
 import pathlib
+import re
 from collections import defaultdict
 
 import fastapi
@@ -335,9 +336,12 @@ def _judge_sort_key(judge: str) -> tuple:
         return (99, 99, "", 99, judge)
 
     if low.startswith("rumil:orch:"):
-        variant = 3
+        variant = 4
         base = judge.split(":")[2] if len(judge.split(":")) >= 3 else judge
     elif low.startswith("rumil:ws:"):
+        variant = 3
+        base = judge.split(":")[2] if len(judge.split(":")) >= 3 else judge
+    elif low.startswith("rumil:text:"):
         variant = 2
         base = judge.split(":")[2] if len(judge.split(":")) >= 3 else judge
     elif low.startswith("anthropic:"):
@@ -393,31 +397,52 @@ def _judge_sort_key(judge: str) -> tuple:
     return (family, strength, base_low, variant, judge)
 
 
+_PROMPT_HASH_RE = re.compile(r"^p[0-9a-f]{8}$")
+
+
 def _judge_label(judge: str) -> dict:
     """Break a judge_model id into stacked header lines.
 
-    Returns {variant, model, task} — all three render as separate rows in the
-    column header so the column width is driven by the widest single part
-    instead of the full colon-joined string.
+    Returns {variant, model, task, phash}. All four render as separate rows in
+    the column header so the column width is driven by the widest single part
+    instead of the full colon-joined string. `phash` is the `:p<sha8>` prompt
+    version suffix (present on post-hash rumil judgments; absent on legacy
+    pre-hash data).
     """
     if judge.startswith("human:"):
-        return {"variant": "human", "model": judge.split(":", 1)[1], "task": None}
-    if judge.startswith("rumil:orch:") or judge.startswith("rumil:ws:"):
+        return {"variant": "human", "model": judge.split(":", 1)[1], "task": None, "phash": None}
+    if (
+        judge.startswith("rumil:orch:")
+        or judge.startswith("rumil:ws:")
+        or judge.startswith("rumil:text:")
+    ):
         parts = judge.split(":")
+        phash = None
+        if parts and _PROMPT_HASH_RE.match(parts[-1]):
+            phash = parts[-1]
+            parts = parts[:-1]
         variant = f"{parts[0]}:{parts[1]}"
         model = parts[2] if len(parts) >= 3 else judge
-        tail = parts[4:]  # skip ws_short hash
-        if tail and tail[0].startswith("b") and tail[0][1:].isdigit():
-            variant = f"{variant} {tail[0]}"
-            tail = tail[1:]
+        if parts[1] == "text":
+            tail = parts[3:]
+        else:
+            tail = parts[4:]  # skip ws_short hash
+            if tail and tail[0].startswith("b") and tail[0][1:].isdigit():
+                variant = f"{variant} {tail[0]}"
+                tail = tail[1:]
         task = ":".join(tail) if tail else None
-        return {"variant": variant, "model": model, "task": task}
+        return {"variant": variant, "model": model, "task": task, "phash": phash}
     if judge.startswith("anthropic:"):
-        return {"variant": "anthropic", "model": judge.split(":", 1)[1], "task": None}
+        return {
+            "variant": "anthropic",
+            "model": judge.split(":", 1)[1],
+            "task": None,
+            "phash": None,
+        }
     if "/" in judge:
         provider, model = judge.split("/", 1)
-        return {"variant": provider, "model": model, "task": None}
-    return {"variant": None, "model": judge, "task": None}
+        return {"variant": provider, "model": model, "task": None, "phash": None}
+    return {"variant": None, "model": judge, "task": None, "phash": None}
 
 
 def _cell_color(pct: float) -> str:

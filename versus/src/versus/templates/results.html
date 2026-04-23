@@ -8,6 +8,7 @@
   {% if lab.variant %}<div class="jh-variant">{{ lab.variant }}</div>{% endif %}
   <div class="jh-model">{{ lab.model }}</div>
   {% if include_task and lab.task %}<div class="jh-task">{{ lab.task }}</div>{% endif %}
+  {% if include_task and lab.phash %}<div class="jh-hash">{{ lab.phash }}</div>{% endif %}
 </th>
 {%- endmacro %}
 {% block body %}
@@ -191,6 +192,7 @@
   table.matrix th.jh .jh-variant { font-size: 10px; color: #999; font-weight: 400; letter-spacing: 0.02em; }
   table.matrix th.jh .jh-model { font-size: 12px; color: var(--fg); font-weight: 500; }
   table.matrix th.jh .jh-task { font-size: 10px; color: #999; font-weight: 400; }
+  table.matrix th.jh .jh-hash { font-size: 9px; color: #bbb; font-weight: 400; font-family: ui-monospace, Menlo, monospace; }
   table.matrix.small th.jh { padding: 2px 4px; }
   table.matrix.small th.jh .jh-variant { font-size: 9px; }
   table.matrix.small th.jh .jh-model { font-size: 11px; }

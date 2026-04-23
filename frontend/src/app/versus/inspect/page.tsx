@@ -23,9 +23,9 @@ function localTracePath(url: string | null | undefined): string | null {
 function deltaSlot(words: number, target: number): React.ReactNode {
   if (!target) return null;
   const pct = ((words - target) / target) * 100;
-  const color = words < target * 0.8 || words > target * 1.2 ? "#b14" : "#1a8";
+  const cls = words < target * 0.8 || words > target * 1.2 ? "delta-bad" : "delta-good";
   return (
-    <span style={{ color }}>
+    <span className={cls}>
       ({pct >= 0 ? "+" : ""}{pct.toFixed(0)}%)
     </span>
   );
@@ -132,21 +132,24 @@ export default async function VersusInspectPage({
                   link to the rumil trace.
                 </p>
                 <div className="versus-card" style={{ padding: 0, overflow: "auto" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <table className="judgments">
                     <thead>
-                      <tr style={{ background: "#f6f6f0", textAlign: "left" }}>
-                        <th style={{ padding: "8px 10px" }}>judge</th>
-                        <th style={{ padding: "8px 10px" }}>criterion</th>
-                        <th style={{ padding: "8px 10px" }}>pair</th>
-                        <th style={{ padding: "8px 10px" }}>verdict</th>
-                        <th style={{ padding: "8px 10px" }}>rumil label</th>
-                        <th style={{ padding: "8px 10px" }}>trace</th>
-                        <th style={{ padding: "8px 10px" }}>reasoning (preview)</th>
+                      <tr>
+                        <th>judge</th>
+                        <th>criterion</th>
+                        <th>pair</th>
+                        <th>verdict</th>
+                        <th>rumil label</th>
+                        <th>trace</th>
+                        <th>reasoning (preview)</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {judgments.map((j, i) => (
-                        <JudgmentRow key={i} j={j} />
+                      {judgments.map((j) => (
+                        <JudgmentRow
+                          key={`${j.judge_model}|${j.criterion}|${j.source_a}|${j.source_b}`}
+                          j={j}
+                        />
                       ))}
                     </tbody>
                   </table>
@@ -256,63 +259,42 @@ function PromptPane({
 
 function JudgmentRow({ j }: { j: Judgment }) {
   const localPath = localTracePath(j.rumil_trace_url);
-  const rowStyle: React.CSSProperties = {
-    borderTop: "1px solid #eee",
-    ...(j.contamination_note
-      ? { background: "#fde8e8", opacity: 0.65 }
-      : j.is_rumil
-        ? { background: "#fdfaf3" }
-        : {}),
-  };
+  const rowClass = j.contamination_note
+    ? "is-contam"
+    : j.is_rumil
+      ? "is-rumil"
+      : undefined;
 
   return (
-    <tr style={rowStyle}>
+    <tr className={rowClass}>
       <td
         style={{
-          padding: "6px 10px",
           fontFamily: "ui-monospace, Menlo, monospace",
           whiteSpace: "nowrap",
         }}
       >
         {j.contamination_note && (
-          <span
-            className="versus-pill"
-            style={{ background: "#c63d3d", color: "white", borderColor: "#c63d3d" }}
-            title={j.contamination_note}
-          >
+          <span className="versus-pill contam" title={j.contamination_note}>
             ⚠ contaminated
           </span>
         )}
-        {j.is_rumil && (
-          <span
-            className="versus-pill"
-            style={{ background: "#e4d7a8", color: "#5a4a1a", borderColor: "#c8b878" }}
-          >
-            rumil
-          </span>
-        )}{" "}
+        {j.is_rumil && <span className="versus-pill rumil">rumil</span>}{" "}
         {j.judge_model}
       </td>
-      <td style={{ padding: "6px 10px" }}>{j.criterion}</td>
-      <td
-        style={{
-          padding: "6px 10px",
-          fontFamily: "ui-monospace, Menlo, monospace",
-          fontSize: 12,
-        }}
-      >
+      <td>{j.criterion}</td>
+      <td style={{ fontFamily: "ui-monospace, Menlo, monospace", fontSize: 12 }}>
         {j.source_a} vs {j.source_b}
       </td>
-      <td style={{ padding: "6px 10px" }}>
+      <td>
         <strong>{j.verdict ?? "?"}</strong>{" "}
         {j.winner_source && j.winner_source !== "tie" && j.verdict !== "tie" && (
           <span className="versus-muted">({j.winner_source})</span>
         )}
       </td>
-      <td style={{ padding: "6px 10px", fontSize: 12 }}>
+      <td style={{ fontSize: 12 }}>
         {j.rumil_preference_label ?? <span className="versus-muted">-</span>}
       </td>
-      <td style={{ padding: "6px 10px", fontSize: 12 }}>
+      <td style={{ fontSize: 12 }}>
         {j.rumil_trace_url ? (
           <>
             {localPath ? (
@@ -330,7 +312,7 @@ function JudgmentRow({ j }: { j: Judgment }) {
           <span className="versus-muted">-</span>
         )}
       </td>
-      <td style={{ padding: "6px 10px", maxWidth: 420 }}>
+      <td style={{ maxWidth: 420 }}>
         <span
           className="versus-muted"
           style={{ fontFamily: "Georgia, serif", fontSize: 12 }}

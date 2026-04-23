@@ -23,10 +23,10 @@ async function getResults(
   return res.json();
 }
 
-function deltaColor(pct: number): string {
-  if (pct < -20 || pct > 20) return "#b14";
-  if (pct < -5 || pct > 5) return "#b85";
-  return "#1a8";
+function deltaClass(pct: number): string {
+  if (pct < -20 || pct > 20) return "delta-bad";
+  if (pct < -5 || pct > 5) return "delta-warn";
+  return "delta-good";
 }
 
 export default async function VersusResultsPage({
@@ -172,7 +172,7 @@ export default async function VersusResultsPage({
                     <td className="versus-mono">{s.source_id}</td>
                     <td>{s.n}</td>
                     <td>{s.avg_words}</td>
-                    <td style={{ color: deltaColor(s.avg_delta_pct) }}>
+                    <td className={deltaClass(s.avg_delta_pct)}>
                       {s.avg_delta_pct >= 0 ? "+" : ""}
                       {s.avg_delta_pct.toFixed(1)}%
                     </td>

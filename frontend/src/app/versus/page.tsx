@@ -32,7 +32,7 @@ export default async function VersusHome() {
         </p>
 
         {!apiOk && (
-          <div className="versus-card" style={{ marginBottom: 16, borderColor: "#c63d3d" }}>
+          <div className="versus-card error-border" style={{ marginBottom: 16 }}>
             <strong>No essays found.</strong> Run <code>uv run scripts/fetch_essays.py</code> in the
             versus directory and ensure <code>VERSUS_CONFIG_PATH</code> points at a valid config.
           </div>

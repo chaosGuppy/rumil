@@ -577,12 +577,13 @@ async def red_team_question(
     force: bool = False,
     sequence_id: str | None = None,
     sequence_position: int | None = None,
+    pool_question_id: str | None = None,
 ) -> str | None:
     """Run a red-team call on a question. Returns call ID, or None if no budget."""
     from rumil.calls.red_team import RedTeamCall
 
     log.info("red_team_question: question=%s", question_id[:8])
-    if not await _consume_budget(db, force=force):
+    if not await _consume_budget(db, force=force, pool_question_id=pool_question_id):
         return None
 
     call = await db.create_call(

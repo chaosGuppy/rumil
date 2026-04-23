@@ -233,6 +233,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                             broadcaster=self.broadcaster,
                             sequence_id=self._sequence_id,
                             sequence_position=self._seq_position,
+                            pool_question_id=self.pool_question_id,
                         )
                         if self._sequence_id is not None:
                             self._seq_position += 1

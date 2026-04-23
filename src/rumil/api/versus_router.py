@@ -368,21 +368,21 @@ def get_essay_sources(essay_id: str) -> list[Source]:
         n_paragraphs=cfg.prefix.n_paragraphs,
         include_headers=cfg.prefix.include_headers,
     )
-    sources: list[Source] = []
+    # Multiple completion rows can share the same source_id (different
+    # sampling_hash); collapse to one per source_id, last-row-wins, to match
+    # versus_judge.load_sources_by_essay.
+    by_source: dict[str, Source] = {}
     for row in versus_jsonl.read(_resolve_path(cfg.storage.completions_log)):
         if row["essay_id"] != essay.id or row["prefix_config_hash"] != task.prefix_config_hash:
             continue
-        sources.append(
-            Source(
-                source_id=row["source_id"],
-                kind=row.get("source_kind", "?"),
-                text=row.get("response_text") or "",
-                words=row.get("response_words") or 0,
-                target=row.get("target_words") or 0,
-            )
+        by_source[row["source_id"]] = Source(
+            source_id=row["source_id"],
+            kind=row.get("source_kind", "?"),
+            text=row.get("response_text") or "",
+            words=row.get("response_words") or 0,
+            target=row.get("target_words") or 0,
         )
-    sources.sort(key=lambda s: (s.source_id != "human", s.source_id))
-    return sources
+    return sorted(by_source.values(), key=lambda s: (s.source_id != "human", s.source_id))
 
 
 @router.get("/essays/{essay_id}/judgments", response_model=list[Judgment])

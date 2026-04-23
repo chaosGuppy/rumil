@@ -393,6 +393,33 @@ def _judge_sort_key(judge: str) -> tuple:
     return (family, strength, base_low, variant, judge)
 
 
+def _judge_label(judge: str) -> dict:
+    """Break a judge_model id into stacked header lines.
+
+    Returns {variant, model, task} — all three render as separate rows in the
+    column header so the column width is driven by the widest single part
+    instead of the full colon-joined string.
+    """
+    if judge.startswith("human:"):
+        return {"variant": "human", "model": judge.split(":", 1)[1], "task": None}
+    if judge.startswith("rumil:orch:") or judge.startswith("rumil:ws:"):
+        parts = judge.split(":")
+        variant = f"{parts[0]}:{parts[1]}"
+        model = parts[2] if len(parts) >= 3 else judge
+        tail = parts[4:]  # skip ws_short hash
+        if tail and tail[0].startswith("b") and tail[0][1:].isdigit():
+            variant = f"{variant} {tail[0]}"
+            tail = tail[1:]
+        task = ":".join(tail) if tail else None
+        return {"variant": variant, "model": model, "task": task}
+    if judge.startswith("anthropic:"):
+        return {"variant": "anthropic", "model": judge.split(":", 1)[1], "task": None}
+    if "/" in judge:
+        provider, model = judge.split("/", 1)
+        return {"variant": provider, "model": model, "task": None}
+    return {"variant": None, "model": judge, "task": None}
+
+
 def _cell_color(pct: float) -> str:
     """Linear gradient: 0 → orange (model preferred), 50 → light gray, 100 → green (human preferred)."""
     if pct <= 0.5:
@@ -594,6 +621,7 @@ def results(
             "active_crit": active_crit,
             "gen_models": gen_models,
             "judge_models": judge_models,
+            "judge_labels": {j: _judge_label(j) for j in judge_models},
             "main_matrices": main_matrices + [content_matrix],
             "small_grid": small_grid,
             "rows": rows,

@@ -2,6 +2,14 @@
 {% macro shortname(m) -%}
 {{ m.split('/')[-1].replace('-preview','').replace('-20260305','') }}
 {%- endmacro %}
+{% macro judge_th(j, labels, include_task=True) -%}
+{% set lab = labels[j] %}
+<th title="{{ j }}" class="jh">
+  {% if lab.variant %}<div class="jh-variant">{{ lab.variant }}</div>{% endif %}
+  <div class="jh-model">{{ lab.model }}</div>
+  {% if include_task and lab.task %}<div class="jh-task">{{ lab.task }}</div>{% endif %}
+</th>
+{%- endmacro %}
 {% block body %}
 <header>
   <strong>versus</strong>
@@ -41,7 +49,7 @@
             <thead>
               <tr>
                 <th></th>
-                {% for j in judge_models %}<th title="{{ j }}">{{ shortname(j) }}</th>{% endfor %}
+                {% for j in judge_models %}{{ judge_th(j, judge_labels) }}{% endfor %}
               </tr>
             </thead>
             <tbody>
@@ -86,7 +94,7 @@
               <thead>
                 <tr>
                   <th></th>
-                  {% for j in judge_models %}<th title="{{ j }}">{{ shortname(j) }}</th>{% endfor %}
+                  {% for j in judge_models %}{{ judge_th(j, judge_labels, include_task=False) }}{% endfor %}
                 </tr>
               </thead>
               <tbody>
@@ -179,6 +187,13 @@
     min-width: 70px; font-variant-numeric: tabular-nums; font-size: 13px;
   }
   table.matrix th { background: transparent; font-weight: 500; color: var(--muted); font-size: 12px; }
+  table.matrix th.jh { vertical-align: bottom; padding: 4px 6px; line-height: 1.25; }
+  table.matrix th.jh .jh-variant { font-size: 10px; color: #999; font-weight: 400; letter-spacing: 0.02em; }
+  table.matrix th.jh .jh-model { font-size: 12px; color: var(--fg); font-weight: 500; }
+  table.matrix th.jh .jh-task { font-size: 10px; color: #999; font-weight: 400; }
+  table.matrix.small th.jh { padding: 2px 4px; }
+  table.matrix.small th.jh .jh-variant { font-size: 9px; }
+  table.matrix.small th.jh .jh-model { font-size: 11px; }
   table.matrix tbody th { text-align: right; padding-right: 8px; }
   table.matrix td .n { font-size: 10px; color: #888; margin-left: 4px; }
   table.matrix td strong { font-weight: 600; }

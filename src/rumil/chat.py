@@ -283,17 +283,22 @@ def make_workspace_search_tool(db: DB) -> Tool:
     return Tool(
         name="search_workspace",
         description=(
-            "Search the research workspace for pages relevant to a query. "
-            "Returns the most similar pages with abstracts. Use this when "
-            "the conversation touches on a topic that might already be covered "
-            "in the workspace."
+            "Search the research workspace for pages relevant to a "
+            "natural-language query — phrase the query as a question, "
+            "topic, or claim you want to look up. Returns the most "
+            "similar pages with abstracts. Use this when the conversation "
+            "touches on a topic that might already be covered in the "
+            "workspace."
         ),
         input_schema={
             "type": "object",
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "Search query — a question, topic, or claim to look up",
+                    "description": (
+                        "Natural-language search query — a question, "
+                        "topic, or claim to look up in the workspace."
+                    ),
                 },
             },
             "required": ["query"],

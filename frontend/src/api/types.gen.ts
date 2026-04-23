@@ -21,29 +21,13 @@ export type AbEvalDimensionOut = {
      */
     preference: string;
     /**
-     * Report A
+     * Report
      */
-    report_a: string;
+    report?: string;
     /**
-     * Report B
+     * Call Id
      */
-    report_b: string;
-    /**
-     * Comparison
-     */
-    comparison: string;
-    /**
-     * Call Id A
-     */
-    call_id_a?: string;
-    /**
-     * Call Id B
-     */
-    call_id_b?: string;
-    /**
-     * Comparison Call Id
-     */
-    comparison_call_id?: string;
+    call_id?: string;
 };
 
 /**
@@ -216,6 +200,28 @@ export type AgentStartedEventOut = {
      * User Message
      */
     user_message: string;
+};
+
+/**
+ * AutocompactEventOut
+ */
+export type AutocompactEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'autocompact';
+    /**
+     * Agent Id
+     */
+    agent_id: string;
 };
 
 /**
@@ -530,10 +536,28 @@ export type ContextBuiltEventOut = {
      * Budget
      */
     budget: number | null;
+};
+
+/**
+ * DedupeCandidateItem
+ */
+export type DedupeCandidateItem = {
     /**
-     * Scout Mode
+     * Id
      */
-    scout_mode: string | null;
+    id: string;
+    /**
+     * Headline
+     */
+    headline?: string;
+    /**
+     * Similarity
+     */
+    similarity: number;
+    /**
+     * Kept By Filter
+     */
+    kept_by_filter?: boolean;
 };
 
 /**
@@ -667,6 +691,50 @@ export type EvaluationCompleteEventOut = {
      * Evaluation
      */
     evaluation: string;
+};
+
+/**
+ * ExperimentalScoringCompletedEventOut
+ */
+export type ExperimentalScoringCompletedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'experimental_scoring_completed';
+    /**
+     * Subquestion Scores
+     */
+    subquestion_scores: Array<ExperimentalSubquestionScoreItem>;
+    /**
+     * Per Type Fruit
+     */
+    per_type_fruit: Array<CallTypeFruitScoreItem>;
+};
+
+/**
+ * ExperimentalSubquestionScoreItem
+ */
+export type ExperimentalSubquestionScoreItem = {
+    /**
+     * Question Id
+     */
+    question_id: string;
+    /**
+     * Headline
+     */
+    headline?: string;
+    /**
+     * Impact Curve
+     */
+    impact_curve?: string;
 };
 
 /**
@@ -1431,6 +1499,56 @@ export type ProposedSubquestion = {
      * Headline
      */
     headline?: string;
+};
+
+/**
+ * QuestionDedupeEventOut
+ */
+export type QuestionDedupeEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'question_dedupe';
+    /**
+     * Proposed Headline
+     */
+    proposed_headline: string;
+    /**
+     * Parent Id
+     */
+    parent_id: string;
+    /**
+     * Parent Headline
+     */
+    parent_headline: string;
+    /**
+     * Candidates
+     */
+    candidates: Array<DedupeCandidateItem>;
+    /**
+     * Outcome
+     */
+    outcome: string;
+    /**
+     * Matched Page Id
+     */
+    matched_page_id: string | null;
+    /**
+     * Matched Headline
+     */
+    matched_headline: string;
+    /**
+     * Decision Reasoning
+     */
+    decision_reasoning: string;
 };
 
 /**
@@ -2613,7 +2731,12 @@ export type GetProjectStatsApiProjectsProjectIdStatsGetData = {
          */
         project_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Staged Run Id
+         */
+        staged_run_id?: string | null;
+    };
     url: '/api/projects/{project_id}/stats';
 };
 
@@ -2644,6 +2767,10 @@ export type GetQuestionStatsApiPagesPageIdStatsGetData = {
         page_id: string;
     };
     query?: {
+        /**
+         * Staged Run Id
+         */
+        staged_run_id?: string | null;
         /**
          * Project Id
          */
@@ -2895,6 +3022,8 @@ export type GetCallEventsApiCallsCallIdEventsGetResponses = {
     } & ErrorEventOut) | ({
         event: 'scoring_completed';
     } & ScoringCompletedEventOut) | ({
+        event: 'experimental_scoring_completed';
+    } & ExperimentalScoringCompletedEventOut) | ({
         event: 'dispatches_planned';
     } & DispatchesPlannedEventOut) | ({
         event: 'dispatch_executed';
@@ -2933,12 +3062,16 @@ export type GetCallEventsApiCallsCallIdEventsGetResponses = {
     } & LinkSubquestionsCompleteEventOut) | ({
         event: 'view_created';
     } & ViewCreatedEventOut) | ({
+        event: 'autocompact';
+    } & AutocompactEventOut) | ({
         event: 'phase_skipped';
     } & PhaseSkippedEventOut) | ({
         event: 'global_phase_completed';
     } & GlobalPhaseCompletedEventOut) | ({
         event: 'update_view_phase_completed';
-    } & UpdateViewPhaseCompletedEventOut)>;
+    } & UpdateViewPhaseCompletedEventOut) | ({
+        event: 'question_dedupe';
+    } & QuestionDedupeEventOut)>;
 };
 
 export type GetCallEventsApiCallsCallIdEventsGetResponse = GetCallEventsApiCallsCallIdEventsGetResponses[keyof GetCallEventsApiCallsCallIdEventsGetResponses];
@@ -3107,6 +3240,10 @@ export type GetPageRunApiPagesPageIdRunGetData = {
         page_id: string;
     };
     query?: {
+        /**
+         * Staged Run Id
+         */
+        staged_run_id?: string | null;
         /**
          * Project Id
          */

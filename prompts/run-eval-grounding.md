@@ -26,6 +26,8 @@ Assess the following dimensions:
 4. Assess source quality and citation accuracy
 5. Note both strengths and weaknesses
 
+You must continue to explore until your assessment of this dimension has converged.
+
 ## Output format
 
 Produce a structured evaluation report with:

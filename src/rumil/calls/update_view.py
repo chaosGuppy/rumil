@@ -152,9 +152,14 @@ def _load_prompt_sections() -> dict[str, str]:
 
 
 def _build_update_view_system_prompt(context_section: str) -> str:
-    """Build system prompt: preamble + View context framing + citations + grounding."""
+    """Build system prompt: preamble + View context framing + grounding.
+
+    No citations section: update_view only modifies epistemic scores and
+    section/importance on existing items — it cannot create content-bearing
+    pages, so inline-citation rules have nothing to attach to.
+    """
     parts: list[str] = []
-    for name in ("preamble.md", "citations.md", "grounding.md"):
+    for name in ("preamble.md", "grounding.md"):
         p = PROMPTS_DIR / name
         if p.exists():
             parts.append(p.read_text(encoding="utf-8"))

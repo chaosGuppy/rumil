@@ -748,7 +748,7 @@
     "/api/projects/{project_id}/stats": {
       "get": {
         "summary": "Get Project Stats",
-        "description": "Aggregate stats over all pages/links/calls in a project.\n\nv1 is baseline-only: rows with staged=true or is_superseded=true are excluded,\nand staged_run_id is not accepted.",
+        "description": "Aggregate stats over all pages/links/calls in a project.\n\nBaseline rows are always included; when `staged_run_id` is provided as a\nquery param, rows from that staged run are also included and its mutation\nevents (supersede_page, delete_link) are overlayed.",
         "operationId": "get_project_stats_api_projects__project_id__stats_get",
         "parameters": [
           {
@@ -758,6 +758,22 @@
             "schema": {
               "type": "string",
               "title": "Project Id"
+            }
+          },
+          {
+            "name": "staged_run_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Staged Run Id"
             }
           }
         ],
@@ -788,7 +804,7 @@
     "/api/pages/{page_id}/stats": {
       "get": {
         "summary": "Get Question Stats",
-        "description": "Aggregate stats over the 2-hop undirected neighborhood around a question.\n\nReturns 404 if the target page is not a question. v1 is baseline-only.",
+        "description": "Aggregate stats over the 2-hop undirected neighborhood around a question.\n\nReturns 404 if the target page is not a question. Staged-run visibility\nmatches get_project_stats.",
         "operationId": "get_question_stats_api_pages__page_id__stats_get",
         "parameters": [
           {
@@ -798,6 +814,22 @@
             "schema": {
               "type": "string",
               "title": "Page Id"
+            }
+          },
+          {
+            "name": "staged_run_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Staged Run Id"
             }
           },
           {
@@ -1153,6 +1185,9 @@
                         "$ref": "#/components/schemas/ScoringCompletedEventOut"
                       },
                       {
+                        "$ref": "#/components/schemas/ExperimentalScoringCompletedEventOut"
+                      },
+                      {
                         "$ref": "#/components/schemas/DispatchesPlannedEventOut"
                       },
                       {
@@ -1210,6 +1245,9 @@
                         "$ref": "#/components/schemas/ViewCreatedEventOut"
                       },
                       {
+                        "$ref": "#/components/schemas/AutocompactEventOut"
+                      },
+                      {
                         "$ref": "#/components/schemas/PhaseSkippedEventOut"
                       },
                       {
@@ -1217,6 +1255,9 @@
                       },
                       {
                         "$ref": "#/components/schemas/UpdateViewPhaseCompletedEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/QuestionDedupeEventOut"
                       }
                     ],
                     "discriminator": {
@@ -1229,6 +1270,7 @@
                         "warning": "#/components/schemas/WarningEventOut",
                         "error": "#/components/schemas/ErrorEventOut",
                         "scoring_completed": "#/components/schemas/ScoringCompletedEventOut",
+                        "experimental_scoring_completed": "#/components/schemas/ExperimentalScoringCompletedEventOut",
                         "dispatches_planned": "#/components/schemas/DispatchesPlannedEventOut",
                         "dispatch_executed": "#/components/schemas/DispatchExecutedEventOut",
                         "explore_page": "#/components/schemas/ExplorePageEventOut",
@@ -1248,9 +1290,11 @@
                         "load_page": "#/components/schemas/LoadPageEventOut",
                         "link_subquestions_complete": "#/components/schemas/LinkSubquestionsCompleteEventOut",
                         "view_created": "#/components/schemas/ViewCreatedEventOut",
+                        "autocompact": "#/components/schemas/AutocompactEventOut",
                         "phase_skipped": "#/components/schemas/PhaseSkippedEventOut",
                         "global_phase_completed": "#/components/schemas/GlobalPhaseCompletedEventOut",
-                        "update_view_phase_completed": "#/components/schemas/UpdateViewPhaseCompletedEventOut"
+                        "update_view_phase_completed": "#/components/schemas/UpdateViewPhaseCompletedEventOut",
+                        "question_dedupe": "#/components/schemas/QuestionDedupeEventOut"
                       }
                     }
                   },
@@ -1500,6 +1544,22 @@
             }
           },
           {
+            "name": "staged_run_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Staged Run Id"
+            }
+          },
+          {
             "name": "project_id",
             "in": "query",
             "required": false,
@@ -1608,31 +1668,14 @@
             "type": "string",
             "title": "Preference"
           },
-          "report_a": {
+          "report": {
             "type": "string",
-            "title": "Report A"
-          },
-          "report_b": {
-            "type": "string",
-            "title": "Report B"
-          },
-          "comparison": {
-            "type": "string",
-            "title": "Comparison"
-          },
-          "call_id_a": {
-            "type": "string",
-            "title": "Call Id A",
+            "title": "Report",
             "default": ""
           },
-          "call_id_b": {
+          "call_id": {
             "type": "string",
-            "title": "Call Id B",
-            "default": ""
-          },
-          "comparison_call_id": {
-            "type": "string",
-            "title": "Comparison Call Id",
+            "title": "Call Id",
             "default": ""
           }
         },
@@ -1640,10 +1683,7 @@
         "required": [
           "name",
           "display_name",
-          "preference",
-          "report_a",
-          "report_b",
-          "comparison"
+          "preference"
         ],
         "title": "ABEvalDimensionOut"
       },
@@ -1875,6 +1915,36 @@
           "user_message"
         ],
         "title": "AgentStartedEventOut"
+      },
+      "AutocompactEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "autocompact",
+            "title": "Event",
+            "default": "autocompact"
+          },
+          "agent_id": {
+            "type": "string",
+            "title": "Agent Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "agent_id"
+        ],
+        "title": "AutocompactEventOut"
       },
       "Call": {
         "properties": {
@@ -2466,17 +2536,6 @@
               }
             ],
             "title": "Budget"
-          },
-          "scout_mode": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Scout Mode"
           }
         },
         "type": "object",
@@ -2487,10 +2546,37 @@
           "working_context_page_ids",
           "preloaded_page_ids",
           "source_page_id",
-          "budget",
-          "scout_mode"
+          "budget"
         ],
         "title": "ContextBuiltEventOut"
+      },
+      "DedupeCandidateItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "headline": {
+            "type": "string",
+            "title": "Headline",
+            "default": ""
+          },
+          "similarity": {
+            "type": "number",
+            "title": "Similarity"
+          },
+          "kept_by_filter": {
+            "type": "boolean",
+            "title": "Kept By Filter",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "similarity"
+        ],
+        "title": "DedupeCandidateItem"
       },
       "DegreeCell": {
         "properties": {
@@ -2682,6 +2768,72 @@
           "evaluation"
         ],
         "title": "EvaluationCompleteEventOut"
+      },
+      "ExperimentalScoringCompletedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "experimental_scoring_completed",
+            "title": "Event",
+            "default": "experimental_scoring_completed"
+          },
+          "subquestion_scores": {
+            "items": {
+              "$ref": "#/components/schemas/ExperimentalSubquestionScoreItem"
+            },
+            "type": "array",
+            "title": "Subquestion Scores",
+            "default": []
+          },
+          "per_type_fruit": {
+            "items": {
+              "$ref": "#/components/schemas/CallTypeFruitScoreItem"
+            },
+            "type": "array",
+            "title": "Per Type Fruit",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "subquestion_scores",
+          "per_type_fruit"
+        ],
+        "title": "ExperimentalScoringCompletedEventOut"
+      },
+      "ExperimentalSubquestionScoreItem": {
+        "properties": {
+          "question_id": {
+            "type": "string",
+            "title": "Question Id"
+          },
+          "headline": {
+            "type": "string",
+            "title": "Headline",
+            "default": ""
+          },
+          "impact_curve": {
+            "type": "string",
+            "title": "Impact Curve",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "question_id"
+        ],
+        "title": "ExperimentalSubquestionScoreItem"
       },
       "ExplorePageEventOut": {
         "properties": {
@@ -4032,6 +4184,87 @@
           "id"
         ],
         "title": "ProposedSubquestion"
+      },
+      "QuestionDedupeEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "question_dedupe",
+            "title": "Event",
+            "default": "question_dedupe"
+          },
+          "proposed_headline": {
+            "type": "string",
+            "title": "Proposed Headline",
+            "default": ""
+          },
+          "parent_id": {
+            "type": "string",
+            "title": "Parent Id"
+          },
+          "parent_headline": {
+            "type": "string",
+            "title": "Parent Headline",
+            "default": ""
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/DedupeCandidateItem"
+            },
+            "type": "array",
+            "title": "Candidates",
+            "default": []
+          },
+          "outcome": {
+            "type": "string",
+            "title": "Outcome",
+            "default": ""
+          },
+          "matched_page_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matched Page Id"
+          },
+          "matched_headline": {
+            "type": "string",
+            "title": "Matched Headline",
+            "default": ""
+          },
+          "decision_reasoning": {
+            "type": "string",
+            "title": "Decision Reasoning",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "proposed_headline",
+          "parent_id",
+          "parent_headline",
+          "candidates",
+          "outcome",
+          "matched_page_id",
+          "matched_headline",
+          "decision_reasoning"
+        ],
+        "title": "QuestionDedupeEventOut"
       },
       "QuestionStatsOut": {
         "properties": {

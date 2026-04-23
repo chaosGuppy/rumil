@@ -20,7 +20,6 @@ from rumil.context import build_prioritization_context
 from rumil.database import DB
 from rumil.llm import build_system_prompt
 from rumil.models import (
-    AssessDispatchPayload,
     Call,
     CallType,
     Dispatch,
@@ -34,9 +33,7 @@ from rumil.orchestrators.common import (
     PrioritizationResult,
     SubquestionScore,
     compute_priority_score,
-    create_view_for_question,
     score_items_sequentially,
-    update_view_for_question,
 )
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
@@ -53,6 +50,7 @@ from rumil.tracing.trace_events import (
     SubquestionScoreItem,
 )
 from rumil.tracing.tracer import CallTrace, set_trace
+from rumil.views import get_active_view
 
 log = logging.getLogger(__name__)
 
@@ -72,6 +70,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         db: DB,
         broadcaster: Broadcaster | None = None,
         budget_cap: int | None = None,
+        pool_pre_registered: bool = False,
     ):
         super().__init__(db, broadcaster)
         self._invocation: int = 0
@@ -84,6 +83,12 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         self._parent_call_id: str | None = None
         self._sequence_id: str | None = None
         self._seq_position: int = 0
+        # When True, this orchestrator's contribution to the question pool
+        # was already registered atomically by the parent's qbp_recurse call,
+        # so run() must NOT register again (it would double-count). The
+        # finally block still calls qbp_unregister to balance active_calls
+        # (which qbp_recurse incremented via its register half).
+        self._pool_pre_registered: bool = pool_pre_registered
 
     def _effective_budget(self, global_remaining: int) -> int:
         if self._budget_cap is not None:
@@ -139,10 +144,15 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             )
             self._sequence_id = seq.id
             self._seq_position = 0
+        self.pool_question_id = root_question_id
+        if not self._pool_pre_registered:
+            contribution = self._budget_cap if self._budget_cap is not None else effective
+            await self.db.qbp_register(root_question_id, contribution)
         try:
             while True:
                 remaining = await self.db.budget_remaining()
-                effective = self._effective_budget(remaining)
+                pool = await self.db.qbp_get(root_question_id)
+                effective = min(self._effective_budget(remaining), pool.remaining)
                 if effective <= 0:
                     break
 
@@ -200,35 +210,28 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                 self._executed_since_last_plan = True
 
                 if self._invocation > 1 or last_call:
-                    existing_view = await self.db.get_view_for_question(root_question_id)
-                    if existing_view:
-                        await update_view_for_question(
-                            root_question_id,
-                            self.db,
-                            parent_call_id=self._parent_call_id,
-                            broadcaster=self.broadcaster,
-                            force=True,
-                            sequence_id=self._sequence_id,
-                            sequence_position=self._seq_position,
-                        )
-                    else:
-                        await create_view_for_question(
-                            root_question_id,
-                            self.db,
-                            parent_call_id=self._parent_call_id,
-                            broadcaster=self.broadcaster,
-                            force=True,
-                            sequence_id=self._sequence_id,
-                            sequence_position=self._seq_position,
-                        )
+                    view = get_active_view()
+                    await view.refresh(
+                        root_question_id,
+                        self.db,
+                        parent_call_id=self._parent_call_id,
+                        broadcaster=self.broadcaster,
+                        force=True,
+                        sequence_id=self._sequence_id,
+                        sequence_position=self._seq_position,
+                        pool_question_id=self.pool_question_id,
+                    )
                     if self._sequence_id is not None:
                         self._seq_position += 1
 
                 if last_call:
                     break
         finally:
-            await self._teardown()
-            await own_db.close()
+            try:
+                await self.db.qbp_unregister(root_question_id)
+            finally:
+                await self._teardown()
+                await own_db.close()
 
     async def _run_dispatch_sequence(
         self,
@@ -250,12 +253,9 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         return result
 
     async def _needs_initial_prioritization(self, question_id: str) -> bool:
-        """Run initial_prioritization iff no judgement or view answers the question yet."""
-        judgements = await self.db.get_judgements_for_question(question_id)
-        if judgements:
-            return False
-        view = await self.db.get_view_for_question(question_id)
-        return view is None
+        """Run initial_prioritization iff no view answers the question yet."""
+        view = get_active_view()
+        return not await view.exists(question_id, self.db)
 
     async def _cancel_initial_call(self) -> None:
         """Mark the eagerly-created initial_prioritization call as complete when it is skipped."""
@@ -336,6 +336,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         context_text, short_id_map = await build_prioritization_context(
             self.db,
             scope_question_id=question_id,
+            current_call_id=self._initial_call.id if self._initial_call else None,
         )
         if self._initial_call is not None:
             p_call = self._initial_call
@@ -399,7 +400,10 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             dispatch_types=list(
                 get_available_calls_preset().initial_prioritization_scouts,
             ),
-            system_prompt=build_system_prompt("two_phase_initial_prioritization"),
+            system_prompt=build_system_prompt(
+                "two_phase_initial_prioritization",
+                include_citations=False,
+            ),
         )
 
         dispatches = list(result.dispatches)
@@ -591,9 +595,26 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             fruit_lines.append("")
             scores_text += "\n".join(fruit_lines)
 
+        # Take the authoritative pool snapshot here — between this point and
+        # the LLM dispatching, peer cycles can only consume more from the pool.
+        # Using a fresh snapshot ensures the budget line and the Coordination
+        # context section agree on what's available.
+        fresh_pool = await self.db.qbp_get(question_id)
+        budget = min(budget, max(fresh_pool.remaining, 0))
+        # If the pool drained between top-of-loop and now (i.e. peer cycles
+        # consumed our slice), bail before calling the LLM with budget 0/-1.
+        # The outer loop will break on the empty result.
+        if budget <= 0:
+            await mark_call_completed(
+                p_call,
+                self.db,
+                "Pool drained by peer cycles before this round could plan.",
+            )
+            return PrioritizationResult(dispatch_sequences=[], call_id=p_call.id)
         context_text, short_id_map = await build_prioritization_context(
             self.db,
             scope_question_id=question_id,
+            current_call_id=p_call.id,
         )
         dispatch_budget = budget if last_call else budget - 1
         budget_line = f"You have a budget of **{dispatch_budget} budget units** to allocate."
@@ -620,8 +641,8 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             "Multi-round scouts (find_considerations, scout_*) cost between 1 and "
             "max_rounds budget units depending on early stopping. Dispatches "
             "targeting a **subquestion** (not the scope question) will have an "
-            "automatic assess appended, adding 1 to the cost. So a scout with "
-            "max_rounds=3 targeting a subquestion costs up to 4 budget units. "
+            "automatic view refresh appended, adding 1 to the cost. So a scout "
+            "with max_rounds=3 targeting a subquestion costs up to 4 budget units. "
             "Web research and assess dispatches cost exactly 1 each. "
             "Recurse costs exactly the budget you assign.\n\n"
             "Plan conservatively: your total worst-case cost across all dispatches "
@@ -655,6 +676,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             extra_dispatch_defs=extra_defs or None,
             system_prompt=build_system_prompt(
                 "two_phase_main_phase_prioritization",
+                include_citations=False,
             ),
             dispatch_budget=dispatch_budget,
         )
@@ -672,10 +694,12 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                         d.payload.question_id[:8],
                     )
                     continue
+                await self.db.qbp_recurse(question_id, resolved, d.payload.budget)
                 child_claim = ClaimInvestigationOrchestrator(
                     self.db,
                     self.broadcaster,
                     budget_cap=d.payload.budget,
+                    pool_pre_registered=True,
                 )
                 child_claim._parent_call_id = p_call.id
                 children.append((child_claim, resolved))
@@ -693,10 +717,12 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                         d.payload.question_id[:8],
                     )
                     continue
+                await self.db.qbp_recurse(question_id, resolved, d.payload.budget)
                 child = TwoPhaseOrchestrator(
                     self.db,
                     self.broadcaster,
                     budget_cap=d.payload.budget,
+                    pool_pre_registered=True,
                 )
                 child._parent_call_id = p_call.id
                 children.append((child, resolved))
@@ -706,17 +732,8 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                     d.payload.budget,
                     d.payload.reason,
                 )
-            elif d.payload.question_id == question_id:
-                sequences.append([d])
             else:
-                assess = Dispatch(
-                    call_type=CallType.ASSESS,
-                    payload=AssessDispatchPayload(
-                        question_id=d.payload.question_id,
-                        reason="Auto-assess after main_phase_prioritization dispatch",
-                    ),
-                )
-                sequences.append([d, assess])
+                sequences.append([d])
 
         all_dispatches = [d for seq in sequences for d in seq]
         all_trace_items = [

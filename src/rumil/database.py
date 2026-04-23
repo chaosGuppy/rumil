@@ -6,6 +6,7 @@ import asyncio
 import logging
 import uuid
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, cast
 
@@ -48,6 +49,26 @@ _Rows = list[dict[str, Any]]
 def _rows(response: Any) -> _Rows:
     """Extract rows from a Supabase API response with proper typing."""
     return cast(_Rows, response.data) if response.data else []
+
+
+@dataclass(frozen=True)
+class QuestionBudgetPool:
+    """Per-question shared budget pool state.
+
+    Multiple prioritisation cycles working on the same question contribute
+    their assigned budget to the pool and draw from it together. The pool
+    is the authoritative stop signal for prio loops; the run-level budget
+    remains the authoritative ceiling.
+    """
+
+    question_id: str
+    contributed: int
+    consumed: int
+    active_calls: int
+
+    @property
+    def remaining(self) -> int:
+        return self.contributed - self.consumed
 
 
 _DB_RETRYABLE_EXCEPTIONS = (
@@ -1660,6 +1681,168 @@ class DB:
         total, used = await self.get_budget()
         return max(0, total - used)
 
+    async def qbp_get(self, question_id: str) -> QuestionBudgetPool:
+        """Read the current pool state for a question.
+
+        Returns a zero-default object when no pool row exists.
+        """
+        rows = _rows(
+            await self._execute(
+                self.client.table("question_budget_pool")
+                .select("contributed, consumed, active_calls")
+                .eq("run_id", self.run_id)
+                .eq("question_id", question_id)
+            )
+        )
+        if not rows:
+            return QuestionBudgetPool(
+                question_id=question_id,
+                contributed=0,
+                consumed=0,
+                active_calls=0,
+            )
+        r = rows[0]
+        return QuestionBudgetPool(
+            question_id=question_id,
+            contributed=r["contributed"],
+            consumed=r["consumed"],
+            active_calls=r["active_calls"],
+        )
+
+    async def qbp_get_many(self, question_ids: Sequence[str]) -> dict[str, QuestionBudgetPool]:
+        """Batched pool fetch. Missing IDs are absent from the returned dict."""
+        if not question_ids:
+            return {}
+        rows = _rows(
+            await self._execute(
+                self.client.table("question_budget_pool")
+                .select("question_id, contributed, consumed, active_calls")
+                .eq("run_id", self.run_id)
+                .in_("question_id", list(question_ids))
+            )
+        )
+        return {
+            r["question_id"]: QuestionBudgetPool(
+                question_id=r["question_id"],
+                contributed=r["contributed"],
+                consumed=r["consumed"],
+                active_calls=r["active_calls"],
+            )
+            for r in rows
+        }
+
+    async def qbp_register(self, question_id: str, contribution: int) -> QuestionBudgetPool:
+        """Add a contribution and increment active_calls for the pool."""
+        result = await self._execute(
+            self.client.rpc(
+                "qbp_register",
+                {
+                    "rid": self.run_id,
+                    "qid": question_id,
+                    "contribution": contribution,
+                },
+            )
+        )
+        rows = cast(list[dict[str, Any]], result.data) or []
+        if not rows:
+            return await self.qbp_get(question_id)
+        r = rows[0]
+        return QuestionBudgetPool(
+            question_id=question_id,
+            contributed=r["contributed"],
+            consumed=r["consumed"],
+            active_calls=r["active_calls"],
+        )
+
+    async def qbp_consume(self, question_id: str, amount: int = 1) -> tuple[int, bool]:
+        """Atomically debit the pool. Returns (remaining, exhausted).
+
+        When no pool row exists, returns a sentinel large positive remaining
+        and ``exhausted=False`` — the run-level budget is the authoritative
+        gate; pool consumption never refuses.
+        """
+        result = await self._execute(
+            self.client.rpc(
+                "qbp_consume",
+                {"rid": self.run_id, "qid": question_id, "amount": amount},
+            )
+        )
+        rows = cast(list[dict[str, Any]], result.data) or []
+        if not rows:
+            return 2147483647, False
+        r = rows[0]
+        return int(r["remaining"]), bool(r["exhausted"])
+
+    async def qbp_unregister(self, question_id: str) -> None:
+        """Decrement active_calls (floored at 0). Leaves contributed/consumed."""
+        await self._execute(
+            self.client.rpc(
+                "qbp_unregister",
+                {"rid": self.run_id, "qid": question_id},
+            )
+        )
+
+    async def qbp_recurse(
+        self,
+        parent_question_id: str,
+        child_question_id: str,
+        amount: int,
+    ) -> None:
+        """Charge the parent pool by ``amount`` and register the child contribution.
+
+        Atomic: peer cycles never see momentarily-doubled budget.
+        """
+        await self._execute(
+            self.client.rpc(
+                "qbp_recurse",
+                {
+                    "rid": self.run_id,
+                    "parent_qid": parent_question_id,
+                    "child_qid": child_question_id,
+                    "amount": amount,
+                },
+            )
+        )
+
+    async def get_active_calls_for_question(
+        self,
+        question_id: str,
+        *,
+        exclude_call_id: str | None = None,
+    ) -> list[Call]:
+        """Return pending/running calls of any type targeting a question.
+
+        Scoped to the current ``run_id``. The optional ``exclude_call_id``
+        filters out the caller's own call so a prio context can omit itself.
+        """
+        query = (
+            self.client.table("calls")
+            .select("*")
+            .eq("scope_page_id", question_id)
+            .eq("run_id", self.run_id)
+            .in_("status", [CallStatus.PENDING.value, CallStatus.RUNNING.value])
+            .order("created_at")
+        )
+        rows = _rows(await self._execute(query))
+        calls = [_row_to_call(r) for r in rows]
+        if exclude_call_id is not None:
+            calls = [c for c in calls if c.id != exclude_call_id]
+        return calls
+
+    async def get_active_prio_pools_for_subquestions(
+        self, parent_question_id: str
+    ) -> list[tuple[str, QuestionBudgetPool]]:
+        """For each direct CHILD_QUESTION of ``parent_question_id``, return
+        (child_id, pool) pairs where the child has at least one active prio cycle.
+        """
+        children = await self.get_child_questions(parent_question_id)
+        if not children:
+            return []
+        pools = await self.qbp_get_many([c.id for c in children])
+        return [
+            (c.id, pools[c.id]) for c in children if c.id in pools and pools[c.id].active_calls > 0
+        ]
+
     async def get_links_between(
         self,
         from_page_id: str,
@@ -2138,29 +2321,26 @@ class DB:
     async def get_project_stats(self, project_id: str) -> dict[str, Any]:
         """Compute aggregate stats for a project via the compute_project_stats RPC.
 
-        Returns a JSONB blob (see supabase/migrations/20260411204240_add_stats_rpcs.sql
-        for the shape). v1 is baseline-only: staged runs are not applied.
+        When this DB is a staged run, the RPC is passed the run_id so baseline
+        rows plus this run's staged rows are counted; mutation events for the
+        run (supersede_page, delete_link) are also overlayed.
         """
-        result = await self._execute(
-            self.client.rpc(
-                "compute_project_stats",
-                {"p_project_id": project_id},
-            )
-        )
+        params: dict[str, Any] = {"p_project_id": project_id}
+        if self.staged:
+            params["p_staged_run_id"] = self.run_id
+        result = await self._execute(self.client.rpc("compute_project_stats", params))
         return cast(dict[str, Any], result.data or {})
 
     async def get_question_stats(self, question_id: str) -> dict[str, Any]:
         """Compute aggregate stats for the 2-hop undirected neighborhood of a question.
 
         Returns the same JSONB shape as get_project_stats plus a subgraph_page_count
-        field. v1 is baseline-only: staged runs are not applied.
+        field. Staged-run visibility mirrors get_project_stats.
         """
-        result = await self._execute(
-            self.client.rpc(
-                "compute_question_stats",
-                {"p_question_id": question_id},
-            )
-        )
+        params: dict[str, Any] = {"p_question_id": question_id}
+        if self.staged:
+            params["p_staged_run_id"] = self.run_id
+        result = await self._execute(self.client.rpc("compute_question_stats", params))
         return cast(dict[str, Any], result.data or {})
 
     async def get_assess_staleness(
@@ -2771,6 +2951,9 @@ class DB:
         for table in ["calls", "pages"]:
             await self._execute(self.client.table(table).delete().eq("run_id", self.run_id))
         await self._execute(self.client.table("budget").delete().eq("run_id", self.run_id))
+        await self._execute(
+            self.client.table("question_budget_pool").delete().eq("run_id", self.run_id)
+        )
         await self._execute(self.client.table("runs").delete().eq("id", self.run_id))
         if delete_project and self.project_id:
             await self._execute(self.client.table("projects").delete().eq("id", self.project_id))

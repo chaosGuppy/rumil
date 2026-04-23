@@ -2,7 +2,7 @@
 
 import contextvars
 import subprocess
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -10,8 +10,6 @@ from typing import Any
 from pydantic import Field
 from pydantic.config import JsonDict
 from pydantic_settings import BaseSettings
-
-from rumil.models import FindConsiderationsMode
 
 _CAPTURE: JsonDict = {"capture": True}
 
@@ -34,7 +32,15 @@ def _capture_field(**kwargs: Any) -> Any:
 
 
 class Settings(BaseSettings):
-    model_config = {"env_file": ".env", "extra": "ignore", "validate_assignment": True}
+    # ".env" is the shared (often symlinked) project env; ".env.local" is a
+    # worktree-local override file written by the workmux post_create hook
+    # (see /Users/chaos-guppy/differential/.workmux.yaml). Later files in the
+    # tuple override earlier ones, so .env.local wins.
+    model_config = {
+        "env_file": (".env", ".env.local"),
+        "extra": "ignore",
+        "validate_assignment": True,
+    }
 
     anthropic_api_key: str = ""
     rumil_test_mode: str = ""
@@ -58,11 +64,10 @@ class Settings(BaseSettings):
 
     assess_call_variant: str = _capture_field(default="default")
     prioritizer_variant: str = _capture_field(default="two_phase")
+    view_variant: str = _capture_field(default="sectioned")
 
     available_moves: str = _capture_field(default="default")
     available_calls: str = _capture_field(default="default")
-
-    find_considerations_modes: str = _capture_field(default="alternate,abstract,concrete")
 
     budget_pacing_enabled: bool = _capture_field(default=True)
 
@@ -78,7 +83,7 @@ class Settings(BaseSettings):
     feedback_investigation_budget: int = _capture_field(default=30)
     ingest_num_claims: int = _capture_field(default=4)
 
-    sonnet_model: str = _capture_field(default="claude-sonnet-4-6")
+    sonnet_model_configured: str = _capture_field(default="claude-sonnet-4-6")
     enable_global_prio: bool = _capture_field(default=False)
     global_prio_budget_fraction: float = _capture_field(default=0.2)
     global_prio_trigger_threshold: int = _capture_field(default=10)
@@ -93,8 +98,8 @@ class Settings(BaseSettings):
     linker_cache_invalidation_threshold: int = _capture_field(default=100)
     subquestion_linker_enabled: bool = _capture_field(default=True)
 
-    max_db_retries: int = _capture_field(default=60)
-    max_api_retries: int = _capture_field(default=60)
+    max_db_retries: int = _capture_field(default=10)
+    max_api_retries: int = _capture_field(default=10)
     max_api_retries_429: int | None = _capture_field(default=None)
     max_api_retries_500: int | None = _capture_field(default=None)
     max_api_retries_529: int | None = _capture_field(default=None)
@@ -117,6 +122,7 @@ class Settings(BaseSettings):
     summary_page_similarity_floor: float = _capture_field(default=0.1)
     big_assess_full_page_similarity_floor: float | None = _capture_field(default=None)
     big_assess_abstract_page_similarity_floor: float | None = _capture_field(default=None)
+    document_floor_delta: float = _capture_field(default=0.25)
 
     @property
     def is_test_mode(self) -> bool:
@@ -135,20 +141,18 @@ class Settings(BaseSettings):
         )
 
     @property
-    def allowed_find_considerations_modes(self) -> Sequence[FindConsiderationsMode]:
-        return [
-            FindConsiderationsMode(m.strip())
-            for m in self.find_considerations_modes.split(",")
-            if m.strip()
-        ]
+    def sonnet_model(self) -> str:
+        if self.is_test_mode or self.is_smoke_test:
+            return self.model
+        return self.sonnet_model_configured
 
     def get_max_retries(self, status: int | None = None) -> int:
         """Return the max retry count, optionally specialized by HTTP status."""
         if status is not None:
             override = getattr(self, f"max_api_retries_{status}", None)
             if override is not None:
-                return override
-        return self.max_api_retries
+                return min(override, 3) if self.is_test_mode else override
+        return min(self.max_api_retries, 3) if self.is_test_mode else self.max_api_retries
 
     @property
     def is_prod_db(self) -> bool:

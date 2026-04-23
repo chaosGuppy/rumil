@@ -14,12 +14,15 @@ from rumil.calls.common import mark_call_completed
 from rumil.calls.dispatches import DISPATCH_DEFS, RECURSE_DISPATCH_DEF, DispatchDef
 from rumil.calls.link_subquestions import LinkSubquestionsCall
 from rumil.calls.prioritization import run_prioritization_call
-from rumil.constants import MIN_TWOPHASE_BUDGET
+from rumil.constants import MIN_EXPERIMENTAL_INITIAL_PRIO_BUDGET, MIN_TWOPHASE_BUDGET
 from rumil.context import build_prioritization_context
 from rumil.database import DB
-from rumil.llm import build_system_prompt
+from rumil.llm import (
+    build_system_prompt,
+    reset_experimental_scout_budget,
+    set_experimental_scout_budget,
+)
 from rumil.models import (
-    AssessDispatchPayload,
     Call,
     CallType,
     Dispatch,
@@ -28,9 +31,8 @@ from rumil.models import (
 )
 from rumil.orchestrators.base import BaseOrchestrator
 from rumil.orchestrators.common import (
+    ExperimentalSubquestionScore,
     PrioritizationResult,
-    SubquestionScore,
-    assess_question,
     score_items_sequentially,
 )
 from rumil.settings import get_settings
@@ -42,11 +44,12 @@ from rumil.tracing.trace_events import (
     DispatchExecutedEvent,
     DispatchTraceItem,
     ErrorEvent,
+    ExperimentalScoringCompletedEvent,
+    ExperimentalSubquestionScoreItem,
     PhaseSkippedEvent,
-    ScoringCompletedEvent,
-    SubquestionScoreItem,
 )
 from rumil.tracing.tracer import CallTrace, set_trace
+from rumil.views import get_active_view
 
 log = logging.getLogger(__name__)
 
@@ -70,6 +73,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         db: DB,
         broadcaster: Broadcaster | None = None,
         budget_cap: int | None = None,
+        pool_pre_registered: bool = False,
     ):
         super().__init__(db, broadcaster)
         self._invocation: int = 0
@@ -83,6 +87,8 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         self._sequence_id: str | None = None
         self._seq_position: int = 0
         self._last_linker_eval_at: datetime | None = None
+        # See TwoPhaseOrchestrator for why this exists.
+        self._pool_pre_registered: bool = pool_pre_registered
 
     def _effective_budget(self, global_remaining: int) -> int:
         if self._budget_cap is not None:
@@ -138,12 +144,19 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             )
             self._sequence_id = seq.id
             self._seq_position = 0
+        budget_token = set_experimental_scout_budget(effective)
+        self.pool_question_id = root_question_id
+        if not self._pool_pre_registered:
+            contribution = self._budget_cap if self._budget_cap is not None else effective
+            await self.db.qbp_register(root_question_id, contribution)
         try:
             while True:
                 remaining = await self.db.budget_remaining()
-                effective = self._effective_budget(remaining)
+                pool = await self.db.qbp_get(root_question_id)
+                effective = min(self._effective_budget(remaining), pool.remaining)
                 if effective <= 0:
                     break
+                set_experimental_scout_budget(effective)
 
                 round_budget = await self._paced_budget(effective)
                 result = await self._get_next_batch(
@@ -194,7 +207,8 @@ class ExperimentalOrchestrator(BaseOrchestrator):
                 self._executed_since_last_plan = True
 
                 if self._invocation > 1:
-                    await assess_question(
+                    view = get_active_view()
+                    await view.refresh(
                         root_question_id,
                         self.db,
                         parent_call_id=self._parent_call_id,
@@ -202,13 +216,17 @@ class ExperimentalOrchestrator(BaseOrchestrator):
                         force=True,
                         sequence_id=self._sequence_id,
                         sequence_position=self._seq_position,
-                        summarise=False,
+                        pool_question_id=self.pool_question_id,
                     )
                     if self._sequence_id is not None:
                         self._seq_position += 1
         finally:
-            await self._teardown()
-            await own_db.close()
+            try:
+                await self.db.qbp_unregister(root_question_id)
+            finally:
+                reset_experimental_scout_budget(budget_token)
+                await self._teardown()
+                await own_db.close()
 
     async def _run_dispatch_sequence(
         self,
@@ -230,14 +248,11 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         return result
 
     async def _needs_initial_prioritization(self, question_id: str) -> bool:
-        """Run initial_prioritization iff no judgement or view answers the question yet."""
-        judgements = await self.db.get_judgements_for_question(question_id)
-        if judgements:
-            return False
-        view = await self.db.get_view_for_question(question_id)
-        return view is None
+        """Run initial_prioritization iff no view answers the question yet."""
+        view = get_active_view()
+        return not await view.exists(question_id, self.db)
 
-    async def _cancel_initial_call(self) -> None:
+    async def _cancel_initial_call(self, reason: str) -> None:
         """Mark the eagerly-created initial_prioritization call as complete when it is skipped."""
         if self._initial_call is None:
             return
@@ -253,13 +268,13 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         await trace.record(
             PhaseSkippedEvent(
                 phase="initial_prioritization",
-                reason="Question already has a judgement or view.",
+                reason=reason,
             )
         )
         await mark_call_completed(
             call,
             self.db,
-            "Initial prioritization skipped — question already has a judgement or view.",
+            f"Initial prioritization skipped — {reason}",
         )
 
     async def _get_next_batch(
@@ -271,14 +286,22 @@ class ExperimentalOrchestrator(BaseOrchestrator):
     ) -> PrioritizationResult:
         if self._invocation == 0:
             self._invocation += 1
-            if await self._needs_initial_prioritization(question_id):
+            effective_remaining = total_remaining if total_remaining is not None else budget
+            if effective_remaining < MIN_EXPERIMENTAL_INITIAL_PRIO_BUDGET:
+                await self._cancel_initial_call(
+                    "Budget too low for initial prioritization "
+                    f"({effective_remaining} < {MIN_EXPERIMENTAL_INITIAL_PRIO_BUDGET}); "
+                    "proceeding straight to main-phase."
+                )
+            elif await self._needs_initial_prioritization(question_id):
                 return await self._initial_prioritization(
                     question_id,
                     budget,
                     parent_call_id,
                     total_remaining=total_remaining,
                 )
-            await self._cancel_initial_call()
+            else:
+                await self._cancel_initial_call("Question already has a judgement or view.")
             self._executed_since_last_plan = True
 
         if not self._executed_since_last_plan:
@@ -330,7 +353,21 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         question_id: str,
         parent_call_id: str | None,
     ) -> None:
-        """Re-run the linker if enough pages have been added since the last evaluation."""
+        """Run the linker if needed.
+
+        Fires when the question has never had a completed linker call (e.g.
+        initial prio was skipped because budget was too low), or when enough
+        pages have been added since this orchestrator's last evaluation to
+        invalidate the cache.
+        """
+        counts = await self.db.get_call_counts_by_type(question_id)
+        if counts.get(CallType.LINK_SUBQUESTIONS.value, 0) == 0:
+            log.info(
+                "No prior linker on question=%s, running now",
+                question_id[:8],
+            )
+            await self._run_subquestion_linker(question_id, parent_call_id)
+            return
         if self._last_linker_eval_at is None:
             return
         settings = get_settings()
@@ -386,6 +423,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         context_text, short_id_map = await build_prioritization_context(
             self.db,
             scope_question_id=question_id,
+            current_call_id=p_call.id,
         )
         trace = CallTrace(p_call.id, self.db, broadcaster=self.broadcaster)
         set_trace(trace)
@@ -423,7 +461,10 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             dispatch_types=list(
                 get_available_calls_preset().initial_prioritization_scouts,
             ),
-            system_prompt=build_system_prompt("two_phase_initial_prioritization"),
+            system_prompt=build_system_prompt(
+                "two_phase_initial_prioritization",
+                include_citations=False,
+            ),
         )
 
         dispatches = list(result.dispatches)
@@ -528,8 +569,8 @@ class ExperimentalOrchestrator(BaseOrchestrator):
                 parent_page=parent_question,
                 parent_judgement=parent_judgement,
                 items=child_questions,
-                system_prompt_name="score_subquestions",
-                response_model=SubquestionScore,
+                system_prompt_name="score_subquestions_experimental",
+                response_model=ExperimentalSubquestionScore,
                 call_id=p_call.id,
                 db=self.db,
             )
@@ -541,8 +582,8 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         scout_fruit: dict[str, int | None] = scoring_results[1]
 
         await trace.record(
-            ScoringCompletedEvent(
-                subquestion_scores=[SubquestionScoreItem(**s) for s in subq_scores],
+            ExperimentalScoringCompletedEvent(
+                subquestion_scores=[ExperimentalSubquestionScoreItem(**s) for s in subq_scores],
                 per_type_fruit=[
                     CallTypeFruitScoreItem(call_type=ct, fruit=f or 0, reasoning="")
                     for ct, f in scout_fruit.items()
@@ -554,13 +595,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         if subq_scores:
             lines = ["## Subquestion Scores", ""]
             for s in subq_scores:
-                lines.append(
-                    f"- `{s['question_id']}` — {s['headline']}: "
-                    f"impact_on_q={s['impact_on_question']}, "
-                    f"broader={s['broader_impact']}, "
-                    f"fruit={s['fruit']} "
-                    f"({s['reasoning']})"
-                )
+                lines.append(f"- `{s['question_id']}` — {s['headline']}\n    {s['impact_curve']}")
             lines.append("")
             scores_text = "\n".join(lines)
 
@@ -573,9 +608,25 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             fruit_lines.append("")
             scores_text += "\n".join(fruit_lines)
 
+        # Take the authoritative pool snapshot here — between this point and
+        # the LLM dispatching, peer cycles can only consume more from the pool.
+        # Using a fresh snapshot ensures the budget line and the Coordination
+        # context section agree on what's available.
+        fresh_pool = await self.db.qbp_get(question_id)
+        budget = min(budget, max(fresh_pool.remaining, 0))
+        # If the pool drained between top-of-loop and now (i.e. peer cycles
+        # consumed our slice), bail before calling the LLM with budget 0/-1.
+        if budget <= 1:
+            await mark_call_completed(
+                p_call,
+                self.db,
+                "Pool drained by peer cycles before this round could plan.",
+            )
+            return PrioritizationResult(dispatch_sequences=[], call_id=p_call.id)
         context_text, short_id_map = await build_prioritization_context(
             self.db,
             scope_question_id=question_id,
+            current_call_id=p_call.id,
         )
         dispatch_budget = budget - 1
         budget_line = f"You have a budget of **{dispatch_budget} budget units** to allocate."
@@ -591,8 +642,8 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             "Multi-round scouts (find_considerations, scout_*) cost between 1 and "
             "max_rounds budget units depending on early stopping. Dispatches "
             "targeting a **subquestion** (not the scope question) will have an "
-            "automatic assess appended, adding 1 to the cost. So a scout with "
-            "max_rounds=3 targeting a subquestion costs up to 4 budget units. "
+            "automatic view refresh appended, adding 1 to the cost. So a scout "
+            "with max_rounds=3 targeting a subquestion costs up to 4 budget units. "
             "Web research and assess dispatches cost exactly 1 each. "
             "Recurse costs exactly the budget you assign.\n\n"
             "Plan conservatively: your total worst-case cost across all dispatches "
@@ -623,7 +674,8 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             ),
             extra_dispatch_defs=extra_defs or None,
             system_prompt=build_system_prompt(
-                "two_phase_main_phase_prioritization",
+                "two_phase_main_phase_prioritization_experimental",
+                include_citations=False,
             ),
             dispatch_budget=dispatch_budget,
         )
@@ -639,10 +691,12 @@ class ExperimentalOrchestrator(BaseOrchestrator):
                         d.payload.question_id[:8],
                     )
                     continue
+                await self.db.qbp_recurse(question_id, resolved, d.payload.budget)
                 child = ExperimentalOrchestrator(
                     self.db,
                     self.broadcaster,
                     budget_cap=d.payload.budget,
+                    pool_pre_registered=True,
                 )
                 child._parent_call_id = p_call.id
                 children.append((child, resolved))
@@ -652,17 +706,8 @@ class ExperimentalOrchestrator(BaseOrchestrator):
                     d.payload.budget,
                     d.payload.reason,
                 )
-            elif d.payload.question_id == question_id:
-                sequences.append([d])
             else:
-                assess = Dispatch(
-                    call_type=CallType.ASSESS,
-                    payload=AssessDispatchPayload(
-                        question_id=d.payload.question_id,
-                        reason="Auto-assess after main_phase_prioritization dispatch",
-                    ),
-                )
-                sequences.append([d, assess])
+                sequences.append([d])
 
         all_dispatches = [d for seq in sequences for d in seq]
         all_trace_items = [

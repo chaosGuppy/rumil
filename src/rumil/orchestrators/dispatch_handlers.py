@@ -55,11 +55,10 @@ from rumil.models import (
 )
 from rumil.orchestrators.common import (
     assess_question,
-    create_view_for_question,
     find_considerations_until_done,
-    update_view_for_question,
     web_research_question,
 )
+from rumil.views import get_active_view
 
 if TYPE_CHECKING:
     from rumil.orchestrators.base import BaseOrchestrator
@@ -87,6 +86,10 @@ class DispatchContext:
     sequence_position: int | None
     d_label: str
 
+    @property
+    def pool_question_id(self) -> str | None:
+        return self.orchestrator.pool_question_id
+
 
 DispatchHandler = Callable[[DispatchContext, BaseDispatchPayload], Awaitable[str | None]]
 
@@ -96,9 +99,8 @@ async def _handle_find_considerations(
 ) -> str | None:
     assert isinstance(payload, ScoutDispatchPayload)
     log.info(
-        "Dispatch: find_considerations on %s (mode=%s, fruit_threshold=%d, max_rounds=%d) — %s",
+        "Dispatch: find_considerations on %s (fruit_threshold=%d, max_rounds=%d) — %s",
         ctx.d_label,
-        payload.mode.value,
         payload.fruit_threshold,
         payload.max_rounds,
         payload.reason,
@@ -110,32 +112,33 @@ async def _handle_find_considerations(
         fruit_threshold=payload.fruit_threshold,
         parent_call_id=ctx.parent_call_id,
         context_page_ids=payload.context_page_ids,
-        mode=payload.mode,
         broadcaster=ctx.orchestrator.broadcaster,
         force=ctx.force,
         call_id=ctx.call_id,
         sequence_id=ctx.sequence_id,
         sequence_position=ctx.sequence_position,
+        pool_question_id=ctx.pool_question_id,
     )
     return child_ids[0] if child_ids else None
 
 
 async def _handle_assess(ctx: DispatchContext, payload: BaseDispatchPayload) -> str | None:
-    """Assess dispatch with view-redirect.
+    """Assess dispatch with view-refresh shortcut.
 
-    If the target question already has a view, redirect to update_view_for_question
-    (incremental view update). Otherwise run a normal assess call.
+    If the active view variant already has data for the target, refresh it
+    (for sectioned: UpdateView; for judgement: a fresh assess). Otherwise
+    run a normal assess call.
     """
     assert isinstance(payload, AssessDispatchPayload)
     db = ctx.orchestrator.db
-    existing_view = await db.get_view_for_question(ctx.resolved_question_id)
-    if existing_view:
+    view = get_active_view()
+    if await view.exists(ctx.resolved_question_id, db):
         log.info(
-            "Dispatch: assess redirected to update_view for %s (has view) — %s",
+            "Dispatch: assess redirected to view.refresh for %s — %s",
             ctx.d_label,
             payload.reason,
         )
-        return await update_view_for_question(
+        return await view.refresh(
             ctx.resolved_question_id,
             db,
             parent_call_id=ctx.parent_call_id,
@@ -145,6 +148,7 @@ async def _handle_assess(ctx: DispatchContext, payload: BaseDispatchPayload) -> 
             call_id=ctx.call_id,
             sequence_id=ctx.sequence_id,
             sequence_position=ctx.sequence_position,
+            pool_question_id=ctx.pool_question_id,
         )
     log.info("Dispatch: assess on %s — %s", ctx.d_label, payload.reason)
     return await assess_question(
@@ -158,10 +162,13 @@ async def _handle_assess(ctx: DispatchContext, payload: BaseDispatchPayload) -> 
         sequence_id=ctx.sequence_id,
         sequence_position=ctx.sequence_position,
         summarise=ctx.orchestrator.summarise_before_assess,
+        pool_question_id=ctx.pool_question_id,
     )
 
 
 async def _handle_create_view(ctx: DispatchContext, payload: BaseDispatchPayload) -> str | None:
+    from rumil.views.sectioned import create_view_for_question
+
     assert isinstance(payload, CreateViewDispatchPayload)
     log.info("Dispatch: create_view on %s — %s", ctx.d_label, payload.reason)
     return await create_view_for_question(
@@ -189,6 +196,7 @@ async def _handle_web_research(ctx: DispatchContext, payload: BaseDispatchPayloa
         call_id=ctx.call_id,
         sequence_id=ctx.sequence_id,
         sequence_position=ctx.sequence_position,
+        pool_question_id=ctx.pool_question_id,
     )
 
 

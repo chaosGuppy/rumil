@@ -20,7 +20,6 @@ from rumil.context import build_prioritization_context
 from rumil.database import DB
 from rumil.llm import build_system_prompt
 from rumil.models import (
-    AssessDispatchPayload,
     Call,
     CallType,
     Dispatch,
@@ -33,7 +32,6 @@ from rumil.orchestrators.base import BaseOrchestrator
 from rumil.orchestrators.common import (
     ClaimScore,
     PrioritizationResult,
-    assess_question,
     compute_priority_score,
     score_items_sequentially,
 )
@@ -50,6 +48,7 @@ from rumil.tracing.trace_events import (
     ScoringCompletedEvent,
 )
 from rumil.tracing.tracer import CallTrace, set_trace
+from rumil.views import get_active_view
 
 log = logging.getLogger(__name__)
 
@@ -69,6 +68,7 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
         db: DB,
         broadcaster: Broadcaster | None = None,
         budget_cap: int | None = None,
+        pool_pre_registered: bool = False,
     ):
         super().__init__(db, broadcaster)
         self._invocation: int = 0
@@ -81,6 +81,10 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
         self._parent_call_id: str | None = None
         self._sequence_id: str | None = None
         self._seq_position: int = 0
+        # See TwoPhaseOrchestrator for why this exists. When True, the
+        # parent already registered our contribution via qbp_recurse, so
+        # run() must not double-register.
+        self._pool_pre_registered: bool = pool_pre_registered
 
     def _effective_budget(self, global_remaining: int) -> int:
         if self._budget_cap is not None:
@@ -132,10 +136,15 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
             )
             self._sequence_id = seq.id
             self._seq_position = 0
+        self.pool_question_id = claim_id
+        if not self._pool_pre_registered:
+            contribution = self._budget_cap if self._budget_cap is not None else effective
+            await self.db.qbp_register(claim_id, contribution)
         try:
             while True:
                 remaining = await self.db.budget_remaining()
-                effective = self._effective_budget(remaining)
+                pool = await self.db.qbp_get(claim_id)
+                effective = min(self._effective_budget(remaining), pool.remaining)
                 if effective <= 0:
                     break
 
@@ -193,7 +202,8 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
                 self._executed_since_last_plan = True
 
                 if self._invocation > 1 or last_call:
-                    await assess_question(
+                    view = get_active_view()
+                    await view.refresh(
                         claim_id,
                         self.db,
                         parent_call_id=self._parent_call_id,
@@ -201,15 +211,19 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
                         force=True,
                         sequence_id=self._sequence_id,
                         sequence_position=self._seq_position,
+                        pool_question_id=self.pool_question_id,
                     )
                     if self._sequence_id is not None:
-                        self._seq_position += 2
+                        self._seq_position += 1
 
                 if last_call:
                     break
         finally:
-            await self._teardown()
-            await own_db.close()
+            try:
+                await self.db.qbp_unregister(claim_id)
+            finally:
+                await self._teardown()
+                await own_db.close()
 
     async def _run_dispatch_sequence(
         self,
@@ -314,6 +328,7 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
         context_text, short_id_map = await build_prioritization_context(
             self.db,
             scope_question_id=claim_id,
+            current_call_id=self._initial_call.id if self._initial_call else None,
         )
         if self._initial_call is not None:
             p_call = self._initial_call
@@ -373,7 +388,10 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
             self.db,
             short_id_map=short_id_map,
             dispatch_types=list(get_available_calls_preset().claim_phase1_scouts),
-            system_prompt=build_system_prompt("claim_investigation_p1"),
+            system_prompt=build_system_prompt(
+                "claim_investigation_p1",
+                include_citations=False,
+            ),
         )
 
         dispatches = list(result.dispatches)
@@ -530,9 +548,25 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
             fruit_lines.append("")
             scores_text += "\n".join(fruit_lines)
 
+        # Take the authoritative pool snapshot here — between this point and
+        # the LLM dispatching, peer cycles can only consume more from the pool.
+        # Using a fresh snapshot ensures the budget line and the Coordination
+        # context section agree on what's available.
+        fresh_pool = await self.db.qbp_get(claim_id)
+        budget = min(budget, max(fresh_pool.remaining, 0))
+        # If the pool drained between top-of-loop and now (i.e. peer cycles
+        # consumed our slice), bail before calling the LLM with budget 0.
+        if budget <= 0:
+            await mark_call_completed(
+                p_call,
+                self.db,
+                "Pool drained by peer cycles before this round could plan.",
+            )
+            return PrioritizationResult(dispatch_sequences=[], call_id=p_call.id)
         context_text, short_id_map = await build_prioritization_context(
             self.db,
             scope_question_id=claim_id,
+            current_call_id=p_call.id,
         )
         budget_line = f"You have a budget of **{budget} budget units** to allocate."
         if last_call:
@@ -573,7 +607,10 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
             short_id_map=short_id_map,
             dispatch_types=list(get_available_calls_preset().claim_phase2_dispatch),
             extra_dispatch_defs=extra_defs or None,
-            system_prompt=build_system_prompt("claim_investigation_p2"),
+            system_prompt=build_system_prompt(
+                "claim_investigation_p2",
+                include_citations=False,
+            ),
             dispatch_budget=budget,
         )
 
@@ -588,10 +625,12 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
                         d.payload.question_id[:8],
                     )
                     continue
+                await self.db.qbp_recurse(claim_id, resolved, d.payload.budget)
                 child = ClaimInvestigationOrchestrator(
                     self.db,
                     self.broadcaster,
                     budget_cap=d.payload.budget,
+                    pool_pre_registered=True,
                 )
                 child._parent_call_id = p_call.id
                 children.append((child, resolved))
@@ -609,10 +648,12 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
                         d.payload.question_id[:8],
                     )
                     continue
+                await self.db.qbp_recurse(claim_id, resolved, d.payload.budget)
                 child = TwoPhaseOrchestrator(
                     self.db,
                     self.broadcaster,
                     budget_cap=d.payload.budget,
+                    pool_pre_registered=True,
                 )
                 child._parent_call_id = p_call.id
                 children.append((child, resolved))
@@ -622,17 +663,8 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
                     d.payload.budget,
                     d.payload.reason,
                 )
-            elif d.payload.question_id == claim_id:
-                sequences.append([d])
             else:
-                assess = Dispatch(
-                    call_type=CallType.ASSESS,
-                    payload=AssessDispatchPayload(
-                        question_id=d.payload.question_id,
-                        reason="Auto-assess after phase-2 dispatch",
-                    ),
-                )
-                sequences.append([d, assess])
+                sequences.append([d])
 
         all_dispatches = [d for seq in sequences for d in seq]
         all_trace_items = [

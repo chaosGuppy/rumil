@@ -28,8 +28,6 @@ from rumil.calls.common import (
 from rumil.calls.dispatches import (
     DISPATCH_DEFS,
     RECURSE_DISPATCH_DEF,
-    filter_mode_schema,
-    make_mode_validator,
 )
 from rumil.constants import (
     MAX_PROPAGATION_REASSESS,
@@ -58,7 +56,6 @@ from rumil.models import (
 from rumil.moves.base import MoveState
 from rumil.moves.registry import MOVES
 from rumil.orchestrators.base import BaseOrchestrator
-from rumil.orchestrators.common import assess_question
 from rumil.orchestrators.experimental import ExperimentalOrchestrator
 from rumil.orchestrators.two_phase import TwoPhaseOrchestrator
 from rumil.settings import get_settings
@@ -72,6 +69,7 @@ from rumil.tracing.trace_events import (
     GlobalPhaseCompletedEvent,
 )
 from rumil.tracing.tracer import CallTrace, set_trace
+from rumil.views import get_active_view
 from rumil.workspace_exploration import (
     make_explore_subgraph_tool,
     make_load_page_tool,
@@ -386,6 +384,12 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
         self._local_task: asyncio.Task | None = None  # type: ignore[type-arg]
         self._messages: list[dict] = []
         self._turn_count: int = 0
+
+        variant = get_settings().prioritizer_variant
+        if variant == "experimental":
+            self.summarise_before_assess = ExperimentalOrchestrator.summarise_before_assess
+        elif variant == "two_phase":
+            self.summarise_before_assess = TwoPhaseOrchestrator.summarise_before_assess
 
     async def run(self, root_question_id: str) -> None:
         own_db = await self.db.fork()
@@ -822,9 +826,6 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
             make_load_page_tool(self.db, trace, default_detail="content"),
         ]
 
-        allowed_fc_modes = get_settings().allowed_find_considerations_modes
-        state._dispatch_validators.append(make_mode_validator(allowed_fc_modes))
-
         create_tools: list[Tool] = []
         for mt in [MoveType.CREATE_QUESTION, MoveType.LINK_CHILD_QUESTION]:
             create_tools.append(MOVES[mt].bind(state))
@@ -835,11 +836,6 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
                 state,
                 scope_question_id=root_question_id,
             )
-            if ct == CallType.FIND_CONSIDERATIONS:
-                tool.input_schema = filter_mode_schema(
-                    tool.input_schema,
-                    allowed_fc_modes,
-                )
             create_tools.append(tool)
 
         remaining_global = self._global_cap - self._global_consumed
@@ -1087,11 +1083,6 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
             headline = question["headline"]
             dispatch_state = MoveState(call, self.db)
 
-            allowed_fc_modes = get_settings().allowed_find_considerations_modes
-            dispatch_state._dispatch_validators.append(
-                make_mode_validator(allowed_fc_modes),
-            )
-
             user_msg = (
                 "**You are now in Phase 4: Dispatch.** "
                 "Dispatch research on this newly created cross-cutting "
@@ -1192,11 +1183,12 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
             return 0
 
         assessed = 0
+        view = get_active_view()
         for qid in stale_ids:
             if self._global_consumed >= self._global_cap:
                 break
             try:
-                call_id = await assess_question(
+                call_id = await view.refresh(
                     qid,
                     self.db,
                     parent_call_id=parent_call_id,
@@ -1207,12 +1199,12 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
                     self._global_consumed += 1
                     assessed += 1
                     log.info(
-                        "Global post-dispatch assess: question=%s",
+                        "Global post-dispatch refresh: question=%s",
                         qid[:8],
                     )
             except Exception:
                 log.warning(
-                    "Global post-dispatch assess failed: %s",
+                    "Global post-dispatch refresh failed: %s",
                     qid[:8],
                     exc_info=True,
                 )
@@ -1261,11 +1253,12 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
             return 0
 
         reassessed = 0
+        view = get_active_view()
         for qid in ordered_nodes:
             if self._global_consumed >= self._global_cap:
                 break
             try:
-                call_id = await assess_question(
+                call_id = await view.refresh(
                     qid,
                     self.db,
                     parent_call_id=parent_call_id,
@@ -1276,12 +1269,12 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
                     self._global_consumed += 1
                     reassessed += 1
                     log.info(
-                        "Global propagation: re-assessed question %s",
+                        "Global propagation: refreshed question %s",
                         qid[:8],
                     )
             except Exception:
                 log.warning(
-                    "Global propagation: failed to re-assess %s",
+                    "Global propagation: failed to refresh %s",
                     qid[:8],
                     exc_info=True,
                 )

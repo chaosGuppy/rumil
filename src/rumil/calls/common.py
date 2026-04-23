@@ -12,8 +12,6 @@ import anthropic
 from anthropic.types import TextBlock, ToolUseBlock
 from pydantic import BaseModel, Field
 
-from rumil.available_moves import get_moves_for_call
-from rumil.context import format_page
 from rumil.database import DB
 from rumil.embeddings import embed_and_store_page
 from rumil.llm import (
@@ -22,7 +20,6 @@ from rumil.llm import (
     RoundRecord,
     Tool,
     ToolCall,
-    build_system_prompt,
     build_user_message,
     call_api,
     structured_call,
@@ -30,16 +27,12 @@ from rumil.llm import (
 from rumil.models import (
     Call,
     CallStatus,
-    CallType,
     Dispatch,
     Move,
     MoveType,
     Page,
-    PageDetail,
 )
 from rumil.moves.base import MoveState
-from rumil.moves.load_page import LoadPagePayload
-from rumil.moves.registry import MOVES
 from rumil.settings import get_settings
 from rumil.tracing.trace_events import (
     ErrorEvent,
@@ -61,15 +54,6 @@ PAGE_ID_FIELDS: dict[MoveType, list[str]] = {
     MoveType.FLAG_FUNNINESS: ["page_id"],
     MoveType.REPORT_DUPLICATE: ["page_id_a", "page_id_b"],
 }
-
-
-PHASE1_TASK = (
-    "Perform your preliminary analysis now. Review the workspace map above and "
-    "load all pages you expect to want during your main task — err on the side of "
-    "loading more rather than fewer. This is your only chance to gather context "
-    "before the main task begins; load everything relevant in one go. "
-    "The main task description will follow in the next turn."
-)
 
 
 async def execute_tool_uses(
@@ -179,8 +163,8 @@ async def run_single_call(
 ) -> AgentResult:
     """Single LLM call with tools, plus exchange/trace persistence.
 
-    Executes tool calls but does NOT loop back. Used for phase-1 page
-    loading, single-call prioritization, and review link modification.
+    Executes tool calls but does NOT loop back. Used for single-call
+    prioritization and review link modification.
 
     Pass `messages` to resume a prior conversation, or `user_message` for
     a fresh single-turn call.
@@ -508,166 +492,12 @@ class ReviewResponse(BaseModel):
 
 @dataclass
 class RunCallResult:
-    """Result of a run_call invocation."""
+    """Result of an LLM-driven call invocation."""
 
     created_page_ids: list[str] = field(default_factory=list)
     dispatches: list[Dispatch] = field(default_factory=list)
     moves: list[Move] = field(default_factory=list)
-    phase1_page_ids: list[str] = field(default_factory=list)
     agent_result: AgentResult = field(default_factory=AgentResult)
-
-
-async def _format_loaded_pages(page_ids: Sequence[str], db: DB) -> str:
-    """Format loaded pages as context text for phase 2."""
-    pages = await db.get_pages_by_ids(page_ids)
-    parts = []
-    for pid in page_ids:
-        page = pages.get(pid)
-        if page:
-            parts.append(
-                f"### Page `{pid[:8]}`\n\n"
-                f"{await format_page(page, PageDetail.HEADLINE, db=db, track=True, track_tags={'source': 'phase1'})}"
-            )
-    return "\n\n---\n\n".join(parts)
-
-
-async def _run_phase1(
-    system_prompt: str,
-    context_text: str,
-    call_id: str,
-    state: MoveState,
-    db: DB,
-) -> list[str]:
-    """Preliminary page loading via single LLM call with load_page tool.
-
-    Returns resolved full page IDs. Free (not counted against budget).
-    """
-    log.debug("Phase 1 starting: context_len=%d", len(context_text))
-    try:
-        phase1_msg = build_user_message(context_text, PHASE1_TASK)
-        load_page_tool = MOVES[MoveType.LOAD_PAGE].bind(state)
-        result = await run_single_call(
-            system_prompt=system_prompt,
-            user_message=phase1_msg,
-            tools=[load_page_tool],
-            call_id=call_id,
-            phase="initial_page_loads",
-            db=db,
-            state=state,
-        )
-        loaded_ids = []
-        for tc in result.tool_calls:
-            if tc.name == "load_page":
-                full_id = await state.db.resolve_page_id(tc.input.get("page_id", ""))
-                if full_id:
-                    loaded_ids.append(full_id)
-        if loaded_ids:
-            labels = [await state.db.page_label(pid) for pid in loaded_ids]
-            log.info("Phase 1 loaded %d pages: %s", len(loaded_ids), labels)
-        else:
-            log.debug("Phase 1 completed with no pages loaded")
-        return loaded_ids
-    except Exception as e:
-        log.warning("Phase 1 skipped due to error: %s", e, exc_info=True)
-        trace = get_trace()
-        if trace:
-            await trace.record(
-                ErrorEvent(
-                    message=f"Phase 1 skipped: {e}",
-                    phase="initial_page_loads",
-                )
-            )
-        return []
-
-
-async def run_call(
-    call_type: CallType,
-    task_description: str,
-    context_text: str,
-    call: Call,
-    db: DB,
-    *,
-    available_moves: list[MoveType] | None = None,
-    max_rounds: int | None = None,
-    state: MoveState | None = None,
-) -> RunCallResult:
-    """Run a workspace call (assess/ingest) with tool use.
-
-    Runs a preliminary phase where the LLM can load pages before starting
-    its main work. Moves are executed immediately when the LLM calls them.
-    Returns a RunCallResult with created page IDs, dispatches, and the
-    raw agent result.
-    """
-
-    if max_rounds is None and not get_settings().is_smoke_test:
-        max_rounds = 3
-
-    log.info(
-        "run_call: type=%s, call=%s, scope=%s",
-        call_type.value,
-        call.id[:8],
-        call.scope_page_id[:8] if call.scope_page_id else None,
-    )
-
-    if available_moves is None:
-        available_moves = list(get_moves_for_call(call_type))
-
-    if state is None:
-        state = MoveState(call, db)
-    system_prompt = build_system_prompt(call_type.value)
-
-    phase1_ids: list[str] = []
-    phase1_ids = await _run_phase1(
-        system_prompt,
-        context_text,
-        call.id,
-        state,
-        db,
-    )
-    if phase1_ids:
-        extra_text = await _format_loaded_pages(phase1_ids, db)
-        context_text = context_text + "\n\n## Loaded Pages\n\n" + extra_text
-
-    tools = [MOVES[mt].bind(state) for mt in available_moves]
-    user_message = build_user_message(context_text, task_description)
-
-    agent_result = await run_agent_loop(
-        system_prompt,
-        user_message,
-        tools,
-        call_id=call.id,
-        db=db,
-        state=state,
-        max_rounds=max_rounds,
-    )
-
-    log.info(
-        "run_call complete: type=%s, pages_created=%d, dispatches=%d, moves=%d",
-        call_type.value,
-        len(state.created_page_ids),
-        len(state.dispatches),
-        len(state.moves),
-    )
-    return RunCallResult(
-        created_page_ids=state.created_page_ids,
-        dispatches=state.dispatches,
-        moves=state.moves,
-        phase1_page_ids=phase1_ids,
-        agent_result=agent_result,
-    )
-
-
-async def extract_loaded_page_ids(result: RunCallResult, db: DB) -> list[str]:
-    """Extract full page IDs for LOAD_PAGE moves from phase 2 only."""
-    phase1_set = set(result.phase1_page_ids)
-    loaded = []
-    for m in result.moves:
-        if m.move_type == MoveType.LOAD_PAGE:
-            assert isinstance(m.payload, LoadPagePayload)
-            full_id = await db.resolve_page_id(m.payload.page_id)
-            if full_id and full_id not in phase1_set:
-                loaded.append(full_id)
-    return loaded
 
 
 async def resolve_page_refs(page_ids: Sequence[str], db: DB) -> list[PageRef]:

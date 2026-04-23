@@ -10,10 +10,9 @@ import anthropic
 from anthropic.types import ServerToolUseBlock, ToolUseBlock
 from pydantic import BaseModel, Field
 
+from rumil.budget import _consume_budget
 from rumil.calls.common import (
-    RunCallResult,
     execute_tool_uses,
-    extract_loaded_page_ids,
     prepare_tools,
     record_round_moves,
     run_agent_loop,
@@ -29,12 +28,12 @@ from rumil.llm import (
 )
 from rumil.models import (
     CallType,
-    FindConsiderationsMode,
     MoveType,
 )
 from rumil.moves.create_claim import (
     execute_with_source_creation,
 )
+from rumil.moves.load_page import LoadPagePayload
 from rumil.moves.registry import MOVES
 from rumil.settings import get_settings
 
@@ -68,9 +67,7 @@ class SimpleAgentLoop(WorkspaceUpdater):
         if max_rounds is None:
             max_rounds = 1 if settings.is_smoke_test else 3
 
-        infra.state.context_page_ids = (
-            set(context.working_page_ids) | set(context.preloaded_ids) | set(context.phase1_ids)
-        )
+        infra.state.context_page_ids = set(context.working_page_ids) | set(context.preloaded_ids)
         moves_list = (
             list(self._available_moves) if self._available_moves is not None else list(MoveType)
         )
@@ -100,18 +97,16 @@ class SimpleAgentLoop(WorkspaceUpdater):
             len(infra.state.moves),
         )
 
-        result = RunCallResult(
-            created_page_ids=infra.state.created_page_ids,
-            dispatches=infra.state.dispatches,
-            moves=infra.state.moves,
-            phase1_page_ids=context.phase1_ids,
-            agent_result=agent_result,
-        )
-
-        phase2_loaded = await extract_loaded_page_ids(result, infra.db)
-        all_loaded_ids = list(
-            dict.fromkeys([*context.preloaded_ids, *context.phase1_ids, *phase2_loaded])
-        )
+        loaded_raw: list[str] = []
+        for move in infra.state.moves:
+            if move.move_type is MoveType.LOAD_PAGE and isinstance(move.payload, LoadPagePayload):
+                loaded_raw.append(move.payload.page_id)
+        resolved_loaded: list[str] = []
+        for raw in loaded_raw:
+            full = await infra.db.resolve_page_id(raw)
+            if full:
+                resolved_loaded.append(full)
+        all_loaded_ids = list(dict.fromkeys([*context.preloaded_ids, *resolved_loaded]))
 
         return UpdateResult(
             created_page_ids=infra.state.created_page_ids,
@@ -122,20 +117,11 @@ class SimpleAgentLoop(WorkspaceUpdater):
         )
 
 
-_CONCRETE_INSTRUCTION = (
-    "\n\n**Mode: CONCRETE**\n\n"
-    "Your goal is considerations, sub-questions, and hypotheses that are as specific "
-    "and falsifiable as possible. Concreteness means: named actors, specific timeframes, "
-    "quantitative claims, named mechanisms, particular cases. A concrete claim should be "
-    "possible to be clearly wrong about — that is what makes it valuable.\n\n"
-    "Concrete scouts are expected to produce claims that subsequent investigation may "
-    "refute. That is a feature, not a failure. Do not hedge your way back to vagueness."
-)
-
 _CONTINUE_TEMPLATE = (
-    "Continue scouting this question. You have already made contributions in "
-    "prior rounds (visible above). Focus on NEW angles, evidence, or "
-    "sub-questions you have not yet covered.{mode_instruction}\n\n"
+    "Continue this task. You have already made contributions in prior rounds "
+    "(visible above). Focus on NEW angles, evidence, or sub-questions you "
+    "have not yet covered — prioritise those that would most add to the "
+    "eventual judgement on this question.\n\n"
     "Question ID: `{question_id}`"
 )
 
@@ -145,16 +131,6 @@ _FRUIT_CHECK_MESSAGE = (
     "angles are left unexplored. Respond with remaining_fruit (0-10) and "
     "brief_reasoning. Do not call any tools — they will have no effect here."
 )
-
-
-def _resolve_round_mode(mode: FindConsiderationsMode, round_index: int) -> FindConsiderationsMode:
-    if mode == FindConsiderationsMode.ALTERNATE:
-        return (
-            FindConsiderationsMode.ABSTRACT
-            if round_index % 2 == 0
-            else FindConsiderationsMode.CONCRETE
-        )
-    return mode
 
 
 class _FruitCheck(BaseModel):
@@ -176,14 +152,12 @@ class MultiRoundLoop(WorkspaceUpdater):
         self,
         max_rounds: int,
         fruit_threshold: int,
-        mode: FindConsiderationsMode | None = None,
         available_moves: Sequence[MoveType] | None = None,
         call_type: CallType = CallType.FIND_CONSIDERATIONS,
         task_description: str | None = None,
     ) -> None:
         self._max_rounds = max_rounds
         self._fruit_threshold = fruit_threshold
-        self._mode = mode
         self._available_moves = available_moves
         self._call_type = call_type
         self._task_description = task_description
@@ -193,9 +167,7 @@ class MultiRoundLoop(WorkspaceUpdater):
         infra: CallInfra,
         context: ContextResult,
     ) -> UpdateResult:
-        infra.state.context_page_ids = (
-            set(context.working_page_ids) | set(context.preloaded_ids) | set(context.phase1_ids)
-        )
+        infra.state.context_page_ids = set(context.working_page_ids) | set(context.preloaded_ids)
         moves_list = (
             list(self._available_moves) if self._available_moves is not None else list(MoveType)
         )
@@ -206,12 +178,9 @@ class MultiRoundLoop(WorkspaceUpdater):
         if self._task_description is not None:
             task = self._task_description
         else:
-            round_mode = _resolve_round_mode(self._mode or FindConsiderationsMode.ALTERNATE, 0)
-            mode_instruction = (
-                _CONCRETE_INSTRUCTION if round_mode == FindConsiderationsMode.CONCRETE else ""
-            )
             task = (
-                f"Scout for missing considerations on this question.{mode_instruction}\n\n"
+                "Generate considerations that would most improve the next "
+                "judgement on this question.\n\n"
                 "Question ID (use this when linking considerations): "
                 f"`{infra.question_id}`"
             )
@@ -222,7 +191,7 @@ class MultiRoundLoop(WorkspaceUpdater):
         last_fruit_score: int | None = None
 
         for i in range(self._max_rounds):
-            if not await infra.db.consume_budget(1):
+            if not await _consume_budget(infra.db, pool_question_id=infra.pool_question_id):
                 log.info(
                     "Budget exhausted, stopping scout session at round %d",
                     i,
@@ -240,17 +209,7 @@ class MultiRoundLoop(WorkspaceUpdater):
                     cache=True,
                 )
             else:
-                if self._mode is not None:
-                    round_mode = _resolve_round_mode(self._mode, i)
-                    mi = (
-                        _CONCRETE_INSTRUCTION
-                        if round_mode == FindConsiderationsMode.CONCRETE
-                        else ""
-                    )
-                else:
-                    mi = ""
                 continue_msg = _CONTINUE_TEMPLATE.format(
-                    mode_instruction=mi,
                     question_id=infra.question_id,
                 )
                 resume_messages.append({"role": "user", "content": continue_msg})
@@ -350,9 +309,7 @@ class WebResearchLoop(WorkspaceUpdater):
         max_rounds = 2 if settings.is_smoke_test else 5
         client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
 
-        infra.state.context_page_ids = (
-            set(context.working_page_ids) | set(context.preloaded_ids) | set(context.phase1_ids)
-        )
+        infra.state.context_page_ids = set(context.working_page_ids) | set(context.preloaded_ids)
         server_tools = self._build_server_tools()
         moves_list = (
             list(self._available_moves)

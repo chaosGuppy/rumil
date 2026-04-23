@@ -730,11 +730,20 @@ def run_rumil_text(
         t0 = time.time()
         system = system_prompt_cache[(task_name, False)]
         user_msg = _build_rumil_text_user_message(pair, task_name)
+        # claude-opus-4-7 deprecates the temperature param on the
+        # Messages API (returns 400 with "temperature is deprecated for
+        # this model"). Omit it for opus; use 0 for sonnet/haiku so
+        # judgments are as deterministic as possible for the same
+        # prompt + pair. Note that temperature isn't part of the
+        # judge_model dedup key, so changing this value forks past
+        # results only at the judgment-row level -- old rows at 0.2
+        # persist and won't be overwritten.
+        use_temp = None if anthropic_model.startswith("claude-opus-4-7") else 0.0
         resp = anthropic_client.chat(
             model=anthropic_model,
             messages=[{"role": "user", "content": user_msg}],
             system=system,
-            temperature=0.2,
+            temperature=use_temp,
             max_tokens=cfg.judging.max_tokens,
             client=client,
         )

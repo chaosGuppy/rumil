@@ -632,10 +632,12 @@ def get_results(
         )
     )
 
+    # `total_judgments` counts raw rows (the on-disk count, including any
+    # duplicates), but `rows` is dedup-by-key so the rendered table and React
+    # keys behave -- matches matrix() / content_test_matrix() above.
     rows: list[JudgmentRow] = []
-    total_judgments = 0
-    for row in versus_jsonl.read(judgments_log):
-        total_judgments += 1
+    total_judgments = sum(1 for _ in versus_jsonl.read(judgments_log))
+    for row in versus_jsonl.read_dedup(judgments_log):
         if row.get("verdict") is None:
             continue
         if not include_contaminated and row.get("contamination_note"):

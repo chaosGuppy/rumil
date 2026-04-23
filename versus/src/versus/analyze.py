@@ -185,7 +185,7 @@ def content_test_matrix(
     pre-fix distribution.
     """
     counts: dict[tuple[str, str, str], list[float]] = collections.defaultdict(lambda: [0.0, 0])
-    for row in jsonl.read(judgments_log):
+    for row in jsonl.read_dedup(judgments_log):
         if row.get("verdict") is None:
             continue
         if not include_contaminated and row.get("contamination_note"):
@@ -225,7 +225,7 @@ def matrix(
     """
     # counts[(gen_model, judge_model, condition, criterion)] = [human_points, total]
     counts: dict[tuple[str, str, str, str], list[float]] = collections.defaultdict(lambda: [0.0, 0])
-    for row in jsonl.read(judgments_log):
+    for row in jsonl.read_dedup(judgments_log):
         if row.get("verdict") is None:
             continue
         if not include_contaminated and row.get("contamination_note"):

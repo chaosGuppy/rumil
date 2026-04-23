@@ -21,6 +21,27 @@ def keys(path: pathlib.Path, key_field: str = "key") -> set[str]:
     return {row[key_field] for row in read(path) if key_field in row}
 
 
+def read_dedup(path: pathlib.Path, key_field: str = "key") -> Iterator[dict]:
+    """Yield rows with duplicate `key_field` collapsed, last-row-wins.
+
+    Append-only writes don't enforce uniqueness, and parallel runners can
+    race past `keys()` and each append a row with the same dedup key.
+    Read paths that aggregate (matrix counts) or render lists (UI tables)
+    should use this so a duplicate doesn't double-count or break React keys.
+    Rows missing the key field are passed through unchanged.
+    """
+    by_key: dict[str, dict] = {}
+    keyless: list[dict] = []
+    for row in read(path):
+        k = row.get(key_field)
+        if k is None:
+            keyless.append(row)
+        else:
+            by_key[k] = row
+    yield from keyless
+    yield from by_key.values()
+
+
 def append(path: pathlib.Path, row: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "a") as f:

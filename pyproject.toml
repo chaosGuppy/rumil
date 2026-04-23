@@ -47,7 +47,7 @@ addopts = "-n auto --dist worksteal"
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-extend-exclude = ["frontend", "supabase", "data"]
+extend-exclude = ["frontend", "supabase", "data", "versus"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]

@@ -1258,6 +1258,12 @@
                       },
                       {
                         "$ref": "#/components/schemas/QuestionDedupeEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/ProcessStartedEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/ProcessCompletedEventOut"
                       }
                     ],
                     "discriminator": {
@@ -1294,7 +1300,9 @@
                         "phase_skipped": "#/components/schemas/PhaseSkippedEventOut",
                         "global_phase_completed": "#/components/schemas/GlobalPhaseCompletedEventOut",
                         "update_view_phase_completed": "#/components/schemas/UpdateViewPhaseCompletedEventOut",
-                        "question_dedupe": "#/components/schemas/QuestionDedupeEventOut"
+                        "question_dedupe": "#/components/schemas/QuestionDedupeEventOut",
+                        "process_started": "#/components/schemas/ProcessStartedEventOut",
+                        "process_completed": "#/components/schemas/ProcessCompletedEventOut"
                       }
                     }
                   },
@@ -2304,6 +2312,7 @@
           "create_view",
           "global_prioritization",
           "update_view",
+          "process_envelope",
           "claude_code_direct"
         ],
         "title": "CallType"
@@ -4062,6 +4071,115 @@
           "reason"
         ],
         "title": "PhaseSkippedEventOut"
+      },
+      "ProcessCompletedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "process_completed",
+            "title": "Event",
+            "default": "process_completed"
+          },
+          "process_type": {
+            "type": "string",
+            "title": "Process Type"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "self_report": {
+            "type": "string",
+            "title": "Self Report",
+            "default": ""
+          },
+          "delta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Delta",
+            "default": {}
+          },
+          "signals": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Signals",
+            "default": []
+          },
+          "usage": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Usage",
+            "default": {}
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "process_type",
+          "status",
+          "self_report",
+          "delta",
+          "signals",
+          "usage"
+        ],
+        "title": "ProcessCompletedEventOut"
+      },
+      "ProcessStartedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "process_started",
+            "title": "Event",
+            "default": "process_started"
+          },
+          "process_type": {
+            "type": "string",
+            "title": "Process Type"
+          },
+          "scope": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Scope",
+            "default": {}
+          },
+          "budgets": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Budgets",
+            "default": {}
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "process_type",
+          "scope",
+          "budgets"
+        ],
+        "title": "ProcessStartedEventOut"
       },
       "Project": {
         "properties": {

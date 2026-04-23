@@ -1724,3 +1724,171 @@
   .pls-question-short { color: #5c5c5c; }
   .pls-question-id-only { color: #777; }
 }
+
+.trace-process-type {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 8px;
+  border-radius: 3px;
+  background: #eef2ff;
+  color: #3a4db3;
+  border: 1px solid #d4dbff;
+}
+
+.trace-process-status {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 8px;
+  border-radius: 3px;
+  border: 1px solid;
+}
+
+.trace-process-status-complete {
+  background: #e8f5ec;
+  color: #2b6d3e;
+  border-color: #bfe0ca;
+}
+
+.trace-process-status-incomplete {
+  background: #fff4dc;
+  color: #8a6a1d;
+  border-color: #eacc8a;
+}
+
+.trace-process-status-failed {
+  background: #fbe8e8;
+  color: #8a2b2b;
+  border-color: #e8bdbd;
+}
+
+.trace-process-budgets {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.trace-process-budget-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  background: #f6f6f7;
+  border: 1px solid #e3e3e5;
+  font-size: 11px;
+}
+
+.trace-process-budget-label {
+  color: #777;
+  text-transform: lowercase;
+}
+
+.trace-process-budget-value {
+  font-family: var(--font-geist-mono), monospace;
+  color: #333;
+  font-weight: 600;
+}
+
+.trace-process-delta {
+  padding: 6px 8px;
+  margin-top: 4px;
+  border-left: 2px solid #d4dbff;
+  background: #f9fafe;
+  border-radius: 0 3px 3px 0;
+}
+
+.trace-process-signals {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.trace-process-signal {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 8px;
+  background: #fdfbf3;
+  border: 1px solid #efe8cf;
+  border-radius: 3px;
+}
+
+.trace-process-signal-kind {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 1px 6px;
+  border-radius: 2px;
+  background: #fff;
+  color: #555;
+  border: 1px solid #d9d3b8;
+  flex-shrink: 0;
+}
+
+.trace-process-signal-kind-focus { color: #3a4db3; border-color: #c5ccea; }
+.trace-process-signal-kind-reassess { color: #8a6a1d; border-color: #e5cb8e; }
+.trace-process-signal-kind-consolidate { color: #2b6d3e; border-color: #bfe0ca; }
+.trace-process-signal-kind-robustify { color: #6a3a9e; border-color: #cfbfe2; }
+.trace-process-signal-kind-propagate { color: #8a2b2b; border-color: #e8bdbd; }
+.trace-process-signal-kind-elicit { color: #555; border-color: #ddd; }
+
+.trace-process-signal-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.trace-process-signal-reason {
+  color: #555;
+}
+
+@media (prefers-color-scheme: dark) {
+  .trace-process-type {
+    background: #1a2347;
+    color: #aeb9ec;
+    border-color: #2a3260;
+  }
+  .trace-process-status-complete {
+    background: #15301f;
+    color: #9fd3ad;
+    border-color: #2a5236;
+  }
+  .trace-process-status-incomplete {
+    background: #352a10;
+    color: #e0c07e;
+    border-color: #5a4520;
+  }
+  .trace-process-status-failed {
+    background: #3a1d1d;
+    color: #e8a6a6;
+    border-color: #5c2f2f;
+  }
+  .trace-process-budget-chip {
+    background: #1a1a1b;
+    border-color: #2b2b2d;
+  }
+  .trace-process-budget-label { color: #888; }
+  .trace-process-budget-value { color: #ddd; }
+  .trace-process-delta {
+    background: #111526;
+    border-left-color: #3a4677;
+  }
+  .trace-process-signal {
+    background: #1d1a10;
+    border-color: #3a3422;
+  }
+  .trace-process-signal-kind {
+    background: #0e0e0f;
+    color: #bbb;
+    border-color: #3a3530;
+  }
+  .trace-process-signal-reason { color: #bbb; }
+}

@@ -2486,6 +2486,43 @@ class DB:
         rows = await self.get_call_rows_for_run(run_id)
         return [_row_to_call(r) for r in rows]
 
+    async def get_pages_for_run(self, run_id: str) -> list[Page]:
+        """Fetch pages created/tagged with this run_id.
+
+        Used by the processes layer to assemble typed deltas after a
+        process run completes. Does not apply mutation-event overlays —
+        newly-created pages within a run aren't superseded within the
+        same run in practice.
+        """
+        rows = _rows(
+            await self._execute(
+                self.client.table("pages").select("*").eq("run_id", run_id).order("created_at")
+            )
+        )
+        return [_row_to_page(r) for r in rows]
+
+    async def get_links_for_run(self, run_id: str) -> list[PageLink]:
+        """Fetch links created/tagged with this run_id."""
+        rows = _rows(
+            await self._execute(
+                self.client.table("page_links").select("*").eq("run_id", run_id).order("created_at")
+            )
+        )
+        return [_row_to_link(r) for r in rows]
+
+    async def get_supersedes_for_run(self, run_id: str) -> list[tuple[str, str]]:
+        """Fetch (old_page_id, new_page_id) pairs for supersedes performed by this run."""
+        rows = _rows(
+            await self._execute(
+                self.client.table("mutation_events")
+                .select("target_id, payload")
+                .eq("run_id", run_id)
+                .eq("event_type", "supersede_page")
+                .order("created_at")
+            )
+        )
+        return [(r["target_id"], (r.get("payload") or {}).get("new_page_id", "")) for r in rows]
+
     async def get_run_question_id(self, run_id: str) -> str | None:
         rows = _rows(
             await self._execute(

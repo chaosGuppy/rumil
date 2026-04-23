@@ -48,10 +48,6 @@ class StorageCfg(pydantic.BaseModel):
     paraphrases_log: pathlib.Path = pathlib.Path("data/paraphrases.jsonl")
 
 
-class UICfg(pydantic.BaseModel):
-    port: int = 8765
-
-
 class Config(pydantic.BaseModel):
     essays: EssaysCfg
     prefix: PrefixCfg
@@ -59,7 +55,6 @@ class Config(pydantic.BaseModel):
     paraphrasing: ParaphrasingCfg = pydantic.Field(default_factory=ParaphrasingCfg)
     judging: JudgingCfg
     storage: StorageCfg
-    ui: UICfg
     concurrency: int = 20
 
 

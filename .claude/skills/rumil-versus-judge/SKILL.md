@@ -132,10 +132,10 @@ All variants print:
 - `[err ] <key>: <msg>` on failure (run continues for other pairs)
 
 Surface any printed trace URLs to the user immediately. After a run
-completes, suggest the versus UI (`cd versus && uv run
-scripts/serve_ui.py` → http://127.0.0.1:8765/inspect?essay=<id>) —
-the `/inspect` page now shows rumil judgments per essay with trace
-links inline.
+completes, suggest the versus UI in the rumil frontend
+(`http://localhost:300X/versus/inspect?essay=<id>`, served by the
+running rumil dev server) — the `/inspect` page shows rumil judgments
+per essay with trace links that navigate in-app to `/traces/[runId]`.
 
 ## Cost confirmation
 

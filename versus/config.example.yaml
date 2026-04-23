@@ -72,7 +72,4 @@ storage:
   judgments_log: data/judgments.jsonl
   paraphrases_log: data/paraphrases.jsonl
 
-ui:
-  port: 8765
-
 concurrency: 8           # parallel API calls per runner (Azure rate-limits gpt-5.4 above ~8)

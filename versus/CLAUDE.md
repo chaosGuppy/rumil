@@ -56,8 +56,13 @@ uv run scripts/run_paraphrases.py
 uv run scripts/run_completions.py   # also synthesizes paraphrase-remainder rows
 uv run scripts/run_judgments.py         # OpenRouter judges
 uv run scripts/run_rumil_judgments.py   # Anthropic-direct judges (see below)
-uv run scripts/serve_ui.py          # UI at http://127.0.0.1:8765
 ```
+
+**UI.** The judging / inspect / results pages live in the rumil
+frontend under `/versus`. From the rumil root, run
+`./scripts/dev-api.sh` and `cd frontend && pnpm dev`, then visit
+`http://localhost:300X/versus`. The API reads versus's JSONL stores
+via `VERSUS_CONFIG_PATH` (defaulting to `versus/config.yaml`).
 
 Each script is idempotent. Re-running just fills gaps.
 
@@ -123,9 +128,14 @@ estimates, and confirmation thresholds.
 
 ## UI
 
-- `/` — blind human judging (stored alongside model judges as `human:<name>`)
-- `/inspect` — essay / completion prompt / judge prompt / paraphrase prompt / all generated sources, side-by-side per essay
-- `/results` — gen × judge matrix of %-picks-human, per-criterion small multiples, per-source length sanity (avg words + Δ vs target — watch this; it's a setup-trust signal)
+Mounted in the rumil Next.js frontend; routes under `/versus`:
+
+- `/versus` — blind human judging entry (name + criterion); judgments stored as `human:<name>`.
+- `/versus/judge` — next-pair loop with A/B/tie verdict buttons.
+- `/versus/inspect` — essay / completion prompt / judge prompt / paraphrase prompt / all generated sources, side-by-side per essay. Rumil-judge rows link in-app to `/traces/[runId]`.
+- `/versus/results` — gen × judge matrix of %-picks-human, per-criterion small multiples, per-source length sanity (avg words + Δ vs target — watch this; it's a setup-trust signal).
+
+Server-side endpoints are in `src/rumil/api/versus_router.py` and read versus's JSONL stores directly. No DB tables.
 
 ## Known quirks
 

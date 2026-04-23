@@ -442,8 +442,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
             )
         )
         self._phase_lines.append(
-            f"score_unscored: scored {len(unscored)} item(s), "
-            f"modified {modified_count}"
+            f"score_unscored: scored {len(unscored)} item(s), modified {modified_count}"
         )
         return messages
 
@@ -525,8 +524,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
             )
         )
         self._phase_lines.append(
-            f"triage: reviewed {len(scored)} item(s), "
-            f"flagged {len(flagged_ids)} for deep review"
+            f"triage: reviewed {len(scored)} item(s), flagged {len(flagged_ids)} for deep review"
         )
         return messages, flagged_ids
 
@@ -771,9 +769,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
         candidates = _prune_candidates(items)
 
         if not candidates:
-            await infra.trace.record(
-                PhaseSkippedEvent(phase="prune", reason="No prune candidates")
-            )
+            await infra.trace.record(PhaseSkippedEvent(phase="prune", reason="No prune candidates"))
             self._phase_lines.append("prune: skipped (no prune candidates)")
             return messages
 

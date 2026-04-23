@@ -645,7 +645,9 @@ def get_results(
 
 def _enumerate_pairs(cfg: versus_config.Config):
     """Yield NextPair-shaped dicts (without progress) for every blind pair."""
-    groups, prefix_texts = versus_judge.load_sources_by_essay(_resolve_path(cfg.storage.completions_log))
+    groups, prefix_texts = versus_judge.load_sources_by_essay(
+        _resolve_path(cfg.storage.completions_log)
+    )
     titles: dict[str, str] = {}
     essays_dir = _essays_dir()
     if essays_dir.exists():
@@ -691,8 +693,7 @@ def _judging_progress(cfg: versus_config.Config, name: str, criterion: str) -> J
         criterion=criterion,
         criteria=list(cfg.judging.criteria),
         per_criterion=[
-            CriterionStats(criterion=c, done=counts[c], total=total)
-            for c in cfg.judging.criteria
+            CriterionStats(criterion=c, done=counts[c], total=total) for c in cfg.judging.criteria
         ],
     )
 

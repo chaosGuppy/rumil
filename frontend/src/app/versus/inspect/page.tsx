@@ -162,7 +162,7 @@ export default async function VersusInspectPage({
                   Generated sources side-by-side
                 </h2>
                 <p className="versus-muted">
-                  Each column is a "contestant" that the judges pair up. Target was{" "}
+                  Each column is a &ldquo;contestant&rdquo; that the judges pair up. Target was{" "}
                   <strong>{detail.target_words}</strong> words.
                 </p>
                 <div

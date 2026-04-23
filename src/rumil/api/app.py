@@ -16,7 +16,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import TypeAdapter, ValidationError
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from rumil.api.versus_router import router as versus_router
 from rumil.api.schemas import (
     ABEvalDimensionOut,
     ABEvalDimensionSummaryOut,
@@ -40,6 +39,7 @@ from rumil.api.schemas import (
     RunTraceTreeOut,
     TraceEventOut,
 )
+from rumil.api.versus_router import router as versus_router
 from rumil.database import DB, _row_to_call, _rows
 from rumil.models import Call, Page, PageLink, PageType, Project, Workspace
 from rumil.settings import get_settings

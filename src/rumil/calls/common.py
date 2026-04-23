@@ -729,7 +729,12 @@ async def run_closing_review(
 def format_moves_for_review(moves: Sequence[Move]) -> str:
     """Format moves as readable text for closing review context."""
     if not moves:
-        return "(no moves)"
+        return (
+            "This call recorded no structural moves. If the call type does "
+            "its work outside of moves (e.g. update_view's per-phase edits), "
+            "that work is not visible here — do not interpret this as a "
+            "failed or empty call on its own."
+        )
     parts = []
     for m in moves:
         headline = getattr(m.payload, "headline", "")

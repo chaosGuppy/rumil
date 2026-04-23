@@ -33,7 +33,7 @@ async def new_question(tmp_db):
 
 async def test_handler_creates_view_for_question_when_enabled(tmp_db, new_question, mocker):
     spy = mocker.patch(
-        "rumil.orchestrators.common.create_view_for_question",
+        "rumil.views.sectioned.create_view_for_question",
         return_value="fake-call-id",
     )
     event = PageCreatedEvent(
@@ -53,7 +53,7 @@ async def test_handler_creates_view_for_question_when_enabled(tmp_db, new_questi
 
 
 async def test_handler_noop_when_setting_off(tmp_db, new_question, mocker):
-    spy = mocker.patch("rumil.orchestrators.common.create_view_for_question")
+    spy = mocker.patch("rumil.views.sectioned.create_view_for_question")
     event = PageCreatedEvent(
         page_id=new_question.id,
         page_type=PageType.QUESTION,
@@ -72,7 +72,7 @@ async def test_handler_noop_when_setting_off(tmp_db, new_question, mocker):
     [PageType.CLAIM, PageType.JUDGEMENT, PageType.VIEW, PageType.VIEW_ITEM],
 )
 async def test_handler_noop_for_non_question_page_types(tmp_db, mocker, page_type):
-    spy = mocker.patch("rumil.orchestrators.common.create_view_for_question")
+    spy = mocker.patch("rumil.views.sectioned.create_view_for_question")
     event = PageCreatedEvent(
         page_id="irrelevant",
         page_type=page_type,
@@ -87,7 +87,7 @@ async def test_handler_noop_for_non_question_page_types(tmp_db, mocker, page_typ
 
 
 async def test_handler_noop_when_db_is_none(mocker):
-    spy = mocker.patch("rumil.orchestrators.common.create_view_for_question")
+    spy = mocker.patch("rumil.views.sectioned.create_view_for_question")
     event = PageCreatedEvent(
         page_id="q1",
         page_type=PageType.QUESTION,
@@ -125,7 +125,7 @@ async def test_handler_noop_when_view_already_exists(tmp_db, new_question, mocke
         )
     )
 
-    spy = mocker.patch("rumil.orchestrators.common.create_view_for_question")
+    spy = mocker.patch("rumil.views.sectioned.create_view_for_question")
     event = PageCreatedEvent(
         page_id=new_question.id,
         page_type=PageType.QUESTION,

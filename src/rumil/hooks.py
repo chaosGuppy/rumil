@@ -26,7 +26,7 @@ async def auto_create_view_on_question(event: PageCreatedEvent) -> None:
     if event.db is None:
         return
 
-    from rumil.orchestrators.common import create_view_for_question
+    from rumil.views.sectioned import create_view_for_question
 
     existing = await event.db.get_view_for_question(event.page_id)
     if existing is not None:

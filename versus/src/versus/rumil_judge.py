@@ -51,10 +51,14 @@ def _call_one(
     client: httpx.Client,
 ) -> dict:
     t0 = time.time()
+    # claude-opus-4-7 deprecates temperature on the Messages API;
+    # omit for opus, keep 0.2 for sonnet/haiku so existing anthropic:*
+    # rows at 0.2 don't silently fork.
+    use_temp = None if model.startswith("claude-opus-4-7") else 0.2
     resp = anthropic_client.chat(
         model=model,
         messages=[{"role": "user", "content": prompt}],
-        temperature=0.2,
+        temperature=use_temp,
         max_tokens=max_tokens,
         client=client,
     )
@@ -84,6 +88,7 @@ def _call_one(
         "ts": dt.datetime.utcnow().isoformat() + "Z",
         "duration_s": round(time.time() - t0, 2),
         "raw_response": resp,
+        "sampling": {"temperature": use_temp, "max_tokens": max_tokens},
     }
 
 
@@ -783,6 +788,10 @@ def run_rumil_text(
             "duration_s": round(time.time() - t0, 2),
             "raw_response": resp,
             "rumil_preference_label": label,
+            "sampling": {
+                "temperature": use_temp,
+                "max_tokens": cfg.judging.max_tokens,
+            },
         }
 
     client = httpx.Client(timeout=600.0)

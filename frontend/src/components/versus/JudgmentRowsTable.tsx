@@ -22,13 +22,14 @@ export function JudgmentRowsTable({ rows }: { rows: JudgmentRow[] }) {
               <th>verdict</th>
               <th>winner</th>
               <th>ts</th>
+              <th>flags</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r) => (
               <tr
                 key={r.key || `${r.essay_id}|${r.judge_model}|${r.criterion}|${r.source_a}|${r.source_b}`}
-                className={`judgment-row-clickable${r.is_rumil ? " is-rumil" : ""}${r.contamination_note ? " is-contam" : ""}`}
+                className={`judgment-row-clickable${r.is_rumil ? " is-rumil" : ""}${r.contamination_note ? " is-contam" : ""}${r.stale ? " is-stale" : ""}`}
                 onClick={() => r.key && setSelected(r.key)}
                 title={r.key ? "Click to inspect" : "Legacy row without dedup key"}
               >
@@ -47,6 +48,13 @@ export function JudgmentRowsTable({ rows }: { rows: JudgmentRow[] }) {
                 <td>{r.verdict}</td>
                 <td className="versus-mono">{r.winner}</td>
                 <td className="versus-muted">{r.ts}</td>
+                <td>
+                  {r.stale && (
+                    <span className="versus-pill stale" title="Judgment references an older essay version">
+                      stale
+                    </span>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>

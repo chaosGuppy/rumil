@@ -198,6 +198,16 @@
               "default": false,
               "title": "Include Contaminated"
             }
+          },
+          {
+            "name": "include_stale",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Include Stale"
+            }
           }
         ],
         "responses": {
@@ -3312,6 +3322,64 @@
         "title": "EssayMeta",
         "description": "Headline metadata for one cached essay."
       },
+      "EssayStatus": {
+        "properties": {
+          "essay_id": {
+            "type": "string",
+            "title": "Essay Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "schema_version": {
+            "type": "integer",
+            "title": "Schema Version"
+          },
+          "current_prefix_hash": {
+            "type": "string",
+            "title": "Current Prefix Hash"
+          },
+          "validator_clean": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validator Clean"
+          },
+          "validator_issues": {
+            "type": "integer",
+            "title": "Validator Issues"
+          },
+          "validator_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validator Model"
+          }
+        },
+        "type": "object",
+        "required": [
+          "essay_id",
+          "title",
+          "schema_version",
+          "current_prefix_hash",
+          "validator_clean",
+          "validator_issues",
+          "validator_model"
+        ],
+        "title": "EssayStatus",
+        "description": "Per-essay state for the /results \"essays\" panel.\n\nSurfaces both validator output (clean? how many issues?) and the\ncurrent ``prefix_config_hash`` so a reader can spot when essay text\nhas drifted out from under cached judgments."
+      },
       "EvaluationCompleteEventOut": {
         "properties": {
           "ts": {
@@ -4175,6 +4243,10 @@
               }
             ],
             "title": "Contamination Note"
+          },
+          "stale": {
+            "type": "boolean",
+            "title": "Stale"
           }
         },
         "type": "object",
@@ -4189,7 +4261,8 @@
           "winner",
           "ts",
           "is_rumil",
-          "contamination_note"
+          "contamination_note",
+          "stale"
         ],
         "title": "JudgmentRow",
         "description": "One row in the raw-judgments explorer at the bottom of /results."
@@ -5969,6 +6042,25 @@
             },
             "type": "array",
             "title": "Sources Summary"
+          },
+          "essays_status": {
+            "items": {
+              "$ref": "#/components/schemas/EssayStatus"
+            },
+            "type": "array",
+            "title": "Essays Status"
+          },
+          "stale_count": {
+            "type": "integer",
+            "title": "Stale Count"
+          },
+          "current_count": {
+            "type": "integer",
+            "title": "Current Count"
+          },
+          "include_stale": {
+            "type": "boolean",
+            "title": "Include Stale"
           }
         },
         "type": "object",
@@ -5984,7 +6076,11 @@
           "rows",
           "total_judgments",
           "total_completions",
-          "sources_summary"
+          "sources_summary",
+          "essays_status",
+          "stale_count",
+          "current_count",
+          "include_stale"
         ],
         "title": "ResultsBundle"
       },

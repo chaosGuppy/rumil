@@ -174,9 +174,23 @@ def _strip_prefix(source_id: str) -> tuple[str, str]:
     return "completion", source_id
 
 
+def _is_stale_row(row: dict, current_prefix_hashes: dict[str, str] | None) -> bool:
+    """True iff the row's essay_id is known and its prefix_config_hash doesn't
+    match the current one (i.e. this judgment is against an older essay
+    version). Returns False when we don't have a current hash for the essay."""
+    if current_prefix_hashes is None:
+        return False
+    eid = row.get("essay_id")
+    if eid not in current_prefix_hashes:
+        return False
+    return row.get("prefix_config_hash") != current_prefix_hashes[eid]
+
+
 def content_test_matrix(
     judgments_log: pathlib.Path,
     include_contaminated: bool = False,
+    current_prefix_hashes: dict[str, str] | None = None,
+    include_stale: bool = True,
 ) -> dict:
     """Compute `%-picks-J's-paraphrase` per (gen_model, judge_model, criterion).
 
@@ -196,6 +210,8 @@ def content_test_matrix(
         if row.get("verdict") is None:
             continue
         if not include_contaminated and row.get("contamination_note"):
+            continue
+        if not include_stale and _is_stale_row(row, current_prefix_hashes):
             continue
         j = row["judge_model"]
         # Strip any :p<hash>:v<N> suffix so the paraphrase source id match
@@ -222,6 +238,8 @@ def matrix(
     judgments_log: pathlib.Path,
     criterion: str | None = None,
     include_contaminated: bool = False,
+    current_prefix_hashes: dict[str, str] | None = None,
+    include_stale: bool = True,
 ) -> dict:
     """Compute %-picks-human per (gen_model, judge_model, condition).
 
@@ -239,6 +257,8 @@ def matrix(
         if row.get("verdict") is None:
             continue
         if not include_contaminated and row.get("contamination_note"):
+            continue
+        if not include_stale and _is_stale_row(row, current_prefix_hashes):
             continue
         if criterion is not None and row.get("criterion") != criterion:
             continue

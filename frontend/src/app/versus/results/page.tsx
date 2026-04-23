@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ResultsBundle } from "@/api/types.gen";
 import { API_BASE, serverFetch } from "@/lib/api-base";
+import { AutoSubmitCheckbox } from "@/components/versus/AutoSubmitCheckbox";
 import { AutoSubmitSelect } from "@/components/versus/AutoSubmitSelect";
 import { JudgmentRowsTable } from "@/components/versus/JudgmentRowsTable";
 import { MatrixTable } from "@/components/versus/MatrixTable";
@@ -12,10 +13,12 @@ export const metadata: Metadata = { title: "versus · results" };
 async function getResults(
   criterion: string | undefined,
   includeContaminated: boolean,
+  includeStale: boolean,
 ): Promise<ResultsBundle | null> {
   const qs = new URLSearchParams();
   if (criterion) qs.set("criterion", criterion);
   if (includeContaminated) qs.set("include_contaminated", "true");
+  qs.set("include_stale", includeStale ? "true" : "false");
   const res = await serverFetch(`${API_BASE}/api/versus/results?${qs}`, {
     cache: "no-store",
   });
@@ -32,12 +35,19 @@ function deltaClass(pct: number): string {
 export default async function VersusResultsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ criterion?: string; include_contaminated?: string }>;
+  searchParams: Promise<{
+    criterion?: string;
+    include_contaminated?: string;
+    include_stale?: string;
+  }>;
 }) {
   const sp = await searchParams;
   const criterion = sp.criterion;
   const includeContaminated = sp.include_contaminated === "true";
-  const data = await getResults(criterion, includeContaminated);
+  // Default include_stale=true preserves prior behavior; users can flip it
+  // to filter the matrices to only judgments against current essay text.
+  const includeStale = sp.include_stale !== "false";
+  const data = await getResults(criterion, includeContaminated, includeStale);
 
   if (!data) {
     return (
@@ -66,6 +76,10 @@ export default async function VersusResultsPage({
     total_judgments,
     total_completions,
     sources_summary,
+    essays_status,
+    stale_count,
+    current_count,
+    include_stale,
   } = data;
 
   const empty = gen_models.length === 0 || judge_models.length === 0;
@@ -81,11 +95,23 @@ export default async function VersusResultsPage({
         }
       />
       <main className="versus-main">
+        {stale_count > 0 && (
+          <div className={`stale-banner${include_stale ? "" : " excluded"}`}>
+            <strong>{stale_count}</strong>{" "}
+            of {stale_count + current_count} judgments reference an older essay
+            version (re-import drift). Aggregates below{" "}
+            {include_stale ? "include" : "exclude"} them. See the{" "}
+            <a href="#essays-status">essays panel</a> for per-essay state.
+          </div>
+        )}
         <div className="results-topbar">
           <h2 title="Higher = judge preferred the human continuation. 50% is neutral. Ties count as ½. Cell: pct% (n).">
             %-picks-human · gen × judge
           </h2>
-          <form method="get" action="/versus/results">
+          <form method="get" action="/versus/results" className="results-controls">
+            {includeContaminated && (
+              <input type="hidden" name="include_contaminated" value="true" />
+            )}
             <AutoSubmitSelect
               name="criterion"
               defaultValue={active_criterion ?? ""}
@@ -95,6 +121,12 @@ export default async function VersusResultsPage({
                 { value: "", label: "avg across criteria" },
                 ...criteria.map((c) => ({ value: c, label: c })),
               ]}
+            />
+            <AutoSubmitCheckbox
+              name="include_stale"
+              value="false"
+              defaultChecked={!include_stale}
+              label="exclude stale"
             />
             <noscript>
               <button type="submit" className="versus-button">apply</button>
@@ -176,6 +208,44 @@ export default async function VersusResultsPage({
                       {s.avg_delta_pct >= 0 ? "+" : ""}
                       {s.avg_delta_pct.toFixed(1)}%
                     </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </details>
+        )}
+
+        {essays_status.length > 0 && (
+          <details className="collapsible" id="essays-status">
+            <summary>Essays ({essays_status.length})</summary>
+            <table className="log" style={{ marginTop: 6 }}>
+              <thead>
+                <tr>
+                  <th>essay</th>
+                  <th>schema</th>
+                  <th>current prefix_hash</th>
+                  <th>validator</th>
+                  <th>issues</th>
+                  <th>model</th>
+                </tr>
+              </thead>
+              <tbody>
+                {essays_status.map((e) => (
+                  <tr key={e.essay_id}>
+                    <td className="versus-mono" title={e.title}>{e.essay_id}</td>
+                    <td>{e.schema_version}</td>
+                    <td className="versus-mono">{e.current_prefix_hash}</td>
+                    <td>
+                      {e.validator_clean === null ? (
+                        <span className="versus-muted">no verdict</span>
+                      ) : e.validator_clean ? (
+                        <span className="versus-pill clean">clean</span>
+                      ) : (
+                        <span className="versus-pill stale">issues</span>
+                      )}
+                    </td>
+                    <td>{e.validator_issues || ""}</td>
+                    <td className="versus-mono versus-muted">{e.validator_model ?? ""}</td>
                   </tr>
                 ))}
               </tbody>

@@ -832,6 +832,46 @@ export type EssayMeta = {
 };
 
 /**
+ * EssayStatus
+ *
+ * Per-essay state for the /results "essays" panel.
+ *
+ * Surfaces both validator output (clean? how many issues?) and the
+ * current ``prefix_config_hash`` so a reader can spot when essay text
+ * has drifted out from under cached judgments.
+ */
+export type EssayStatus = {
+    /**
+     * Essay Id
+     */
+    essay_id: string;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Schema Version
+     */
+    schema_version: number;
+    /**
+     * Current Prefix Hash
+     */
+    current_prefix_hash: string;
+    /**
+     * Validator Clean
+     */
+    validator_clean: boolean | null;
+    /**
+     * Validator Issues
+     */
+    validator_issues: number;
+    /**
+     * Validator Model
+     */
+    validator_model: string | null;
+};
+
+/**
  * EvaluationCompleteEventOut
  */
 export type EvaluationCompleteEventOut = {
@@ -1329,6 +1369,10 @@ export type JudgmentRow = {
      * Contamination Note
      */
     contamination_note: string | null;
+    /**
+     * Stale
+     */
+    stale: boolean;
 };
 
 /**
@@ -2385,6 +2429,22 @@ export type ResultsBundle = {
      * Sources Summary
      */
     sources_summary: Array<SourceSummary>;
+    /**
+     * Essays Status
+     */
+    essays_status: Array<EssayStatus>;
+    /**
+     * Stale Count
+     */
+    stale_count: number;
+    /**
+     * Current Count
+     */
+    current_count: number;
+    /**
+     * Include Stale
+     */
+    include_stale: boolean;
 };
 
 /**
@@ -3141,6 +3201,10 @@ export type GetResultsApiVersusResultsGetData = {
          * Include Contaminated
          */
         include_contaminated?: boolean;
+        /**
+         * Include Stale
+         */
+        include_stale?: boolean;
     };
     url: '/api/versus/results';
 };

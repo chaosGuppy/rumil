@@ -113,6 +113,44 @@
   color: var(--vcontam-pill-fg);
   border-color: var(--vcontam-pill-bg);
 }
+.versus-pill.stale {
+  background: var(--vcontam-pill-bg);
+  color: var(--vcontam-pill-fg);
+  border-color: var(--vcontam-pill-bg);
+  opacity: 0.85;
+}
+.versus-pill.clean {
+  background: var(--vaccent-dim);
+  color: var(--vaccent-fg);
+  border-color: var(--vaccent);
+}
+
+.stale-banner {
+  background: var(--vcontam-bg);
+  border: 1px solid var(--vcontam-pill-bg);
+  color: var(--foreground);
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+.stale-banner.excluded { opacity: 0.75; }
+.stale-banner a { color: var(--vaccent-fg); }
+
+.versus-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.results-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
 
 .versus-card {
   background: var(--color-surface);
@@ -279,6 +317,7 @@ table.judgments thead th { padding: 8px 10px; font-weight: 500; color: var(--col
 table.judgments tbody tr { border-top: 1px solid var(--color-border); }
 table.judgments tbody tr.is-rumil { background: var(--vrumil-bg); }
 table.judgments tbody tr.is-contam { background: var(--vcontam-bg); opacity: 0.7; }
+table.judgments tbody tr.is-stale { opacity: 0.55; font-style: italic; }
 table.judgments tbody td { padding: 6px 10px; }
 table.judgments a { color: var(--vaccent-fg); }
 

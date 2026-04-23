@@ -72,6 +72,71 @@ def _essays_dir() -> pathlib.Path:
     return _data_dir() / "essays"
 
 
+def _iter_essay_paths() -> list[pathlib.Path]:
+    """Essay JSONs only — skips ``<id>.verdict.json`` and other companions."""
+    d = _essays_dir()
+    if not d.exists():
+        return []
+    return sorted(p for p in d.glob("*.json") if not p.name.endswith(".verdict.json"))
+
+
+def _load_verdict(essay_id: str) -> dict | None:
+    p = _essays_dir() / f"{essay_id}.verdict.json"
+    if not p.exists():
+        return None
+    try:
+        return json.loads(p.read_text())
+    except json.JSONDecodeError:
+        return None
+
+
+def _build_essays_status(
+    cfg: versus_config.Config,
+) -> tuple[list["EssayStatus"], dict[str, str]]:
+    """Compute the per-essay status panel and the {essay_id -> current
+    prefix_config_hash} map used to flag stale judgment/completion rows.
+
+    Reads cached essay JSONs + their adjacent ``.verdict.json`` files. If
+    no essays are cached, returns empty containers (matrix filtering is a
+    no-op when ``current_prefix_hashes`` is empty).
+    """
+    statuses: list[EssayStatus] = []
+    current: dict[str, str] = {}
+    for path in _iter_essay_paths():
+        with open(path) as f:
+            d = json.load(f)
+        essay = versus_fetch.Essay(
+            id=d["id"],
+            url=d["url"],
+            title=d["title"],
+            author=d["author"],
+            pub_date=d["pub_date"],
+            blocks=[versus_fetch.Block(**b) for b in d["blocks"]],
+            markdown=d.get("markdown", ""),
+            schema_version=d.get("schema_version", 0),
+        )
+        task = versus_prepare.prepare(
+            essay,
+            n_paragraphs=cfg.prefix.n_paragraphs,
+            include_headers=cfg.prefix.include_headers,
+            length_tolerance=cfg.completion.length_tolerance,
+        )
+        current[essay.id] = task.prefix_config_hash
+        verdict = _load_verdict(essay.id)
+        statuses.append(
+            EssayStatus(
+                essay_id=essay.id,
+                title=essay.title,
+                schema_version=essay.schema_version,
+                current_prefix_hash=task.prefix_config_hash,
+                validator_clean=verdict["clean"] if verdict else None,
+                validator_issues=len(verdict["issues"]) if verdict else 0,
+                validator_model=verdict.get("model") if verdict else None,
+            )
+        )
+    return statuses, current
+
+
 class EssayMeta(pydantic.BaseModel):
     """Headline metadata for one cached essay."""
 
@@ -245,6 +310,24 @@ class JudgmentRow(pydantic.BaseModel):
     ts: str
     is_rumil: bool
     contamination_note: str | None
+    stale: bool
+
+
+class EssayStatus(pydantic.BaseModel):
+    """Per-essay state for the /results "essays" panel.
+
+    Surfaces both validator output (clean? how many issues?) and the
+    current ``prefix_config_hash`` so a reader can spot when essay text
+    has drifted out from under cached judgments.
+    """
+
+    essay_id: str
+    title: str
+    schema_version: int
+    current_prefix_hash: str
+    validator_clean: bool | None
+    validator_issues: int
+    validator_model: str | None
 
 
 class ResultsBundle(pydantic.BaseModel):
@@ -260,6 +343,10 @@ class ResultsBundle(pydantic.BaseModel):
     total_judgments: int
     total_completions: int
     sources_summary: list[SourceSummary]
+    essays_status: list[EssayStatus]
+    stale_count: int
+    current_count: int
+    include_stale: bool
 
 
 class NextPair(pydantic.BaseModel):
@@ -346,11 +433,11 @@ def _load_essay(essay_id: str) -> versus_fetch.Essay | None:
 
 @router.get("/essays", response_model=list[EssayMeta])
 def list_essays() -> list[EssayMeta]:
-    essays_dir = _essays_dir()
-    if not essays_dir.exists():
-        raise HTTPException(503, f"versus essays dir not found: {essays_dir}")
+    paths = _iter_essay_paths()
+    if not paths and not _essays_dir().exists():
+        raise HTTPException(503, f"versus essays dir not found: {_essays_dir()}")
     out: list[EssayMeta] = []
-    for p in sorted(essays_dir.glob("*.json")):
+    for p in paths:
         with open(p) as f:
             d = json.load(f)
         out.append(
@@ -566,14 +653,25 @@ def _matrix_cells(
 def get_results(
     criterion: str | None = None,
     include_contaminated: bool = False,
+    include_stale: bool = True,
 ) -> ResultsBundle:
     cfg = _cfg_required()
     judgments_log = _resolve_path(cfg.storage.judgments_log)
     completions_log = _resolve_path(cfg.storage.completions_log)
 
-    data = versus_analyze.matrix(judgments_log, include_contaminated=include_contaminated)
+    essays_status, current_prefix_hashes = _build_essays_status(cfg)
+
+    data = versus_analyze.matrix(
+        judgments_log,
+        include_contaminated=include_contaminated,
+        current_prefix_hashes=current_prefix_hashes,
+        include_stale=include_stale,
+    )
     content_data = versus_analyze.content_test_matrix(
-        judgments_log, include_contaminated=include_contaminated
+        judgments_log,
+        include_contaminated=include_contaminated,
+        current_prefix_hashes=current_prefix_hashes,
+        include_stale=include_stale,
     )
 
     conditions_present = sorted({k[2] for k in data}) if data else []
@@ -654,10 +752,19 @@ def get_results(
     # keys behave -- matches matrix() / content_test_matrix() above.
     rows: list[JudgmentRow] = []
     total_judgments = sum(1 for _ in versus_jsonl.read(judgments_log))
+    stale_count = 0
+    current_count = 0
     for row in versus_jsonl.read_dedup(judgments_log):
         if row.get("verdict") is None:
             continue
         if not include_contaminated and row.get("contamination_note"):
+            continue
+        is_stale = versus_analyze._is_stale_row(row, current_prefix_hashes)
+        if is_stale:
+            stale_count += 1
+        else:
+            current_count += 1
+        if not include_stale and is_stale:
             continue
         rows.append(
             JudgmentRow(
@@ -672,6 +779,7 @@ def get_results(
                 ts=row["ts"][:16],
                 is_rumil=str(row.get("judge_model", "")).startswith("rumil:"),
                 contamination_note=row.get("contamination_note"),
+                stale=is_stale,
             )
         )
 
@@ -708,6 +816,10 @@ def get_results(
         total_judgments=total_judgments,
         total_completions=total_completions,
         sources_summary=sources_summary,
+        essays_status=essays_status,
+        stale_count=stale_count,
+        current_count=current_count,
+        include_stale=include_stale,
     )
 
 
@@ -717,12 +829,10 @@ def _enumerate_pairs(cfg: versus_config.Config):
         _resolve_path(cfg.storage.completions_log)
     )
     titles: dict[str, str] = {}
-    essays_dir = _essays_dir()
-    if essays_dir.exists():
-        for p in essays_dir.glob("*.json"):
-            with open(p) as f:
-                d = json.load(f)
-            titles[d["id"]] = d["title"]
+    for p in _iter_essay_paths():
+        with open(p) as f:
+            d = json.load(f)
+        titles[d["id"]] = d["title"]
 
     for (essay_id, prefix_hash), sources in groups.items():
         source_ids = sorted(sources.keys())

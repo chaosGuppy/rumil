@@ -20,6 +20,8 @@ You will be asked to review View items in batches across several phases. Apply y
 
 The context may include a **Child Investigation Results** section showing the latest findings from recursive sub-question investigations. Items marked **[NEW]** were produced since the View was last updated. These results should inform your review — new findings may confirm, contradict, or refine existing View items, or may reveal gaps needing new items.
 
+The context may also include a **Recent findings from claim investigations** section. Claim investigations drill into specific considerations of this question and often produce counter-evidence or reframings that live at the claim level and have not yet been reflected in the View. Treat these findings the same way as child-investigation results: they should directly pressure existing View items or motivate new ones. If a finding here materially contradicts a View item, supersede or adjust that item rather than leaving both standing.
+
 <!-- PHASE:score_unscored — DO NOT RENAME THIS MARKER -->
 ## Phase: Score Unscored Proposals
 
@@ -51,6 +53,8 @@ For each item in this batch, choose one action:
 * **supersede**: The item should be replaced with a new version. Provide a new headline, content, robustness, robustness_reasoning, importance, and section. The old item will be superseded and the new one linked to the View.
 
 When superseding, write the replacement item as you would a fresh View item: a clear headline, content with an epistemic gloss explaining the robustness score, and careful scoring. Provide `robustness_reasoning` per the preamble rubric — where the uncertainty sits and how reducible it is.
+
+Each item is rendered with its **Cited evidence** (pages the item already depends on) and, when applicable, a **Related considerations on the parent question (not cited by this item)** block. The latter lists considerations of the scope question that the item does not already cite — these are the most likely source of overlooked contradictions or complications. Before choosing an action, scan this list and ask whether any of these considerations should change, complicate, or replace the item under review.
 
 You may also **propose entirely new items** if you notice gaps — evidence or conclusions that the View should capture but currently doesn't. New items should include full scores (robustness, robustness_reasoning, importance, section) and follow the same format as existing items.
 

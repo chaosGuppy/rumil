@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import TypeAdapter, ValidationError
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from rumil.api.versus_router import router as versus_router
 from rumil.api.schemas import (
     ABEvalDimensionOut,
     ABEvalDimensionSummaryOut,
@@ -86,6 +87,9 @@ app.add_middleware(
     allow_methods=["GET"],
     allow_headers=["*"],
 )
+
+
+app.include_router(versus_router)
 
 
 @app.get("/healthz")

@@ -119,7 +119,30 @@ def main() -> None:
     )
     ap.add_argument("--limit", type=int, default=None, help="Cap on number of judgments.")
     ap.add_argument("--dry-run", action="store_true", help="List pending keys and exit.")
+    ap.add_argument(
+        "--essay",
+        action="append",
+        default=None,
+        help="Restrict planning to specified essay_id(s). Repeatable. ws/orch only.",
+    )
+    ap.add_argument(
+        "--contestants",
+        default=None,
+        help=(
+            "Comma-separated source_ids; only emit pairs where both sides "
+            "are in this list. ws/orch only."
+        ),
+    )
+    ap.add_argument(
+        "--vs-human",
+        action="store_true",
+        help="Only emit pairs where one side is 'human'. ws/orch only.",
+    )
     args = ap.parse_args()
+
+    contestants = (
+        [s.strip() for s in args.contestants.split(",") if s.strip()] if args.contestants else None
+    )
 
     cfg = config.load(args.config)
     for field in ("completions_log", "judgments_log", "paraphrases_log"):
@@ -150,6 +173,9 @@ def main() -> None:
                 limit=args.limit,
                 dry_run=args.dry_run,
                 concurrency=args.concurrency,
+                essay_ids=args.essay,
+                contestants=contestants,
+                vs_human=args.vs_human,
             )
         )
     elif args.variant == "orch":
@@ -162,6 +188,9 @@ def main() -> None:
                 budget=args.budget,
                 limit=args.limit,
                 dry_run=args.dry_run,
+                essay_ids=args.essay,
+                contestants=contestants,
+                vs_human=args.vs_human,
             )
         )
 

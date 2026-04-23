@@ -84,13 +84,30 @@ _LABEL_TO_VERDICT = {
 
 @dataclass
 class PairContext:
+    """Inputs for one versus pairwise judgment.
+
+    ``continuation_a_*`` / ``continuation_b_*`` are what the agent sees as
+    "Continuation A" and "Continuation B" -- callers are responsible for
+    putting them in display order (typically versus's deterministic
+    ``order_pair``, so the same pair gets the same A/B assignment across
+    all judges).
+
+    ``source_a_id`` / ``source_b_id`` are the versus raw-pair source_ids
+    in alphabetical order (versus's dedup-key convention). They are
+    recorded as metadata on the Question page but NOT shown to the agent
+    -- leaking the raw source_id (which can literally be ``"human"``)
+    would break blind judging.
+    """
+
     essay_id: str
     prefix_hash: str
     prefix_text: str
+    continuation_a_id: str
+    continuation_a_text: str
+    continuation_b_id: str
+    continuation_b_text: str
     source_a_id: str
-    source_a_text: str
     source_b_id: str
-    source_b_text: str
     task_name: str  # e.g. "general_quality", "grounding", "standalone_quality"
 
 
@@ -158,14 +175,17 @@ def _versus_extra(pair: PairContext) -> dict:
 
 
 def _format_pair_content(pair: PairContext) -> str:
+    # Intentionally do NOT disclose continuation source_ids -- they can
+    # literally be "human" and would defeat blind judging. Source ids are
+    # preserved only in the Question's extra metadata.
     return (
         "This question was created by the versus pairwise essay-judging harness. "
         "Two continuations of the same essay opening are compared on one dimension. "
         "Workspace material may be consulted if it bears on the essay's subject.\n\n"
         f"## Dimension\n\n{pair.task_name}\n\n"
         f"## Essay opening\n\n{pair.prefix_text}\n\n"
-        f"## Continuation A (source_id: `{pair.source_a_id}`)\n\n{pair.source_a_text}\n\n"
-        f"## Continuation B (source_id: `{pair.source_b_id}`)\n\n{pair.source_b_text}\n"
+        f"## Continuation A\n\n{pair.continuation_a_text}\n\n"
+        f"## Continuation B\n\n{pair.continuation_b_text}\n"
     )
 
 

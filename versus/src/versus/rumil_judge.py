@@ -206,31 +206,50 @@ class _PendingPair:
     # display order for this (essay_id, pair). Used for downstream display
     # parity with OpenRouter judges.
     display_first_id: str
+    display_first_text: str
     display_second_id: str
+    display_second_text: str
 
 
 def _plan_rumil_pairs(
     cfg: config.Config,
     tasks_spec: Sequence[tuple[str, bool]],
     compose_judge_model: Callable[[str, bool], str],
+    *,
+    essay_ids: Sequence[str] | None = None,
+    contestants: Sequence[str] | None = None,
+    vs_human: bool = False,
 ) -> list[tuple[_PendingPair, str, bool, str]]:
     """Enumerate pending (pair, task_name, is_versus_criterion, judge_model) tuples.
 
     ``tasks_spec`` is a list of (task_name, is_versus_criterion). The
     ``compose_judge_model(task_name, is_versus_criterion)`` callback is the
     dedup-safe way to derive the judge_model string for each task.
+
+    Filters (all optional, composable):
+    - ``essay_ids``: restrict to pairs from these essays
+    - ``contestants``: restrict to pairs where both source_ids are in this list
+    - ``vs_human``: restrict to pairs where one side is ``"human"``
     """
+    essay_id_set = set(essay_ids) if essay_ids else None
+    contestants_set = set(contestants) if contestants else None
     groups, prefix_texts = judge.load_sources_by_essay(cfg.storage.completions_log)
     existing = jsonl.keys(cfg.storage.judgments_log)
     out: list[tuple[_PendingPair, str, bool, str]] = []
     for (essay_id, prefix_hash), sources in groups.items():
+        if essay_id_set is not None and essay_id not in essay_id_set:
+            continue
         source_ids = list(sources.keys())
         if not cfg.judging.include_human_as_contestant:
             source_ids = [s for s in source_ids if s != "human"]
+        if contestants_set is not None:
+            source_ids = [s for s in source_ids if s in contestants_set]
         if len(source_ids) < 2:
             continue
         prefix_text = prefix_texts.get((essay_id, prefix_hash), "")
         for a_id, b_id in itertools.combinations(sorted(source_ids), 2):
+            if vs_human and "human" not in (a_id, b_id):
+                continue
             src_a = judge.Source(a_id, sources[a_id])
             src_b = judge.Source(b_id, sources[b_id])
             first, second = judge.order_pair(essay_id, src_a, src_b)
@@ -243,7 +262,9 @@ def _plan_rumil_pairs(
                 source_b_id=b_id,
                 source_b_text=sources[b_id],
                 display_first_id=first.source_id,
+                display_first_text=first.text,
                 display_second_id=second.source_id,
+                display_second_text=second.text,
             )
             for task_name, is_versus_crit in tasks_spec:
                 judge_model = compose_judge_model(task_name, is_versus_crit)
@@ -336,6 +357,9 @@ async def run_ws(
     limit: int | None = None,
     dry_run: bool = False,
     concurrency: int = 2,
+    essay_ids: Sequence[str] | None = None,
+    contestants: Sequence[str] | None = None,
+    vs_human: bool = False,
 ) -> None:
     """Run the workspace-aware rumil judge against pending pairs.
 
@@ -373,7 +397,14 @@ async def run_ws(
         suffix = f"versus_{task_name}" if is_versus_crit else task_name
         return f"rumil:ws:{model}:{ws_short}:{suffix}"
 
-    tasks = _plan_rumil_pairs(cfg, tasks_spec, _compose)
+    tasks = _plan_rumil_pairs(
+        cfg,
+        tasks_spec,
+        _compose,
+        essay_ids=essay_ids,
+        contestants=contestants,
+        vs_human=vs_human,
+    )
     if limit is not None:
         tasks = tasks[:limit]
     if not tasks:
@@ -429,10 +460,12 @@ async def run_ws(
                     essay_id=pair.essay_id,
                     prefix_hash=pair.prefix_hash,
                     prefix_text=pair.prefix_text,
+                    continuation_a_id=pair.display_first_id,
+                    continuation_a_text=pair.display_first_text,
+                    continuation_b_id=pair.display_second_id,
+                    continuation_b_text=pair.display_second_text,
                     source_a_id=pair.source_a_id,
-                    source_a_text=pair.source_a_text,
                     source_b_id=pair.source_b_id,
-                    source_b_text=pair.source_b_text,
                     task_name=effective_task,
                 )
                 result = await judge_pair_ws_aware(db, pair_ctx, task_body=task_body)
@@ -461,6 +494,9 @@ async def run_orch(
     budget: int = 1,
     limit: int | None = None,
     dry_run: bool = False,
+    essay_ids: Sequence[str] | None = None,
+    contestants: Sequence[str] | None = None,
+    vs_human: bool = False,
 ) -> None:
     """Run the orchestrator rumil judge against pending pairs.
 
@@ -491,7 +527,14 @@ async def run_orch(
         suffix = f"versus_{task_name}" if is_versus_crit else task_name
         return f"rumil:orch:{model}:{ws_short}:b{budget}:{suffix}"
 
-    tasks = _plan_rumil_pairs(cfg, tasks_spec, _compose)
+    tasks = _plan_rumil_pairs(
+        cfg,
+        tasks_spec,
+        _compose,
+        essay_ids=essay_ids,
+        contestants=contestants,
+        vs_human=vs_human,
+    )
     if limit is not None:
         tasks = tasks[:limit]
     if not tasks:
@@ -525,10 +568,12 @@ async def run_orch(
                 essay_id=pair.essay_id,
                 prefix_hash=pair.prefix_hash,
                 prefix_text=pair.prefix_text,
+                continuation_a_id=pair.display_first_id,
+                continuation_a_text=pair.display_first_text,
+                continuation_b_id=pair.display_second_id,
+                continuation_b_text=pair.display_second_text,
                 source_a_id=pair.source_a_id,
-                source_a_text=pair.source_a_text,
                 source_b_id=pair.source_b_id,
-                source_b_text=pair.source_b_text,
                 task_name=effective_task,
             )
             await db.create_run(

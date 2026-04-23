@@ -436,6 +436,28 @@ export type CallsForQuestion = {
 };
 
 /**
+ * Cell
+ */
+export type Cell = {
+    /**
+     * Pct
+     */
+    pct: number | null;
+    /**
+     * N
+     */
+    n: number;
+    /**
+     * Bg
+     */
+    bg: string;
+    /**
+     * Fg
+     */
+    fg: string;
+};
+
+/**
  * ClaimReassessedEventOut
  */
 export type ClaimReassessedEventOut = {
@@ -500,6 +522,28 @@ export type ClaimScoreItem = {
 };
 
 /**
+ * ConditionMeta
+ */
+export type ConditionMeta = {
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Pair
+     */
+    pair: string;
+    /**
+     * Cell Meaning
+     */
+    cell_meaning: string;
+    /**
+     * Value Picks
+     */
+    value_picks: string;
+};
+
+/**
  * ConsiderationDirection
  */
 export type ConsiderationDirection = 'supports' | 'opposes' | 'neutral';
@@ -536,6 +580,38 @@ export type ContextBuiltEventOut = {
      * Budget
      */
     budget: number | null;
+};
+
+/**
+ * CriterionMatrix
+ */
+export type CriterionMatrix = {
+    /**
+     * Criterion
+     */
+    criterion: string;
+    /**
+     * Cells
+     */
+    cells: Array<GenJudgeCell>;
+};
+
+/**
+ * CriterionStats
+ */
+export type CriterionStats = {
+    /**
+     * Criterion
+     */
+    criterion: string;
+    /**
+     * Done
+     */
+    done: number;
+    /**
+     * Total
+     */
+    total: number;
 };
 
 /**
@@ -672,6 +748,90 @@ export type ErrorEventOut = {
 };
 
 /**
+ * EssayDetail
+ *
+ * Essay + the prompts shown to completion / judge / paraphrase models.
+ */
+export type EssayDetail = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Author
+     */
+    author: string;
+    /**
+     * Pub Date
+     */
+    pub_date: string;
+    /**
+     * Url
+     */
+    url: string;
+    /**
+     * Markdown
+     */
+    markdown: string;
+    /**
+     * Prefix Config Hash
+     */
+    prefix_config_hash: string;
+    /**
+     * Target Words
+     */
+    target_words: number;
+    /**
+     * Completion Prompt
+     */
+    completion_prompt: string;
+    /**
+     * Judge Prompt Template
+     */
+    judge_prompt_template: string;
+    /**
+     * Paraphrase Prompt Template
+     */
+    paraphrase_prompt_template: string;
+    /**
+     * Criteria
+     */
+    criteria: Array<string>;
+};
+
+/**
+ * EssayMeta
+ *
+ * Headline metadata for one cached essay.
+ */
+export type EssayMeta = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Author
+     */
+    author: string;
+    /**
+     * Pub Date
+     */
+    pub_date: string;
+    /**
+     * Url
+     */
+    url: string;
+};
+
+/**
  * EvaluationCompleteEventOut
  */
 export type EvaluationCompleteEventOut = {
@@ -768,6 +928,23 @@ export type ExplorePageEventOut = {
 };
 
 /**
+ * GenJudgeCell
+ *
+ * One (gen_model, judge_model) cell with its rendered colors.
+ */
+export type GenJudgeCell = {
+    /**
+     * Gen Model
+     */
+    gen_model: string;
+    /**
+     * Judge Model
+     */
+    judge_model: string;
+    cell: Cell;
+};
+
+/**
  * GlobalPhaseCompletedEventOut
  */
 export type GlobalPhaseCompletedEventOut = {
@@ -829,6 +1006,230 @@ export type HttpValidationError = {
      * Detail
      */
     detail?: Array<ValidationError>;
+};
+
+/**
+ * JudgeLabel
+ *
+ * Stacked column-header parts for a judge model id.
+ */
+export type JudgeLabel = {
+    /**
+     * Variant
+     */
+    variant: string | null;
+    /**
+     * Model
+     */
+    model: string;
+    /**
+     * Task
+     */
+    task: string | null;
+    /**
+     * Phash
+     */
+    phash: string | null;
+};
+
+/**
+ * JudgingProgress
+ *
+ * Returned when there is no next pair; tells the UI to show 'done'.
+ */
+export type JudgingProgress = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Criterion
+     */
+    criterion: string;
+    /**
+     * Criteria
+     */
+    criteria: Array<string>;
+    /**
+     * Per Criterion
+     */
+    per_criterion: Array<CriterionStats>;
+};
+
+/**
+ * Judgment
+ *
+ * One pairwise judgment row, shaped for the inspect view.
+ */
+export type Judgment = {
+    /**
+     * Judge Model
+     */
+    judge_model: string;
+    /**
+     * Criterion
+     */
+    criterion: string;
+    /**
+     * Source A
+     */
+    source_a: string;
+    /**
+     * Source B
+     */
+    source_b: string;
+    /**
+     * Display First
+     */
+    display_first: string;
+    /**
+     * Display Second
+     */
+    display_second: string;
+    /**
+     * Verdict
+     */
+    verdict: string | null;
+    /**
+     * Winner Source
+     */
+    winner_source: string | null;
+    /**
+     * Reasoning Preview
+     */
+    reasoning_preview: string;
+    /**
+     * Is Rumil
+     */
+    is_rumil: boolean;
+    /**
+     * Rumil Trace Url
+     */
+    rumil_trace_url: string | null;
+    /**
+     * Rumil Preference Label
+     */
+    rumil_preference_label: string | null;
+    /**
+     * Rumil Question Id
+     */
+    rumil_question_id: string | null;
+    /**
+     * Rumil Call Id
+     */
+    rumil_call_id: string | null;
+    /**
+     * Rumil Run Id
+     */
+    rumil_run_id: string | null;
+    /**
+     * Rumil Cost Usd
+     */
+    rumil_cost_usd: number | null;
+    /**
+     * Contamination Note
+     */
+    contamination_note: string | null;
+};
+
+/**
+ * JudgmentRow
+ *
+ * One row in the raw-judgments explorer at the bottom of /results.
+ */
+export type JudgmentRow = {
+    /**
+     * Essay Id
+     */
+    essay_id: string;
+    /**
+     * Source A
+     */
+    source_a: string;
+    /**
+     * Source B
+     */
+    source_b: string;
+    /**
+     * Criterion
+     */
+    criterion: string;
+    /**
+     * Judge Model
+     */
+    judge_model: string;
+    /**
+     * Verdict
+     */
+    verdict: string;
+    /**
+     * Winner
+     */
+    winner: string;
+    /**
+     * Ts
+     */
+    ts: string;
+};
+
+/**
+ * JudgmentSubmit
+ */
+export type JudgmentSubmit = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Criterion
+     */
+    criterion: string;
+    /**
+     * Essay Id
+     */
+    essay_id: string;
+    /**
+     * Prefix Hash
+     */
+    prefix_hash: string;
+    /**
+     * A
+     */
+    a: string;
+    /**
+     * B
+     */
+    b: string;
+    /**
+     * First Source
+     */
+    first_source: string;
+    /**
+     * Second Source
+     */
+    second_source: string;
+    /**
+     * Verdict
+     */
+    verdict: string;
+    /**
+     * Note
+     */
+    note?: string;
+};
+
+/**
+ * JudgmentSubmitResult
+ */
+export type JudgmentSubmitResult = {
+    /**
+     * Key
+     */
+    key: string;
+    /**
+     * Winner Source
+     */
+    winner_source: string;
 };
 
 /**
@@ -1074,6 +1475,21 @@ export type LoadPageEventOut = {
 };
 
 /**
+ * Matrix
+ */
+export type Matrix = {
+    /**
+     * Condition
+     */
+    condition: string;
+    meta: ConditionMeta;
+    /**
+     * Cells
+     */
+    cells: Array<GenJudgeCell>;
+};
+
+/**
  * MoveTraceItem
  */
 export type MoveTraceItem = {
@@ -1112,6 +1528,78 @@ export type MovesExecutedEventOut = {
      * Moves
      */
     moves: Array<MoveTraceItem>;
+};
+
+/**
+ * NextPair
+ */
+export type NextPair = {
+    /**
+     * Essay Id
+     */
+    essay_id: string;
+    /**
+     * Prefix Hash
+     */
+    prefix_hash: string;
+    /**
+     * A
+     */
+    a: string;
+    /**
+     * B
+     */
+    b: string;
+    /**
+     * First Source
+     */
+    first_source: string;
+    /**
+     * Second Source
+     */
+    second_source: string;
+    /**
+     * First Text
+     */
+    first_text: string;
+    /**
+     * Second Text
+     */
+    second_text: string;
+    /**
+     * Prefix Text
+     */
+    prefix_text: string;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Criterion
+     */
+    criterion: string;
+    /**
+     * Criterion Desc
+     */
+    criterion_desc: string;
+    /**
+     * Done Count
+     */
+    done_count: number;
+    /**
+     * Total
+     */
+    total: number;
+};
+
+/**
+ * NextPairResponse
+ *
+ * Either a next pair to judge, or progress when nothing's left.
+ */
+export type NextPairResponse = {
+    pair: NextPair | null;
+    progress: JudgingProgress;
 };
 
 /**
@@ -1685,6 +2173,62 @@ export type RenderQuestionSubgraphEventOut = {
 };
 
 /**
+ * ResultsBundle
+ */
+export type ResultsBundle = {
+    /**
+     * Conditions
+     */
+    conditions: Array<string>;
+    /**
+     * Criteria
+     */
+    criteria: Array<string>;
+    /**
+     * Active Criterion
+     */
+    active_criterion: string | null;
+    /**
+     * Gen Models
+     */
+    gen_models: Array<string>;
+    /**
+     * Judge Models
+     */
+    judge_models: Array<string>;
+    /**
+     * Judge Labels
+     */
+    judge_labels: {
+        [key: string]: JudgeLabel;
+    };
+    /**
+     * Main Matrices
+     */
+    main_matrices: Array<Matrix>;
+    /**
+     * Small Grid
+     */
+    small_grid: Array<SmallGridRow>;
+    /**
+     * Rows
+     */
+    rows: Array<JudgmentRow>;
+    /**
+     * Total Judgments
+     */
+    total_judgments: number;
+    /**
+     * Total Completions
+     */
+    total_completions: number;
+    /**
+     * Sources Summary
+     */
+    sources_summary: Array<SourceSummary>;
+};
+
+/**
  * ReviewCompleteEventOut
  */
 export type ReviewCompleteEventOut = {
@@ -1829,6 +2373,70 @@ export type ScoringCompletedEventOut = {
      * Dispatch Guidance
      */
     dispatch_guidance: string;
+};
+
+/**
+ * SmallGridRow
+ */
+export type SmallGridRow = {
+    /**
+     * Condition
+     */
+    condition: string;
+    /**
+     * Per Crit
+     */
+    per_crit: Array<CriterionMatrix>;
+};
+
+/**
+ * Source
+ *
+ * One generated continuation (or the held-out human remainder).
+ */
+export type Source = {
+    /**
+     * Source Id
+     */
+    source_id: string;
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * Text
+     */
+    text: string;
+    /**
+     * Words
+     */
+    words: number;
+    /**
+     * Target
+     */
+    target: number;
+};
+
+/**
+ * SourceSummary
+ */
+export type SourceSummary = {
+    /**
+     * Source Id
+     */
+    source_id: string;
+    /**
+     * N
+     */
+    n: number;
+    /**
+     * Avg Words
+     */
+    avg_words: number;
+    /**
+     * Avg Delta Pct
+     */
+    avg_delta_pct: number;
 };
 
 /**
@@ -2249,6 +2857,211 @@ export type WebResearchCompleteEventOut = {
  * Workspace
  */
 export type Workspace = 'research' | 'prioritization';
+
+export type ListEssaysApiVersusEssaysGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/versus/essays';
+};
+
+export type ListEssaysApiVersusEssaysGetResponses = {
+    /**
+     * Response List Essays Api Versus Essays Get
+     *
+     * Successful Response
+     */
+    200: Array<EssayMeta>;
+};
+
+export type ListEssaysApiVersusEssaysGetResponse = ListEssaysApiVersusEssaysGetResponses[keyof ListEssaysApiVersusEssaysGetResponses];
+
+export type GetEssayApiVersusEssaysEssayIdGetData = {
+    body?: never;
+    path: {
+        /**
+         * Essay Id
+         */
+        essay_id: string;
+    };
+    query?: never;
+    url: '/api/versus/essays/{essay_id}';
+};
+
+export type GetEssayApiVersusEssaysEssayIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetEssayApiVersusEssaysEssayIdGetError = GetEssayApiVersusEssaysEssayIdGetErrors[keyof GetEssayApiVersusEssaysEssayIdGetErrors];
+
+export type GetEssayApiVersusEssaysEssayIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: EssayDetail;
+};
+
+export type GetEssayApiVersusEssaysEssayIdGetResponse = GetEssayApiVersusEssaysEssayIdGetResponses[keyof GetEssayApiVersusEssaysEssayIdGetResponses];
+
+export type GetEssaySourcesApiVersusEssaysEssayIdSourcesGetData = {
+    body?: never;
+    path: {
+        /**
+         * Essay Id
+         */
+        essay_id: string;
+    };
+    query?: never;
+    url: '/api/versus/essays/{essay_id}/sources';
+};
+
+export type GetEssaySourcesApiVersusEssaysEssayIdSourcesGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetEssaySourcesApiVersusEssaysEssayIdSourcesGetError = GetEssaySourcesApiVersusEssaysEssayIdSourcesGetErrors[keyof GetEssaySourcesApiVersusEssaysEssayIdSourcesGetErrors];
+
+export type GetEssaySourcesApiVersusEssaysEssayIdSourcesGetResponses = {
+    /**
+     * Response Get Essay Sources Api Versus Essays  Essay Id  Sources Get
+     *
+     * Successful Response
+     */
+    200: Array<Source>;
+};
+
+export type GetEssaySourcesApiVersusEssaysEssayIdSourcesGetResponse = GetEssaySourcesApiVersusEssaysEssayIdSourcesGetResponses[keyof GetEssaySourcesApiVersusEssaysEssayIdSourcesGetResponses];
+
+export type GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Essay Id
+         */
+        essay_id: string;
+    };
+    query?: never;
+    url: '/api/versus/essays/{essay_id}/judgments';
+};
+
+export type GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetError = GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetErrors[keyof GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetErrors];
+
+export type GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetResponses = {
+    /**
+     * Response Get Essay Judgments Api Versus Essays  Essay Id  Judgments Get
+     *
+     * Successful Response
+     */
+    200: Array<Judgment>;
+};
+
+export type GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetResponse = GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetResponses[keyof GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetResponses];
+
+export type GetResultsApiVersusResultsGetData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Criterion
+         */
+        criterion?: string | null;
+        /**
+         * Include Contaminated
+         */
+        include_contaminated?: boolean;
+    };
+    url: '/api/versus/results';
+};
+
+export type GetResultsApiVersusResultsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetResultsApiVersusResultsGetError = GetResultsApiVersusResultsGetErrors[keyof GetResultsApiVersusResultsGetErrors];
+
+export type GetResultsApiVersusResultsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ResultsBundle;
+};
+
+export type GetResultsApiVersusResultsGetResponse = GetResultsApiVersusResultsGetResponses[keyof GetResultsApiVersusResultsGetResponses];
+
+export type GetNextPairApiVersusNextPairGetData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Name
+         */
+        name: string;
+        /**
+         * Criterion
+         */
+        criterion?: string | null;
+    };
+    url: '/api/versus/next-pair';
+};
+
+export type GetNextPairApiVersusNextPairGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetNextPairApiVersusNextPairGetError = GetNextPairApiVersusNextPairGetErrors[keyof GetNextPairApiVersusNextPairGetErrors];
+
+export type GetNextPairApiVersusNextPairGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: NextPairResponse;
+};
+
+export type GetNextPairApiVersusNextPairGetResponse = GetNextPairApiVersusNextPairGetResponses[keyof GetNextPairApiVersusNextPairGetResponses];
+
+export type SubmitJudgmentApiVersusJudgmentsPostData = {
+    body: JudgmentSubmit;
+    path?: never;
+    query?: never;
+    url: '/api/versus/judgments';
+};
+
+export type SubmitJudgmentApiVersusJudgmentsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SubmitJudgmentApiVersusJudgmentsPostError = SubmitJudgmentApiVersusJudgmentsPostErrors[keyof SubmitJudgmentApiVersusJudgmentsPostErrors];
+
+export type SubmitJudgmentApiVersusJudgmentsPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: JudgmentSubmitResult;
+};
+
+export type SubmitJudgmentApiVersusJudgmentsPostResponse = SubmitJudgmentApiVersusJudgmentsPostResponses[keyof SubmitJudgmentApiVersusJudgmentsPostResponses];
 
 export type HealthzHealthzGetData = {
     body?: never;

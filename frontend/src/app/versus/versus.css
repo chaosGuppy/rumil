@@ -1,0 +1,232 @@
+/* Shared styles for the /versus pages.
+
+   Mirrors the look-and-feel of versus/templates/_base.html so that
+   ported pages feel like the same UI; once the jinja UI is gone we
+   can let these drift toward rumil's house style. */
+
+.versus-shell {
+  --vfg: #1a1a1a;
+  --vmuted: #666;
+  --vbg: #fafaf7;
+  --vcard: #fff;
+  --vborder: #e3e3dd;
+  --vaccent: #ff6f43;
+  --vaccent-dim: #fff1ea;
+  font-family: var(--font-geist-sans), -apple-system, system-ui, sans-serif;
+  color: var(--vfg);
+  background: var(--vbg);
+  min-height: 100vh;
+}
+
+.versus-header {
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--vborder);
+  background: var(--vcard);
+  display: flex;
+  gap: 20px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  font-size: 14px;
+}
+.versus-header strong { font-weight: 600; }
+.versus-header .grow { flex: 1; }
+.versus-header .muted { color: var(--vmuted); }
+.versus-header a {
+  color: var(--vaccent);
+  text-decoration: none;
+}
+.versus-header a:hover { text-decoration: underline; }
+
+.versus-main { padding: 14px 24px; max-width: 1600px; margin: 0 auto; }
+
+.versus-pill {
+  display: inline-block;
+  padding: 2px 10px;
+  background: var(--vaccent-dim);
+  border: 1px solid var(--vaccent);
+  color: var(--vaccent);
+  border-radius: 999px;
+  font-size: 12px;
+}
+.versus-pill.subtle {
+  background: #f4f4f0;
+  color: var(--vfg);
+  border-color: var(--vborder);
+}
+
+.versus-card {
+  background: var(--vcard);
+  border: 1px solid var(--vborder);
+  border-radius: 6px;
+  padding: 20px;
+}
+
+.versus-mono { font-family: ui-monospace, Menlo, monospace; font-size: 11px; }
+.versus-muted { color: var(--vmuted); }
+
+.matrix-table { border-collapse: separate; border-spacing: 1px; }
+.matrix-table th,
+.matrix-table td {
+  padding: 5px 8px;
+  text-align: center;
+  border-radius: 3px;
+  min-width: 70px;
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+}
+.matrix-table th {
+  background: transparent;
+  font-weight: 500;
+  color: var(--vmuted);
+  font-size: 12px;
+}
+.matrix-table tbody th { text-align: right; padding-right: 8px; }
+.matrix-table td .n { font-size: 10px; color: #888; margin-left: 4px; }
+.matrix-table td strong { font-weight: 600; }
+.matrix-table.small th,
+.matrix-table.small td {
+  padding: 3px 5px;
+  min-width: 48px;
+  font-size: 12px;
+}
+.matrix-table.small .n { font-size: 9px; margin-left: 2px; }
+
+.judge-th { vertical-align: bottom; padding: 4px 6px; line-height: 1.25; }
+.judge-th-variant { font-size: 10px; color: #999; font-weight: 400; letter-spacing: 0.02em; }
+.judge-th-model { font-size: 12px; color: var(--vfg); font-weight: 500; }
+.judge-th-task { font-size: 10px; color: #999; font-weight: 400; }
+.judge-th-hash {
+  font-size: 9px;
+  color: #bbb;
+  font-weight: 400;
+  font-family: ui-monospace, Menlo, monospace;
+}
+.matrix-table.small .judge-th { padding: 2px 4px; }
+.matrix-table.small .judge-th-variant { font-size: 9px; }
+.matrix-table.small .judge-th-model { font-size: 11px; }
+
+.results-topbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 4px 0 12px;
+}
+.results-topbar h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 500;
+}
+.results-topbar select {
+  font: inherit;
+  padding: 4px 8px;
+  font-size: 13px;
+  border: 1px solid var(--vborder);
+  border-radius: 4px;
+  background: var(--vcard);
+}
+
+.results-section-head {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--vmuted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 24px 0 8px;
+}
+
+.main-matrices {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.main-matrices section { width: 100%; overflow-x: auto; }
+.cond-head {
+  margin-bottom: 4px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.cond-title { font-weight: 500; font-size: 13px; }
+.cond-desc {
+  color: var(--vmuted);
+  font-size: 12px;
+  line-height: 1.4;
+  margin-bottom: 2px;
+}
+
+.facet-grid { display: grid; gap: 6px; align-items: start; }
+.facet-col-head { padding: 2px 0; font-size: 12px; }
+.facet-row-head { padding: 2px 6px; align-self: center; font-size: 12px; }
+.facet-card {
+  background: var(--vcard);
+  border: 1px solid var(--vborder);
+  border-radius: 4px;
+  padding: 6px;
+}
+
+.collapsible { margin-top: 20px; }
+.collapsible summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--vmuted);
+}
+
+table.log {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12px;
+}
+table.log th,
+table.log td {
+  padding: 3px 8px;
+  border-bottom: 1px solid var(--vborder);
+  text-align: left;
+}
+table.log th {
+  color: var(--vmuted);
+  font-weight: 500;
+  background: #f7f6f0;
+}
+
+.judging-prose {
+  white-space: pre-wrap;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 15px;
+  line-height: 1.55;
+}
+.judging-prose h1,
+.judging-prose h2,
+.judging-prose h3 {
+  font-family: inherit;
+}
+
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.versus-button {
+  font: inherit;
+  padding: 10px 18px;
+  border: 1px solid var(--vborder);
+  background: var(--vcard);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.versus-button:hover {
+  background: var(--vaccent-dim);
+  border-color: var(--vaccent);
+}
+.versus-button.primary { font-weight: 600; }
+
+.versus-input,
+.versus-select,
+.versus-textarea {
+  font: inherit;
+  padding: 8px 10px;
+  border: 1px solid var(--vborder);
+  border-radius: 4px;
+  background: var(--vcard);
+}

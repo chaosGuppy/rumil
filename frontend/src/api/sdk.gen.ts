@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { GetAbEvalApiAbEvalsEvalIdGetData, GetAbEvalApiAbEvalsEvalIdGetErrors, GetAbEvalApiAbEvalsEvalIdGetResponses, GetCallApiCallsCallIdGetData, GetCallApiCallsCallIdGetErrors, GetCallApiCallsCallIdGetResponses, GetCallEventsApiCallsCallIdEventsGetData, GetCallEventsApiCallsCallIdEventsGetErrors, GetCallEventsApiCallsCallIdEventsGetResponses, GetChildCallsApiCallsCallIdChildrenGetData, GetChildCallsApiCallsCallIdChildrenGetErrors, GetChildCallsApiCallsCallIdChildrenGetResponses, GetDependenciesApiPagesPageIdDependenciesGetData, GetDependenciesApiPagesPageIdDependenciesGetErrors, GetDependenciesApiPagesPageIdDependenciesGetResponses, GetDependentsApiPagesPageIdDependentsGetData, GetDependentsApiPagesPageIdDependentsGetErrors, GetDependentsApiPagesPageIdDependentsGetResponses, GetLinksFromApiPagesPageIdLinksFromGetData, GetLinksFromApiPagesPageIdLinksFromGetErrors, GetLinksFromApiPagesPageIdLinksFromGetResponses, GetLinksToApiPagesPageIdLinksToGetData, GetLinksToApiPagesPageIdLinksToGetErrors, GetLinksToApiPagesPageIdLinksToGetResponses, GetLlmExchangeApiLlmExchangesExchangeIdGetData, GetLlmExchangeApiLlmExchangesExchangeIdGetErrors, GetLlmExchangeApiLlmExchangesExchangeIdGetResponses, GetPageApiPagesPageIdGetData, GetPageApiPagesPageIdGetErrors, GetPageApiPagesPageIdGetResponses, GetPageByShortIdApiPagesShortShortIdGetData, GetPageByShortIdApiPagesShortShortIdGetErrors, GetPageByShortIdApiPagesShortShortIdGetResponses, GetPageCountsApiPagesPageIdCountsGetData, GetPageCountsApiPagesPageIdCountsGetErrors, GetPageCountsApiPagesPageIdCountsGetResponses, GetPageDetailApiPagesPageIdDetailGetData, GetPageDetailApiPagesPageIdDetailGetErrors, GetPageDetailApiPagesPageIdDetailGetResponses, GetPageLoadStatsApiRunsRunIdPageLoadStatsGetData, GetPageLoadStatsApiRunsRunIdPageLoadStatsGetErrors, GetPageLoadStatsApiRunsRunIdPageLoadStatsGetResponses, GetPageRunApiPagesPageIdRunGetData, GetPageRunApiPagesPageIdRunGetErrors, GetPageRunApiPagesPageIdRunGetResponses, GetProjectApiProjectsProjectIdGetData, GetProjectApiProjectsProjectIdGetErrors, GetProjectApiProjectsProjectIdGetResponses, GetProjectStatsApiProjectsProjectIdStatsGetData, GetProjectStatsApiProjectsProjectIdStatsGetErrors, GetProjectStatsApiProjectsProjectIdStatsGetResponses, GetQuestionStatsApiPagesPageIdStatsGetData, GetQuestionStatsApiPagesPageIdStatsGetErrors, GetQuestionStatsApiPagesPageIdStatsGetResponses, GetRealtimeConfigApiRealtimeConfigGetData, GetRealtimeConfigApiRealtimeConfigGetResponses, GetRunTraceTreeApiRunsRunIdTraceTreeGetData, GetRunTraceTreeApiRunsRunIdTraceTreeGetErrors, GetRunTraceTreeApiRunsRunIdTraceTreeGetResponses, HealthzHealthzGetData, HealthzHealthzGetResponses, ListAbEvalsApiAbEvalsGetData, ListAbEvalsApiAbEvalsGetErrors, ListAbEvalsApiAbEvalsGetResponses, ListCallsApiProjectsProjectIdCallsGetData, ListCallsApiProjectsProjectIdCallsGetErrors, ListCallsApiProjectsProjectIdCallsGetResponses, ListLlmExchangesApiCallsCallIdLlmExchangesGetData, ListLlmExchangesApiCallsCallIdLlmExchangesGetErrors, ListLlmExchangesApiCallsCallIdLlmExchangesGetResponses, ListPagesApiProjectsProjectIdPagesGetData, ListPagesApiProjectsProjectIdPagesGetErrors, ListPagesApiProjectsProjectIdPagesGetResponses, ListProjectRunsApiProjectsProjectIdRunsGetData, ListProjectRunsApiProjectsProjectIdRunsGetErrors, ListProjectRunsApiProjectsProjectIdRunsGetResponses, ListProjectsApiProjectsGetData, ListProjectsApiProjectsGetErrors, ListProjectsApiProjectsGetResponses, ListRootQuestionsApiProjectsProjectIdQuestionsGetData, ListRootQuestionsApiProjectsProjectIdQuestionsGetErrors, ListRootQuestionsApiProjectsProjectIdQuestionsGetResponses } from './types.gen';
+import type { GetAbEvalApiAbEvalsEvalIdGetData, GetAbEvalApiAbEvalsEvalIdGetErrors, GetAbEvalApiAbEvalsEvalIdGetResponses, GetCallApiCallsCallIdGetData, GetCallApiCallsCallIdGetErrors, GetCallApiCallsCallIdGetResponses, GetCallEventsApiCallsCallIdEventsGetData, GetCallEventsApiCallsCallIdEventsGetErrors, GetCallEventsApiCallsCallIdEventsGetResponses, GetChildCallsApiCallsCallIdChildrenGetData, GetChildCallsApiCallsCallIdChildrenGetErrors, GetChildCallsApiCallsCallIdChildrenGetResponses, GetDependenciesApiPagesPageIdDependenciesGetData, GetDependenciesApiPagesPageIdDependenciesGetErrors, GetDependenciesApiPagesPageIdDependenciesGetResponses, GetDependentsApiPagesPageIdDependentsGetData, GetDependentsApiPagesPageIdDependentsGetErrors, GetDependentsApiPagesPageIdDependentsGetResponses, GetEssayApiVersusEssaysEssayIdGetData, GetEssayApiVersusEssaysEssayIdGetErrors, GetEssayApiVersusEssaysEssayIdGetResponses, GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetData, GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetErrors, GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetResponses, GetEssaySourcesApiVersusEssaysEssayIdSourcesGetData, GetEssaySourcesApiVersusEssaysEssayIdSourcesGetErrors, GetEssaySourcesApiVersusEssaysEssayIdSourcesGetResponses, GetLinksFromApiPagesPageIdLinksFromGetData, GetLinksFromApiPagesPageIdLinksFromGetErrors, GetLinksFromApiPagesPageIdLinksFromGetResponses, GetLinksToApiPagesPageIdLinksToGetData, GetLinksToApiPagesPageIdLinksToGetErrors, GetLinksToApiPagesPageIdLinksToGetResponses, GetLlmExchangeApiLlmExchangesExchangeIdGetData, GetLlmExchangeApiLlmExchangesExchangeIdGetErrors, GetLlmExchangeApiLlmExchangesExchangeIdGetResponses, GetNextPairApiVersusNextPairGetData, GetNextPairApiVersusNextPairGetErrors, GetNextPairApiVersusNextPairGetResponses, GetPageApiPagesPageIdGetData, GetPageApiPagesPageIdGetErrors, GetPageApiPagesPageIdGetResponses, GetPageByShortIdApiPagesShortShortIdGetData, GetPageByShortIdApiPagesShortShortIdGetErrors, GetPageByShortIdApiPagesShortShortIdGetResponses, GetPageCountsApiPagesPageIdCountsGetData, GetPageCountsApiPagesPageIdCountsGetErrors, GetPageCountsApiPagesPageIdCountsGetResponses, GetPageDetailApiPagesPageIdDetailGetData, GetPageDetailApiPagesPageIdDetailGetErrors, GetPageDetailApiPagesPageIdDetailGetResponses, GetPageLoadStatsApiRunsRunIdPageLoadStatsGetData, GetPageLoadStatsApiRunsRunIdPageLoadStatsGetErrors, GetPageLoadStatsApiRunsRunIdPageLoadStatsGetResponses, GetPageRunApiPagesPageIdRunGetData, GetPageRunApiPagesPageIdRunGetErrors, GetPageRunApiPagesPageIdRunGetResponses, GetProjectApiProjectsProjectIdGetData, GetProjectApiProjectsProjectIdGetErrors, GetProjectApiProjectsProjectIdGetResponses, GetProjectStatsApiProjectsProjectIdStatsGetData, GetProjectStatsApiProjectsProjectIdStatsGetErrors, GetProjectStatsApiProjectsProjectIdStatsGetResponses, GetQuestionStatsApiPagesPageIdStatsGetData, GetQuestionStatsApiPagesPageIdStatsGetErrors, GetQuestionStatsApiPagesPageIdStatsGetResponses, GetRealtimeConfigApiRealtimeConfigGetData, GetRealtimeConfigApiRealtimeConfigGetResponses, GetResultsApiVersusResultsGetData, GetResultsApiVersusResultsGetErrors, GetResultsApiVersusResultsGetResponses, GetRunTraceTreeApiRunsRunIdTraceTreeGetData, GetRunTraceTreeApiRunsRunIdTraceTreeGetErrors, GetRunTraceTreeApiRunsRunIdTraceTreeGetResponses, HealthzHealthzGetData, HealthzHealthzGetResponses, ListAbEvalsApiAbEvalsGetData, ListAbEvalsApiAbEvalsGetErrors, ListAbEvalsApiAbEvalsGetResponses, ListCallsApiProjectsProjectIdCallsGetData, ListCallsApiProjectsProjectIdCallsGetErrors, ListCallsApiProjectsProjectIdCallsGetResponses, ListEssaysApiVersusEssaysGetData, ListEssaysApiVersusEssaysGetResponses, ListLlmExchangesApiCallsCallIdLlmExchangesGetData, ListLlmExchangesApiCallsCallIdLlmExchangesGetErrors, ListLlmExchangesApiCallsCallIdLlmExchangesGetResponses, ListPagesApiProjectsProjectIdPagesGetData, ListPagesApiProjectsProjectIdPagesGetErrors, ListPagesApiProjectsProjectIdPagesGetResponses, ListProjectRunsApiProjectsProjectIdRunsGetData, ListProjectRunsApiProjectsProjectIdRunsGetErrors, ListProjectRunsApiProjectsProjectIdRunsGetResponses, ListProjectsApiProjectsGetData, ListProjectsApiProjectsGetErrors, ListProjectsApiProjectsGetResponses, ListRootQuestionsApiProjectsProjectIdQuestionsGetData, ListRootQuestionsApiProjectsProjectIdQuestionsGetErrors, ListRootQuestionsApiProjectsProjectIdQuestionsGetResponses, SubmitJudgmentApiVersusJudgmentsPostData, SubmitJudgmentApiVersusJudgmentsPostErrors, SubmitJudgmentApiVersusJudgmentsPostResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<TData, ThrowOnError> & {
     /**
@@ -17,6 +17,48 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
      */
     meta?: Record<string, unknown>;
 };
+
+/**
+ * List Essays
+ */
+export const listEssaysApiVersusEssaysGet = <ThrowOnError extends boolean = false>(options?: Options<ListEssaysApiVersusEssaysGetData, ThrowOnError>) => (options?.client ?? client).get<ListEssaysApiVersusEssaysGetResponses, unknown, ThrowOnError>({ url: '/api/versus/essays', ...options });
+
+/**
+ * Get Essay
+ */
+export const getEssayApiVersusEssaysEssayIdGet = <ThrowOnError extends boolean = false>(options: Options<GetEssayApiVersusEssaysEssayIdGetData, ThrowOnError>) => (options.client ?? client).get<GetEssayApiVersusEssaysEssayIdGetResponses, GetEssayApiVersusEssaysEssayIdGetErrors, ThrowOnError>({ url: '/api/versus/essays/{essay_id}', ...options });
+
+/**
+ * Get Essay Sources
+ */
+export const getEssaySourcesApiVersusEssaysEssayIdSourcesGet = <ThrowOnError extends boolean = false>(options: Options<GetEssaySourcesApiVersusEssaysEssayIdSourcesGetData, ThrowOnError>) => (options.client ?? client).get<GetEssaySourcesApiVersusEssaysEssayIdSourcesGetResponses, GetEssaySourcesApiVersusEssaysEssayIdSourcesGetErrors, ThrowOnError>({ url: '/api/versus/essays/{essay_id}/sources', ...options });
+
+/**
+ * Get Essay Judgments
+ */
+export const getEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGet = <ThrowOnError extends boolean = false>(options: Options<GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetData, ThrowOnError>) => (options.client ?? client).get<GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetResponses, GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetErrors, ThrowOnError>({ url: '/api/versus/essays/{essay_id}/judgments', ...options });
+
+/**
+ * Get Results
+ */
+export const getResultsApiVersusResultsGet = <ThrowOnError extends boolean = false>(options?: Options<GetResultsApiVersusResultsGetData, ThrowOnError>) => (options?.client ?? client).get<GetResultsApiVersusResultsGetResponses, GetResultsApiVersusResultsGetErrors, ThrowOnError>({ url: '/api/versus/results', ...options });
+
+/**
+ * Get Next Pair
+ */
+export const getNextPairApiVersusNextPairGet = <ThrowOnError extends boolean = false>(options: Options<GetNextPairApiVersusNextPairGetData, ThrowOnError>) => (options.client ?? client).get<GetNextPairApiVersusNextPairGetResponses, GetNextPairApiVersusNextPairGetErrors, ThrowOnError>({ url: '/api/versus/next-pair', ...options });
+
+/**
+ * Submit Judgment
+ */
+export const submitJudgmentApiVersusJudgmentsPost = <ThrowOnError extends boolean = false>(options: Options<SubmitJudgmentApiVersusJudgmentsPostData, ThrowOnError>) => (options.client ?? client).post<SubmitJudgmentApiVersusJudgmentsPostResponses, SubmitJudgmentApiVersusJudgmentsPostErrors, ThrowOnError>({
+    url: '/api/versus/judgments',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
 
 /**
  * Healthz

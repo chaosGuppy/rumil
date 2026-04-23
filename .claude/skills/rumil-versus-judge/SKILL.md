@@ -1,8 +1,8 @@
 ---
 name: rumil-versus-judge
-description: Run pairwise judgments on versus essay-continuation pairs using rumil-adjacent judge backends — direct Anthropic (text), rumil's SDK agent with workspace tools (ws), or a full orchestrator run per pair (orch). Use when the user wants to measure how well rumil discriminates on pairs with known ground truth (human continuation vs. model continuations), compare Anthropic judges against OpenRouter judges in versus, evaluate whether workspace material improves judgment, or top up pending judgments after adding new dimensions or models.
+description: Run pairwise judgments on versus essay-continuation pairs using rumil-adjacent judge backends — direct Anthropic with versus prompt (text), Anthropic with rumil dimension prompt (rumil-text), rumil's SDK agent with workspace tools (ws), or a full orchestrator run per pair (orch). Use when the user wants to measure how well rumil discriminates on pairs with known ground truth (human continuation vs. model continuations), compare Anthropic judges against OpenRouter judges in versus, evaluate whether workspace material improves judgment, or top up pending judgments after adding new dimensions or models.
 allowed-tools: Bash, Read
-argument-hint: "--variant text|ws|orch [--workspace <name>] [--rumil-model opus|sonnet|haiku] [--dimension <name>...] [--versus-criterion <name>...] [--essay <id>...] [--contestants <csv>] [--vs-human] [--model <id>...] [--budget N] [--limit N] [--dry-run]"
+argument-hint: "--variant text|rumil-text|ws|orch [--workspace <name>] [--rumil-model opus|sonnet|haiku] [--dimension <name>...] [--versus-criterion <name>...] [--essay <id>...] [--contestants <csv>] [--vs-human] [--model <id>...] [--budget N] [--limit N] [--concurrency N] [--dry-run]"
 ---
 
 # rumil-versus-judge
@@ -14,17 +14,24 @@ picks up the new rows automatically; rumil paths also mirror a trace
 URL + 7-point preference label + call/run/question IDs so the `/inspect`
 page can link back to the rumil trace.
 
-## Three variants
+## Four variants
 
 | Variant | What it does | judge_model format | Needs supabase? |
 |---|---|---|---|
 | `text` (default) | Single-turn Anthropic call, versus judge prompt. Same shape as OpenRouter judges, different model axis. | `anthropic:<model>` | no |
-| `ws` | One VERSUS_JUDGE rumil agent call per pair with single-arm workspace-exploration tools (search / load_page / explore_subgraph). Dimension prompt defaults to essay-adapted rumil dimensions; `--versus-criterion` also available for direct comparison. | `rumil:ws:<model>:<ws_short>:<task>` | **yes** |
-| `orch` | Per-pair: create Question page, fire `TwoPhaseOrchestrator` at configurable budget, then a closing call extracts the 7-point label. Produces a full research trace per pair. | `rumil:orch:<model>:<ws_short>:b<N>:<task>` | **yes** |
+| `rumil-text` | Single-turn Anthropic call with **rumil's** dimension prompt (judge-shell + essay-adapted dimension body). Isolates the prompt-source effect from the workspace/tools effect that `ws` bundles together. | `rumil:text:<model>:<dim>:p<hash>` | no |
+| `ws` | One VERSUS_JUDGE rumil agent call per pair with single-arm workspace-exploration tools (search / load_page / explore_subgraph). Dimension prompt defaults to essay-adapted rumil dimensions; `--versus-criterion` also available for direct comparison. | `rumil:ws:<model>:<ws_short>:<task>:p<hash>:v<N>` | **yes** |
+| `orch` | Per-pair: create Question page, fire `TwoPhaseOrchestrator` at configurable budget, then a closing call extracts the 7-point label. Produces a full research trace per pair. | `rumil:orch:<model>:<ws_short>:b<N>:<task>:p<hash>:v<N>` | **yes** |
 
 `<task>` is either a rumil dimension name (e.g. `general_quality`) or
 `versus_<criterion>` (e.g. `versus_standalone_quality`) when
 `--versus-criterion` is set.
+
+`p<hash>` is `compute_prompt_hash(task_body)` — hashes
+`prompts/versus-judge-shell.md` + the task body so any `.md` edit auto-
+invalidates the key. `v<N>` is `BLIND_JUDGE_VERSION` — manual bump for
+semantic bridge changes that don't move the prompt hash (see "When to
+bump `BLIND_JUDGE_VERSION`" below).
 
 ## When to use
 
@@ -47,13 +54,17 @@ Versus must already have completions cached
 - Anthropic models for the `text` variant come from
   `versus/config.yaml` under `judging.anthropic_models`, overridable
   via `--model`.
-- `ws` / `orch` variants use rumil's configured model (`settings.model`
-  — defaults to `claude-opus-4-7`). Override per-run with
-  `--rumil-model opus|sonnet|haiku`; the flag sets
-  `RUMIL_MODEL_OVERRIDE` before rumil imports so `run_sdk_agent` and
-  `text_call` see it. Picking the model matters — opus and sonnet
-  produce meaningfully different verdicts on the same pairs, so treat
-  the model as part of the judge identity.
+- `rumil-text` / `ws` / `orch` variants take their model from
+  `--rumil-model opus|sonnet|haiku` (default: `opus`). The model is
+  passed explicitly through the bridge via
+  `override_settings(rumil_model_override=...)` — no env-var
+  ordering. Picking the model matters: opus and sonnet produce
+  meaningfully different verdicts on the same pairs, so treat it as
+  part of the judge identity.
+- `rumil-text` requires `--rumil-model` OR exactly one `--model`
+  (doesn't fall back to `judging.anthropic_models` the way `text`
+  does). Use `--model <full-id>` only if you need a model not in the
+  alias list.
 - Dimensions default to `general_quality`. Each dimension needs a
   prompt at `prompts/versus-<name>.md`. Currently available:
   `general_quality`, `grounding`. Adding more = drop a new prompt file
@@ -61,7 +72,11 @@ Versus must already have completions cached
   needed.
 - `--versus-criterion` accepts any key from
   `versus/src/versus/judge.py:CRITERION_PROMPTS` (e.g.
-  `standalone_quality`, `informativeness`, `substance_and_bite`).
+  `standalone_quality`, `informativeness`, `substance_and_bite`). Not
+  applicable to `rumil-text`.
+- `--concurrency N` — concurrent LLM calls. Defaults: `ws` = 2,
+  `text` / `rumil-text` = `cfg.concurrency` (usually 8). `orch` runs
+  serially regardless (per-pair orchestrator run + DB traffic).
 
 ## Targeted pair selection (ws / orch)
 
@@ -150,6 +165,8 @@ are extrapolations.
 |---|---|---|---|
 | text | sonnet (4-6) | $0.03-0.08 | $3-8 |
 | text | opus (4-7) | $0.20-0.40 | $20-40 |
+| rumil-text | sonnet (4-6) | $0.03-0.10 (similar to `text`; different prompt) | $3-10 |
+| rumil-text | opus (4-7) | $0.20-0.45 | $20-45 |
 | ws | haiku (4-5) | $0.05-0.25 | $5-25 |
 | ws | sonnet (4-6) | **~$0.12** (observed; range $0.09-0.14) | ~$12 |
 | ws | opus (4-7) | **~$0.53** (observed; range $0.35-0.73) | ~$53 |
@@ -226,3 +243,32 @@ over-read any single number:
 - **Rumil trace UI requires rumil's frontend** (`./scripts/dev-api.sh`
   + `cd frontend && pnpm dev`). Trace URLs emitted by the script point
   at `settings.frontend_url` (default http://127.0.0.1:3000).
+
+## When to bump `BLIND_JUDGE_VERSION`
+
+`BLIND_JUDGE_VERSION` (in `src/rumil/versus_bridge.py`, currently `2`)
+is the manual version knob that forks `rumil:ws:*` and `rumil:orch:*`
+judge_model keys when you make a semantic change the automatic prompt
+hash doesn't catch. **Bump it when editing any of:**
+
+- `versus_bridge._format_pair_content` — the Question page body the
+  agent reads via `load_page`.
+- `versus_bridge._versus_extra` — rendered verbatim in page views.
+- The inline user prompts constructed in code:
+  - `judge_pair_ws_aware` (agent user prompt + allowed/disallowed tools)
+  - `_run_orch_closer` (closer user prompt)
+  - `_build_rumil_text_user_message` (rumil-text user message)
+- The tool list / `disallowed_tools` config on `SdkAgentConfig` in
+  `judge_pair_ws_aware` — changing what the agent can reach changes
+  its behavior.
+- Anything else in the bridge that a future reader would consider
+  "part of the judge's identity" but isn't an `.md` file on disk.
+
+**Do NOT bump** when editing `prompts/versus-judge-shell.md` or
+`prompts/versus-<dim>.md` — those are already covered by
+`compute_prompt_hash` (the `:p<hash>` suffix moves automatically).
+
+When you bump, also update the comment next to the constant with a
+short reason, so future readers know what the bump paid for
+(e.g. `# v2 (2026-04-23): fixes #3 headline leak and #4 page.extra
+leak`).

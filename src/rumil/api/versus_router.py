@@ -17,6 +17,7 @@ import json
 import os
 import pathlib
 from collections import defaultdict
+from collections.abc import Sequence
 
 import pydantic
 from fastapi import APIRouter, HTTPException
@@ -485,8 +486,8 @@ def _build_cell(
 
 def _matrix_cells(
     data: dict,
-    gen_models: list[str],
-    judge_models: list[str],
+    gen_models: Sequence[str],
+    judge_models: Sequence[str],
     cond: str,
     crit: str | None,
     *,
@@ -513,13 +514,15 @@ def get_results(
     completions_log = _resolve_path(cfg.storage.completions_log)
 
     data = versus_analyze.matrix(judgments_log, include_contaminated=include_contaminated)
-    content_data = versus_analyze.content_test_matrix(judgments_log)
+    content_data = versus_analyze.content_test_matrix(
+        judgments_log, include_contaminated=include_contaminated
+    )
 
     conditions_present = sorted({k[2] for k in data}) if data else []
     conditions = [c for c in ("completion", "paraphrase") if c in conditions_present] or (
         conditions_present
     )
-    criteria = list(cfg.judging.criteria)
+    criteria = cfg.judging.criteria
 
     present_gens = {k[0] for k in data if k[2] in conditions} | {k[0] for k in content_data}
     present_judges = {k[1] for k in data if k[2] in conditions} | {k[1] for k in content_data}
@@ -593,6 +596,8 @@ def get_results(
     for row in versus_jsonl.read(judgments_log):
         total_judgments += 1
         if row.get("verdict") is None:
+            continue
+        if not include_contaminated and row.get("contamination_note"):
             continue
         rows.append(
             JudgmentRow(

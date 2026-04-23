@@ -88,6 +88,7 @@ def model_sort_key(judge: str) -> tuple:
 
 
 _PROMPT_HASH_RE = re.compile(r"^p[0-9a-f]{8}$")
+_VERSION_TAG_RE = re.compile(r"^v\d+$")
 
 
 def judge_label(judge: str) -> dict:
@@ -95,7 +96,8 @@ def judge_label(judge: str) -> dict:
 
     Returns {variant, model, task, phash}. `phash` is the `:p<sha8>` prompt
     version suffix (present on post-hash rumil judgments; absent on legacy
-    pre-hash data).
+    pre-hash data). A `:v<N>` BLIND_JUDGE_VERSION suffix (after the phash)
+    is folded into `variant` so the phash remains separable.
     """
     if judge.startswith("human:"):
         return {"variant": "human", "model": judge.split(":", 1)[1], "task": None, "phash": None}
@@ -105,6 +107,10 @@ def judge_label(judge: str) -> dict:
         or judge.startswith("rumil:text:")
     ):
         parts = judge.split(":")
+        version = None
+        if parts and _VERSION_TAG_RE.match(parts[-1]):
+            version = parts[-1]
+            parts = parts[:-1]
         phash = None
         if parts and _PROMPT_HASH_RE.match(parts[-1]):
             phash = parts[-1]
@@ -118,6 +124,8 @@ def judge_label(judge: str) -> dict:
             if tail and tail[0].startswith("b") and tail[0][1:].isdigit():
                 variant = f"{variant} {tail[0]}"
                 tail = tail[1:]
+        if version:
+            variant = f"{variant} {version}"
         task = ":".join(tail) if tail else None
         return {"variant": variant, "model": model, "task": task, "phash": phash}
     if judge.startswith("anthropic:"):
@@ -159,7 +167,10 @@ def _strip_prefix(source_id: str) -> tuple[str, str]:
     return "completion", source_id
 
 
-def content_test_matrix(judgments_log: pathlib.Path) -> dict:
+def content_test_matrix(
+    judgments_log: pathlib.Path,
+    include_contaminated: bool = False,
+) -> dict:
     """Compute `%-picks-J's-paraphrase` per (gen_model, judge_model, criterion).
 
     Counts pairs of the form (paraphrase:J, completion:G) where the judge J is
@@ -168,12 +179,16 @@ def content_test_matrix(judgments_log: pathlib.Path) -> dict:
     the diagonal (G == J); off-diagonal mixes style + content.
 
     Cell value is fraction of J-picks-paraphrase:J (ties = 0.5).
+
+    ``include_contaminated`` mirrors ``matrix()``: rows tagged with a
+    ``contamination_note`` are excluded by default; pass True to see the
+    pre-fix distribution.
     """
     counts: dict[tuple[str, str, str], list[float]] = collections.defaultdict(lambda: [0.0, 0])
     for row in jsonl.read(judgments_log):
         if row.get("verdict") is None:
             continue
-        if row.get("contamination_note"):
+        if not include_contaminated and row.get("contamination_note"):
             continue
         j = row["judge_model"]
         baseline = f"paraphrase:{j}"

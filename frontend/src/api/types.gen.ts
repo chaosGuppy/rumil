@@ -1133,11 +1133,126 @@ export type Judgment = {
 };
 
 /**
+ * JudgmentDetail
+ *
+ * Full judgment row for the side-panel inspector on /versus/results.
+ *
+ * Includes the verbatim prompt + reasoning text + raw provider response,
+ * so a reader can audit what the judge actually saw and said. Most fields
+ * are optional because the shape varies across judge variants (OpenRouter
+ * vs anthropic vs rumil:text vs rumil:ws/orch vs human:*).
+ */
+export type JudgmentDetail = {
+    /**
+     * Key
+     */
+    key: string;
+    /**
+     * Essay Id
+     */
+    essay_id: string;
+    /**
+     * Prefix Config Hash
+     */
+    prefix_config_hash: string;
+    /**
+     * Source A
+     */
+    source_a: string;
+    /**
+     * Source B
+     */
+    source_b: string;
+    /**
+     * Display First
+     */
+    display_first: string;
+    /**
+     * Display Second
+     */
+    display_second: string;
+    /**
+     * Criterion
+     */
+    criterion: string;
+    /**
+     * Judge Model
+     */
+    judge_model: string;
+    /**
+     * Verdict
+     */
+    verdict: string | null;
+    /**
+     * Winner Source
+     */
+    winner_source: string | null;
+    /**
+     * Is Rumil
+     */
+    is_rumil: boolean;
+    /**
+     * Contamination Note
+     */
+    contamination_note: string | null;
+    /**
+     * Prompt
+     */
+    prompt: string | null;
+    /**
+     * Reasoning Text
+     */
+    reasoning_text: string | null;
+    /**
+     * Raw Response
+     */
+    raw_response: {
+        [key: string]: unknown;
+    } | Array<unknown> | null;
+    /**
+     * Rumil Trace Url
+     */
+    rumil_trace_url: string | null;
+    /**
+     * Rumil Preference Label
+     */
+    rumil_preference_label: string | null;
+    /**
+     * Rumil Question Id
+     */
+    rumil_question_id: string | null;
+    /**
+     * Rumil Call Id
+     */
+    rumil_call_id: string | null;
+    /**
+     * Rumil Run Id
+     */
+    rumil_run_id: string | null;
+    /**
+     * Rumil Cost Usd
+     */
+    rumil_cost_usd: number | null;
+    /**
+     * Ts
+     */
+    ts: string | null;
+    /**
+     * Duration S
+     */
+    duration_s: number | null;
+};
+
+/**
  * JudgmentRow
  *
  * One row in the raw-judgments explorer at the bottom of /results.
  */
 export type JudgmentRow = {
+    /**
+     * Key
+     */
+    key: string;
     /**
      * Essay Id
      */
@@ -1170,6 +1285,14 @@ export type JudgmentRow = {
      * Ts
      */
     ts: string;
+    /**
+     * Is Rumil
+     */
+    is_rumil: boolean;
+    /**
+     * Contamination Note
+     */
+    contamination_note: string | null;
 };
 
 /**
@@ -3037,6 +3160,36 @@ export type GetNextPairApiVersusNextPairGetResponses = {
 };
 
 export type GetNextPairApiVersusNextPairGetResponse = GetNextPairApiVersusNextPairGetResponses[keyof GetNextPairApiVersusNextPairGetResponses];
+
+export type GetJudgmentByKeyApiVersusJudgmentsByKeyGetData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Key
+         */
+        key: string;
+    };
+    url: '/api/versus/judgments/by-key';
+};
+
+export type GetJudgmentByKeyApiVersusJudgmentsByKeyGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetJudgmentByKeyApiVersusJudgmentsByKeyGetError = GetJudgmentByKeyApiVersusJudgmentsByKeyGetErrors[keyof GetJudgmentByKeyApiVersusJudgmentsByKeyGetErrors];
+
+export type GetJudgmentByKeyApiVersusJudgmentsByKeyGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: JudgmentDetail;
+};
+
+export type GetJudgmentByKeyApiVersusJudgmentsByKeyGetResponse = GetJudgmentByKeyApiVersusJudgmentsByKeyGetResponses[keyof GetJudgmentByKeyApiVersusJudgmentsByKeyGetResponses];
 
 export type SubmitJudgmentApiVersusJudgmentsPostData = {
     body: JudgmentSubmit;

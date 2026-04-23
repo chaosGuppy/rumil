@@ -131,6 +131,44 @@ class Judgment(pydantic.BaseModel):
     contamination_note: str | None
 
 
+class JudgmentDetail(pydantic.BaseModel):
+    """Full judgment row for the side-panel inspector on /versus/results.
+
+    Includes the verbatim prompt + reasoning text + raw provider response,
+    so a reader can audit what the judge actually saw and said. Most fields
+    are optional because the shape varies across judge variants (OpenRouter
+    vs anthropic vs rumil:text vs rumil:ws/orch vs human:*).
+    """
+
+    key: str
+    essay_id: str
+    prefix_config_hash: str
+    source_a: str
+    source_b: str
+    display_first: str
+    display_second: str
+    criterion: str
+    judge_model: str
+    verdict: str | None
+    winner_source: str | None
+    is_rumil: bool
+    contamination_note: str | None
+
+    prompt: str | None
+    reasoning_text: str | None
+    raw_response: dict | list | None
+
+    rumil_trace_url: str | None
+    rumil_preference_label: str | None
+    rumil_question_id: str | None
+    rumil_call_id: str | None
+    rumil_run_id: str | None
+    rumil_cost_usd: float | None
+
+    ts: str | None
+    duration_s: float | None
+
+
 class JudgeLabel(pydantic.BaseModel):
     """Stacked column-header parts for a judge model id."""
 
@@ -188,6 +226,7 @@ class SourceSummary(pydantic.BaseModel):
 class JudgmentRow(pydantic.BaseModel):
     """One row in the raw-judgments explorer at the bottom of /results."""
 
+    key: str
     essay_id: str
     source_a: str
     source_b: str
@@ -196,6 +235,8 @@ class JudgmentRow(pydantic.BaseModel):
     verdict: str
     winner: str
     ts: str
+    is_rumil: bool
+    contamination_note: str | None
 
 
 class ResultsBundle(pydantic.BaseModel):
@@ -601,6 +642,7 @@ def get_results(
             continue
         rows.append(
             JudgmentRow(
+                key=row.get("key", ""),
                 essay_id=row["essay_id"],
                 source_a=row["source_a"],
                 source_b=row["source_b"],
@@ -609,6 +651,8 @@ def get_results(
                 verdict=row["verdict"],
                 winner=row.get("winner_source") or "-",
                 ts=row["ts"][:16],
+                is_rumil=str(row.get("judge_model", "")).startswith("rumil:"),
+                contamination_note=row.get("contamination_note"),
             )
         )
 
@@ -739,6 +783,47 @@ def get_next_pair(name: str, criterion: str | None = None) -> NextPairResponse:
         **next_p,
     )
     return NextPairResponse(pair=pair, progress=progress)
+
+
+@router.get("/judgments/by-key", response_model=JudgmentDetail)
+def get_judgment_by_key(key: str) -> JudgmentDetail:
+    """Look up the verbatim row for a single judgment key.
+
+    Used by the side-panel inspector on /versus/results so a reader can see
+    the prompt + reasoning + raw response that produced a verdict. The key
+    contains `|` and `:` so callers must pass it as a query param.
+    """
+    cfg = _cfg_required()
+    for row in versus_jsonl.read(_resolve_path(cfg.storage.judgments_log)):
+        if row.get("key") != key:
+            continue
+        return JudgmentDetail(
+            key=row["key"],
+            essay_id=row.get("essay_id", ""),
+            prefix_config_hash=row.get("prefix_config_hash", ""),
+            source_a=row.get("source_a", ""),
+            source_b=row.get("source_b", ""),
+            display_first=row.get("display_first", ""),
+            display_second=row.get("display_second", ""),
+            criterion=row.get("criterion", ""),
+            judge_model=row.get("judge_model", ""),
+            verdict=row.get("verdict"),
+            winner_source=row.get("winner_source"),
+            is_rumil=str(row.get("judge_model", "")).startswith("rumil:"),
+            contamination_note=row.get("contamination_note"),
+            prompt=row.get("prompt"),
+            reasoning_text=row.get("reasoning_text"),
+            raw_response=row.get("raw_response"),
+            rumil_trace_url=row.get("rumil_trace_url"),
+            rumil_preference_label=row.get("rumil_preference_label"),
+            rumil_question_id=row.get("rumil_question_id"),
+            rumil_call_id=row.get("rumil_call_id"),
+            rumil_run_id=row.get("rumil_run_id"),
+            rumil_cost_usd=row.get("rumil_cost_usd"),
+            ts=row.get("ts"),
+            duration_s=row.get("duration_s"),
+        )
+    raise HTTPException(404, f"judgment key not found: {key}")
 
 
 @router.post("/judgments", response_model=JudgmentSubmitResult)

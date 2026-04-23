@@ -15,7 +15,6 @@ import httpx
 
 from versus import config, jsonl, openrouter
 
-
 CRITERION_PROMPTS: dict[str, str] = {
     "standalone_quality": (
         "Judge on standalone quality. Which continuation reads as better, clearer,"
@@ -41,8 +40,8 @@ CRITERION_PROMPTS: dict[str, str] = {
 
 @dataclass
 class Source:
-    source_id: str       # "human" or the model id
-    text: str            # the completion text
+    source_id: str  # "human" or the model id
+    text: str  # the completion text
 
 
 def pair_order_seed(essay_id: str, a: str, b: str) -> int:
@@ -134,7 +133,7 @@ def _prefix_text_from_completion_row(row: dict) -> str:
     end = prompt.rfind("\n===\n")
     if start == -1 or end == -1 or end <= start:
         return ""
-    return prompt[start + len("BEGIN ESSAY\n===\n"): end].strip()
+    return prompt[start + len("BEGIN ESSAY\n===\n") : end].strip()
 
 
 def load_sources_by_essay(log_path: pathlib.Path, prefix_hash_filter: str | None = None):
@@ -154,8 +153,18 @@ def load_sources_by_essay(log_path: pathlib.Path, prefix_hash_filter: str | None
 
 
 def _call_one_judgment(
-    essay_id, prefix_hash, a_id, b_id, first, second, criterion,
-    judge_model, prompt, k, max_tokens, client,
+    essay_id,
+    prefix_hash,
+    a_id,
+    b_id,
+    first,
+    second,
+    criterion,
+    judge_model,
+    prompt,
+    k,
+    max_tokens,
+    client,
 ):
     t0 = time.time()
     resp = openrouter.chat(
@@ -194,29 +203,56 @@ def _call_one_judgment(
     }
 
 
-def run(cfg: config.Config) -> None:
+def run(
+    cfg: config.Config,
+    *,
+    judge_models: list[str] | None = None,
+    criteria: list[str] | None = None,
+    essay_ids: list[str] | None = None,
+    contestants: list[str] | None = None,
+    vs_human: bool = False,
+    limit: int | None = None,
+    dry_run: bool = False,
+) -> None:
+    """Run the OpenRouter pairwise judge matrix against pending rows.
+
+    Filters (all optional, composable):
+    - ``judge_models`` -- override ``cfg.judging.models`` (e.g. single judge)
+    - ``criteria``     -- override ``cfg.judging.criteria``
+    - ``essay_ids``    -- restrict to these essays
+    - ``contestants``  -- only pairs where both source_ids are in this list
+    - ``vs_human``     -- only pairs where one side is "human"
+    """
     groups, prefix_texts = load_sources_by_essay(cfg.storage.completions_log)
     existing = jsonl.keys(cfg.storage.judgments_log)
 
+    effective_judges = judge_models if judge_models is not None else cfg.judging.models
+    effective_criteria = criteria if criteria is not None else cfg.judging.criteria
+    essay_id_set = set(essay_ids) if essay_ids else None
+    contestants_set = set(contestants) if contestants else None
+
     tasks_to_run: list = []
     for (essay_id, prefix_hash), sources in groups.items():
+        if essay_id_set is not None and essay_id not in essay_id_set:
+            continue
         source_ids = list(sources.keys())
         if not cfg.judging.include_human_as_contestant:
             source_ids = [s for s in source_ids if s != "human"]
+        if contestants_set is not None:
+            source_ids = [s for s in source_ids if s in contestants_set]
         if len(source_ids) < 2:
             continue
         prefix_text = prefix_texts.get((essay_id, prefix_hash), "")
         for a_id, b_id in itertools.combinations(sorted(source_ids), 2):
+            if vs_human and "human" not in (a_id, b_id):
+                continue
             src_a = Source(a_id, sources[a_id])
             src_b = Source(b_id, sources[b_id])
             first, second = order_pair(essay_id, src_a, src_b)
-            for criterion in cfg.judging.criteria:
-                for judge_model in cfg.judging.models:
-                    k = judgment_key(
-                        essay_id, prefix_hash, a_id, b_id, criterion, judge_model
-                    )
+            for criterion in effective_criteria:
+                for judge_model in effective_judges:
+                    k = judgment_key(essay_id, prefix_hash, a_id, b_id, criterion, judge_model)
                     if k in existing:
-                        print(f"[skip] {k}")
                         continue
                     prompt = render_judge_prompt(
                         prefix_text=prefix_text,
@@ -226,22 +262,41 @@ def run(cfg: config.Config) -> None:
                     )
                     tasks_to_run.append(
                         (
-                            essay_id, prefix_hash, a_id, b_id, first, second,
-                            criterion, judge_model, prompt, k,
+                            essay_id,
+                            prefix_hash,
+                            a_id,
+                            b_id,
+                            first,
+                            second,
+                            criterion,
+                            judge_model,
+                            prompt,
+                            k,
                         )
                     )
                     existing.add(k)
 
+    if limit is not None:
+        tasks_to_run = tasks_to_run[:limit]
+
     if not tasks_to_run:
+        print("[info] no pending judgments")
         return
-    print(f"[run ] {len(tasks_to_run)} judgment calls (concurrency={cfg.concurrency})")
+    print(f"[plan] {len(tasks_to_run)} judgment calls (concurrency={cfg.concurrency})")
+    if dry_run:
+        for t in tasks_to_run[:20]:
+            essay_id, _, a_id, b_id, _, _, crit, jm, _, _ = t
+            print(f"  * {essay_id} {a_id} vs {b_id} [{crit}] -> {jm}")
+        if len(tasks_to_run) > 20:
+            print(f"  ... and {len(tasks_to_run) - 20} more")
+        return
     client = httpx.Client(timeout=600.0)
     try:
         with ThreadPoolExecutor(max_workers=cfg.concurrency) as pool:
             futures = {
-                pool.submit(
-                    _call_one_judgment, *t, cfg.judging.max_tokens, client
-                ): t[9]  # key is 10th element
+                pool.submit(_call_one_judgment, *t, cfg.judging.max_tokens, client): t[
+                    9
+                ]  # key is 10th element
                 for t in tasks_to_run
             }
             done = 0

@@ -621,3 +621,184 @@ async def run_orch(
             f"[done {done}/{total}] {row['key']}  "
             f"label={result.preference_label!r}  trace={result.trace_url}"
         )
+
+
+def _build_rumil_text_user_message(pair: _PendingPair, task_name: str) -> str:
+    """Compose the user message for a rumil-text judgment.
+
+    Unlike the ws / orch paths (which put the essay prefix + both
+    continuations on a Question page that the agent reads via load_page),
+    rumil-text has no DB / no tools -- the full pair has to go in the
+    user message inline.
+
+    Keeps the continuations in display order and does NOT disclose the
+    source_ids (same blind-judge guarantee as ws).
+    """
+    return (
+        f"Compare Continuation A and Continuation B on the dimension "
+        f"**{task_name}**.\n\n"
+        "End your response with one of the 7-point preference labels "
+        "on its own line.\n\n"
+        f"## Essay opening\n\n{pair.prefix_text}\n\n"
+        f"## Continuation A\n\n{pair.display_first_text}\n\n"
+        f"## Continuation B\n\n{pair.display_second_text}\n"
+    )
+
+
+def run_rumil_text(
+    cfg: config.Config,
+    *,
+    anthropic_model: str,
+    dimensions: Sequence[str],
+    limit: int | None = None,
+    dry_run: bool = False,
+    essay_ids: Sequence[str] | None = None,
+    contestants: Sequence[str] | None = None,
+    vs_human: bool = False,
+) -> None:
+    """Run the single-turn rumil-prompt judge against pending pairs.
+
+    Composes the versus-judge-shell + essay-adapted rumil dimension body
+    as the system prompt, passes the essay prefix + both continuations
+    inline in the user message, and calls Anthropic directly (no DB,
+    no tools, no workspace). This is the "prompt alone" condition -- it
+    isolates the prompt-source effect from the tool/workspace effect
+    that `ws` bundles together.
+
+    ``judge_model`` is ``rumil:text:<model>:<dim>:p<hash>``, distinct from
+    ``anthropic:<model>`` (versus-criterion text) and ``rumil:ws:...``
+    (workspace-aware).
+    """
+    from rumil.versus_bridge import (
+        build_system_prompt,
+        compute_prompt_hash,
+        extract_preference,
+        label_to_verdict,
+    )
+
+    tasks_spec: list[tuple[str, bool]] = [(d, False) for d in dimensions]
+    if not tasks_spec:
+        print("[info] no dimensions specified for rumil-text variant; nothing to do")
+        return
+
+    task_body_cache = {(t, False): _resolve_task_body(t, False) for t in dimensions}
+    prompt_hash_cache = {k: compute_prompt_hash(b) for k, b in task_body_cache.items()}
+    system_prompt_cache = {k: build_system_prompt(b) for k, b in task_body_cache.items()}
+
+    def _compose(task_name: str, is_versus_crit: bool) -> str:
+        ph = prompt_hash_cache[(task_name, is_versus_crit)]
+        return f"rumil:text:{anthropic_model}:{task_name}:p{ph}"
+
+    tasks = _plan_rumil_pairs(
+        cfg,
+        tasks_spec,
+        _compose,
+        essay_ids=essay_ids,
+        contestants=contestants,
+        vs_human=vs_human,
+    )
+    if limit is not None:
+        tasks = tasks[:limit]
+    if not tasks:
+        print("[info] no pending rumil-text judgments")
+        return
+
+    print(
+        f"[plan] {len(tasks)} rumil-text judgments "
+        f"(model={anthropic_model}, concurrency={cfg.concurrency})"
+    )
+    if dry_run:
+        for pair, task_name, _is_versus_crit, judge_model in tasks[:20]:
+            print(
+                f"  * [rumil_dim:{task_name}] {pair.essay_id} "
+                f"{pair.source_a_id} vs {pair.source_b_id} -> {judge_model}"
+            )
+        if len(tasks) > 20:
+            print(f"  ... and {len(tasks) - 20} more")
+        return
+
+    def _call_one_rumil_text(
+        pair: _PendingPair,
+        task_name: str,
+        judge_model: str,
+        client: httpx.Client,
+    ) -> dict:
+        t0 = time.time()
+        system = system_prompt_cache[(task_name, False)]
+        user_msg = _build_rumil_text_user_message(pair, task_name)
+        resp = anthropic_client.chat(
+            model=anthropic_model,
+            messages=[{"role": "user", "content": user_msg}],
+            system=system,
+            temperature=0.2,
+            max_tokens=cfg.judging.max_tokens,
+            client=client,
+        )
+        text = anthropic_client.extract_text(resp)
+        label = extract_preference(text)
+        verdict = label_to_verdict(label)
+        winner_source: str | None = None
+        if verdict == "A":
+            winner_source = pair.display_first_id
+        elif verdict == "B":
+            winner_source = pair.display_second_id
+        elif verdict == "tie":
+            winner_source = "tie"
+        k = judge.judgment_key(
+            pair.essay_id,
+            pair.prefix_hash,
+            pair.source_a_id,
+            pair.source_b_id,
+            f"rumil_{task_name}",
+            judge_model,
+        )
+        return {
+            "key": k,
+            "essay_id": pair.essay_id,
+            "prefix_config_hash": pair.prefix_hash,
+            "source_a": pair.source_a_id,
+            "source_b": pair.source_b_id,
+            "display_first": pair.display_first_id,
+            "display_second": pair.display_second_id,
+            "criterion": f"rumil_{task_name}",
+            "judge_model": judge_model,
+            "verdict": verdict,
+            "winner_source": winner_source,
+            "reasoning_text": text,
+            "prompt": system,
+            "ts": dt.datetime.utcnow().isoformat() + "Z",
+            "duration_s": round(time.time() - t0, 2),
+            "raw_response": resp,
+            "rumil_preference_label": label,
+        }
+
+    client = httpx.Client(timeout=600.0)
+    try:
+        with ThreadPoolExecutor(max_workers=cfg.concurrency) as pool:
+            futures = {
+                pool.submit(
+                    _call_one_rumil_text, pair, task_name, judge_model, client
+                ): judge.judgment_key(
+                    pair.essay_id,
+                    pair.prefix_hash,
+                    pair.source_a_id,
+                    pair.source_b_id,
+                    f"rumil_{task_name}",
+                    judge_model,
+                )
+                for pair, task_name, _ivc, judge_model in tasks
+            }
+            done = 0
+            total = len(tasks)
+            for fut in as_completed(futures):
+                k = futures[fut]
+                try:
+                    row = fut.result()
+                except Exception as e:
+                    print(f"[err ] {k}: {e}")
+                    continue
+                jsonl.append(cfg.storage.judgments_log, row)
+                done += 1
+                print(f"[done {done}/{total}] {k}  label={row.get('rumil_preference_label')!r}")
+    finally:
+        client.close()

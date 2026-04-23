@@ -61,9 +61,13 @@ def main() -> None:
     ap.add_argument("--config", default=str(VERSUS_ROOT / "config.yaml"))
     ap.add_argument(
         "--variant",
-        choices=("text", "ws", "orch"),
+        choices=("text", "rumil-text", "ws", "orch"),
         default="text",
-        help="Which rumil judge path to run (default: text).",
+        help=(
+            "Which rumil judge path to run (default: text). "
+            "rumil-text = single-turn Anthropic call with rumil dimension "
+            "prompts (isolates prompt effect from workspace/tools effect)."
+        ),
     )
     ap.add_argument(
         "--model",
@@ -174,6 +178,29 @@ def main() -> None:
     if args.variant == "text":
         models = args.model if args.model else list(cfg.judging.anthropic_models)
         rumil_judge.run(cfg, models, limit=args.limit, dry_run=args.dry_run)
+        return
+
+    if args.variant == "rumil-text":
+        # Resolve Anthropic model from --rumil-model alias or --model explicit.
+        if args.rumil_model:
+            model_id = RUMIL_MODEL_ALIASES[args.rumil_model]
+        elif args.model:
+            if len(args.model) != 1:
+                ap.error("--variant rumil-text expects exactly one --model")
+            model_id = args.model[0]
+        else:
+            ap.error("--variant rumil-text requires --rumil-model or --model")
+        dimensions = tuple(args.dimension) if args.dimension else DEFAULT_DIMENSIONS
+        rumil_judge.run_rumil_text(
+            cfg,
+            anthropic_model=model_id,
+            dimensions=dimensions,
+            limit=args.limit,
+            dry_run=args.dry_run,
+            essay_ids=args.essay,
+            contestants=contestants,
+            vs_human=args.vs_human,
+        )
         return
 
     if not args.workspace:

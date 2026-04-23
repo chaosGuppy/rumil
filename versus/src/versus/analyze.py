@@ -4,10 +4,150 @@ from __future__ import annotations
 
 import collections
 import pathlib
+import re
 
 from versus import jsonl
 
 HUMAN = "human"
+
+
+def model_sort_key(judge: str) -> tuple:
+    """Order model ids (gen or judge) by family -> weak->strong -> variant.
+
+    Families (left to right): gemini, openai, anthropic, other. Weak->strong
+    within family: flash < pro for gemini, nano < mini < full for openai,
+    haiku < sonnet < opus for anthropic. Variant (relevant for judges):
+    bare openrouter < anthropic: (legacy text) < rumil:text < rumil:ws <
+    rumil:orch. Human judges pinned to the end.
+    """
+    low = judge.lower()
+
+    if low.startswith("human:"):
+        return (99, 99, "", 99, judge)
+
+    if low.startswith("rumil:orch:"):
+        variant = 4
+        base = judge.split(":")[2] if len(judge.split(":")) >= 3 else judge
+    elif low.startswith("rumil:ws:"):
+        variant = 3
+        base = judge.split(":")[2] if len(judge.split(":")) >= 3 else judge
+    elif low.startswith("rumil:text:"):
+        variant = 2
+        base = judge.split(":")[2] if len(judge.split(":")) >= 3 else judge
+    elif low.startswith("anthropic:"):
+        variant = 1
+        base = judge.split(":", 1)[1]
+    elif "/" in judge:
+        variant = 0
+        base = judge.split("/", 1)[1]
+    else:
+        variant = 0
+        base = judge
+    base_low = base.lower()
+
+    if "gemini" in base_low or low.startswith("google/"):
+        family = 0
+        if "flash-lite" in base_low:
+            strength = 0
+        elif "flash" in base_low:
+            strength = 1
+        elif "pro" in base_low:
+            strength = 2
+        else:
+            strength = 5
+    elif "gpt" in base_low or low.startswith("openai/"):
+        family = 1
+        if "nano" in base_low:
+            strength = 0
+        elif "mini" in base_low:
+            strength = 1
+        else:
+            strength = 2
+    elif (
+        "claude" in base_low
+        or "haiku" in base_low
+        or "sonnet" in base_low
+        or "opus" in base_low
+        or low.startswith("anthropic")
+        or low.startswith("rumil:")
+    ):
+        family = 2
+        if "haiku" in base_low:
+            strength = 0
+        elif "sonnet" in base_low:
+            strength = 1
+        elif "opus" in base_low:
+            strength = 2
+        else:
+            strength = 5
+    else:
+        family = 3
+        strength = 5
+
+    return (family, strength, base_low, variant, judge)
+
+
+_PROMPT_HASH_RE = re.compile(r"^p[0-9a-f]{8}$")
+
+
+def judge_label(judge: str) -> dict:
+    """Break a judge_model id into stacked header parts.
+
+    Returns {variant, model, task, phash}. `phash` is the `:p<sha8>` prompt
+    version suffix (present on post-hash rumil judgments; absent on legacy
+    pre-hash data).
+    """
+    if judge.startswith("human:"):
+        return {"variant": "human", "model": judge.split(":", 1)[1], "task": None, "phash": None}
+    if (
+        judge.startswith("rumil:orch:")
+        or judge.startswith("rumil:ws:")
+        or judge.startswith("rumil:text:")
+    ):
+        parts = judge.split(":")
+        phash = None
+        if parts and _PROMPT_HASH_RE.match(parts[-1]):
+            phash = parts[-1]
+            parts = parts[:-1]
+        variant = f"{parts[0]}:{parts[1]}"
+        model = parts[2] if len(parts) >= 3 else judge
+        if parts[1] == "text":
+            tail = parts[3:]
+        else:
+            tail = parts[4:]  # skip ws_short hash
+            if tail and tail[0].startswith("b") and tail[0][1:].isdigit():
+                variant = f"{variant} {tail[0]}"
+                tail = tail[1:]
+        task = ":".join(tail) if tail else None
+        return {"variant": variant, "model": model, "task": task, "phash": phash}
+    if judge.startswith("anthropic:"):
+        return {
+            "variant": "anthropic",
+            "model": judge.split(":", 1)[1],
+            "task": None,
+            "phash": None,
+        }
+    if "/" in judge:
+        provider, model = judge.split("/", 1)
+        return {"variant": provider, "model": model, "task": None, "phash": None}
+    return {"variant": None, "model": judge, "task": None, "phash": None}
+
+
+def cell_color(pct: float) -> str:
+    """Gradient: 0 -> orange (model preferred), 50 -> light gray, 100 -> green (human preferred)."""
+    if pct <= 0.5:
+        t = pct / 0.5
+        r, g, b = 255, int(111 + (238 - 111) * t), int(67 + (238 - 67) * t)
+    else:
+        t = (pct - 0.5) / 0.5
+        r = int(238 - (238 - 110) * t)
+        g = int(238 - (238 - 199) * t)
+        b = int(238 - (238 - 120) * t)
+    return f"rgb({r},{g},{b})"
+
+
+def text_color(pct: float) -> str:
+    return "#111"
 
 
 def _strip_prefix(source_id: str) -> tuple[str, str]:

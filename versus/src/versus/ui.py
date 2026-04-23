@@ -323,12 +323,14 @@ def inspect(request: fastapi.Request, essay: str | None = None):
     )
 
 
-def _judge_sort_key(judge: str) -> tuple:
-    """Order judge columns: family → weak→strong within family → bare/rumil/ws/orch variant.
+def _model_sort_key(judge: str) -> tuple:
+    """Order model ids (gen or judge) by family → weak→strong within family → variant.
 
-    Families (left to right): gemini, openai, anthropic, other.
-    Variants for a given base model: bare (openrouter) < rumil text (`anthropic:`) <
-    rumil ws < rumil orch. Human judges pinned to the end.
+    Families (left to right): gemini, openai, anthropic, other. Weak→strong
+    within family: flash < pro for gemini, nano < mini < full for openai,
+    haiku < sonnet < opus for anthropic. Variant (relevant for judges):
+    bare openrouter < anthropic: (legacy text) < rumil:text < rumil:ws <
+    rumil:orch. Human judges pinned to the end.
     """
     low = judge.lower()
 
@@ -475,12 +477,10 @@ def results(
     criteria = cfg().judging.criteria
     active_crit = criterion  # None means "average"
 
-    # Axis order follows config (flash, mini, 5.4, ...) rather than alphabetical.
     present_gens = {k[0] for k in data if k[2] in conditions}
     present_judges = {k[1] for k in data if k[2] in conditions}
-    gen_models = [m.id for m in cfg().completion.models if m.id in present_gens]
-    gen_models += sorted(g for g in present_gens if g not in gen_models)  # orphans last
-    judge_models = sorted(present_judges, key=_judge_sort_key)
+    gen_models = sorted(present_gens, key=_model_sort_key)
+    judge_models = sorted(present_judges, key=_model_sort_key)
 
     def build_cell(gen, jmod, cond, crit_filter):
         hs, ns = 0.0, 0

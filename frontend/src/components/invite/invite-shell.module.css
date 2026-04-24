@@ -1,0 +1,185 @@
+/*
+ * Shared visual shell for the invitation pages (/welcome and /sign-in).
+ * Supplies the paper backdrop, wordmark, and card chrome; each page fills
+ * in its own interactive middle.
+ */
+
+.root {
+  --paper: #f3ecdc;
+  --paper-warm: #ede4cf;
+  --paper-shadow: #d7ccb0;
+  --ink: #1a1713;
+  --ink-soft: #3e342a;
+  --ink-faint: #8a7d6b;
+  --ink-whisper: #b5a991;
+  --burgundy: #8b1e2b;
+  --burgundy-deep: #6a1620;
+
+  --font-display: var(--font-fraunces), "Fraunces", "Cormorant Garamond", Georgia, serif;
+  --font-mono: var(--font-mono-invite), "JetBrains Mono", "IBM Plex Mono", ui-monospace, monospace;
+
+  position: relative;
+  min-height: 100svh;
+  color: var(--ink);
+  background: var(--paper);
+  font-family: var(--font-display);
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.root::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.88' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.09 0 0 0 0 0.07 0 0 0 0 0.04 0 0 0 0 0.55 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  background-size: 220px 220px;
+  opacity: 0.18;
+  mix-blend-mode: multiply;
+  z-index: 0;
+}
+
+.root::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse at 50% 50%,
+    transparent 50%,
+    rgba(58, 42, 22, 0.08) 100%
+  );
+  z-index: 0;
+}
+
+.frame {
+  position: relative;
+  z-index: 1;
+  min-height: 100svh;
+  padding: clamp(20px, 4vw, 48px);
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  grid-template-rows: auto 1fr;
+  gap: 24px 16px;
+}
+
+.wordmark {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  padding-top: clamp(8px, 2vh, 32px);
+  animation: inkRise 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.wordmarkName {
+  font-family: var(--font-display);
+  font-size: clamp(44px, 7vw, 92px);
+  font-weight: 330;
+  font-variation-settings: "opsz" 144, "SOFT" 100;
+  line-height: 0.82;
+  letter-spacing: -0.03em;
+  color: var(--ink);
+}
+
+.stage {
+  grid-column: 2 / span 8;
+  grid-row: 2;
+  display: flex;
+  align-items: center;
+  padding-block: clamp(32px, 6vh, 96px);
+}
+
+@media (max-width: 820px) {
+  .stage {
+    grid-column: 1 / -1;
+  }
+}
+
+.card {
+  width: min(100%, 480px);
+  position: relative;
+  animation: cardSettle 1s cubic-bezier(0.22, 1, 0.36, 1) 0.15s both;
+}
+
+/* Hairline L-brackets: suggestion of a sheet of paper, not a full frame. */
+.card::before,
+.card::after {
+  content: "";
+  position: absolute;
+  border: 1px solid var(--ink-faint);
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.card::before {
+  top: -18px;
+  left: -18px;
+  width: 32px;
+  height: 32px;
+  border-right: none;
+  border-bottom: none;
+}
+
+.card::after {
+  bottom: -18px;
+  right: -18px;
+  width: 32px;
+  height: 32px;
+  border-left: none;
+  border-top: none;
+}
+
+.cardLabel {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+  color: var(--burgundy);
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--burgundy);
+  margin-bottom: clamp(18px, 2.6vw, 28px);
+}
+
+.cardTitle {
+  font-family: var(--font-display);
+  font-weight: 360;
+  font-variation-settings: "opsz" 48, "SOFT" 50;
+  font-size: clamp(26px, 3vw, 34px);
+  line-height: 1.12;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  margin: 0 0 clamp(24px, 3vw, 32px) 0;
+  max-width: 22ch;
+}
+
+@keyframes inkRise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+    letter-spacing: 0em;
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    letter-spacing: -0.03em;
+  }
+}
+
+@keyframes cardSettle {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wordmark,
+  .card {
+    animation: none;
+  }
+}

@@ -48,6 +48,12 @@ from rumil.tracing.trace_events import (
 )
 
 
+class AuthUserOut(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+    user_id: str
+    email: str
+
+
 class LinkedPageOut(BaseModel):
     page: Page
     link: PageLink

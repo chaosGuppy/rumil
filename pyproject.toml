@@ -16,6 +16,7 @@ dependencies = [
     "claude-agent-sdk>=0.1.0",
     "tenacity>=9.0.0",
     "google-genai>=1.72",
+    "pyjwt[crypto]>=2.11.0",
 ]
 
 [project.optional-dependencies]

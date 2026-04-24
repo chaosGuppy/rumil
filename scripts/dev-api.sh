@@ -10,13 +10,16 @@ ENV_FILE="$PROJECT_ROOT/frontend/.env.local"
 
 PORT=8000
 if [[ -f "$ENV_FILE" ]]; then
-    url=$(grep -E '^NEXT_PUBLIC_API_URL=' "$ENV_FILE" | cut -d= -f2- | tr -d '[:space:]')
-    if [[ -n "$url" ]]; then
-        extracted=$(echo "$url" | grep -oE ':[0-9]+$' | tr -d ':')
-        if [[ -n "$extracted" ]]; then
-            PORT="$extracted"
+    for var in API_BASE_URL NEXT_PUBLIC_API_URL; do
+        url=$(grep -E "^${var}=" "$ENV_FILE" | cut -d= -f2- | tr -d '[:space:]')
+        if [[ -n "$url" ]]; then
+            extracted=$(echo "$url" | grep -oE ':[0-9]+$' | tr -d ':')
+            if [[ -n "$extracted" ]]; then
+                PORT="$extracted"
+                break
+            fi
         fi
-    fi
+    done
 fi
 
 echo "Starting API server on port $PORT (from $ENV_FILE)"

@@ -99,8 +99,10 @@ frontend:
     failureThreshold: 30
     timeoutSeconds: 5
 
-  # NEXT_PUBLIC_API_URL is baked at build time (client-side fetch) — set when building the image.
-  # API_BASE_URL is read at runtime for server-side rendering.
+  # Build-time env vars (NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY)
+  # are inlined by `next build` — see scripts/deploy.sh. API_BASE_URL is read
+  # at runtime; the Next.js middleware proxies /api/* to it same-origin so it
+  # can inject the Supabase JWT before the request reaches the backend.
   env:
     API_BASE_URL: http://rumil-api.rumil.svc.cluster.local:8000
 

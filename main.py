@@ -979,6 +979,15 @@ async def async_main():
         help="Project workspace name (default: 'default'). Auto-created on first use.",
     )
     parser.add_argument(
+        "--user",
+        dest="cli_user_id",
+        default="",
+        help=(
+            "Supabase auth.users.id to stamp as the project owner on first creation. "
+            "Overrides DEFAULT_CLI_USER_ID. Ignored for existing projects."
+        ),
+    )
+    parser.add_argument(
         "--list-workspaces",
         dest="list_workspaces",
         action="store_true",
@@ -1154,7 +1163,10 @@ async def async_main():
         await cmd_list_workspaces(db)
         return
 
-    project = await db.get_or_create_project(args.workspace_name)
+    project = await db.get_or_create_project(
+        args.workspace_name,
+        owner_user_id=args.cli_user_id or get_settings().default_cli_user_id or None,
+    )
     db.project_id = project.id
 
     if args.stage_run_id:

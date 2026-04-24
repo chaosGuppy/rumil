@@ -57,6 +57,9 @@ class Settings(BaseSettings):
     )
     supabase_prod_url: str = ""
     supabase_prod_key: str = ""
+    supabase_jwt_secret: str = "super-secret-jwt-token-with-at-least-32-characters-long"
+    auth_enabled: bool = True
+    default_cli_user_id: str = ""
     voyage_ai_api_key: str = ""
     jina_api_key: str = ""
     langfuse_public_key: str = ""

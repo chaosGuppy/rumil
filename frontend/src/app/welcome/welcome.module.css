@@ -1,0 +1,148 @@
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fieldRow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--ink-whisper);
+  position: relative;
+  transition: border-color 0.2s ease;
+}
+
+.fieldRow::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  background: var(--ink);
+  transform-origin: left center;
+  transform: scaleX(0);
+  transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.fieldRow:focus-within::after {
+  transform: scaleX(1);
+}
+
+.input {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  outline: none;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 17px;
+  font-weight: 300;
+  letter-spacing: 0.1em;
+  padding: 4px 0;
+  caret-color: var(--burgundy);
+}
+
+.input::placeholder {
+  color: var(--ink-whisper);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  font-size: 11px;
+}
+
+.submit {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+  color: var(--ink);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: color 0.2s ease, transform 0.2s ease;
+}
+
+.submit:hover:not(:disabled) {
+  color: var(--burgundy);
+  transform: translateX(4px);
+}
+
+.submit:disabled {
+  cursor: progress;
+  opacity: 0.4;
+}
+
+.submitLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  transition: color 0.2s ease;
+}
+
+.submit:hover:not(:disabled) .submitLabel {
+  color: var(--burgundy);
+}
+
+.arrow {
+  display: inline-block;
+  flex-shrink: 0;
+  transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.submit:hover:not(:disabled) .arrow {
+  transform: translateX(6px);
+}
+
+.error {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 380;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--burgundy);
+  min-height: 1.4em;
+  margin: 6px 0 0 0;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+
+.errorVisible {
+  opacity: 1;
+}
+
+.shake {
+  animation: inkShake 0.42s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+@keyframes inkShake {
+  10%, 90% { transform: translateX(-1px); }
+  20%, 80% { transform: translateX(2px); }
+  30%, 50%, 70% { transform: translateX(-4px); }
+  40%, 60% { transform: translateX(4px); }
+}
+
+.dissolving {
+  animation: dissolve 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+  pointer-events: none;
+}
+
+@keyframes dissolve {
+  from { opacity: 1; filter: blur(0); }
+  to { opacity: 0; filter: blur(4px); transform: translateY(-6px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fieldRow::after,
+  .submit,
+  .arrow {
+    transition: none;
+  }
+  .shake, .dissolving {
+    animation: none;
+  }
+}

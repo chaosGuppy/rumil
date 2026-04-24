@@ -7,16 +7,7 @@ import json
 from dataclasses import dataclass
 
 from versus.essay import Block, Essay, blocks_to_markdown
-
-# Bump when ``render_prompt`` text changes in a way that should invalidate
-# existing completion rows. Folded into ``prefix_config_hash`` below so
-# every downstream key (completions AND judgments keyed on prefix_hash)
-# forks naturally. Edit the prompt without bumping this and old rows
-# silently persist.
-#
-# v3: source-neutral prompt wording and namespaced essay ids (the essay
-# id is folded into the hash via ``prepare``).
-COMPLETION_PROMPT_VERSION = 3
+from versus.versions import COMPLETION_PROMPT_VERSION
 
 
 @dataclass

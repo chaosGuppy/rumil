@@ -20,13 +20,7 @@ import httpx
 
 from versus import config, jsonl, openrouter
 from versus import essay as versus_essay
-
-# Bump when ``PARAPHRASE_INSTRUCTIONS`` changes in a way that should
-# invalidate existing paraphrase rows. Folded into ``sampling_hash``
-# below so each paraphrase key forks on edit. Paraphrases are keyed on
-# (essay_id, model_id, sampling_hash), so a bump here produces fresh
-# keys without clobbering.
-PARAPHRASE_PROMPT_VERSION = 3
+from versus.versions import PARAPHRASE_PROMPT_VERSION
 
 
 PARAPHRASE_INSTRUCTIONS = """\

@@ -58,16 +58,17 @@ log = logging.getLogger(__name__)
 
 _TOOL_SERVER_NAME = "versus-judge-tools"
 
-# Manual version tag that goes into ws / orch judge_model strings so
-# dedup keys fork when we ship a known-semantics change that isn't
-# captured by the prompt hash -- e.g. a blind-judge leak fix in the
-# bridge itself. Bump when that happens, and update the PR's
-# "Blind judging" section with the reason.
-# v2 (2026-04-23): fixes #3 (headline leak) and #4 (page.extra leak).
-# v3 (2026-04-23): essay markdown re-imported with fetch SCHEMA_VERSION=4
-# (nested-list dedup, footnote-marker strip, emphasis preservation, caption
-# skip). Old judgments judge old text, new judgments judge new text.
-BLIND_JUDGE_VERSION = 3
+# BLIND_JUDGE_VERSION lives in ``versus.versions`` alongside the other
+# three prompt-version knobs so bumps can't drift between modules.
+# Notes on historical bumps:
+#   v2 (2026-04-23): fixes #3 (headline leak) and #4 (page.extra leak).
+#   v3 (2026-04-23): essay markdown re-imported with fetch SCHEMA_VERSION=4
+#   (nested-list dedup, footnote-marker strip, emphasis preservation,
+#   caption skip). Old judgments judge old text, new judgments judge new
+#   text.
+# Re-exported below for back-compat with any caller that still reads
+# ``rumil.versus_bridge.BLIND_JUDGE_VERSION``.
+from versus.versions import BLIND_JUDGE_VERSION  # noqa: E402, F401
 
 # Re-export the pure prompt-rendering helpers from the lightweight
 # ``rumil.versus_prompts`` module so external callers (and existing

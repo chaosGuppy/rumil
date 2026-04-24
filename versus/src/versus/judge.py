@@ -29,18 +29,7 @@ from rumil.versus_prompts import (
     label_to_verdict,
 )
 from versus import config, jsonl, openrouter
-
-# Bump when ``render_judge_prompt`` changes in a way that should
-# invalidate existing OpenRouter / ``anthropic:<model>`` judge rows.
-# The rumil judge variants (rumil:ws, rumil:orch, rumil:text) have
-# their own version knob (``BLIND_JUDGE_VERSION`` in
-# :mod:`rumil.versus_bridge`).
-#
-# v2 (2026-04-23): switched from inline 3-criterion versus prompts to
-# the rumil judge-shell + essay-adapted dimension body. Output format
-# moved from ``<verdict>A|B|tie</verdict>`` to the 7-point preference
-# scale. ``criteria`` collapsed from 3 to 1 (``general_quality``).
-JUDGE_PROMPT_VERSION = 2
+from versus.versions import JUDGE_PROMPT_VERSION
 
 
 @dataclass

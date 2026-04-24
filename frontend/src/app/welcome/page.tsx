@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Fraunces, JetBrains_Mono } from "next/font/google";
 
@@ -22,7 +22,7 @@ const mono = JetBrains_Mono({
   display: "swap",
 });
 
-export default function WelcomePage() {
+function WelcomeForm() {
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState<"idle" | "pending" | "wrong" | "ok">(
     "idle",
@@ -133,5 +133,13 @@ export default function WelcomePage() {
         </form>
       </InviteShell>
     </div>
+  );
+}
+
+export default function WelcomePage() {
+  return (
+    <Suspense fallback={null}>
+      <WelcomeForm />
+    </Suspense>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Fraunces, JetBrains_Mono } from "next/font/google";
 
@@ -23,7 +23,7 @@ const mono = JetBrains_Mono({
   display: "swap",
 });
 
-export default function SignInPage() {
+function SignInForm() {
   const [status, setStatus] = useState<"idle" | "pending">("idle");
   const [error, setError] = useState<string | null>(null);
   const searchParams = useSearchParams();
@@ -72,5 +72,13 @@ export default function SignInPage() {
         </div>
       </InviteShell>
     </div>
+  );
+}
+
+export default function SignInPage() {
+  return (
+    <Suspense fallback={null}>
+      <SignInForm />
+    </Suspense>
   );
 }

@@ -536,6 +536,40 @@ export type ContextBuiltEventOut = {
      * Budget
      */
     budget: number | null;
+    /**
+     * Full Pages
+     */
+    full_pages: Array<PageRef>;
+    /**
+     * Abstract Pages
+     */
+    abstract_pages: Array<PageRef>;
+    /**
+     * Summary Pages
+     */
+    summary_pages: Array<PageRef>;
+    /**
+     * Distillation Pages
+     */
+    distillation_pages: Array<PageRef>;
+    /**
+     * Scope Linked Pages
+     */
+    scope_linked_pages: Array<PageRef>;
+    /**
+     * Budget Usage
+     */
+    budget_usage: {
+        [key: string]: number;
+    };
+    /**
+     * Context Text
+     */
+    context_text: string;
+    /**
+     * Context Text Chars
+     */
+    context_text_chars: number;
 };
 
 /**

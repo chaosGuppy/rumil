@@ -12,7 +12,6 @@ from pydantic import BaseModel, Field
 from rumil.calls.common import (
     ABSTRACT_INSTRUCTION,
     PageSummaryItem,
-    resolve_page_refs,
     save_page_abstracts,
 )
 from rumil.calls.stages import CallInfra, ContextBuilder, ContextResult
@@ -37,27 +36,10 @@ from rumil.models import (
     PageType,
 )
 from rumil.settings import get_settings
-from rumil.tracing.trace_events import ContextBuiltEvent
 
 log = logging.getLogger(__name__)
 
 _B2_SEMAPHORE = asyncio.Semaphore(15)
-
-
-async def _record_context_built(
-    infra: CallInfra,
-    working_page_ids: Sequence[str],
-    preloaded_ids: Sequence[str],
-    *,
-    source_page_id: str | None = None,
-) -> None:
-    await infra.trace.record(
-        ContextBuiltEvent(
-            working_context_page_ids=await resolve_page_refs(working_page_ids, infra.db),
-            preloaded_page_ids=await resolve_page_refs(preloaded_ids, infra.db),
-            source_page_id=source_page_id,
-        )
-    )
 
 
 class CreateViewContext(ContextBuilder):
@@ -123,11 +105,15 @@ class CreateViewContext(ContextBuilder):
                     ]
             context_text += "\n".join(parts_pre)
 
-        await _record_context_built(infra, working_page_ids, preloaded_ids)
         return ContextResult(
             context_text=context_text,
             working_page_ids=working_page_ids,
             preloaded_ids=preloaded_ids,
+            full_page_ids=result.full_page_ids,
+            abstract_page_ids=result.abstract_page_ids,
+            summary_page_ids=result.summary_page_ids,
+            distillation_page_ids=result.distillation_page_ids,
+            budget_usage=result.budget_usage,
         )
 
 
@@ -150,6 +136,7 @@ class EmbeddingContext(ContextBuilder):
             query,
             infra.db,
             scope_question_id=infra.question_id,
+            scope_linked_detail=PageDetail.ABSTRACT,
             require_judgement_for_questions=self._require_judgement_for_questions,
         )
         working_page_ids = result.page_ids
@@ -177,11 +164,15 @@ class EmbeddingContext(ContextBuilder):
                     ]
             context_text += "\n".join(parts)
 
-        await _record_context_built(infra, working_page_ids, preloaded_ids)
         return ContextResult(
             context_text=context_text,
             working_page_ids=working_page_ids,
             preloaded_ids=preloaded_ids,
+            full_page_ids=result.full_page_ids,
+            abstract_page_ids=result.abstract_page_ids,
+            summary_page_ids=result.summary_page_ids,
+            distillation_page_ids=result.distillation_page_ids,
+            budget_usage=result.budget_usage,
         )
 
 
@@ -256,6 +247,12 @@ class ScoutSiblingAwareContext(EmbeddingContext):
             context_text=prepended,
             working_page_ids=result.working_page_ids,
             preloaded_ids=result.preloaded_ids,
+            full_page_ids=result.full_page_ids,
+            abstract_page_ids=result.abstract_page_ids,
+            summary_page_ids=result.summary_page_ids,
+            distillation_page_ids=result.distillation_page_ids,
+            budget_usage=result.budget_usage,
+            source_page_id=result.source_page_id,
         )
 
 
@@ -276,12 +273,6 @@ class IngestEmbeddingContext(ContextBuilder):
             scope_question_id=infra.question_id,
         )
         working_page_ids = result.page_ids
-        await _record_context_built(
-            infra,
-            working_page_ids,
-            [],
-            source_page_id=self._source_page.id,
-        )
 
         formatted_source = await format_page(
             self._source_page,
@@ -297,6 +288,12 @@ class IngestEmbeddingContext(ContextBuilder):
         return ContextResult(
             context_text=result.context_text + source_section,
             working_page_ids=working_page_ids,
+            full_page_ids=result.full_page_ids,
+            abstract_page_ids=result.abstract_page_ids,
+            summary_page_ids=result.summary_page_ids,
+            distillation_page_ids=result.distillation_page_ids,
+            budget_usage=result.budget_usage,
+            source_page_id=self._source_page.id,
         )
 
 
@@ -334,19 +331,14 @@ class WebResearchEmbeddingContext(ContextBuilder):
             emb_result.budget_usage,
         )
 
-        await infra.trace.record(
-            ContextBuiltEvent(
-                working_context_page_ids=await resolve_page_refs(
-                    working_page_ids,
-                    infra.db,
-                ),
-                preloaded_page_ids=[],
-            )
-        )
-
         return ContextResult(
             context_text=context_text,
             working_page_ids=working_page_ids,
+            full_page_ids=emb_result.full_page_ids,
+            abstract_page_ids=emb_result.abstract_page_ids,
+            summary_page_ids=emb_result.summary_page_ids,
+            distillation_page_ids=emb_result.distillation_page_ids,
+            budget_usage=emb_result.budget_usage,
         )
 
 
@@ -1035,11 +1027,15 @@ class BigAssessContext(ContextBuilder):
             if parts:
                 context_text += "\n".join(parts)
 
-        await _record_context_built(infra, working_page_ids, all_extra)
         return ContextResult(
             context_text=context_text,
             working_page_ids=working_page_ids,
             preloaded_ids=all_extra,
+            full_page_ids=result.full_page_ids,
+            abstract_page_ids=result.abstract_page_ids,
+            summary_page_ids=result.summary_page_ids,
+            distillation_page_ids=result.distillation_page_ids,
+            budget_usage=result.budget_usage,
         )
 
 
@@ -1085,7 +1081,6 @@ class SpecOnlyContext(ContextBuilder):
         context_text = "\n".join(parts)
 
         working_page_ids = [task.id] + [p.id for p in spec_pages]
-        await _record_context_built(infra, working_page_ids, [])
         return ContextResult(
             context_text=context_text,
             working_page_ids=working_page_ids,
@@ -1148,7 +1143,6 @@ class CritiqueContext(ContextBuilder):
         context_text = "\n".join(parts)
 
         working_page_ids = [task.id, artefact.id, *embedding_result.page_ids]
-        await _record_context_built(infra, working_page_ids, [])
         return ContextResult(
             context_text=context_text,
             working_page_ids=working_page_ids,
@@ -1298,7 +1292,6 @@ class RefinementContext(ContextBuilder):
             *[p.id for p in current_spec],
             *[a.id for a, _, _ in triples],
         ]
-        await _record_context_built(infra, working_page_ids, [])
         return ContextResult(
             context_text=context_text,
             working_page_ids=working_page_ids,

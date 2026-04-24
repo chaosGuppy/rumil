@@ -2536,6 +2536,64 @@
               }
             ],
             "title": "Budget"
+          },
+          "full_pages": {
+            "items": {
+              "$ref": "#/components/schemas/PageRef"
+            },
+            "type": "array",
+            "title": "Full Pages",
+            "default": []
+          },
+          "abstract_pages": {
+            "items": {
+              "$ref": "#/components/schemas/PageRef"
+            },
+            "type": "array",
+            "title": "Abstract Pages",
+            "default": []
+          },
+          "summary_pages": {
+            "items": {
+              "$ref": "#/components/schemas/PageRef"
+            },
+            "type": "array",
+            "title": "Summary Pages",
+            "default": []
+          },
+          "distillation_pages": {
+            "items": {
+              "$ref": "#/components/schemas/PageRef"
+            },
+            "type": "array",
+            "title": "Distillation Pages",
+            "default": []
+          },
+          "scope_linked_pages": {
+            "items": {
+              "$ref": "#/components/schemas/PageRef"
+            },
+            "type": "array",
+            "title": "Scope Linked Pages",
+            "default": []
+          },
+          "budget_usage": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Budget Usage",
+            "default": {}
+          },
+          "context_text": {
+            "type": "string",
+            "title": "Context Text",
+            "default": ""
+          },
+          "context_text_chars": {
+            "type": "integer",
+            "title": "Context Text Chars",
+            "default": 0
           }
         },
         "type": "object",
@@ -2546,7 +2604,15 @@
           "working_context_page_ids",
           "preloaded_page_ids",
           "source_page_id",
-          "budget"
+          "budget",
+          "full_pages",
+          "abstract_pages",
+          "summary_pages",
+          "distillation_pages",
+          "scope_linked_pages",
+          "budget_usage",
+          "context_text",
+          "context_text_chars"
         ],
         "title": "ContextBuiltEventOut"
       },

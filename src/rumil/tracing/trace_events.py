@@ -43,6 +43,25 @@ class ContextBuiltEvent(BaseModel):
     preloaded_page_ids: PageRefList = []
     source_page_id: str | None = None
     budget: int | None = None
+    # Tiered breakdown of which pages went into the prompt at which fidelity.
+    # Empty lists when the context builder doesn't run tiered selection —
+    # the legacy working_context_page_ids field still carries the flat list.
+    full_pages: PageRefList = []
+    abstract_pages: PageRefList = []
+    summary_pages: PageRefList = []
+    distillation_pages: PageRefList = []
+    # Pages pulled in via the scope question's linked items — considerations,
+    # judgements, and sub-question judgements rendered inline by
+    # format_page(scope_page, linked_detail=...). These aren't in the
+    # embedding tiers; they're a separate category captured via page-load
+    # tracking during build_context.
+    scope_linked_pages: PageRefList = []
+    # Characters spent per tier (keys: full, abstract, summary, distillation).
+    budget_usage: dict[str, int] = {}
+    # The rendered context section the builder produced, plus its char count
+    # pre-computed so the UI can show a length at a glance without measuring.
+    context_text: str = ""
+    context_text_chars: int = 0
 
 
 class MovesExecutedEvent(BaseModel):

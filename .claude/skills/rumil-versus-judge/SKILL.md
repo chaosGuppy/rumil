@@ -291,8 +291,8 @@ over-read any single number:
 
 ## When to bump `BLIND_JUDGE_VERSION`
 
-`BLIND_JUDGE_VERSION` (in `versus/src/versus/versions.py`, currently
-`4`; re-exported from `src/rumil/versus_bridge.py` for back-compat)
+`BLIND_JUDGE_VERSION` (in `versus/src/versus/versions.py`;
+re-exported from `src/rumil/versus_bridge.py` for back-compat)
 is the manual version knob that forks `rumil:ws:*`, `rumil:orch:*`,
 and `rumil:text:*` judge_model keys when you make a semantic change
 the automatic prompt hash doesn't catch. **Bump it when editing any

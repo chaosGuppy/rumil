@@ -32,6 +32,10 @@ async def execute(payload: RegenerateAndCritiquePayload, call: Call, db: DB) -> 
     # the CallRunner imports inside execute() breaks the cycle.
     from rumil.calls.critique_artefact import CritiqueArtefactCall
     from rumil.calls.generate_artefact import GenerateArtefactCall
+    from rumil.tracing.tracer import get_trace
+
+    parent_trace = get_trace()
+    broadcaster = parent_trace.broadcaster if parent_trace is not None else None
 
     artefact_task_id = call.scope_page_id
     if not artefact_task_id:
@@ -65,7 +69,7 @@ async def execute(payload: RegenerateAndCritiquePayload, call: Call, db: DB) -> 
         scope_page_id=artefact_task_id,
         parent_call_id=call.id,
     )
-    gen_runner = GenerateArtefactCall(artefact_task_id, gen_call, db)
+    gen_runner = GenerateArtefactCall(artefact_task_id, gen_call, db, broadcaster=broadcaster)
     await gen_runner.run()
 
     crit_call = await db.create_call(
@@ -73,7 +77,7 @@ async def execute(payload: RegenerateAndCritiquePayload, call: Call, db: DB) -> 
         scope_page_id=artefact_task_id,
         parent_call_id=call.id,
     )
-    crit_runner = CritiqueArtefactCall(artefact_task_id, crit_call, db)
+    crit_runner = CritiqueArtefactCall(artefact_task_id, crit_call, db, broadcaster=broadcaster)
     await crit_runner.run()
 
     new_artefact = await db.latest_artefact_for_task(artefact_task_id)

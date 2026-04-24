@@ -35,6 +35,8 @@ from rumil.models import (
     PageType,
     Workspace,
 )
+from rumil.orchestrators.common import _create_broadcaster
+from rumil.tracing.broadcast import Broadcaster
 
 log = logging.getLogger(__name__)
 
@@ -56,9 +58,12 @@ class GenerativeOrchestrator:
         db: DB,
         *,
         refine_max_rounds: int = 10,
+        broadcaster: Broadcaster | None = None,
     ) -> None:
         self.db = db
         self.refine_max_rounds = refine_max_rounds
+        self.broadcaster = broadcaster
+        self._owns_broadcaster = False
 
     async def run(self, request: str, *, headline: str | None = None) -> GenerativeResult:
         """Produce an artefact for *request*. Returns the result's IDs.
@@ -67,39 +72,47 @@ class GenerativeOrchestrator:
         drives generate_spec + refine_spec to completion (or budget
         exhaustion), and ensures an artefact exists and is visible.
         """
-        task = await self._create_task(request, headline=headline)
-        log.info(
-            "Generative orchestrator: task=%s, headline=%s",
-            task.id[:8],
-            task.headline[:70],
-        )
+        if self.broadcaster is None:
+            self.broadcaster = _create_broadcaster(self.db)
+            self._owns_broadcaster = self.broadcaster is not None
 
-        await self._run_generate_spec(task.id)
+        try:
+            task = await self._create_task(request, headline=headline)
+            log.info(
+                "Generative orchestrator: task=%s, headline=%s",
+                task.id[:8],
+                task.headline[:70],
+            )
 
-        await self._run_refine_spec(task.id)
+            await self._run_generate_spec(task.id)
 
-        artefact = await self.db.latest_artefact_for_task(task.id)
-        finalized = False
-        # Refiner never produced an artefact (budget exhausted before the
-        # first regenerate_and_critique, or the model never fired one).
-        # Try to produce one now with a direct generate+critique so the
-        # caller at least has something.
-        if artefact is None and await self.db.consume_budget(1):
-            await self._one_off_regenerate(task.id, parent_call_id=None)
+            await self._run_refine_spec(task.id)
+
             artefact = await self.db.latest_artefact_for_task(task.id)
+            finalized = False
+            # Refiner never produced an artefact (budget exhausted before the
+            # first regenerate_and_critique, or the model never fired one).
+            # Try to produce one now with a direct generate+critique so the
+            # caller at least has something.
+            if artefact is None and await self.db.consume_budget(1):
+                await self._one_off_regenerate(task.id, parent_call_id=None)
+                artefact = await self.db.latest_artefact_for_task(task.id)
 
-        if artefact is not None and artefact.hidden:
-            await self.db.set_page_hidden(artefact.id, False)
-            finalized = True
-            log.info("Orchestrator force-finalized artefact %s", artefact.id[:8])
-        elif artefact is not None and not artefact.hidden:
-            finalized = True
+            if artefact is not None and artefact.hidden:
+                await self.db.set_page_hidden(artefact.id, False)
+                finalized = True
+                log.info("Orchestrator force-finalized artefact %s", artefact.id[:8])
+            elif artefact is not None and not artefact.hidden:
+                finalized = True
 
-        return GenerativeResult(
-            task_id=task.id,
-            artefact_id=artefact.id if artefact else None,
-            finalized=finalized,
-        )
+            return GenerativeResult(
+                task_id=task.id,
+                artefact_id=artefact.id if artefact else None,
+                finalized=finalized,
+            )
+        finally:
+            if self._owns_broadcaster and self.broadcaster is not None:
+                await self.broadcaster.close()
 
     async def _create_task(self, request: str, *, headline: str | None) -> Page:
         task = Page(
@@ -121,7 +134,7 @@ class GenerativeOrchestrator:
             CallType.GENERATE_SPEC,
             scope_page_id=task_id,
         )
-        runner = GenerateSpecCall(task_id, call, self.db)
+        runner = GenerateSpecCall(task_id, call, self.db, broadcaster=self.broadcaster)
         await runner.run()
 
     async def _run_refine_spec(self, task_id: str) -> None:
@@ -132,7 +145,13 @@ class GenerativeOrchestrator:
             CallType.REFINE_SPEC,
             scope_page_id=task_id,
         )
-        runner = RefineSpecCall(task_id, call, self.db, max_rounds=self.refine_max_rounds)
+        runner = RefineSpecCall(
+            task_id,
+            call,
+            self.db,
+            max_rounds=self.refine_max_rounds,
+            broadcaster=self.broadcaster,
+        )
         await runner.run()
 
     async def _one_off_regenerate(self, task_id: str, parent_call_id: str | None) -> None:
@@ -142,7 +161,7 @@ class GenerativeOrchestrator:
             scope_page_id=task_id,
             parent_call_id=parent_call_id,
         )
-        await GenerateArtefactCall(task_id, gen_call, self.db).run()
+        await GenerateArtefactCall(task_id, gen_call, self.db, broadcaster=self.broadcaster).run()
 
         if not await self.db.consume_budget(1):
             return
@@ -151,7 +170,7 @@ class GenerativeOrchestrator:
             scope_page_id=task_id,
             parent_call_id=parent_call_id,
         )
-        await CritiqueArtefactCall(task_id, crit_call, self.db).run()
+        await CritiqueArtefactCall(task_id, crit_call, self.db, broadcaster=self.broadcaster).run()
 
 
 async def run_generative_workflow(

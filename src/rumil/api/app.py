@@ -390,6 +390,11 @@ def _count_trace_events(trace_json: list[dict] | None) -> tuple[int, int]:
 
 @app.get("/api/runs/{run_id}/trace-tree", response_model=RunTraceTreeOut)
 async def get_run_trace_tree(run_id: str, db: DB = Depends(_get_db)):
+    run_resp = await db.client.table("runs").select("staged, config").eq("id", run_id).execute()
+    run_data: list[dict[str, object]] = run_resp.data or []  # type: ignore[assignment]
+    if not run_data:
+        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+
     question_id = await db.get_run_question_id(run_id)
     question_page = None
     if question_id:
@@ -415,12 +420,8 @@ async def get_run_trace_tree(run_id: str, db: DB = Depends(_get_db)):
             )
         )
     total_cost = sum(c.cost_usd or 0 for c in calls)
-    run_resp = await db.client.table("runs").select("staged, config").eq("id", run_id).execute()
-    run_data: list[dict[str, object]] = run_resp.data or []  # type: ignore[assignment]
-    is_staged = bool(run_data and run_data[0].get("staged"))
-    run_config: dict = {}
-    if run_data:
-        run_config = run_data[0].get("config") or {}  # type: ignore[assignment]
+    is_staged = bool(run_data[0].get("staged"))
+    run_config: dict = run_data[0].get("config") or {}  # type: ignore[assignment]
     return RunTraceTreeOut(
         run_id=run_id,
         question=question_page,

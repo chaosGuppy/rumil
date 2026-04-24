@@ -13,7 +13,7 @@ from dataclasses import asdict, dataclass
 
 # Version tag for parsed-essay cache. Bump when Block / Essay shape
 # changes in a way that should invalidate cached JSON.
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 10
 
 
 ACK_PATTERNS = [

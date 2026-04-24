@@ -15,9 +15,20 @@ import bs4
 
 def clean_text(s: str) -> str:
     s = re.sub(r"\s+", " ", s).strip()
-    s = re.sub(r"\s+([,.;:!?\)\]])", r"\1", s)
+    # Merge adjacent italic runs separated only by whitespace (common when a
+    # single italicized phrase is broken by an inline link in the source HTML).
+    # Done before the punctuation cleanup so newly-revealed ``\s+[,.]`` patterns
+    # get caught by the next pass. The negative lookarounds are critical —
+    # without them, the regex also chews into adjacent bold markers (``** **``)
+    # or bold-italic (``** ***``) pairs and mangles the emphasis.
+    s = re.sub(r"(?<!\*)\*\s+\*(?!\*)", " ", s)
+    s = re.sub(r"\s+([,.;:!?\)\]—–])", r"\1", s)
     s = re.sub(r"([\(\[])\s+", r"\1", s)
     s = re.sub(r"(\*+)\s+([,.;:!?\)\]])", r"\1\2", s)
+    # Smart-quote spacing (introduced when italic fragments get merged across
+    # a quoted link): `"  word` -> `"word`, `word  "` -> `word"`.
+    s = re.sub(r"([“\"])\s+(\w)", r"\1\2", s)
+    s = re.sub(r"(\w)\s+([”\"])", r"\1\2", s)
     return s
 
 
@@ -27,8 +38,8 @@ def render_inline(
     """Render a node's text content with bold/italic preserved as markdown.
 
     Skips ``<ul>``/``<ol>`` subtrees so list rendering can handle them
-    separately. Also skips ``<sup>`` descendants (commonly used for
-    footnote markers — stripped up front before parsing).
+    separately. ``<br>`` tags emit a space so ``<br><br>``-separated
+    paragraphs don't merge.
     """
     if isinstance(node, bs4.NavigableString):
         return str(node)
@@ -36,6 +47,8 @@ def render_inline(
         return ""
     if node.name in skip_tag_names:
         return ""
+    if node.name == "br":
+        return " "
     inner = "".join(render_inline(c, skip_tag_names=skip_tag_names) for c in node.children)
     if node.name in ("strong", "b"):
         stripped = inner.strip()

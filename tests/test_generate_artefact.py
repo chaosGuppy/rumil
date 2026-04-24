@@ -11,11 +11,7 @@
 import pytest
 import pytest_asyncio
 
-from rumil.calls.context_builders import (
-    CritiqueContext,
-    SpecOnlyContext,
-    _latest_artefact_for_task,
-)
+from rumil.calls.context_builders import CritiqueContext, SpecOnlyContext
 from rumil.calls.critique_artefact import CritiqueArtefactCall
 from rumil.calls.generate_artefact import GenerateArtefactCall
 from rumil.calls.stages import CallInfra
@@ -181,7 +177,7 @@ async def test_critique_context_errors_when_no_artefact(tmp_db, artefact_task):
 
 async def test_latest_artefact_for_task_returns_most_recent(tmp_db, artefact_task):
     """Helper selects the most recent active ARTEFACT linked to the task."""
-    assert await _latest_artefact_for_task(artefact_task.id, tmp_db) is None
+    assert await tmp_db.latest_artefact_for_task(artefact_task.id) is None
 
     older = Page(
         page_type=PageType.ARTEFACT,
@@ -217,7 +213,7 @@ async def test_latest_artefact_for_task_returns_most_recent(tmp_db, artefact_tas
         )
     )
 
-    latest = await _latest_artefact_for_task(artefact_task.id, tmp_db)
+    latest = await tmp_db.latest_artefact_for_task(artefact_task.id)
     assert latest is not None
     assert latest.id == newer.id
 
@@ -252,7 +248,7 @@ async def test_generate_artefact_end_to_end(tmp_db, artefact_task):
     refreshed = await tmp_db.get_call(call.id)
     assert refreshed.status == CallStatus.COMPLETE
 
-    artefact = await _latest_artefact_for_task(artefact_task.id, tmp_db)
+    artefact = await tmp_db.latest_artefact_for_task(artefact_task.id)
     assert artefact is not None
     assert artefact.page_type == PageType.ARTEFACT
     assert artefact.hidden is True

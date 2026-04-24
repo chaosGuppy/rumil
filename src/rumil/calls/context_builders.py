@@ -1110,7 +1110,7 @@ class CritiqueContext(ContextBuilder):
                 f"CritiqueContext: artefact-task question {infra.question_id} not found"
             )
 
-        artefact = await _latest_artefact_for_task(infra.question_id, infra.db)
+        artefact = await infra.db.latest_artefact_for_task(infra.question_id)
         if artefact is None:
             raise ValueError(
                 f"CritiqueContext: no artefact found for task {infra.question_id}; "
@@ -1154,19 +1154,6 @@ class CritiqueContext(ContextBuilder):
             working_page_ids=working_page_ids,
             preloaded_ids=[],
         )
-
-
-async def _latest_artefact_for_task(task_id: str, db) -> Page | None:
-    """Return the most recently-created active Artefact linked ARTEFACT_OF to *task_id*."""
-    links = await db.get_links_to(task_id)
-    artefact_links = [l for l in links if l.link_type == LinkType.ARTEFACT_OF]
-    if not artefact_links:
-        return None
-    pages_by_id = await db.get_pages_by_ids([l.from_page_id for l in artefact_links])
-    active = [p for p in pages_by_id.values() if p.is_active() and p.page_type == PageType.ARTEFACT]
-    if not active:
-        return None
-    return max(active, key=lambda p: p.created_at)
 
 
 async def active_spec_items_for_task(task_id: str, db) -> list[Page]:

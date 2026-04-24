@@ -39,7 +39,7 @@ envcascade.apply(
     rumil_root=RUMIL_ROOT,
 )
 
-from versus import config, rumil_judge  # noqa: E402
+from versus import config, prepare, rumil_judge  # noqa: E402
 
 DEFAULT_DIMENSIONS = ("general_quality",)
 
@@ -134,6 +134,15 @@ def main() -> None:
         help="Restrict planning to specified essay_id(s). Repeatable. ws/orch only.",
     )
     ap.add_argument(
+        "--active",
+        action="store_true",
+        help=(
+            "Restrict to the canonical active set: current schema_version "
+            "and not in cfg.essays.exclude_ids. Same gate /versus applies. "
+            "Composes with --essay (intersected)."
+        ),
+    )
+    ap.add_argument(
         "--contestants",
         default=None,
         help=(
@@ -180,6 +189,12 @@ def main() -> None:
     if not cfg.essays.cache_dir.is_absolute():
         cfg.essays.cache_dir = VERSUS_ROOT / cfg.essays.cache_dir
 
+    if args.active:
+        active = prepare.active_essay_ids(cfg.essays.cache_dir, cfg.essays.exclude_ids)
+        essay_ids = sorted(active & set(args.essay)) if args.essay else sorted(active)
+    else:
+        essay_ids = args.essay
+
     if args.variant == "text":
         models = args.model if args.model else list(cfg.judging.anthropic_models)
         rumil_judge.run(
@@ -187,7 +202,7 @@ def main() -> None:
             models,
             limit=args.limit,
             dry_run=args.dry_run,
-            essay_ids=args.essay,
+            essay_ids=essay_ids,
             contestants=contestants,
             vs_human=args.vs_human,
             current_only=args.current_only,
@@ -205,7 +220,7 @@ def main() -> None:
             dimensions=dimensions,
             limit=args.limit,
             dry_run=args.dry_run,
-            essay_ids=args.essay,
+            essay_ids=essay_ids,
             contestants=contestants,
             vs_human=args.vs_human,
             current_only=args.current_only,
@@ -229,7 +244,7 @@ def main() -> None:
                 limit=args.limit,
                 dry_run=args.dry_run,
                 concurrency=args.concurrency,
-                essay_ids=args.essay,
+                essay_ids=essay_ids,
                 contestants=contestants,
                 vs_human=args.vs_human,
                 current_only=args.current_only,
@@ -247,7 +262,7 @@ def main() -> None:
                 limit=args.limit,
                 dry_run=args.dry_run,
                 concurrency=args.concurrency,
-                essay_ids=args.essay,
+                essay_ids=essay_ids,
                 contestants=contestants,
                 vs_human=args.vs_human,
                 current_only=args.current_only,

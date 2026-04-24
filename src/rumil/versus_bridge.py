@@ -370,16 +370,18 @@ async def judge_pair_orch(
     *,
     task_body: str,
     model: str,
-    budget: int = 1,
+    budget: int,
     broadcaster: Broadcaster | None = None,
 ) -> JudgeResult:
     """Create a per-pair Question, run TwoPhaseOrchestrator against it, then
     fire a closing call to extract the 7-point label.
 
-    ``budget`` is the orchestrator's research call budget; defaults to the
-    minimum (1). ``model`` scopes a :func:`override_settings` block around
-    the entire orchestrator run + closer call so the orchestrator's
-    internal LLM calls all see the caller's chosen model.
+    ``budget`` is the orchestrator's research call budget; caller must pass
+    it explicitly -- a silent default hid the cost knob and made it too
+    easy to run orch at budget=1 without realizing. ``model`` scopes a
+    :func:`override_settings` block around the entire orchestrator run +
+    closer call so the orchestrator's internal LLM calls all see the
+    caller's chosen model.
     """
     with override_settings(rumil_model_override=model):
         question_id = await ensure_versus_question(db, pair)

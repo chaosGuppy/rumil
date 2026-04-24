@@ -440,11 +440,13 @@ class JudgmentSubmit(pydantic.BaseModel):
     second_source: str
     verdict: str  # "A" | "B" | "tie"
     note: str = ""
+    force: bool = False
 
 
 class JudgmentSubmitResult(pydantic.BaseModel):
     key: str
     winner_source: str
+    duplicate: bool = False
 
 
 router = APIRouter(prefix="/api/versus", tags=["versus"])
@@ -1066,6 +1068,14 @@ def submit_judgment(body: JudgmentSubmit) -> JudgmentSubmitResult:
     k = versus_judge.judgment_key(
         body.essay_id, body.prefix_hash, body.a, body.b, body.criterion, judge_model, order
     )
+    log_path = _resolve_path(cfg.storage.judgments_log)
+    # Guard against double-clicks / accidental re-judgment. read_dedup
+    # collapses dupes last-row-wins, but the raw file grows and
+    # total_judgments inflates until caches roll over. Require an
+    # explicit `force` to override -- lets the operator fix a mistaken
+    # verdict, but makes "I clicked twice" a no-op.
+    if not body.force and k in versus_jsonl.keys(log_path):
+        return JudgmentSubmitResult(key=k, winner_source=winner_source, duplicate=True)
     row = {
         "key": k,
         "essay_id": body.essay_id,
@@ -1081,11 +1091,11 @@ def submit_judgment(body: JudgmentSubmit) -> JudgmentSubmitResult:
         "winner_source": winner_source,
         "reasoning_text": body.note,
         "prompt": None,
-        "ts": dt.datetime.utcnow().isoformat() + "Z",
+        "ts": dt.datetime.now(dt.UTC).isoformat(),
         "duration_s": None,
         "raw_response": None,
     }
-    versus_jsonl.append(_resolve_path(cfg.storage.judgments_log), row)
+    versus_jsonl.append(log_path, row)
     return JudgmentSubmitResult(key=k, winner_source=winner_source)
 
 

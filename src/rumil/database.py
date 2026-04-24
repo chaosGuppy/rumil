@@ -305,6 +305,23 @@ class DB:
         db._prod = self._prod
         return db
 
+    def view_as_staged(self, run_id: str) -> "DB":
+        """Return a sibling DB with staged visibility for ``run_id``.
+
+        Reuses the same Supabase client (no new HTTP connection, no close
+        needed) and only flips the staging flags. Use this for short-lived
+        reads that need to see a staged run's mutations — e.g. surfacing a
+        staged run's pages in the trace-tree API.
+        """
+        db = DB(
+            run_id=run_id,
+            client=self.client,
+            project_id=self.project_id,
+            staged=True,
+        )
+        db._prod = self._prod
+        return db
+
     async def close(self) -> None:
         """Close the underlying HTTP connections."""
         try:

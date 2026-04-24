@@ -88,29 +88,16 @@ def judgment_key(
     return f"{essay_id}|{prefix_hash}|{lo}__vs__{hi}|{criterion}|{judge_model}"
 
 
-_JUDGE_MODEL_SUFFIX_RE = re.compile(
-    r":p[0-9a-f]{8}(?::v\d+)?(?::t[0-9a-f]{8})?(?::s[0-9a-f]{8})?$"
-)
-
-
-def base_judge_model(judge_model: str) -> str:
-    """Strip ``:p<hash>[:v<N>][:t<hash>][:s<hash>]`` version suffix to recover the raw model id.
-
-    Use wherever downstream code needs to match the judge_model against a
-    source_id (e.g. ``paraphrase:<model>``) or render a column header that
-    groups across prompt versions. ``:t<hash>`` is the tool-prompt hash
-    used by rumil:ws / rumil:orch (not used by OpenRouter / anthropic /
-    rumil-text variants); ``:s<hash>`` is the sampling-params hash used
-    by the non-ws paths. In practice ``:t`` and ``:s`` don't co-occur,
-    but the regex tolerates either order-last.
-    """
-    return _JUDGE_MODEL_SUFFIX_RE.sub("", judge_model)
-
-
 _PHASH_TAG_RE = re.compile(r"^p[0-9a-f]{8}$")
 _VERSION_TAG_RE = re.compile(r"^v\d+$")
 _SHASH_TAG_RE = re.compile(r"^s[0-9a-f]{8}$")
 _THASH_TAG_RE = re.compile(r"^t[0-9a-f]{8}$")
+
+
+def _peel_ts_tag(parts: list[str]) -> list[str]:
+    if parts and (_SHASH_TAG_RE.match(parts[-1]) or _THASH_TAG_RE.match(parts[-1])):
+        return parts[:-1]
+    return parts
 
 
 def parse_judge_model_suffix(judge_model: str) -> tuple[str, str | None, str | None]:
@@ -124,13 +111,12 @@ def parse_judge_model_suffix(judge_model: str) -> tuple[str, str | None, str | N
     separately (they exist in the dedup key so topups at different
     sampling params / tool-prompt edits don't silently no-op; the
     human-readable sampling dict lives on the judgment row, and the
-    tool-prompt text lives in-repo).
+    tool-prompt text lives in-repo). ``:t`` and ``:s`` are peeled
+    symmetrically so either ordering is tolerated.
     """
     parts = judge_model.split(":")
-    if parts and _SHASH_TAG_RE.match(parts[-1]):
-        parts = parts[:-1]
-    if parts and _THASH_TAG_RE.match(parts[-1]):
-        parts = parts[:-1]
+    parts = _peel_ts_tag(parts)
+    parts = _peel_ts_tag(parts)
     version = None
     if parts and _VERSION_TAG_RE.match(parts[-1]):
         version = parts[-1]
@@ -140,6 +126,17 @@ def parse_judge_model_suffix(judge_model: str) -> tuple[str, str | None, str | N
         phash = parts[-1]
         parts = parts[:-1]
     return ":".join(parts), phash, version
+
+
+def base_judge_model(judge_model: str) -> str:
+    """Strip ``:p<hash>[:v<N>][:t<hash>][:s<hash>]`` version suffix to recover the raw model id.
+
+    Use wherever downstream code needs to match the judge_model against a
+    source_id (e.g. ``paraphrase:<model>``) or render a column header that
+    groups across prompt versions. Delegates to
+    :func:`parse_judge_model_suffix` so the peel logic is shared.
+    """
+    return parse_judge_model_suffix(judge_model)[0]
 
 
 def compute_judge_prompt_hash(dimension: str) -> str:

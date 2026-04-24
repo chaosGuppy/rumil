@@ -93,6 +93,12 @@ _SAMPLING_HASH_RE = re.compile(r"^s[0-9a-f]{8}$")
 _TOOL_HASH_RE = re.compile(r"^t[0-9a-f]{8}$")
 
 
+def _peel_ts_tag(parts: list[str]) -> list[str]:
+    if parts and (_SAMPLING_HASH_RE.match(parts[-1]) or _TOOL_HASH_RE.match(parts[-1])):
+        return parts[:-1]
+    return parts
+
+
 def _strip_phash_version(parts: list[str]) -> tuple[list[str], str | None, str | None]:
     """Peel trailing ``:s<hash>``, ``:t<hash>``, ``:v<N>``, then ``:p<hash>`` off a split judge_model.
 
@@ -100,12 +106,11 @@ def _strip_phash_version(parts: list[str]) -> tuple[list[str], str | None, str |
     returned) because the frontend doesn't render them -- they exist
     only for dedup-key discipline. The human-readable sampling dict
     lives on the judgment row; the tool-prompt text lives in-repo
-    under ``src/rumil/workspace_exploration/``.
+    under ``src/rumil/workspace_exploration/``. ``:t`` and ``:s`` peel
+    symmetrically so either trailing-order is tolerated.
     """
-    if parts and _SAMPLING_HASH_RE.match(parts[-1]):
-        parts = parts[:-1]
-    if parts and _TOOL_HASH_RE.match(parts[-1]):
-        parts = parts[:-1]
+    parts = _peel_ts_tag(parts)
+    parts = _peel_ts_tag(parts)
     version = None
     if parts and _VERSION_TAG_RE.match(parts[-1]):
         version = parts[-1]

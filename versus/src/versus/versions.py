@@ -31,4 +31,8 @@ from __future__ import annotations
 COMPLETION_PROMPT_VERSION = 5
 PARAPHRASE_PROMPT_VERSION = 3
 JUDGE_PROMPT_VERSION = 2
+# v4 (2026-04-23): extract_preference parses the LAST 7-point label in the
+# output instead of the first, so models that think-out-loud and revise
+# their rating don't get locked to an early mention. Unhashed surface
+# change — affects verdicts but not prompt/tool hashes.
 BLIND_JUDGE_VERSION = 4

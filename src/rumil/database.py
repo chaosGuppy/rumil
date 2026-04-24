@@ -1435,8 +1435,7 @@ class DB:
         return [
             (pages[l.to_page_id], l)
             for l in dep_links
-            if l.to_page_id in pages
-            and (include_hidden or not pages[l.to_page_id].hidden)
+            if l.to_page_id in pages and (include_hidden or not pages[l.to_page_id].hidden)
         ]
 
     async def _get_project_page_ids(self) -> set[str] | None:

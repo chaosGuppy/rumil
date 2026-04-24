@@ -71,9 +71,7 @@ def test_versus_prompt_snapshot_matches_pin(filename: str) -> None:
     actual = _sha16(path)
     expected = EXPECTED_HASHES[filename]
     if actual != expected:
-        guidance = _BUMP_GUIDANCE.get(
-            filename, "No specific bump guidance for this file."
-        )
+        guidance = _BUMP_GUIDANCE.get(filename, "No specific bump guidance for this file.")
         pytest.fail(
             f"prompt snapshot mismatch for `prompts/{filename}`:\n"
             f"  expected: {expected}\n"

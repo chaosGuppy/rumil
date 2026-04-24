@@ -11,7 +11,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import httpx
 
-from versus import config, fetch, jsonl, openrouter, prepare
+from versus import config, jsonl, openrouter, prepare
+from versus import essay as versus_essay
 
 HUMAN_SOURCE_ID = "human"
 
@@ -73,7 +74,7 @@ def ensure_paraphrase_rows(
         k = completion_key(task.essay_id, task.prefix_config_hash, source_id, samp_hash)
         if k in existing_keys:
             continue
-        para_blocks = [fetch.Block(**b) for b in para_row["blocks"]]
+        para_blocks = [versus_essay.Block(**b) for b in para_row["blocks"]]
         remainder_md = prepare.split_paraphrase(para_blocks, n_paragraphs)
         row = {
             "key": k,
@@ -133,7 +134,7 @@ def _call_one_completion(task, prompt, m, sh, k, client):
     }
 
 
-def run(cfg: config.Config, essays: list[fetch.Essay]) -> None:
+def run(cfg: config.Config, essays: list[versus_essay.Essay]) -> None:
     log = cfg.storage.completions_log
     existing = jsonl.keys(log)
     paraphrase_rows = load_paraphrases_by_essay_model(cfg.storage.paraphrases_log)

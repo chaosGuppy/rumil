@@ -23,29 +23,41 @@ VERSUS_ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 sys.path.insert(0, str(VERSUS_ROOT / "src"))
 
-from versus import config, fetch, jsonl, paraphrase as _paraphrase, prepare  # noqa: E402
+from versus import config, jsonl, prepare  # noqa: E402
+from versus import essay as versus_essay  # noqa: E402
+from versus import paraphrase as _paraphrase  # noqa: E402
 
 
-def _load_essays(cfg: config.Config) -> dict[str, fetch.Essay]:
-    out: dict[str, fetch.Essay] = {}
+def _load_essays(cfg: config.Config) -> dict[str, versus_essay.Essay]:
+    exclude = set(cfg.essays.exclude_ids)
+    out: dict[str, versus_essay.Essay] = {}
     for path in sorted(cfg.essays.cache_dir.glob("*.json")):
         if path.name.endswith(".verdict.json"):
             continue
         d = json.loads(path.read_text())
-        out[d["id"]] = fetch.Essay(
+        if "source_id" not in d:
+            # Legacy pre-multi-source JSON — skip. Re-fetch to upgrade.
+            continue
+        if d["id"] in exclude:
+            continue
+        out[d["id"]] = versus_essay.Essay(
             id=d["id"],
+            source_id=d["source_id"],
             url=d["url"],
             title=d["title"],
             author=d["author"],
             pub_date=d["pub_date"],
-            blocks=[fetch.Block(**b) for b in d["blocks"]],
+            blocks=[versus_essay.Block(**b) for b in d["blocks"]],
             markdown=d["markdown"],
+            image_count=d.get("image_count", 0),
             schema_version=d["schema_version"],
         )
     return out
 
 
-def _current_prefix_hashes(cfg: config.Config, essays: dict[str, fetch.Essay]) -> dict[str, str]:
+def _current_prefix_hashes(
+    cfg: config.Config, essays: dict[str, versus_essay.Essay]
+) -> dict[str, str]:
     out: dict[str, str] = {}
     for eid, essay in essays.items():
         task = prepare.prepare(

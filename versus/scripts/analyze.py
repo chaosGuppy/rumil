@@ -7,7 +7,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "src"))
 
-from versus import analyze, config  # noqa: E402
+from versus import analyze, config
 
 
 def main() -> None:

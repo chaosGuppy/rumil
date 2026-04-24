@@ -6,10 +6,17 @@ import pydantic
 import yaml
 
 
-class EssaysCfg(pydantic.BaseModel):
-    source: str = "forethought"
+class SourceCfg(pydantic.BaseModel):
+    id: str
     max_recent: int = 5
+    max_images: int | None = None  # skip essay if image_count > this
+    max_image_ratio: float | None = None  # skip essay if image_count / paragraph_count > this
+
+
+class EssaysCfg(pydantic.BaseModel):
+    sources: list[SourceCfg] = pydantic.Field(default_factory=list)
     cache_dir: pathlib.Path = pathlib.Path("data/essays")
+    exclude_ids: list[str] = pydantic.Field(default_factory=list)  # skip these namespaced essay ids
 
 
 class PrefixCfg(pydantic.BaseModel):

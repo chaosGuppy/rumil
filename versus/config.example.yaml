@@ -1,9 +1,16 @@
 # versus eval config
 
 essays:
-  source: forethought
-  max_recent: 8          # how many most-recent essays to fetch
   cache_dir: data/essays
+  sources:
+    - id: forethought
+      max_recent: 8
+      # max_image_ratio: 0.15  # skip image-heavy essays (images per paragraph above threshold)
+      # max_images: 10         # or filter by absolute count
+    - id: redwood
+      max_recent: 10
+    - id: carlsmith
+      max_recent: 8
 
 prefix:
   n_paragraphs: 3        # show this many opening paragraphs

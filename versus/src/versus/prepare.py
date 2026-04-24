@@ -6,19 +6,23 @@ import hashlib
 import json
 from dataclasses import dataclass
 
-from versus.fetch import Block, Essay, blocks_to_markdown
+from versus.essay import Block, Essay, blocks_to_markdown
 
 # Bump when ``render_prompt`` text changes in a way that should invalidate
 # existing completion rows. Folded into ``prefix_config_hash`` below so
 # every downstream key (completions AND judgments keyed on prefix_hash)
 # forks naturally. Edit the prompt without bumping this and old rows
 # silently persist.
-COMPLETION_PROMPT_VERSION = 2
+#
+# v3: source-neutral prompt wording and namespaced essay ids (the essay
+# id is folded into the hash via ``prepare``).
+COMPLETION_PROMPT_VERSION = 3
 
 
 @dataclass
 class PreparedTask:
     essay_id: str
+    source_id: str
     title: str
     prefix_blocks: list[Block]
     remaining_headers: list[Block]
@@ -76,6 +80,7 @@ def prepare(
 
     return PreparedTask(
         essay_id=essay.id,
+        source_id=essay.source_id,
         title=essay.title,
         prefix_blocks=prefix_blocks,
         remaining_headers=remaining_headers,
@@ -106,14 +111,19 @@ def current_prefix_hashes(cfg, essays_dir) -> dict[str, str]:
         if path.name.endswith(".verdict.json"):
             continue
         data = json.loads(path.read_text())
+        if "source_id" not in data:
+            # Legacy (pre-multi-source) essay JSON — skip. Re-fetch to upgrade.
+            continue
         essay = Essay(
             id=data["id"],
+            source_id=data["source_id"],
             url=data.get("url", ""),
             title=data.get("title", ""),
             author=data.get("author", ""),
             pub_date=data.get("pub_date", ""),
             blocks=[Block(**b) for b in data["blocks"]],
             markdown=data.get("markdown", ""),
+            image_count=data.get("image_count", 0),
             schema_version=data.get("schema_version", 0),
         )
         task = prepare(
@@ -148,8 +158,8 @@ def render_prompt(task: PreparedTask, include_headers: bool, tolerance: float) -
     high = int(task.target_words * (1 + tolerance))
 
     parts = [
-        "You are continuing an essay from forethought.org. Below is the beginning;",
-        "continue it in the same voice and style. Do not restate or summarize the opening —",
+        "You are continuing an essay. Below is the beginning; continue it in the same voice",
+        "and style. Do not restate or summarize the opening —",
         f"write only the continuation. Aim for about {task.target_words} words",
         f"(between {low} and {high} is fine). Use Markdown section headings if it helps structure.",
     ]

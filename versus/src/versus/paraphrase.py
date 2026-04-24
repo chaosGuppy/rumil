@@ -12,14 +12,14 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import json
-import pathlib
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import httpx
 
-from versus import config, fetch, jsonl, openrouter
+from versus import config, jsonl, openrouter
+from versus import essay as versus_essay
 
 # Bump when ``PARAPHRASE_INSTRUCTIONS`` changes in a way that should
 # invalidate existing paraphrase rows. Folded into ``sampling_hash``
@@ -64,13 +64,13 @@ def paraphrase_key(essay_id: str, model_id: str, samp_hash: str) -> str:
     return f"{essay_id}|{model_id}|{samp_hash}"
 
 
-def markdown_to_blocks(md: str) -> list[fetch.Block]:
+def markdown_to_blocks(md: str) -> list[versus_essay.Block]:
     """Rough inverse of blocks_to_markdown. Splits on blank lines.
 
     Only recognizes ##/###/#### as h1/h2/h3 (other lines are paragraphs).
     Preserves list/blockquote text verbatim inside paragraph blocks.
     """
-    out: list[fetch.Block] = []
+    out: list[versus_essay.Block] = []
     chunks = re.split(r"\n\s*\n", md.strip())
     for chunk in chunks:
         chunk = chunk.strip("\n").rstrip()
@@ -81,9 +81,9 @@ def markdown_to_blocks(md: str) -> list[fetch.Block]:
         if m and "\n" not in chunk:
             hashes = m.group(1)
             level_map = {"##": "h1", "###": "h2", "####": "h3"}
-            out.append(fetch.Block(type=level_map[hashes], text=m.group(2)))
+            out.append(versus_essay.Block(type=level_map[hashes], text=m.group(2)))
         else:
-            out.append(fetch.Block(type="p", text=chunk))
+            out.append(versus_essay.Block(type="p", text=chunk))
     return out
 
 
@@ -115,7 +115,7 @@ def _call_one_paraphrase(essay, m, sh, k, prompt, client):
     }
 
 
-def run(cfg: config.Config, essays: list[fetch.Essay]) -> None:
+def run(cfg: config.Config, essays: list[versus_essay.Essay]) -> None:
     if not cfg.paraphrasing.enabled or not cfg.paraphrasing.models:
         print("[paraphrase] disabled or no models configured; skipping")
         return

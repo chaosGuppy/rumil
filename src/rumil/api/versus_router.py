@@ -24,7 +24,7 @@ from fastapi import APIRouter, HTTPException
 
 from versus import analyze as versus_analyze
 from versus import config as versus_config
-from versus import fetch as versus_fetch
+from versus import essay as versus_essay
 from versus import jsonl as versus_jsonl
 from versus import judge as versus_judge
 from versus import paraphrase as versus_paraphrase
@@ -102,17 +102,24 @@ def _build_essays_status(
     """
     statuses: list[EssayStatus] = []
     current: dict[str, str] = {}
+    exclude = set(cfg.essays.exclude_ids)
     for path in _iter_essay_paths():
         with open(path) as f:
             d = json.load(f)
-        essay = versus_fetch.Essay(
+        if "source_id" not in d:
+            continue
+        if d["id"] in exclude:
+            continue
+        essay = versus_essay.Essay(
             id=d["id"],
+            source_id=d["source_id"],
             url=d["url"],
             title=d["title"],
             author=d["author"],
             pub_date=d["pub_date"],
-            blocks=[versus_fetch.Block(**b) for b in d["blocks"]],
+            blocks=[versus_essay.Block(**b) for b in d["blocks"]],
             markdown=d.get("markdown", ""),
+            image_count=d.get("image_count", 0),
             schema_version=d.get("schema_version", 0),
         )
         task = versus_prepare.prepare(
@@ -414,19 +421,22 @@ def _human_judge_id(name: str) -> str:
     return f"human:{name.strip().lower()}"
 
 
-def _load_essay(essay_id: str) -> versus_fetch.Essay | None:
+def _load_essay(essay_id: str) -> versus_essay.Essay | None:
     p = _essays_dir() / f"{essay_id}.json"
     if not p.exists():
         return None
     with open(p) as f:
         d = json.load(f)
-    return versus_fetch.Essay(
+    if "source_id" not in d:
+        return None
+    return versus_essay.Essay(
         id=d["id"],
+        source_id=d["source_id"],
         url=d["url"],
         title=d["title"],
         author=d["author"],
         pub_date=d["pub_date"],
-        blocks=[versus_fetch.Block(**b) for b in d["blocks"]],
+        blocks=[versus_essay.Block(**b) for b in d["blocks"]],
         markdown=d.get("markdown", ""),
         schema_version=d.get("schema_version", 0),
     )
@@ -437,10 +447,14 @@ def list_essays() -> list[EssayMeta]:
     paths = _iter_essay_paths()
     if not paths and not _essays_dir().exists():
         raise HTTPException(503, f"versus essays dir not found: {_essays_dir()}")
+    cfg = _cfg_cached()
+    exclude = set(cfg.essays.exclude_ids) if cfg else set()
     out: list[EssayMeta] = []
     for p in paths:
         with open(p) as f:
             d = json.load(f)
+        if d.get("id") in exclude:
+            continue
         out.append(
             EssayMeta(
                 id=d["id"],

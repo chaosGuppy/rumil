@@ -26,7 +26,7 @@ VALIDATOR_TEMPERATURE = 0.0
 VALIDATOR_VERSION = 1
 
 SYSTEM_PROMPT = (
-    "You inspect normalized markdown extracted from a forethought.org essay "
+    "You inspect normalized markdown extracted from a longform web essay "
     "and decide whether it is clean enough to feed into a language-model "
     "evaluation pipeline.\n\n"
     "The pipeline takes the markdown verbatim and asks judges to read it as "
@@ -37,7 +37,7 @@ SYSTEM_PROMPT = (
     "- DUPLICATION: the same sentence or paragraph appearing twice in a row, "
     "or a parent bullet whose text already contains its child bullets' text "
     "while those children are also emitted as siblings.\n"
-    "- ORPHAN_FOOTNOTE: a bare digit at the end of a sentence (e.g. "
+    "- ORPHAN_FOOTNOTE: a bare digit or '^' at the end of a sentence (e.g. "
     "'public discourse. 2') that is clearly a stripped footnote reference. "
     "Footnote bodies missing entirely is also an orphan_footnote.\n"
     "- PUNCTUATION_SPACING: stray space before a comma/period/colon/semicolon "
@@ -48,7 +48,8 @@ SYSTEM_PROMPT = (
     "- CAPTION_LEAK: a standalone paragraph that is just an image caption or "
     "credit line (e.g. an italic painting title with artist + year).\n"
     "- NAV_FOOTER_LEAK: 'Subscribe', 'Share', 'Read more', author bios, "
-    "related-posts, social-media buttons, cookie banners, comment sections.\n"
+    "related-posts, social-media buttons, cookie banners, comment sections, "
+    "paywall CTAs, newsletter signup prompts, 'Thanks for reading'.\n"
     "- ENCODING: mojibake (e.g. â€™ for '), unresolved HTML entities (&amp;, "
     "&#39;), zero-width characters, BOM markers.\n"
     "- TRUNCATION: text that abruptly cuts off mid-sentence.\n"
@@ -70,7 +71,7 @@ SYSTEM_PROMPT = (
     "    {\n"
     '      "kind": <one of: duplication, orphan_footnote, punctuation_spacing, '
     "lost_emphasis, caption_leak, nav_footer_leak, encoding, truncation, "
-    'broken_structure, other>,\n'
+    "broken_structure, other>,\n"
     '      "snippet": <short verbatim quote from the markdown, ~10-60 chars, '
     "showing the problem>,\n"
     '      "description": <one short sentence explaining what is wrong>\n'
@@ -109,8 +110,17 @@ def _parse_response(text: str) -> dict:
     cleaned = text.strip()
     fence = re.match(r"^```(?:json)?\s*\n(.*?)\n```\s*$", cleaned, re.DOTALL)
     if fence:
-        cleaned = fence.group(1)
-    return json.loads(cleaned)
+        cleaned = fence.group(1).strip()
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        pass
+    # Fallback: extract the outermost JSON object from any surrounding prose.
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        return json.loads(cleaned[start : end + 1])
+    raise ValueError(f"validator response is not JSON: {text[:500]!r}")
 
 
 def validate(
@@ -170,7 +180,6 @@ def format_verdict(v: dict) -> str:
     for issue in v["issues"]:
         snippet = issue.get("snippet", "")
         lines.append(
-            f"      [{issue.get('kind', '?')}] {snippet!r}: "
-            f"{issue.get('description', '')}"
+            f"      [{issue.get('kind', '?')}] {snippet!r}: {issue.get('description', '')}"
         )
     return "\n".join(lines)

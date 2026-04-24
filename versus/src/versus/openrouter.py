@@ -42,6 +42,7 @@ def chat(
 ) -> dict:
     """Return full response JSON. Retries on transient null-content failures."""
     import time as _time
+
     payload: dict = {"model": model, "messages": messages}
     if temperature is not None:
         payload["temperature"] = temperature

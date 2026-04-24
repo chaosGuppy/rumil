@@ -175,14 +175,24 @@ def _strip_prefix(source_id: str) -> tuple[str, str]:
 
 
 def _is_stale_row(row: dict, current_prefix_hashes: dict[str, str] | None) -> bool:
-    """True iff the row's essay_id is known and its prefix_config_hash doesn't
-    match the current one (i.e. this judgment is against an older essay
-    version). Returns False when we don't have a current hash for the essay."""
+    """True iff the row cannot be verified as matching the current essay cache.
+
+    A row is stale when either:
+      * its ``essay_id`` isn't in the current cache (essay was removed or
+        renamed — e.g. forethought essays migrated to the ``forethought__``
+        namespace no longer match their old jsonl rows), or
+      * its ``prefix_config_hash`` doesn't match the current hash for that
+        essay (essay content or prefix params changed).
+
+    Returns False (not stale) only when we pass both checks. When
+    ``current_prefix_hashes`` is None (caller doesn't want staleness
+    filtering) we defer and return False.
+    """
     if current_prefix_hashes is None:
         return False
     eid = row.get("essay_id")
     if eid not in current_prefix_hashes:
-        return False
+        return True
     return row.get("prefix_config_hash") != current_prefix_hashes[eid]
 
 

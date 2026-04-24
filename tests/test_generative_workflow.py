@@ -24,6 +24,8 @@ from rumil.models import (
     Workspace,
 )
 from rumil.moves.base import MoveState
+from rumil.moves.regenerate_and_critique import RegenerateAndCritiquePayload
+from rumil.moves.regenerate_and_critique import execute as regenerate_and_critique
 from rumil.orchestrators.generative import GenerativeOrchestrator
 from rumil.tracing.tracer import CallTrace
 
@@ -192,6 +194,82 @@ async def test_refinement_context_respects_window(tmp_db, refinement_task):
     assert "v4" in ctx.context_text
     assert "v1" not in ctx.context_text
     assert "v2" not in ctx.context_text
+
+
+async def test_regenerate_and_critique_errors_when_budget_is_one(tmp_db, refinement_task):
+    """Budget guard must be atomic — budget=1 means no sub-calls fire and no
+    partial artefact is produced. Exercised without the LLM by setting a
+    tight budget before calling."""
+    await _seed_spec(tmp_db, refinement_task, ["Rule A"])
+
+    parent = Call(
+        call_type=CallType.REFINE_SPEC,
+        workspace=Workspace.RESEARCH,
+        scope_page_id=refinement_task.id,
+        status=CallStatus.PENDING,
+    )
+    await tmp_db.save_call(parent)
+
+    total, used = await tmp_db.get_budget()
+    await tmp_db.consume_budget(total - used - 1)  # leave exactly 1 unit
+
+    result = await regenerate_and_critique(
+        RegenerateAndCritiquePayload(reason="should be rejected"),
+        parent,
+        tmp_db,
+    )
+    assert "budget" in result.message.lower()
+    assert result.created_page_id is None
+
+    artefacts = await tmp_db.get_pages(page_type=PageType.ARTEFACT, include_hidden=True)
+    assert artefacts == []
+
+
+@pytest.mark.integration
+async def test_regenerate_and_critique_produces_artefact_and_critique(tmp_db, refinement_task):
+    """Happy path: the move fires both sub-calls and links them up."""
+    await tmp_db.init_budget(6)
+    await _seed_spec(
+        tmp_db,
+        refinement_task,
+        [
+            "Keep it short",
+            "Use plain language",
+            "No headings, prose only",
+        ],
+    )
+
+    parent = Call(
+        call_type=CallType.REFINE_SPEC,
+        workspace=Workspace.RESEARCH,
+        scope_page_id=refinement_task.id,
+        status=CallStatus.PENDING,
+    )
+    await tmp_db.save_call(parent)
+
+    _total, used_before = await tmp_db.get_budget()
+    result = await regenerate_and_critique(
+        RegenerateAndCritiquePayload(reason="initial"),
+        parent,
+        tmp_db,
+    )
+    _total, used_after = await tmp_db.get_budget()
+    assert used_after - used_before == 2
+
+    assert "Regenerated artefact" in result.message
+
+    artefact = await tmp_db.latest_artefact_for_task(refinement_task.id)
+    assert artefact is not None
+    assert artefact.page_type == PageType.ARTEFACT
+
+    inbound = await tmp_db.get_links_to(artefact.id)
+    critique_links = [l for l in inbound if l.link_type == LinkType.CRITIQUE_OF]
+    assert len(critique_links) == 1
+
+    critiques = await tmp_db.get_pages_by_ids([l.from_page_id for l in critique_links])
+    (crit,) = list(critiques.values())
+    assert crit.page_type == PageType.JUDGEMENT
+    assert "grade" in crit.extra
 
 
 @pytest.mark.integration

@@ -50,12 +50,12 @@ async def execute(payload: RegenerateAndCritiquePayload, call: Call, db: DB) -> 
             created_page_id=None,
         )
 
-    gen_ok = await db.consume_budget(1)
-    if not gen_ok:
+    if not await db.consume_budget(2):
         return MoveResult(
             message=(
-                "ERROR: budget exhausted before generate_artefact could run. "
-                "No sub-calls fired. Consider calling finalize_artefact."
+                "ERROR: regenerate_and_critique needs 2 units of budget and "
+                "fewer are available. No sub-calls fired. Consider calling "
+                "finalize_artefact to ship the latest artefact instead."
             ),
             created_page_id=None,
         )
@@ -67,16 +67,6 @@ async def execute(payload: RegenerateAndCritiquePayload, call: Call, db: DB) -> 
     )
     gen_runner = GenerateArtefactCall(artefact_task_id, gen_call, db)
     await gen_runner.run()
-
-    crit_ok = await db.consume_budget(1)
-    if not crit_ok:
-        return MoveResult(
-            message=(
-                "Budget ran out after regeneration — no critique produced this "
-                "round. The new artefact is available; consider finalize_artefact."
-            ),
-            created_page_id=None,
-        )
 
     crit_call = await db.create_call(
         CallType.CRITIQUE_ARTEFACT,

@@ -1,7 +1,8 @@
 """Versus router mounted on the rumil FastAPI app.
 
-Reads versus's JSONL stores + cached essay JSON. Aggregation logic stays
-in versus.analyze; this layer just shapes typed responses.
+Reads versus's JSONL stores + cached essay JSON. Aggregation / pair-shaping
+logic lives in ``versus.view`` and ``versus.analyze``; this layer just
+wraps those results in typed pydantic envelopes for the frontend.
 
 Config resolution: VERSUS_CONFIG_PATH env var, defaulting to
 <repo-root>/versus/config.yaml. The essays-only endpoint works without
@@ -12,13 +13,10 @@ from __future__ import annotations
 
 import datetime as dt
 import functools
-import itertools
 import json
-import math
 import os
 import pathlib
 from collections import defaultdict
-from collections.abc import Sequence
 
 import pydantic
 from fastapi import APIRouter, HTTPException
@@ -31,6 +29,7 @@ from versus import jsonl as versus_jsonl
 from versus import judge as versus_judge
 from versus import paraphrase as versus_paraphrase
 from versus import prepare as versus_prepare
+from versus import view as versus_view
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 _DEFAULT_CONFIG = _REPO_ROOT / "versus" / "config.yaml"
@@ -624,124 +623,35 @@ def get_essay_judgments(essay_id: str) -> list[Judgment]:
     return judgments
 
 
-_COND_META = {
-    "completion": ConditionMeta(
-        title="vs human · from-scratch continuation",
-        pair="pair: (human continuation, G's from-scratch continuation) — judged by J",
-        cell_meaning="cell: % J picks human. High → J prefers the real continuation over G's new one.",
-        value_picks="human",
-    ),
-    "paraphrase": ConditionMeta(
-        title="vs human · same-model paraphrase",
-        pair="pair: (human continuation, G's rewrite of the human continuation) — judged by J",
-        cell_meaning="cell: % J picks human. Content is held constant; this isolates style preference.",
-        value_picks="human",
-    ),
-    "content-test": ConditionMeta(
-        title="style-controlled · content test",
-        pair="pair: (G's from-scratch continuation, J's rewrite of the human) — judged by J",
-        cell_meaning=(
-            "cell: % J picks its own human-content-baseline. On the diagonal (G=J), style is held"
-            " at J; off-diagonal mixes styles."
-        ),
-        value_picks="J's paraphrase (= human content in J's voice)",
-    ),
-}
-
-
-def _wilson_ci(wins_eq: float, n: int, z: float = 1.96) -> tuple[float, float]:
-    """Wilson score interval. ``wins_eq`` is a win-equivalent count (ties = 0.5).
-
-    Wilson treats this as ``wins_eq`` successes out of ``n`` trials, which is
-    the standard approximation for tie-aware binomials. The interval is
-    slightly narrower than bootstrapping the tie half-credit directly but
-    matches how the cell's ``pct`` is computed, so the CI is self-consistent
-    with the number rendered in the cell. ``n > 0`` is required by the caller.
-    """
-    p = wins_eq / n
-    denom = 1.0 + z * z / n
-    centre = (p + z * z / (2 * n)) / denom
-    spread = (z / denom) * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n))
-    return (max(0.0, centre - spread), min(1.0, centre + spread))
-
-
-def _build_cell(
-    data: dict,
-    gen: str,
-    jmod: str,
-    cond: str,
-    crit_filter: str | None,
-    *,
-    keyed_by_condition: bool,
-) -> Cell:
-    wins_total = 0
-    ties_total = 0
-    losses_total = 0
-    for k, row in data.items():
-        if keyed_by_condition:
-            g, j, c, cr = k
-            if g != gen or j != jmod or c != cond:
-                continue
-        else:
-            g, j, cr = k
-            if g != gen or j != jmod:
-                continue
-        if crit_filter and cr != crit_filter:
-            continue
-        # row = (pct, n, wins, ties, losses) from analyze.matrix /
-        # content_test_matrix. We re-aggregate wins/ties/losses rather than
-        # pct*n so the Wilson interval reflects the raw counts.
-        wins_total += row[2]
-        ties_total += row[3]
-        losses_total += row[4]
-    n = wins_total + ties_total + losses_total
-    if n == 0:
-        return Cell(
-            pct=None,
-            n=0,
-            wins=0,
-            ties=0,
-            losses=0,
-            tie_frac=None,
-            ci_lo=None,
-            ci_hi=None,
-            bg="#f4f4f0",
-            fg="#999",
-        )
-    wins_eq = wins_total + 0.5 * ties_total
-    pct = wins_eq / n
-    ci_lo, ci_hi = _wilson_ci(wins_eq, n)
-    return Cell(
-        pct=pct,
-        n=n,
-        wins=wins_total,
-        ties=ties_total,
-        losses=losses_total,
-        tie_frac=ties_total / n,
-        ci_lo=ci_lo,
-        ci_hi=ci_hi,
-        bg=versus_analyze.cell_color(pct),
-        fg=versus_analyze.text_color(pct),
+def _cond_meta(cond: str) -> ConditionMeta:
+    m = versus_view.COND_META[cond]
+    return ConditionMeta(
+        title=m.title,
+        pair=m.pair,
+        cell_meaning=m.cell_meaning,
+        value_picks=m.value_picks,
     )
 
 
-def _matrix_cells(
-    data: dict,
-    gen_models: Sequence[str],
-    judge_models: Sequence[str],
-    cond: str,
-    crit: str | None,
-    *,
-    keyed_by_condition: bool,
-) -> list[GenJudgeCell]:
+def _cells_out(view_cells: list[versus_view.GenJudgeCell]) -> list[GenJudgeCell]:
     return [
         GenJudgeCell(
-            gen_model=g,
-            judge_model=j,
-            cell=_build_cell(data, g, j, cond, crit, keyed_by_condition=keyed_by_condition),
+            gen_model=vc.gen_model,
+            judge_model=vc.judge_model,
+            cell=Cell(
+                pct=vc.cell.pct,
+                n=vc.cell.n,
+                wins=vc.cell.wins,
+                ties=vc.cell.ties,
+                losses=vc.cell.losses,
+                tie_frac=vc.cell.tie_frac,
+                ci_lo=vc.cell.ci_lo,
+                ci_hi=vc.cell.ci_hi,
+                bg=vc.cell.bg,
+                fg=vc.cell.fg,
+            ),
         )
-        for g in gen_models
-        for j in judge_models
+        for vc in view_cells
     ]
 
 
@@ -846,23 +756,27 @@ def get_results(
         main_matrices.append(
             Matrix(
                 condition=cond,
-                meta=_COND_META[cond],
-                cells=_matrix_cells(
-                    data, gen_models, judge_models, cond, criterion, keyed_by_condition=True
+                meta=_cond_meta(cond),
+                cells=_cells_out(
+                    versus_view.matrix_cells(
+                        data, gen_models, judge_models, cond, criterion, keyed_by_condition=True
+                    )
                 ),
             )
         )
     main_matrices.append(
         Matrix(
             condition="content-test",
-            meta=_COND_META["content-test"],
-            cells=_matrix_cells(
-                content_data,
-                gen_models,
-                judge_models,
-                "content-test",
-                criterion,
-                keyed_by_condition=False,
+            meta=_cond_meta("content-test"),
+            cells=_cells_out(
+                versus_view.matrix_cells(
+                    content_data,
+                    gen_models,
+                    judge_models,
+                    "content-test",
+                    criterion,
+                    keyed_by_condition=False,
+                )
             ),
         )
     )
@@ -875,8 +789,10 @@ def get_results(
                 per_crit=[
                     CriterionMatrix(
                         criterion=crit,
-                        cells=_matrix_cells(
-                            data, gen_models, judge_models, cond, crit, keyed_by_condition=True
+                        cells=_cells_out(
+                            versus_view.matrix_cells(
+                                data, gen_models, judge_models, cond, crit, keyed_by_condition=True
+                            )
                         ),
                     )
                     for crit in criteria
@@ -889,13 +805,15 @@ def get_results(
             per_crit=[
                 CriterionMatrix(
                     criterion=crit,
-                    cells=_matrix_cells(
-                        content_data,
-                        gen_models,
-                        judge_models,
-                        "content-test",
-                        crit,
-                        keyed_by_condition=False,
+                    cells=_cells_out(
+                        versus_view.matrix_cells(
+                            content_data,
+                            gen_models,
+                            judge_models,
+                            "content-test",
+                            crit,
+                            keyed_by_condition=False,
+                        )
                     ),
                 )
                 for crit in criteria
@@ -1002,39 +920,11 @@ def get_results(
 
 
 def _enumerate_pairs(cfg: versus_config.Config):
-    """Yield NextPair-shaped dicts (without progress) for every blind pair."""
-    groups, prefix_texts = versus_judge.load_sources_by_essay(
-        _resolve_path(cfg.storage.completions_log)
+    return versus_view.enumerate_pairs(
+        cfg,
+        _resolve_path(cfg.storage.completions_log),
+        _iter_essay_paths(),
     )
-    titles: dict[str, str] = {}
-    for p in _iter_essay_paths():
-        with open(p) as f:
-            d = json.load(f)
-        titles[d["id"]] = d["title"]
-
-    for (essay_id, prefix_hash), sources in groups.items():
-        source_ids = sorted(sources.keys())
-        if not cfg.judging.include_human_as_contestant:
-            source_ids = [s for s in source_ids if s != "human"]
-        if len(source_ids) < 2:
-            continue
-        prefix_text = prefix_texts.get((essay_id, prefix_hash), "")
-        for a_id, b_id in itertools.combinations(source_ids, 2):
-            src_a = versus_judge.Source(a_id, sources[a_id])
-            src_b = versus_judge.Source(b_id, sources[b_id])
-            first, second = versus_judge.order_pair(essay_id, src_a, src_b)
-            yield {
-                "essay_id": essay_id,
-                "prefix_hash": prefix_hash,
-                "a": a_id,
-                "b": b_id,
-                "first_source": first.source_id,
-                "second_source": second.source_id,
-                "first_text": first.text,
-                "second_text": second.text,
-                "prefix_text": prefix_text,
-                "title": titles.get(essay_id, essay_id),
-            }
 
 
 def _judging_progress(cfg: versus_config.Config, name: str, criterion: str) -> JudgingProgress:
@@ -1068,10 +958,10 @@ def get_next_pair(name: str, criterion: str | None = None) -> NextPairResponse:
     all_pairs = list(_enumerate_pairs(cfg))
     total = len(all_pairs)
     done_count = 0
-    next_p: dict | None = None
+    next_p: versus_view.PairShape | None = None
     for p in all_pairs:
         k = versus_judge.judgment_key(
-            p["essay_id"], p["prefix_hash"], p["a"], p["b"], active_criterion, judge_model
+            p.essay_id, p.prefix_hash, p.a, p.b, active_criterion, judge_model
         )
         if k in done:
             done_count += 1
@@ -1089,7 +979,7 @@ def get_next_pair(name: str, criterion: str | None = None) -> NextPairResponse:
         criterion_desc=get_rumil_dimension_body(active_criterion),
         done_count=done_count,
         total=total,
-        **next_p,
+        **versus_view.pair_as_dict(next_p),
     )
     return NextPairResponse(pair=pair, progress=progress)
 

@@ -77,6 +77,19 @@ async def execute(payload: SupersedeSpecItemPayload, call: Call, db: DB) -> Move
             created_page_id=None,
         )
 
+    old_links = await db.get_links_from(old_id)
+    on_this_spec = any(
+        l.link_type == LinkType.SPEC_OF and l.to_page_id == artefact_task_id for l in old_links
+    )
+    if not on_this_spec:
+        return MoveResult(
+            message=(
+                f"ERROR: spec item {payload.old_id!r} is not part of this artefact "
+                "task's spec. Supersede the item from the call whose scope owns it."
+            ),
+            created_page_id=None,
+        )
+
     new_page = Page(
         page_type=PageType.SPEC_ITEM,
         layer=PageLayer.SQUIDGY,

@@ -192,6 +192,41 @@ async def test_supersede_spec_item_errors_when_target_is_not_a_spec_item(tmp_db)
     assert "spec item" in result.message.lower()
 
 
+async def test_supersede_spec_item_rejects_spec_from_another_task(tmp_db):
+    """Scope guard: supersede_spec_item must not mutate a spec item that belongs
+    to a different task's spec — doing so would silently shrink the other
+    task's spec without surfacing an error."""
+    this_task = await _make_task(tmp_db, "this task")
+    other_task = await _make_task(tmp_db, "other task")
+
+    other_spec = await _make_page(
+        tmp_db, "belongs to other task", page_type=PageType.SPEC_ITEM, hidden=True
+    )
+    await _link_spec(tmp_db, other_spec, other_task)
+
+    call = await _make_call(tmp_db, this_task.id, CallType.GENERATE_SPEC)
+    payload = SupersedeSpecItemPayload(
+        old_id=other_spec.id,
+        headline="Wrong task",
+        content="Should be rejected.",
+    )
+    result = await supersede_spec_item(payload, call, tmp_db)
+    assert result.created_page_id is None
+    assert "not part of this" in result.message.lower()
+
+    refreshed_other = await tmp_db.get_page(other_spec.id)
+    assert refreshed_other is not None
+    assert refreshed_other.is_superseded is False
+
+    other_links = await tmp_db.get_links_from(other_spec.id)
+    still_linked = [
+        l
+        for l in other_links
+        if l.link_type == LinkType.SPEC_OF and l.to_page_id == other_task.id
+    ]
+    assert len(still_linked) == 1
+
+
 async def test_supersede_spec_item_errors_when_scope_is_not_a_question(tmp_db):
     some_claim = await _make_page(tmp_db, "random", page_type=PageType.CLAIM)
     spec = await _make_page(tmp_db, "a spec", page_type=PageType.SPEC_ITEM, hidden=True)

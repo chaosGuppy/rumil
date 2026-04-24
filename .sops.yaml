@@ -1,0 +1,3 @@
+creation_rules:
+  - path_regex: deploy/chart/secrets(\.enc)?\.yaml$
+    gcp_kms: projects/project-fe559f0f-d011-4af4-bf0/locations/global/keyRings/sops/cryptoKeys/sops-key

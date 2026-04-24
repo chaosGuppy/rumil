@@ -597,8 +597,15 @@ async def run_ws(
                         "prompt_hash": ph,
                         "blind_judge_version": BLIND_JUDGE_VERSION,
                         "essay_id": pair.essay_id,
-                        "source_a": pair.source_a_id,
-                        "source_b": pair.source_b_id,
+                        # Canonical alphabetical order for dedup-key
+                        # purposes, NOT display order. display_first /
+                        # order live on the judgment row in
+                        # judgments.jsonl — intentionally not duplicated
+                        # here to keep runs.config blind-equivalent with
+                        # page.extra if a future change routes config
+                        # into agent context.
+                        "canonical_source_first": pair.source_a_id,
+                        "canonical_source_second": pair.source_b_id,
                         "staged": not persist,
                     },
                 )
@@ -769,8 +776,15 @@ async def run_orch(
                         "prompt_hash": ph,
                         "blind_judge_version": BLIND_JUDGE_VERSION,
                         "essay_id": pair.essay_id,
-                        "source_a": pair.source_a_id,
-                        "source_b": pair.source_b_id,
+                        # Canonical alphabetical order for dedup-key
+                        # purposes, NOT display order. display_first /
+                        # order live on the judgment row in
+                        # judgments.jsonl — intentionally not duplicated
+                        # here to keep runs.config blind-equivalent with
+                        # page.extra if a future change routes config
+                        # into agent context.
+                        "canonical_source_first": pair.source_a_id,
+                        "canonical_source_second": pair.source_b_id,
                         "staged": not persist,
                     },
                 )

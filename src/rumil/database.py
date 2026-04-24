@@ -472,10 +472,22 @@ class DB:
         )
 
     async def list_projects(self, include_hidden: bool = False) -> list[Project]:
-        query = self.client.table("projects").select("*").order("created_at")
-        if not include_hidden:
-            query = query.eq("hidden", False)
-        rows = _rows(await self._execute(query))
+        # PostgREST's max-rows caps .limit() at 1000, so we paginate with
+        # range() until we get a short page. Without this, newly created
+        # workspaces fall off the end once test-* projects accumulate past
+        # 1000 — list_projects would silently return a stale prefix.
+        page_size = 1000
+        start = 0
+        rows: list[dict] = []
+        while True:
+            query = self.client.table("projects").select("*").order("created_at")
+            if not include_hidden:
+                query = query.eq("hidden", False)
+            page = _rows(await self._execute(query.range(start, start + page_size - 1)))
+            rows.extend(page)
+            if len(page) < page_size:
+                break
+            start += page_size
         return [
             Project(
                 id=r["id"],

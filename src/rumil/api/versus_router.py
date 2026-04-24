@@ -92,7 +92,7 @@ def _load_verdict(essay_id: str) -> dict | None:
 
 def _build_essays_status(
     cfg: versus_config.Config,
-) -> tuple[list["EssayStatus"], dict[str, str]]:
+) -> tuple[list[EssayStatus], dict[str, str]]:
     """Compute the per-essay status panel and the {essay_id -> current
     prefix_config_hash} map used to flag stale judgment/completion rows.
 
@@ -561,9 +561,7 @@ def get_essay_judgments(essay_id: str) -> list[Judgment]:
                 display_second=row.get("display_second", ""),
                 verdict=row.get("verdict"),
                 winner_source=row.get("winner_source"),
-                preference_label=(
-                    row.get("preference_label") or row.get("rumil_preference_label")
-                ),
+                preference_label=(row.get("preference_label") or row.get("rumil_preference_label")),
                 reasoning_preview=(row.get("reasoning_text") or "")[:400],
                 is_rumil=jm.startswith("rumil:"),
                 rumil_trace_url=row.get("rumil_trace_url"),
@@ -782,9 +780,7 @@ def get_results(
                 judge_model=row["judge_model"],
                 verdict=row["verdict"],
                 winner=row.get("winner_source") or "-",
-                preference_label=(
-                    row.get("preference_label") or row.get("rumil_preference_label")
-                ),
+                preference_label=(row.get("preference_label") or row.get("rumil_preference_label")),
                 ts=row["ts"][:16],
                 is_rumil=str(row.get("judge_model", "")).startswith("rumil:"),
                 contamination_note=row.get("contamination_note"),
@@ -957,9 +953,7 @@ def get_judgment_by_key(key: str) -> JudgmentDetail:
             sampling=row.get("sampling"),
             verdict=row.get("verdict"),
             winner_source=row.get("winner_source"),
-            preference_label=(
-                row.get("preference_label") or row.get("rumil_preference_label")
-            ),
+            preference_label=(row.get("preference_label") or row.get("rumil_preference_label")),
             is_rumil=jm.startswith("rumil:"),
             contamination_note=row.get("contamination_note"),
             prompt=row.get("prompt"),

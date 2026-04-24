@@ -22,6 +22,7 @@ from collections.abc import Sequence
 import pydantic
 from fastapi import APIRouter, HTTPException
 
+from rumil.versus_bridge import get_rumil_dimension_body
 from versus import analyze as versus_analyze
 from versus import config as versus_config
 from versus import diagnostics as versus_diagnostics
@@ -1103,8 +1104,6 @@ def get_next_pair(name: str, criterion: str | None = None) -> NextPairResponse:
     progress = _build_judging_progress(name, active_criterion, cfg.judging.criteria, counts, total)
     if next_p is None:
         return NextPairResponse(pair=None, progress=progress)
-
-    from rumil.versus_bridge import get_rumil_dimension_body
 
     pair = NextPair(
         criterion=active_criterion,

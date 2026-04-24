@@ -28,6 +28,9 @@ _SUFFIX_VARIANTS = (
     ":p12345678:v2:t87654321",
     ":p12345678:v2:t87654321:s11223344",
     ":p12345678:v2:s11223344:t87654321",
+    ":p12345678:v2:t87654321:q0b760f15",
+    ":p12345678:v2:q0b760f15:t87654321",
+    ":p12345678:v6:t24fbaec7:q0b760f15",
 )
 
 
@@ -85,3 +88,19 @@ def test_content_test_baseline_normalizes_anthropic(
     judge_model: str, expected_baseline: str
 ) -> None:
     assert analyze._content_test_baseline(judge_model) == expected_baseline
+
+
+def test_judge_label_peels_q_surface_hash_from_rumil_orch() -> None:
+    """The ``:q<hash>`` suffix added by compute_pair_surface_hash must peel
+    cleanly so ``phash`` / ``version`` / ``task`` render in their own
+    header rows rather than all landing in one very wide ``task`` cell.
+    """
+    label = analyze.judge_label(
+        "rumil:orch:claude-opus-4-7:ws123abc:b4:general_quality:p39100fe9:v6:t24fbaec7:q0b760f15"
+    )
+    assert label == {
+        "variant": "rumil:orch b4 v6",
+        "model": "claude-opus-4-7",
+        "task": "general_quality",
+        "phash": "p39100fe9",
+    }

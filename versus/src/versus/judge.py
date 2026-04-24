@@ -137,11 +137,16 @@ _PHASH_TAG_RE = re.compile(r"^p[0-9a-f]{8}$")
 _VERSION_TAG_RE = re.compile(r"^v\d+$")
 _SHASH_TAG_RE = re.compile(r"^s[0-9a-f]{8}$")
 _THASH_TAG_RE = re.compile(r"^t[0-9a-f]{8}$")
+_QHASH_TAG_RE = re.compile(r"^q[0-9a-f]{8}$")
 
 
 def _peel_ts_tag(parts: list[str]) -> list[str]:
-    if parts and (_SHASH_TAG_RE.match(parts[-1]) or _THASH_TAG_RE.match(parts[-1])):
-        return parts[:-1]
+    while parts and (
+        _SHASH_TAG_RE.match(parts[-1])
+        or _THASH_TAG_RE.match(parts[-1])
+        or _QHASH_TAG_RE.match(parts[-1])
+    ):
+        parts = parts[:-1]
     return parts
 
 
@@ -150,17 +155,17 @@ def parse_judge_model_suffix(judge_model: str) -> tuple[str, str | None, str | N
 
     ``phash`` and ``version`` are the ``p<sha8>`` and ``v<N>`` tags if
     present, else None. Trailing ``:t<sha8>`` (tool-prompt hash,
-    ws/orch) and ``:s<sha8>`` (sampling-params hash, text variants) are
-    absorbed silently into ``base`` stripping so the rest of the shape
-    stays the same -- the frontend doesn't render those hashes
-    separately (they exist in the dedup key so topups at different
-    sampling params / tool-prompt edits don't silently no-op; the
-    human-readable sampling dict lives on the judgment row, and the
-    tool-prompt text lives in-repo). ``:t`` and ``:s`` are peeled
-    symmetrically so either ordering is tolerated.
+    ws/orch), ``:s<sha8>`` (sampling-params hash, text variants), and
+    ``:q<sha8>`` (pair-surface hash, ws/orch) are absorbed silently
+    into ``base`` stripping so the rest of the shape stays the same --
+    the frontend doesn't render those hashes separately (they exist in
+    the dedup key so topups at different sampling params / tool-prompt
+    / page-surface edits don't silently no-op; the human-readable
+    sampling dict lives on the judgment row, and the tool-prompt text
+    lives in-repo). ``:t``, ``:s``, and ``:q`` are peeled symmetrically
+    so any trailing ordering is tolerated.
     """
     parts = judge_model.split(":")
-    parts = _peel_ts_tag(parts)
     parts = _peel_ts_tag(parts)
     version = None
     if parts and _VERSION_TAG_RE.match(parts[-1]):
@@ -174,7 +179,7 @@ def parse_judge_model_suffix(judge_model: str) -> tuple[str, str | None, str | N
 
 
 def base_judge_model(judge_model: str) -> str:
-    """Strip ``:p<hash>[:v<N>][:t<hash>][:s<hash>]`` version suffix to recover the raw model id.
+    """Strip ``:p<hash>[:v<N>][:t<hash>][:s<hash>][:q<hash>]`` version suffix to recover the raw model id.
 
     Use wherever downstream code needs to match the judge_model against a
     source_id (e.g. ``paraphrase:<model>``) or render a column header that

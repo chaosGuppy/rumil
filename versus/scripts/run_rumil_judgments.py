@@ -177,6 +177,8 @@ def main() -> None:
         p = getattr(cfg.storage, field)
         if not p.is_absolute():
             setattr(cfg.storage, field, VERSUS_ROOT / p)
+    if not cfg.essays.cache_dir.is_absolute():
+        cfg.essays.cache_dir = VERSUS_ROOT / cfg.essays.cache_dir
 
     if args.variant == "text":
         models = args.model if args.model else list(cfg.judging.anthropic_models)

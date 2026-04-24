@@ -80,6 +80,14 @@ def main() -> None:
     args = ap.parse_args()
 
     cfg = config.load(args.config)
+    # Anchor relative paths to versus/ so the script works regardless of cwd
+    # (e.g. when invoked from the rumil root via uv run).
+    for field in ("completions_log", "judgments_log", "paraphrases_log"):
+        p = getattr(cfg.storage, field)
+        if not p.is_absolute():
+            setattr(cfg.storage, field, VERSUS_ROOT / p)
+    if not cfg.essays.cache_dir.is_absolute():
+        cfg.essays.cache_dir = VERSUS_ROOT / cfg.essays.cache_dir
     contestants = (
         [s.strip() for s in args.contestants.split(",") if s.strip()] if args.contestants else None
     )

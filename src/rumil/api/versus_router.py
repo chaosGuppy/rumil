@@ -14,6 +14,7 @@ import datetime as dt
 import functools
 import itertools
 import json
+import math
 import os
 import pathlib
 from collections import defaultdict
@@ -259,8 +260,23 @@ class JudgeLabel(pydantic.BaseModel):
 
 
 class Cell(pydantic.BaseModel):
+    """One aggregated (gen, judge, condition[, criterion]) cell.
+
+    ``pct`` treats ties as 0.5. ``wins`` / ``ties`` / ``losses`` are the raw
+    counts that feed it (``n = wins + ties + losses``). ``tie_frac`` is the
+    share of judgments that were explicit ties — so a 50% cell from all-ties
+    visually contrasts with a 50/50 split. ``ci_lo`` / ``ci_hi`` is the
+    Wilson 95% interval on ``pct`` (None when ``n == 0``).
+    """
+
     pct: float | None
     n: int
+    wins: int
+    ties: int
+    losses: int
+    tie_frac: float | None
+    ci_lo: float | None
+    ci_hi: float | None
     bg: str
     fg: str
 
@@ -615,6 +631,22 @@ _COND_META = {
 }
 
 
+def _wilson_ci(wins_eq: float, n: int, z: float = 1.96) -> tuple[float, float]:
+    """Wilson score interval. ``wins_eq`` is a win-equivalent count (ties = 0.5).
+
+    Wilson treats this as ``wins_eq`` successes out of ``n`` trials, which is
+    the standard approximation for tie-aware binomials. The interval is
+    slightly narrower than bootstrapping the tie half-credit directly but
+    matches how the cell's ``pct`` is computed, so the CI is self-consistent
+    with the number rendered in the cell. ``n > 0`` is required by the caller.
+    """
+    p = wins_eq / n
+    denom = 1.0 + z * z / n
+    centre = (p + z * z / (2 * n)) / denom
+    spread = (z / denom) * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n))
+    return (max(0.0, centre - spread), min(1.0, centre + spread))
+
+
 def _build_cell(
     data: dict,
     gen: str,
@@ -624,8 +656,10 @@ def _build_cell(
     *,
     keyed_by_condition: bool,
 ) -> Cell:
-    hs, ns = 0.0, 0
-    for k, (pct, n) in data.items():
+    wins_total = 0
+    ties_total = 0
+    losses_total = 0
+    for k, row in data.items():
         if keyed_by_condition:
             g, j, c, cr = k
             if g != gen or j != jmod or c != cond:
@@ -636,14 +670,40 @@ def _build_cell(
                 continue
         if crit_filter and cr != crit_filter:
             continue
-        hs += pct * n
-        ns += n
-    pct = (hs / ns) if ns else None
+        # row = (pct, n, wins, ties, losses) from analyze.matrix /
+        # content_test_matrix. We re-aggregate wins/ties/losses rather than
+        # pct*n so the Wilson interval reflects the raw counts.
+        wins_total += row[2]
+        ties_total += row[3]
+        losses_total += row[4]
+    n = wins_total + ties_total + losses_total
+    if n == 0:
+        return Cell(
+            pct=None,
+            n=0,
+            wins=0,
+            ties=0,
+            losses=0,
+            tie_frac=None,
+            ci_lo=None,
+            ci_hi=None,
+            bg="#f4f4f0",
+            fg="#999",
+        )
+    wins_eq = wins_total + 0.5 * ties_total
+    pct = wins_eq / n
+    ci_lo, ci_hi = _wilson_ci(wins_eq, n)
     return Cell(
         pct=pct,
-        n=ns,
-        bg=versus_analyze.cell_color(pct) if pct is not None else "#f4f4f0",
-        fg=versus_analyze.text_color(pct) if pct is not None else "#999",
+        n=n,
+        wins=wins_total,
+        ties=ties_total,
+        losses=losses_total,
+        tie_frac=ties_total / n,
+        ci_lo=ci_lo,
+        ci_hi=ci_hi,
+        bg=versus_analyze.cell_color(pct),
+        fg=versus_analyze.text_color(pct),
     )
 
 

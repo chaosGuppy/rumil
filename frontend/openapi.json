@@ -2772,6 +2772,51 @@
             "type": "integer",
             "title": "N"
           },
+          "wins": {
+            "type": "integer",
+            "title": "Wins"
+          },
+          "ties": {
+            "type": "integer",
+            "title": "Ties"
+          },
+          "losses": {
+            "type": "integer",
+            "title": "Losses"
+          },
+          "tie_frac": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tie Frac"
+          },
+          "ci_lo": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ci Lo"
+          },
+          "ci_hi": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ci Hi"
+          },
           "bg": {
             "type": "string",
             "title": "Bg"
@@ -2785,10 +2830,17 @@
         "required": [
           "pct",
           "n",
+          "wins",
+          "ties",
+          "losses",
+          "tie_frac",
+          "ci_lo",
+          "ci_hi",
           "bg",
           "fg"
         ],
-        "title": "Cell"
+        "title": "Cell",
+        "description": "One aggregated (gen, judge, condition[, criterion]) cell.\n\n``pct`` treats ties as 0.5. ``wins`` / ``ties`` / ``losses`` are the raw\ncounts that feed it (``n = wins + ties + losses``). ``tie_frac`` is the\nshare of judgments that were explicit ties \u2014 so a 50% cell from all-ties\nvisually contrasts with a 50/50 split. ``ci_lo`` / ``ci_hi`` is the\nWilson 95% interval on ``pct`` (None when ``n == 0``)."
       },
       "ClaimReassessedEventOut": {
         "properties": {

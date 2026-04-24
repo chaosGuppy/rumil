@@ -437,6 +437,14 @@ export type CallsForQuestion = {
 
 /**
  * Cell
+ *
+ * One aggregated (gen, judge, condition[, criterion]) cell.
+ *
+ * ``pct`` treats ties as 0.5. ``wins`` / ``ties`` / ``losses`` are the raw
+ * counts that feed it (``n = wins + ties + losses``). ``tie_frac`` is the
+ * share of judgments that were explicit ties — so a 50% cell from all-ties
+ * visually contrasts with a 50/50 split. ``ci_lo`` / ``ci_hi`` is the
+ * Wilson 95% interval on ``pct`` (None when ``n == 0``).
  */
 export type Cell = {
     /**
@@ -447,6 +455,30 @@ export type Cell = {
      * N
      */
     n: number;
+    /**
+     * Wins
+     */
+    wins: number;
+    /**
+     * Ties
+     */
+    ties: number;
+    /**
+     * Losses
+     */
+    losses: number;
+    /**
+     * Tie Frac
+     */
+    tie_frac: number | null;
+    /**
+     * Ci Lo
+     */
+    ci_lo: number | null;
+    /**
+     * Ci Hi
+     */
+    ci_hi: number | null;
     /**
      * Bg
      */

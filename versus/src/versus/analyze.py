@@ -214,8 +214,13 @@ def content_test_matrix(
     ``include_contaminated`` mirrors ``matrix()``: rows tagged with a
     ``contamination_note`` are excluded by default; pass True to see the
     pre-fix distribution.
+
+    Returns ``{key: (pct, n, wins, ties, losses)}`` where ``wins`` counts the
+    judge picking the paraphrase-baseline, ``losses`` counts it picking the
+    other side, and ``ties`` counts explicit ties. ``pct`` treats ties as 0.5.
     """
-    counts: dict[tuple[str, str, str], list[float]] = collections.defaultdict(lambda: [0.0, 0])
+    # counts[key] = [wins, ties, losses]
+    counts: dict[tuple[str, str, str], list[int]] = collections.defaultdict(lambda: [0, 0, 0])
     for row in jsonl.read_dedup(judgments_log):
         if row.get("verdict") is None:
             continue
@@ -236,12 +241,16 @@ def content_test_matrix(
             continue
         gen_model = other
         key = (gen_model, j, row["criterion"])
-        counts[key][1] += 1
         if row["winner_source"] == baseline:
-            counts[key][0] += 1.0
+            counts[key][0] += 1
         elif row["winner_source"] == "tie":
-            counts[key][0] += 0.5
-    return {k: (h / t, int(t)) for k, (h, t) in counts.items()}
+            counts[key][1] += 1
+        else:
+            counts[key][2] += 1
+    return {
+        k: ((w + 0.5 * t) / (w + t + l), w + t + l, w, t, l)
+        for k, (w, t, l) in counts.items()
+    }
 
 
 def matrix(
@@ -260,9 +269,13 @@ def matrix(
     (produced before a blind-judge leak fix; the verdict doesn't
     measure what the matrix claims to measure). Pass True to include
     them and see the pre-fix distribution.
+
+    Returns ``{key: (pct, n, wins, ties, losses)}`` where ``wins`` counts the
+    judge picking human, ``losses`` counts it picking the generator, and
+    ``ties`` counts explicit ties. ``pct`` treats ties as 0.5.
     """
-    # counts[(gen_model, judge_model, condition, criterion)] = [human_points, total]
-    counts: dict[tuple[str, str, str, str], list[float]] = collections.defaultdict(lambda: [0.0, 0])
+    # counts[(gen_model, judge_model, condition, criterion)] = [wins, ties, losses]
+    counts: dict[tuple[str, str, str, str], list[int]] = collections.defaultdict(lambda: [0, 0, 0])
     for row in jsonl.read_dedup(judgments_log):
         if row.get("verdict") is None:
             continue
@@ -280,12 +293,16 @@ def matrix(
         judge_model = row["judge_model"]
         crit = row["criterion"]
         key = (gen_model, judge_model, cond, crit)
-        counts[key][1] += 1
         if row["winner_source"] == HUMAN:
-            counts[key][0] += 1.0
+            counts[key][0] += 1
         elif row["winner_source"] == "tie":
-            counts[key][0] += 0.5
-    return {k: (h / t, int(t)) for k, (h, t) in counts.items()}
+            counts[key][1] += 1
+        else:
+            counts[key][2] += 1
+    return {
+        k: ((w + 0.5 * t) / (w + t + l), w + t + l, w, t, l)
+        for k, (w, t, l) in counts.items()
+    }
 
 
 def format_matrix(
@@ -306,10 +323,11 @@ def format_matrix(
     for g in gen_models:
         for j in judge_models:
             hs, ns = 0.0, 0
-            for (gg, jj, cc, crit), (pct, n) in data.items():
+            for (gg, jj, cc, crit), row in data.items():
                 if gg == g and jj == j and cc == condition:
                     if criterion and crit != criterion:
                         continue
+                    pct, n = row[0], row[1]
                     hs += pct * n
                     ns += n
             cell[(g, j)] = ((hs / ns) if ns else 0.0, ns)

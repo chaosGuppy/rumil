@@ -32,6 +32,7 @@ class PageType(str, Enum):
     VIEW_ITEM = "view_item"
     VIEW_META = "view_meta"
     SPEC_ITEM = "spec_item"  # prescriptive claim constraining a generated artefact
+    ARTEFACT = "artefact"  # long-form object produced by the generative workflow
 
 
 class PageDetail(str, Enum):
@@ -86,6 +87,8 @@ class CallType(str, Enum):
     GLOBAL_PRIORITIZATION = "global_prioritization"
     UPDATE_VIEW = "update_view"
     GENERATE_SPEC = "generate_spec"
+    GENERATE_ARTEFACT = "generate_artefact"
+    CRITIQUE_ARTEFACT = "critique_artefact"
     # Envelope call for mutations made from Claude Code's broader context
     # (not a rumil-internal call with carefully scoped prompt). Never
     # dispatchable from prioritization — only created by .claude/ skills.
@@ -139,6 +142,11 @@ class LinkType(str, Enum):
     META_FOR = "meta_for"  # view_meta -> view_item or view: meta annotation
     SPEC_OF = (
         "spec_of"  # spec_item -> question: the artefact-task question this spec item constrains
+    )
+    ARTEFACT_OF = "artefact_of"  # artefact -> question: artefact produced for an artefact-task
+    CRITIQUE_OF = "critique_of"  # judgement -> artefact: this judgement critiques that artefact
+    GENERATED_FROM = (
+        "generated_from"  # artefact -> spec_item: spec items the artefact was generated from
     )
 
 

@@ -45,7 +45,7 @@ def _block_real_llm_calls(request, monkeypatch):
     test still reaches this chokepoint, it's silently making real API
     calls — raise instead.
     """
-    if request.node.get_closest_marker("llm"):
+    if request.node.get_closest_marker("llm") or request.node.get_closest_marker("integration"):
         return
     from rumil.settings import Settings
 

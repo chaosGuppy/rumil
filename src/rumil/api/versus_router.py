@@ -347,6 +347,17 @@ class SmallGridRow(pydantic.BaseModel):
     per_crit: list[CriterionMatrix]
 
 
+class SourceMatrix(pydantic.BaseModel):
+    """A main matrix restricted to one essay source (e.g. forethought / redwood / carlsmith).
+
+    Wraps a regular :class:`Matrix` so the gen/judge axes match the all-source
+    matrix above; ``source_id`` is the essay-source label rendered in the UI.
+    """
+
+    source_id: str
+    matrix: Matrix
+
+
 class SourceSummary(pydantic.BaseModel):
     source_id: str
     n: int
@@ -412,6 +423,7 @@ class ResultsBundle(pydantic.BaseModel):
     judge_models: list[str]
     judge_labels: dict[str, JudgeLabel]
     main_matrices: list[Matrix]
+    completion_per_source: list[SourceMatrix]
     small_grid: list[SmallGridRow]
     rows: list[JudgmentRow]
     total_judgments: int
@@ -862,6 +874,37 @@ def get_results(
         )
     )
 
+    data_by_source = versus_analyze.matrix_by_source(
+        judgments_log,
+        include_contaminated=include_contaminated,
+        current_prefix_hashes=current_prefix_hashes,
+        include_stale=include_stale,
+    )
+    completion_per_source: list[SourceMatrix] = []
+    for source_id in sorted(data_by_source):
+        src_data = data_by_source[source_id]
+        if not any(k[2] == "completion" for k in src_data):
+            continue
+        completion_per_source.append(
+            SourceMatrix(
+                source_id=source_id,
+                matrix=Matrix(
+                    condition="completion",
+                    meta=_cond_meta("completion"),
+                    cells=_cells_out(
+                        versus_view.matrix_cells(
+                            src_data,
+                            gen_models,
+                            judge_models,
+                            "completion",
+                            criterion,
+                            keyed_by_condition=True,
+                        )
+                    ),
+                ),
+            )
+        )
+
     small_grid: list[SmallGridRow] = []
     for cond in conditions:
         small_grid.append(
@@ -985,6 +1028,7 @@ def get_results(
         judge_models=judge_models,
         judge_labels={j: JudgeLabel(**versus_analyze.judge_label(j)) for j in judge_models},
         main_matrices=main_matrices,
+        completion_per_source=completion_per_source,
         small_grid=small_grid,
         rows=rows,
         total_judgments=total_judgments,

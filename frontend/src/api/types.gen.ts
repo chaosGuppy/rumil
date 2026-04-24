@@ -2621,6 +2621,10 @@ export type ResultsBundle = {
      */
     main_matrices: Array<Matrix>;
     /**
+     * Completion Per Source
+     */
+    completion_per_source: Array<SourceMatrix>;
+    /**
      * Small Grid
      */
     small_grid: Array<SmallGridRow>;
@@ -2908,6 +2912,22 @@ export type Source = {
      * Target
      */
     target: number;
+};
+
+/**
+ * SourceMatrix
+ *
+ * A main matrix restricted to one essay source (e.g. forethought / redwood / carlsmith).
+ *
+ * Wraps a regular :class:`Matrix` so the gen/judge axes match the all-source
+ * matrix above; ``source_id`` is the essay-source label rendered in the UI.
+ */
+export type SourceMatrix = {
+    /**
+     * Source Id
+     */
+    source_id: string;
+    matrix: Matrix;
 };
 
 /**

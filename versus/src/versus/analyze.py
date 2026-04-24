@@ -277,10 +277,7 @@ def content_test_matrix(
             counts[key][1] += 1
         else:
             counts[key][2] += 1
-    return {
-        k: ((w + 0.5 * t) / (w + t + l), w + t + l, w, t, l)
-        for k, (w, t, l) in counts.items()
-    }
+    return {k: ((w + 0.5 * t) / (w + t + l), w + t + l, w, t, l) for k, (w, t, l) in counts.items()}
 
 
 def matrix(
@@ -329,9 +326,54 @@ def matrix(
             counts[key][1] += 1
         else:
             counts[key][2] += 1
+    return {k: ((w + 0.5 * t) / (w + t + l), w + t + l, w, t, l) for k, (w, t, l) in counts.items()}
+
+
+def matrix_by_source(
+    judgments_log: pathlib.Path,
+    include_contaminated: bool = False,
+    current_prefix_hashes: dict[str, str] | None = None,
+    include_stale: bool = True,
+) -> dict[str, dict]:
+    """Same as ``matrix()``, binned by essay source (essay_id prefix before ``__``).
+
+    Returns ``{source_id: matrix_dict}`` where each ``matrix_dict`` has the same
+    shape as :func:`matrix`. Single pass over the judgments log.
+    """
+    counts: dict[str, dict[tuple[str, str, str, str], list[int]]] = collections.defaultdict(
+        lambda: collections.defaultdict(lambda: [0, 0, 0])
+    )
+    for row in jsonl.read_dedup(judgments_log):
+        if row.get("verdict") is None:
+            continue
+        if not include_contaminated and row.get("contamination_note"):
+            continue
+        if not include_stale and _is_stale_row(row, current_prefix_hashes):
+            continue
+        a, b = row["source_a"], row["source_b"]
+        if a != HUMAN and b != HUMAN:
+            continue
+        eid = str(row.get("essay_id", ""))
+        if "__" not in eid:
+            continue
+        source_id = eid.split("__", 1)[0]
+        other = b if a == HUMAN else a
+        cond, gen_model = _strip_prefix(other)
+        judge_model = row["judge_model"]
+        crit = row["criterion"]
+        key = (gen_model, judge_model, cond, crit)
+        if row["winner_source"] == HUMAN:
+            counts[source_id][key][0] += 1
+        elif row["winner_source"] == "tie":
+            counts[source_id][key][1] += 1
+        else:
+            counts[source_id][key][2] += 1
     return {
-        k: ((w + 0.5 * t) / (w + t + l), w + t + l, w, t, l)
-        for k, (w, t, l) in counts.items()
+        source_id: {
+            k: ((w + 0.5 * t) / (w + t + l), w + t + l, w, t, l)
+            for k, (w, t, l) in src_counts.items()
+        }
+        for source_id, src_counts in counts.items()
     }
 
 

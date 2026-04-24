@@ -328,6 +328,22 @@
   margin-bottom: 2px;
 }
 
+.per-source-matrices {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 4px 0 6px 16px;
+  padding-left: 12px;
+  border-left: 2px solid var(--color-border);
+}
+.per-source-matrices section { width: 100%; overflow-x: auto; }
+.per-source-head {
+  font-size: 11px;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 .facet-grid { display: grid; gap: 6px; align-items: start; }
 .facet-col-head { padding: 2px 0; font-size: 12px; }
 .facet-row-head { padding: 2px 6px; align-self: center; font-size: 12px; }

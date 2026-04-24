@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Fragment } from "react";
 import type { ResultsBundle } from "@/api/types.gen";
 import { API_BASE, serverFetch } from "@/lib/api-base";
 import { AutoSubmitCheckbox } from "@/components/versus/AutoSubmitCheckbox";
@@ -96,6 +97,7 @@ export default async function VersusResultsPage({
     judge_models,
     judge_labels,
     main_matrices,
+    completion_per_source,
     small_grid,
     rows,
     total_judgments,
@@ -187,24 +189,49 @@ export default async function VersusResultsPage({
         ) : (
           <div className="main-matrices">
             {main_matrices.map((mm) => (
-              <section key={mm.condition}>
-                <div className="cond-head">
-                  <span className="versus-pill">{mm.condition}</span>
-                  <span className="cond-title">{mm.meta.title}</span>
-                </div>
-                <div className="cond-desc">{mm.meta.pair}</div>
-                <div className="cond-desc">{mm.meta.cell_meaning}</div>
-                <MatrixTable
-                  cells={mm.cells}
-                  genModels={gen_models}
-                  judgeModels={judge_models}
-                  judgeLabels={judge_labels}
-                  condition={mm.condition}
-                  criterion={active_criterion}
-                  includeStale={includeStale}
-                  includeContaminated={includeContaminated}
-                />
-              </section>
+              <Fragment key={mm.condition}>
+                <section>
+                  <div className="cond-head">
+                    <span className="versus-pill">{mm.condition}</span>
+                    <span className="cond-title">{mm.meta.title}</span>
+                  </div>
+                  <div className="cond-desc">{mm.meta.pair}</div>
+                  <div className="cond-desc">{mm.meta.cell_meaning}</div>
+                  <MatrixTable
+                    cells={mm.cells}
+                    genModels={gen_models}
+                    judgeModels={judge_models}
+                    judgeLabels={judge_labels}
+                    condition={mm.condition}
+                    criterion={active_criterion}
+                    includeStale={includeStale}
+                    includeContaminated={includeContaminated}
+                  />
+                </section>
+                {mm.condition === "completion" && completion_per_source.length > 0 && (
+                  <div className="per-source-matrices">
+                    <div className="per-source-head">by essay source</div>
+                    {completion_per_source.map((sm) => (
+                      <section key={sm.source_id}>
+                        <div className="cond-head">
+                          <span className="versus-pill subtle">{sm.source_id}</span>
+                          <span className="cond-title">{sm.matrix.meta.title}</span>
+                        </div>
+                        <MatrixTable
+                          cells={sm.matrix.cells}
+                          genModels={gen_models}
+                          judgeModels={judge_models}
+                          judgeLabels={judge_labels}
+                          condition={sm.matrix.condition}
+                          criterion={active_criterion}
+                          includeStale={includeStale}
+                          includeContaminated={includeContaminated}
+                        />
+                      </section>
+                    ))}
+                  </div>
+                )}
+              </Fragment>
             ))}
           </div>
         )}

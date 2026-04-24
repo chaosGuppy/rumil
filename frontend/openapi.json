@@ -6463,6 +6463,13 @@
             "type": "array",
             "title": "Main Matrices"
           },
+          "completion_per_source": {
+            "items": {
+              "$ref": "#/components/schemas/SourceMatrix"
+            },
+            "type": "array",
+            "title": "Completion Per Source"
+          },
           "small_grid": {
             "items": {
               "$ref": "#/components/schemas/SmallGridRow"
@@ -6532,6 +6539,7 @@
           "judge_models",
           "judge_labels",
           "main_matrices",
+          "completion_per_source",
           "small_grid",
           "rows",
           "total_judgments",
@@ -6950,6 +6958,24 @@
         ],
         "title": "Source",
         "description": "One generated continuation (or the held-out human remainder)."
+      },
+      "SourceMatrix": {
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "title": "Source Id"
+          },
+          "matrix": {
+            "$ref": "#/components/schemas/Matrix"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_id",
+          "matrix"
+        ],
+        "title": "SourceMatrix",
+        "description": "A main matrix restricted to one essay source (e.g. forethought / redwood / carlsmith).\n\nWraps a regular :class:`Matrix` so the gen/judge axes match the all-source\nmatrix above; ``source_id`` is the essay-source label rendered in the UI."
       },
       "SourceSummary": {
         "properties": {

@@ -14,7 +14,7 @@ import logging
 from pydantic import BaseModel, Field
 
 from rumil.calls.closing_reviewers import StandardClosingReview
-from rumil.calls.context_builders import CritiqueContext, _latest_artefact_for_task
+from rumil.calls.context_builders import CritiqueContext
 from rumil.calls.stages import (
     CallInfra,
     CallRunner,
@@ -78,7 +78,7 @@ class CritiqueWriter(WorkspaceUpdater):
         infra: CallInfra,
         context: ContextResult,
     ) -> UpdateResult:
-        artefact = await _latest_artefact_for_task(infra.question_id, infra.db)
+        artefact = await infra.db.latest_artefact_for_task(infra.question_id)
         if artefact is None:
             raise RuntimeError(
                 f"critique_artefact: no artefact found for task {infra.question_id[:8]}"

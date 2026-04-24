@@ -232,6 +232,7 @@ class MutationState:
     __slots__ = (
         "credence_source",
         "deleted_links",
+        "hidden_overrides",
         "latest_credence",
         "latest_robustness",
         "link_role_overrides",
@@ -249,6 +250,7 @@ class MutationState:
         self.latest_robustness: dict[str, tuple[int, str]] = {}
         self.credence_source: dict[str, str] = {}
         self.robustness_source: dict[str, str] = {}
+        self.hidden_overrides: dict[str, bool] = {}
 
 
 class DB:
@@ -377,6 +379,8 @@ class DB:
                     source = payload.get("source_page_id")
                     if source:
                         state.robustness_source[tid] = source
+            elif et == "set_hidden" and "hidden" in payload:
+                state.hidden_overrides[tid] = bool(payload["hidden"])
         self._mutation_cache = state
         return state
 
@@ -391,6 +395,7 @@ class DB:
             and not state.page_content_overrides
             and not state.latest_credence
             and not state.latest_robustness
+            and not state.hidden_overrides
         ):
             return list(pages)
         result: list[Page] = []
@@ -409,6 +414,8 @@ class DB:
                 value, reasoning = state.latest_robustness[p.id]
                 updates["robustness"] = value
                 updates["robustness_reasoning"] = reasoning
+            if p.id in state.hidden_overrides:
+                updates["hidden"] = state.hidden_overrides[p.id]
             if updates:
                 p = p.model_copy(update=updates)
             result.append(p)
@@ -846,6 +853,22 @@ class DB:
         if active_only:
             pages = [p for p in pages if p.is_active()]
         return pages
+
+    async def set_page_hidden(self, page_id: str, hidden: bool) -> None:
+        """Flip a page's hidden flag, recording a mutation event.
+
+        Staged runs only record the event (other readers keep seeing the
+        baseline flag). Non-staged runs additionally update the row.
+        """
+        await self.record_mutation_event(
+            "set_hidden",
+            page_id,
+            {"hidden": bool(hidden)},
+        )
+        if not self.staged:
+            await self._execute(
+                self.client.table("pages").update({"hidden": bool(hidden)}).eq("id", page_id)
+            )
 
     async def supersede_page(
         self,
@@ -2306,6 +2329,24 @@ class DB:
             )
         )
         return rows[0]["id"] if rows else None
+
+    async def latest_artefact_for_task(self, task_id: str) -> Page | None:
+        """Return the most recently-created active ARTEFACT linked ARTEFACT_OF to *task_id*.
+
+        Ties broken by page ``id`` for stable ordering. Returns None if no
+        artefact exists for the task.
+        """
+        links = await self.get_links_to(task_id)
+        artefact_links = [l for l in links if l.link_type == LinkType.ARTEFACT_OF]
+        if not artefact_links:
+            return None
+        pages_by_id = await self.get_pages_by_ids([l.from_page_id for l in artefact_links])
+        active = [
+            p for p in pages_by_id.values() if p.is_active() and p.page_type == PageType.ARTEFACT
+        ]
+        if not active:
+            return None
+        return max(active, key=lambda p: (p.created_at, p.id))
 
     async def get_root_questions(
         self,

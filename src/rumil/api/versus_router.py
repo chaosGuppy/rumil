@@ -677,7 +677,7 @@ def get_essay_judgments(essay_id: str) -> EssayJudgmentsResponse:
     source_index = _build_completion_source_index(cfg)
     judgments: list[Judgment] = []
     stale_hidden = 0
-    for row in versus_jsonl.read(_resolve_path(cfg.storage.judgments_log)):
+    for row in versus_jsonl.read_dedup(_resolve_path(cfg.storage.judgments_log)):
         if row.get("essay_id") != essay.id:
             continue
         if row.get("prefix_config_hash") != task.prefix_config_hash:
@@ -1079,7 +1079,7 @@ def _build_judging_progress(
 def _judging_progress(cfg: versus_config.Config, name: str, criterion: str) -> JudgingProgress:
     judge_model = _human_judge_id(name)
     counts: dict[str, int] = defaultdict(int)
-    for row in versus_jsonl.read(_resolve_path(cfg.storage.judgments_log)):
+    for row in versus_jsonl.read_dedup(_resolve_path(cfg.storage.judgments_log)):
         if row.get("judge_model") == judge_model:
             counts[row.get("criterion", "")] += 1
     total = sum(1 for _ in _enumerate_pairs(cfg))
@@ -1103,7 +1103,7 @@ def get_next_pair(name: str, criterion: str | None = None) -> NextPairResponse:
     # the request) — same cache hit but two O(N) Python loops per call.
     done: set[str] = set()
     counts: dict[str, int] = defaultdict(int)
-    for row in versus_jsonl.read(_resolve_path(cfg.storage.judgments_log)):
+    for row in versus_jsonl.read_dedup(_resolve_path(cfg.storage.judgments_log)):
         if row.get("judge_model") != judge_model:
             continue
         row_crit = row.get("criterion", "")

@@ -358,6 +358,7 @@ class Page(BaseModel):
     sections: list[str] | None = None  # VIEW pages: ordered section names
     meta_type: str | None = None  # VIEW_META pages: priority/annotation/proposal
     run_id: str = ""
+    hidden: bool = False
 
     def is_active(self) -> bool:
         return not self.is_superseded

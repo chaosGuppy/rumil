@@ -1,6 +1,8 @@
 # versus
 
-Pairwise LLM eval harness on forethought.org essays: models continue essay openings ("from-scratch") or paraphrase whole essays (style-controlled baseline), then blind judges compare continuations across criteria. The artifact is a gen-model × judge-model matrix of how often each judge prefers the human continuation.
+Pairwise LLM eval harness on longform web essays: models continue essay openings ("from-scratch") or paraphrase whole essays (style-controlled baseline), then blind judges compare continuations across criteria. The artifact is a gen-model × judge-model matrix of how often each judge prefers the human continuation.
+
+Sources plug in as per-source fetchers under `versus/src/versus/sources/` (currently forethought, redwood, carlsmith). Each produces `Essay` objects with a namespaced id `<source>__<slug>` so dedup keys across all three jsonl stores stay unique. Config lists sources in `essays.sources` with per-source `max_recent` and optional `max_images` / `max_image_ratio` filters; `essays.exclude_ids` blocks specific essays from the pipeline.
 
 Library lives at `versus/src/versus/`; CLI entry points at `versus/scripts/`; data in `versus/data/`. Bridge to rumil is `src/rumil/versus_bridge.py` — exposes `judge_pair_ws_aware` (single agent call with workspace tools) and `judge_pair_orch` (full `TwoPhaseOrchestrator` per pair + closing call). API routes under `/versus` live in `src/rumil/api/versus_router.py`. Skill for invoking versus from Claude Code: `.claude/skills/rumil-versus-judge/`.
 
@@ -80,10 +82,12 @@ Model for ws/orch/rumil-text is passed explicitly through the bridge (`--rumil-m
 
 ## Known quirks
 
-- Images not parsed from essay HTML; screen-reader "Image" labels filtered explicitly.
-- Forethought essays end with a `Footnotes` heading + acknowledgement paragraph; both stripped at fetch time.
+- Images not parsed from essay HTML; screen-reader "Image" labels filtered explicitly. Per-source parsers count images pre-strip and store on `Essay.image_count` so the fetch filter can skip image-heavy posts quantitatively.
+- Forethought essays end with a `Footnotes` heading + acknowledgement paragraph; both stripped at fetch time by the shared `essay.clean_blocks`.
+- Forethought uses KaTeX to render math (MathML + LaTeX annotation + styled HTML all in one span). Parser keeps only the `$latex$` annotation so math reads cleanly.
+- Substack (redwood) has two footnote variants — old `<sup>[N]</sup>` + trailing `<ol>`, new `<a class="footnote-anchor">` + `<div class="footnote">` bodies. Both are stripped in `sources/redwood.py`.
 - Length tolerance is a prompt hint, not a hard constraint. Some models consistently undershoot — real signal, not to silently correct.
-- `fetch.SCHEMA_VERSION` invalidates the essay JSON cache. Raw HTML stays cached separately so we don't re-download.
+- `essay.SCHEMA_VERSION` invalidates the essay JSON cache. Raw HTML stays cached separately so we don't re-download.
 - Refused / content-filtered completions are excluded from pair enumeration (see `judge.is_refusal`).
 - Re-imports auto-run a Sonnet validator (`validate_essay.py`) that blocks the import on scraping artifacts (nested-list duplication, orphan footnote digits, caption leakage, etc.). Verdicts cache to `data/essays/<id>.verdict.json` keyed on essay content hash + `VALIDATOR_VERSION`. Pass `--no-validate` to bypass, `--revalidate` to re-run on cached essays.
 

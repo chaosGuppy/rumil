@@ -23,8 +23,6 @@ from typing import Literal
 
 import httpx
 
-Order = Literal["ab", "ba"]
-
 from rumil.versus_prompts import (
     build_system_prompt,
     compute_prompt_hash,
@@ -34,6 +32,8 @@ from rumil.versus_prompts import (
 )
 from versus import config, jsonl, openrouter
 from versus.versions import BLIND_JUDGE_VERSION, JUDGE_PROMPT_VERSION
+
+Order = Literal["ab", "ba"]
 
 
 def compute_sampling_hash(sampling: dict | None) -> str | None:

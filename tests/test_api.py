@@ -6,6 +6,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from rumil.api.app import app
+from rumil.api.auth import AuthUser, get_current_user
 from rumil.database import DB
 from rumil.models import (
     Call,
@@ -20,8 +21,15 @@ from rumil.models import (
 
 @pytest.fixture
 def api_client():
+    app.dependency_overrides[get_current_user] = lambda: AuthUser(
+        user_id="", email="test@example.com"
+    )
     transport = ASGITransport(app=app)
-    return AsyncClient(transport=transport, base_url="http://test")
+    client = AsyncClient(transport=transport, base_url="http://test")
+    try:
+        yield client
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
 
 
 @pytest.mark.asyncio

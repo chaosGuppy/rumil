@@ -61,9 +61,22 @@ if $deploy_api; then
 fi
 
 if $deploy_frontend; then
+    # NEXT_PUBLIC_* vars must be set at build time — `next build` inlines them
+    # into the client bundle. NEXT_PUBLIC_API_URL is intentionally unset so
+    # client fetches go same-origin and the Next.js middleware can inject the
+    # Supabase JWT before proxying to the backend service.
+    FRONTEND_SUPABASE_URL="https://aesjaehibxrzearctiqp.supabase.co"
+    if [[ -z "${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}" ]]; then
+        echo "error: NEXT_PUBLIC_SUPABASE_ANON_KEY is required for the frontend build." >&2
+        echo "       copy it from the Supabase dashboard → Settings → API → anon public." >&2
+        exit 1
+    fi
+
     echo "==> Building frontend (pnpm build)..."
     cd "$REPO_ROOT/frontend"
-    NEXT_PUBLIC_API_URL="https://api.rumil.ink" pnpm build
+    NEXT_PUBLIC_SUPABASE_URL="$FRONTEND_SUPABASE_URL" \
+    NEXT_PUBLIC_SUPABASE_ANON_KEY="$NEXT_PUBLIC_SUPABASE_ANON_KEY" \
+        pnpm build
 
     echo "==> Building frontend image (linux/amd64)..."
     docker build --platform linux/amd64 \

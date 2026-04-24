@@ -17,6 +17,7 @@ dependencies = [
     "tenacity>=9.0.0",
     "google-genai>=1.72",
     "versus",
+    "pyjwt[crypto]>=2.11.0",
     "langfuse>=4.5.1",
 ]
 

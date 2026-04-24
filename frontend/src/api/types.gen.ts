@@ -203,6 +203,20 @@ export type AgentStartedEventOut = {
 };
 
 /**
+ * AuthUserOut
+ */
+export type AuthUserOut = {
+    /**
+     * User Id
+     */
+    user_id: string;
+    /**
+     * Email
+     */
+    email: string;
+};
+
+/**
  * AutocompactEventOut
  */
 export type AutocompactEventOut = {
@@ -2375,6 +2389,10 @@ export type Project = {
      * Hidden
      */
     hidden: boolean;
+    /**
+     * Owner User Id
+     */
+    owner_user_id: string | null;
 };
 
 /**
@@ -3740,8 +3758,45 @@ export type HealthzHealthzGetResponses = {
 
 export type HealthzHealthzGetResponse = HealthzHealthzGetResponses[keyof HealthzHealthzGetResponses];
 
+export type GetMeApiAuthMeGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/auth/me';
+};
+
+export type GetMeApiAuthMeGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetMeApiAuthMeGetError = GetMeApiAuthMeGetErrors[keyof GetMeApiAuthMeGetErrors];
+
+export type GetMeApiAuthMeGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: AuthUserOut;
+};
+
+export type GetMeApiAuthMeGetResponse = GetMeApiAuthMeGetResponses[keyof GetMeApiAuthMeGetResponses];
+
 export type ListProjectsApiProjectsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path?: never;
     query?: {
         /**
@@ -3774,6 +3829,12 @@ export type ListProjectsApiProjectsGetResponse = ListProjectsApiProjectsGetRespo
 
 export type GetProjectApiProjectsProjectIdGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Project Id
@@ -3804,6 +3865,12 @@ export type GetProjectApiProjectsProjectIdGetResponse = GetProjectApiProjectsPro
 
 export type ListProjectRunsApiProjectsProjectIdRunsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Project Id
@@ -3836,6 +3903,12 @@ export type ListProjectRunsApiProjectsProjectIdRunsGetResponse = ListProjectRuns
 
 export type ListPagesApiProjectsProjectIdPagesGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Project Id
@@ -3899,6 +3972,12 @@ export type ListPagesApiProjectsProjectIdPagesGetResponse = ListPagesApiProjects
 
 export type GetPageByShortIdApiPagesShortShortIdGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Short Id
@@ -3938,6 +4017,12 @@ export type GetPageByShortIdApiPagesShortShortIdGetResponse = GetPageByShortIdAp
 
 export type GetPageApiPagesPageIdGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Page Id
@@ -3977,6 +4062,12 @@ export type GetPageApiPagesPageIdGetResponse = GetPageApiPagesPageIdGetResponses
 
 export type GetLinksFromApiPagesPageIdLinksFromGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Page Id
@@ -4014,6 +4105,12 @@ export type GetLinksFromApiPagesPageIdLinksFromGetResponse = GetLinksFromApiPage
 
 export type GetLinksToApiPagesPageIdLinksToGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Page Id
@@ -4051,6 +4148,12 @@ export type GetLinksToApiPagesPageIdLinksToGetResponse = GetLinksToApiPagesPageI
 
 export type GetDependentsApiPagesPageIdDependentsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Page Id
@@ -4092,6 +4195,12 @@ export type GetDependentsApiPagesPageIdDependentsGetResponse = GetDependentsApiP
 
 export type GetDependenciesApiPagesPageIdDependenciesGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Page Id
@@ -4133,6 +4242,12 @@ export type GetDependenciesApiPagesPageIdDependenciesGetResponse = GetDependenci
 
 export type GetPageDetailApiPagesPageIdDetailGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Page Id
@@ -4172,6 +4287,12 @@ export type GetPageDetailApiPagesPageIdDetailGetResponse = GetPageDetailApiPages
 
 export type GetPageCountsApiPagesPageIdCountsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Page Id
@@ -4207,6 +4328,12 @@ export type GetPageCountsApiPagesPageIdCountsGetResponse = GetPageCountsApiPages
 
 export type GetProjectStatsApiProjectsProjectIdStatsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Project Id
@@ -4242,6 +4369,12 @@ export type GetProjectStatsApiProjectsProjectIdStatsGetResponse = GetProjectStat
 
 export type GetQuestionStatsApiPagesPageIdStatsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Page Id
@@ -4281,6 +4414,12 @@ export type GetQuestionStatsApiPagesPageIdStatsGetResponse = GetQuestionStatsApi
 
 export type ListRootQuestionsApiProjectsProjectIdQuestionsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Project Id
@@ -4319,6 +4458,12 @@ export type ListRootQuestionsApiProjectsProjectIdQuestionsGetResponse = ListRoot
 
 export type ListCallsApiProjectsProjectIdCallsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Project Id
@@ -4356,6 +4501,12 @@ export type ListCallsApiProjectsProjectIdCallsGetResponse = ListCallsApiProjects
 
 export type GetCallApiCallsCallIdGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Call Id
@@ -4391,6 +4542,12 @@ export type GetCallApiCallsCallIdGetResponse = GetCallApiCallsCallIdGetResponses
 
 export type GetChildCallsApiCallsCallIdChildrenGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Call Id
@@ -4428,6 +4585,12 @@ export type GetChildCallsApiCallsCallIdChildrenGetResponse = GetChildCallsApiCal
 
 export type GetRunTraceTreeApiRunsRunIdTraceTreeGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Run Id
@@ -4463,6 +4626,12 @@ export type GetRunTraceTreeApiRunsRunIdTraceTreeGetResponse = GetRunTraceTreeApi
 
 export type GetCallEventsApiCallsCallIdEventsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Call Id
@@ -4564,6 +4733,12 @@ export type GetCallEventsApiCallsCallIdEventsGetResponse = GetCallEventsApiCalls
 
 export type ListAbEvalsApiAbEvalsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path?: never;
     query?: {
         /**
@@ -4596,6 +4771,12 @@ export type ListAbEvalsApiAbEvalsGetResponse = ListAbEvalsApiAbEvalsGetResponses
 
 export type GetAbEvalApiAbEvalsEvalIdGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Eval Id
@@ -4631,6 +4812,12 @@ export type GetAbEvalApiAbEvalsEvalIdGetResponse = GetAbEvalApiAbEvalsEvalIdGetR
 
 export type ListLlmExchangesApiCallsCallIdLlmExchangesGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Call Id
@@ -4668,6 +4855,12 @@ export type ListLlmExchangesApiCallsCallIdLlmExchangesGetResponse = ListLlmExcha
 
 export type GetLlmExchangeApiLlmExchangesExchangeIdGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Exchange Id
@@ -4703,10 +4896,25 @@ export type GetLlmExchangeApiLlmExchangesExchangeIdGetResponse = GetLlmExchangeA
 
 export type GetRealtimeConfigApiRealtimeConfigGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path?: never;
     query?: never;
     url: '/api/realtime/config';
 };
+
+export type GetRealtimeConfigApiRealtimeConfigGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetRealtimeConfigApiRealtimeConfigGetError = GetRealtimeConfigApiRealtimeConfigGetErrors[keyof GetRealtimeConfigApiRealtimeConfigGetErrors];
 
 export type GetRealtimeConfigApiRealtimeConfigGetResponses = {
     /**
@@ -4719,6 +4927,12 @@ export type GetRealtimeConfigApiRealtimeConfigGetResponse = GetRealtimeConfigApi
 
 export type GetPageRunApiPagesPageIdRunGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Page Id
@@ -4760,6 +4974,12 @@ export type GetPageRunApiPagesPageIdRunGetResponse = GetPageRunApiPagesPageIdRun
 
 export type GetPageLoadStatsApiRunsRunIdPageLoadStatsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Run Id

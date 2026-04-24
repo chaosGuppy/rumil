@@ -40,7 +40,7 @@ Every "contestant" the judge sees is a row in `completions.jsonl`, with `source_
 
 ## Judging contract
 
-Judges reason freely; we parse the **last** `<verdict>A|B|tie</verdict>` tag from the output (OpenRouter / anthropic:* variants) or the 7-point preference label (rumil:* variants). Don't constrain the whole response to JSON — chain-of-thought materially improves judgment quality.
+Judges reason freely; we parse the **last** 7-point preference label from the output. All three backends (OpenRouter, `anthropic:*`, and `rumil:*`) share this parser via `versus.judge.parse_verdict_from_label` → `rumil.versus_prompts.extract_preference`. Don't constrain the whole response to JSON — chain-of-thought materially improves judgment quality.
 
 Display order (A vs B) is deterministic per `(essay_id, sorted_pair)` via `judge.order_pair()` so every judge — model or human — sees the same assignment for the same pair.
 

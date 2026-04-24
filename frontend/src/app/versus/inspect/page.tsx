@@ -311,6 +311,14 @@ function JudgmentRow({ j }: { j: Judgment }) {
             ⚠ contaminated
           </span>
         )}
+        {j.orphaned && (
+          <span
+            className="versus-pill stale"
+            title="No matching completion row for source_a / source_b at the current prefix_config_hash"
+          >
+            orphan
+          </span>
+        )}
         {j.is_rumil && <span className="versus-pill rumil">rumil</span>}{" "}
         {j.judge_model_base}
         <JudgeVersionTags j={j} />

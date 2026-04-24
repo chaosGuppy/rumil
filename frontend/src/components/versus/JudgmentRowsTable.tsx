@@ -30,7 +30,7 @@ export function JudgmentRowsTable({ rows }: { rows: JudgmentRow[] }) {
             {rows.map((r) => (
               <tr
                 key={r.key || `${r.essay_id}|${r.judge_model}|${r.criterion}|${r.source_a}|${r.source_b}`}
-                className={`judgment-row-clickable${r.is_rumil ? " is-rumil" : ""}${r.contamination_note ? " is-contam" : ""}${r.stale ? " is-stale" : ""}`}
+                className={`judgment-row-clickable${r.is_rumil ? " is-rumil" : ""}${r.contamination_note ? " is-contam" : ""}${r.stale ? " is-stale" : ""}${r.orphaned ? " is-orphaned" : ""}`}
                 onClick={() => r.key && setSelected(r.key)}
                 title={r.key ? "Click to inspect" : "Legacy row without dedup key"}
               >
@@ -54,6 +54,11 @@ export function JudgmentRowsTable({ rows }: { rows: JudgmentRow[] }) {
                   {r.stale && (
                     <span className="versus-pill stale" title="Judgment references an older essay version">
                       stale
+                    </span>
+                  )}
+                  {r.orphaned && (
+                    <span className="versus-pill stale" title="No matching completion row for source_a / source_b at the current prefix_config_hash">
+                      orphan
                     </span>
                   )}
                 </td>

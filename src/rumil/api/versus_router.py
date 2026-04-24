@@ -92,6 +92,36 @@ def _load_verdict(essay_id: str) -> dict | None:
         return None
 
 
+def _build_completion_source_index(
+    cfg: versus_config.Config,
+) -> dict[tuple[str, str], set[str]]:
+    """Index ``(essay_id, prefix_config_hash) -> {source_id, ...}`` over completions.
+
+    Used to flag judgment rows as ``orphaned``: a row whose
+    ``prefix_config_hash`` IS current but whose ``source_a`` / ``source_b``
+    has no matching completion row (e.g. the completion was manually
+    removed, or judgment ran against a partially-generated set). Distinct
+    from staleness, which fires when the prefix_config_hash itself is old.
+    """
+    index: dict[tuple[str, str], set[str]] = {}
+    for row in versus_jsonl.read(_resolve_path(cfg.storage.completions_log)):
+        eid = row.get("essay_id")
+        ph = row.get("prefix_config_hash")
+        sid = row.get("source_id")
+        if not (eid and ph and sid):
+            continue
+        index.setdefault((eid, ph), set()).add(sid)
+    return index
+
+
+def _is_orphaned(row: dict, sources: dict[tuple[str, str], set[str]]) -> bool:
+    key = (row.get("essay_id"), row.get("prefix_config_hash"))
+    present = sources.get(key)  # pyright: ignore[reportArgumentType]
+    if present is None:
+        return False  # unknown (essay, prefix) — treat as stale, not orphaned
+    return row.get("source_a") not in present or row.get("source_b") not in present
+
+
 def _build_essays_status(
     cfg: versus_config.Config,
 ) -> tuple[list[EssayStatus], dict[str, str]]:
@@ -209,6 +239,7 @@ class Judgment(pydantic.BaseModel):
     rumil_run_id: str | None
     rumil_cost_usd: float | None
     contamination_note: str | None
+    orphaned: bool
 
 
 class JudgmentDetail(pydantic.BaseModel):
@@ -338,6 +369,7 @@ class JudgmentRow(pydantic.BaseModel):
     is_rumil: bool
     contamination_note: str | None
     stale: bool
+    orphaned: bool
 
 
 class EssayStatus(pydantic.BaseModel):
@@ -605,6 +637,12 @@ class EssayJudgmentsResponse(pydantic.BaseModel):
     doesn't aggregate verdicts that scored different text. ``stale_hidden``
     is the count of rows filtered this way, so the UI can surface
     "N stale judgments hidden" rather than silently dropping them.
+
+    ``orphaned`` flags a judgment whose source_a / source_b is not
+    present in the current completions.jsonl at the same prefix_hash --
+    the judgment survived a prefix-hash check but its sources did not.
+    Rare (requires manual jsonl edits or an aborted generation run), but
+    when it happens the verdict is meaningless.
     """
 
     judgments: list[Judgment]
@@ -623,6 +661,7 @@ def get_essay_judgments(essay_id: str) -> EssayJudgmentsResponse:
         include_headers=cfg.prefix.include_headers,
         length_tolerance=cfg.completion.length_tolerance,
     )
+    source_index = _build_completion_source_index(cfg)
     judgments: list[Judgment] = []
     stale_hidden = 0
     for row in versus_jsonl.read(_resolve_path(cfg.storage.judgments_log)):
@@ -657,6 +696,7 @@ def get_essay_judgments(essay_id: str) -> EssayJudgmentsResponse:
                 rumil_run_id=row.get("rumil_run_id"),
                 rumil_cost_usd=row.get("rumil_cost_usd"),
                 contamination_note=row.get("contamination_note"),
+                orphaned=_is_orphaned(row, source_index),
             )
         )
     judgments.sort(key=lambda j: (j.judge_model, j.criterion, j.source_a, j.source_b))
@@ -866,6 +906,7 @@ def get_results(
     # aggregate downstream (matrices, content-test, rows list) sees.
     # Counting raw rows here would over-report by every dupe + every
     # null-verdict placeholder and drift from the rendered totals.
+    source_index = _build_completion_source_index(cfg)
     rows: list[JudgmentRow] = []
     total_judgments = 0
     rows_total_before_filter = 0
@@ -909,6 +950,7 @@ def get_results(
                 is_rumil=str(row.get("judge_model", "")).startswith("rumil:"),
                 contamination_note=row.get("contamination_note"),
                 stale=is_stale,
+                orphaned=(not is_stale) and _is_orphaned(row, source_index),
             )
         )
 

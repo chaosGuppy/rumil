@@ -923,6 +923,12 @@ export type EssayFlagOut = {
  * doesn't aggregate verdicts that scored different text. ``stale_hidden``
  * is the count of rows filtered this way, so the UI can surface
  * "N stale judgments hidden" rather than silently dropping them.
+ *
+ * ``orphaned`` flags a judgment whose source_a / source_b is not
+ * present in the current completions.jsonl at the same prefix_hash --
+ * the judgment survived a prefix-hash check but its sources did not.
+ * Rare (requires manual jsonl edits or an aborted generation run), but
+ * when it happens the verdict is meaningless.
  */
 export type EssayJudgmentsResponse = {
     /**
@@ -1373,6 +1379,10 @@ export type Judgment = {
      * Contamination Note
      */
     contamination_note: string | null;
+    /**
+     * Orphaned
+     */
+    orphaned: boolean;
 };
 
 /**
@@ -1562,6 +1572,10 @@ export type JudgmentRow = {
      * Stale
      */
     stale: boolean;
+    /**
+     * Orphaned
+     */
+    orphaned: boolean;
 };
 
 /**

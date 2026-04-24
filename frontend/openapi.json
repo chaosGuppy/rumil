@@ -3616,7 +3616,7 @@
           "stale_hidden"
         ],
         "title": "EssayJudgmentsResponse",
-        "description": "Judgments for a single essay at the current prefix_config_hash.\n\nStale judgments (rows whose prefix_hash no longer matches what the\nessay hashes to today) are filtered out of ``judgments`` so the UI\ndoesn't aggregate verdicts that scored different text. ``stale_hidden``\nis the count of rows filtered this way, so the UI can surface\n\"N stale judgments hidden\" rather than silently dropping them."
+        "description": "Judgments for a single essay at the current prefix_config_hash.\n\nStale judgments (rows whose prefix_hash no longer matches what the\nessay hashes to today) are filtered out of ``judgments`` so the UI\ndoesn't aggregate verdicts that scored different text. ``stale_hidden``\nis the count of rows filtered this way, so the UI can surface\n\"N stale judgments hidden\" rather than silently dropping them.\n\n``orphaned`` flags a judgment whose source_a / source_b is not\npresent in the current completions.jsonl at the same prefix_hash --\nthe judgment survived a prefix-hash check but its sources did not.\nRare (requires manual jsonl edits or an aborted generation run), but\nwhen it happens the verdict is meaningless."
       },
       "EssayMeta": {
         "properties": {
@@ -4305,6 +4305,10 @@
               }
             ],
             "title": "Contamination Note"
+          },
+          "orphaned": {
+            "type": "boolean",
+            "title": "Orphaned"
           }
         },
         "type": "object",
@@ -4329,7 +4333,8 @@
           "rumil_call_id",
           "rumil_run_id",
           "rumil_cost_usd",
-          "contamination_note"
+          "contamination_note",
+          "orphaned"
         ],
         "title": "Judgment",
         "description": "One pairwise judgment row, shaped for the inspect view."
@@ -4675,6 +4680,10 @@
           "stale": {
             "type": "boolean",
             "title": "Stale"
+          },
+          "orphaned": {
+            "type": "boolean",
+            "title": "Orphaned"
           }
         },
         "type": "object",
@@ -4691,7 +4700,8 @@
           "ts",
           "is_rumil",
           "contamination_note",
-          "stale"
+          "stale",
+          "orphaned"
         ],
         "title": "JudgmentRow",
         "description": "One row in the raw-judgments explorer at the bottom of /results."

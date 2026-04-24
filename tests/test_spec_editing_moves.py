@@ -220,9 +220,7 @@ async def test_supersede_spec_item_rejects_spec_from_another_task(tmp_db):
 
     other_links = await tmp_db.get_links_from(other_spec.id)
     still_linked = [
-        l
-        for l in other_links
-        if l.link_type == LinkType.SPEC_OF and l.to_page_id == other_task.id
+        l for l in other_links if l.link_type == LinkType.SPEC_OF and l.to_page_id == other_task.id
     ]
     assert len(still_linked) == 1
 

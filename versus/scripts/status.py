@@ -23,7 +23,7 @@ VERSUS_ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 sys.path.insert(0, str(VERSUS_ROOT / "src"))
 
-from versus import config, jsonl, prepare  # noqa: E402
+from versus import config, jsonl, judge, prepare  # noqa: E402
 from versus import essay as versus_essay  # noqa: E402
 from versus import paraphrase as _paraphrase  # noqa: E402
 
@@ -109,16 +109,35 @@ def _stale_paraphrases(rows: list[dict], current_samp: set[str], known_essays: s
 
 
 def _stale_judgments(rows: list[dict], current_prefix: dict[str, str]) -> Counter:
-    c = Counter({"current": 0, "stale_prefix": 0, "unknown_essay": 0})
+    """Bucket judgment rows into current / stale_prefix / stale_prompt / unknown.
+
+    A row is stale_prefix if its essay changed (``prefix_config_hash``
+    drift — same thing flagged for completions).
+
+    A row is stale_prompt if its ``judge_model`` suffix no longer matches
+    the current ``p<hash>:v<N>``. That fires when versus-judge-shell.md
+    or a versus-<dim>.md edit forks the prompt hash, or when
+    ``JUDGE_PROMPT_VERSION`` / ``BLIND_JUDGE_VERSION`` is bumped. Without
+    this bucket, prompt edits silently orphan existing rows and the
+    status banner reads "all current" right up until the judging-quality
+    regression shows up in /results.
+    """
+    c = Counter({"current": 0, "stale_prefix": 0, "stale_prompt": 0, "unknown_essay": 0})
     for r in rows:
         eid = r.get("essay_id")
         ph = r.get("prefix_config_hash")
         if eid not in current_prefix:
             c["unknown_essay"] += 1
-        elif ph != current_prefix[eid]:
+            continue
+        if ph != current_prefix[eid]:
             c["stale_prefix"] += 1
-        else:
-            c["current"] += 1
+            continue
+        judge_model = r.get("judge_model")
+        criterion = r.get("criterion")
+        if judge_model and criterion and not judge.judge_prompt_is_current(judge_model, criterion):
+            c["stale_prompt"] += 1
+            continue
+        c["current"] += 1
     return c
 
 
@@ -157,37 +176,43 @@ def main() -> None:
             comp_counts["stale_prefix"]
             or para_counts["stale_prompt"]
             or judg_counts["stale_prefix"]
+            or judg_counts["stale_prompt"]
         )
         if any_stale:
             print("=" * 60)
             print("WARNING: stale cached rows detected")
             print("=" * 60)
         print(f"essays cached: {len(essays)}")
-        for label, counts, stale_key in (
-            ("completions", comp_counts, "stale_prefix"),
-            ("paraphrases", para_counts, "stale_prompt"),
-            ("judgments", judg_counts, "stale_prefix"),
+        for label, counts, stale_keys in (
+            ("completions", comp_counts, ("stale_prefix",)),
+            ("paraphrases", para_counts, ("stale_prompt",)),
+            ("judgments", judg_counts, ("stale_prefix", "stale_prompt")),
         ):
             total = sum(counts.values())
             cur = counts["current"]
-            stale = counts[stale_key]
+            stale = sum(counts[k] for k in stale_keys)
             unk = counts["unknown_essay"]
             mark = " <- STALE" if stale else ""
+            detail = ""
+            if len(stale_keys) > 1 and stale:
+                detail = "  (" + ", ".join(f"{k}={counts[k]}" for k in stale_keys) + ")"
             print(
                 f"  {label:13s} total={total:5d}  current={cur:5d}  "
-                f"stale={stale:5d}  unknown_essay={unk:3d}{mark}"
+                f"stale={stale:5d}  unknown_essay={unk:3d}{mark}{detail}"
             )
         if any_stale:
             print()
             print(
-                "Topup runs against stale rows will judge old essay text. "
-                "To regenerate against current essays, run:"
+                "Topup runs against stale rows will judge old essay text or "
+                "use an outdated judge prompt. To regenerate against current "
+                "essays + prompts, run:"
             )
             print("  uv run python scripts/run_paraphrases.py")
             print("  uv run python scripts/run_completions.py")
             print("  uv run python scripts/run_judgments.py")
+            print("  uv run python scripts/run_rumil_judgments.py  # rumil-style judges")
             sys.exit(2)
-        print("\nall cached rows match current essays.")
+        print("\nall cached rows match current essays + prompts.")
 
 
 if __name__ == "__main__":

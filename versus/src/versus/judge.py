@@ -33,7 +33,7 @@ from rumil.versus_prompts import (
     label_to_verdict,
 )
 from versus import config, jsonl, openrouter
-from versus.versions import JUDGE_PROMPT_VERSION
+from versus.versions import BLIND_JUDGE_VERSION, JUDGE_PROMPT_VERSION
 
 
 def compute_sampling_hash(sampling: dict | None) -> str | None:
@@ -195,6 +195,40 @@ def compute_judge_prompt_hash(dimension: str) -> str:
     """
     body = get_rumil_dimension_body(dimension)
     return compute_prompt_hash(body)
+
+
+def judge_prompt_is_current(judge_model: str, criterion: str) -> bool:
+    """Return False if the row's ``p<hash>:v<N>`` suffix is out of date.
+
+    Catches the staleness class that ``prefix_config_hash`` doesn't: when
+    ``versus-judge-shell.md`` / ``versus-<dim>.md`` get edited, or
+    ``JUDGE_PROMPT_VERSION`` / ``BLIND_JUDGE_VERSION`` get bumped, previously
+    cached judgment rows point at an old prompt. Status.py uses this to
+    surface them in the STALE banner; without it, a prompt/version bump
+    silently leaves rows that look current.
+
+    Rumil-style judges (``rumil:ws:*``, ``rumil:orch:*``, ``rumil:text:*``)
+    gate on ``BLIND_JUDGE_VERSION``; everyone else gates on
+    ``JUDGE_PROMPT_VERSION``. We recover dimension from the row's
+    ``criterion`` column (passed in here) rather than re-parsing the
+    judge_model string, which differs in shape per variant.
+    """
+    _, phash, version = parse_judge_model_suffix(judge_model)
+    if phash is None or version is None:
+        # Legacy pre-hash judge_model — predates the dedup-version
+        # regime entirely. Flag as stale so the operator can decide to
+        # regenerate.
+        return False
+    try:
+        expected_ph = f"p{compute_judge_prompt_hash(criterion)}"
+    except ValueError:
+        # Dimension prompt was removed; row can't match current set.
+        return False
+    version_const = (
+        BLIND_JUDGE_VERSION if judge_model.startswith("rumil:") else JUDGE_PROMPT_VERSION
+    )
+    expected_v = f"v{version_const}"
+    return phash == expected_ph and version == expected_v
 
 
 def compose_judge_model(

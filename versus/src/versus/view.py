@@ -203,6 +203,8 @@ def enumerate_pairs(
     cfg: versus_config.Config,
     completions_log: pathlib.Path,
     essay_paths: Sequence[pathlib.Path],
+    *,
+    current_prefix_hashes: dict[str, str] | None = None,
 ) -> Iterator[PairShape]:
     """Yield every blind pair derivable from the completions store.
 
@@ -211,6 +213,13 @@ def enumerate_pairs(
     and same deterministic display ordering. ``essay_paths`` are the cached
     essay JSONs; the caller passes them in so this function stays pure (no
     filesystem walking beyond reading those specific paths).
+
+    When ``current_prefix_hashes`` is provided, skip any group whose
+    ``(essay_id, prefix_hash)`` does not match the current cache — those
+    pairs come from completions a fresh run would no longer produce
+    (essay content drift, schema bump, or the essay dropped from the
+    current cache entirely). Matches the staleness semantics in
+    :func:`versus.analyze._is_stale_row`.
     """
     groups, prefix_texts = versus_judge.load_sources_by_essay(completions_log)
     titles: dict[str, str] = {}
@@ -220,6 +229,8 @@ def enumerate_pairs(
         titles[d["id"]] = d["title"]
 
     for (essay_id, prefix_hash), sources in groups.items():
+        if current_prefix_hashes is not None and current_prefix_hashes.get(essay_id) != prefix_hash:
+            continue
         source_ids = sorted(sources.keys())
         if not cfg.judging.include_human_as_contestant:
             source_ids = [s for s in source_ids if s != "human"]

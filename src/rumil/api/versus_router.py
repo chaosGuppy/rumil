@@ -110,6 +110,8 @@ def _build_essays_status(
             d = json.load(f)
         if "source_id" not in d:
             continue
+        if d.get("schema_version", 0) != versus_essay.SCHEMA_VERSION:
+            continue
         if d["id"] in exclude:
             continue
         essay = versus_essay.Essay(
@@ -961,10 +963,12 @@ def get_results(
 
 
 def _enumerate_pairs(cfg: versus_config.Config):
+    _, current_prefix_hashes = _build_essays_status(cfg)
     return versus_view.enumerate_pairs(
         cfg,
         _resolve_path(cfg.storage.completions_log),
         _iter_essay_paths(),
+        current_prefix_hashes=current_prefix_hashes,
     )
 
 

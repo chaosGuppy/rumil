@@ -410,6 +410,27 @@ def _mirror_row(
     }
 
 
+async def _resolve_workspace(db: Any, name: str) -> Any:
+    """Look up a workspace by name, failing loudly if it doesn't exist.
+
+    Previously this used ``get_or_create_project``, which silently created
+    an empty project on typos and then planned zero judgments. That made
+    the failure mode look identical to "already all judged" — a
+    misleading ``[info] no pending ...`` with no indication the name was
+    wrong. Now we fail early with the list of known workspaces so the
+    user can fix the flag.
+    """
+    projects = await db.list_projects(include_hidden=True)
+    by_name = {p.name: p for p in projects}
+    if name not in by_name:
+        known = ", ".join(sorted(by_name.keys())) or "<none>"
+        raise SystemExit(
+            f"[err ] workspace {name!r} not found. "
+            f"Create it via rumil's main.py, or pick from: {known}"
+        )
+    return by_name[name]
+
+
 def _resolve_task_body(task_name: str, is_versus_criterion: bool) -> str:
     """Return the dimension body for a judge task.
 
@@ -472,7 +493,7 @@ async def run_ws(
     # staged view, and the per-pair DBs below inherit db.project_id through
     # their explicit constructor arg.
     probe_db = await DB.create(run_id=str(uuid.uuid4()), prod=False, staged=False)
-    project = await probe_db.get_or_create_project(workspace)
+    project = await _resolve_workspace(probe_db, workspace)
     ws_short = project.id[:8]
 
     task_body_cache = {(t, v): _resolve_task_body(t, v) for t, v in tasks_spec}
@@ -637,10 +658,10 @@ async def run_orch(
         print("[info] no dimensions specified for orch variant; nothing to do")
         return
 
-    # Probe is always non-staged: it only calls get_or_create_project,
-    # which should be visible across runs (project lookup isn't per-run).
+    # Probe is always non-staged: project lookup isn't per-run and
+    # needs to see baseline rows.
     probe_db = await DB.create(run_id=str(uuid.uuid4()), prod=False, staged=False)
-    project = await probe_db.get_or_create_project(workspace)
+    project = await _resolve_workspace(probe_db, workspace)
     ws_short = project.id[:8]
 
     task_body_cache = {(t, v): _resolve_task_body(t, v) for t, v in tasks_spec}

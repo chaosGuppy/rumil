@@ -1,6 +1,7 @@
 """Move registry: collects all MoveDefs."""
 
 from rumil.models import MoveType
+from rumil.moves.add_spec_item import MOVE as _add_spec_item
 from rumil.moves.base import MoveDef
 from rumil.moves.change_link_role import MOVE as _change_link_role
 from rumil.moves.create_claim import MOVE as _create_claim
@@ -44,5 +45,6 @@ MOVES: dict[MoveType, MoveDef] = {
         _update_epistemic,
         _create_view_item,
         _propose_view_item,
+        _add_spec_item,
     ]
 }

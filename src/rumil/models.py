@@ -31,6 +31,7 @@ class PageType(str, Enum):
     VIEW = "view"
     VIEW_ITEM = "view_item"
     VIEW_META = "view_meta"
+    SPEC_ITEM = "spec_item"  # prescriptive claim constraining a generated artefact
 
 
 class PageDetail(str, Enum):
@@ -84,6 +85,7 @@ class CallType(str, Enum):
     CREATE_VIEW = "create_view"
     GLOBAL_PRIORITIZATION = "global_prioritization"
     UPDATE_VIEW = "update_view"
+    GENERATE_SPEC = "generate_spec"
     # Envelope call for mutations made from Claude Code's broader context
     # (not a rumil-internal call with carefully scoped prompt). Never
     # dispatchable from prioritization — only created by .claude/ skills.
@@ -135,6 +137,9 @@ class LinkType(str, Enum):
     VIEW_ITEM = "view_item"  # view -> view_item: item belongs to this view
     VIEW_OF = "view_of"  # view -> question: this view covers this question
     META_FOR = "meta_for"  # view_meta -> view_item or view: meta annotation
+    SPEC_OF = (
+        "spec_of"  # spec_item -> question: the artefact-task question this spec item constrains
+    )
 
 
 class MoveType(str, Enum):
@@ -155,6 +160,7 @@ class MoveType(str, Enum):
     UPDATE_EPISTEMIC = "UPDATE_EPISTEMIC"
     CREATE_VIEW_ITEM = "CREATE_VIEW_ITEM"
     PROPOSE_VIEW_ITEM = "PROPOSE_VIEW_ITEM"
+    ADD_SPEC_ITEM = "ADD_SPEC_ITEM"
 
 
 class CallStage(str, Enum):

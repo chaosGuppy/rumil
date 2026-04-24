@@ -148,6 +148,9 @@ PRESETS: dict[str, AvailableMoves] = {
             MoveType.LOAD_PAGE,
             MoveType.UPDATE_EPISTEMIC,
         ],
+        CallType.GENERATE_SPEC: [
+            MoveType.ADD_SPEC_ITEM,
+        ],
     },
     "judge-on-assess": {
         CallType.ASSESS: [
@@ -288,6 +291,9 @@ PRESETS: dict[str, AvailableMoves] = {
         CallType.UPDATE_VIEW: [
             MoveType.LOAD_PAGE,
             MoveType.UPDATE_EPISTEMIC,
+        ],
+        CallType.GENERATE_SPEC: [
+            MoveType.ADD_SPEC_ITEM,
         ],
     },
 }

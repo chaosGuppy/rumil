@@ -140,4 +140,9 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build, push, and deploy
+        env:
+          # Inlined into the client bundle by `next build` — see scripts/deploy.sh.
+          # Not a secret in the cryptographic sense (ships with every page), but
+          # kept in GitHub Secrets so the value is centrally managed.
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
         run: ./scripts/deploy.sh --all --tag "${GITHUB_SHA::7}"

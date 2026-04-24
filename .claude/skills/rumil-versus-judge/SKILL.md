@@ -18,20 +18,23 @@ page can link back to the rumil trace.
 
 | Variant | What it does | judge_model format | Needs supabase? |
 |---|---|---|---|
-| `text` (default) | Single-turn Anthropic call, versus judge prompt. Same shape as OpenRouter judges, different model axis. | `anthropic:<model>` | no |
-| `rumil-text` | Single-turn Anthropic call with **rumil's** dimension prompt (judge-shell + essay-adapted dimension body). Isolates the prompt-source effect from the workspace/tools effect that `ws` bundles together. | `rumil:text:<model>:<dim>:p<hash>` | no |
-| `ws` | One VERSUS_JUDGE rumil agent call per pair with single-arm workspace-exploration tools (search / load_page / explore_subgraph). Dimension prompt defaults to essay-adapted rumil dimensions; `--versus-criterion` also available for direct comparison. | `rumil:ws:<model>:<ws_short>:<task>:p<hash>:v<N>` | **yes** |
-| `orch` | Per-pair: create Question page, fire `TwoPhaseOrchestrator` at configurable budget, then a closing call extracts the 7-point label. Produces a full research trace per pair. | `rumil:orch:<model>:<ws_short>:b<N>:<task>:p<hash>:v<N>` | **yes** |
+| `text` (default) | Single-turn Anthropic call, versus judge prompt. Same shape as OpenRouter judges, different model axis. | `anthropic:<model>:p<hash>:v<N>:s<hash>` | no |
+| `rumil-text` | Single-turn Anthropic call with **rumil's** dimension prompt (judge-shell + essay-adapted dimension body). Isolates the prompt-source effect from the workspace/tools effect that `ws` bundles together. | `rumil:text:<model>:<dim>:p<hash>:v<N>:s<hash>` | no |
+| `ws` | One VERSUS_JUDGE rumil agent call per pair with single-arm workspace-exploration tools (search / load_page / explore_subgraph). Dimension prompt defaults to essay-adapted rumil dimensions; `--versus-criterion` also available for direct comparison. | `rumil:ws:<model>:<ws_short>:<task>:p<hash>:v<N>:t<hash>` | **yes** |
+| `orch` | Per-pair: create Question page, fire `TwoPhaseOrchestrator` at configurable budget, then a closing call extracts the 7-point label. Produces a full research trace per pair. | `rumil:orch:<model>:<ws_short>:b<N>:<task>:p<hash>:v<N>:t<hash>` | **yes** |
 
 `<task>` is either a rumil dimension name (e.g. `general_quality`) or
 `versus_<criterion>` (e.g. `versus_standalone_quality`) when
 `--versus-criterion` is set.
 
-`p<hash>` is `compute_prompt_hash(task_body)` — hashes
-`prompts/versus-judge-shell.md` + the task body so any `.md` edit auto-
-invalidates the key. `v<N>` is `BLIND_JUDGE_VERSION` — manual bump for
-semantic bridge changes that don't move the prompt hash (see "When to
-bump `BLIND_JUDGE_VERSION`" below).
+Four tags appear in the key, three automatic and one manual:
+
+- `:p<hash>` — `compute_prompt_hash(task_body)` hashes `prompts/versus-judge-shell.md` + the task body. Any `.md` edit auto-invalidates the key.
+- `:v<N>` — `BLIND_JUDGE_VERSION` from `versus.versions`. Manual bump for semantic bridge changes the prompt hash doesn't catch (see "When to bump `BLIND_JUDGE_VERSION`" below).
+- `:t<hash>` (ws / orch only) — hash of the workspace-exploration tool description map. Tool docstring edits auto-invalidate.
+- `:s<hash>` (text / rumil-text / OpenRouter judges) — hash of the sampling dict (`{"temperature", "max_tokens"}`). Topups at a different temperature re-judge instead of silently no-opping.
+
+See `versus/AGENT.md` for the full interaction between these four knobs.
 
 ## When to use
 
@@ -264,19 +267,24 @@ over-read any single number:
   (`TwoPhaseOrchestrator` rejects anything smaller with a clear
   error).
 - **Re-running is free.** Dedup keys include the variant, model,
-  workspace, dimension (or versus criterion), and budget, so any
-  combination change produces fresh rows without clobbering existing
-  ones.
+  workspace, dimension (or versus criterion), budget, sampling params
+  (via `:s<hash>`), tool-prompt contents (via `:t<hash>` for ws/orch),
+  and `order` slot — so any combination change produces fresh rows
+  without clobbering existing ones. `order` is currently always
+  single-order; the slot exists so mirror-mode can be switched on
+  without a migration.
 - **Rumil trace UI requires rumil's frontend** (`./scripts/dev-api.sh`
   + `cd frontend && pnpm dev`). Trace URLs emitted by the script point
   at `settings.frontend_url` (default http://127.0.0.1:3000).
 
 ## When to bump `BLIND_JUDGE_VERSION`
 
-`BLIND_JUDGE_VERSION` (in `src/rumil/versus_bridge.py`, currently `2`)
-is the manual version knob that forks `rumil:ws:*` and `rumil:orch:*`
-judge_model keys when you make a semantic change the automatic prompt
-hash doesn't catch. **Bump it when editing any of:**
+`BLIND_JUDGE_VERSION` (in `versus/src/versus/versions.py`, currently
+`3`; re-exported from `src/rumil/versus_bridge.py` for back-compat)
+is the manual version knob that forks `rumil:ws:*`, `rumil:orch:*`,
+and `rumil:text:*` judge_model keys when you make a semantic change
+the automatic prompt hash doesn't catch. **Bump it when editing any
+of:**
 
 - `versus_bridge._format_pair_content` — the Question page body the
   agent reads via `load_page`.
@@ -285,15 +293,23 @@ hash doesn't catch. **Bump it when editing any of:**
   - `judge_pair_ws_aware` (agent user prompt + allowed/disallowed tools)
   - `_run_orch_closer` (closer user prompt)
   - `_build_rumil_text_user_message` (rumil-text user message)
-- The tool list / `disallowed_tools` config on `SdkAgentConfig` in
-  `judge_pair_ws_aware` — changing what the agent can reach changes
-  its behavior.
+- The tool *list* / `disallowed_tools` config on `SdkAgentConfig` in
+  `judge_pair_ws_aware` (adding/removing tools) — changing what the
+  agent can reach changes its behavior. Tool *docstring* edits are
+  already auto-covered by `:t<hash>`; only list changes need a bump.
 - Anything else in the bridge that a future reader would consider
   "part of the judge's identity" but isn't an `.md` file on disk.
 
-**Do NOT bump** when editing `prompts/versus-judge-shell.md` or
-`prompts/versus-<dim>.md` — those are already covered by
-`compute_prompt_hash` (the `:p<hash>` suffix moves automatically).
+**Do NOT bump** when editing:
+
+- `prompts/versus-judge-shell.md` or `prompts/versus-<dim>.md` —
+  covered by `:p<hash>` automatically. `tests/test_versus_prompt_snapshots.py`
+  pins the file shas, so a prompt edit without the corresponding version
+  bump fails the snapshot test with a message pointing at the constant
+  to roll.
+- The sampling dict passed to non-ws paths — covered by `:s<hash>`.
+- Tool descriptions/docstrings for `search_workspace` / `load_page` /
+  `explore_subgraph` — covered by `:t<hash>` for ws/orch.
 
 When you bump, also update the comment next to the constant with a
 short reason, so future readers know what the bump paid for

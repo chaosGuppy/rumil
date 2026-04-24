@@ -14,7 +14,7 @@ Adding a model, judge, criterion, or prefix-config must **never** re-run existin
 |---|---|
 | `data/completions.jsonl` | `essay_id · prefix_config_hash · source_id · sampling_hash` |
 | `data/paraphrases.jsonl` | `essay_id · model_id · sampling_hash` |
-| `data/judgments.jsonl`   | `essay_id · prefix_hash · sorted(source_a, source_b) · criterion · judge_model` |
+| `data/judgments.jsonl`   | `essay_id · prefix_hash · sorted(source_a, source_b) · criterion · judge_model · order` |
 
 `prefix_config_hash` mixes in essay content + prefix params (n_paragraphs, include_headers, length_tolerance) + `prepare.COMPLETION_PROMPT_VERSION`. `sampling_hash` covers sampling params (temperature/max_tokens/top_p) plus — for paraphrases — `paraphrase.PARAPHRASE_PROMPT_VERSION`.
 
@@ -43,6 +43,8 @@ Every "contestant" the judge sees is a row in `completions.jsonl`, with `source_
 Judges reason freely; we parse the **last** `<verdict>A|B|tie</verdict>` tag from the output (OpenRouter / anthropic:* variants) or the 7-point preference label (rumil:* variants). Don't constrain the whole response to JSON — chain-of-thought materially improves judgment quality.
 
 Display order (A vs B) is deterministic per `(essay_id, sorted_pair)` via `judge.order_pair()` so every judge — model or human — sees the same assignment for the same pair.
+
+Every row records an `order ∈ {"ab", "ba"}` field (`"ab"` iff the alphabetically-lower source was shown as Continuation A). `order` is also the last slot in `judgment_key`, so the key scheme supports a future mirror-mode that emits both orders per pair and collapses them on the read side to cancel position bias. Today enumeration still emits one task per pair — nothing is doubled by default. Legacy rows that predate the `order` field are handled via `judge.infer_order(row)`, which derives the orientation from the stored `display_first`; any downstream code that needs the per-row order should go through that helper so pre- and post-change rows coexist cleanly.
 
 ## Blind judging
 

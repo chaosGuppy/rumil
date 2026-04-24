@@ -249,7 +249,7 @@ def run(
 
 from collections.abc import Callable  # noqa: E402
 from dataclasses import dataclass  # noqa: E402
-from typing import Any
+from typing import Any  # noqa: E402
 
 
 @dataclass

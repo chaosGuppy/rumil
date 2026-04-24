@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass
 
-from versus.essay import Block, Essay, blocks_to_markdown
+from versus.essay import SCHEMA_VERSION, Block, Essay, blocks_to_markdown
 from versus.versions import COMPLETION_PROMPT_VERSION
 
 
@@ -130,6 +131,37 @@ def current_prefix_hashes(cfg, essays_dir) -> dict[str, str]:
             length_tolerance=cfg.completion.length_tolerance,
         )
         out[essay.id] = task.prefix_config_hash
+    return out
+
+
+def active_essay_ids(essays_dir, exclude_ids: Iterable[str]) -> set[str]:
+    """Essay IDs in the current canonical set.
+
+    Applies the same gate as the API's ``_build_essays_status``:
+    legacy pre-multi-source JSONs are skipped, essays at an older
+    ``schema_version`` are skipped, and ``exclude_ids`` are skipped.
+    Used by ``scripts/run_completions.py`` / ``run_judgments.py``
+    ``--active`` so they touch exactly the essays ``/versus`` would
+    enumerate.
+    """
+    import pathlib
+
+    exclude = set(exclude_ids)
+    out: set[str] = set()
+    d = pathlib.Path(essays_dir)
+    if not d.exists():
+        return out
+    for path in sorted(d.glob("*.json")):
+        if path.name.endswith(".verdict.json"):
+            continue
+        data = json.loads(path.read_text())
+        if "source_id" not in data:
+            continue
+        if data.get("schema_version") != SCHEMA_VERSION:
+            continue
+        if data["id"] in exclude:
+            continue
+        out.add(data["id"])
     return out
 
 

@@ -32,12 +32,12 @@ sys.path.insert(0, str(RUMIL_ROOT / "src"))
 # progress in real time instead of dumping on exit.
 sys.stdout.reconfigure(line_buffering=True)  # pyright: ignore[reportAttributeAccessIssue]
 
-from versus import config, judge  # noqa: E402
+from versus import config, judge, prepare  # noqa: E402
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--config", default="config.yaml")
+    ap.add_argument("--config", default=str(VERSUS_ROOT / "config.yaml"))
     ap.add_argument(
         "--judge-model",
         action="append",
@@ -55,6 +55,15 @@ def main() -> None:
         action="append",
         default=None,
         help="Restrict to specified essay_id(s). Repeatable.",
+    )
+    ap.add_argument(
+        "--active",
+        action="store_true",
+        help=(
+            "Restrict to the canonical active set: current schema_version "
+            "and not in cfg.essays.exclude_ids. Same gate /versus applies. "
+            "Composes with --essay (intersected)."
+        ),
     )
     ap.add_argument(
         "--contestants",
@@ -91,11 +100,16 @@ def main() -> None:
     contestants = (
         [s.strip() for s in args.contestants.split(",") if s.strip()] if args.contestants else None
     )
+    if args.active:
+        active = prepare.active_essay_ids(cfg.essays.cache_dir, cfg.essays.exclude_ids)
+        essay_ids = sorted(active & set(args.essay)) if args.essay else sorted(active)
+    else:
+        essay_ids = args.essay
     judge.run(
         cfg,
         judge_models=args.judge_model,
         criteria=args.criterion,
-        essay_ids=args.essay,
+        essay_ids=essay_ids,
         contestants=contestants,
         vs_human=args.vs_human,
         current_only=args.current_only,

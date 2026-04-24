@@ -288,7 +288,7 @@ def test_blind_judge_version_is_positive_int():
 
 
 def test_compute_prompt_hash_changes_when_shell_file_changes(tmp_path, monkeypatch):
-    import rumil.versus_bridge as vb
+    import rumil.versus_prompts as vp
 
     body = "Stable task body."
     baseline = compute_prompt_hash(body)
@@ -296,7 +296,7 @@ def test_compute_prompt_hash_changes_when_shell_file_changes(tmp_path, monkeypat
     (tmp_path / "versus-judge-shell.md").write_text(
         "Totally different shell wording here.\n\n{task_body}\n"
     )
-    monkeypatch.setattr(vb, "_PROMPTS_DIR", tmp_path)
+    monkeypatch.setattr(vp, "_PROMPTS_DIR", tmp_path)
     forked = compute_prompt_hash(body)
 
     assert baseline != forked

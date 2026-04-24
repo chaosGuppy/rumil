@@ -89,6 +89,7 @@ class CallType(str, Enum):
     GENERATE_SPEC = "generate_spec"
     GENERATE_ARTEFACT = "generate_artefact"
     CRITIQUE_ARTEFACT = "critique_artefact"
+    REFINE_SPEC = "refine_spec"
     # Envelope call for mutations made from Claude Code's broader context
     # (not a rumil-internal call with carefully scoped prompt). Never
     # dispatchable from prioritization — only created by .claude/ skills.
@@ -172,6 +173,7 @@ class MoveType(str, Enum):
     SUPERSEDE_SPEC_ITEM = "SUPERSEDE_SPEC_ITEM"
     DELETE_SPEC_ITEM = "DELETE_SPEC_ITEM"
     FINALIZE_ARTEFACT = "FINALIZE_ARTEFACT"
+    REGENERATE_AND_CRITIQUE = "REGENERATE_AND_CRITIQUE"
 
 
 class CallStage(str, Enum):

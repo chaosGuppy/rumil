@@ -153,6 +153,13 @@ PRESETS: dict[str, AvailableMoves] = {
         ],
         CallType.GENERATE_ARTEFACT: [],
         CallType.CRITIQUE_ARTEFACT: [],
+        CallType.REFINE_SPEC: [
+            MoveType.ADD_SPEC_ITEM,
+            MoveType.SUPERSEDE_SPEC_ITEM,
+            MoveType.DELETE_SPEC_ITEM,
+            MoveType.REGENERATE_AND_CRITIQUE,
+            MoveType.FINALIZE_ARTEFACT,
+        ],
     },
     "judge-on-assess": {
         CallType.ASSESS: [
@@ -299,6 +306,13 @@ PRESETS: dict[str, AvailableMoves] = {
         ],
         CallType.GENERATE_ARTEFACT: [],
         CallType.CRITIQUE_ARTEFACT: [],
+        CallType.REFINE_SPEC: [
+            MoveType.ADD_SPEC_ITEM,
+            MoveType.SUPERSEDE_SPEC_ITEM,
+            MoveType.DELETE_SPEC_ITEM,
+            MoveType.REGENERATE_AND_CRITIQUE,
+            MoveType.FINALIZE_ARTEFACT,
+        ],
     },
 }
 

@@ -75,9 +75,9 @@ def main() -> None:
         action="append",
         default=None,
         help=(
-            "Anthropic model id, repeatable. text variant only -- ws/orch "
-            "variants use rumil's configured model. Overrides "
-            "judging.anthropic_models."
+            "Anthropic model id, repeatable. text variant only -- "
+            "rumil-text / ws / orch select their model via --rumil-model. "
+            "Overrides judging.anthropic_models."
         ),
     )
     ap.add_argument(
@@ -195,15 +195,9 @@ def main() -> None:
         return
 
     if args.variant == "rumil-text":
-        # Resolve Anthropic model from --rumil-model alias or --model explicit.
-        if args.rumil_model:
-            model_id = RUMIL_MODEL_ALIASES[args.rumil_model]
-        elif args.model:
-            if len(args.model) != 1:
-                ap.error("--variant rumil-text expects exactly one --model")
-            model_id = args.model[0]
-        else:
-            ap.error("--variant rumil-text requires --rumil-model or --model")
+        if args.model:
+            ap.error("--model is for --variant text only; use --rumil-model for rumil-text")
+        model_id = RUMIL_MODEL_ALIASES[args.rumil_model]
         dimensions = tuple(args.dimension) if args.dimension else DEFAULT_DIMENSIONS
         rumil_judge.run_rumil_text(
             cfg,

@@ -148,9 +148,6 @@ export default async function VersusResultsPage({
             %-picks-human · gen × judge
           </h2>
           <form method="get" action="/versus/results" className="results-controls">
-            {includeContaminated && (
-              <input type="hidden" name="include_contaminated" value="true" />
-            )}
             <AutoSubmitSelect
               name="criterion"
               defaultValue={active_criterion ?? ""}
@@ -166,6 +163,12 @@ export default async function VersusResultsPage({
               value="true"
               defaultChecked={include_stale}
               label="include stale"
+            />
+            <AutoSubmitCheckbox
+              name="include_contaminated"
+              value="true"
+              defaultChecked={includeContaminated}
+              label="include contaminated"
             />
             <noscript>
               <button type="submit" className="versus-button">apply</button>

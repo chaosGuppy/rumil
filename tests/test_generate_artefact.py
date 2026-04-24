@@ -121,6 +121,43 @@ async def test_spec_only_context_renders_task_and_spec(tmp_db, artefact_task):
     assert len(ctx.working_page_ids) == 3
 
 
+async def test_spec_only_context_orders_items_deterministically(tmp_db, artefact_task):
+    """Spec items render in created_at order so prompt caching stays stable."""
+    specs = await _seed_spec_items(
+        tmp_db,
+        artefact_task.id,
+        [
+            ("First rule", "first"),
+            ("Second rule", "second"),
+            ("Third rule", "third"),
+        ],
+    )
+
+    call = Call(
+        call_type=CallType.GENERATE_ARTEFACT,
+        workspace=Workspace.RESEARCH,
+        scope_page_id=artefact_task.id,
+        status=CallStatus.PENDING,
+    )
+    await tmp_db.save_call(call)
+
+    infra = CallInfra(
+        question_id=artefact_task.id,
+        call=call,
+        db=tmp_db,
+        trace=CallTrace(call.id, tmp_db),
+        state=MoveState(call, tmp_db),
+    )
+    ctx = await SpecOnlyContext().build_context(infra)
+
+    first_pos = ctx.context_text.index("First rule")
+    second_pos = ctx.context_text.index("Second rule")
+    third_pos = ctx.context_text.index("Third rule")
+    assert first_pos < second_pos < third_pos
+
+    assert ctx.working_page_ids[1:] == [s.id for s in specs]
+
+
 async def test_critique_context_errors_when_no_artefact(tmp_db, artefact_task):
     """CritiqueContext requires an artefact; surface a clear error otherwise."""
     call = Call(

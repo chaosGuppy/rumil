@@ -1058,15 +1058,7 @@ class SpecOnlyContext(ContextBuilder):
                 f"SpecOnlyContext: artefact-task question {infra.question_id} not found"
             )
 
-        spec_links = await infra.db.get_links_to(infra.question_id)
-        spec_of_links = [l for l in spec_links if l.link_type == LinkType.SPEC_OF]
-        spec_ids = [l.from_page_id for l in spec_of_links]
-        spec_pages_by_id = await infra.db.get_pages_by_ids(spec_ids)
-        spec_pages = [
-            spec_pages_by_id[pid]
-            for pid in spec_ids
-            if pid in spec_pages_by_id and spec_pages_by_id[pid].is_active()
-        ]
+        spec_pages = await active_spec_items_for_task(infra.question_id, infra.db)
 
         parts: list[str] = [
             "# Artefact task",
@@ -1175,3 +1167,22 @@ async def _latest_artefact_for_task(task_id: str, db) -> Page | None:
     if not active:
         return None
     return max(active, key=lambda p: p.created_at)
+
+
+async def active_spec_items_for_task(task_id: str, db) -> list[Page]:
+    """Return active SPEC_ITEM pages SPEC_OF-linked to *task_id*.
+
+    Sorted by ``created_at`` (stable insertion order) so prompt rendering is
+    deterministic across runs — important for prompt caching and for keeping
+    generated artefacts consistent when the spec hasn't actually changed.
+    """
+    links = await db.get_links_to(task_id)
+    spec_of_links = [l for l in links if l.link_type == LinkType.SPEC_OF]
+    if not spec_of_links:
+        return []
+    pages_by_id = await db.get_pages_by_ids([l.from_page_id for l in spec_of_links])
+    active = [
+        p for p in pages_by_id.values() if p.is_active() and p.page_type == PageType.SPEC_ITEM
+    ]
+    active.sort(key=lambda p: (p.created_at, p.id))
+    return active

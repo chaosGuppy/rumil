@@ -12,7 +12,7 @@ import logging
 from pydantic import BaseModel, Field
 
 from rumil.calls.closing_reviewers import StandardClosingReview
-from rumil.calls.context_builders import SpecOnlyContext
+from rumil.calls.context_builders import SpecOnlyContext, active_spec_items_for_task
 from rumil.calls.stages import (
     CallInfra,
     CallRunner,
@@ -110,12 +110,12 @@ class ArtefactWriter(WorkspaceUpdater):
             )
         )
 
-        spec_item_ids = [pid for pid in context.working_page_ids if pid != infra.question_id]
-        for spec_id in spec_item_ids:
+        spec_items = await active_spec_items_for_task(infra.question_id, infra.db)
+        for spec in spec_items:
             await infra.db.save_link(
                 PageLink(
                     from_page_id=artefact_page.id,
-                    to_page_id=spec_id,
+                    to_page_id=spec.id,
                     link_type=LinkType.GENERATED_FROM,
                 )
             )
@@ -133,7 +133,7 @@ class ArtefactWriter(WorkspaceUpdater):
             "Artefact generated: %s (task=%s, spec_items=%d)",
             artefact_page.id[:8],
             infra.question_id[:8],
-            len(spec_item_ids),
+            len(spec_items),
         )
 
         infra.state.created_page_ids.append(artefact_page.id)

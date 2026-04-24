@@ -385,7 +385,6 @@ function BlockRow({
               judgeModels={judgeModels}
               judgeLabels={judgeLabels}
               small
-              includeTask={false}
               condition={block.condition}
               criterion={cellBlock.criterion}
               includeStale={includeStale}

@@ -267,6 +267,8 @@
 .matrix-table.small .judge-th { padding: 2px 4px; }
 .matrix-table.small .judge-th-variant { font-size: 10px; }
 .matrix-table.small .judge-th-model { font-size: 12px; }
+.matrix-table.small .judge-th-task { font-size: 9px; }
+.matrix-table.small .judge-th-hash { font-size: 9px; }
 .matrix-table tbody th { font-size: 13px; font-weight: 500; }
 .matrix-cell-empty {
   background: var(--color-surface);

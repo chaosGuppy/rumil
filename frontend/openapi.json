@@ -6,6 +6,27 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/api/versus/criteria": {
+      "get": {
+        "tags": [
+          "versus"
+        ],
+        "summary": "Get Criteria",
+        "operationId": "get_criteria_api_versus_criteria_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CriteriaResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/versus/essays": {
       "get": {
         "tags": [
@@ -3165,6 +3186,23 @@
           "budget"
         ],
         "title": "ContextBuiltEventOut"
+      },
+      "CriteriaResponse": {
+        "properties": {
+          "criteria": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Criteria"
+          }
+        },
+        "type": "object",
+        "required": [
+          "criteria"
+        ],
+        "title": "CriteriaResponse",
+        "description": "Dimensions the human-judging UI should offer.\n\nSourced from ``cfg.judging.criteria`` so the landing page tracks the\nversus config instead of a frontend hard-coded list. Keeps the\nselectable criteria in sync with what run_judgments / run_rumil_judgments\nactually evaluate."
       },
       "CriterionMatrix": {
         "properties": {

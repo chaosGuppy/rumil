@@ -1,13 +1,15 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import type { EssayMeta } from "@/api/types.gen";
+import type { CriteriaResponse, EssayMeta } from "@/api/types.gen";
 import { API_BASE, serverFetch } from "@/lib/api-base";
 import { VersusHeader } from "@/components/versus/VersusHeader";
 import "./versus.css";
 
 export const metadata: Metadata = { title: "versus" };
 
-const DEFAULT_CRITERIA = ["standalone_quality", "informativeness", "substance_and_bite"];
+// Fallback only when /criteria is unreachable. Matches the current
+// config; keep in sync with versus/config.yaml#judging.criteria.
+const FALLBACK_CRITERIA = ["general_quality"];
 
 async function listEssays(): Promise<EssayMeta[]> {
   const res = await serverFetch(`${API_BASE}/api/versus/essays`, { cache: "no-store" });
@@ -15,8 +17,15 @@ async function listEssays(): Promise<EssayMeta[]> {
   return res.json();
 }
 
+async function listCriteria(): Promise<string[]> {
+  const res = await serverFetch(`${API_BASE}/api/versus/criteria`, { cache: "no-store" });
+  if (!res.ok) return FALLBACK_CRITERIA;
+  const payload: CriteriaResponse = await res.json();
+  return payload.criteria.length > 0 ? payload.criteria : FALLBACK_CRITERIA;
+}
+
 export default async function VersusHome() {
-  const essays = await listEssays();
+  const [essays, criteria] = await Promise.all([listEssays(), listCriteria()]);
   const apiOk = essays.length > 0;
 
   return (
@@ -59,7 +68,7 @@ export default async function VersusHome() {
           <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
             <label htmlFor="criterion" style={{ minWidth: 90 }}>Criterion</label>
             <select id="criterion" name="criterion" className="versus-select">
-              {DEFAULT_CRITERIA.map((c) => (
+              {criteria.map((c: string) => (
                 <option key={c} value={c}>{c}</option>
               ))}
             </select>

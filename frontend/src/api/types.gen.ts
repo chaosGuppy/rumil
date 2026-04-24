@@ -615,6 +615,23 @@ export type ContextBuiltEventOut = {
 };
 
 /**
+ * CriteriaResponse
+ *
+ * Dimensions the human-judging UI should offer.
+ *
+ * Sourced from ``cfg.judging.criteria`` so the landing page tracks the
+ * versus config instead of a frontend hard-coded list. Keeps the
+ * selectable criteria in sync with what run_judgments / run_rumil_judgments
+ * actually evaluate.
+ */
+export type CriteriaResponse = {
+    /**
+     * Criteria
+     */
+    criteria: Array<string>;
+};
+
+/**
  * CriterionMatrix
  */
 export type CriterionMatrix = {
@@ -3319,6 +3336,22 @@ export type WebResearchCompleteEventOut = {
  * Workspace
  */
 export type Workspace = 'research' | 'prioritization';
+
+export type GetCriteriaApiVersusCriteriaGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/versus/criteria';
+};
+
+export type GetCriteriaApiVersusCriteriaGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: CriteriaResponse;
+};
+
+export type GetCriteriaApiVersusCriteriaGetResponse = GetCriteriaApiVersusCriteriaGetResponses[keyof GetCriteriaApiVersusCriteriaGetResponses];
 
 export type ListEssaysApiVersusEssaysGetData = {
     body?: never;

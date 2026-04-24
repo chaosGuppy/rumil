@@ -453,6 +453,24 @@ class JudgmentSubmitResult(pydantic.BaseModel):
 router = APIRouter(prefix="/api/versus", tags=["versus"])
 
 
+class CriteriaResponse(pydantic.BaseModel):
+    """Dimensions the human-judging UI should offer.
+
+    Sourced from ``cfg.judging.criteria`` so the landing page tracks the
+    versus config instead of a frontend hard-coded list. Keeps the
+    selectable criteria in sync with what run_judgments / run_rumil_judgments
+    actually evaluate.
+    """
+
+    criteria: list[str]
+
+
+@router.get("/criteria", response_model=CriteriaResponse)
+def get_criteria() -> CriteriaResponse:
+    cfg = _cfg_required()
+    return CriteriaResponse(criteria=list(cfg.judging.criteria))
+
+
 def _human_judge_id(name: str) -> str:
     return f"human:{name.strip().lower()}"
 

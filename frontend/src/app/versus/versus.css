@@ -183,6 +183,19 @@
 .matrix-table tbody th { text-align: right; padding-right: 8px; color: var(--foreground); }
 .matrix-table td .n { font-size: 10px; color: var(--color-muted); margin-left: 4px; }
 .matrix-table td strong { font-weight: 600; }
+/* Small-n cells: desaturate and italicise so a reader instinctively
+ * down-weights them. The leading "~" is a redundant typographic cue so
+ * the signal survives a grayscale screenshot. */
+.matrix-table td.low-n {
+  filter: saturate(0.25);
+  font-style: italic;
+  opacity: 0.78;
+}
+.matrix-table td.low-n .low-n-mark {
+  margin-right: 1px;
+  font-weight: 400;
+  opacity: 0.7;
+}
 .matrix-table.small th,
 .matrix-table.small td {
   padding: 3px 5px;

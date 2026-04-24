@@ -11,6 +11,31 @@ export function buildCellMap(cells: GenJudgeCell[]): Map<string, Cell> {
   return m;
 }
 
+// Below this many judgments per cell, the cell is rendered as a low-confidence
+// marker (desaturated bg, italic, leading "~") so a reader doesn't read 67%
+// off three judgments as if it meant the same thing as 67% off thirty.
+const SMALL_N_THRESHOLD = 5;
+
+function formatPct(pct: number): string {
+  return `${Math.round(pct * 100)}`;
+}
+
+function formatCiPct(lo: number, hi: number): string {
+  return `${Math.round(lo * 100)}–${Math.round(hi * 100)}%`;
+}
+
+function cellTooltip(c: Cell): string {
+  if (c.pct === null || c.pct === undefined) return "no data";
+  const n = c.n;
+  const ci =
+    c.ci_lo !== null && c.ci_lo !== undefined && c.ci_hi !== null && c.ci_hi !== undefined
+      ? ` — 95% CI: ${formatCiPct(c.ci_lo, c.ci_hi)}`
+      : "";
+  const tiePct = c.tie_frac !== null && c.tie_frac !== undefined ? ` (${Math.round(c.tie_frac * 100)}% ties)` : "";
+  const lowN = n < SMALL_N_THRESHOLD ? ` · low n (<${SMALL_N_THRESHOLD}), read with caution` : "";
+  return `${Math.round(c.pct * 100)}% · n=${n} (${c.wins}W / ${c.ties}T / ${c.losses}L)${tiePct}${ci}${lowN}`;
+}
+
 export function MatrixTable({
   cells,
   genModels,
@@ -52,12 +77,27 @@ export function MatrixTable({
                   </td>
                 );
               }
+              const lowN = c.n < SMALL_N_THRESHOLD;
+              const tooltip = cellTooltip(c);
+              const classes = ["matrix-cell"];
+              if (lowN) classes.push("low-n");
               return (
-                <td key={j} style={{ background: c.bg, color: c.fg }}>
+                <td
+                  key={j}
+                  style={{ background: c.bg, color: c.fg }}
+                  className={classes.join(" ")}
+                  title={tooltip}
+                >
                   {small ? (
-                    Math.round(c.pct! * 100)
+                    <>
+                      {lowN && <span className="low-n-mark">~</span>}
+                      {formatPct(c.pct!)}
+                    </>
                   ) : (
-                    <strong>{Math.round(c.pct! * 100)}</strong>
+                    <strong>
+                      {lowN && <span className="low-n-mark">~</span>}
+                      {formatPct(c.pct!)}
+                    </strong>
                   )}
                   <span className="n">{c.n}</span>
                 </td>

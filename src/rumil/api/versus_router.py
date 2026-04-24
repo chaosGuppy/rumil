@@ -17,6 +17,7 @@ import json
 import os
 import pathlib
 from collections import defaultdict
+from collections.abc import Sequence
 
 import pydantic
 from fastapi import APIRouter, HTTPException
@@ -949,6 +950,23 @@ def _enumerate_pairs(cfg: versus_config.Config):
     )
 
 
+def _build_judging_progress(
+    name: str,
+    criterion: str,
+    criteria: Sequence[str],
+    counts: dict[str, int],
+    total: int,
+) -> JudgingProgress:
+    return JudgingProgress(
+        name=name,
+        criterion=criterion,
+        criteria=list(criteria),
+        per_criterion=[
+            CriterionStats(criterion=c, done=counts.get(c, 0), total=total) for c in criteria
+        ],
+    )
+
+
 def _judging_progress(cfg: versus_config.Config, name: str, criterion: str) -> JudgingProgress:
     judge_model = _human_judge_id(name)
     counts: dict[str, int] = defaultdict(int)
@@ -956,14 +974,7 @@ def _judging_progress(cfg: versus_config.Config, name: str, criterion: str) -> J
         if row.get("judge_model") == judge_model:
             counts[row.get("criterion", "")] += 1
     total = sum(1 for _ in _enumerate_pairs(cfg))
-    return JudgingProgress(
-        name=name,
-        criterion=criterion,
-        criteria=list(cfg.judging.criteria),
-        per_criterion=[
-            CriterionStats(criterion=c, done=counts[c], total=total) for c in cfg.judging.criteria
-        ],
-    )
+    return _build_judging_progress(name, criterion, cfg.judging.criteria, counts, total)
 
 
 @router.get("/next-pair", response_model=NextPairResponse)
@@ -972,9 +983,18 @@ def get_next_pair(name: str, criterion: str | None = None) -> NextPairResponse:
     judge_model = _human_judge_id(name)
     active_criterion = criterion or cfg.judging.criteria[0]
 
+    # Single pass over judgments.jsonl populates both the per-criterion
+    # progress counts and the "done" set for the active criterion. The old
+    # code read the file twice (here + _judging_progress at the end of
+    # the request) — same cache hit but two O(N) Python loops per call.
     done: set[str] = set()
+    counts: dict[str, int] = defaultdict(int)
     for row in versus_jsonl.read(_resolve_path(cfg.storage.judgments_log)):
-        if row.get("judge_model") == judge_model and row.get("criterion") == active_criterion:
+        if row.get("judge_model") != judge_model:
+            continue
+        row_crit = row.get("criterion", "")
+        counts[row_crit] += 1
+        if row_crit == active_criterion:
             # Re-derive the row's key with the current scheme so legacy
             # rows (pre-order field) are still recognized as done: their
             # stored ``key`` lacks the ``|ab``/``|ba`` suffix. infer_order
@@ -994,6 +1014,9 @@ def get_next_pair(name: str, criterion: str | None = None) -> NextPairResponse:
                 )
             )
 
+    # Enumerate once, reuse for both progress.total and the next-pair walk.
+    # _judging_progress() internally re-enumerates; we skip that by
+    # building the progress payload directly.
     all_pairs = list(_enumerate_pairs(cfg))
     total = len(all_pairs)
     done_count = 0
@@ -1008,7 +1031,7 @@ def get_next_pair(name: str, criterion: str | None = None) -> NextPairResponse:
         elif next_p is None:
             next_p = p
 
-    progress = _judging_progress(cfg, name, active_criterion)
+    progress = _build_judging_progress(name, active_criterion, cfg.judging.criteria, counts, total)
     if next_p is None:
         return NextPairResponse(pair=None, progress=progress)
 

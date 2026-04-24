@@ -50,7 +50,14 @@ Every row records an `order ∈ {"ab", "ba"}` field (`"ab"` iff the alphabetical
 
 Source ids can literally be `"human"`, so any surface the judge sees (prompt, Question page headline, Question page content, `page.extra` which renders verbatim via `rumil.context.format_page`) must not disclose them. Test coverage is in `tests/test_versus_bridge.py`. Raw source ids stay in the judgment row for post-hoc analysis only.
 
-`runs.config` for `ws`/`orch` runs is surfaced in the traces UI but **not** fed to the agent (agent reads pages via `load_page` / `search` / `explore_subgraph`; it never reads the runs row). Judge identity and per-pair metadata are safe to embed there.
+`runs.config` for `ws`/`orch` runs is surfaced in the traces UI but **not** fed to the agent (agent reads pages via `load_page` / `search` / `explore_subgraph`; it never reads the runs row). Judge identity and per-pair metadata are safe to embed there **today** — but prefer to keep `runs.config` blind-equivalent with `page.extra` anyway, so a future refactor that routes config into agent context doesn't silently create a leak. Grep agent-visible surfaces (tools, context builders, `format_page`) before adding a new identity-disclosing key to `runs.config`; if you can't add it to `page.extra`, it probably doesn't belong in `runs.config` either.
+
+**Canonical vs display order.** Two different A/B conventions coexist, easy to confuse:
+
+- `canonical_source_first` / `canonical_source_second` in `runs.config`, and `source_a` / `source_b` in the judgment row, are the **alphabetical** dedup-key order (`sorted([x, y])`). They don't tell you which side the judge saw as "Continuation A".
+- `display_first` / `display_second` on the judgment row is the actual display order — what the judge rendered as "A" and "B" on the Question page. The `order` field (`ab` or `ba`) encodes how display order maps onto canonical order; `judge.order_from_display_first` computes it.
+
+`display_first` / `display_second` live only on the judgment row, not on `runs.config` or `page.extra`, to keep source identity out of run metadata that's easier to accidentally surface. For a specific pair's display order at audit time, go to `data/judgments.jsonl`.
 
 ## Running
 

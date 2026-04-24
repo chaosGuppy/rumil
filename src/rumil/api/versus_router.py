@@ -1000,6 +1000,11 @@ def get_next_pair(name: str, criterion: str | None = None) -> NextPairResponse:
     cfg = _cfg_required()
     judge_model = _human_judge_id(name)
     active_criterion = criterion or cfg.judging.criteria[0]
+    if active_criterion not in cfg.judging.criteria:
+        raise HTTPException(
+            400,
+            f"unknown criterion {active_criterion!r}; configured: {list(cfg.judging.criteria)}",
+        )
 
     # Single pass over judgments.jsonl populates both the per-criterion
     # progress counts and the "done" set for the active criterion. The old

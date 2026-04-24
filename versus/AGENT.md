@@ -27,8 +27,9 @@ OpenRouter and `anthropic:<model>` judges embed `:p<hash>:v<N>` in their `judge_
 Rumil-style judge_model strings (`rumil:ws:...`, `rumil:orch:...`, `rumil:text:...`) embed four version knobs:
 
 - **`:p<hash>`** — automatic. `versus_bridge.compute_prompt_hash(task_body)` hashes `prompts/versus-judge-shell.md` + the task body (`prompts/versus-<name>.md` or a versus criterion prompt). Any `.md` edit forks the key.
-- **`:v<N>`** — manual. `versus_bridge.BLIND_JUDGE_VERSION`. Bump when you make a semantic change the prompt hash doesn't catch. **Unhashed surfaces to watch:** `_format_pair_content`, the inline user prompts in `judge_pair_ws_aware` / `_run_orch_closer` / `_build_rumil_text_user_message`, `disallowed_tools` config, `_versus_extra` contents. If you change any of those in a way that affects judge behavior, bump `BLIND_JUDGE_VERSION`.
+- **`:v<N>`** — manual. `versus_bridge.BLIND_JUDGE_VERSION`. Bump when you make a semantic change the prompt hash and page-surface hash don't catch. **Unhashed surfaces to watch:** the inline user prompts in `judge_pair_ws_aware` / `_run_orch_closer` / `_build_rumil_text_user_message`, `disallowed_tools` config, orchestrator-internal tool set. (The Question page surface — `_build_headline`, `_format_pair_content`, `_versus_extra` key schema — is covered automatically by `:q<hash>` below on ws/orch; bump `:v<N>` when the surface-hash forking isn't enough or you need to fork `rumil:text:*` alongside.) Applies to all three rumil variants.
 - **`:t<hash>`** — automatic, ws/orch only. `versus_bridge.compute_tool_prompt_hash()` hashes the `{tool_name: description_string}` map for the workspace-exploration tools (`search_workspace`, `load_page`, `explore_subgraph`). Edits to those tool docstrings fork the key. Does not cover the broader dispatch-call tool set used inside the orchestrator (those fork via `BLIND_JUDGE_VERSION`).
+- **`:q<hash>`** — automatic, ws/orch only. `versus_bridge.compute_pair_surface_hash()` hashes the agent-visible Versus Question page surface: the headline template (`_build_headline`), the content body shape (`_format_pair_content`), and the `_versus_extra` key schema. Edits to any of those auto-fork ws/orch keys without forking `rumil:text:*` (which doesn't read the Question page). Computed once per run via a sentinel `PairContext`.
 - **`:s<hash>`** — automatic, non-ws paths (OpenRouter / `anthropic:<model>` / `rumil:text`). `judge.compute_sampling_hash(sampling)` hashes the sampling dict (`{"temperature": ..., "max_tokens": ...}`) so topups at a different temperature re-judge instead of silently no-opping.
 
 ## Sources, unified
@@ -50,7 +51,9 @@ Every row records an `order ∈ {"ab", "ba"}` field (`"ab"` iff the alphabetical
 
 Source ids can literally be `"human"`, so any surface the judge sees (prompt, Question page headline, Question page content, `page.extra` which renders verbatim via `rumil.context.format_page`) must not disclose them. Test coverage is in `tests/test_versus_bridge.py`. Raw source ids stay in the judgment row for post-hoc analysis only.
 
-`runs.config` for `ws`/`orch` runs is surfaced in the traces UI but **not** fed to the agent (agent reads pages via `load_page` / `search` / `explore_subgraph`; it never reads the runs row). Judge identity and per-pair metadata are safe to embed there **today** — but prefer to keep `runs.config` blind-equivalent with `page.extra` anyway, so a future refactor that routes config into agent context doesn't silently create a leak. Grep agent-visible surfaces (tools, context builders, `format_page`) before adding a new identity-disclosing key to `runs.config`; if you can't add it to `page.extra`, it probably doesn't belong in `runs.config` either.
+`essay_id` is also kept off agent-visible surfaces. Its namespaced form `<source>__<slug>` (see `versus.essay.namespaced_id`) bakes the source into what looks like a neutral id and would leak through headline embeddings, `search_workspace`, and `load_page` output. The Question headline uses `prefix_hash[:8]` as a source-free audit tag; `page.extra` drops `essay_id` entirely. Correlation from a trace back to the essay goes through `runs.config.essay_id` (operator-visible, non-agent-visible) or the judgment row's `essay_id` keyed by `question_id`.
+
+**`runs.config` vs `page.extra` — intentional divergence.** `runs.config` for `ws`/`orch` runs is surfaced in the traces UI but **not** fed to the agent (agent reads pages via `load_page` / `search` / `explore_subgraph`; it never reads the runs row). It's the operator-facing identifying layer: holds `essay_id`, `canonical_source_first` / `canonical_source_second` (which can literally be `"human"`), judge identity, etc. `page.extra` is the stricter blind layer — nothing source-identifying. The two are intentionally NOT blind-equivalent today. If a future refactor routes `runs.config` into agent context, it must first be scrubbed to match `page.extra`'s blindness.
 
 **Canonical vs display order.** Two different A/B conventions coexist, easy to confuse:
 
@@ -84,8 +87,8 @@ UI routes (`/versus`, `/versus/judge`, `/versus/inspect`, `/versus/results`) mou
 
 - `text` — single-turn Anthropic call using versus's judge prompt. `judge_model = anthropic:<model>:p<hash>:v<N>:s<hash>`.
 - `rumil-text` — single-turn Anthropic call using rumil's dimension prompt (isolates prompt-source effect from workspace/tools effect). `judge_model = rumil:text:<model>:<dim>:p<hash>:v<N>:s<hash>`.
-- `ws` — one VERSUS_JUDGE agent call with workspace-exploration tools against a `--workspace`. `judge_model = rumil:ws:<model>:<ws>:<task>:p<hash>:v<N>:t<hash>`. Requires local Supabase.
-- `orch` — full TwoPhaseOrchestrator run + closing call per pair. `judge_model = rumil:orch:<model>:<ws>:b<N>:<task>:p<hash>:v<N>:t<hash>`. Requires local Supabase. Expensive.
+- `ws` — one VERSUS_JUDGE agent call with workspace-exploration tools against a `--workspace`. `judge_model = rumil:ws:<model>:<ws>:<task>:p<hash>:v<N>:t<hash>:q<hash>`. Requires local Supabase.
+- `orch` — full TwoPhaseOrchestrator run + closing call per pair. `judge_model = rumil:orch:<model>:<ws>:b<N>:<task>:p<hash>:v<N>:t<hash>:q<hash>`. Requires local Supabase. Expensive.
 
 Model for ws/orch/rumil-text is passed explicitly through the bridge (`--rumil-model opus|sonnet|haiku`, default opus) — do not rely on `settings.model`. The bridge uses `override_settings(rumil_model_override=model)` to propagate to nested rumil calls.
 

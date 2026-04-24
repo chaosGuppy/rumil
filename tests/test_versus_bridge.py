@@ -28,9 +28,11 @@ from rumil.versus_bridge import (
     PREFERENCE_LABELS,
     JudgeResult,
     PairContext,
+    _build_headline,
     _format_pair_content,
     _versus_extra,
     build_system_prompt,
+    compute_pair_surface_hash,
     compute_prompt_hash,
     extract_preference,
     label_to_verdict,
@@ -270,6 +272,55 @@ def test_ensure_versus_question_headline_does_not_leak_source_ids():
     assert "anthropic/claude-opus-4-7" not in page.content
 
 
+def test_ensure_versus_question_headline_does_not_leak_essay_source_prefix():
+    # `essay_id` has the form `<source>__<slug>` (see
+    # versus.essay.namespaced_id) -- using it as-is in the headline
+    # would leak "forethought" / "carlsmith" / "redwood" into an
+    # agent-visible surface that gets embedded, searched, and
+    # returned by load_page. The headline must instead use the
+    # source-free prefix_hash[:8] as the audit tag.
+    pair = _make_pair(
+        essay_id="forethought__the-ai-frontier",
+        prefix_hash="deadbeefcafef00d",
+        task_name="general_quality",
+    )
+    page = _make_question_page_synchronously(pair)
+
+    assert "forethought" not in page.headline
+    assert "__" not in page.headline
+    # Audit linkage: operators can go headline -> prefix_hash -> judgment
+    # row -> essay_id. The short prefix hash must actually appear.
+    assert "deadbeef" in page.headline
+
+
+def test_ensure_versus_question_content_does_not_carry_essay_id():
+    # Content body is rendered via _format_pair_content and must
+    # not reintroduce essay_id in any form.
+    pair = _make_pair(
+        essay_id="carlsmith__the-harm-of-mistakes",
+        prefix_hash="0123456789abcdef",
+    )
+    page = _make_question_page_synchronously(pair)
+
+    assert "carlsmith" not in page.content
+    assert "the-harm-of-mistakes" not in page.content
+
+
+def test_ensure_versus_question_extra_drops_essay_id():
+    # essay_id used to live in page.extra (rendered verbatim via
+    # format_page). Even though the substring "forethought" is
+    # source-identifying on its own, the namespaced id disclosed the
+    # full origin. Correlation now goes through runs.config.essay_id
+    # (non-agent-visible) and the judgment row.
+    pair = _make_pair(essay_id="forethought__the-ai-frontier")
+    page = _make_question_page_synchronously(pair)
+
+    assert "essay_id" not in page.extra
+    for v in page.extra.values():
+        assert "__" not in str(v)
+        assert "forethought" not in str(v)
+
+
 def test_ensure_versus_question_extra_does_not_leak_source_ids():
     # rumil.context.format_page() renders every key in page.extra as
     # "key: value" lines inline with the page body, so anything in
@@ -306,6 +357,63 @@ def test_ensure_versus_question_extra_does_not_leak_source_ids():
 def test_blind_judge_version_is_positive_int():
     assert isinstance(BLIND_JUDGE_VERSION, int)
     assert BLIND_JUDGE_VERSION >= 1
+
+
+# Pair surface hash (ws/orch :q<hash> suffix) ------------------------------
+
+
+def test_compute_pair_surface_hash_is_deterministic():
+    assert compute_pair_surface_hash() == compute_pair_surface_hash()
+
+
+def test_compute_pair_surface_hash_is_short_hex():
+    h = compute_pair_surface_hash()
+    assert len(h) == 8
+    assert all(c in "0123456789abcdef" for c in h)
+
+
+def test_compute_pair_surface_hash_changes_when_headline_template_changes(monkeypatch):
+    import rumil.versus_bridge as vb
+
+    baseline = compute_pair_surface_hash()
+
+    def _alt_headline(pair):
+        return f"DIFFERENT HEADLINE FORMAT: {pair.task_name}"
+
+    monkeypatch.setattr(vb, "_build_headline", _alt_headline)
+    forked = compute_pair_surface_hash()
+
+    assert baseline != forked
+
+
+def test_compute_pair_surface_hash_changes_when_extra_keys_change(monkeypatch):
+    import rumil.versus_bridge as vb
+
+    baseline = compute_pair_surface_hash()
+
+    def _alt_extra(pair):
+        return {"source": "versus", "prefix_hash": pair.prefix_hash, "new_key": "x"}
+
+    monkeypatch.setattr(vb, "_versus_extra", _alt_extra)
+    forked = compute_pair_surface_hash()
+
+    assert baseline != forked
+
+
+def test_build_headline_uses_prefix_hash_not_essay_id():
+    # prefix_hash is the source-free audit tag; essay_id would leak the
+    # `<source>__` namespace prefix.
+    pair = _make_pair(
+        essay_id="forethought__the-ai-frontier",
+        prefix_hash="abcd1234ef567890",
+        task_name="grounding",
+    )
+    headline = _build_headline(pair)
+
+    assert "forethought" not in headline
+    assert "the-ai-frontier" not in headline
+    assert "abcd1234" in headline
+    assert "grounding" in headline
 
 
 # Prompt hash forks on shell edit ------------------------------------------
@@ -360,7 +468,7 @@ def test_versus_extra_does_not_leak_source_ids(a_id, b_id):
     )
     extra = _versus_extra(pair)
 
-    assert set(extra.keys()) == {"source", "essay_id", "prefix_hash", "task_name"}
+    assert set(extra.keys()) == {"source", "prefix_hash", "task_name"}
     for v in extra.values():
         assert v != a_id
         assert v != b_id

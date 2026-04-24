@@ -176,15 +176,33 @@ def _versus_extra(pair: PairContext) -> dict:
     # IMPORTANT: every key in page.extra is rendered verbatim by
     # rumil.context.format_page() (as "key: value" lines inline with
     # the page body). So anything disclosing source identity leaks
-    # to the agent. Keep only neutral tags; source_a_id / source_b_id
-    # are NOT stored here -- the judgment row in versus's
-    # judgments.jsonl carries them for post-hoc analysis.
+    # to the agent. Keep only neutral tags.
+    #
+    # `essay_id` is also excluded — its `<source>__<slug>` namespacing
+    # bakes the source into what looks like a neutral id, and it's the
+    # one field that can route a capable agent toward the essay's
+    # origin via workspace material. Operator-side correlation goes
+    # through `runs.config.essay_id` (non-agent-visible) and the
+    # judgment row's `essay_id` keyed by `question_id`.
     return {
         "source": "versus",
-        "essay_id": pair.essay_id,
         "prefix_hash": pair.prefix_hash,
         "task_name": pair.task_name,
     }
+
+
+def _build_headline(pair: PairContext) -> str:
+    """Compose the Versus Question page headline.
+
+    Intentionally source-free: `pair.essay_id` has the form
+    `<source>__<slug>`, so using it here would leak the source into
+    headline embedding / search / tool output. `prefix_hash[:8]`
+    uniquely identifies the (essay, prefix_config) pair without
+    disclosing where the essay came from. Operators can follow the
+    prefix_hash back to the judgment row or `runs.config.essay_id`
+    when they need the source.
+    """
+    return f"Versus judgment: {pair.task_name} [{pair.prefix_hash[:8]}]"
 
 
 def _format_pair_content(pair: PairContext) -> str:
@@ -224,6 +242,57 @@ def _build_ws_user_prompt(pair: PairContext, question_id: str) -> str:
     )
 
 
+_SURFACE_HASH_SENTINEL: dict[str, str] = {
+    "essay_id": "_SENTINEL_ESSAY_",
+    "prefix_hash": "_SENTINEL_PREFIX_HASH_",
+    "prefix_text": "_SENTINEL_PREFIX_TEXT_",
+    "continuation_a_id": "_SENTINEL_A_ID_",
+    "continuation_a_text": "_SENTINEL_A_TEXT_",
+    "continuation_b_id": "_SENTINEL_B_ID_",
+    "continuation_b_text": "_SENTINEL_B_TEXT_",
+    "source_a_id": "_SENTINEL_SOURCE_A_",
+    "source_b_id": "_SENTINEL_SOURCE_B_",
+    "task_name": "_SENTINEL_TASK_",
+}
+
+
+def compute_pair_surface_hash() -> str:
+    """Short deterministic hash of the Versus Question page surface.
+
+    Used as the ``:q<hash>`` suffix on ``rumil:ws:*`` / ``rumil:orch:*``
+    ``judge_model`` strings so structural edits to the agent-visible
+    page surface auto-fork the dedup key without a manual version bump.
+
+    Covers three surfaces together:
+
+    - :func:`_build_headline` — the Question headline template.
+    - :func:`_format_pair_content` — the Question body shape (section
+      ordering, header text, etc.).
+    - :func:`_versus_extra` — the set of keys stored on ``page.extra``
+      (values are pair-dependent and live in the content body instead;
+      only the key schema is hashed).
+
+    Scope: ws/orch only. The rumil-text path (``_build_rumil_text_user_message``)
+    doesn't read the Question page, so a surface change there wouldn't
+    affect text judgments — forking text keys for a page-surface edit
+    would force unnecessary re-judging. Manual :v<N>
+    (:data:`BLIND_JUDGE_VERSION`) remains the fork mechanism for
+    semantic changes the auto-hash can't catch (inline user prompts,
+    disallowed_tools, orchestrator-internal tool set, etc.) and is
+    still applied to all three variants.
+    """
+    sentinel = PairContext(**_SURFACE_HASH_SENTINEL)
+    blob = json.dumps(
+        {
+            "headline": _build_headline(sentinel),
+            "content": _format_pair_content(sentinel),
+            "extra_keys": sorted(_versus_extra(sentinel).keys()),
+        },
+        sort_keys=True,
+    )
+    return hashlib.sha256(blob.encode()).hexdigest()[:8]
+
+
 async def ensure_versus_question(db: DB, pair: PairContext) -> str:
     """Create a fresh Question page for this pair. Returns the page id.
 
@@ -235,7 +304,7 @@ async def ensure_versus_question(db: DB, pair: PairContext) -> str:
     or content (those render into the question's view / get loaded by
     the agent's tools, so any leak there defeats blind judging).
     """
-    headline = f"Versus judgment: {pair.task_name} on {pair.essay_id}"
+    headline = _build_headline(pair)
     page = Page(
         page_type=PageType.QUESTION,
         layer=PageLayer.SQUIDGY,

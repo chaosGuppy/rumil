@@ -208,6 +208,70 @@
               "default": true,
               "title": "Include Stale"
             }
+          },
+          {
+            "name": "filter_gen",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filter Gen"
+            }
+          },
+          {
+            "name": "filter_judge",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filter Judge"
+            }
+          },
+          {
+            "name": "filter_condition",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filter Condition"
+            }
+          },
+          {
+            "name": "filter_criterion",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filter Criterion"
+            }
           }
         ],
         "responses": {
@@ -6125,6 +6189,17 @@
           "include_stale": {
             "type": "boolean",
             "title": "Include Stale"
+          },
+          "include_contaminated": {
+            "type": "boolean",
+            "title": "Include Contaminated"
+          },
+          "row_filter": {
+            "$ref": "#/components/schemas/RowFilter"
+          },
+          "rows_total_before_filter": {
+            "type": "integer",
+            "title": "Rows Total Before Filter"
           }
         },
         "type": "object",
@@ -6144,7 +6219,10 @@
           "essays_status",
           "stale_count",
           "current_count",
-          "include_stale"
+          "include_stale",
+          "include_contaminated",
+          "row_filter",
+          "rows_total_before_filter"
         ],
         "title": "ResultsBundle"
       },
@@ -6196,6 +6274,63 @@
           "confidence"
         ],
         "title": "ReviewCompleteEventOut"
+      },
+      "RowFilter": {
+        "properties": {
+          "gen": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gen"
+          },
+          "judge": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Judge"
+          },
+          "condition": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Condition"
+          },
+          "criterion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Criterion"
+          }
+        },
+        "type": "object",
+        "required": [
+          "gen",
+          "judge",
+          "condition",
+          "criterion"
+        ],
+        "title": "RowFilter",
+        "description": "Echoed back on ResultsBundle when the row list is filtered.\n\nPopulated from ``?filter_gen=`` / ``?filter_judge=`` /\n``?filter_condition=`` / ``?filter_criterion=`` \u2014 the cell-drill-in\nlinkage from MatrixTable cells into the raw-judgments table below."
       },
       "RunListItemOut": {
         "properties": {

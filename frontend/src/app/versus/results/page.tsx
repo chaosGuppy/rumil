@@ -14,11 +14,21 @@ async function getResults(
   criterion: string | undefined,
   includeContaminated: boolean,
   includeStale: boolean,
+  rowFilter: {
+    gen?: string;
+    judge?: string;
+    condition?: string;
+    criterion?: string;
+  },
 ): Promise<ResultsBundle | null> {
   const qs = new URLSearchParams();
   if (criterion) qs.set("criterion", criterion);
   if (includeContaminated) qs.set("include_contaminated", "true");
   qs.set("include_stale", includeStale ? "true" : "false");
+  if (rowFilter.gen) qs.set("filter_gen", rowFilter.gen);
+  if (rowFilter.judge) qs.set("filter_judge", rowFilter.judge);
+  if (rowFilter.condition) qs.set("filter_condition", rowFilter.condition);
+  if (rowFilter.criterion) qs.set("filter_criterion", rowFilter.criterion);
   const res = await serverFetch(`${API_BASE}/api/versus/results?${qs}`, {
     cache: "no-store",
   });
@@ -39,6 +49,10 @@ export default async function VersusResultsPage({
     criterion?: string;
     include_contaminated?: string;
     include_stale?: string;
+    filter_gen?: string;
+    filter_judge?: string;
+    filter_condition?: string;
+    filter_criterion?: string;
   }>;
 }) {
   const sp = await searchParams;
@@ -48,7 +62,13 @@ export default async function VersusResultsPage({
   // against current essay text. Pass ?include_stale=true to mix in
   // historical rows tied to older prefix_config_hashes.
   const includeStale = sp.include_stale === "true";
-  const data = await getResults(criterion, includeContaminated, includeStale);
+  const rowFilter = {
+    gen: sp.filter_gen,
+    judge: sp.filter_judge,
+    condition: sp.filter_condition,
+    criterion: sp.filter_criterion,
+  };
+  const data = await getResults(criterion, includeContaminated, includeStale, rowFilter);
 
   if (!data) {
     return (
@@ -81,7 +101,25 @@ export default async function VersusResultsPage({
     stale_count,
     current_count,
     include_stale,
+    row_filter,
+    rows_total_before_filter,
   } = data;
+
+  const hasRowFilter =
+    Boolean(row_filter.gen) ||
+    Boolean(row_filter.judge) ||
+    Boolean(row_filter.condition) ||
+    Boolean(row_filter.criterion);
+  // Preserve the main page controls (criterion, include_stale,
+  // include_contaminated) when clearing just the cell-drill-in filter.
+  const clearFilterHref = (() => {
+    const qs = new URLSearchParams();
+    if (active_criterion) qs.set("criterion", active_criterion);
+    qs.set("include_stale", includeStale ? "true" : "false");
+    if (includeContaminated) qs.set("include_contaminated", "true");
+    const s = qs.toString();
+    return `/versus/results${s ? `?${s}` : ""}#judgments`;
+  })();
 
   const empty = gen_models.length === 0 || judge_models.length === 0;
 
@@ -154,6 +192,10 @@ export default async function VersusResultsPage({
                   genModels={gen_models}
                   judgeModels={judge_models}
                   judgeLabels={judge_labels}
+                  condition={mm.condition}
+                  criterion={active_criterion}
+                  includeStale={includeStale}
+                  includeContaminated={includeContaminated}
                 />
               </section>
             ))}
@@ -185,6 +227,8 @@ export default async function VersusResultsPage({
                   genModels={gen_models}
                   judgeModels={judge_models}
                   judgeLabels={judge_labels}
+                  includeStale={includeStale}
+                  includeContaminated={includeContaminated}
                 />
               ))}
             </div>
@@ -262,8 +306,42 @@ export default async function VersusResultsPage({
           </details>
         )}
 
-        <details className="collapsible">
-          <summary>All judgments ({rows.length})</summary>
+        <details className="collapsible" id="judgments" open={hasRowFilter}>
+          <summary>
+            All judgments ({rows.length}
+            {hasRowFilter ? ` of ${rows_total_before_filter}` : ""})
+          </summary>
+          {hasRowFilter && (
+            <div className="row-filter-banner" role="status">
+              <span className="row-filter-label">filtered to</span>
+              {row_filter.condition && (
+                <>
+                  <code>{row_filter.condition}</code>
+                </>
+              )}
+              {row_filter.gen && (
+                <>
+                  <span className="versus-muted">gen</span>
+                  <code>{row_filter.gen}</code>
+                </>
+              )}
+              {row_filter.judge && (
+                <>
+                  <span className="versus-muted">judge</span>
+                  <code>{row_filter.judge}</code>
+                </>
+              )}
+              {row_filter.criterion && (
+                <>
+                  <span className="versus-muted">criterion</span>
+                  <code>{row_filter.criterion}</code>
+                </>
+              )}
+              <a className="row-filter-clear" href={clearFilterHref}>
+                clear filter
+              </a>
+            </div>
+          )}
           <JudgmentRowsTable rows={rows} />
         </details>
       </main>
@@ -277,12 +355,16 @@ function BlockRow({
   genModels,
   judgeModels,
   judgeLabels,
+  includeStale,
+  includeContaminated,
 }: {
   block: ResultsBundle["small_grid"][number];
   empty: boolean;
   genModels: string[];
   judgeModels: string[];
   judgeLabels: ResultsBundle["judge_labels"];
+  includeStale: boolean;
+  includeContaminated: boolean;
 }) {
   return (
     <>
@@ -301,6 +383,10 @@ function BlockRow({
               judgeLabels={judgeLabels}
               small
               includeTask={false}
+              condition={block.condition}
+              criterion={cellBlock.criterion}
+              includeStale={includeStale}
+              includeContaminated={includeContaminated}
             />
           )}
         </div>

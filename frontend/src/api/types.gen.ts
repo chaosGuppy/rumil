@@ -2481,6 +2481,15 @@ export type ResultsBundle = {
      * Include Stale
      */
     include_stale: boolean;
+    /**
+     * Include Contaminated
+     */
+    include_contaminated: boolean;
+    row_filter: RowFilter;
+    /**
+     * Rows Total Before Filter
+     */
+    rows_total_before_filter: number;
 };
 
 /**
@@ -2507,6 +2516,34 @@ export type ReviewCompleteEventOut = {
      * Confidence
      */
     confidence: number | null;
+};
+
+/**
+ * RowFilter
+ *
+ * Echoed back on ResultsBundle when the row list is filtered.
+ *
+ * Populated from ``?filter_gen=`` / ``?filter_judge=`` /
+ * ``?filter_condition=`` / ``?filter_criterion=`` — the cell-drill-in
+ * linkage from MatrixTable cells into the raw-judgments table below.
+ */
+export type RowFilter = {
+    /**
+     * Gen
+     */
+    gen: string | null;
+    /**
+     * Judge
+     */
+    judge: string | null;
+    /**
+     * Condition
+     */
+    condition: string | null;
+    /**
+     * Criterion
+     */
+    criterion: string | null;
 };
 
 /**
@@ -3241,6 +3278,22 @@ export type GetResultsApiVersusResultsGetData = {
          * Include Stale
          */
         include_stale?: boolean;
+        /**
+         * Filter Gen
+         */
+        filter_gen?: string | null;
+        /**
+         * Filter Judge
+         */
+        filter_judge?: string | null;
+        /**
+         * Filter Condition
+         */
+        filter_condition?: string | null;
+        /**
+         * Filter Criterion
+         */
+        filter_criterion?: string | null;
     };
     url: '/api/versus/results';
 };

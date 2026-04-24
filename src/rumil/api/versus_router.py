@@ -354,6 +354,20 @@ class EssayStatus(pydantic.BaseModel):
     validator_model: str | None
 
 
+class RowFilter(pydantic.BaseModel):
+    """Echoed back on ResultsBundle when the row list is filtered.
+
+    Populated from ``?filter_gen=`` / ``?filter_judge=`` /
+    ``?filter_condition=`` / ``?filter_criterion=`` — the cell-drill-in
+    linkage from MatrixTable cells into the raw-judgments table below.
+    """
+
+    gen: str | None
+    judge: str | None
+    condition: str | None
+    criterion: str | None
+
+
 class ResultsBundle(pydantic.BaseModel):
     conditions: list[str]
     criteria: list[str]
@@ -371,6 +385,9 @@ class ResultsBundle(pydantic.BaseModel):
     stale_count: int
     current_count: int
     include_stale: bool
+    include_contaminated: bool
+    row_filter: RowFilter
+    rows_total_before_filter: int
 
 
 class NextPair(pydantic.BaseModel):
@@ -727,11 +744,71 @@ def _matrix_cells(
     ]
 
 
+def _row_matches_filters(
+    row: dict,
+    *,
+    filter_gen: str | None,
+    filter_judge: str | None,
+    filter_condition: str | None,
+    filter_criterion: str | None,
+) -> bool:
+    """Apply the matrix-cell filter to a raw judgments row.
+
+    Mirrors how `analyze.matrix` / `analyze.content_test_matrix` classify a
+    row: for the "completion" / "paraphrase" conditions the pair is
+    ``(human, G)`` or ``(human, paraphrase:G)``; for "content-test" it's
+    ``(paraphrase:J, G)`` with the same ``J`` as ``judge_model``.
+    """
+    if filter_criterion and row.get("criterion") != filter_criterion:
+        return False
+    jm = str(row.get("judge_model", ""))
+    if filter_judge and jm != filter_judge:
+        return False
+    a = str(row.get("source_a", ""))
+    b = str(row.get("source_b", ""))
+    if filter_condition == "content-test":
+        j_base = versus_judge.base_judge_model(jm)
+        baseline = f"paraphrase:{j_base}"
+        if baseline not in (a, b):
+            return False
+        other = b if a == baseline else a
+        if other == "human" or other.startswith("paraphrase:"):
+            return False
+        gen = other
+    elif filter_condition in ("completion", "paraphrase"):
+        if a != "human" and b != "human":
+            return False
+        other = b if a == "human" else a
+        cond, gen = versus_analyze._strip_prefix(other)
+        if cond != filter_condition:
+            return False
+    elif filter_condition:
+        return False
+    else:
+        gen = None
+    if filter_gen:
+        if gen is None:
+            # No condition pin: accept as long as gen appears anywhere in the
+            # pair (either side, and stripping the paraphrase: prefix so the
+            # filter matches across conditions).
+            _, gen_a = versus_analyze._strip_prefix(a)
+            _, gen_b = versus_analyze._strip_prefix(b)
+            if filter_gen not in (gen_a, gen_b):
+                return False
+        elif gen != filter_gen:
+            return False
+    return True
+
+
 @router.get("/results", response_model=ResultsBundle)
 def get_results(
     criterion: str | None = None,
     include_contaminated: bool = False,
     include_stale: bool = True,
+    filter_gen: str | None = None,
+    filter_judge: str | None = None,
+    filter_condition: str | None = None,
+    filter_criterion: str | None = None,
 ) -> ResultsBundle:
     cfg = _cfg_required()
     judgments_log = _resolve_path(cfg.storage.judgments_log)
@@ -830,8 +907,10 @@ def get_results(
     # keys behave -- matches matrix() / content_test_matrix() above.
     rows: list[JudgmentRow] = []
     total_judgments = sum(1 for _ in versus_jsonl.read(judgments_log))
+    rows_total_before_filter = 0
     stale_count = 0
     current_count = 0
+    any_filter = bool(filter_gen or filter_judge or filter_condition or filter_criterion)
     for row in versus_jsonl.read_dedup(judgments_log):
         if row.get("verdict") is None:
             continue
@@ -843,6 +922,15 @@ def get_results(
         else:
             current_count += 1
         if not include_stale and is_stale:
+            continue
+        rows_total_before_filter += 1
+        if any_filter and not _row_matches_filters(
+            row,
+            filter_gen=filter_gen,
+            filter_judge=filter_judge,
+            filter_condition=filter_condition,
+            filter_criterion=filter_criterion,
+        ):
             continue
         rows.append(
             JudgmentRow(
@@ -901,6 +989,14 @@ def get_results(
         stale_count=stale_count,
         current_count=current_count,
         include_stale=include_stale,
+        include_contaminated=include_contaminated,
+        row_filter=RowFilter(
+            gen=filter_gen,
+            judge=filter_judge,
+            condition=filter_condition,
+            criterion=filter_criterion,
+        ),
+        rows_total_before_filter=rows_total_before_filter,
     )
 
 

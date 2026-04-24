@@ -196,6 +196,51 @@
   font-weight: 400;
   opacity: 0.7;
 }
+/* Linked cells: the <a> fills the <td> so the full colored patch is
+ * clickable. Keep the text color inherited from the td so the cell's
+ * fg/bg contrast set server-side survives. */
+.matrix-table td.is-linked { padding: 0; }
+.matrix-cell-link {
+  display: block;
+  padding: 5px 8px;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+.matrix-table.small td.is-linked .matrix-cell-link { padding: 3px 5px; }
+.matrix-cell-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+/* Active-filter banner above the judgments table. */
+.row-filter-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  margin: 6px 0 8px;
+  border-left: 3px solid var(--color-accent, #c4a052);
+  background: var(--color-surface);
+  font-size: 12px;
+}
+.row-filter-banner .row-filter-label {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 10px;
+  color: var(--color-muted);
+}
+.row-filter-banner code {
+  font-family: ui-monospace, Menlo, monospace;
+  background: rgba(0, 0, 0, 0.05);
+  padding: 1px 5px;
+  border-radius: 2px;
+}
+.row-filter-banner .row-filter-clear {
+  margin-left: auto;
+  font-size: 11px;
+}
+@media (prefers-color-scheme: dark) {
+  .row-filter-banner code { background: rgba(255, 255, 255, 0.08); }
+}
 .matrix-table.small th,
 .matrix-table.small td {
   padding: 3px 5px;

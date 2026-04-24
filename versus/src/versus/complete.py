@@ -6,6 +6,7 @@ import datetime as dt
 import hashlib
 import json
 import pathlib
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -15,6 +16,22 @@ from versus import config, jsonl, openrouter, prepare
 from versus import essay as versus_essay
 
 HUMAN_SOURCE_ID = "human"
+
+_CONTINUATION_RE = re.compile(r"<continuation>(.*?)</continuation>", re.DOTALL | re.IGNORECASE)
+
+
+def extract_continuation(text: str) -> str:
+    """Return the final ``<continuation>...</continuation>`` block if present.
+
+    Models may emit scratch space (outlines, dead-ends, planning) before the
+    tagged block; we keep only what's inside the last tag. Falls back to the
+    full response when the model omits the tag entirely so downstream code
+    never gets an empty string from a well-formed-but-untagged continuation.
+    """
+    matches = _CONTINUATION_RE.findall(text)
+    if matches:
+        return matches[-1].strip()
+    return text.strip()
 
 
 def sampling_hash(model_cfg: config.ModelCfg) -> str:
@@ -114,7 +131,8 @@ def _call_one_completion(task, prompt, m, sh, k, client):
         top_p=m.top_p,
         client=client,
     )
-    text = openrouter.extract_text(resp)
+    raw_text = openrouter.extract_text(resp)
+    text = extract_continuation(raw_text)
     return {
         "key": k,
         "essay_id": task.essay_id,
@@ -127,6 +145,7 @@ def _call_one_completion(task, prompt, m, sh, k, client):
         "prompt": prompt,
         "response_text": text,
         "response_words": len(text.split()),
+        "raw_response_text": raw_text,
         "target_words": task.target_words,
         "ts": dt.datetime.utcnow().isoformat() + "Z",
         "duration_s": round(time.time() - t0, 2),

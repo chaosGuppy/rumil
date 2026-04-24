@@ -19,16 +19,16 @@ dedup keys.
   tool-list changes, inline user-message edits).
 
 Numeric values match their former per-module locations.
-``COMPLETION_PROMPT_VERSION = 4`` drops the "continue in the same voice
-and style" constraint — the judge prompt evaluates continuations on
-overall writing and thinking quality, with voice/coherence as one
-sub-criterion, so asking generators to impersonate the author's voice
-over-constrains the task relative to what's being judged.
+``COMPLETION_PROMPT_VERSION = 5`` adds a
+``<continuation>...</continuation>`` scratch-space convention: models
+can plan/outline before the tagged block, and only the content inside
+the last tag is used for judging. Models that skip the tag fall back
+to full-text behaviour.
 """
 
 from __future__ import annotations
 
-COMPLETION_PROMPT_VERSION = 4
+COMPLETION_PROMPT_VERSION = 5
 PARAPHRASE_PROMPT_VERSION = 3
 JUDGE_PROMPT_VERSION = 2
 BLIND_JUDGE_VERSION = 3

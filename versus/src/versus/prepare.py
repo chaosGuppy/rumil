@@ -154,6 +154,11 @@ def render_prompt(task: PreparedTask, include_headers: bool, tolerance: float) -
         "topic. Don't restate the opening, hedge performatively, or drift generic.",
         f"Aim for about {task.target_words} words (between {low} and {high} is fine).",
         "Use Markdown section headings if it helps structure.",
+        "",
+        "You may use scratch space to think through your approach first — outline",
+        "the argument, sketch sections, note dead ends. Wrap your final continuation",
+        "in <continuation>...</continuation> tags; only the content inside those tags",
+        "is evaluated.",
     ]
     if include_headers and task.remaining_headers:
         parts.append("")

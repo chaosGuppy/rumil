@@ -247,12 +247,17 @@ def test_page_extra_keys_are_exactly_the_allowed_set():
     """Pin the exact key set so adding a new key is a deliberate act.
 
     The current allowed set: ``source`` (literal string ``"versus"``),
-    ``essay_id``, ``prefix_hash``, ``task_name``. Anything else must be
-    considered for blind-judge leak risk before being added.
+    ``prefix_hash``, ``task_name``. ``essay_id`` is intentionally NOT
+    stored here — its ``<source>__<slug>`` namespacing bakes the
+    source into what looks like a neutral id and leaks through
+    ``format_page``, search, and headline embeddings. Operator
+    correlation goes through ``runs.config.essay_id`` and the
+    judgment row instead. Anything new must be considered for
+    blind-judge leak risk before being added.
     """
     pair = _make_pair_context()
     extra = _versus_extra(pair)
-    assert set(extra.keys()) == {"source", "essay_id", "prefix_hash", "task_name"}
+    assert set(extra.keys()) == {"source", "prefix_hash", "task_name"}
 
 
 BLIND_JUDGE_BACKEND_TESTS = (

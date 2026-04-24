@@ -21,6 +21,7 @@ export function JudgmentRowsTable({ rows }: { rows: JudgmentRow[] }) {
               <th>judge</th>
               <th>verdict</th>
               <th>winner</th>
+              <th>preference</th>
               <th>ts</th>
               <th>flags</th>
             </tr>
@@ -47,6 +48,7 @@ export function JudgmentRowsTable({ rows }: { rows: JudgmentRow[] }) {
                 <td className="versus-mono">{r.judge_model}</td>
                 <td>{r.verdict}</td>
                 <td className="versus-mono">{r.winner}</td>
+                <td style={{ fontSize: 11 }}>{r.preference_label ?? ""}</td>
                 <td className="versus-muted">{r.ts}</td>
                 <td>
                   {r.stale && (

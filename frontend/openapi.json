@@ -3804,6 +3804,17 @@
             ],
             "title": "Winner Source"
           },
+          "preference_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preference Label"
+          },
           "reasoning_preview": {
             "type": "string",
             "title": "Reasoning Preview"
@@ -3822,17 +3833,6 @@
               }
             ],
             "title": "Rumil Trace Url"
-          },
-          "rumil_preference_label": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Rumil Preference Label"
           },
           "rumil_question_id": {
             "anyOf": [
@@ -3904,10 +3904,10 @@
           "display_second",
           "verdict",
           "winner_source",
+          "preference_label",
           "reasoning_preview",
           "is_rumil",
           "rumil_trace_url",
-          "rumil_preference_label",
           "rumil_question_id",
           "rumil_call_id",
           "rumil_run_id",
@@ -4015,6 +4015,17 @@
             ],
             "title": "Winner Source"
           },
+          "preference_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preference Label"
+          },
           "is_rumil": {
             "type": "boolean",
             "title": "Is Rumil"
@@ -4078,17 +4089,6 @@
               }
             ],
             "title": "Rumil Trace Url"
-          },
-          "rumil_preference_label": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Rumil Preference Label"
           },
           "rumil_question_id": {
             "anyOf": [
@@ -4174,13 +4174,13 @@
           "sampling",
           "verdict",
           "winner_source",
+          "preference_label",
           "is_rumil",
           "contamination_note",
           "prompt",
           "reasoning_text",
           "raw_response",
           "rumil_trace_url",
-          "rumil_preference_label",
           "rumil_question_id",
           "rumil_call_id",
           "rumil_run_id",
@@ -4225,6 +4225,17 @@
             "type": "string",
             "title": "Winner"
           },
+          "preference_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preference Label"
+          },
           "ts": {
             "type": "string",
             "title": "Ts"
@@ -4259,6 +4270,7 @@
           "judge_model",
           "verdict",
           "winner",
+          "preference_label",
           "ts",
           "is_rumil",
           "contamination_note",

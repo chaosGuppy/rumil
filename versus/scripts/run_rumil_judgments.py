@@ -27,7 +27,9 @@ import sys
 VERSUS_ROOT = pathlib.Path(__file__).resolve().parent.parent
 RUMIL_ROOT = VERSUS_ROOT.parent
 
+# versus/src for the versus package; rumil/src for the bridge / DB / etc.
 sys.path.insert(0, str(VERSUS_ROOT / "src"))
+sys.path.insert(0, str(RUMIL_ROOT / "src"))
 
 from versus import envcascade  # noqa: E402
 
@@ -103,17 +105,6 @@ def main() -> None:
             "Essay-adapted rumil dimension name, repeatable "
             "(default: general_quality). Requires a prompt at "
             "prompts/versus-<name>.md."
-        ),
-    )
-    ap.add_argument(
-        "--versus-criterion",
-        action="append",
-        default=None,
-        help=(
-            "Versus criterion name, repeatable. Adds versus-criterion "
-            "tasks alongside rumil dimensions for direct comparison with "
-            "OpenRouter judges. Judge-model strings get a 'versus_' prefix "
-            "so dedup keys differ from dimension-based rows."
         ),
     )
     ap.add_argument(
@@ -220,7 +211,6 @@ def main() -> None:
 
     model_id = RUMIL_MODEL_ALIASES[args.rumil_model]
     dimensions = tuple(args.dimension) if args.dimension else DEFAULT_DIMENSIONS
-    versus_criteria = tuple(args.versus_criterion) if args.versus_criterion else ()
 
     if args.variant == "ws":
         asyncio.run(
@@ -229,7 +219,6 @@ def main() -> None:
                 workspace=args.workspace,
                 model=model_id,
                 dimensions=dimensions,
-                versus_criteria=versus_criteria,
                 limit=args.limit,
                 dry_run=args.dry_run,
                 concurrency=args.concurrency,
@@ -246,7 +235,6 @@ def main() -> None:
                 workspace=args.workspace,
                 model=model_id,
                 dimensions=dimensions,
-                versus_criteria=versus_criteria,
                 budget=args.budget,
                 limit=args.limit,
                 dry_run=args.dry_run,

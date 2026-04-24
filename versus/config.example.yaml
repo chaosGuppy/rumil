@@ -60,10 +60,12 @@ judging:
     - claude-opus-4-7
     - claude-sonnet-4-6
     # - claude-haiku-4-5
-  criteria:                       # one judgment per criterion per pair per judge
-    - standalone_quality          # blind quality: clearer thinking, better writing
-    - informativeness             # which is more informative, all things considered
-    - substance_and_bite          # opinionated: rewards concrete non-obvious claims over hedging
+  criteria:                       # one judgment per dimension per pair per judge.
+                                  # All judges (OpenRouter, Anthropic-direct text,
+                                  # rumil:text/ws/orch) share the same prompt source
+                                  # at prompts/versus-<dimension>.md so cross-judge
+                                  # rows are directly comparable on the prompt axis.
+    - general_quality
   include_human_as_contestant: true
   max_tokens: 64000           # reasoning judges (gpt-5.4) can chew through tokens
 

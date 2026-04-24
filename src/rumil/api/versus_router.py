@@ -189,10 +189,10 @@ class Judgment(pydantic.BaseModel):
     display_second: str
     verdict: str | None
     winner_source: str | None
+    preference_label: str | None
     reasoning_preview: str
     is_rumil: bool
     rumil_trace_url: str | None
-    rumil_preference_label: str | None
     rumil_question_id: str | None
     rumil_call_id: str | None
     rumil_run_id: str | None
@@ -224,6 +224,7 @@ class JudgmentDetail(pydantic.BaseModel):
     sampling: dict | None
     verdict: str | None
     winner_source: str | None
+    preference_label: str | None
     is_rumil: bool
     contamination_note: str | None
 
@@ -232,7 +233,6 @@ class JudgmentDetail(pydantic.BaseModel):
     raw_response: dict | list | None
 
     rumil_trace_url: str | None
-    rumil_preference_label: str | None
     rumil_question_id: str | None
     rumil_call_id: str | None
     rumil_run_id: str | None
@@ -307,6 +307,7 @@ class JudgmentRow(pydantic.BaseModel):
     judge_model: str
     verdict: str
     winner: str
+    preference_label: str | None
     ts: str
     is_rumil: bool
     contamination_note: str | None
@@ -469,11 +470,14 @@ def get_essay(essay_id: str) -> EssayDetail:
         include_headers=cfg.prefix.include_headers,
         tolerance=cfg.completion.length_tolerance,
     )
-    judge_prompt_template = versus_judge.render_judge_prompt(
+    judge_system, judge_user = versus_judge.render_judge_prompt(
         prefix_text="{{ PREFIX SHOWN TO JUDGE }}",
-        criterion=cfg.judging.criteria[0],
+        dimension=cfg.judging.criteria[0],
         source_a_text="{{ CONTINUATION A }}",
         source_b_text="{{ CONTINUATION B }}",
+    )
+    judge_prompt_template = (
+        f"## SYSTEM PROMPT\n\n{judge_system}\n\n---\n\n## USER MESSAGE\n\n{judge_user}"
     )
     paraphrase_prompt_template = versus_paraphrase.PARAPHRASE_INSTRUCTIONS.replace(
         "{markdown}", "{{ FULL ESSAY MARKDOWN }}"
@@ -557,10 +561,12 @@ def get_essay_judgments(essay_id: str) -> list[Judgment]:
                 display_second=row.get("display_second", ""),
                 verdict=row.get("verdict"),
                 winner_source=row.get("winner_source"),
+                preference_label=(
+                    row.get("preference_label") or row.get("rumil_preference_label")
+                ),
                 reasoning_preview=(row.get("reasoning_text") or "")[:400],
                 is_rumil=jm.startswith("rumil:"),
                 rumil_trace_url=row.get("rumil_trace_url"),
-                rumil_preference_label=row.get("rumil_preference_label"),
                 rumil_question_id=row.get("rumil_question_id"),
                 rumil_call_id=row.get("rumil_call_id"),
                 rumil_run_id=row.get("rumil_run_id"),
@@ -776,6 +782,9 @@ def get_results(
                 judge_model=row["judge_model"],
                 verdict=row["verdict"],
                 winner=row.get("winner_source") or "-",
+                preference_label=(
+                    row.get("preference_label") or row.get("rumil_preference_label")
+                ),
                 ts=row["ts"][:16],
                 is_rumil=str(row.get("judge_model", "")).startswith("rumil:"),
                 contamination_note=row.get("contamination_note"),
@@ -904,9 +913,11 @@ def get_next_pair(name: str, criterion: str | None = None) -> NextPairResponse:
     if next_p is None:
         return NextPairResponse(pair=None, progress=progress)
 
+    from rumil.versus_bridge import get_rumil_dimension_body
+
     pair = NextPair(
         criterion=active_criterion,
-        criterion_desc=versus_judge.CRITERION_PROMPTS[active_criterion],
+        criterion_desc=get_rumil_dimension_body(active_criterion),
         done_count=done_count,
         total=total,
         **next_p,
@@ -944,13 +955,15 @@ def get_judgment_by_key(key: str) -> JudgmentDetail:
             sampling=row.get("sampling"),
             verdict=row.get("verdict"),
             winner_source=row.get("winner_source"),
+            preference_label=(
+                row.get("preference_label") or row.get("rumil_preference_label")
+            ),
             is_rumil=jm.startswith("rumil:"),
             contamination_note=row.get("contamination_note"),
             prompt=row.get("prompt"),
             reasoning_text=row.get("reasoning_text"),
             raw_response=row.get("raw_response"),
             rumil_trace_url=row.get("rumil_trace_url"),
-            rumil_preference_label=row.get("rumil_preference_label"),
             rumil_question_id=row.get("rumil_question_id"),
             rumil_call_id=row.get("rumil_call_id"),
             rumil_run_id=row.get("rumil_run_id"),

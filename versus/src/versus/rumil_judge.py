@@ -46,7 +46,8 @@ def _call_one(
     criterion: str,
     model: str,
     judge_model: str,
-    prompt: str,
+    system_prompt: str,
+    user_prompt: str,
     k: str,
     max_tokens: int,
     client: httpx.Client,
@@ -60,13 +61,14 @@ def _call_one(
     use_temp = None if model.startswith("claude-opus-4-7") else 0.0
     resp = anthropic_client.chat(
         model=model,
-        messages=[{"role": "user", "content": prompt}],
+        system=system_prompt,
+        messages=[{"role": "user", "content": user_prompt}],
         temperature=use_temp,
         max_tokens=max_tokens,
         client=client,
     )
     text = anthropic_client.extract_text(resp)
-    verdict = judge.parse_verdict(text)
+    verdict, preference_label = judge.parse_verdict_from_label(text)
     winner_source = None
     if verdict == "A":
         winner_source = first.source_id
@@ -86,8 +88,10 @@ def _call_one(
         "judge_model": judge_model,
         "verdict": verdict,
         "winner_source": winner_source,
+        "preference_label": preference_label,
         "reasoning_text": text,
-        "prompt": prompt,
+        "prompt": user_prompt,
+        "system_prompt": system_prompt,
         "ts": dt.datetime.utcnow().isoformat() + "Z",
         "duration_s": round(time.time() - t0, 2),
         "raw_response": resp,
@@ -133,9 +137,9 @@ def _plan_tasks(
                     )
                     if k in existing:
                         continue
-                    prompt = judge.render_judge_prompt(
+                    system_prompt, user_prompt = judge.render_judge_prompt(
                         prefix_text=prefix_text,
-                        criterion=criterion,
+                        dimension=criterion,
                         source_a_text=first.text,
                         source_b_text=second.text,
                     )
@@ -150,7 +154,8 @@ def _plan_tasks(
                             criterion,
                             model,
                             judge_model,
-                            prompt,
+                            system_prompt,
+                            user_prompt,
                             k,
                         )
                     )
@@ -190,7 +195,7 @@ def run(
     print(f"[plan] {len(tasks)} anthropic judgment calls (concurrency={cfg.concurrency})")
     if dry_run:
         for t in tasks[:20]:
-            print(f"  * {t[10]}")
+            print(f"  * {t[11]}")
         if len(tasks) > 20:
             print(f"  ... and {len(tasks) - 20} more")
         return
@@ -199,7 +204,7 @@ def run(
     try:
         with ThreadPoolExecutor(max_workers=cfg.concurrency) as pool:
             futures = {
-                pool.submit(_call_one, *t, cfg.judging.max_tokens, client): t[10]  # pyright: ignore[reportCallIssue]
+                pool.submit(_call_one, *t, cfg.judging.max_tokens, client): t[11]  # pyright: ignore[reportCallIssue]
                 for t in tasks
             }
             done = 0
@@ -361,18 +366,26 @@ def _mirror_row(
         "rumil_run_id": result.run_id,
         "rumil_question_id": result.question_id,
         "rumil_trace_url": result.trace_url,
-        "rumil_preference_label": result.preference_label,
+        "preference_label": result.preference_label,
         "rumil_cost_usd": result.cost_usd,
     }
 
 
 def _resolve_task_body(task_name: str, is_versus_criterion: bool) -> str:
-    if is_versus_criterion:
-        from versus.judge import CRITERION_PROMPTS
+    """Return the dimension body for a judge task.
 
-        if task_name not in CRITERION_PROMPTS:
-            raise ValueError(f"unknown versus criterion: {task_name!r}")
-        return CRITERION_PROMPTS[task_name]
+    The ``is_versus_criterion`` parameter is kept for callsite stability
+    after the criterion-prompts removal. Versus-criterion task bodies no
+    longer exist -- if any caller still passes True, raise so the issue
+    surfaces immediately rather than silently producing rumil-dimension
+    output under a versus-criterion judge_model.
+    """
+    if is_versus_criterion:
+        raise ValueError(
+            f"versus-criterion task bodies were removed in JUDGE_PROMPT_VERSION=2; "
+            f"got task_name={task_name!r}. Pass the rumil dimension name instead "
+            f"(e.g. 'general_quality')."
+        )
     from rumil.versus_bridge import get_rumil_dimension_body
 
     return get_rumil_dimension_body(task_name)
@@ -384,7 +397,6 @@ async def run_ws(
     workspace: str,
     model: str,
     dimensions: Sequence[str],
-    versus_criteria: Sequence[str] = (),
     limit: int | None = None,
     dry_run: bool = False,
     concurrency: int | None = None,
@@ -403,11 +415,6 @@ async def run_ws(
     ``dimensions`` is a list of essay-adapted rumil dimension names
     (e.g. ``general_quality``, ``grounding``) -- each maps to a prompt
     at ``prompts/versus-<name>.md``.
-
-    ``versus_criteria`` adds task-body-from-versus-criterion entries
-    alongside dimensions -- useful for direct comparison with OpenRouter
-    judges on the same criterion axis. Judge-model strings carry the
-    ``versus_`` prefix so dedup keys differ from dimension-based rows.
     """
     import uuid
 
@@ -416,11 +423,9 @@ async def run_ws(
     from rumil.versus_bridge import PairContext, judge_pair_ws_aware
 
     settings = get_settings()
-    tasks_spec: list[tuple[str, bool]] = [(d, False) for d in dimensions] + [
-        (c, True) for c in versus_criteria
-    ]
+    tasks_spec: list[tuple[str, bool]] = [(d, False) for d in dimensions]
     if not tasks_spec:
-        print("[info] no dimensions or versus criteria specified for ws variant; nothing to do")
+        print("[info] no dimensions specified for ws variant; nothing to do")
         return
 
     run_id = str(uuid.uuid4())
@@ -484,7 +489,6 @@ async def run_ws(
             "workspace": workspace,
             "model": model,
             "dimensions": list(dimensions),
-            "versus_criteria": list(versus_criteria),
             "prompt_hash_by_task": prompt_hashes,
             "blind_judge_version": BLIND_JUDGE_VERSION,
             "num_pairs": len(tasks),
@@ -545,7 +549,6 @@ async def run_orch(
     workspace: str,
     model: str,
     dimensions: Sequence[str],
-    versus_criteria: Sequence[str] = (),
     budget: int = 1,
     limit: int | None = None,
     dry_run: bool = False,
@@ -572,11 +575,9 @@ async def run_orch(
     from rumil.versus_bridge import PairContext, judge_pair_orch
 
     settings = get_settings()
-    tasks_spec: list[tuple[str, bool]] = [(d, False) for d in dimensions] + [
-        (c, True) for c in versus_criteria
-    ]
+    tasks_spec: list[tuple[str, bool]] = [(d, False) for d in dimensions]
     if not tasks_spec:
-        print("[info] no dimensions or versus criteria specified for orch variant; nothing to do")
+        print("[info] no dimensions specified for orch variant; nothing to do")
         return
 
     # Probe is always non-staged: it only calls get_or_create_project,

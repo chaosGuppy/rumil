@@ -311,7 +311,7 @@ function JudgmentRow({ j }: { j: Judgment }) {
         )}
       </td>
       <td style={{ fontSize: 12 }}>
-        {j.rumil_preference_label ?? <span className="versus-muted">-</span>}
+        {j.preference_label ?? <span className="versus-muted">-</span>}
       </td>
       <td style={{ fontSize: 12 }}>
         {j.rumil_trace_url ? (

@@ -20,7 +20,13 @@ import argparse
 import pathlib
 import sys
 
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "src"))
+VERSUS_ROOT = pathlib.Path(__file__).resolve().parent.parent
+RUMIL_ROOT = VERSUS_ROOT.parent
+
+# versus/src for the versus package; rumil/src for ``rumil.versus_bridge``
+# which judge.py now imports for the shared judge prompt.
+sys.path.insert(0, str(VERSUS_ROOT / "src"))
+sys.path.insert(0, str(RUMIL_ROOT / "src"))
 
 # Line-buffer stdout so backgrounded runs (`... > logfile 2>&1 &`) show
 # progress in real time instead of dumping on exit.

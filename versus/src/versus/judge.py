@@ -1,4 +1,12 @@
-"""Pairwise blind judging of completions with deterministic ordering."""
+"""Pairwise blind judging of completions with deterministic ordering.
+
+OpenRouter and ``anthropic:<model>`` (text-mode) judges share the same
+prompt source-of-truth as ``rumil:text`` / ``rumil:ws`` / ``rumil:orch``
+-- the versus-judge-shell + the essay-adapted dimension body live in
+``prompts/versus-*.md`` and are loaded via :mod:`rumil.versus_bridge`.
+This means cross-judge rows are directly comparable on the prompt axis;
+the only real difference is the model + transport.
+"""
 
 from __future__ import annotations
 
@@ -13,36 +21,26 @@ from dataclasses import dataclass
 
 import httpx
 
+from rumil.versus_prompts import (
+    build_system_prompt,
+    compute_prompt_hash,
+    extract_preference,
+    get_rumil_dimension_body,
+    label_to_verdict,
+)
 from versus import config, jsonl, openrouter
 
-# Bump when ``render_judge_prompt`` or ``CRITERION_PROMPTS`` change in a
-# way that should invalidate existing OpenRouter / ``anthropic:<model>``
-# judge rows. The rumil judge variants (rumil:ws, rumil:orch, rumil:text)
-# have their own version knobs in ``rumil.versus_bridge``.
-JUDGE_PROMPT_VERSION = 1
-
-
-CRITERION_PROMPTS: dict[str, str] = {
-    "standalone_quality": (
-        "Judge on standalone quality. Which continuation reads as better, clearer,"
-        " better-argued writing? Reward precise thinking, interesting reasoning, and"
-        " prose that rewards careful reading. Penalize vagueness, padding, and"
-        " tangents. You are not told which (if any) is the original; judge blindly on"
-        " merit."
-    ),
-    "informativeness": (
-        "Which continuation is more informative, all things considered? Reward pieces"
-        " that leave the reader with more usable knowledge, frameworks, distinctions,"
-        " evidence, or concrete examples."
-    ),
-    "substance_and_bite": (
-        "Great essays on topics like this do real intellectual work: they take"
-        " positions, make concrete non-obvious claims, engage with real objections,"
-        " and produce frameworks or conclusions a reader can carry forward. Excessive"
-        " hedging, surface-level points, and vibes-only prose are weaker even if"
-        " stylish. By that standard, which continuation is better?"
-    ),
-}
+# Bump when ``render_judge_prompt`` changes in a way that should
+# invalidate existing OpenRouter / ``anthropic:<model>`` judge rows.
+# The rumil judge variants (rumil:ws, rumil:orch, rumil:text) have
+# their own version knob (``BLIND_JUDGE_VERSION`` in
+# :mod:`rumil.versus_bridge`).
+#
+# v2 (2026-04-23): switched from inline 3-criterion versus prompts to
+# the rumil judge-shell + essay-adapted dimension body. Output format
+# moved from ``<verdict>A|B|tie</verdict>`` to the 7-point preference
+# scale. ``criteria`` collapsed from 3 to 1 (``general_quality``).
+JUDGE_PROMPT_VERSION = 2
 
 
 @dataclass
@@ -79,8 +77,6 @@ def judgment_key(
     lo, hi = sorted([source_a, source_b])
     return f"{essay_id}|{prefix_hash}|{lo}__vs__{hi}|{criterion}|{judge_model}"
 
-
-VERDICT_RE = re.compile(r"<\s*verdict\s*>\s*(A|B|tie)\s*<\s*/\s*verdict\s*>", re.IGNORECASE)
 
 _JUDGE_MODEL_SUFFIX_RE = re.compile(r":p[0-9a-f]{8}(?::v\d+)?$")
 
@@ -119,77 +115,69 @@ def parse_judge_model_suffix(judge_model: str) -> tuple[str, str | None, str | N
     return ":".join(parts), phash, version
 
 
-def compute_judge_prompt_hash(criterion: str) -> str:
-    """Short hash of the rendered judge prompt for ``criterion``.
+def compute_judge_prompt_hash(dimension: str) -> str:
+    """Short hash of the composed judge prompt for ``dimension``.
 
-    Hashes the shell + the criterion-specific text with fixed placeholders
-    so the hash covers prompt surface without mixing in pair content. Any
-    edit to ``render_judge_prompt`` or ``CRITERION_PROMPTS[criterion]``
-    forks the hash.
+    Delegates to :func:`rumil.versus_bridge.compute_prompt_hash` so the
+    OpenRouter pathway and the ``rumil:text`` / ``rumil:ws`` pathways
+    produce the same ``p<hash>`` for the same dimension. Any edit to
+    ``versus-judge-shell.md`` or the dimension prompt forks the hash
+    naturally.
     """
-    rendered = render_judge_prompt(
-        prefix_text="__PREFIX__",
-        criterion=criterion,
-        source_a_text="__A__",
-        source_b_text="__B__",
-    )
-    payload = f"v{JUDGE_PROMPT_VERSION}|{rendered}"
-    return hashlib.sha256(payload.encode()).hexdigest()[:8]
+    body = get_rumil_dimension_body(dimension)
+    return compute_prompt_hash(body)
 
 
-def compose_judge_model(base_model: str, criterion: str) -> str:
+def compose_judge_model(base_model: str, dimension: str) -> str:
     """Append the judge-prompt version suffix to ``base_model``.
 
     Produces ``<base_model>:p<hash>:v<N>``. Used for OpenRouter bare-model
-    judges and ``anthropic:<model>`` judges so their dedup keys fork when
-    the judge prompt changes.
+    judges and ``anthropic:<model>`` judges so their dedup keys fork
+    when the judge prompt changes. The dimension is carried in the
+    ``criterion`` column on the judgment row, so it isn't repeated here.
     """
-    ph = compute_judge_prompt_hash(criterion)
+    ph = compute_judge_prompt_hash(dimension)
     return f"{base_model}:p{ph}:v{JUDGE_PROMPT_VERSION}"
 
 
-def parse_verdict(text: str) -> str | None:
-    matches = VERDICT_RE.findall(text)
-    if not matches:
-        return None
-    v = matches[-1].lower()
-    return "tie" if v == "tie" else v.upper()
+def parse_verdict_from_label(text: str) -> tuple[str | None, str | None]:
+    """Return ``(verdict, preference_label)`` parsed from a judge response.
+
+    Looks for one of the seven preference labels defined in
+    :mod:`rumil.versus_bridge` and maps it to a 3-way verdict
+    (``A`` / ``B`` / ``tie``). Returns ``(None, None)`` if no label
+    is found in the text.
+    """
+    label = extract_preference(text)
+    return label_to_verdict(label), label
 
 
 def render_judge_prompt(
     prefix_text: str,
-    criterion: str,
+    dimension: str,
     source_a_text: str,
     source_b_text: str,
-) -> str:
-    criterion_desc = CRITERION_PROMPTS[criterion]
-    return f"""You are a blind judge comparing two continuations of the same essay opening.
+) -> tuple[str, str]:
+    """Render the (system, user) prompt pair for a text-mode judge.
 
-CRITERION
-{criterion_desc}
-
-ESSAY OPENING (for context)
-===
-{prefix_text}
-===
-
-CONTINUATION A
-===
-{source_a_text}
-===
-
-CONTINUATION B
-===
-{source_b_text}
-===
-
-Think it through in as much detail as you want: weigh specific passages, note strengths and weaknesses of each, and reach a considered judgment. When you are done reasoning, end your response with exactly one of these tags on its own line:
-
-<verdict>A</verdict>   (A is better)
-<verdict>B</verdict>   (B is better)
-<verdict>tie</verdict> (a genuine tie or too close to call)
-
-Only the last such tag in your response is read; feel free to revise as you think."""
+    Uses ``versus-judge-shell.md`` + the essay-adapted dimension body as
+    the system prompt -- identical to what ``rumil:text`` (and the agent
+    variants) see, so cross-judge comparisons are apples-to-apples on the
+    prompt axis. The user message inlines the essay prefix and both
+    continuations; no source ids are disclosed.
+    """
+    body = get_rumil_dimension_body(dimension)
+    system = build_system_prompt(body)
+    user = (
+        "Compare Continuation A and Continuation B on the dimension "
+        f"**{dimension}**.\n\n"
+        "End your response with one of the 7-point preference labels "
+        "on its own line.\n\n"
+        f"## Essay opening\n\n{prefix_text}\n\n"
+        f"## Continuation A\n\n{source_a_text}\n\n"
+        f"## Continuation B\n\n{source_b_text}\n"
+    )
+    return system, user
 
 
 REFUSAL_NATIVE_REASONS = {"refusal", "content_filter", "safety", "blocked"}
@@ -270,7 +258,8 @@ def _call_one_judgment(
     criterion,
     base_model,
     judge_model,
-    prompt,
+    system_prompt,
+    user_prompt,
     k,
     max_tokens,
     client,
@@ -278,13 +267,16 @@ def _call_one_judgment(
     t0 = time.time()
     resp = openrouter.chat(
         model=base_model,
-        messages=[{"role": "user", "content": prompt}],
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
         temperature=JUDGE_TEMPERATURE,
         max_tokens=max_tokens,
         client=client,
     )
     text = openrouter.extract_text(resp)
-    verdict = parse_verdict(text)
+    verdict, preference_label = parse_verdict_from_label(text)
     winner_source = None
     if verdict == "A":
         winner_source = first.source_id
@@ -304,8 +296,10 @@ def _call_one_judgment(
         "judge_model": judge_model,
         "verdict": verdict,
         "winner_source": winner_source,
+        "preference_label": preference_label,
         "reasoning_text": text,
-        "prompt": prompt,
+        "prompt": user_prompt,
+        "system_prompt": system_prompt,
         "ts": dt.datetime.utcnow().isoformat() + "Z",
         "duration_s": round(time.time() - t0, 2),
         "raw_response": resp,
@@ -365,9 +359,9 @@ def run(
                     k = judgment_key(essay_id, prefix_hash, a_id, b_id, criterion, judge_model)
                     if k in existing:
                         continue
-                    prompt = render_judge_prompt(
+                    system_prompt, user_prompt = render_judge_prompt(
                         prefix_text=prefix_text,
-                        criterion=criterion,
+                        dimension=criterion,
                         source_a_text=first.text,
                         source_b_text=second.text,
                     )
@@ -382,7 +376,8 @@ def run(
                             criterion,
                             base_model,
                             judge_model,
-                            prompt,
+                            system_prompt,
+                            user_prompt,
                             k,
                         )
                     )
@@ -397,7 +392,7 @@ def run(
     print(f"[plan] {len(tasks_to_run)} judgment calls (concurrency={cfg.concurrency})")
     if dry_run:
         for t in tasks_to_run[:20]:
-            essay_id, _, a_id, b_id, _, _, crit, _, jm, _, _ = t
+            essay_id, _, a_id, b_id, _, _, crit, _, jm, _, _, _ = t
             print(f"  * {essay_id} {a_id} vs {b_id} [{crit}] -> {jm}")
         if len(tasks_to_run) > 20:
             print(f"  ... and {len(tasks_to_run) - 20} more")
@@ -407,8 +402,8 @@ def run(
         with ThreadPoolExecutor(max_workers=cfg.concurrency) as pool:
             futures = {
                 pool.submit(_call_one_judgment, *t, cfg.judging.max_tokens, client): t[
-                    10
-                ]  # key is 11th element
+                    11
+                ]  # key is 12th element
                 for t in tasks_to_run
             }
             done = 0

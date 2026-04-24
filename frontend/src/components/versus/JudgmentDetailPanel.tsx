@@ -157,10 +157,10 @@ function DetailContent({
               <dd>${data.rumil_cost_usd.toFixed(4)}</dd>
             </>
           )}
-          {data.rumil_preference_label && (
+          {data.preference_label && (
             <>
-              <dt>rumil label</dt>
-              <dd>{data.rumil_preference_label}</dd>
+              <dt>preference</dt>
+              <dd>{data.preference_label}</dd>
             </>
           )}
           {data.contamination_note && (

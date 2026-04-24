@@ -1153,6 +1153,10 @@ export type Judgment = {
      */
     winner_source: string | null;
     /**
+     * Preference Label
+     */
+    preference_label: string | null;
+    /**
      * Reasoning Preview
      */
     reasoning_preview: string;
@@ -1164,10 +1168,6 @@ export type Judgment = {
      * Rumil Trace Url
      */
     rumil_trace_url: string | null;
-    /**
-     * Rumil Preference Label
-     */
-    rumil_preference_label: string | null;
     /**
      * Rumil Question Id
      */
@@ -1264,6 +1264,10 @@ export type JudgmentDetail = {
      */
     winner_source: string | null;
     /**
+     * Preference Label
+     */
+    preference_label: string | null;
+    /**
      * Is Rumil
      */
     is_rumil: boolean;
@@ -1289,10 +1293,6 @@ export type JudgmentDetail = {
      * Rumil Trace Url
      */
     rumil_trace_url: string | null;
-    /**
-     * Rumil Preference Label
-     */
-    rumil_preference_label: string | null;
     /**
      * Rumil Question Id
      */
@@ -1357,6 +1357,10 @@ export type JudgmentRow = {
      * Winner
      */
     winner: string;
+    /**
+     * Preference Label
+     */
+    preference_label: string | null;
     /**
      * Ts
      */

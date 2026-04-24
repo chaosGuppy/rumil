@@ -22,10 +22,12 @@ Adding a model, judge, criterion, or prefix-config must **never** re-run existin
 
 OpenRouter and `anthropic:<model>` judges embed `:p<hash>:v<N>` in their `judge_model` string via `judge.compose_judge_model`. Bump `judge.JUDGE_PROMPT_VERSION` when editing `render_judge_prompt` or `CRITERION_PROMPTS` so existing rows fork instead of silently persisting.
 
-Rumil-style judge_model strings (`rumil:ws:...`, `rumil:orch:...`, `rumil:text:...`) embed two version knobs:
+Rumil-style judge_model strings (`rumil:ws:...`, `rumil:orch:...`, `rumil:text:...`) embed four version knobs:
 
 - **`:p<hash>`** — automatic. `versus_bridge.compute_prompt_hash(task_body)` hashes `prompts/versus-judge-shell.md` + the task body (`prompts/versus-<name>.md` or a versus criterion prompt). Any `.md` edit forks the key.
-- **`:v<N>`** — manual. `versus_bridge.BLIND_JUDGE_VERSION`. Bump when you make a semantic change the prompt hash doesn't catch. **Unhashed surfaces to watch:** `_format_pair_content`, the inline user prompts in `judge_pair_ws_aware` / `_run_orch_closer` / `_build_rumil_text_user_message`, the tool list / `disallowed_tools` config, `_versus_extra` contents. If you change any of those in a way that affects judge behavior, bump `BLIND_JUDGE_VERSION`.
+- **`:v<N>`** — manual. `versus_bridge.BLIND_JUDGE_VERSION`. Bump when you make a semantic change the prompt hash doesn't catch. **Unhashed surfaces to watch:** `_format_pair_content`, the inline user prompts in `judge_pair_ws_aware` / `_run_orch_closer` / `_build_rumil_text_user_message`, `disallowed_tools` config, `_versus_extra` contents. If you change any of those in a way that affects judge behavior, bump `BLIND_JUDGE_VERSION`.
+- **`:t<hash>`** — automatic, ws/orch only. `versus_bridge.compute_tool_prompt_hash()` hashes the `{tool_name: description_string}` map for the workspace-exploration tools (`search_workspace`, `load_page`, `explore_subgraph`). Edits to those tool docstrings fork the key. Does not cover the broader dispatch-call tool set used inside the orchestrator (those fork via `BLIND_JUDGE_VERSION`).
+- **`:s<hash>`** — automatic, non-ws paths (OpenRouter / `anthropic:<model>` / `rumil:text`). `judge.compute_sampling_hash(sampling)` hashes the sampling dict (`{"temperature": ..., "max_tokens": ...}`) so topups at a different temperature re-judge instead of silently no-opping.
 
 ## Sources, unified
 
@@ -69,10 +71,10 @@ UI routes (`/versus`, `/versus/judge`, `/versus/inspect`, `/versus/results`) mou
 
 `scripts/run_rumil_judgments.py` has four `--variant` options. See `.claude/skills/rumil-versus-judge/SKILL.md` for the detailed invocation guide, cost estimates, and confirmation thresholds.
 
-- `text` — single-turn Anthropic call using versus's judge prompt. `judge_model = anthropic:<model>:p<hash>:v<N>`.
-- `rumil-text` — single-turn Anthropic call using rumil's dimension prompt (isolates prompt-source effect from workspace/tools effect). `judge_model = rumil:text:<model>:<dim>:p<hash>`.
-- `ws` — one VERSUS_JUDGE agent call with workspace-exploration tools against a `--workspace`. `judge_model = rumil:ws:<model>:<ws>:<task>:p<hash>:v<N>`. Requires local Supabase.
-- `orch` — full TwoPhaseOrchestrator run + closing call per pair. `judge_model = rumil:orch:<model>:<ws>:b<N>:<task>:p<hash>:v<N>`. Requires local Supabase. Expensive.
+- `text` — single-turn Anthropic call using versus's judge prompt. `judge_model = anthropic:<model>:p<hash>:v<N>:s<hash>`.
+- `rumil-text` — single-turn Anthropic call using rumil's dimension prompt (isolates prompt-source effect from workspace/tools effect). `judge_model = rumil:text:<model>:<dim>:p<hash>:v<N>:s<hash>`.
+- `ws` — one VERSUS_JUDGE agent call with workspace-exploration tools against a `--workspace`. `judge_model = rumil:ws:<model>:<ws>:<task>:p<hash>:v<N>:t<hash>`. Requires local Supabase.
+- `orch` — full TwoPhaseOrchestrator run + closing call per pair. `judge_model = rumil:orch:<model>:<ws>:b<N>:<task>:p<hash>:v<N>:t<hash>`. Requires local Supabase. Expensive.
 
 Model for ws/orch/rumil-text is passed explicitly through the bridge (`--rumil-model opus|sonnet|haiku`, default opus) — do not rely on `settings.model`. The bridge uses `override_settings(rumil_model_override=model)` to propagate to nested rumil calls.
 

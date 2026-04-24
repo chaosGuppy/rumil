@@ -88,15 +88,21 @@ def judgment_key(
     return f"{essay_id}|{prefix_hash}|{lo}__vs__{hi}|{criterion}|{judge_model}"
 
 
-_JUDGE_MODEL_SUFFIX_RE = re.compile(r":p[0-9a-f]{8}(?::v\d+)?(?::s[0-9a-f]{8})?$")
+_JUDGE_MODEL_SUFFIX_RE = re.compile(
+    r":p[0-9a-f]{8}(?::v\d+)?(?::t[0-9a-f]{8})?(?::s[0-9a-f]{8})?$"
+)
 
 
 def base_judge_model(judge_model: str) -> str:
-    """Strip ``:p<hash>[:v<N>][:s<hash>]`` version suffix to recover the raw model id.
+    """Strip ``:p<hash>[:v<N>][:t<hash>][:s<hash>]`` version suffix to recover the raw model id.
 
     Use wherever downstream code needs to match the judge_model against a
     source_id (e.g. ``paraphrase:<model>``) or render a column header that
-    groups across prompt versions.
+    groups across prompt versions. ``:t<hash>`` is the tool-prompt hash
+    used by rumil:ws / rumil:orch (not used by OpenRouter / anthropic /
+    rumil-text variants); ``:s<hash>`` is the sampling-params hash used
+    by the non-ws paths. In practice ``:t`` and ``:s`` don't co-occur,
+    but the regex tolerates either order-last.
     """
     return _JUDGE_MODEL_SUFFIX_RE.sub("", judge_model)
 
@@ -104,20 +110,26 @@ def base_judge_model(judge_model: str) -> str:
 _PHASH_TAG_RE = re.compile(r"^p[0-9a-f]{8}$")
 _VERSION_TAG_RE = re.compile(r"^v\d+$")
 _SHASH_TAG_RE = re.compile(r"^s[0-9a-f]{8}$")
+_THASH_TAG_RE = re.compile(r"^t[0-9a-f]{8}$")
 
 
 def parse_judge_model_suffix(judge_model: str) -> tuple[str, str | None, str | None]:
     """Split a judge_model into ``(base, phash, version)``.
 
     ``phash`` and ``version`` are the ``p<sha8>`` and ``v<N>`` tags if
-    present, else None. A trailing ``:s<sha8>`` sampling tag is absorbed
-    silently into ``base`` stripping so the rest of the shape stays the
-    same -- the frontend doesn't render sampling hashes separately (they
-    exist in the dedup key so topups at different sampling params don't
-    silently no-op; the human-readable sampling dict lives on the row).
+    present, else None. Trailing ``:t<sha8>`` (tool-prompt hash,
+    ws/orch) and ``:s<sha8>`` (sampling-params hash, text variants) are
+    absorbed silently into ``base`` stripping so the rest of the shape
+    stays the same -- the frontend doesn't render those hashes
+    separately (they exist in the dedup key so topups at different
+    sampling params / tool-prompt edits don't silently no-op; the
+    human-readable sampling dict lives on the judgment row, and the
+    tool-prompt text lives in-repo).
     """
     parts = judge_model.split(":")
     if parts and _SHASH_TAG_RE.match(parts[-1]):
+        parts = parts[:-1]
+    if parts and _THASH_TAG_RE.match(parts[-1]):
         parts = parts[:-1]
     version = None
     if parts and _VERSION_TAG_RE.match(parts[-1]):

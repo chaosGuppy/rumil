@@ -27,9 +27,12 @@ itself) to mirror wherever it likes.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from unittest.mock import MagicMock
 
 from rumil.context import format_page
 from rumil.database import DB
@@ -81,6 +84,46 @@ from rumil.versus_prompts import (  # noqa: E402, F401
     get_rumil_dimension_body,
     label_to_verdict,
 )
+
+
+def compute_tool_prompt_hash() -> str:
+    """Short deterministic hash of the workspace-exploration tool prompts.
+
+    Hashes the ``{tool_name: description_string}`` map for the three
+    tools the rumil bridge exposes to ws-aware judges
+    (``search_workspace``, ``load_page``, ``explore_subgraph``). Used as
+    the ``:t<hash>`` suffix on ``rumil:ws:*`` and ``rumil:orch:*``
+    judge_model strings so edits to those tool docstrings fork the
+    dedup key.
+
+    Scope decision (documented so it doesn't drift): this covers only
+    the workspace-exploration family -- the tools directly passed to
+    the SDK in ``judge_pair_ws_aware``. The orch variant's closing call
+    has no tools (it's a plain ``text_call``), and the orchestrator's
+    dispatched calls use a broader tool set (find_considerations,
+    assess, scout-*, etc.) that isn't passed from this bridge; those
+    are covered by ``BLIND_JUDGE_VERSION`` bumps at the semantic level.
+    Hashing workspace-exploration for both ws and orch keeps the key
+    schemes parallel.
+
+    Parameters match the bridge's actual call sites: load_page's
+    default_detail is "content", explore_subgraph's questions_only is
+    False (the ws bridge uses the full-graph variant). If either of
+    those call-site parameters changes, the description text changes
+    naturally and the hash forks without further intervention.
+    """
+    db_stub = MagicMock()
+    trace_stub = MagicMock()
+    search_tool = make_search_tool(db_stub, trace_stub)
+    load_page_tool = make_load_page_tool(db_stub, trace_stub)
+    explore_tool = make_explore_subgraph_tool(db_stub, trace_stub, questions_only=False)
+    descriptions = {
+        search_tool.name: search_tool.description,
+        load_page_tool.name: load_page_tool.description,
+        explore_tool.name: explore_tool.description,
+    }
+    blob = json.dumps(descriptions, sort_keys=True)
+    return hashlib.sha256(blob.encode()).hexdigest()[:8]
 
 
 @dataclass

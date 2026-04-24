@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from rumil.calls.closing_reviewers import StandardClosingReview
 from rumil.calls.context_builders import SpecOnlyContext, active_spec_items_for_task
@@ -35,6 +35,13 @@ from rumil.models import (
 from rumil.settings import get_settings
 
 log = logging.getLogger(__name__)
+
+# Artefacts are inherently long-form (multi-page plans, retrospectives,
+# designs). Default structured-call budget is 20k which is too tight once
+# thinking tokens and JSON escaping overhead are factored in — truncation
+# manifests as a pydantic ValidationError on a mid-string EOF. 60k leaves
+# thinking budget and covers a ~20-30k-token artefact.
+_ARTEFACT_MAX_TOKENS = 60_000
 
 
 class ArtefactOutput(BaseModel):
@@ -72,16 +79,29 @@ class ArtefactWriter(WorkspaceUpdater):
             CallType.GENERATE_ARTEFACT.value,
             include_preamble=False,
         )
-        result = await structured_call(
-            system_prompt=system_prompt,
-            user_message=context.context_text,
-            response_model=ArtefactOutput,
-            metadata=LLMExchangeMetadata(
-                call_id=infra.call.id,
-                phase="generate_artefact",
-            ),
-            db=infra.db,
-        )
+        try:
+            result = await structured_call(
+                system_prompt=system_prompt,
+                user_message=context.context_text,
+                response_model=ArtefactOutput,
+                metadata=LLMExchangeMetadata(
+                    call_id=infra.call.id,
+                    phase="generate_artefact",
+                ),
+                db=infra.db,
+                max_tokens=_ARTEFACT_MAX_TOKENS,
+            )
+        except ValidationError as exc:
+            # messages.parse raises ValidationError when the model's JSON is
+            # truncated mid-string (usually a max_tokens hit). Don't crash the
+            # call — the refine loop will see this as a tool error via the
+            # regenerate_and_critique message and can retry or finalize.
+            raise RuntimeError(
+                f"generate_artefact: model output was truncated or malformed "
+                f"({exc.error_count()} pydantic error(s)). The artefact may "
+                "be too long for the current max_tokens; try a smaller request "
+                "or split the task."
+            ) from exc
         parsed = result.parsed
         if parsed is None:
             raise RuntimeError(

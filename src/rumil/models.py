@@ -31,6 +31,8 @@ class PageType(str, Enum):
     VIEW = "view"
     VIEW_ITEM = "view_item"
     VIEW_META = "view_meta"
+    SPEC_ITEM = "spec_item"  # prescriptive claim constraining a generated artefact
+    ARTEFACT = "artefact"  # long-form object produced by the generative workflow
 
 
 class PageDetail(str, Enum):
@@ -84,6 +86,10 @@ class CallType(str, Enum):
     CREATE_VIEW = "create_view"
     GLOBAL_PRIORITIZATION = "global_prioritization"
     UPDATE_VIEW = "update_view"
+    GENERATE_SPEC = "generate_spec"
+    GENERATE_ARTEFACT = "generate_artefact"
+    CRITIQUE_ARTEFACT = "critique_artefact"
+    REFINE_SPEC = "refine_spec"
     # Envelope call for mutations made from Claude Code's broader context
     # (not a rumil-internal call with carefully scoped prompt). Never
     # dispatchable from prioritization — only created by .claude/ skills.
@@ -139,6 +145,14 @@ class LinkType(str, Enum):
     VIEW_ITEM = "view_item"  # view -> view_item: item belongs to this view
     VIEW_OF = "view_of"  # view -> question: this view covers this question
     META_FOR = "meta_for"  # view_meta -> view_item or view: meta annotation
+    SPEC_OF = (
+        "spec_of"  # spec_item -> question: the artefact-task question this spec item constrains
+    )
+    ARTEFACT_OF = "artefact_of"  # artefact -> question: artefact produced for an artefact-task
+    CRITIQUE_OF = "critique_of"  # judgement -> artefact: this judgement critiques that artefact
+    GENERATED_FROM = (
+        "generated_from"  # artefact -> spec_item: spec items the artefact was generated from
+    )
 
 
 class MoveType(str, Enum):
@@ -159,6 +173,11 @@ class MoveType(str, Enum):
     UPDATE_EPISTEMIC = "UPDATE_EPISTEMIC"
     CREATE_VIEW_ITEM = "CREATE_VIEW_ITEM"
     PROPOSE_VIEW_ITEM = "PROPOSE_VIEW_ITEM"
+    ADD_SPEC_ITEM = "ADD_SPEC_ITEM"
+    SUPERSEDE_SPEC_ITEM = "SUPERSEDE_SPEC_ITEM"
+    DELETE_SPEC_ITEM = "DELETE_SPEC_ITEM"
+    FINALIZE_ARTEFACT = "FINALIZE_ARTEFACT"
+    REGENERATE_AND_CRITIQUE = "REGENERATE_AND_CRITIQUE"
 
 
 class CallStage(str, Enum):
@@ -362,6 +381,7 @@ class Page(BaseModel):
     sections: list[str] | None = None  # VIEW pages: ordered section names
     meta_type: str | None = None  # VIEW_META pages: priority/annotation/proposal
     run_id: str = ""
+    hidden: bool = False
 
     def is_active(self) -> bool:
         return not self.is_superseded

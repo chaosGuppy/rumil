@@ -1,6 +1,7 @@
 """Move registry: collects all MoveDefs."""
 
 from rumil.models import MoveType
+from rumil.moves.add_spec_item import MOVE as _add_spec_item
 from rumil.moves.base import MoveDef
 from rumil.moves.change_link_role import MOVE as _change_link_role
 from rumil.moves.create_claim import MOVE as _create_claim
@@ -13,6 +14,8 @@ from rumil.moves.create_question import (
 )
 from rumil.moves.create_view_item import MOVE as _create_view_item
 from rumil.moves.create_wiki_page import MOVE as _create_wiki_page
+from rumil.moves.delete_spec_item import MOVE as _delete_spec_item
+from rumil.moves.finalize_artefact import MOVE as _finalize_artefact
 from rumil.moves.flag_funniness import MOVE as _flag_funniness
 from rumil.moves.link_child_question import MOVE as _link_child_question
 from rumil.moves.link_consideration import MOVE as _link_consideration
@@ -20,8 +23,10 @@ from rumil.moves.link_related import MOVE as _link_related
 from rumil.moves.link_variant import MOVE as _link_variant
 from rumil.moves.load_page import MOVE as _load_page
 from rumil.moves.propose_view_item import MOVE as _propose_view_item
+from rumil.moves.regenerate_and_critique import MOVE as _regenerate_and_critique
 from rumil.moves.remove_link import MOVE as _remove_link
 from rumil.moves.report_duplicate import MOVE as _report_duplicate
+from rumil.moves.supersede_spec_item import MOVE as _supersede_spec_item
 from rumil.moves.update_epistemic import MOVE as _update_epistemic
 
 MOVES: dict[MoveType, MoveDef] = {
@@ -44,5 +49,10 @@ MOVES: dict[MoveType, MoveDef] = {
         _update_epistemic,
         _create_view_item,
         _propose_view_item,
+        _add_spec_item,
+        _supersede_spec_item,
+        _delete_spec_item,
+        _finalize_artefact,
+        _regenerate_and_critique,
     ]
 }

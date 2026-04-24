@@ -768,6 +768,16 @@
             }
           },
           {
+            "name": "include_hidden",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Hidden"
+            }
+          },
+          {
             "name": "staged_run_id",
             "in": "query",
             "required": false,
@@ -1060,6 +1070,16 @@
             }
           },
           {
+            "name": "include_hidden",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Hidden"
+            }
+          },
+          {
             "name": "project_id",
             "in": "query",
             "required": false,
@@ -1111,6 +1131,16 @@
             "schema": {
               "type": "string",
               "title": "Page Id"
+            }
+          },
+          {
+            "name": "include_hidden",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Hidden"
             }
           },
           {
@@ -1409,6 +1439,16 @@
             "schema": {
               "$ref": "#/components/schemas/Workspace",
               "default": "research"
+            }
+          },
+          {
+            "name": "include_hidden",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Hidden"
             }
           }
         ],
@@ -2825,6 +2865,10 @@
           "create_view",
           "global_prioritization",
           "update_view",
+          "generate_spec",
+          "generate_artefact",
+          "critique_artefact",
+          "refine_spec",
           "claude_code_direct",
           "versus_judge"
         ],
@@ -3173,6 +3217,64 @@
               }
             ],
             "title": "Budget"
+          },
+          "full_pages": {
+            "items": {
+              "$ref": "#/components/schemas/PageRef"
+            },
+            "type": "array",
+            "title": "Full Pages",
+            "default": []
+          },
+          "abstract_pages": {
+            "items": {
+              "$ref": "#/components/schemas/PageRef"
+            },
+            "type": "array",
+            "title": "Abstract Pages",
+            "default": []
+          },
+          "summary_pages": {
+            "items": {
+              "$ref": "#/components/schemas/PageRef"
+            },
+            "type": "array",
+            "title": "Summary Pages",
+            "default": []
+          },
+          "distillation_pages": {
+            "items": {
+              "$ref": "#/components/schemas/PageRef"
+            },
+            "type": "array",
+            "title": "Distillation Pages",
+            "default": []
+          },
+          "scope_linked_pages": {
+            "items": {
+              "$ref": "#/components/schemas/PageRef"
+            },
+            "type": "array",
+            "title": "Scope Linked Pages",
+            "default": []
+          },
+          "budget_usage": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Budget Usage",
+            "default": {}
+          },
+          "context_text": {
+            "type": "string",
+            "title": "Context Text",
+            "default": ""
+          },
+          "context_text_chars": {
+            "type": "integer",
+            "title": "Context Text Chars",
+            "default": 0
           }
         },
         "type": "object",
@@ -3183,7 +3285,15 @@
           "working_context_page_ids",
           "preloaded_page_ids",
           "source_page_id",
-          "budget"
+          "budget",
+          "full_pages",
+          "abstract_pages",
+          "summary_pages",
+          "distillation_pages",
+          "scope_linked_pages",
+          "budget_usage",
+          "context_text",
+          "context_text_chars"
         ],
         "title": "ContextBuiltEventOut"
       },
@@ -4918,6 +5028,17 @@
               }
             ],
             "title": "Tool Uses"
+          },
+          "langfuse_trace_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Langfuse Trace Url"
           }
         },
         "type": "object",
@@ -4935,7 +5056,8 @@
           "duration_ms",
           "cost_usd",
           "has_thinking",
-          "tool_uses"
+          "tool_uses",
+          "langfuse_trace_url"
         ],
         "title": "LLMExchangeEventOut"
       },
@@ -5228,7 +5350,11 @@
           "depends_on",
           "view_item",
           "view_of",
-          "meta_for"
+          "meta_for",
+          "spec_of",
+          "artefact_of",
+          "critique_of",
+          "generated_from"
         ],
         "title": "LinkType"
       },
@@ -5652,6 +5778,11 @@
             "type": "string",
             "title": "Run Id",
             "default": ""
+          },
+          "hidden": {
+            "type": "boolean",
+            "title": "Hidden",
+            "default": false
           }
         },
         "type": "object",
@@ -5680,7 +5811,8 @@
           "fruit_remaining",
           "sections",
           "meta_type",
-          "run_id"
+          "run_id",
+          "hidden"
         ],
         "title": "Page"
       },
@@ -5942,7 +6074,9 @@
           "summary",
           "view",
           "view_item",
-          "view_meta"
+          "view_meta",
+          "spec_item",
+          "artefact"
         ],
         "title": "PageType"
       },

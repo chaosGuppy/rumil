@@ -12,7 +12,6 @@ from pydantic import BaseModel, Field
 from rumil.calls.common import (
     ABSTRACT_INSTRUCTION,
     PageSummaryItem,
-    resolve_page_refs,
     save_page_abstracts,
 )
 from rumil.calls.stages import CallInfra, ContextBuilder, ContextResult
@@ -37,27 +36,10 @@ from rumil.models import (
     PageType,
 )
 from rumil.settings import get_settings
-from rumil.tracing.trace_events import ContextBuiltEvent
 
 log = logging.getLogger(__name__)
 
 _B2_SEMAPHORE = asyncio.Semaphore(15)
-
-
-async def _record_context_built(
-    infra: CallInfra,
-    working_page_ids: Sequence[str],
-    preloaded_ids: Sequence[str],
-    *,
-    source_page_id: str | None = None,
-) -> None:
-    await infra.trace.record(
-        ContextBuiltEvent(
-            working_context_page_ids=await resolve_page_refs(working_page_ids, infra.db),
-            preloaded_page_ids=await resolve_page_refs(preloaded_ids, infra.db),
-            source_page_id=source_page_id,
-        )
-    )
 
 
 class CreateViewContext(ContextBuilder):
@@ -123,11 +105,15 @@ class CreateViewContext(ContextBuilder):
                     ]
             context_text += "\n".join(parts_pre)
 
-        await _record_context_built(infra, working_page_ids, preloaded_ids)
         return ContextResult(
             context_text=context_text,
             working_page_ids=working_page_ids,
             preloaded_ids=preloaded_ids,
+            full_page_ids=result.full_page_ids,
+            abstract_page_ids=result.abstract_page_ids,
+            summary_page_ids=result.summary_page_ids,
+            distillation_page_ids=result.distillation_page_ids,
+            budget_usage=result.budget_usage,
         )
 
 
@@ -150,6 +136,7 @@ class EmbeddingContext(ContextBuilder):
             query,
             infra.db,
             scope_question_id=infra.question_id,
+            scope_linked_detail=PageDetail.ABSTRACT,
             require_judgement_for_questions=self._require_judgement_for_questions,
         )
         working_page_ids = result.page_ids
@@ -177,11 +164,15 @@ class EmbeddingContext(ContextBuilder):
                     ]
             context_text += "\n".join(parts)
 
-        await _record_context_built(infra, working_page_ids, preloaded_ids)
         return ContextResult(
             context_text=context_text,
             working_page_ids=working_page_ids,
             preloaded_ids=preloaded_ids,
+            full_page_ids=result.full_page_ids,
+            abstract_page_ids=result.abstract_page_ids,
+            summary_page_ids=result.summary_page_ids,
+            distillation_page_ids=result.distillation_page_ids,
+            budget_usage=result.budget_usage,
         )
 
 
@@ -256,6 +247,12 @@ class ScoutSiblingAwareContext(EmbeddingContext):
             context_text=prepended,
             working_page_ids=result.working_page_ids,
             preloaded_ids=result.preloaded_ids,
+            full_page_ids=result.full_page_ids,
+            abstract_page_ids=result.abstract_page_ids,
+            summary_page_ids=result.summary_page_ids,
+            distillation_page_ids=result.distillation_page_ids,
+            budget_usage=result.budget_usage,
+            source_page_id=result.source_page_id,
         )
 
 
@@ -276,12 +273,6 @@ class IngestEmbeddingContext(ContextBuilder):
             scope_question_id=infra.question_id,
         )
         working_page_ids = result.page_ids
-        await _record_context_built(
-            infra,
-            working_page_ids,
-            [],
-            source_page_id=self._source_page.id,
-        )
 
         formatted_source = await format_page(
             self._source_page,
@@ -297,6 +288,12 @@ class IngestEmbeddingContext(ContextBuilder):
         return ContextResult(
             context_text=result.context_text + source_section,
             working_page_ids=working_page_ids,
+            full_page_ids=result.full_page_ids,
+            abstract_page_ids=result.abstract_page_ids,
+            summary_page_ids=result.summary_page_ids,
+            distillation_page_ids=result.distillation_page_ids,
+            budget_usage=result.budget_usage,
+            source_page_id=self._source_page.id,
         )
 
 
@@ -334,19 +331,14 @@ class WebResearchEmbeddingContext(ContextBuilder):
             emb_result.budget_usage,
         )
 
-        await infra.trace.record(
-            ContextBuiltEvent(
-                working_context_page_ids=await resolve_page_refs(
-                    working_page_ids,
-                    infra.db,
-                ),
-                preloaded_page_ids=[],
-            )
-        )
-
         return ContextResult(
             context_text=context_text,
             working_page_ids=working_page_ids,
+            full_page_ids=emb_result.full_page_ids,
+            abstract_page_ids=emb_result.abstract_page_ids,
+            summary_page_ids=emb_result.summary_page_ids,
+            distillation_page_ids=emb_result.distillation_page_ids,
+            budget_usage=emb_result.budget_usage,
         )
 
 
@@ -1035,9 +1027,273 @@ class BigAssessContext(ContextBuilder):
             if parts:
                 context_text += "\n".join(parts)
 
-        await _record_context_built(infra, working_page_ids, all_extra)
         return ContextResult(
             context_text=context_text,
             working_page_ids=working_page_ids,
             preloaded_ids=all_extra,
+            full_page_ids=result.full_page_ids,
+            abstract_page_ids=result.abstract_page_ids,
+            summary_page_ids=result.summary_page_ids,
+            distillation_page_ids=result.distillation_page_ids,
+            budget_usage=result.budget_usage,
+        )
+
+
+class SpecOnlyContext(ContextBuilder):
+    """Context containing ONLY the spec items for an artefact-task question.
+
+    Used by generate_artefact: the generator must produce the artefact from
+    the spec alone, with no access to the broader workspace. Any information
+    the artefact should reflect must be captured in a spec item.
+    """
+
+    async def build_context(self, infra: CallInfra) -> ContextResult:
+        task = await infra.db.get_page(infra.question_id)
+        if task is None:
+            raise ValueError(
+                f"SpecOnlyContext: artefact-task question {infra.question_id} not found"
+            )
+
+        spec_pages = await active_spec_items_for_task(infra.question_id, infra.db)
+
+        parts: list[str] = [
+            "# Artefact task",
+            "",
+            task.headline,
+            "",
+            task.content or "(no further description)",
+            "",
+            "---",
+            "",
+            f"# Spec ({len(spec_pages)} items)",
+            "",
+        ]
+        if not spec_pages:
+            parts.append("(no spec items yet)")
+        else:
+            for i, spec in enumerate(spec_pages, start=1):
+                parts += [
+                    f"## {i}. {spec.headline}",
+                    "",
+                    spec.content,
+                    "",
+                ]
+        context_text = "\n".join(parts)
+
+        working_page_ids = [task.id] + [p.id for p in spec_pages]
+        return ContextResult(
+            context_text=context_text,
+            working_page_ids=working_page_ids,
+            preloaded_ids=[],
+        )
+
+
+class CritiqueContext(ContextBuilder):
+    """Context for critiquing the latest artefact on an artefact-task question.
+
+    Includes the artefact-task question, the latest active Artefact produced
+    for it, and an embedding-based sweep over the broader workspace. Spec
+    items are deliberately EXCLUDED — the critic judges the artefact against
+    the request and what the workspace knows, not against the spec. That is
+    how spec-gaps get surfaced.
+    """
+
+    async def build_context(self, infra: CallInfra) -> ContextResult:
+        task = await infra.db.get_page(infra.question_id)
+        if task is None:
+            raise ValueError(
+                f"CritiqueContext: artefact-task question {infra.question_id} not found"
+            )
+
+        artefact = await infra.db.latest_artefact_for_task(infra.question_id)
+        if artefact is None:
+            raise ValueError(
+                f"CritiqueContext: no artefact found for task {infra.question_id}; "
+                "run generate_artefact first."
+            )
+
+        query = task.headline or task.content[:200]
+        embedding_result = await build_embedding_based_context(
+            query,
+            infra.db,
+            scope_question_id=infra.question_id,
+        )
+
+        parts: list[str] = [
+            "# Artefact task",
+            "",
+            task.headline,
+            "",
+            task.content or "(no further description)",
+            "",
+            "---",
+            "",
+            "# Artefact under review",
+            "",
+            f"**{artefact.headline}**",
+            "",
+            artefact.content,
+            "",
+            "---",
+            "",
+            "# Broader workspace context",
+            "",
+            embedding_result.context_text,
+        ]
+        context_text = "\n".join(parts)
+
+        working_page_ids = [task.id, artefact.id, *embedding_result.page_ids]
+        return ContextResult(
+            context_text=context_text,
+            working_page_ids=working_page_ids,
+            preloaded_ids=[],
+        )
+
+
+async def active_spec_items_for_task(task_id: str, db) -> list[Page]:
+    """Return active SPEC_ITEM pages SPEC_OF-linked to *task_id*.
+
+    Sorted by ``created_at`` (stable insertion order) so prompt rendering is
+    deterministic across runs — important for prompt caching and for keeping
+    generated artefacts consistent when the spec hasn't actually changed.
+    """
+    links = await db.get_links_to(task_id)
+    spec_of_links = [l for l in links if l.link_type == LinkType.SPEC_OF]
+    if not spec_of_links:
+        return []
+    pages_by_id = await db.get_pages_by_ids([l.from_page_id for l in spec_of_links])
+    active = [
+        p for p in pages_by_id.values() if p.is_active() and p.page_type == PageType.SPEC_ITEM
+    ]
+    active.sort(key=lambda p: (p.created_at, p.id))
+    return active
+
+
+class RefinementContext(ContextBuilder):
+    """Context for the refine_spec call.
+
+    Shows the refiner:
+    1. The original artefact-task request.
+    2. The current spec (same format as SpecOnlyContext).
+    3. The last-3 iteration triples — for each of the three most recent
+       artefact versions linked ARTEFACT_OF to the task: the spec items it
+       was generated from (via GENERATED_FROM — captured at generation time
+       so deleted spec items still appear in historical triples), the
+       artefact itself, and its critique.
+
+    Does NOT do a main-workspace embedding sweep — refinement operates on
+    the closed feedback loop of spec → artefact → critique.
+    """
+
+    def __init__(self, window: int = 3) -> None:
+        self._window = window
+
+    async def build_context(self, infra: CallInfra) -> ContextResult:
+        task = await infra.db.get_page(infra.question_id)
+        if task is None:
+            raise ValueError(
+                f"RefinementContext: artefact-task question {infra.question_id} not found"
+            )
+
+        current_spec = await active_spec_items_for_task(infra.question_id, infra.db)
+
+        links = await infra.db.get_links_to(infra.question_id)
+        artefact_links = [l for l in links if l.link_type == LinkType.ARTEFACT_OF]
+        artefact_ids = [l.from_page_id for l in artefact_links]
+        artefacts_by_id = await infra.db.get_pages_by_ids(artefact_ids)
+        artefacts = [p for p in artefacts_by_id.values() if p.page_type == PageType.ARTEFACT]
+        artefacts.sort(key=lambda p: (p.created_at, p.id))
+        recent = artefacts[-self._window :]
+
+        triples: list[tuple[Page, list[Page], Page | None]] = []
+        for artefact in recent:
+            snapshot_links = await infra.db.get_links_from(artefact.id)
+            spec_ids = [
+                l.to_page_id for l in snapshot_links if l.link_type == LinkType.GENERATED_FROM
+            ]
+            snapshot_pages_by_id = await infra.db.get_pages_by_ids(spec_ids) if spec_ids else {}
+            snapshot_specs = [
+                snapshot_pages_by_id[pid] for pid in spec_ids if pid in snapshot_pages_by_id
+            ]
+            snapshot_specs.sort(key=lambda p: (p.created_at, p.id))
+
+            inbound = await infra.db.get_links_to(artefact.id)
+            critique_link_ids = [
+                l.from_page_id for l in inbound if l.link_type == LinkType.CRITIQUE_OF
+            ]
+            critique_pages_by_id = (
+                await infra.db.get_pages_by_ids(critique_link_ids) if critique_link_ids else {}
+            )
+            critiques = [
+                p
+                for p in critique_pages_by_id.values()
+                if p.is_active() and p.page_type == PageType.JUDGEMENT
+            ]
+            latest_critique = max(critiques, key=lambda p: p.created_at) if critiques else None
+
+            triples.append((artefact, snapshot_specs, latest_critique))
+
+        parts: list[str] = [
+            "# Artefact task",
+            "",
+            task.headline,
+            "",
+            task.content or "(no further description)",
+            "",
+            "---",
+            "",
+            f"# Current spec ({len(current_spec)} items)",
+            "",
+        ]
+        if current_spec:
+            for i, spec in enumerate(current_spec, start=1):
+                parts += [
+                    f"## {i}. [{spec.id[:8]}] {spec.headline}",
+                    "",
+                    spec.content,
+                    "",
+                ]
+        else:
+            parts.append("(no spec items)")
+
+        parts += ["", "---", "", f"# Last {len(triples)} iterations (oldest first)", ""]
+        if not triples:
+            parts.append("(no iterations yet — call regenerate_and_critique to start)")
+        else:
+            for iter_index, (artefact, snapshot_specs, critique) in enumerate(triples, start=1):
+                parts += [f"## Iteration {iter_index} — artefact [{artefact.id[:8]}]", ""]
+                parts.append(f"### Spec used ({len(snapshot_specs)} items)")
+                parts.append("")
+                if snapshot_specs:
+                    for spec in snapshot_specs:
+                        parts.append(f"- [{spec.id[:8]}] **{spec.headline}** — {spec.content}")
+                else:
+                    parts.append("(none captured)")
+                parts += ["", f"### Artefact: {artefact.headline}", "", artefact.content, ""]
+                if critique is not None:
+                    grade = critique.extra.get("grade")
+                    issues = critique.extra.get("issues") or []
+                    grade_label = f"**Grade:** {grade}/10" if grade is not None else ""
+                    parts += ["### Critique", "", grade_label]
+                    if issues:
+                        parts.append("")
+                        parts.append("**Issues:**")
+                        for issue in issues:
+                            parts.append(f"- {issue}")
+                    parts.append("")
+                else:
+                    parts += ["### Critique", "", "(no critique recorded for this iteration)", ""]
+                parts.append("---")
+                parts.append("")
+
+        context_text = "\n".join(parts)
+        working_page_ids = [
+            task.id,
+            *[p.id for p in current_spec],
+            *[a.id for a, _, _ in triples],
+        ]
+        return ContextResult(
+            context_text=context_text,
+            working_page_ids=working_page_ids,
+            preloaded_ids=[],
         )

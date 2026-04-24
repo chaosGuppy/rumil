@@ -28,8 +28,14 @@ def _word_count(text: str) -> int:
 
 
 def _content_hash(essay: Essay) -> str:
+    # Title is rendered into the completion prompt via `# {task.title}`
+    # in render_prompt, so a title-only re-fetch changes what the model
+    # sees and must fork prefix_config_hash. Blocks alone aren't enough.
     payload = json.dumps(
-        [{"type": b.type, "text": b.text} for b in essay.blocks],
+        {
+            "title": essay.title,
+            "blocks": [{"type": b.type, "text": b.text} for b in essay.blocks],
+        },
         sort_keys=True,
         ensure_ascii=False,
     )

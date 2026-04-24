@@ -327,7 +327,10 @@ async def _judge_pair_ws_aware_inner(
 
     try:
         result = await run_sdk_agent(config)
-        report_text = "\n\n".join(result.all_assistant_text)
+        # See _run_orch_closer for the rationale: the shared prompt shell
+        # pins the verdict to the final turn, so label extraction should
+        # only scan the final turn's text.
+        report_text = "\n\n".join(result.last_assistant_text)
         call.status = CallStatus.COMPLETE
         call.completed_at = datetime.now(UTC)
         call.result_summary = report_text[:500]
@@ -464,7 +467,12 @@ async def _run_orch_closer(
     try:
         with override_settings(sdk_agent_max_turns=5):
             result = await run_sdk_agent(config)
-        report_text = "\n\n".join(result.all_assistant_text)
+        # Both the versus-judge-shell system prompt and the inline user
+        # prompt instruct "End your response with ... on its own line", so
+        # the verdict belongs in the FINAL turn. Scan only last_assistant_text
+        # for the label — earlier turns may mention labels mid-thought
+        # ("might be A somewhat preferred") that shouldn't count.
+        report_text = "\n\n".join(result.last_assistant_text)
         call.status = CallStatus.COMPLETE
         call.completed_at = datetime.now(UTC)
         call.result_summary = report_text[:500]

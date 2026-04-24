@@ -42,4 +42,10 @@ JUDGE_PROMPT_VERSION = 2
 # View + view_items inline — materially changes what signal the
 # verdict is conditioned on, so rumil:orch rows fork cleanly from
 # pre-bump rows.
-BLIND_JUDGE_VERSION = 5
+# v6 (2026-04-24): both ws and orch now extract the 7-point label
+# from last_assistant_text (final turn only) instead of
+# all_assistant_text (joined across all turns). The prompt shell
+# pins the verdict to the final turn ("End your response with ...");
+# earlier turns may mention labels mid-thought and those shouldn't
+# count.
+BLIND_JUDGE_VERSION = 6

@@ -57,6 +57,7 @@ from rumil.models import CallStage, CallType
 from rumil.orchestrators import create_root_question
 from rumil.orchestrators.robustify import RobustifyOrchestrator
 from rumil.settings import get_settings
+from rumil.tracing import get_langfuse
 
 _SCOUT_CALL_TYPES: dict[str, tuple[CallType, type[CallRunner]]] = {
     "scout-subquestions": (CallType.SCOUT_SUBQUESTIONS, ScoutSubquestionsCall),
@@ -252,7 +253,11 @@ async def run(args: argparse.Namespace) -> None:
         print("Provide a question text or --question-id.")
         return
 
-    print(f"Trace: {frontend}/traces/{db.run_id}\n")
+    print(f"Trace: {frontend}/traces/{db.run_id}")
+    if get_langfuse() is not None:
+        lf_base = settings.langfuse_base_url.rstrip("/")
+        print(f"Langfuse session: {lf_base}/sessions?sessionId={db.run_id}")
+    print()
     if adopted_run_id:
         await db.add_budget(args.budget)
     else:

@@ -379,7 +379,7 @@ export type CallSummary = {
 /**
  * CallType
  */
-export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'ab_eval' | 'ab_eval_comparison' | 'ab_eval_summary' | 'run_eval' | 'create_view' | 'global_prioritization' | 'update_view' | 'claude_code_direct';
+export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'ab_eval' | 'ab_eval_comparison' | 'ab_eval_summary' | 'run_eval' | 'create_view' | 'global_prioritization' | 'update_view' | 'generate_spec' | 'generate_artefact' | 'critique_artefact' | 'refine_spec' | 'claude_code_direct';
 
 /**
  * CallTypeFruitScoreItem
@@ -927,6 +927,10 @@ export type LlmExchangeEventOut = {
     tool_uses: Array<{
         [key: string]: unknown;
     }> | null;
+    /**
+     * Langfuse Trace Url
+     */
+    langfuse_trace_url: string | null;
 };
 
 /**
@@ -1063,7 +1067,7 @@ export type LinkSubquestionsCompleteEventOut = {
 /**
  * LinkType
  */
-export type LinkType = 'consideration' | 'child_question' | 'supersedes' | 'related' | 'answers' | 'variant' | 'summarizes' | 'cites' | 'depends_on' | 'view_item' | 'view_of' | 'meta_for';
+export type LinkType = 'consideration' | 'child_question' | 'supersedes' | 'related' | 'answers' | 'variant' | 'summarizes' | 'cites' | 'depends_on' | 'view_item' | 'view_of' | 'meta_for' | 'spec_of' | 'artefact_of' | 'critique_of' | 'generated_from';
 
 /**
  * LinkedPageOut
@@ -1245,6 +1249,10 @@ export type Page = {
      * Run Id
      */
     run_id: string;
+    /**
+     * Hidden
+     */
+    hidden: boolean;
 };
 
 /**
@@ -1395,7 +1403,7 @@ export type PageRef = {
 /**
  * PageType
  */
-export type PageType = 'source' | 'claim' | 'question' | 'judgement' | 'wiki' | 'summary' | 'view' | 'view_item' | 'view_meta';
+export type PageType = 'source' | 'claim' | 'question' | 'judgement' | 'wiki' | 'summary' | 'view' | 'view_item' | 'view_meta' | 'spec_item' | 'artefact';
 
 /**
  * PaginatedPagesOut
@@ -2432,6 +2440,10 @@ export type ListPagesApiProjectsProjectIdPagesGetData = {
          */
         limit?: number;
         /**
+         * Include Hidden
+         */
+        include_hidden?: boolean;
+        /**
          * Staged Run Id
          */
         staged_run_id?: string | null;
@@ -2619,6 +2631,10 @@ export type GetDependentsApiPagesPageIdDependentsGetData = {
     };
     query?: {
         /**
+         * Include Hidden
+         */
+        include_hidden?: boolean;
+        /**
          * Project Id
          */
         project_id?: string;
@@ -2655,6 +2671,10 @@ export type GetDependenciesApiPagesPageIdDependenciesGetData = {
         page_id: string;
     };
     query?: {
+        /**
+         * Include Hidden
+         */
+        include_hidden?: boolean;
         /**
          * Project Id
          */
@@ -2841,6 +2861,10 @@ export type ListRootQuestionsApiProjectsProjectIdQuestionsGetData = {
     };
     query?: {
         workspace?: Workspace;
+        /**
+         * Include Hidden
+         */
+        include_hidden?: boolean;
     };
     url: '/api/projects/{project_id}/questions';
 };

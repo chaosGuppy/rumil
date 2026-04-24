@@ -13,6 +13,7 @@ from rumil.calls.common import mark_call_completed, resolve_page_refs
 from rumil.database import DB
 from rumil.models import Call, CallStage, CallStatus, CallType, Dispatch, Move, MoveType
 from rumil.moves.base import MoveState
+from rumil.tracing import get_langfuse, observe, phase_span, propagate_attributes
 from rumil.tracing.page_load_tracking import page_track_scope
 from rumil.tracing.trace_events import ContextBuiltEvent, ErrorEvent
 from rumil.tracing.tracer import CallTrace, reset_trace, set_trace
@@ -202,14 +203,34 @@ class CallRunner(ABC):
             )
         )
 
+    @observe(name="call.run")
     async def run(self) -> None:
         call_db = await self.infra.db.fork()
         self.infra.db = call_db
         self.infra.state.db = call_db
         self.infra.trace.db = call_db
         trace_token = set_trace(self.infra.trace)
+        lf = get_langfuse()
+        if lf is not None:
+            lf.update_current_span(
+                name=f"call.{self.infra.call.call_type.value}",
+                metadata={
+                    "call_id": self.infra.call.id,
+                    "call_type": self.infra.call.call_type.value,
+                    "question_id": self.infra.question_id,
+                    "parent_call_id": self.infra.call.parent_call_id,
+                },
+            )
         try:
-            await self._run_stages()
+            with propagate_attributes(
+                session_id=self.infra.db.run_id or None,
+                metadata={
+                    "call_type": self.infra.call.call_type.value,
+                    "call_id": self.infra.call.id,
+                },
+                tags=[f"call_type:{self.infra.call.call_type.value}"],
+            ):
+                await self._run_stages()
         finally:
             try:
                 await call_db.close()
@@ -229,7 +250,8 @@ class CallRunner(ABC):
                     call_params=self.infra.call.call_params,
                 )
 
-                self.context_result = await self.context_builder.build_context(self.infra)
+                with phase_span("build_context"):
+                    self.context_result = await self.context_builder.build_context(self.infra)
                 await self._record_context_built(self.context_result)
                 if self.up_to_stage == CallStage.BUILD_CONTEXT:
                     await mark_call_completed(
@@ -240,10 +262,11 @@ class CallRunner(ABC):
                     await self.infra.trace.flush_page_loads()
                     return
 
-                self.update_result = await self.workspace_updater.update_workspace(
-                    self.infra,
-                    self.context_result,
-                )
+                with phase_span("update_workspace"):
+                    self.update_result = await self.workspace_updater.update_workspace(
+                        self.infra,
+                        self.context_result,
+                    )
                 if self.up_to_stage == CallStage.UPDATE_WORKSPACE:
                     await mark_call_completed(
                         self.infra.call,
@@ -253,11 +276,12 @@ class CallRunner(ABC):
                     await self.infra.trace.flush_page_loads()
                     return
 
-                await self.closing_reviewer.closing_review(
-                    self.infra,
-                    self.context_result,
-                    self.update_result,
-                )
+                with phase_span("closing_review"):
+                    await self.closing_reviewer.closing_review(
+                        self.infra,
+                        self.context_result,
+                        self.update_result,
+                    )
                 await self.infra.trace.flush_page_loads()
             except Exception as e:
                 await self.infra.trace.flush_page_loads()

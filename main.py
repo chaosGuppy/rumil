@@ -43,6 +43,20 @@ from rumil.run_eval.agents import EVAL_AGENTS, EvalAgentSpec
 from rumil.settings import Settings, _settings_var, get_settings
 from rumil.sources import create_source_page, run_ingest_calls
 from rumil.summary import generate_summary, save_summary
+from rumil.tracing import get_langfuse
+
+
+def _maybe_print_langfuse_session(db: DB, *, indent: str = "") -> None:
+    """Print the Langfuse session URL when Langfuse is configured.
+
+    Called alongside the in-house "Trace:" prints so users can jump straight
+    into Langfuse for LLM-call detail. No-op when Langfuse is disabled.
+    """
+    if get_langfuse() is None:
+        return
+    settings = get_settings()
+    lf_base = settings.langfuse_base_url.rstrip("/")
+    print(f"{indent}Langfuse: {lf_base}/sessions?sessionId={db.run_id}")
 
 
 @dataclasses.dataclass
@@ -177,7 +191,9 @@ async def cmd_ingest(
     frontend = get_settings().frontend_url.rstrip("/")
     print(f"\nExtracting considerations for: {question.headline[:80]}")
     print(f"Budget: {effective_budget} call{'s' if effective_budget != 1 else ''}")
-    print(f"Trace:  {frontend}/traces/{db.run_id}\n")
+    print(f"Trace:  {frontend}/traces/{db.run_id}")
+    _maybe_print_langfuse_session(db, indent=" ")
+    print()
     await db.init_budget(effective_budget)
     made = await run_ingest_calls(source_pages, for_question_id, db)
     total, used = await db.get_budget()
@@ -202,7 +218,9 @@ async def cmd_evaluate(question_id: str, db: DB, *, eval_type: str = "default") 
 
     frontend = get_settings().frontend_url.rstrip("/")
     print(f"\nEvaluating judgement for: {question.headline[:80]}")
-    print(f"Trace: {frontend}/traces/{db.run_id}\n")
+    print(f"Trace: {frontend}/traces/{db.run_id}")
+    _maybe_print_langfuse_session(db)
+    print()
 
     call = await run_evaluation(question.id, db, eval_type=eval_type)
     print(f"\nEvaluation complete (call {call.id}).\n")
@@ -272,7 +290,9 @@ async def cmd_ground(eval_call_id: str, db: DB, *, from_stage: int = 1) -> None:
     print(f"\nRunning grounding feedback for: {question.headline[:80]}")
     if from_stage > 1:
         print(f"Resuming from stage {from_stage}")
-    print(f"Trace: {frontend}/traces/{db.run_id}\n")
+    print(f"Trace: {frontend}/traces/{db.run_id}")
+    _maybe_print_langfuse_session(db)
+    print()
 
     result = await run_grounding_feedback(
         call.scope_page_id,
@@ -335,7 +355,9 @@ async def cmd_feedback_update(
 
     frontend = get_settings().frontend_url.rstrip("/")
     print(f"\nRunning feedback update for: {question.headline[:80]}")
-    print(f"Trace: {frontend}/traces/{db.run_id}\n")
+    print(f"Trace: {frontend}/traces/{db.run_id}")
+    _maybe_print_langfuse_session(db)
+    print()
 
     if investigation_budget is not None:
         get_settings().feedback_investigation_budget = investigation_budget
@@ -390,7 +412,9 @@ async def cmd_feedback_update_from_file(
     frontend = get_settings().frontend_url.rstrip("/")
     print(f"\nRunning feedback update for: {question.headline[:80]}")
     print(f"Source: {file_path}")
-    print(f"Trace: {frontend}/traces/{db.run_id}\n")
+    print(f"Trace: {frontend}/traces/{db.run_id}")
+    _maybe_print_langfuse_session(db)
+    print()
 
     if investigation_budget is not None:
         get_settings().feedback_investigation_budget = investigation_budget
@@ -559,6 +583,7 @@ async def cmd_new(
     print(f"Headline:     {q.headline}")
     print(f"Budget:       {budget} research calls")
     print(f"Trace:        {frontend}/traces/{db.run_id}")
+    _maybe_print_langfuse_session(db, indent="       ")
 
     if ingest_files:
         source_pages = []
@@ -747,6 +772,7 @@ async def cmd_continue(
     )
     print(f"Budget:       {additional_budget} research calls")
     print(f"Trace:        {frontend}/traces/{db.run_id}")
+    _maybe_print_langfuse_session(db, indent="       ")
 
     if chat_first:
         source_pages: list[Page] = []

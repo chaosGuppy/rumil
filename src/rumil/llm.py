@@ -177,15 +177,27 @@ _SCOUT_BUDGET_CALL_TYPES: frozenset[str] = frozenset(
 )
 
 
-def build_system_prompt(call_type: str, *, include_citations: bool = True) -> str:
+def build_system_prompt(
+    call_type: str,
+    *,
+    include_preamble: bool = True,
+    include_citations: bool = True,
+) -> str:
     """Combine preamble + call-type instructions + citations into one system prompt.
 
     Pass ``include_citations=False`` for calls that do not create any content-bearing
     pages (e.g. prioritization, scoring) — the inline-citation rules have nothing to
     attach to in those calls and only add noise.
+
+    Pass ``include_preamble=False`` for calls whose prompts must not assume any
+    rumil-workspace framing (e.g. generate_artefact, where the LLM is acting as
+    a domain-neutral writer with only a spec for context). When preamble is off,
+    citations and grounding are also skipped since they're workspace-specific.
     """
-    preamble = _load_file("preamble.md")
     instructions = _load_file(f"{call_type}.md")
+    if not include_preamble:
+        return instructions
+    preamble = _load_file("preamble.md")
     grounding = _load_file("grounding.md")
     parts = [preamble, instructions]
     if include_citations:
@@ -356,13 +368,17 @@ class LLMExchangeMetadata:
 
     Encapsulates the parameters needed by save_llm_exchange that are not
     already present in the call_api / structured_call signatures.
+
+    `user_message` is only used for single-turn calls (text_call). For
+    multi-turn calls the full message stack is serialized automatically
+    from the `messages` arg and persisted to `user_messages` on the
+    exchange row.
     """
 
     call_id: str
     phase: str
     round_num: int | None = None
     user_message: str | None = None
-    user_messages: list[dict] | None = None
 
 
 async def _save_exchange(
@@ -377,6 +393,7 @@ async def _save_exchange(
     duration_ms: int,
     cache_creation_input_tokens: int = 0,
     cache_read_input_tokens: int = 0,
+    user_messages: Sequence[dict] | None = None,
 ) -> None:
     """Persist an LLM exchange and record a trace event."""
     exchange_id = await db.save_llm_exchange(
@@ -392,7 +409,7 @@ async def _save_exchange(
         round_num=metadata.round_num,
         cache_creation_input_tokens=cache_creation_input_tokens or None,
         cache_read_input_tokens=cache_read_input_tokens or None,
-        user_messages=metadata.user_messages,
+        user_messages=user_messages,
     )
     cost_usd = compute_cost(
         model=model,
@@ -509,8 +526,7 @@ async def call_api(
                         "content": block.model_dump(mode="json")["content"],
                     }
                 )
-        if metadata.user_messages is None and len(messages) > 1:
-            metadata.user_messages = _serialize_messages(messages)
+        serialized = _serialize_messages(messages) if len(messages) > 1 else None
         try:
             await _save_exchange(
                 metadata,
@@ -527,6 +543,7 @@ async def call_api(
                 )
                 or 0,
                 cache_read_input_tokens=getattr(response.usage, "cache_read_input_tokens", 0) or 0,
+                user_messages=serialized,
             )
         except Exception as exc:
             log.error(
@@ -779,12 +796,13 @@ async def _structured_call_parse(
         if isinstance(block, TextBlock):
             response_text += block.text
     if metadata and db:
-        if metadata.user_message is None and metadata.user_messages is None:
+        serialized: Sequence[dict] | None = None
+        if metadata.user_message is None:
             if len(msg_list) == 1:
                 content = msg_list[0].get("content", "")
                 metadata.user_message = content if isinstance(content, str) else None
             if len(msg_list) > 1 or metadata.user_message is None:
-                metadata.user_messages = _serialize_messages(msg_list)
+                serialized = _serialize_messages(msg_list)
         await _save_exchange(
             metadata,
             db=db,
@@ -798,6 +816,7 @@ async def _structured_call_parse(
             cache_creation_input_tokens=getattr(response.usage, "cache_creation_input_tokens", 0)
             or 0,
             cache_read_input_tokens=getattr(response.usage, "cache_read_input_tokens", 0) or 0,
+            user_messages=serialized,
         )
     if response.parsed_output is not None:
         log.debug(

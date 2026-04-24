@@ -10,6 +10,7 @@ spec:
   parentRefs:
   - name: shared-tls-gateway
     namespace: cert-manager
+    sectionName: https
   hostnames:
   - {{ .Values.frontend.httproute.host | quote }}
   rules:

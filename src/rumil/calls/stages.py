@@ -69,6 +69,7 @@ class UpdateResult:
     messages: list[dict] = field(default_factory=list)
     last_fruit_score: int | None = None
     rounds_completed: int = 0
+    phase_summary: str = ""
 
 
 class ContextBuilder(ABC):

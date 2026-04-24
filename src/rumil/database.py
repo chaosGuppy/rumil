@@ -138,7 +138,7 @@ _SLIM_PAGE_COLUMNS = (
     "id,page_type,layer,workspace,headline,abstract,"
     "epistemic_status,epistemic_type,credence,credence_reasoning,"
     "robustness,robustness_reasoning,extra,is_superseded,"
-    "project_id,created_at,superseded_by,run_id"
+    "project_id,created_at,superseded_by,run_id,hidden"
 )
 
 
@@ -169,6 +169,7 @@ def _row_to_page(row: dict[str, Any]) -> Page:
         sections=row.get("sections"),
         meta_type=row.get("meta_type"),
         run_id=row.get("run_id") or "",
+        hidden=bool(row.get("hidden", False)),
     )
 
 
@@ -231,6 +232,7 @@ class MutationState:
     __slots__ = (
         "credence_source",
         "deleted_links",
+        "hidden_overrides",
         "latest_credence",
         "latest_robustness",
         "link_role_overrides",
@@ -248,6 +250,7 @@ class MutationState:
         self.latest_robustness: dict[str, tuple[int, str]] = {}
         self.credence_source: dict[str, str] = {}
         self.robustness_source: dict[str, str] = {}
+        self.hidden_overrides: dict[str, bool] = {}
 
 
 class DB:
@@ -376,6 +379,8 @@ class DB:
                     source = payload.get("source_page_id")
                     if source:
                         state.robustness_source[tid] = source
+            elif et == "set_hidden" and "hidden" in payload:
+                state.hidden_overrides[tid] = bool(payload["hidden"])
         self._mutation_cache = state
         return state
 
@@ -390,6 +395,7 @@ class DB:
             and not state.page_content_overrides
             and not state.latest_credence
             and not state.latest_robustness
+            and not state.hidden_overrides
         ):
             return list(pages)
         result: list[Page] = []
@@ -408,6 +414,8 @@ class DB:
                 value, reasoning = state.latest_robustness[p.id]
                 updates["robustness"] = value
                 updates["robustness_reasoning"] = reasoning
+            if p.id in state.hidden_overrides:
+                updates["hidden"] = state.hidden_overrides[p.id]
             if updates:
                 p = p.model_copy(update=updates)
             result.append(p)
@@ -524,6 +532,7 @@ class DB:
                     "run_id": self.run_id,
                     "staged": self.staged,
                     "abstract": page.abstract,
+                    "hidden": page.hidden,
                 }
             )
         )
@@ -815,13 +824,19 @@ class DB:
             return f'"{page.headline[:60]}" [{page_id[:8]}]'
         return f"[{page_id[:8]}]"
 
-    async def get_pages_slim(self, active_only: bool = True) -> list[Page]:
+    async def get_pages_slim(
+        self,
+        active_only: bool = True,
+        include_hidden: bool = False,
+    ) -> list[Page]:
         """Fetch all pages without the content field — safe for bulk loads."""
         query = self.client.table("pages").select(_SLIM_PAGE_COLUMNS)
         if self.project_id:
             query = query.eq("project_id", self.project_id)
         if active_only:
             query = query.eq("is_superseded", False)
+        if not include_hidden:
+            query = query.eq("hidden", False)
         query = self._staged_filter(query)
         pages = [
             _row_to_page(r)
@@ -837,6 +852,7 @@ class DB:
         workspace: Workspace | None = None,
         page_type: PageType | None = None,
         active_only: bool = True,
+        include_hidden: bool = False,
     ) -> list[Page]:
         query = self.client.table("pages").select("*")
         if self.project_id:
@@ -847,6 +863,8 @@ class DB:
             query = query.eq("page_type", page_type.value)
         if active_only:
             query = query.eq("is_superseded", False)
+        if not include_hidden:
+            query = query.eq("hidden", False)
         query = self._staged_filter(query)
         pages = [
             _row_to_page(r)
@@ -856,6 +874,22 @@ class DB:
         if active_only:
             pages = [p for p in pages if p.is_active()]
         return pages
+
+    async def set_page_hidden(self, page_id: str, hidden: bool) -> None:
+        """Flip a page's hidden flag, recording a mutation event.
+
+        Staged runs only record the event (other readers keep seeing the
+        baseline flag). Non-staged runs additionally update the row.
+        """
+        await self.record_mutation_event(
+            "set_hidden",
+            page_id,
+            {"hidden": bool(hidden)},
+        )
+        if not self.staged:
+            await self._execute(
+                self.client.table("pages").update({"hidden": bool(hidden)}).eq("id", page_id)
+            )
 
     async def supersede_page(
         self,
@@ -893,6 +927,7 @@ class DB:
         search: str | None = None,
         offset: int = 0,
         limit: int = 50,
+        include_hidden: bool = False,
     ) -> tuple[Sequence[Page], int]:
         """Return a page of results and the total matching count."""
         query = self.client.table("pages").select("*", count=CountMethod.exact)
@@ -904,6 +939,8 @@ class DB:
             query = query.eq("page_type", page_type.value)
         if active_only:
             query = query.eq("is_superseded", False)
+        if not include_hidden:
+            query = query.eq("hidden", False)
         if search:
             query = query.or_(f"headline.ilike.%{search}%,content.ilike.%{search}%")
         query = self._staged_filter(query)
@@ -1250,6 +1287,7 @@ class DB:
     async def get_considerations_for_question(
         self,
         question_id: str,
+        include_hidden: bool = False,
     ) -> list[tuple[Page, PageLink]]:
         """Return (claim_page, link) pairs for all considerations on a question."""
         links = await self.get_links_to(question_id)
@@ -1260,12 +1298,15 @@ class DB:
         return [
             (pages[l.from_page_id], l)
             for l in consideration_links
-            if l.from_page_id in pages and pages[l.from_page_id].is_active()
+            if l.from_page_id in pages
+            and pages[l.from_page_id].is_active()
+            and (include_hidden or not pages[l.from_page_id].hidden)
         ]
 
     async def get_considerations_for_questions(
         self,
         question_ids: Sequence[str],
+        include_hidden: bool = False,
     ) -> dict[str, list[tuple[Page, PageLink]]]:
         """Bulk-fetch considerations for many questions. Returns {question_id: [(claim, link)]}."""
         result: dict[str, list[tuple[Page, PageLink]]] = {qid: [] for qid in question_ids}
@@ -1284,21 +1325,29 @@ class DB:
         pages = await self.get_pages_by_ids(page_ids)
         for link in consideration_links:
             page = pages.get(link.from_page_id)
-            if page and page.is_active():
+            if page and page.is_active() and (include_hidden or not page.hidden):
                 result[link.to_page_id].append((page, link))
         return result
 
-    async def get_parent_question(self, question_id: str) -> Page | None:
+    async def get_parent_question(
+        self,
+        question_id: str,
+        include_hidden: bool = False,
+    ) -> Page | None:
         """Return the parent question, or None if this is a root question."""
         links = await self.get_links_to(question_id)
         for link in links:
             if link.link_type == LinkType.CHILD_QUESTION:
                 page = await self.get_page(link.from_page_id)
-                if page and page.is_active():
+                if page and page.is_active() and (include_hidden or not page.hidden):
                     return page
         return None
 
-    async def get_child_questions(self, parent_id: str) -> list[Page]:
+    async def get_child_questions(
+        self,
+        parent_id: str,
+        include_hidden: bool = False,
+    ) -> list[Page]:
         """Return sub-questions of a question."""
         links = await self.get_links_from(parent_id)
         child_links = [l for l in links if l.link_type == LinkType.CHILD_QUESTION]
@@ -1308,12 +1357,15 @@ class DB:
         return [
             pages[l.to_page_id]
             for l in child_links
-            if l.to_page_id in pages and pages[l.to_page_id].is_active()
+            if l.to_page_id in pages
+            and pages[l.to_page_id].is_active()
+            and (include_hidden or not pages[l.to_page_id].hidden)
         ]
 
     async def get_child_questions_with_links(
         self,
         parent_id: str,
+        include_hidden: bool = False,
     ) -> list[tuple[Page, PageLink]]:
         """Return (child_page, link) pairs for sub-questions of a question."""
         links = await self.get_links_from(parent_id)
@@ -1324,10 +1376,16 @@ class DB:
         return [
             (pages[l.to_page_id], l)
             for l in child_links
-            if l.to_page_id in pages and pages[l.to_page_id].is_active()
+            if l.to_page_id in pages
+            and pages[l.to_page_id].is_active()
+            and (include_hidden or not pages[l.to_page_id].hidden)
         ]
 
-    async def get_judgements_for_question(self, question_id: str) -> list[Page]:
+    async def get_judgements_for_question(
+        self,
+        question_id: str,
+        include_hidden: bool = False,
+    ) -> list[Page]:
         links = await self.get_links_to(question_id)
         judgement_links = [l for l in links if l.link_type == LinkType.ANSWERS]
         if not judgement_links:
@@ -1339,11 +1397,13 @@ class DB:
             if l.from_page_id in pages
             and pages[l.from_page_id].is_active()
             and pages[l.from_page_id].page_type == PageType.JUDGEMENT
+            and (include_hidden or not pages[l.from_page_id].hidden)
         ]
 
     async def get_judgements_for_questions(
         self,
         question_ids: Sequence[str],
+        include_hidden: bool = False,
     ) -> dict[str, list[Page]]:
         """Bulk-fetch active judgements for many questions. Returns {question_id: [judgements]}.
 
@@ -1377,13 +1437,19 @@ class DB:
         pages = await self.get_pages_by_ids(from_ids)
         for link in applied:
             page = pages.get(link.from_page_id)
-            if page is not None and page.is_active() and page.page_type == PageType.JUDGEMENT:
+            if (
+                page is not None
+                and page.is_active()
+                and page.page_type == PageType.JUDGEMENT
+                and (include_hidden or not page.hidden)
+            ):
                 result.setdefault(link.to_page_id, []).append(page)
         return result
 
     async def get_dependents(
         self,
         page_id: str,
+        include_hidden: bool = False,
     ) -> list[tuple[Page, PageLink]]:
         """Return (dependent_page, link) for all pages that depend on this one."""
         links = await self.get_links_to(page_id)
@@ -1394,12 +1460,15 @@ class DB:
         return [
             (pages[l.from_page_id], l)
             for l in dep_links
-            if l.from_page_id in pages and pages[l.from_page_id].is_active()
+            if l.from_page_id in pages
+            and pages[l.from_page_id].is_active()
+            and (include_hidden or not pages[l.from_page_id].hidden)
         ]
 
     async def get_dependencies(
         self,
         page_id: str,
+        include_hidden: bool = False,
     ) -> list[tuple[Page, PageLink]]:
         """Return (dependency_page, link) for all pages this one depends on."""
         links = await self.get_links_from(page_id)
@@ -1407,7 +1476,11 @@ class DB:
         if not dep_links:
             return []
         pages = await self.get_pages_by_ids([l.to_page_id for l in dep_links])
-        return [(pages[l.to_page_id], l) for l in dep_links if l.to_page_id in pages]
+        return [
+            (pages[l.to_page_id], l)
+            for l in dep_links
+            if l.to_page_id in pages and (include_hidden or not pages[l.to_page_id].hidden)
+        ]
 
     async def _get_project_page_ids(self) -> set[str] | None:
         """Fetch all page IDs belonging to the current project.
@@ -2278,9 +2351,28 @@ class DB:
         )
         return rows[0]["id"] if rows else None
 
+    async def latest_artefact_for_task(self, task_id: str) -> Page | None:
+        """Return the most recently-created active ARTEFACT linked ARTEFACT_OF to *task_id*.
+
+        Ties broken by page ``id`` for stable ordering. Returns None if no
+        artefact exists for the task.
+        """
+        links = await self.get_links_to(task_id)
+        artefact_links = [l for l in links if l.link_type == LinkType.ARTEFACT_OF]
+        if not artefact_links:
+            return None
+        pages_by_id = await self.get_pages_by_ids([l.from_page_id for l in artefact_links])
+        active = [
+            p for p in pages_by_id.values() if p.is_active() and p.page_type == PageType.ARTEFACT
+        ]
+        if not active:
+            return None
+        return max(active, key=lambda p: (p.created_at, p.id))
+
     async def get_root_questions(
         self,
         workspace: Workspace = Workspace.RESEARCH,
+        include_hidden: bool = False,
     ) -> list[Page]:
         """Return questions that have no parent (top-level questions)."""
         params: dict[str, Any] = {"ws": workspace.value}
@@ -2288,6 +2380,8 @@ class DB:
             params["pid"] = self.project_id
         if self.staged:
             params["p_staged_run_id"] = self.run_id
+        if include_hidden:
+            params["p_include_hidden"] = True
         rows = _rows(await self._execute(self.client.rpc("get_root_questions", params)))
         pages = [_row_to_page(r) for r in rows]
         pages = await self._apply_page_events(pages)
@@ -2296,6 +2390,7 @@ class DB:
     async def get_human_questions(
         self,
         workspace: Workspace = Workspace.RESEARCH,
+        include_hidden: bool = False,
     ) -> list[Page]:
         """Return all active, human-authored questions in *workspace*.
 
@@ -2314,6 +2409,8 @@ class DB:
         )
         if self.project_id:
             query = query.eq("project_id", self.project_id)
+        if not include_hidden:
+            query = query.eq("hidden", False)
         query = self._staged_filter(query)
         rows = _rows(await self._execute(query))
         pages = [_row_to_page(r) for r in rows]

@@ -3,11 +3,11 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CHART_DIR="$REPO_ROOT/deploy/chart"
-SECRETS_FILE="$CHART_DIR/secrets.yaml"
+SECRETS_FILE="$CHART_DIR/secrets.enc.yaml"
 NAMESPACE="rumil"
 RELEASE="rumil"
-API_REPO="us-central1-docker.pkg.dev/varuna-400921/delphos/rumil-api"
-FRONTEND_REPO="us-central1-docker.pkg.dev/varuna-400921/delphos/rumil-frontend"
+API_REPO="us-central1-docker.pkg.dev/project-fe559f0f-d011-4af4-bf0/rumil/rumil-api"
+FRONTEND_REPO="us-central1-docker.pkg.dev/project-fe559f0f-d011-4af4-bf0/rumil/rumil-frontend"
 
 usage() {
     echo "Usage: $0 [--api] [--frontend] [--all] [--tag TAG]"
@@ -63,7 +63,7 @@ fi
 if $deploy_frontend; then
     echo "==> Building frontend (pnpm build)..."
     cd "$REPO_ROOT/frontend"
-    NEXT_PUBLIC_API_URL="" pnpm build
+    NEXT_PUBLIC_API_URL="https://api.rumil.ink" pnpm build
 
     echo "==> Building frontend image (linux/amd64)..."
     docker build --platform linux/amd64 \
@@ -77,8 +77,9 @@ if $deploy_frontend; then
 fi
 
 echo "==> Deploying with Helm (release=$RELEASE, namespace=$NAMESPACE, tag=$tag)..."
-helm upgrade "$RELEASE" "$CHART_DIR" \
+helm secrets upgrade --install "$RELEASE" "$CHART_DIR" \
     -n "$NAMESPACE" \
+    --create-namespace \
     --set "releaseId=$tag" \
     -f "$SECRETS_FILE"
 

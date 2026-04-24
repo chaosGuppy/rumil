@@ -100,7 +100,7 @@ class Settings(BaseSettings):
     subquestion_linker_enabled: bool = _capture_field(default=True)
 
     max_db_retries: int = _capture_field(default=10)
-    max_api_retries: int = _capture_field(default=10)
+    max_api_retries: int = _capture_field(default=60)
     max_api_retries_429: int | None = _capture_field(default=None)
     max_api_retries_500: int | None = _capture_field(default=None)
     max_api_retries_529: int | None = _capture_field(default=None)

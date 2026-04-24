@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import type { Metadata } from "next";
 import type { JudgmentSubmit, NextPairResponse } from "@/api/types.gen";
 import { API_BASE, serverFetch } from "@/lib/api-base";
+import { JudgeKeyboardShortcuts } from "@/components/versus/JudgeKeyboardShortcuts";
 import { VersusHeader } from "@/components/versus/VersusHeader";
 import "../versus.css";
 
@@ -184,16 +185,20 @@ export default async function VersusJudgePage({
 
           <div style={{ display: "flex", gap: 12, marginTop: 16, alignItems: "center" }}>
             <button type="submit" name="verdict" value="A" className="versus-button primary">
-              A is better
+              A is better <kbd style={{ opacity: 0.6, fontSize: 11 }}>1</kbd>
             </button>
             <button type="submit" name="verdict" value="B" className="versus-button primary">
-              B is better
+              B is better <kbd style={{ opacity: 0.6, fontSize: 11 }}>2</kbd>
             </button>
             <button type="submit" name="verdict" value="tie" className="versus-button">
-              Tie
+              Tie <kbd style={{ opacity: 0.6, fontSize: 11 }}>3</kbd>
             </button>
+            <span className="versus-muted" style={{ fontSize: 11, marginLeft: 8 }}>
+              shortcuts: 1 / 2 / 3 (or A / B / T, or ← / →)
+            </span>
           </div>
         </form>
+        <JudgeKeyboardShortcuts />
       </main>
     </div>
   );

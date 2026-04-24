@@ -4,15 +4,33 @@ essays:
   cache_dir: data/essays
   sources:
     - id: forethought
-      max_recent: 8
-      # max_image_ratio: 0.15  # skip image-heavy essays (images per paragraph above threshold)
-      # max_images: 10         # or filter by absolute count
+      max_recent: 14
     - id: redwood
       max_recent: 10
     - id: carlsmith
       max_recent: 8
-  # exclude_ids:        # namespaced essay ids to skip across the pipeline
-  #   - carlsmith__leaving-open-philanthropy-going-to-anthropic
+  exclude_ids:
+    # Short announcement post, not an essay.
+    - carlsmith__leaving-open-philanthropy-going-to-anthropic
+    # Body references stripped screenshots of system-card quotes — reader sees
+    # "From the Opus 4.6 system card:" followed by missing content.
+    - redwood__anthropic-repeatedly-accidentally
+    # Near-duplicate topic with the "how-human-like" essay; dropping the
+    # transcript version to avoid double-weighting in the eval set.
+    - carlsmith__video-and-transcript-of-talk-on-human-like-ness-in-ai-safety
+    # Transcript essay — excluded going forward.
+    - carlsmith__video-and-transcript-of-talk-on-giving-ais-safe-motivations
+    # Listicle of 8 project proposals; continuation = invent next bullet.
+    - forethought__concrete-projects-in-agi-preparedness
+    # Short meta-intro whose remainder is one-paragraph stubs previewing
+    # sibling design-sketch essays — no real continuation target.
+    - forethought__design-sketches-for-a-more-sensible-world
+    # Tool/benchmark announcement — continuation tests guessing undisclosed
+    # benchmark design details, not prose quality.
+    - redwood__introducing-linuxarena
+    # Quantitative research report; remainder is ROC figures + prompt-dump
+    # appendix, not argumentative prose.
+    - redwood__logit-rocs-monitor-tpr-is-linear
 
 prefix:
   n_paragraphs: 3        # show this many opening paragraphs
@@ -37,9 +55,9 @@ completion:
       temperature: 0
       max_tokens: 32000    # opus may reject explicit temperature via
                            # OpenRouter; adjust if we see 400s
-    # - id: anthropic/claude-haiku-4-5
-    #   temperature: 0.8
-    #   max_tokens: 32000
+    - id: anthropic/claude-haiku-4-5
+      temperature: 0
+      max_tokens: 32000
 
 paraphrasing:
   enabled: true
@@ -82,5 +100,8 @@ storage:
   completions_log: data/completions.jsonl
   judgments_log: data/judgments.jsonl
   paraphrases_log: data/paraphrases.jsonl
+
+ui:
+  port: 8765
 
 concurrency: 8           # parallel API calls per runner (Azure rate-limits gpt-5.4 above ~8)

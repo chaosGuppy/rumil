@@ -1,5 +1,7 @@
 """Tests for UpdateViewCall: incremental View updates."""
 
+from datetime import UTC
+
 import pytest
 import pytest_asyncio
 
@@ -260,7 +262,7 @@ def test_render_item_full_omits_related_block_when_all_cited():
 
 async def test_render_claim_investigation_findings_surfaces_new_findings(tmp_db):
     """New considerations on a claim linked to the question should appear."""
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     from rumil.context import render_claim_investigation_findings
 
@@ -290,10 +292,8 @@ async def test_render_claim_investigation_findings_surfaces_new_findings(tmp_db)
         )
     )
 
-    cutoff = datetime.now(timezone.utc) - timedelta(days=365)
-    text, page_ids = await render_claim_investigation_findings(
-        tmp_db, question.id, cutoff
-    )
+    cutoff = datetime.now(UTC) - timedelta(days=365)
+    text, page_ids = await render_claim_investigation_findings(tmp_db, question.id, cutoff)
 
     assert finding.id in page_ids
     assert "Moskovitz" in text
@@ -303,7 +303,7 @@ async def test_render_claim_investigation_findings_surfaces_new_findings(tmp_db)
 
 async def test_render_claim_investigation_findings_filters_old_findings(tmp_db):
     """Findings older than last_view_created_at should be excluded."""
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     from rumil.context import render_claim_investigation_findings
 
@@ -330,10 +330,8 @@ async def test_render_claim_investigation_findings_filters_old_findings(tmp_db):
         )
     )
 
-    cutoff = datetime.now(timezone.utc) + timedelta(days=1)
-    text, page_ids = await render_claim_investigation_findings(
-        tmp_db, question.id, cutoff
-    )
+    cutoff = datetime.now(UTC) + timedelta(days=1)
+    text, page_ids = await render_claim_investigation_findings(tmp_db, question.id, cutoff)
 
     assert page_ids == []
     assert text == ""

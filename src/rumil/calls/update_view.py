@@ -238,9 +238,7 @@ def _render_item_full(
     uncited = [c for c in related_considerations if c.id not in cited_ids and c.id != page.id]
     if uncited:
         parts.append("")
-        parts.append(
-            "**Related considerations on the parent question (not cited by this item):**"
-        )
+        parts.append("**Related considerations on the parent question (not cited by this item):**")
         for cp in uncited:
             score_parts = []
             if cp.credence is not None:

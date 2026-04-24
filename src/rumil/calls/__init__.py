@@ -4,6 +4,7 @@ from rumil.calls.assess import AssessCall, BigAssessCall
 from rumil.calls.call_registry import ASSESS_CALL_CLASSES
 from rumil.calls.create_view import CreateViewCall
 from rumil.calls.find_considerations import FindConsiderationsCall
+from rumil.calls.generate_spec import GenerateSpecCall
 from rumil.calls.ingest import IngestCall
 from rumil.calls.link_subquestions import LinkSubquestionsCall
 from rumil.calls.scout_analogies import ScoutAnalogiesCall
@@ -32,6 +33,7 @@ __all__ = [
     "CallRunner",
     "CreateViewCall",
     "FindConsiderationsCall",
+    "GenerateSpecCall",
     "IngestCall",
     "LinkSubquestionsCall",
     "ScoutAnalogiesCall",

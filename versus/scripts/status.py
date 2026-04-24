@@ -38,6 +38,12 @@ def _load_essays(cfg: config.Config) -> dict[str, versus_essay.Essay]:
         if "source_id" not in d:
             # Legacy pre-multi-source JSON — skip. Re-fetch to upgrade.
             continue
+        if d.get("schema_version") != versus_essay.SCHEMA_VERSION:
+            # Older schema — the API's staleness gate excludes these from
+            # ``current_prefix_hashes`` so rows against them show as
+            # "essay-not-current" in /versus. Match that here: drop the
+            # essay, and its rows fall into ``unknown_essay`` below.
+            continue
         if d["id"] in exclude:
             continue
         out[d["id"]] = versus_essay.Essay(
@@ -147,6 +153,8 @@ def main() -> None:
     args = p.parse_args()
 
     cfg = config.load(str(VERSUS_ROOT / "config.yaml"))
+    if not cfg.essays.cache_dir.is_absolute():
+        cfg.essays.cache_dir = VERSUS_ROOT / cfg.essays.cache_dir
     essays = _load_essays(cfg)
     if not essays:
         print("no cached essays — run scripts/fetch_essays.py first")

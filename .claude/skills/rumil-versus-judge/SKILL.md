@@ -52,17 +52,28 @@ Versus must already have completions cached
 **Before any topup run, check for staleness:**
 
 ```bash
+# run from the rumil repo root (not versus/) so rumil is importable
 uv run python versus/scripts/status.py
 ```
 
-This compares cached completion / paraphrase / judgment rows against the
-current essay markdown (`prefix_config_hash`) and current paraphrase
-prompt version. Exit code 2 + a `STALE` banner means an essay re-import
-or version bump happened and the existing rows judge OLD essay text. A
-topup will silently keep extending those stale pairs unless the user
-first re-runs `run_paraphrases.py` + `run_completions.py` to write fresh
-rows under the new keys. Surface the warning to the user; don't proceed
-on stale data without confirmation.
+Compares cached completion / paraphrase / judgment rows against the
+current essay cache. A row is stale if its `essay_id` isn't in the
+current cache (essay removed, renamed, or at an older
+`schema_version` — same gate as the API's `_build_essays_status`) or
+its `prefix_config_hash` doesn't match the current hash (essay content
+or prefix params changed). Paraphrases also bucket by sampling hash to
+catch prompt version bumps.
+
+Exit code 2 + a `STALE` banner means a topup will silently keep
+extending rows against OLD essay text / outdated prompts unless the
+user first re-runs `run_paraphrases.py` + `run_completions.py` to
+write fresh rows under the new keys. Surface the warning to the user;
+don't proceed on stale data without confirmation.
+
+The same three staleness buckets (`current` / `stale_prefix` or
+`stale_prompt` / `unknown_essay`) are what `/versus/results` and
+`/versus/judge` filter on in the UI, so `status.py`'s numbers should
+match what you see there.
 
 ## Env & config
 

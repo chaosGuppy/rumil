@@ -108,6 +108,41 @@ async def test_add_spec_item_errors_without_scope(tmp_db):
     assert spec_items == []
 
 
+async def test_add_spec_item_errors_when_scope_is_not_a_question(tmp_db):
+    """scope_page_id must point at a question — other page types are rejected."""
+    claim = Page(
+        page_type=PageType.CLAIM,
+        layer=PageLayer.SQUIDGY,
+        workspace=Workspace.RESEARCH,
+        content="Some unrelated claim.",
+        headline="Unrelated claim",
+    )
+    await tmp_db.save_page(claim)
+
+    call = Call(
+        call_type=CallType.GENERATE_SPEC,
+        workspace=Workspace.RESEARCH,
+        scope_page_id=claim.id,
+        status=CallStatus.PENDING,
+    )
+    await tmp_db.save_call(call)
+
+    payload = AddSpecItemPayload(
+        headline="Some rule",
+        content="Some rule about the artefact.",
+    )
+    result = await execute(payload, call, tmp_db)
+
+    assert result.created_page_id is None
+    assert "question" in result.message.lower()
+
+    spec_items = await tmp_db.get_pages(
+        page_type=PageType.SPEC_ITEM,
+        include_hidden=True,
+    )
+    assert spec_items == []
+
+
 @pytest.mark.integration
 async def test_generate_spec_end_to_end(tmp_db, artefact_task, generate_spec_call):
     """GENERATE_SPEC runs to completion and produces at least one SPEC_ITEM

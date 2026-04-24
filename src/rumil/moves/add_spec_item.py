@@ -49,6 +49,17 @@ async def execute(payload: AddSpecItemPayload, call: Call, db: DB) -> MoveResult
             created_page_id=None,
         )
 
+    scope_page = await db.get_page(artefact_task_id)
+    if scope_page is None or scope_page.page_type != PageType.QUESTION:
+        actual = scope_page.page_type.value if scope_page else "missing"
+        return MoveResult(
+            message=(
+                f"ERROR: add_spec_item scope_page_id must point at a question; "
+                f"got {actual}. No spec item was created."
+            ),
+            created_page_id=None,
+        )
+
     page = Page(
         page_type=PageType.SPEC_ITEM,
         layer=PageLayer.SQUIDGY,

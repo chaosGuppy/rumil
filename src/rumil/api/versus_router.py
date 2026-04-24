@@ -796,6 +796,8 @@ def get_results(
     source_stats: dict[str, dict] = {}
     for row in versus_jsonl.read(completions_log):
         total_completions += 1
+        if not include_stale and versus_analyze._is_stale_row(row, current_prefix_hashes):
+            continue
         sid = row["source_id"]
         stats = source_stats.setdefault(sid, {"n": 0, "words": 0, "delta": 0.0})
         stats["n"] += 1

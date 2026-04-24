@@ -44,9 +44,10 @@ export default async function VersusResultsPage({
   const sp = await searchParams;
   const criterion = sp.criterion;
   const includeContaminated = sp.include_contaminated === "true";
-  // Default include_stale=true preserves prior behavior; users can flip it
-  // to filter the matrices to only judgments against current essay text.
-  const includeStale = sp.include_stale !== "false";
+  // Default include_stale=false so the matrices reflect only judgments
+  // against current essay text. Pass ?include_stale=true to mix in
+  // historical rows tied to older prefix_config_hashes.
+  const includeStale = sp.include_stale === "true";
   const data = await getResults(criterion, includeContaminated, includeStale);
 
   if (!data) {
@@ -124,9 +125,9 @@ export default async function VersusResultsPage({
             />
             <AutoSubmitCheckbox
               name="include_stale"
-              value="false"
-              defaultChecked={!include_stale}
-              label="exclude stale"
+              value="true"
+              defaultChecked={include_stale}
+              label="include stale"
             />
             <noscript>
               <button type="submit" className="versus-button">apply</button>

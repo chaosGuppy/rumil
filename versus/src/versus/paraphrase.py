@@ -22,7 +22,6 @@ from versus import config, jsonl, openrouter
 from versus import essay as versus_essay
 from versus.versions import PARAPHRASE_PROMPT_VERSION
 
-
 PARAPHRASE_INSTRUCTIONS = """\
 Rewrite the following essay in your own prose style while preserving the content exactly.
 

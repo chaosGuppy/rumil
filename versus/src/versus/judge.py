@@ -13,6 +13,7 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import itertools
+import json
 import pathlib
 import re
 import time
@@ -30,6 +31,26 @@ from rumil.versus_prompts import (
 )
 from versus import config, jsonl, openrouter
 from versus.versions import JUDGE_PROMPT_VERSION
+
+
+def compute_sampling_hash(sampling: dict | None) -> str | None:
+    """Short deterministic hash of sampling params for judge_model dedup.
+
+    Sorted-key JSON so key order doesn't fork the hash. Returns None when
+    ``sampling`` is None (agent-sdk paths like rumil:ws / rumil:orch have
+    no explicit sampling dict -- task 5 handles those with a tool-prompt
+    hash instead). 8 hex chars is enough to distinguish temperature /
+    max_tokens combos without cluttering the key.
+
+    Why this matters: per CLAUDE.local.md, "if some judgements were made
+    at 0 or at 0.2 temp, we want that to be in the data." Without folding
+    sampling into the dedup key, a ``--topup`` at a different temperature
+    silently no-ops against existing rows judged at the old temperature.
+    """
+    if sampling is None:
+        return None
+    blob = json.dumps(sampling, sort_keys=True, default=str)
+    return hashlib.sha256(blob.encode()).hexdigest()[:8]
 
 
 @dataclass
@@ -67,11 +88,11 @@ def judgment_key(
     return f"{essay_id}|{prefix_hash}|{lo}__vs__{hi}|{criterion}|{judge_model}"
 
 
-_JUDGE_MODEL_SUFFIX_RE = re.compile(r":p[0-9a-f]{8}(?::v\d+)?$")
+_JUDGE_MODEL_SUFFIX_RE = re.compile(r":p[0-9a-f]{8}(?::v\d+)?(?::s[0-9a-f]{8})?$")
 
 
 def base_judge_model(judge_model: str) -> str:
-    """Strip ``:p<hash>[:v<N>]`` version suffix to recover the raw model id.
+    """Strip ``:p<hash>[:v<N>][:s<hash>]`` version suffix to recover the raw model id.
 
     Use wherever downstream code needs to match the judge_model against a
     source_id (e.g. ``paraphrase:<model>``) or render a column header that
@@ -82,17 +103,22 @@ def base_judge_model(judge_model: str) -> str:
 
 _PHASH_TAG_RE = re.compile(r"^p[0-9a-f]{8}$")
 _VERSION_TAG_RE = re.compile(r"^v\d+$")
+_SHASH_TAG_RE = re.compile(r"^s[0-9a-f]{8}$")
 
 
 def parse_judge_model_suffix(judge_model: str) -> tuple[str, str | None, str | None]:
     """Split a judge_model into ``(base, phash, version)``.
 
     ``phash`` and ``version`` are the ``p<sha8>`` and ``v<N>`` tags if
-    present, else None. Used by the API to expose version fragments as
-    separate columns in the inspect view without the frontend parsing
-    strings.
+    present, else None. A trailing ``:s<sha8>`` sampling tag is absorbed
+    silently into ``base`` stripping so the rest of the shape stays the
+    same -- the frontend doesn't render sampling hashes separately (they
+    exist in the dedup key so topups at different sampling params don't
+    silently no-op; the human-readable sampling dict lives on the row).
     """
     parts = judge_model.split(":")
+    if parts and _SHASH_TAG_RE.match(parts[-1]):
+        parts = parts[:-1]
     version = None
     if parts and _VERSION_TAG_RE.match(parts[-1]):
         version = parts[-1]
@@ -117,16 +143,32 @@ def compute_judge_prompt_hash(dimension: str) -> str:
     return compute_prompt_hash(body)
 
 
-def compose_judge_model(base_model: str, dimension: str) -> str:
-    """Append the judge-prompt version suffix to ``base_model``.
+def compose_judge_model(
+    base_model: str,
+    dimension: str,
+    sampling: dict | None = None,
+) -> str:
+    """Append the judge-prompt version + sampling-hash suffix to ``base_model``.
 
-    Produces ``<base_model>:p<hash>:v<N>``. Used for OpenRouter bare-model
-    judges and ``anthropic:<model>`` judges so their dedup keys fork
-    when the judge prompt changes. The dimension is carried in the
-    ``criterion`` column on the judgment row, so it isn't repeated here.
+    Produces ``<base_model>:p<hash>:v<N>[:s<hash>]``. Used for OpenRouter
+    bare-model judges and ``anthropic:<model>`` judges so their dedup keys
+    fork when the judge prompt or sampling params change. The dimension
+    is carried in the ``criterion`` column on the judgment row, so it
+    isn't repeated here.
+
+    ``sampling`` is the same dict recorded on the judgment row
+    (e.g. ``{"temperature": 0.0, "max_tokens": 8192}``). When provided,
+    a deterministic 8-char hash is appended so topups at a different
+    temperature re-judge instead of silently no-opping. When None, the
+    suffix is omitted (keys predate sampling-hash accounting and shouldn't
+    fork retroactively for text variants that didn't use to pass it).
     """
     ph = compute_judge_prompt_hash(dimension)
-    return f"{base_model}:p{ph}:v{JUDGE_PROMPT_VERSION}"
+    base = f"{base_model}:p{ph}:v{JUDGE_PROMPT_VERSION}"
+    sh = compute_sampling_hash(sampling)
+    if sh is not None:
+        base = f"{base}:s{sh}"
+    return base
 
 
 def parse_verdict_from_label(text: str) -> tuple[str | None, str | None]:
@@ -353,9 +395,13 @@ def run(
             src_a = Source(a_id, sources[a_id])
             src_b = Source(b_id, sources[b_id])
             first, second = order_pair(essay_id, src_a, src_b)
+            sampling = {
+                "temperature": JUDGE_TEMPERATURE,
+                "max_tokens": cfg.judging.max_tokens,
+            }
             for criterion in effective_criteria:
                 for base_model in effective_judges:
-                    judge_model = compose_judge_model(base_model, criterion)
+                    judge_model = compose_judge_model(base_model, criterion, sampling=sampling)
                     k = judgment_key(essay_id, prefix_hash, a_id, b_id, criterion, judge_model)
                     if k in existing:
                         continue

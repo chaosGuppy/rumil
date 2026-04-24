@@ -36,6 +36,18 @@ import httpx
 from versus import anthropic_client, config, jsonl, judge
 
 
+def _anthropic_sampling(model: str, max_tokens: int) -> dict:
+    """Shared sampling dict for anthropic-direct + rumil-text paths.
+
+    Opus 4.7 deprecates the temperature param on the Messages API (returns
+    400), so we omit it. Sonnet/Haiku use temperature=0.0 for determinism.
+    Kept in one place so the runtime call and the dedup-hash computation
+    see the same value.
+    """
+    use_temp = None if model.startswith("claude-opus-4-7") else 0.0
+    return {"temperature": use_temp, "max_tokens": max_tokens}
+
+
 def _call_one(
     essay_id: str,
     prefix_hash: str,
@@ -53,18 +65,13 @@ def _call_one(
     client: httpx.Client,
 ) -> dict:
     t0 = time.time()
-    # claude-opus-4-7 deprecates temperature on the Messages API;
-    # omit for opus, use 0 for sonnet/haiku. Existing rows that ran at
-    # 0.2 before this default change are NOT invalidated (temperature
-    # isn't in the judge_model dedup key) — they persist at the row
-    # level. If you need forks, add a version knob here or re-run.
-    use_temp = None if model.startswith("claude-opus-4-7") else 0.0
+    sampling = _anthropic_sampling(model, max_tokens)
     resp = anthropic_client.chat(
         model=model,
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
-        temperature=use_temp,
-        max_tokens=max_tokens,
+        temperature=sampling["temperature"],
+        max_tokens=sampling["max_tokens"],
         client=client,
     )
     text = anthropic_client.extract_text(resp)
@@ -95,7 +102,7 @@ def _call_one(
         "ts": dt.datetime.utcnow().isoformat() + "Z",
         "duration_s": round(time.time() - t0, 2),
         "raw_response": resp,
-        "sampling": {"temperature": use_temp, "max_tokens": max_tokens},
+        "sampling": sampling,
     }
 
 
@@ -139,7 +146,10 @@ def _plan_tasks(
             first, second = judge.order_pair(essay_id, src_a, src_b)
             for criterion in cfg.judging.criteria:
                 for model in models:
-                    judge_model = judge.compose_judge_model(f"anthropic:{model}", criterion)
+                    sampling = _anthropic_sampling(model, cfg.judging.max_tokens)
+                    judge_model = judge.compose_judge_model(
+                        f"anthropic:{model}", criterion, sampling=sampling
+                    )
                     k = judge.judgment_key(
                         essay_id, prefix_hash, a_id, b_id, criterion, judge_model
                     )
@@ -774,11 +784,14 @@ def run_rumil_text(
     isolates the prompt-source effect from the tool/workspace effect
     that `ws` bundles together.
 
-    ``judge_model`` is ``rumil:text:<model>:<dim>:p<hash>``, distinct from
-    ``anthropic:<model>`` (versus-criterion text) and ``rumil:ws:...``
-    (workspace-aware).
+    ``judge_model`` is ``rumil:text:<model>:<dim>:p<hash>:v<N>:s<hash>``,
+    distinct from ``anthropic:<model>`` (versus-criterion text) and
+    ``rumil:ws:...`` (workspace-aware). ``:v<N>`` is ``BLIND_JUDGE_VERSION``
+    (parallel to rumil:ws / rumil:orch — prior rumil-text runs had no
+    version tag, so they're orphaned by this fork).
     """
     from rumil.versus_bridge import (
+        BLIND_JUDGE_VERSION,
         build_system_prompt,
         compute_prompt_hash,
         extract_preference,
@@ -796,9 +809,15 @@ def run_rumil_text(
 
     effective_concurrency = concurrency if concurrency is not None else cfg.concurrency
 
+    sampling = _anthropic_sampling(anthropic_model, cfg.judging.max_tokens)
+    shash = judge.compute_sampling_hash(sampling)
+
     def _compose(task_name: str, is_versus_crit: bool) -> str:
         ph = prompt_hash_cache[(task_name, is_versus_crit)]
-        return f"rumil:text:{anthropic_model}:{task_name}:p{ph}"
+        return (
+            f"rumil:text:{anthropic_model}:{task_name}"
+            f":p{ph}:v{BLIND_JUDGE_VERSION}:s{shash}"
+        )
 
     tasks = _plan_rumil_pairs(
         cfg,
@@ -838,21 +857,12 @@ def run_rumil_text(
         t0 = time.time()
         system = system_prompt_cache[(task_name, False)]
         user_msg = _build_rumil_text_user_message(pair, task_name)
-        # claude-opus-4-7 deprecates the temperature param on the
-        # Messages API (returns 400 with "temperature is deprecated for
-        # this model"). Omit it for opus; use 0 for sonnet/haiku so
-        # judgments are as deterministic as possible for the same
-        # prompt + pair. Note that temperature isn't part of the
-        # judge_model dedup key, so changing this value forks past
-        # results only at the judgment-row level -- old rows at 0.2
-        # persist and won't be overwritten.
-        use_temp = None if anthropic_model.startswith("claude-opus-4-7") else 0.0
         resp = anthropic_client.chat(
             model=anthropic_model,
             messages=[{"role": "user", "content": user_msg}],
             system=system,
-            temperature=use_temp,
-            max_tokens=cfg.judging.max_tokens,
+            temperature=sampling["temperature"],
+            max_tokens=sampling["max_tokens"],
             client=client,
         )
         text = anthropic_client.extract_text(resp)
@@ -891,10 +901,7 @@ def run_rumil_text(
             "duration_s": round(time.time() - t0, 2),
             "raw_response": resp,
             "rumil_preference_label": label,
-            "sampling": {
-                "temperature": use_temp,
-                "max_tokens": cfg.judging.max_tokens,
-            },
+            "sampling": sampling,
         }
 
     client = httpx.Client(timeout=600.0)

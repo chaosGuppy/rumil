@@ -89,10 +89,18 @@ def model_sort_key(judge: str) -> tuple:
 
 _PROMPT_HASH_RE = re.compile(r"^p[0-9a-f]{8}$")
 _VERSION_TAG_RE = re.compile(r"^v\d+$")
+_SAMPLING_HASH_RE = re.compile(r"^s[0-9a-f]{8}$")
 
 
 def _strip_phash_version(parts: list[str]) -> tuple[list[str], str | None, str | None]:
-    """Peel trailing ``:v<N>`` then ``:p<hash>`` off a split judge_model."""
+    """Peel trailing ``:s<hash>``, ``:v<N>``, then ``:p<hash>`` off a split judge_model.
+
+    The sampling hash is absorbed silently (not returned) because the
+    frontend doesn't render it -- it exists only for dedup-key discipline.
+    The human-readable sampling dict lives on the judgment row.
+    """
+    if parts and _SAMPLING_HASH_RE.match(parts[-1]):
+        parts = parts[:-1]
     version = None
     if parts and _VERSION_TAG_RE.match(parts[-1]):
         version = parts[-1]

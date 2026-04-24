@@ -15,31 +15,36 @@ Call `add_spec_item` once per rule. Each spec item has:
 
 Examples of good spec items:
 
+- "The artefact should state that self-driving-car uptake in 2027 will be substantially higher than in 2026, and anchor everything else to that framing."
+- "Walk through why prior estimates underweighted regulatory easing as a cause of acceleration."
+- "Recommend option A over option B, citing cost as the primary reason; don't leave the decision open."
+- "Name the 2024 benchmark result (roughly 37% on the held-out set) when describing current capability, rather than hedging with 'substantial progress'."
 - "The plan should name, for each step, who owns it and the trigger that starts it."
-- "Avoid the phrase 'best practices' anywhere in the artefact; name the specific practice."
-- "Include at least one concrete worked example for each novel concept introduced."
 - "Structure the document as numbered steps, not prose paragraphs."
-- "Cite a source for every quantitative claim."
+- "Avoid the phrase 'best practices' anywhere in the artefact; name the specific practice."
+- "Write in clear prose for a professional audience."
+
+Most spec items convey *content* — specific positions, findings, claims, or framings the artefact must carry. Structural and stylistic rules matter too, but they are usually the minority.
 
 ## What Makes a Good Spec
 
 - **Atomic.** One rule per spec item. If you find yourself writing "and", consider whether you have two items.
-- **Prescriptive, not descriptive.** Spec items are about the artefact, not about the world. "The artefact should X" rather than "X is true".
-- **Actionable by a generator with no context.** If a generator saw only your spec, would it know what shape the artefact takes? What content? What style? What depth? What to leave out?
-- **Grounded in the workspace.** You have full workspace context. Use it to surface rules that a generator could not infer from the artefact-task headline alone — relevant prior considerations, known pitfalls, project-specific conventions, constraints the user has previously voiced.
-- **Specific.** "Be clear" is not a spec item. "Prefer 1-2 sentence paragraphs; never nest lists more than two levels" is.
+- **Prescriptive, not descriptive.** A spec item tells the artefact what to do — whether that's asserting something specific ("the artefact should state X"), committing to a position, structuring itself a particular way, or avoiding a failure mode. It is not a bare description of the world on its own; the artefact is where those descriptions land.
+- **Actionable by a generator with no context.** If a generator saw only your spec, would it know what shape the artefact takes? What specific things it should say? What style? What depth? What to leave out?
+- **Grounded in the workspace.** You have full workspace context. Use it to surface rules that a generator could not infer from the artefact-task headline alone — specific findings the artefact must carry, positions already reached, known pitfalls, project-specific conventions, constraints the user has previously voiced.
+- **Specific.** "Be clear" is not a spec item; "Prefer 1-2 sentence paragraphs; never nest lists more than two levels" is. Likewise, "Discuss growth" is not a spec item; "State that 2027 growth will be substantially higher than 2026, and give at least one concrete reason" is.
 
 ## Coverage
 
 Aim for a spec rich enough that, handed the spec alone, a capable generator could produce a faithful first draft. This typically means covering:
 
+- **Substantive content** — what specific claims, positions, findings, or recommendations must the artefact convey? What framing should it commit to? What should it explicitly *not* say?
 - **Shape and structure** — what kind of artefact is this, what sections or components must it have?
-- **Content** — what must be included, what must be excluded, what must be addressed?
 - **Style and tone** — how should it read, what voice, what register?
 - **Anchors to the request** — what specific parts of the original request the artefact must directly serve?
 - **Known pitfalls** — failure modes the workspace suggests are worth explicitly guarding against.
 
-Err on the side of more spec items. The downstream refinement loop can prune or supersede what doesn't hold up; it cannot invent what isn't there.
+Err on the side of more spec items in cases where there's content in the workspace that you think should make it into the artefact (but it's okay if some content doesn't make it in!). The instance writing the artefact will not have access to the workspace.
 
 ## Not Your Job
 

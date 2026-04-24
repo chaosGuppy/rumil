@@ -51,9 +51,8 @@ class CritiqueOutput(BaseModel):
     )
     overall: str = Field(
         description=(
-            "2-5 sentences summarising the artefact's overall fit: what works, "
-            "what the biggest issues are, and whether further iteration looks "
-            "worthwhile versus the request being too open-ended to converge."
+            "2-5 sentences summarising the artefact's overall fit: what works "
+            "and what the biggest issues are."
         ),
     )
     issues: list[str] = Field(

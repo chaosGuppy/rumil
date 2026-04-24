@@ -37,7 +37,7 @@ Call `finalize_artefact` when any of these hold:
 
 - The grade is high (8+) and the remaining issues are stylistic nits you'd rather not over-engineer for.
 - Two consecutive critiques are raising different sets of issues (non-convergence — likely the spec is over-fit to the last critique).
-- The critic explicitly says iteration won't help further (the request is open-ended, or issues need information the spec can't give).
+- The issues flagged by recent critiques would need information the spec can't capture (e.g. the request is open-ended about X and no rule would resolve it without guessing).
 - You can see a further-improving edit but the budget won't cover another regeneration — finalize now with the current version rather than regenerate and leave the critique unread.
 
 The `note` field on `finalize_artefact` is where to record *why* you stopped, for later audit.

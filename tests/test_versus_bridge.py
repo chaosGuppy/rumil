@@ -80,6 +80,30 @@ def test_extract_preference_is_case_insensitive():
     assert extract_preference(text) == "B somewhat preferred"
 
 
+def test_extract_preference_prefers_last_label_when_multiple_mentioned():
+    # Agents often reason through the scale ("A strongly preferred would
+    # mean X; it's not that extreme; my verdict: B somewhat preferred").
+    # The final label is the verdict -- first-in-text would lock onto
+    # the discussion, not the decision.
+    text = (
+        "If A strongly preferred were the right call, I'd expect X.\n"
+        "It isn't -- A is better on grounding but B on specificity.\n"
+        "Final verdict: B somewhat preferred\n"
+    )
+    assert extract_preference(text) == "B somewhat preferred"
+
+
+def test_extract_preference_prefers_last_label_across_verdicts():
+    # Corrections/retractions: an agent can state one verdict then change
+    # its mind. The final one wins.
+    text = (
+        "Tentative: A slightly preferred.\n\n"
+        "On further reflection I don't buy that; my actual rating is\n"
+        "Approximately indifferent between A and B\n"
+    )
+    assert extract_preference(text) == "Approximately indifferent between A and B"
+
+
 @pytest.mark.parametrize(
     "label,expected",
     [

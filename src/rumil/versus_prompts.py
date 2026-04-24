@@ -37,12 +37,29 @@ _LABEL_TO_VERDICT = {
 
 
 def extract_preference(text: str) -> str | None:
-    """Return the 7-point label found in ``text``, or None if absent."""
+    """Return the 7-point label found in ``text``, or None if absent.
+
+    When a model reasons through the labels before emitting its verdict
+    ("B is arguably strongly preferred on grounding, but overall A
+    somewhat preferred"), the verdict is the LAST label in the text,
+    not the first one that happens to match. We scan for every label
+    and pick the latest occurrence; ties (same start position) are
+    broken by preferring the longer label so "B somewhat preferred"
+    wins over a prefix-matching "B slightly preferred" — the labels
+    don't actually share prefixes today, but pinning the tiebreak
+    avoids a silent regression if they ever do.
+    """
     lower = text.lower()
+    best_pos = -1
+    best_label: str | None = None
     for label in PREFERENCE_LABELS:
-        if label.lower() in lower:
-            return label
-    return None
+        pos = lower.rfind(label.lower())
+        if pos == -1:
+            continue
+        if pos > best_pos or (pos == best_pos and len(label) > len(best_label or "")):
+            best_pos = pos
+            best_label = label
+    return best_label
 
 
 def label_to_verdict(label: str | None) -> str | None:

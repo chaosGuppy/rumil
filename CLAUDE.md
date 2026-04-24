@@ -124,7 +124,7 @@ To add a new call type: subclass `CallRunner`. Set `call_type`, override `_make_
 
 ## Versus
 
-`versus/` is a pairwise LLM eval harness on forethought.org essays with a bridge into rumil's agent/orchestrator machinery. Full docs in **`versus/AGENT.md`** — read it before editing any of:
+`versus/` is a pairwise LLM eval harness on longform web essays (forethought.org, redwoodresearch.substack.com, joecarlsmith.com — pluggable per-source fetchers under `versus/src/versus/sources/`) with a bridge into rumil's agent/orchestrator machinery. Full docs in **`versus/AGENT.md`** — read it before editing any of:
 
 - `versus/` (library, scripts, data)
 - `src/rumil/versus_bridge.py` (rumil ↔ versus bridge)

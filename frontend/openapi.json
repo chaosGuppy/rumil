@@ -440,6 +440,76 @@
         }
       }
     },
+    "/api/versus/diagnostics": {
+      "get": {
+        "tags": [
+          "versus"
+        ],
+        "summary": "Get Diagnostics",
+        "description": "Post-hoc bias / n-floor / per-essay sanity over the judgments log.\n\nFilters mirror /results so the pane's numbers line up with the\nmatrix the operator is currently looking at.",
+        "operationId": "get_diagnostics_api_versus_diagnostics_get",
+        "parameters": [
+          {
+            "name": "criterion",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Criterion"
+            }
+          },
+          {
+            "name": "include_contaminated",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Contaminated"
+            }
+          },
+          {
+            "name": "include_stale",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Include Stale"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiagnosticsBundle"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/healthz": {
       "get": {
         "summary": "Healthz",
@@ -3190,6 +3260,44 @@
         ],
         "title": "DegreeCell"
       },
+      "DiagnosticsBundle": {
+        "properties": {
+          "judge_bias": {
+            "items": {
+              "$ref": "#/components/schemas/JudgeBiasRowOut"
+            },
+            "type": "array",
+            "title": "Judge Bias"
+          },
+          "biased_judge_count": {
+            "type": "integer",
+            "title": "Biased Judge Count"
+          },
+          "small_n_cells": {
+            "items": {
+              "$ref": "#/components/schemas/SmallNCellOut"
+            },
+            "type": "array",
+            "title": "Small N Cells"
+          },
+          "essay_flags": {
+            "items": {
+              "$ref": "#/components/schemas/EssayFlagOut"
+            },
+            "type": "array",
+            "title": "Essay Flags"
+          }
+        },
+        "type": "object",
+        "required": [
+          "judge_bias",
+          "biased_judge_count",
+          "small_n_cells",
+          "essay_flags"
+        ],
+        "title": "DiagnosticsBundle",
+        "description": "Summary counts + three sections for the Diagnostics pane.\n\n`biased_judge_count` uses a |A%-50| > 5pp threshold so the banner\nline matches the default color thresholds in the UI."
+      },
       "DispatchExecutedEventOut": {
         "properties": {
           "ts": {
@@ -3403,6 +3511,56 @@
         ],
         "title": "EssayDetail",
         "description": "Essay + the prompts shown to completion / judge / paraphrase models."
+      },
+      "EssayFlagOut": {
+        "properties": {
+          "essay_id": {
+            "type": "string",
+            "title": "Essay Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "n_judgments": {
+            "type": "integer",
+            "title": "N Judgments"
+          },
+          "tie_rate_pct": {
+            "type": "number",
+            "title": "Tie Rate Pct"
+          },
+          "tie_flag": {
+            "type": "boolean",
+            "title": "Tie Flag"
+          },
+          "sweep_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sweep Source"
+          },
+          "sweep_n": {
+            "type": "integer",
+            "title": "Sweep N"
+          }
+        },
+        "type": "object",
+        "required": [
+          "essay_id",
+          "title",
+          "n_judgments",
+          "tie_rate_pct",
+          "tie_flag",
+          "sweep_source",
+          "sweep_n"
+        ],
+        "title": "EssayFlagOut"
       },
       "EssayMeta": {
         "properties": {
@@ -3748,6 +3906,93 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "JudgeBiasRowOut": {
+        "properties": {
+          "judge_base": {
+            "type": "string",
+            "title": "Judge Base"
+          },
+          "n_total": {
+            "type": "integer",
+            "title": "N Total"
+          },
+          "all_a_pct": {
+            "type": "number",
+            "title": "All A Pct"
+          },
+          "all_ci_lo_pct": {
+            "type": "number",
+            "title": "All Ci Lo Pct"
+          },
+          "all_ci_hi_pct": {
+            "type": "number",
+            "title": "All Ci Hi Pct"
+          },
+          "n_cvc": {
+            "type": "integer",
+            "title": "N Cvc"
+          },
+          "cvc_a_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cvc A Pct"
+          },
+          "cvc_ci_lo_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cvc Ci Lo Pct"
+          },
+          "cvc_ci_hi_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cvc Ci Hi Pct"
+          },
+          "content_bias_pp": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Bias Pp"
+          }
+        },
+        "type": "object",
+        "required": [
+          "judge_base",
+          "n_total",
+          "all_a_pct",
+          "all_ci_lo_pct",
+          "all_ci_hi_pct",
+          "n_cvc",
+          "cvc_a_pct",
+          "cvc_ci_lo_pct",
+          "cvc_ci_hi_pct",
+          "content_bias_pp"
+        ],
+        "title": "JudgeBiasRowOut",
+        "description": "Per-judge A-preference breakdown.\n\n`all_*` covers every judged row; `cvc_*` covers only\ncompletion-vs-completion pairs (neither side is human), which is the\npure-position-bias signal. `content_bias_pp` is the all - cvc gap in\npercentage points; null when cvc n<20."
       },
       "JudgeLabel": {
         "properties": {
@@ -6562,6 +6807,39 @@
           "per_crit"
         ],
         "title": "SmallGridRow"
+      },
+      "SmallNCellOut": {
+        "properties": {
+          "gen_model": {
+            "type": "string",
+            "title": "Gen Model"
+          },
+          "judge_base": {
+            "type": "string",
+            "title": "Judge Base"
+          },
+          "condition": {
+            "type": "string",
+            "title": "Condition"
+          },
+          "criterion": {
+            "type": "string",
+            "title": "Criterion"
+          },
+          "n": {
+            "type": "integer",
+            "title": "N"
+          }
+        },
+        "type": "object",
+        "required": [
+          "gen_model",
+          "judge_base",
+          "condition",
+          "criterion",
+          "n"
+        ],
+        "title": "SmallNCellOut"
       },
       "Source": {
         "properties": {

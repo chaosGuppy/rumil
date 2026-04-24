@@ -683,6 +683,33 @@ export type DegreeCell = {
 };
 
 /**
+ * DiagnosticsBundle
+ *
+ * Summary counts + three sections for the Diagnostics pane.
+ *
+ * `biased_judge_count` uses a |A%-50| > 5pp threshold so the banner
+ * line matches the default color thresholds in the UI.
+ */
+export type DiagnosticsBundle = {
+    /**
+     * Judge Bias
+     */
+    judge_bias: Array<JudgeBiasRowOut>;
+    /**
+     * Biased Judge Count
+     */
+    biased_judge_count: number;
+    /**
+     * Small N Cells
+     */
+    small_n_cells: Array<SmallNCellOut>;
+    /**
+     * Essay Flags
+     */
+    essay_flags: Array<EssayFlagOut>;
+};
+
+/**
  * DispatchExecutedEventOut
  */
 export type DispatchExecutedEventOut = {
@@ -833,6 +860,40 @@ export type EssayDetail = {
      * Criteria
      */
     criteria: Array<string>;
+};
+
+/**
+ * EssayFlagOut
+ */
+export type EssayFlagOut = {
+    /**
+     * Essay Id
+     */
+    essay_id: string;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * N Judgments
+     */
+    n_judgments: number;
+    /**
+     * Tie Rate Pct
+     */
+    tie_rate_pct: number;
+    /**
+     * Tie Flag
+     */
+    tie_flag: boolean;
+    /**
+     * Sweep Source
+     */
+    sweep_source: string | null;
+    /**
+     * Sweep N
+     */
+    sweep_n: number;
 };
 
 /**
@@ -1078,6 +1139,59 @@ export type HttpValidationError = {
      * Detail
      */
     detail?: Array<ValidationError>;
+};
+
+/**
+ * JudgeBiasRowOut
+ *
+ * Per-judge A-preference breakdown.
+ *
+ * `all_*` covers every judged row; `cvc_*` covers only
+ * completion-vs-completion pairs (neither side is human), which is the
+ * pure-position-bias signal. `content_bias_pp` is the all - cvc gap in
+ * percentage points; null when cvc n<20.
+ */
+export type JudgeBiasRowOut = {
+    /**
+     * Judge Base
+     */
+    judge_base: string;
+    /**
+     * N Total
+     */
+    n_total: number;
+    /**
+     * All A Pct
+     */
+    all_a_pct: number;
+    /**
+     * All Ci Lo Pct
+     */
+    all_ci_lo_pct: number;
+    /**
+     * All Ci Hi Pct
+     */
+    all_ci_hi_pct: number;
+    /**
+     * N Cvc
+     */
+    n_cvc: number;
+    /**
+     * Cvc A Pct
+     */
+    cvc_a_pct: number | null;
+    /**
+     * Cvc Ci Lo Pct
+     */
+    cvc_ci_lo_pct: number | null;
+    /**
+     * Cvc Ci Hi Pct
+     */
+    cvc_ci_hi_pct: number | null;
+    /**
+     * Content Bias Pp
+     */
+    content_bias_pp: number | null;
 };
 
 /**
@@ -2682,6 +2796,32 @@ export type SmallGridRow = {
 };
 
 /**
+ * SmallNCellOut
+ */
+export type SmallNCellOut = {
+    /**
+     * Gen Model
+     */
+    gen_model: string;
+    /**
+     * Judge Base
+     */
+    judge_base: string;
+    /**
+     * Condition
+     */
+    condition: string;
+    /**
+     * Criterion
+     */
+    criterion: string;
+    /**
+     * N
+     */
+    n: number;
+};
+
+/**
  * Source
  *
  * One generated continuation (or the held-out human remainder).
@@ -3404,6 +3544,44 @@ export type SubmitJudgmentApiVersusJudgmentsPostResponses = {
 };
 
 export type SubmitJudgmentApiVersusJudgmentsPostResponse = SubmitJudgmentApiVersusJudgmentsPostResponses[keyof SubmitJudgmentApiVersusJudgmentsPostResponses];
+
+export type GetDiagnosticsApiVersusDiagnosticsGetData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Criterion
+         */
+        criterion?: string | null;
+        /**
+         * Include Contaminated
+         */
+        include_contaminated?: boolean;
+        /**
+         * Include Stale
+         */
+        include_stale?: boolean;
+    };
+    url: '/api/versus/diagnostics';
+};
+
+export type GetDiagnosticsApiVersusDiagnosticsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetDiagnosticsApiVersusDiagnosticsGetError = GetDiagnosticsApiVersusDiagnosticsGetErrors[keyof GetDiagnosticsApiVersusDiagnosticsGetErrors];
+
+export type GetDiagnosticsApiVersusDiagnosticsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: DiagnosticsBundle;
+};
+
+export type GetDiagnosticsApiVersusDiagnosticsGetResponse = GetDiagnosticsApiVersusDiagnosticsGetResponses[keyof GetDiagnosticsApiVersusDiagnosticsGetResponses];
 
 export type HealthzHealthzGetData = {
     body?: never;

@@ -3,6 +3,7 @@ import type { ResultsBundle } from "@/api/types.gen";
 import { API_BASE, serverFetch } from "@/lib/api-base";
 import { AutoSubmitCheckbox } from "@/components/versus/AutoSubmitCheckbox";
 import { AutoSubmitSelect } from "@/components/versus/AutoSubmitSelect";
+import { DiagnosticsPane, fetchDiagnostics } from "@/components/versus/DiagnosticsPane";
 import { JudgmentRowsTable } from "@/components/versus/JudgmentRowsTable";
 import { MatrixTable } from "@/components/versus/MatrixTable";
 import { VersusHeader } from "@/components/versus/VersusHeader";
@@ -68,7 +69,10 @@ export default async function VersusResultsPage({
     condition: sp.filter_condition,
     criterion: sp.filter_criterion,
   };
-  const data = await getResults(criterion, includeContaminated, includeStale, rowFilter);
+  const [data, diagnostics] = await Promise.all([
+    getResults(criterion, includeContaminated, includeStale, rowFilter),
+    fetchDiagnostics(criterion, includeContaminated, includeStale),
+  ]);
 
   if (!data) {
     return (
@@ -308,6 +312,8 @@ export default async function VersusResultsPage({
             </div>
           </details>
         )}
+
+        <DiagnosticsPane data={diagnostics} />
 
         <details className="collapsible" id="judgments" open={hasRowFilter}>
           <summary>

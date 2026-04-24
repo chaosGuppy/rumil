@@ -468,10 +468,11 @@ async def run_ws(
         print("[info] no dimensions specified for ws variant; nothing to do")
         return
 
-    run_id = str(uuid.uuid4())
-    db = await DB.create(run_id=run_id, prod=False, staged=not persist)
-    project = await db.get_or_create_project(workspace)
-    db.project_id = project.id
+    # Probe DB just for project lookup — projects live outside any run's
+    # staged view, and the per-pair DBs below inherit db.project_id through
+    # their explicit constructor arg.
+    probe_db = await DB.create(run_id=str(uuid.uuid4()), prod=False, staged=False)
+    project = await probe_db.get_or_create_project(workspace)
     ws_short = project.id[:8]
 
     task_body_cache = {(t, v): _resolve_task_body(t, v) for t, v in tasks_spec}
@@ -487,10 +488,7 @@ async def run_ws(
     def _compose(task_name: str, is_versus_crit: bool) -> str:
         suffix = f"versus_{task_name}" if is_versus_crit else task_name
         ph = prompt_hash_cache[(task_name, is_versus_crit)]
-        return (
-            f"rumil:ws:{model}:{ws_short}:{suffix}"
-            f":p{ph}:v{BLIND_JUDGE_VERSION}:t{thash}"
-        )
+        return f"rumil:ws:{model}:{ws_short}:{suffix}:p{ph}:v{BLIND_JUDGE_VERSION}:t{thash}"
 
     tasks = _plan_rumil_pairs(
         cfg,
@@ -522,30 +520,6 @@ async def run_ws(
             print(f"  ... and {len(tasks) - 20} more")
         return
 
-    # runs.config is surfaced via the traces UI but is NOT fed to the
-    # agent during the run (agent reads pages via load_page / search /
-    # explore_subgraph; it never reads the runs row). Safe to embed
-    # judge identity here for forensic traceability. Do NOT add per-pair
-    # content like essay_id / source ids at the run level for ws — pairs
-    # share one run, so there's nothing pair-specific to record.
-    prompt_hashes = {(f"versus_{t}" if v else t): prompt_hash_cache[(t, v)] for t, v in tasks_spec}
-    await db.create_run(
-        name=f"versus-rumil-ws:{workspace}",
-        question_id=None,
-        config={
-            "origin": "versus",
-            "variant": "ws",
-            "workspace": workspace,
-            "model": model,
-            "dimensions": list(dimensions),
-            "prompt_hash_by_task": prompt_hashes,
-            "blind_judge_version": BLIND_JUDGE_VERSION,
-            "num_pairs": len(tasks),
-            "staged": not persist,
-        },
-    )
-    print(f"[run] {settings.frontend_url.rstrip('/')}/traces/{run_id}")
-
     sem = asyncio.Semaphore(effective_concurrency)
     done = 0
     total = len(tasks)
@@ -560,6 +534,16 @@ async def run_ws(
         nonlocal done
         async with sem:
             t0 = time.time()
+            # Each pair gets its own run_id + its own DB. Matches the
+            # run_orch shape: staging is per-run, concurrent pairs can't
+            # contaminate each other's staged views, the per-pair trace
+            # URL points at just that pair's VERSUS_JUDGE call, and the
+            # MutationState cache on the shared DB no longer thrashes
+            # across pairs.
+            run_id = str(uuid.uuid4())
+            db = await DB.create(
+                run_id=run_id, prod=False, project_id=project.id, staged=not persist
+            )
             try:
                 task_body = _resolve_task_body(task_name, is_versus_crit)
                 effective_task = f"versus_{task_name}" if is_versus_crit else task_name
@@ -575,6 +559,29 @@ async def run_ws(
                     source_b_id=pair.source_b_id,
                     task_name=effective_task,
                 )
+                # runs.config is surfaced via the traces UI but is NOT
+                # fed to the agent (agent reads pages via load_page /
+                # search / explore_subgraph, never the runs row). Safe
+                # to embed per-pair metadata for forensic traceability.
+                ph = prompt_hash_cache[(task_name, is_versus_crit)]
+                await db.create_run(
+                    name=f"versus-rumil-ws:{workspace}:{pair.essay_id}",
+                    question_id=None,
+                    config={
+                        "origin": "versus",
+                        "variant": "ws",
+                        "workspace": workspace,
+                        "model": model,
+                        "task_name": effective_task,
+                        "prompt_hash": ph,
+                        "blind_judge_version": BLIND_JUDGE_VERSION,
+                        "essay_id": pair.essay_id,
+                        "source_a": pair.source_a_id,
+                        "source_b": pair.source_b_id,
+                        "staged": not persist,
+                    },
+                )
+                print(f"[run] {settings.frontend_url.rstrip('/')}/traces/{run_id}")
                 result = await judge_pair_ws_aware(db, pair_ctx, task_body=task_body, model=model)
             except Exception as e:
                 print(f"[err ] {pair.essay_id} {task_name}: {type(e).__name__}: {e}")
@@ -840,10 +847,7 @@ def run_rumil_text(
 
     def _compose(task_name: str, is_versus_crit: bool) -> str:
         ph = prompt_hash_cache[(task_name, is_versus_crit)]
-        return (
-            f"rumil:text:{anthropic_model}:{task_name}"
-            f":p{ph}:v{BLIND_JUDGE_VERSION}:s{shash}"
-        )
+        return f"rumil:text:{anthropic_model}:{task_name}:p{ph}:v{BLIND_JUDGE_VERSION}:s{shash}"
 
     tasks = _plan_rumil_pairs(
         cfg,

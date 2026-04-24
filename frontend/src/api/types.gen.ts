@@ -897,6 +897,28 @@ export type EssayFlagOut = {
 };
 
 /**
+ * EssayJudgmentsResponse
+ *
+ * Judgments for a single essay at the current prefix_config_hash.
+ *
+ * Stale judgments (rows whose prefix_hash no longer matches what the
+ * essay hashes to today) are filtered out of ``judgments`` so the UI
+ * doesn't aggregate verdicts that scored different text. ``stale_hidden``
+ * is the count of rows filtered this way, so the UI can surface
+ * "N stale judgments hidden" rather than silently dropping them.
+ */
+export type EssayJudgmentsResponse = {
+    /**
+     * Judgments
+     */
+    judgments: Array<Judgment>;
+    /**
+     * Stale Hidden
+     */
+    stale_hidden: number;
+};
+
+/**
  * EssayMeta
  *
  * Headline metadata for one cached essay.
@@ -1569,6 +1591,10 @@ export type JudgmentSubmit = {
      * Note
      */
     note?: string;
+    /**
+     * Force
+     */
+    force?: boolean;
 };
 
 /**
@@ -1583,6 +1609,10 @@ export type JudgmentSubmitResult = {
      * Winner Source
      */
     winner_source: string;
+    /**
+     * Duplicate
+     */
+    duplicate?: boolean;
 };
 
 /**
@@ -3393,11 +3423,9 @@ export type GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetError = GetEssayJ
 
 export type GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetResponses = {
     /**
-     * Response Get Essay Judgments Api Versus Essays  Essay Id  Judgments Get
-     *
      * Successful Response
      */
-    200: Array<Judgment>;
+    200: EssayJudgmentsResponse;
 };
 
 export type GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetResponse = GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetResponses[keyof GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetResponses];

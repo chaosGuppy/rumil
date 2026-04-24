@@ -143,11 +143,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Judgment"
-                  },
-                  "title": "Response Get Essay Judgments Api Versus Essays  Essay Id  Judgments Get"
+                  "$ref": "#/components/schemas/EssayJudgmentsResponse"
                 }
               }
             }
@@ -3562,6 +3558,28 @@
         ],
         "title": "EssayFlagOut"
       },
+      "EssayJudgmentsResponse": {
+        "properties": {
+          "judgments": {
+            "items": {
+              "$ref": "#/components/schemas/Judgment"
+            },
+            "type": "array",
+            "title": "Judgments"
+          },
+          "stale_hidden": {
+            "type": "integer",
+            "title": "Stale Hidden"
+          }
+        },
+        "type": "object",
+        "required": [
+          "judgments",
+          "stale_hidden"
+        ],
+        "title": "EssayJudgmentsResponse",
+        "description": "Judgments for a single essay at the current prefix_config_hash.\n\nStale judgments (rows whose prefix_hash no longer matches what the\nessay hashes to today) are filtered out of ``judgments`` so the UI\ndoesn't aggregate verdicts that scored different text. ``stale_hidden``\nis the count of rows filtered this way, so the UI can surface\n\"N stale judgments hidden\" rather than silently dropping them."
+      },
       "EssayMeta": {
         "properties": {
           "id": {
@@ -4682,6 +4700,11 @@
             "type": "string",
             "title": "Note",
             "default": ""
+          },
+          "force": {
+            "type": "boolean",
+            "title": "Force",
+            "default": false
           }
         },
         "type": "object",
@@ -4707,6 +4730,11 @@
           "winner_source": {
             "type": "string",
             "title": "Winner Source"
+          },
+          "duplicate": {
+            "type": "boolean",
+            "title": "Duplicate",
+            "default": false
           }
         },
         "type": "object",

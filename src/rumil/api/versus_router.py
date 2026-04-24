@@ -576,8 +576,22 @@ def get_essay_sources(essay_id: str) -> list[Source]:
     return sorted(by_source.values(), key=lambda s: (s.source_id != "human", s.source_id))
 
 
-@router.get("/essays/{essay_id}/judgments", response_model=list[Judgment])
-def get_essay_judgments(essay_id: str) -> list[Judgment]:
+class EssayJudgmentsResponse(pydantic.BaseModel):
+    """Judgments for a single essay at the current prefix_config_hash.
+
+    Stale judgments (rows whose prefix_hash no longer matches what the
+    essay hashes to today) are filtered out of ``judgments`` so the UI
+    doesn't aggregate verdicts that scored different text. ``stale_hidden``
+    is the count of rows filtered this way, so the UI can surface
+    "N stale judgments hidden" rather than silently dropping them.
+    """
+
+    judgments: list[Judgment]
+    stale_hidden: int
+
+
+@router.get("/essays/{essay_id}/judgments", response_model=EssayJudgmentsResponse)
+def get_essay_judgments(essay_id: str) -> EssayJudgmentsResponse:
     cfg = _cfg_required()
     essay = _load_essay(essay_id)
     if not essay:
@@ -589,10 +603,13 @@ def get_essay_judgments(essay_id: str) -> list[Judgment]:
         length_tolerance=cfg.completion.length_tolerance,
     )
     judgments: list[Judgment] = []
+    stale_hidden = 0
     for row in versus_jsonl.read(_resolve_path(cfg.storage.judgments_log)):
         if row.get("essay_id") != essay.id:
             continue
         if row.get("prefix_config_hash") != task.prefix_config_hash:
+            if row.get("verdict") is not None:
+                stale_hidden += 1
             continue
         jm = str(row.get("judge_model", ""))
         base, phash, version = versus_judge.parse_judge_model_suffix(jm)
@@ -622,7 +639,7 @@ def get_essay_judgments(essay_id: str) -> list[Judgment]:
             )
         )
     judgments.sort(key=lambda j: (j.judge_model, j.criterion, j.source_a, j.source_b))
-    return judgments
+    return EssayJudgmentsResponse(judgments=judgments, stale_hidden=stale_hidden)
 
 
 def _cond_meta(cond: str) -> ConditionMeta:

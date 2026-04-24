@@ -1,6 +1,12 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import type { EssayDetail, EssayMeta, Judgment, Source } from "@/api/types.gen";
+import type {
+  EssayDetail,
+  EssayJudgmentsResponse,
+  EssayMeta,
+  Judgment,
+  Source,
+} from "@/api/types.gen";
 import { API_BASE, serverFetch } from "@/lib/api-base";
 import { AutoSubmitSelect } from "@/components/versus/AutoSubmitSelect";
 import { VersusHeader } from "@/components/versus/VersusHeader";
@@ -48,11 +54,13 @@ export default async function VersusInspectPage({
         `/api/versus/essays/${encodeURIComponent(selectedId)}/sources`,
       )) ?? [])
     : [];
-  const judgments = selectedId
-    ? ((await fetchJson<Judgment[]>(
+  const judgmentsPayload = selectedId
+    ? await fetchJson<EssayJudgmentsResponse>(
         `/api/versus/essays/${encodeURIComponent(selectedId)}/judgments`,
-      )) ?? [])
-    : [];
+      )
+    : null;
+  const judgments: Judgment[] = judgmentsPayload?.judgments ?? [];
+  const staleHidden = judgmentsPayload?.stale_hidden ?? 0;
 
   const essaySelector = (
     <form method="get" action="/versus/inspect" style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -122,7 +130,7 @@ export default async function VersusInspectPage({
             </p>
             <PromptPane body={detail.paraphrase_prompt_template} maxHeight="60vh" />
 
-            {judgments.length > 0 && (
+            {(judgments.length > 0 || staleHidden > 0) && (
               <>
                 <h2 style={{ marginTop: 36, fontSize: 16, fontWeight: 500 }}>
                   Judgments for this essay
@@ -131,6 +139,13 @@ export default async function VersusInspectPage({
                   One row per judgment. Rumil-path judges show the raw 7-point preference label and a
                   link to the rumil trace.
                 </p>
+                {staleHidden > 0 && (
+                  <p className="versus-muted" style={{ fontSize: 12, marginTop: -4 }}>
+                    <strong>{staleHidden}</strong> judgment{staleHidden === 1 ? "" : "s"} hidden
+                    because they reference an older <code>prefix_config_hash</code> for this essay
+                    (re-import changed the text or prompt version). Still on disk; not aggregated here.
+                  </p>
+                )}
                 <div className="versus-card" style={{ padding: 0, overflow: "auto" }}>
                   <table className="judgments">
                     <thead>

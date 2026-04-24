@@ -18,9 +18,9 @@ _VERSUS_SRC = Path(__file__).resolve().parents[1] / "versus" / "src"
 if str(_VERSUS_SRC) not in sys.path:
     sys.path.insert(0, str(_VERSUS_SRC))
 
-from versus import judge as versus_judge  # noqa: E402
 from versus.rumil_judge import _mirror_row, _PendingPair  # noqa: E402
 
+from versus import judge as versus_judge  # noqa: E402
 
 # judgment_key: order slot produces distinct strings ------------------------
 
@@ -42,12 +42,8 @@ def test_judgment_key_ab_and_ba_produce_distinct_strings():
 
 
 def test_judgment_key_sort_canonicalises_source_a_b():
-    k1 = versus_judge.judgment_key(
-        "e", "ph", "human", "openai/gpt-5.4", "c", "jm", order="ab"
-    )
-    k2 = versus_judge.judgment_key(
-        "e", "ph", "openai/gpt-5.4", "human", "c", "jm", order="ab"
-    )
+    k1 = versus_judge.judgment_key("e", "ph", "human", "openai/gpt-5.4", "c", "jm", order="ab")
+    k2 = versus_judge.judgment_key("e", "ph", "openai/gpt-5.4", "human", "c", "jm", order="ab")
     assert k1 == k2
 
 
@@ -63,31 +59,22 @@ def test_judgment_key_requires_order_as_keyword():
 
 def test_order_from_display_first_ab_when_alphabetically_lower_is_first():
     # sorted(["human", "openai/gpt-5.4"])[0] == "human"
-    assert (
-        versus_judge.order_from_display_first("human", "openai/gpt-5.4", "human")
-        == "ab"
-    )
+    assert versus_judge.order_from_display_first("human", "openai/gpt-5.4", "human") == "ab"
 
 
 def test_order_from_display_first_ba_when_alphabetically_higher_is_first():
     # sorted(["human", "openai/gpt-5.4"])[0] == "human"; first is the other one
     assert (
-        versus_judge.order_from_display_first(
-            "human", "openai/gpt-5.4", "openai/gpt-5.4"
-        )
-        == "ba"
+        versus_judge.order_from_display_first("human", "openai/gpt-5.4", "openai/gpt-5.4") == "ba"
     )
 
 
 def test_order_from_display_first_is_symmetric_in_input_order():
     # The arg order shouldn't matter -- what matters is which *sorted*
     # slot the display_first sits in.
-    assert (
-        versus_judge.order_from_display_first("human", "paraphrase:foo", "human")
-        == versus_judge.order_from_display_first(
-            "paraphrase:foo", "human", "human"
-        )
-    )
+    assert versus_judge.order_from_display_first(
+        "human", "paraphrase:foo", "human"
+    ) == versus_judge.order_from_display_first("paraphrase:foo", "human", "human")
 
 
 # infer_order: passthrough + legacy derivation ------------------------------
@@ -175,18 +162,14 @@ def test_mirror_row_includes_order_ab_when_lower_is_first():
 
 
 def test_mirror_row_includes_order_ba_when_higher_is_first():
-    pair = _make_pending_pair(
-        "human", "openai/gpt-5.4", display_first_id="openai/gpt-5.4"
-    )
+    pair = _make_pending_pair("human", "openai/gpt-5.4", display_first_id="openai/gpt-5.4")
     row = _mirror_row(pair, "rumil:text:m:d:p1:v1:s1", "rumil_d", _FakeJudgeResult(), t0=0.0)
     assert row["order"] == "ba"
     assert row["key"].endswith("|ba")
 
 
 def test_mirror_row_key_matches_judgment_key():
-    pair = _make_pending_pair(
-        "human", "openai/gpt-5.4", display_first_id="openai/gpt-5.4"
-    )
+    pair = _make_pending_pair("human", "openai/gpt-5.4", display_first_id="openai/gpt-5.4")
     judge_model = "rumil:text:m:d:p1:v1:s1"
     row = _mirror_row(pair, judge_model, "rumil_d", _FakeJudgeResult(), t0=0.0)
     expected = versus_judge.judgment_key(
@@ -210,9 +193,7 @@ def test_call_one_judgment_row_includes_order(mocker):
         "versus.openrouter.chat",
         return_value={"choices": [{"message": {"content": "A strongly preferred"}}]},
     )
-    mocker.patch(
-        "versus.openrouter.extract_text", return_value="A strongly preferred"
-    )
+    mocker.patch("versus.openrouter.extract_text", return_value="A strongly preferred")
 
     from versus.judge import Source, _call_one_judgment
 

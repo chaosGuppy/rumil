@@ -8,6 +8,7 @@ through the API into a 500.
 
 from __future__ import annotations
 
+import json
 import logging
 import sys
 from pathlib import Path
@@ -51,7 +52,7 @@ def test_read_tolerates_truncated_final_line_with_trailing_newline(tmp_path):
 def test_read_raises_on_mid_file_corruption(tmp_path):
     path = tmp_path / "log.jsonl"
     path.write_text('{"key": "a"}\nGARBAGE\n{"key": "b"}\n')
-    with pytest.raises(Exception):
+    with pytest.raises(json.JSONDecodeError):
         list(versus_jsonl.read(path))
 
 

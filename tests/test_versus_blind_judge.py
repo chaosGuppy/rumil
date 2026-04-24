@@ -39,7 +39,6 @@ import pytest
 from rumil.versus_bridge import (
     PairContext,
     _build_ws_user_prompt,
-    _format_pair_content,
     _versus_extra,
     ensure_versus_question,
 )
@@ -107,12 +106,8 @@ def _assert_no_id_leak(rendered: str, source_a_id: str, source_b_id: str) -> Non
     used in this test file are chosen so they don't appear in any essay
     body, dimension prompt, or judge shell.
     """
-    assert source_a_id not in rendered, (
-        f"source_a_id {source_a_id!r} leaked into rendered payload"
-    )
-    assert source_b_id not in rendered, (
-        f"source_b_id {source_b_id!r} leaked into rendered payload"
-    )
+    assert source_a_id not in rendered, f"source_a_id {source_a_id!r} leaked into rendered payload"
+    assert source_b_id not in rendered, f"source_b_id {source_b_id!r} leaked into rendered payload"
 
 
 ID_PAIRS = (
@@ -171,9 +166,7 @@ def test_rumil_text_judge_does_not_leak_source_ids(source_a_id, source_b_id):
 
 
 @pytest.mark.parametrize(("source_a_id", "source_b_id"), ID_PAIRS)
-def test_rumil_ws_orch_agent_visible_surfaces_do_not_leak_source_ids(
-    source_a_id, source_b_id
-):
+def test_rumil_ws_orch_agent_visible_surfaces_do_not_leak_source_ids(source_a_id, source_b_id):
     """Backend 4: rumil:ws / rumil:orch agent-visible surfaces.
 
     Covers everything a ws/orch agent can read without hitting the DB

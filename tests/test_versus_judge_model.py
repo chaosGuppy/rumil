@@ -81,5 +81,7 @@ def test_parse_legacy_unhashed_judge_model() -> None:
         ("anthropic:claude-opus-4-7", "paraphrase:anthropic/claude-opus-4-7"),
     ),
 )
-def test_content_test_baseline_normalizes_anthropic(judge_model: str, expected_baseline: str) -> None:
+def test_content_test_baseline_normalizes_anthropic(
+    judge_model: str, expected_baseline: str
+) -> None:
     assert analyze._content_test_baseline(judge_model) == expected_baseline

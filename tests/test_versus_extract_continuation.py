@@ -52,11 +52,7 @@ def test_fallback_is_also_stripped() -> None:
 
 
 def test_multiline_content_preserved() -> None:
-    text = (
-        "<continuation>## Heading\n\n"
-        "First paragraph.\n\n"
-        "Second paragraph.</continuation>"
-    )
+    text = "<continuation>## Heading\n\nFirst paragraph.\n\nSecond paragraph.</continuation>"
     expected = "## Heading\n\nFirst paragraph.\n\nSecond paragraph."
     assert complete.extract_continuation(text) == expected
 

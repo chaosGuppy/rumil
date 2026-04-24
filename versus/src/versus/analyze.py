@@ -5,6 +5,7 @@ from __future__ import annotations
 import collections
 import pathlib
 import re
+from collections.abc import Sequence
 
 from versus import jsonl, judge
 
@@ -109,17 +110,18 @@ _TOOL_HASH_RE = re.compile(r"^t[0-9a-f]{8}$")
 _SURFACE_HASH_RE = re.compile(r"^q[0-9a-f]{8}$")
 
 
-def _peel_ts_tag(parts: list[str]) -> list[str]:
-    while parts and (
-        _SAMPLING_HASH_RE.match(parts[-1])
-        or _TOOL_HASH_RE.match(parts[-1])
-        or _SURFACE_HASH_RE.match(parts[-1])
+def _peel_ts_tag(parts: Sequence[str]) -> list[str]:
+    out = list(parts)
+    while out and (
+        _SAMPLING_HASH_RE.match(out[-1])
+        or _TOOL_HASH_RE.match(out[-1])
+        or _SURFACE_HASH_RE.match(out[-1])
     ):
-        parts = parts[:-1]
-    return parts
+        out = out[:-1]
+    return out
 
 
-def _strip_phash_version(parts: list[str]) -> tuple[list[str], str | None, str | None]:
+def _strip_phash_version(parts: Sequence[str]) -> tuple[list[str], str | None, str | None]:
     """Peel trailing ``:s<hash>``, ``:t<hash>``, ``:q<hash>``, ``:v<N>``, then ``:p<hash>`` off a split judge_model.
 
     The sampling / tool-prompt / pair-surface hashes are absorbed
@@ -385,8 +387,8 @@ def matrix_by_source(
 
 def format_matrix(
     data: dict,
-    gen_models: list[str] | None = None,
-    judge_models: list[str] | None = None,
+    gen_models: Sequence[str] | None = None,
+    judge_models: Sequence[str] | None = None,
     condition: str = "completion",
     criterion: str | None = None,
 ) -> str:

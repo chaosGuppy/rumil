@@ -2,7 +2,7 @@
 name: rumil-versus-judge
 description: Run pairwise judgments on versus essay-continuation pairs using rumil-adjacent judge backends — direct Anthropic with versus prompt (text), Anthropic with rumil dimension prompt (rumil-text), rumil's SDK agent with workspace tools (ws), or a full orchestrator run per pair (orch). Use when the user wants to measure how well rumil discriminates on pairs with known ground truth (human continuation vs. model continuations), compare Anthropic judges against OpenRouter judges in versus, evaluate whether workspace material improves judgment, or top up pending judgments after adding new dimensions or models.
 allowed-tools: Bash, Read
-argument-hint: "--variant text|rumil-text|ws|orch [--workspace <name>] [--rumil-model opus|sonnet|haiku] [--dimension <name>...] [--versus-criterion <name>...] [--essay <id>...] [--contestants <csv>] [--vs-human] [--model <id>...] [--budget N] [--limit N] [--concurrency N] [--dry-run]"
+argument-hint: "--variant text|rumil-text|ws|orch [--workspace <name>] [--rumil-model opus|sonnet|haiku] [--dimension <name>...] [--essay <id>...] [--contestants <csv>] [--vs-human] [--model <id>...] [--budget N] [--limit N] [--concurrency N] [--current-only] [--persist] [--dry-run]"
 ---
 
 # rumil-versus-judge
@@ -20,12 +20,12 @@ page can link back to the rumil trace.
 |---|---|---|---|
 | `text` (default) | Single-turn Anthropic call, versus judge prompt. Same shape as OpenRouter judges, different model axis. | `anthropic:<model>:p<hash>:v<N>:s<hash>` | no |
 | `rumil-text` | Single-turn Anthropic call with **rumil's** dimension prompt (judge-shell + essay-adapted dimension body). Isolates the prompt-source effect from the workspace/tools effect that `ws` bundles together. | `rumil:text:<model>:<dim>:p<hash>:v<N>:s<hash>` | no |
-| `ws` | One VERSUS_JUDGE rumil agent call per pair with single-arm workspace-exploration tools (search / load_page / explore_subgraph). Dimension prompt defaults to essay-adapted rumil dimensions; `--versus-criterion` also available for direct comparison. | `rumil:ws:<model>:<ws_short>:<task>:p<hash>:v<N>:t<hash>` | **yes** |
+| `ws` | One VERSUS_JUDGE rumil agent call per pair with single-arm workspace-exploration tools (search / load_page / explore_subgraph). Uses the essay-adapted rumil dimension prompt selected via `--dimension`. | `rumil:ws:<model>:<ws_short>:<task>:p<hash>:v<N>:t<hash>` | **yes** |
 | `orch` | Per-pair: create Question page, fire `TwoPhaseOrchestrator` at configurable budget, then a closing call extracts the 7-point label. Produces a full research trace per pair. | `rumil:orch:<model>:<ws_short>:b<N>:<task>:p<hash>:v<N>:t<hash>` | **yes** |
 
-`<task>` is either a rumil dimension name (e.g. `general_quality`) or
-`versus_<criterion>` (e.g. `versus_standalone_quality`) when
-`--versus-criterion` is set.
+`<task>` is the rumil dimension name selected via `--dimension` (e.g.
+`general_quality`, `grounding`). Versus-style criterion prompts were
+retired in JUDGE_PROMPT_VERSION=2; use a rumil dimension instead.
 
 Four tags appear in the key, three automatic and one manual:
 
@@ -79,19 +79,20 @@ on stale data without confirmation.
   ordering. Picking the model matters: opus and sonnet produce
   meaningfully different verdicts on the same pairs, so treat it as
   part of the judge identity.
-- `rumil-text` requires `--rumil-model` OR exactly one `--model`
-  (doesn't fall back to `judging.anthropic_models` the way `text`
-  does). Use `--model <full-id>` only if you need a model not in the
-  alias list.
+- `rumil-text` uses `--rumil-model` (default opus). It does not accept
+  `--model` — that flag is text-variant only. If you need a model not in
+  the alias list for `rumil-text`, add an entry to `RUMIL_MODEL_ALIASES`
+  in `run_rumil_judgments.py`.
 - Dimensions default to `general_quality`. Each dimension needs a
   prompt at `prompts/versus-<name>.md`. Currently available:
   `general_quality`, `grounding`. Adding more = drop a new prompt file
   following the existing adapted-for-essays shape — no code changes
   needed.
-- `--versus-criterion` accepts any key from
-  `versus/src/versus/judge.py:CRITERION_PROMPTS` (e.g.
-  `standalone_quality`, `informativeness`, `substance_and_bite`). Not
-  applicable to `rumil-text`.
+- `--current-only` — skip groups whose `prefix_config_hash` isn't the
+  current one for the essay. Protects against judging stale rows after
+  an essay re-import; pair with `scripts/status.py` to detect staleness.
+- `--persist` — ws/orch only. Disables the default staged mode and
+  writes versus-created pages to the baseline workspace.
 - `--concurrency N` — concurrent LLM calls. Defaults: `ws` = 2,
   `text` / `rumil-text` = `cfg.concurrency` (usually 8), `orch` = 1
   (serial). Raise `orch` concurrency cautiously (each pair fires a full
@@ -155,7 +156,7 @@ Typical invocations (substitute the user's chosen workspace for `<WS>`):
 - `--variant ws --workspace <WS> --dry-run` — list pending ws judgments
 - `--variant ws --workspace <WS> --limit 5` — run 5 ws judgments
 - `--variant ws --workspace <WS> --rumil-model sonnet --limit 5` — run on sonnet instead of opus
-- `--variant ws --workspace <WS> --dimension grounding --versus-criterion standalone_quality --limit 5` — mix tasks
+- `--variant ws --workspace <WS> --dimension general_quality --dimension grounding --limit 5` — run multiple dimensions
 - `--variant orch --workspace <WS> --budget 4 --limit 3` — 3 orch judgments at minimum budget (TwoPhaseOrchestrator rejects budget < 4)
 
 ## What to surface

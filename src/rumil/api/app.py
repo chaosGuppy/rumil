@@ -177,6 +177,7 @@ async def list_pages(
     search: str | None = None,
     offset: int = 0,
     limit: int = 50,
+    include_hidden: bool = False,
     db: DB = Depends(_get_db_maybe_staged),
 ):
     pages, total_count = await db.get_pages_paginated(
@@ -186,6 +187,7 @@ async def list_pages(
         search=search,
         offset=offset,
         limit=limit,
+        include_hidden=include_hidden,
     )
     return PaginatedPagesOut(
         items=pages,
@@ -228,16 +230,24 @@ async def get_links_to(page_id: str, db: DB = Depends(_get_db)):
 
 
 @app.get("/api/pages/{page_id}/dependents", response_model=list[LinkedPageOut])
-async def get_dependents(page_id: str, db: DB = Depends(_get_db)):
+async def get_dependents(
+    page_id: str,
+    include_hidden: bool = False,
+    db: DB = Depends(_get_db),
+):
     """Pages that depend on this page (inbound DEPENDS_ON links)."""
-    results = await db.get_dependents(page_id)
+    results = await db.get_dependents(page_id, include_hidden=include_hidden)
     return [LinkedPageOut(page=page, link=link) for page, link in results]
 
 
 @app.get("/api/pages/{page_id}/dependencies", response_model=list[LinkedPageOut])
-async def get_dependencies(page_id: str, db: DB = Depends(_get_db)):
+async def get_dependencies(
+    page_id: str,
+    include_hidden: bool = False,
+    db: DB = Depends(_get_db),
+):
     """Pages that this page depends on (outbound DEPENDS_ON links)."""
-    results = await db.get_dependencies(page_id)
+    results = await db.get_dependencies(page_id, include_hidden=include_hidden)
     return [LinkedPageOut(page=page, link=link) for page, link in results]
 
 
@@ -310,9 +320,10 @@ async def get_question_stats(page_id: str, db: DB = Depends(_get_db_maybe_staged
 async def list_root_questions(
     project_id: str,
     workspace: Workspace = Workspace.RESEARCH,
+    include_hidden: bool = False,
     db: DB = Depends(_get_db),
 ):
-    return await db.get_root_questions(workspace)
+    return await db.get_root_questions(workspace, include_hidden=include_hidden)
 
 
 @app.get(

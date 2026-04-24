@@ -162,11 +162,13 @@ async def search_pages_by_vector(
     match_count: int = 10,
     workspace: Workspace | None = None,
     field_name: str | None = None,
+    include_hidden: bool = False,
 ) -> list[tuple[Page, float]]:
     """Search for pages similar to a given embedding vector.
 
     Returns (page, similarity_score) pairs sorted by descending similarity.
-    Optionally filter to embeddings of a specific field_name.
+    Optionally filter to embeddings of a specific field_name. Hidden pages
+    are excluded unless *include_hidden* is True.
     """
     embedding_str = "[" + ",".join(str(x) for x in query_embedding) + "]"
     params: dict[str, Any] = {
@@ -182,6 +184,8 @@ async def search_pages_by_vector(
         params["filter_field_name"] = field_name
     if db.staged:
         params["filter_staged_run_id"] = db.run_id
+    if include_hidden:
+        params["filter_include_hidden"] = True
     rows: _Rows = _rows(await db.client.rpc("match_pages", params).execute())
     results: list[tuple[Page, float]] = []
     for row in rows:

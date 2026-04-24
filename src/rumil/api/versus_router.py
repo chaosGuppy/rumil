@@ -953,15 +953,33 @@ def get_next_pair(name: str, criterion: str | None = None) -> NextPairResponse:
     done: set[str] = set()
     for row in versus_jsonl.read(_resolve_path(cfg.storage.judgments_log)):
         if row.get("judge_model") == judge_model and row.get("criterion") == active_criterion:
-            done.add(row["key"])
+            # Re-derive the row's key with the current scheme so legacy
+            # rows (pre-order field) are still recognized as done: their
+            # stored ``key`` lacks the ``|ab``/``|ba`` suffix. infer_order
+            # recovers the single order they were judged in from
+            # display_first; we then rebuild the key under the current
+            # scheme so the "done" set is comparable to enumeration keys.
+            rorder = versus_judge.infer_order(row)
+            done.add(
+                versus_judge.judgment_key(
+                    row["essay_id"],
+                    row["prefix_config_hash"],
+                    row["source_a"],
+                    row["source_b"],
+                    row["criterion"],
+                    row["judge_model"],
+                    rorder,
+                )
+            )
 
     all_pairs = list(_enumerate_pairs(cfg))
     total = len(all_pairs)
     done_count = 0
     next_p: versus_view.PairShape | None = None
     for p in all_pairs:
+        order = versus_judge.order_from_display_first(p.a, p.b, p.first_source)
         k = versus_judge.judgment_key(
-            p.essay_id, p.prefix_hash, p.a, p.b, active_criterion, judge_model
+            p.essay_id, p.prefix_hash, p.a, p.b, active_criterion, judge_model, order
         )
         if k in done:
             done_count += 1
@@ -1044,8 +1062,9 @@ def submit_judgment(body: JudgmentSubmit) -> JudgmentSubmitResult:
     else:
         raise HTTPException(400, f"bad verdict: {body.verdict}")
 
+    order = versus_judge.order_from_display_first(body.a, body.b, body.first_source)
     k = versus_judge.judgment_key(
-        body.essay_id, body.prefix_hash, body.a, body.b, body.criterion, judge_model
+        body.essay_id, body.prefix_hash, body.a, body.b, body.criterion, judge_model, order
     )
     row = {
         "key": k,
@@ -1055,6 +1074,7 @@ def submit_judgment(body: JudgmentSubmit) -> JudgmentSubmitResult:
         "source_b": body.b,
         "display_first": body.first_source,
         "display_second": body.second_source,
+        "order": order,
         "criterion": body.criterion,
         "judge_model": judge_model,
         "verdict": body.verdict,

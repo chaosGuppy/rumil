@@ -19,8 +19,11 @@ import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from typing import Literal
 
 import httpx
+
+Order = Literal["ab", "ba"]
 
 from rumil.versus_prompts import (
     build_system_prompt,
@@ -83,9 +86,51 @@ def judgment_key(
     source_b: str,
     criterion: str,
     judge_model: str,
+    order: Order,
 ) -> str:
+    """Deterministic dedup key for one judgment row.
+
+    ``order`` records which orientation the judge saw the pair in:
+    ``"ab"`` when the alphabetically-lower source was shown as Continuation
+    A, ``"ba"`` when it was shown as Continuation B. Required (no default)
+    so callers are forced to thread it through — silently defaulting would
+    hide sites that don't compute the order.
+
+    This is the capability slot for future mirror-mode aggregation (emit
+    both orders per pair and collapse them on the read side to cancel
+    position bias). Today the enumeration loops still emit one task per
+    pair, so every new row is either ``"ab"`` or ``"ba"`` but never both.
+    """
     lo, hi = sorted([source_a, source_b])
-    return f"{essay_id}|{prefix_hash}|{lo}__vs__{hi}|{criterion}|{judge_model}"
+    return f"{essay_id}|{prefix_hash}|{lo}__vs__{hi}|{criterion}|{judge_model}|{order}"
+
+
+def order_from_display_first(source_a: str, source_b: str, display_first: str) -> Order:
+    """Derive the ``order`` slot from the display-first source id.
+
+    ``"ab"`` iff the alphabetically-lower source is shown as Continuation
+    A; ``"ba"`` otherwise. Works for any pair (including ones where
+    ``display_first`` equals one of the inputs) -- we only care which
+    sorted-slot ended up at position A.
+    """
+    lo, _ = sorted([source_a, source_b])
+    return "ab" if display_first == lo else "ba"
+
+
+def infer_order(row: dict) -> Order:
+    """Return ``row['order']`` if present; otherwise derive it from ``display_first``.
+
+    Legacy rows (written before the order field was added) don't carry
+    ``order``; their orientation is still deterministic and recoverable
+    from ``display_first`` vs ``sorted([source_a, source_b])``. Use this
+    wherever downstream code needs the per-row order -- it tolerates the
+    mix of pre- and post-change rows that will coexist in the judgments
+    log.
+    """
+    existing = row.get("order")
+    if existing in ("ab", "ba"):
+        return existing  # pyright: ignore[reportReturnType]
+    return order_from_display_first(row["source_a"], row["source_b"], row["display_first"])
 
 
 _PHASH_TAG_RE = re.compile(r"^p[0-9a-f]{8}$")
@@ -301,6 +346,7 @@ def _call_one_judgment(
     system_prompt,
     user_prompt,
     k,
+    order: Order,
     max_tokens,
     client,
 ):
@@ -332,6 +378,7 @@ def _call_one_judgment(
         "source_b": b_id,
         "display_first": first.source_id,
         "display_second": second.source_id,
+        "order": order,
         "criterion": criterion,
         "judge_model": judge_model,
         "verdict": verdict,
@@ -404,6 +451,7 @@ def run(
             src_a = Source(a_id, sources[a_id])
             src_b = Source(b_id, sources[b_id])
             first, second = order_pair(essay_id, src_a, src_b)
+            order = order_from_display_first(a_id, b_id, first.source_id)
             sampling = {
                 "temperature": JUDGE_TEMPERATURE,
                 "max_tokens": cfg.judging.max_tokens,
@@ -411,7 +459,9 @@ def run(
             for criterion in effective_criteria:
                 for base_model in effective_judges:
                     judge_model = compose_judge_model(base_model, criterion, sampling=sampling)
-                    k = judgment_key(essay_id, prefix_hash, a_id, b_id, criterion, judge_model)
+                    k = judgment_key(
+                        essay_id, prefix_hash, a_id, b_id, criterion, judge_model, order
+                    )
                     if k in existing:
                         continue
                     system_prompt, user_prompt = render_judge_prompt(
@@ -434,6 +484,7 @@ def run(
                             system_prompt,
                             user_prompt,
                             k,
+                            order,
                         )
                     )
                     existing.add(k)
@@ -447,7 +498,7 @@ def run(
     print(f"[plan] {len(tasks_to_run)} judgment calls (concurrency={cfg.concurrency})")
     if dry_run:
         for t in tasks_to_run[:20]:
-            essay_id, _, a_id, b_id, _, _, crit, _, jm, _, _, _ = t
+            essay_id, _, a_id, b_id, _, _, crit, _, jm, _, _, _, _ = t
             print(f"  * {essay_id} {a_id} vs {b_id} [{crit}] -> {jm}")
         if len(tasks_to_run) > 20:
             print(f"  ... and {len(tasks_to_run) - 20} more")

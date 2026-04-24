@@ -61,6 +61,7 @@ def _call_one(
     system_prompt: str,
     user_prompt: str,
     k: str,
+    order: judge.Order,
     max_tokens: int,
     client: httpx.Client,
 ) -> dict:
@@ -91,6 +92,7 @@ def _call_one(
         "source_b": b_id,
         "display_first": first.source_id,
         "display_second": second.source_id,
+        "order": order,
         "criterion": criterion,
         "judge_model": judge_model,
         "verdict": verdict,
@@ -144,6 +146,7 @@ def _plan_tasks(
             src_a = judge.Source(a_id, sources[a_id])
             src_b = judge.Source(b_id, sources[b_id])
             first, second = judge.order_pair(essay_id, src_a, src_b)
+            order = judge.order_from_display_first(a_id, b_id, first.source_id)
             for criterion in cfg.judging.criteria:
                 for model in models:
                     sampling = _anthropic_sampling(model, cfg.judging.max_tokens)
@@ -151,7 +154,7 @@ def _plan_tasks(
                         f"anthropic:{model}", criterion, sampling=sampling
                     )
                     k = judge.judgment_key(
-                        essay_id, prefix_hash, a_id, b_id, criterion, judge_model
+                        essay_id, prefix_hash, a_id, b_id, criterion, judge_model, order
                     )
                     if k in existing:
                         continue
@@ -175,6 +178,7 @@ def _plan_tasks(
                             system_prompt,
                             user_prompt,
                             k,
+                            order,
                         )
                     )
                     existing.add(k)
@@ -330,11 +334,12 @@ def _plan_rumil_pairs(
                 display_second_id=second.source_id,
                 display_second_text=second.text,
             )
+            order = judge.order_from_display_first(a_id, b_id, first.source_id)
             for task_name, is_versus_crit in tasks_spec:
                 judge_model = compose_judge_model(task_name, is_versus_crit)
                 criterion_value = task_name if is_versus_crit else f"rumil_{task_name}"
                 k = judge.judgment_key(
-                    essay_id, prefix_hash, a_id, b_id, criterion_value, judge_model
+                    essay_id, prefix_hash, a_id, b_id, criterion_value, judge_model, order
                 )
                 if k in existing:
                     continue
@@ -366,6 +371,9 @@ def _mirror_row(
         winner_source = pair.display_second_id
     elif verdict == "tie":
         winner_source = "tie"
+    order = judge.order_from_display_first(
+        pair.source_a_id, pair.source_b_id, pair.display_first_id
+    )
     k = judge.judgment_key(
         pair.essay_id,
         pair.prefix_hash,
@@ -373,6 +381,7 @@ def _mirror_row(
         pair.source_b_id,
         criterion_value,
         judge_model,
+        order,
     )
     return {
         "key": k,
@@ -382,6 +391,7 @@ def _mirror_row(
         "source_b": pair.source_b_id,
         "display_first": pair.display_first_id,
         "display_second": pair.display_second_id,
+        "order": order,
         "criterion": criterion_value,
         "judge_model": judge_model,
         "verdict": verdict,
@@ -891,6 +901,9 @@ def run_rumil_text(
             winner_source = pair.display_second_id
         elif verdict == "tie":
             winner_source = "tie"
+        order = judge.order_from_display_first(
+            pair.source_a_id, pair.source_b_id, pair.display_first_id
+        )
         k = judge.judgment_key(
             pair.essay_id,
             pair.prefix_hash,
@@ -898,6 +911,7 @@ def run_rumil_text(
             pair.source_b_id,
             f"rumil_{task_name}",
             judge_model,
+            order,
         )
         return {
             "key": k,
@@ -907,6 +921,7 @@ def run_rumil_text(
             "source_b": pair.source_b_id,
             "display_first": pair.display_first_id,
             "display_second": pair.display_second_id,
+            "order": order,
             "criterion": f"rumil_{task_name}",
             "judge_model": judge_model,
             "verdict": verdict,
@@ -934,6 +949,9 @@ def run_rumil_text(
                     pair.source_b_id,
                     f"rumil_{task_name}",
                     judge_model,
+                    judge.order_from_display_first(
+                        pair.source_a_id, pair.source_b_id, pair.display_first_id
+                    ),
                 )
                 for pair, task_name, _ivc, judge_model in tasks
             }

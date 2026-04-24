@@ -272,6 +272,32 @@ async def test_regenerate_and_critique_produces_artefact_and_critique(tmp_db, re
     assert "grade" in crit.extra
 
 
+async def test_resume_errors_on_unknown_task(tmp_db):
+    """resume() must raise when the given task_id doesn't exist."""
+    orchestrator = GenerativeOrchestrator(tmp_db)
+    import uuid as _uuid
+
+    fake_id = str(_uuid.uuid4())
+    with pytest.raises(ValueError, match="not found"):
+        await orchestrator.resume(fake_id)
+
+
+async def test_resume_errors_when_target_is_not_a_question(tmp_db):
+    """resume() rejects non-question scopes — refuses to operate on, say, a claim."""
+    claim = Page(
+        page_type=PageType.CLAIM,
+        layer=PageLayer.SQUIDGY,
+        workspace=Workspace.RESEARCH,
+        content="unrelated claim",
+        headline="unrelated",
+    )
+    await tmp_db.save_page(claim)
+
+    orchestrator = GenerativeOrchestrator(tmp_db)
+    with pytest.raises(ValueError, match="expected question"):
+        await orchestrator.resume(claim.id)
+
+
 @pytest.mark.integration
 async def test_generative_orchestrator_produces_visible_artefact(tmp_db):
     """Tight request → visible ARTEFACT at the end, even if the refiner runs

@@ -11,6 +11,9 @@ Usage:
     uv run python scripts/run_generative.py "<long request>" \
         --headline "Adopt X? one-page brief" --workspace generative-scratch --budget 25
 
+    # Resume an interrupted run. Give it the task id printed by the earlier run.
+    uv run python scripts/run_generative.py --resume <task-id> --budget 15
+
     # Run against production (be careful)
     uv run python scripts/run_generative.py "..." --prod --workspace my-project --budget 25
 
@@ -18,6 +21,10 @@ The script prints the trace URL before starting and, when the orchestrator
 finishes, prints the artefact headline + content so you can see what came out
 without opening the frontend. The task question stays hidden, so nothing leaks
 into the default workspace view unless you pass --include-hidden when browsing.
+
+Resume mode uses the existing task's project scope; the --workspace flag is
+ignored in that case. The refiner picks up exactly where the DB left off
+(current spec + last-N iteration triples) but with fresh agent-loop state.
 """
 
 from __future__ import annotations
@@ -50,26 +57,38 @@ async def run(args: argparse.Namespace) -> int:
         prod=args.prod,
         staged=not args.no_stage,
     )
-    project = await db.get_or_create_project(args.workspace)
-    db.project_id = project.id
+
+    if args.resume:
+        # Project is inherited from the existing task inside resume().
+        run_name = f"resume {args.resume[:8]}"
+    else:
+        project = await db.get_or_create_project(args.workspace)
+        db.project_id = project.id
+        run_name = args.headline or args.request[:120]
 
     await db.init_budget(args.budget)
     await db.create_run(
-        name=args.headline or args.request[:120],
+        name=run_name,
         question_id=None,
         config=settings.capture_config(),
     )
 
     frontend = settings.frontend_url
     print(f"Trace: {frontend}/traces/{db.run_id}\n")
-    print(f"Workspace: {args.workspace}  (project_id={db.project_id})")
+    if args.resume:
+        print(f"Resuming task: {args.resume}")
+    else:
+        print(f"Workspace: {args.workspace}  (project_id={db.project_id})")
     print(f"Budget:    {args.budget}\n")
 
     orchestrator = GenerativeOrchestrator(
         db,
         refine_max_rounds=args.refine_max_rounds,
     )
-    result = await orchestrator.run(args.request, headline=args.headline)
+    if args.resume:
+        result = await orchestrator.resume(args.resume)
+    else:
+        result = await orchestrator.run(args.request, headline=args.headline)
 
     print("\n--- Orchestrator result ---")
     print(f"Task:       {result.task_id[:8]}  ({result.task_id})")
@@ -101,7 +120,22 @@ def main() -> None:
     )
     parser.add_argument(
         "request",
-        help="The user request describing the artefact to produce.",
+        nargs="?",
+        default=None,
+        help=(
+            "The user request describing the artefact to produce. "
+            "Required unless --resume <task-id> is given."
+        ),
+    )
+    parser.add_argument(
+        "--resume",
+        default=None,
+        metavar="TASK_ID",
+        help=(
+            "Resume an existing artefact task (e.g. after interrupting a prior run). "
+            "Loads the task + current spec + last-N triples and re-runs refine_spec. "
+            "When set, the positional request argument and --workspace are ignored."
+        ),
     )
     parser.add_argument(
         "--headline",
@@ -143,6 +177,11 @@ def main() -> None:
         help="Set rumil_smoke_test=1 (caps agent loops at 2 rounds, uses Haiku).",
     )
     args = parser.parse_args()
+
+    if args.resume and args.request:
+        parser.error("--resume cannot be combined with a positional request.")
+    if not args.resume and not args.request:
+        parser.error("either a positional request or --resume <task-id> is required.")
 
     try:
         exit_code = asyncio.run(run(args))

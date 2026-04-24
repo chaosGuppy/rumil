@@ -72,7 +72,7 @@ async def execute(payload: FinalizeArtefactPayload, call: Call, db: DB) -> MoveR
     return MoveResult(
         message=(f"Finalized artefact [{artefact.id[:8]}]: now visible to the workspace."),
         created_page_id=None,
-        trace_extra={"artefact_id": artefact.id, "note": payload.note},
+        trace_extra={"artefact_id": artefact.id},
     )
 
 

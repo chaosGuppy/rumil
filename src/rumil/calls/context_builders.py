@@ -1041,3 +1041,137 @@ class BigAssessContext(ContextBuilder):
             working_page_ids=working_page_ids,
             preloaded_ids=all_extra,
         )
+
+
+class SpecOnlyContext(ContextBuilder):
+    """Context containing ONLY the spec items for an artefact-task question.
+
+    Used by generate_artefact: the generator must produce the artefact from
+    the spec alone, with no access to the broader workspace. Any information
+    the artefact should reflect must be captured in a spec item.
+    """
+
+    async def build_context(self, infra: CallInfra) -> ContextResult:
+        task = await infra.db.get_page(infra.question_id)
+        if task is None:
+            raise ValueError(
+                f"SpecOnlyContext: artefact-task question {infra.question_id} not found"
+            )
+
+        spec_links = await infra.db.get_links_to(infra.question_id)
+        spec_of_links = [l for l in spec_links if l.link_type == LinkType.SPEC_OF]
+        spec_ids = [l.from_page_id for l in spec_of_links]
+        spec_pages_by_id = await infra.db.get_pages_by_ids(spec_ids)
+        spec_pages = [
+            spec_pages_by_id[pid]
+            for pid in spec_ids
+            if pid in spec_pages_by_id and spec_pages_by_id[pid].is_active()
+        ]
+
+        parts: list[str] = [
+            "# Artefact task",
+            "",
+            task.headline,
+            "",
+            task.content or "(no further description)",
+            "",
+            "---",
+            "",
+            f"# Spec ({len(spec_pages)} items)",
+            "",
+        ]
+        if not spec_pages:
+            parts.append("(no spec items yet)")
+        else:
+            for i, spec in enumerate(spec_pages, start=1):
+                parts += [
+                    f"## {i}. {spec.headline}",
+                    "",
+                    spec.content,
+                    "",
+                ]
+        context_text = "\n".join(parts)
+
+        working_page_ids = [task.id] + [p.id for p in spec_pages]
+        await _record_context_built(infra, working_page_ids, [])
+        return ContextResult(
+            context_text=context_text,
+            working_page_ids=working_page_ids,
+            preloaded_ids=[],
+        )
+
+
+class CritiqueContext(ContextBuilder):
+    """Context for critiquing the latest artefact on an artefact-task question.
+
+    Includes the artefact-task question, the latest active Artefact produced
+    for it, and an embedding-based sweep over the broader workspace. Spec
+    items are deliberately EXCLUDED — the critic judges the artefact against
+    the request and what the workspace knows, not against the spec. That is
+    how spec-gaps get surfaced.
+    """
+
+    async def build_context(self, infra: CallInfra) -> ContextResult:
+        task = await infra.db.get_page(infra.question_id)
+        if task is None:
+            raise ValueError(
+                f"CritiqueContext: artefact-task question {infra.question_id} not found"
+            )
+
+        artefact = await _latest_artefact_for_task(infra.question_id, infra.db)
+        if artefact is None:
+            raise ValueError(
+                f"CritiqueContext: no artefact found for task {infra.question_id}; "
+                "run generate_artefact first."
+            )
+
+        query = task.headline or task.content[:200]
+        embedding_result = await build_embedding_based_context(
+            query,
+            infra.db,
+            scope_question_id=infra.question_id,
+        )
+
+        parts: list[str] = [
+            "# Artefact task",
+            "",
+            task.headline,
+            "",
+            task.content or "(no further description)",
+            "",
+            "---",
+            "",
+            "# Artefact under review",
+            "",
+            f"**{artefact.headline}**",
+            "",
+            artefact.content,
+            "",
+            "---",
+            "",
+            "# Broader workspace context",
+            "",
+            embedding_result.context_text,
+        ]
+        context_text = "\n".join(parts)
+
+        working_page_ids = [task.id, artefact.id, *embedding_result.page_ids]
+        await _record_context_built(infra, working_page_ids, [])
+        return ContextResult(
+            context_text=context_text,
+            working_page_ids=working_page_ids,
+            preloaded_ids=[],
+        )
+
+
+async def _latest_artefact_for_task(task_id: str, db) -> Page | None:
+    """Return the most recently-created active Artefact linked ARTEFACT_OF to *task_id*."""
+    links = await db.get_links_to(task_id)
+    artefact_links = [l for l in links if l.link_type == LinkType.ARTEFACT_OF]
+    if not artefact_links:
+        return None
+    pages_by_id = await db.get_pages_by_ids([l.from_page_id for l in artefact_links])
+    active = [p for p in pages_by_id.values() if p.is_active() and p.page_type == PageType.ARTEFACT]
+    if not active:
+        return None
+    return max(active, key=lambda p: p.created_at)

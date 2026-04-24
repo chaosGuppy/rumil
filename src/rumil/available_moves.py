@@ -151,6 +151,8 @@ PRESETS: dict[str, AvailableMoves] = {
         CallType.GENERATE_SPEC: [
             MoveType.ADD_SPEC_ITEM,
         ],
+        CallType.GENERATE_ARTEFACT: [],
+        CallType.CRITIQUE_ARTEFACT: [],
     },
     "judge-on-assess": {
         CallType.ASSESS: [
@@ -295,6 +297,8 @@ PRESETS: dict[str, AvailableMoves] = {
         CallType.GENERATE_SPEC: [
             MoveType.ADD_SPEC_ITEM,
         ],
+        CallType.GENERATE_ARTEFACT: [],
+        CallType.CRITIQUE_ARTEFACT: [],
     },
 }
 

@@ -35,4 +35,11 @@ JUDGE_PROMPT_VERSION = 2
 # output instead of the first, so models that think-out-loud and revise
 # their rating don't get locked to an early mention. Unhashed surface
 # change — affects verdicts but not prompt/tool hashes.
-BLIND_JUDGE_VERSION = 4
+# v5 (2026-04-24): orch closer is now an SDK agent with the three
+# workspace-exploration tools and max_turns=5 (was a single text_call
+# with no tools despite the shell prompt promising them). The closer
+# now also sees considerations/judgements at CONTENT detail and the
+# View + view_items inline — materially changes what signal the
+# verdict is conditioned on, so rumil:orch rows fork cleanly from
+# pre-bump rows.
+BLIND_JUDGE_VERSION = 5

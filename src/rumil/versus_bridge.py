@@ -34,9 +34,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
-from rumil.context import format_page
+from rumil.context import format_page, render_view
 from rumil.database import DB
-from rumil.llm import LLMExchangeMetadata, text_call
 from rumil.models import (
     Call,
     CallStatus,
@@ -52,7 +51,7 @@ from rumil.run_eval.runner import wrap_as_mcp_tool
 from rumil.sdk_agent import SdkAgentConfig, run_sdk_agent
 from rumil.settings import get_settings, override_settings
 from rumil.tracing.broadcast import Broadcaster
-from rumil.tracing.tracer import CallTrace, reset_trace, set_trace
+from rumil.tracing.tracer import CallTrace
 from rumil.workspace_exploration.explore import make_explore_subgraph_tool
 from rumil.workspace_exploration.load_page import make_load_page_tool
 from rumil.workspace_exploration.search import make_search_tool
@@ -98,13 +97,13 @@ def compute_tool_prompt_hash() -> str:
 
     Scope decision (documented so it doesn't drift): this covers only
     the workspace-exploration family -- the tools directly passed to
-    the SDK in ``judge_pair_ws_aware``. The orch variant's closing call
-    has no tools (it's a plain ``text_call``), and the orchestrator's
-    dispatched calls use a broader tool set (find_considerations,
-    assess, scout-*, etc.) that isn't passed from this bridge; those
-    are covered by ``BLIND_JUDGE_VERSION`` bumps at the semantic level.
-    Hashing workspace-exploration for both ws and orch keeps the key
-    schemes parallel.
+    the SDK in ``judge_pair_ws_aware`` and ``_run_orch_closer``. The
+    orchestrator's dispatched calls inside ``judge_pair_orch`` use a
+    broader tool set (find_considerations, assess, scout-*, etc.)
+    that isn't passed from this bridge; those are covered by
+    ``BLIND_JUDGE_VERSION`` bumps at the semantic level. Hashing
+    workspace-exploration for both ws and orch keeps the key schemes
+    parallel and tracks docstring edits on the shared tools.
 
     Parameters match the bridge's actual call sites: load_page's
     default_detail is "content", explore_subgraph's questions_only is
@@ -359,6 +358,40 @@ async def _judge_pair_ws_aware_inner(
     )
 
 
+async def _render_question_for_closer(db: DB, question_id: str) -> str:
+    """Render a Question + the orchestrator's research into the closer prompt.
+
+    ``format_page`` on a Question already surfaces considerations and
+    judgements as linked items, but only at HEADLINE detail and without
+    the View / view_items the orchestrator synthesizes. That made the
+    closer effectively read preformed claim titles with no evidence and
+    ignore the most distilled layer of research it had paid for.
+
+    This helper extends the standard Question rendering along three
+    axes: considerations and judgements render at CONTENT detail
+    (claim body + link reasoning), and the active View page + all of
+    its view_items are rendered below via :func:`render_view` at
+    ``min_importance=2`` so every item the orch wrote is visible. Kept
+    versus-specific to avoid changing how the non-versus orchestrator
+    / call-site code paths render Question pages.
+    """
+    question = await db.get_page(question_id)
+    if question is None:
+        raise RuntimeError(f"question {question_id} missing after orch run")
+    body = await format_page(
+        question,
+        PageDetail.CONTENT,
+        linked_detail=PageDetail.CONTENT,
+        db=db,
+    )
+    view = await db.get_view_for_question(question_id)
+    if view is None:
+        return body
+    items = await db.get_view_items(view.id, min_importance=2)
+    view_rendered = await render_view(view, items, min_importance=2)
+    return f"{body}\n\n{view_rendered}"
+
+
 async def _run_orch_closer(
     db: DB,
     question_id: str,
@@ -368,12 +401,14 @@ async def _run_orch_closer(
     """Small closing call: read the orchestrator's research on ``question_id``
     and emit a 7-point preference label.
 
-    Wrapped in a VERSUS_JUDGE call so it gets its own trace.
+    Wrapped in a VERSUS_JUDGE call so it gets its own trace. Runs as
+    an SDK agent with the three workspace-exploration tools enabled
+    and a tight ``max_turns`` budget — the system prompt promises
+    those tools so we need to actually wire them. Budget is small
+    because the closer's job is to synthesize what the orchestrator
+    already produced, not to re-do the investigation.
     """
-    question = await db.get_page(question_id)
-    if question is None:
-        raise RuntimeError(f"question {question_id} missing after orch run")
-    rendered = await format_page(question, PageDetail.CONTENT, db=db)
+    rendered = await _render_question_for_closer(db, question_id)
 
     call = await db.create_call(
         call_type=CallType.VERSUS_JUDGE,
@@ -382,27 +417,54 @@ async def _run_orch_closer(
     trace = CallTrace(call.id, db, broadcaster=broadcaster)
     await db.update_call_status(call.id, CallStatus.RUNNING)
 
+    explore_llm_tool = make_explore_subgraph_tool(db, trace, questions_only=False)
+    load_page_llm_tool = make_load_page_tool(db, trace)
+    search_llm_tool = make_search_tool(db, trace)
+    mcp_tools = [
+        wrap_as_mcp_tool(explore_llm_tool),
+        wrap_as_mcp_tool(load_page_llm_tool),
+        wrap_as_mcp_tool(search_llm_tool),
+    ]
+    allowed = [
+        f"mcp__{_TOOL_SERVER_NAME}__{t.name}"
+        for t in (explore_llm_tool, load_page_llm_tool, search_llm_tool)
+    ]
+
     system_prompt = build_system_prompt(task_body)
     user_prompt = (
         "A research run has just finished investigating the pair comparison "
         "captured in the scope question. The rendered question (including "
-        "the essay prefix and both continuations) follows; your job is to "
-        "read it, weigh what the research surfaced, and emit the 7-point "
-        "preference label. Do not re-run the investigation -- this is the "
-        "closing step.\n\n"
+        "the essay prefix, both continuations, the considerations and "
+        "judgements the orchestrator produced, and the distilled view "
+        "items) follows; your job is to read it, weigh what the research "
+        "surfaced, and emit the 7-point preference label. You have the "
+        "workspace tools if further material bears on the essay's subject, "
+        "but keep usage light — this is the closing step, not a fresh "
+        "investigation.\n\n"
         f"{rendered}\n\n"
         "End your response with one of the 7-point preference labels on its "
         "own line."
     )
 
-    token = set_trace(trace)
+    config = SdkAgentConfig(
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        server_name=_TOOL_SERVER_NAME,
+        mcp_tools=mcp_tools,
+        call=call,
+        call_type=CallType.VERSUS_JUDGE,
+        scope_page_id=question_id,
+        db=db,
+        trace=trace,
+        broadcaster=broadcaster,
+        allowed_tools=allowed,
+        disallowed_tools=["Write", "Edit", "Glob"],
+    )
+
     try:
-        report_text = await text_call(
-            system_prompt=system_prompt,
-            user_message=user_prompt,
-            metadata=LLMExchangeMetadata(call_id=call.id, phase="versus_orch_closer"),
-            db=db,
-        )
+        with override_settings(sdk_agent_max_turns=5):
+            result = await run_sdk_agent(config)
+        report_text = "\n\n".join(result.all_assistant_text)
         call.status = CallStatus.COMPLETE
         call.completed_at = datetime.now(UTC)
         call.result_summary = report_text[:500]
@@ -413,8 +475,6 @@ async def _run_orch_closer(
         log.exception("versus orch closer failed (question=%s)", question_id)
         await db.update_call_status(call.id, CallStatus.FAILED)
         raise
-    finally:
-        reset_trace(token)
 
     return report_text, call
 

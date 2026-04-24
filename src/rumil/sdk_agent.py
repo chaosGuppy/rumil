@@ -3,7 +3,6 @@
 import json
 import logging
 import re
-import shutil
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -426,10 +425,6 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
     for hook_type, matchers in config.extra_hooks.items():
         hooks.setdefault(hook_type, []).extend(matchers)
 
-    # Prefer a host-installed `claude` CLI over whatever claude-agent-sdk
-    # bundles. The bundled CLI in 0.1.57-0.1.59 still rejects opus-4-7
-    # with "thinking.type.enabled is not supported for this model";
-    # the host CLI handles the newer thinking protocol correctly.
     options = ClaudeAgentOptions(
         system_prompt=config.system_prompt,
         mcp_servers={config.server_name: server},
@@ -440,7 +435,6 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
         max_turns=settings.sdk_agent_max_turns,
         model=settings.model,
         output_format=config.output_format,
-        cli_path=shutil.which("claude"),
     )
 
     await config.trace.record(

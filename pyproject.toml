@@ -13,7 +13,7 @@ dependencies = [
     "supabase>=2.0.0",
     "uvicorn[standard]>=0.41.0",
     "voyageai>=0.3.2",
-    "claude-agent-sdk>=0.1.0",
+    "claude-agent-sdk>=0.1.66",
     "tenacity>=9.0.0",
     "google-genai>=1.72",
     "versus",

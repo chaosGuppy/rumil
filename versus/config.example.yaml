@@ -11,6 +11,8 @@ essays:
       max_recent: 10
     - id: carlsmith
       max_recent: 8
+  # exclude_ids:        # namespaced essay ids to skip across the pipeline
+  #   - carlsmith__leaving-open-philanthropy-going-to-anthropic
 
 prefix:
   n_paragraphs: 3        # show this many opening paragraphs

@@ -108,18 +108,33 @@ def _cached_verdict(path: pathlib.Path, md_hash: str) -> dict | None:
 
 def _parse_response(text: str) -> dict:
     cleaned = text.strip()
-    fence = re.match(r"^```(?:json)?\s*\n(.*?)\n```\s*$", cleaned, re.DOTALL)
-    if fence:
-        cleaned = fence.group(1).strip()
     try:
         return json.loads(cleaned)
     except json.JSONDecodeError:
         pass
-    # Fallback: extract the outermost JSON object from any surrounding prose.
-    start = cleaned.find("{")
-    end = cleaned.rfind("}")
-    if start != -1 and end != -1 and end > start:
-        return json.loads(cleaned[start : end + 1])
+    # Fenced JSON anywhere in the response (Sonnet sometimes prefixes prose).
+    for m in re.finditer(r"```(?:json)?\s*\n(\{[\s\S]*?\})\s*\n```", cleaned):
+        try:
+            return json.loads(m.group(1))
+        except json.JSONDecodeError:
+            continue
+    # Balanced-brace scan: try every candidate ``{...}`` object that contains
+    # a ``"clean"`` key, from innermost/latest to outermost/earliest.
+    candidates: list[str] = []
+    stack: list[int] = []
+    for i, c in enumerate(cleaned):
+        if c == "{":
+            stack.append(i)
+        elif c == "}" and stack:
+            start = stack.pop()
+            candidates.append(cleaned[start : i + 1])
+    for cand in reversed(candidates):
+        if '"clean"' not in cand:
+            continue
+        try:
+            return json.loads(cand)
+        except json.JSONDecodeError:
+            continue
     raise ValueError(f"validator response is not JSON: {text[:500]!r}")
 
 

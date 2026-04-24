@@ -102,23 +102,36 @@ def main() -> None:
 
     print("\nvalidating essays:")
     failures: list[dict] = []
+    errors: list[str] = []
     for e in essays:
-        verdict = validate_essay.validate(
-            essay_id=e.id,
-            markdown=e.markdown,
-            cache_dir=cfg.essays.cache_dir,
-            force=args.revalidate,
-        )
+        try:
+            verdict = validate_essay.validate(
+                essay_id=e.id,
+                markdown=e.markdown,
+                cache_dir=cfg.essays.cache_dir,
+                force=args.revalidate,
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"  [err]  {e.id}: validator response unparseable — {exc}")
+            errors.append(e.id)
+            continue
         print(validate_essay.format_verdict(verdict))
         if not verdict["clean"]:
             failures.append(verdict)
 
+    if errors:
+        print(
+            f"\n{len(errors)} essay(s) had unparseable validator responses. "
+            "Re-run with --revalidate to retry, or pass --no-validate to skip."
+        )
     if failures:
         print(
             f"\n{len(failures)} essay(s) failed validation. "
             "Fix the parser in versus/src/versus/sources/ and re-run, "
             "or pass --no-validate to import anyway."
         )
+        sys.exit(1)
+    if errors:
         sys.exit(1)
     print(f"\nall {len(essays)} essays clean.")
 

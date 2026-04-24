@@ -164,6 +164,13 @@ def _parse_article_html(html: str) -> tuple[list[Block], int]:
     soup = bs4.BeautifulSoup(html, "lxml")
     for sup in soup.find_all(attrs={"data-component": list(SUP_COMPONENTS)}):
         sup.decompose()
+    # KaTeX renders every formula as three concatenated representations
+    # (MathML + LaTeX annotation + styled HTML). Extract just the LaTeX
+    # source and replace the whole span with it so math reads cleanly.
+    for span in soup.find_all("span", class_="katex"):
+        annot = span.find("annotation", attrs={"encoding": "application/x-tex"})
+        latex = annot.get_text() if annot else ""
+        span.replace_with(bs4.NavigableString(f" ${latex.strip()}$ " if latex.strip() else ""))
     containers = soup.find_all(attrs={"data-component": "Markdown"})
     if not containers:
         return [], 0

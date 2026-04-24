@@ -25,6 +25,7 @@ from rumil.orchestrators.dispatch_handlers import (
     DispatchContext,
 )
 from rumil.settings import get_settings
+from rumil.tracing import observe, propagate_attributes
 from rumil.tracing.broadcast import Broadcaster
 from rumil.tracing.trace_events import DispatchExecutedEvent
 from rumil.tracing.tracer import get_trace
@@ -33,8 +34,46 @@ from rumil.views import get_active_view
 log = logging.getLogger(__name__)
 
 
+def _wrap_run_with_session(run, orch_name: str):
+    """Wrap an orchestrator's run() so its body runs inside a Langfuse session.
+
+    Sets session_id=db.run_id and tags the trace with the orchestrator name
+    so all child spans (CallRunner.run, agent loops, LLM calls) inherit it.
+    No-op when Langfuse is disabled — propagate_attributes is a cheap
+    contextvar manipulation either way.
+    """
+    import functools
+
+    @functools.wraps(run)
+    async def wrapper(self, *args, **kwargs):
+        with propagate_attributes(
+            session_id=self.db.run_id or None,
+            metadata={"orchestrator": orch_name},
+            tags=[f"orchestrator:{orch_name}"],
+        ):
+            return await run(self, *args, **kwargs)
+
+    return wrapper
+
+
 class BaseOrchestrator(ABC):
     summarise_before_assess: bool = True
+
+    def __init_subclass__(cls, **kwargs):
+        """Auto-trace every concrete subclass's run() with a Langfuse span.
+
+        Wraps run() in propagate_attributes so the entire orchestrator
+        invocation appears as one Langfuse trace tagged with session_id=run_id
+        and the orchestrator class name. Subclasses that don't override run()
+        inherit the abstract decl and skip this.
+        """
+        super().__init_subclass__(**kwargs)
+        run = cls.__dict__.get("run")
+        if run is None or getattr(run, "__isabstractmethod__", False):
+            return
+        cls.run = observe(name=f"orchestrator.{cls.__name__}")(
+            _wrap_run_with_session(run, cls.__name__)
+        )
 
     def __init__(self, db: DB, broadcaster: Broadcaster | None = None):
         self.db = db

@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     supabase_prod_key: str = ""
     voyage_ai_api_key: str = ""
     jina_api_key: str = ""
+    langfuse_public_key: str = ""
+    langfuse_secret_key: str = ""
+    langfuse_base_url: str = "https://us.cloud.langfuse.com"
     frontend_url: str = "http://127.0.0.1:3000"
     db_max_concurrent_queries: int = 20
 
@@ -172,6 +175,10 @@ class Settings(BaseSettings):
                 "Set it before running the workspace."
             )
         return self.anthropic_api_key
+
+    @property
+    def langfuse_enabled(self) -> bool:
+        return bool(self.langfuse_public_key and self.langfuse_secret_key)
 
     @classmethod
     def from_env_files(cls, *env_files: str | Path) -> "Settings":

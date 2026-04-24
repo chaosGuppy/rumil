@@ -904,6 +904,18 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
             {exchangeLoading && (
               <span className="trace-exchange-loading">loading...</span>
             )}
+            {event.langfuse_trace_url && (
+              <a
+                href={event.langfuse_trace_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="trace-langfuse-link"
+                title="View this LLM call in Langfuse"
+              >
+                Langfuse ↗
+              </a>
+            )}
           </span>
         )}
         <span className="trace-event-time" suppressHydrationWarning>{formatTime(event.ts)}</span>

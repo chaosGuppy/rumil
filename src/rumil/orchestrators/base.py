@@ -3,6 +3,7 @@ BaseOrchestrator: abstract base class for all orchestrators.
 """
 
 import asyncio
+import functools
 import logging
 import uuid
 from abc import ABC, abstractmethod
@@ -42,7 +43,6 @@ def _wrap_run_with_session(run, orch_name: str):
     No-op when Langfuse is disabled — propagate_attributes is a cheap
     contextvar manipulation either way.
     """
-    import functools
 
     @functools.wraps(run)
     async def wrapper(self, *args, **kwargs):

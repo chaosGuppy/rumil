@@ -7,7 +7,7 @@ to render its "Langfuse ↗" link.
 
 import pytest
 
-from rumil.settings import override_settings
+from rumil.settings import get_settings, override_settings
 from rumil.tracing import (
     flush_langfuse,
     get_langfuse,
@@ -34,12 +34,8 @@ def test_get_langfuse_returns_none_when_disabled():
 
 def test_langfuse_enabled_property():
     with override_settings(langfuse_public_key="", langfuse_secret_key=""):
-        from rumil.settings import get_settings
-
         assert get_settings().langfuse_enabled is False
     with override_settings(langfuse_public_key="pk-x", langfuse_secret_key="sk-y"):
-        from rumil.settings import get_settings
-
         assert get_settings().langfuse_enabled is True
 
 

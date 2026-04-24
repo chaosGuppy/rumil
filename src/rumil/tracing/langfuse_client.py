@@ -24,9 +24,17 @@ from rumil.settings import get_settings
 def get_langfuse() -> Langfuse | None:
     """Return a configured Langfuse client, or None when disabled.
 
-    Reads from settings (not env directly) so worktree/A-B configs work. The
-    SDK reads its own LANGFUSE_PUBLIC_KEY/SECRET_KEY/HOST env vars at client
-    construction, so we set them here from settings before instantiating.
+    **Process-wide singleton.** The first caller's settings determine the
+    enabled/disabled verdict and the client config (project keys, host) for
+    the rest of the process. To switch keys mid-process — e.g. in tests
+    that exercise both states — call ``get_langfuse.cache_clear()`` after
+    swapping settings (the test suite does this via an autouse fixture).
+    Even if you do clear our cache, ``langfuse.get_client()`` itself caches
+    by public_key, so true mid-process key switching needs more care.
+
+    The SDK reads its own LANGFUSE_PUBLIC_KEY/SECRET_KEY/HOST env vars at
+    client construction; we copy from settings to those env vars here so
+    each worktree's distinct .env feeds through correctly at process start.
     """
     settings = get_settings()
     if not settings.langfuse_enabled:

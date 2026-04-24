@@ -274,7 +274,7 @@ export default async function VersusResultsPage({
         )}
 
         {essays_status.length > 0 && (
-          <details className="collapsible" id="essays-status">
+          <details className="collapsible" id="essays-status" open>
             <summary>Essays ({essays_status.length})</summary>
             <div>
               <table className="log" style={{ marginTop: 6 }}>

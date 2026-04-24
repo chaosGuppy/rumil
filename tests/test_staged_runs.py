@@ -771,6 +771,7 @@ async def test_retroactively_staged_update_page_content_visible_to_staged_reader
     await helper.delete_run_data()
     await observer.delete_run_data()
 
+
 async def test_view_as_staged_sees_staged_pages(baseline_db, staged_db, observer_db):
     """A view built from a non-staged DB onto a staged run_id sees that run's pages.
 

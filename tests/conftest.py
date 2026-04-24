@@ -395,6 +395,29 @@ async def prio_harness(tmp_db, mocker):
         "rumil.orchestrators.two_phase.screen_candidates",
         side_effect=_fake_screen,
     )
+
+    async def _fake_score_scouts(
+        scout_types,
+        db,
+        *,
+        call_id,
+        parent_page,
+        parent_judgement,
+        view_render,
+        last_fruit_by_type,
+    ):
+        return {
+            ct.value: {
+                "fruit": last_fruit_by_type.get(ct.value) or 5,
+                "reasoning": "harness-scored",
+            }
+            for ct in scout_types
+        }
+
+    mocker.patch(
+        "rumil.orchestrators.two_phase.score_scouts",
+        side_effect=_fake_score_scouts,
+    )
     mocker.patch(
         "rumil.orchestrators.claim_investigation.score_items_sequentially",
         return_value=[],

@@ -2323,9 +2323,15 @@
             "title": "Call Type"
           },
           "fruit": {
-            "type": "integer",
-            "title": "Fruit",
-            "default": 0
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fruit"
           },
           "reasoning": {
             "type": "string",

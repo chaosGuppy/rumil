@@ -94,7 +94,7 @@ class SubquestionScoreItem(BaseModel):
 
 class CallTypeFruitScoreItem(BaseModel):
     call_type: str
-    fruit: int = 0
+    fruit: int | None = None
     reasoning: str = ""
 
 

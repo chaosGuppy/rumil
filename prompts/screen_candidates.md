@@ -44,7 +44,6 @@ Per candidate, output:
 
 ## When to drop (`investigate: false`)
 
-- A mature view item with high robustness and no dangling threads — no obvious further investigation would move it.
 - Clearly tangential given the scope question and the view's current shape.
 - Scout with `last_fruit <= 2` and no other signal it would pay off.
 - Information already covered by another, stronger candidate you're keeping (dedup your shortlist).

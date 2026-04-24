@@ -392,7 +392,7 @@ export type CallTypeFruitScoreItem = {
     /**
      * Fruit
      */
-    fruit?: number;
+    fruit?: number | null;
     /**
      * Reasoning
      */

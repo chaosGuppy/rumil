@@ -512,7 +512,7 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
             ScoringCompletedEvent(
                 claim_scores=[ClaimScoreItem(**s) for s in item_scores],
                 per_type_fruit=[
-                    CallTypeFruitScoreItem(call_type=ct, fruit=f or 0, reasoning="")
+                    CallTypeFruitScoreItem(call_type=ct, fruit=f, reasoning="")
                     for ct, f in scout_fruit.items()
                 ],
             )

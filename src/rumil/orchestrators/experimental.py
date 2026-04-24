@@ -585,7 +585,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             ExperimentalScoringCompletedEvent(
                 subquestion_scores=[ExperimentalSubquestionScoreItem(**s) for s in subq_scores],
                 per_type_fruit=[
-                    CallTypeFruitScoreItem(call_type=ct, fruit=f or 0, reasoning="")
+                    CallTypeFruitScoreItem(call_type=ct, fruit=f, reasoning="")
                     for ct, f in scout_fruit.items()
                 ],
             )

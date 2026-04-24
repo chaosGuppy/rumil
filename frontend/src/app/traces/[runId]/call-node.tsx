@@ -812,7 +812,9 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
                 <div key={i} className="trace-fruit-type-row">
                   <div className="trace-fruit-type-header">
                     <span className="trace-score-headline">{s.call_type}</span>
-                    <span className="trace-kv-value">{s.fruit}/10</span>
+                    <span className="trace-kv-value">
+                      {s.fruit == null ? "unknown (never run)" : `${s.fruit}/10`}
+                    </span>
                   </div>
                   {s.reasoning && (
                     <div className="trace-score-reasoning">{s.reasoning}</div>
@@ -867,7 +869,9 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
                 <div key={i} className="trace-fruit-type-row">
                   <div className="trace-fruit-type-header">
                     <span className="trace-score-headline">{s.call_type}</span>
-                    <span className="trace-kv-value">{s.fruit}/10</span>
+                    <span className="trace-kv-value">
+                      {s.fruit == null ? "unknown (never run)" : `${s.fruit}/10`}
+                    </span>
                   </div>
                   {s.reasoning && (
                     <div className="trace-score-reasoning">{s.reasoning}</div>
@@ -894,11 +898,11 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
       )}
 
       {event.event === "candidates_built" && (
-        <div className="trace-event-body">
-          <div className="trace-kv">
+        <details className="trace-event-body">
+          <summary>
             <span className="trace-kv-key">candidates</span>
             <span className="trace-kv-value">{(event.candidates ?? []).length}</span>
-          </div>
+          </summary>
           {(event.candidates ?? []).map((c, i) => (
             <div key={i} className="trace-score-row">
               <span className="trace-score-headline">
@@ -910,36 +914,34 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
               </span>
             </div>
           ))}
-        </div>
+        </details>
       )}
 
-      {event.event === "candidates_screened" && (
-        <div className="trace-event-body">
-          {(() => {
-            const kept = (event.decisions ?? []).filter((d) => d.investigate).length;
-            const total = (event.decisions ?? []).length;
-            return (
-              <div className="trace-kv">
-                <span className="trace-kv-key">kept</span>
-                <span className="trace-kv-value">{kept} / {total}</span>
+      {event.event === "candidates_screened" && (() => {
+        const kept = (event.decisions ?? []).filter((d) => d.investigate).length;
+        const total = (event.decisions ?? []).length;
+        return (
+          <details className="trace-event-body">
+            <summary>
+              <span className="trace-kv-key">kept</span>
+              <span className="trace-kv-value">{kept} / {total}</span>
+            </summary>
+            {(event.decisions ?? []).map((d, i) => (
+              <div key={i} className="trace-score-row">
+                <span className="trace-score-headline">
+                  {d.investigate ? "✓" : "·"} {d.ref.length > 16 ? d.ref.slice(0, 8) : d.ref}
+                </span>
+                <span className="trace-kv-value">
+                  {d.suggested_call_type || ""}
+                </span>
+                {d.reason && (
+                  <span className="trace-score-reasoning">{d.reason}</span>
+                )}
               </div>
-            );
-          })()}
-          {(event.decisions ?? []).map((d, i) => (
-            <div key={i} className="trace-score-row">
-              <span className="trace-score-headline">
-                {d.investigate ? "✓" : "·"} {d.ref.length > 16 ? d.ref.slice(0, 8) : d.ref}
-              </span>
-              <span className="trace-kv-value">
-                {d.suggested_call_type || ""}
-              </span>
-              {d.reason && (
-                <span className="trace-score-reasoning">{d.reason}</span>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </details>
+        );
+      })()}
 
       {event.event === "autocompact" && (
         <div className="trace-event-body trace-info-text">

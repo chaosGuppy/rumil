@@ -16,6 +16,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from rumil.calls.dispatches import DISPATCH_DEFS
 from rumil.database import DB
 from rumil.llm import LLMExchangeMetadata, build_system_prompt, structured_call
 from rumil.models import CallType, LinkType, Page, PageType
@@ -106,6 +107,18 @@ class ScreenResult(BaseModel):
     """Top-level response wrapper for the screening structured call."""
 
     decisions: list[ScreenDecision]
+
+
+class ScoutFruitScore(BaseModel):
+    """One per-scout fruit assessment from the scout-scoring LLM call."""
+
+    call_type: str = Field(description="Scout call_type, e.g. 'scout_hypotheses'.")
+    fruit: int = Field(ge=0, le=10, description="0-10 remaining fruit.")
+    reasoning: str = Field(description="One-sentence explanation.")
+
+
+class ScoutFruitScoringResult(BaseModel):
+    scores: list[ScoutFruitScore]
 
 
 class ScreenedCandidate(BaseModel):
@@ -304,6 +317,68 @@ def _render_candidates_block(candidates: Sequence[ScreenCandidate]) -> str:
             lines.append(f"provenance: {', '.join(c.provenance)}")
         lines.append("")
     return "\n".join(lines)
+
+
+async def score_scouts(
+    scout_types: Sequence[CallType],
+    db: DB,
+    *,
+    call_id: str,
+    parent_page: Page,
+    parent_judgement: Page | None,
+    view_render: str | None,
+    last_fruit_by_type: dict[str, int | None],
+) -> dict[str, dict[str, Any]]:
+    """Ask the LLM to score remaining fruit for each scout type.
+
+    Returns a mapping ``{call_type_value: {"fruit": int, "reasoning": str}}``.
+    Scouts absent from the response are simply omitted from the result — the
+    caller decides what to do with gaps.
+    """
+    if not scout_types:
+        return {}
+
+    parent_block = _render_parent_block(parent_page, parent_judgement)
+    scout_blocks: list[str] = []
+    for ct in scout_types:
+        ddef = DISPATCH_DEFS.get(ct)
+        description = ddef.description if ddef else ""
+        last = last_fruit_by_type.get(ct.value)
+        last_line = (
+            f"last_fruit: {last}/10" if last is not None else "last_fruit: null (never run)"
+        )
+        scout_blocks.append(
+            f"### `{ct.value}`\n{description}\n{last_line}"
+        )
+    scouts_block = "## Scout types\n\n" + "\n\n".join(scout_blocks)
+
+    parts = [parent_block]
+    if view_render:
+        parts.append(view_render)
+    parts.append(scouts_block)
+    parts.append("Score each scout now — one entry per scout in `scores`.")
+    user_message = "\n\n".join(parts)
+
+    system_prompt = build_system_prompt("score_scouts", include_citations=False)
+
+    result = await structured_call(
+        system_prompt,
+        user_message=user_message,
+        response_model=ScoutFruitScoringResult,
+        cache=True,
+        metadata=LLMExchangeMetadata(
+            call_id=call_id,
+            phase="score_scouts",
+            user_messages=[{"role": "user", "content": user_message}],
+        ),
+        db=db,
+    )
+
+    out: dict[str, dict[str, Any]] = {}
+    if result.parsed:
+        for s in result.parsed.scores:
+            out[s.call_type] = {"fruit": s.fruit, "reasoning": s.reasoning}
+    return out
 
 
 async def screen_candidates(

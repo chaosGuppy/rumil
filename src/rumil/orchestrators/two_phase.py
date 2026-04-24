@@ -5,6 +5,7 @@ TwoPhaseOrchestrator: two-phase orchestrator for new questions.
 import asyncio
 import logging
 from collections.abc import Sequence
+from typing import Any
 
 from rumil.available_calls import get_available_calls_preset
 from rumil.calls.common import mark_call_completed
@@ -40,6 +41,7 @@ from rumil.orchestrators.common import (
 from rumil.orchestrators.screening import (
     ScreenCandidateKind,
     ScreenedCandidate,
+    score_scouts,
     screen_candidates,
     scout_types_from,
 )
@@ -514,7 +516,9 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         screened: list[ScreenedCandidate] | None = None
         approved_scouts: set[str] | None = None
 
+        view_render: str | None = None
         if await view.exists(question_id, self.db):
+            view_render = await view.render_for_parent_scoring(question_id, self.db)
             screened = await screen_candidates(
                 question_id,
                 self.db,
@@ -523,7 +527,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                 trace=trace,
                 parent_page=parent_question,
                 parent_judgement=parent_judgement,
-                view_render=await view.render_for_parent_scoring(question_id, self.db),
+                view_render=view_render,
             )
             if not screened:
                 await trace.record(
@@ -573,6 +577,8 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                 for page, _link in await self.db.get_considerations_for_question(question_id)
             ]
 
+        last_fruit = await self.db.get_latest_scout_fruit(question_id)
+
         scoring_tasks: list = []
         scoring_tasks.append(
             score_items_sequentially(
@@ -596,22 +602,48 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                 db=self.db,
             )
         )
-        scoring_tasks.append(self.db.get_latest_scout_fruit(question_id))
+        if approved_scouts is not None:
+            approved_scout_types = [CallType(ref) for ref in approved_scouts]
+            scoring_tasks.append(
+                score_scouts(
+                    approved_scout_types,
+                    self.db,
+                    call_id=p_call.id,
+                    parent_page=parent_question,
+                    parent_judgement=parent_judgement,
+                    view_render=view_render,
+                    last_fruit_by_type=last_fruit,
+                )
+            )
 
         scoring_results = await asyncio.gather(*scoring_tasks)
         subq_scores: list[dict] = scoring_results[0]
         claim_scores: list[dict] = scoring_results[1]
-        scout_fruit: dict[str, int | None] = scoring_results[2]
 
+        scout_fruit: dict[str, int | None] = {}
+        scout_reasoning: dict[str, str] = {}
         if approved_scouts is not None:
-            scout_fruit = {k: scout_fruit.get(k) for k in approved_scouts}
+            scout_score_map: dict[str, dict[str, Any]] = scoring_results[2]
+            for ct in approved_scouts:
+                entry = scout_score_map.get(ct)
+                if entry is None:
+                    scout_fruit[ct] = last_fruit.get(ct)
+                else:
+                    scout_fruit[ct] = entry["fruit"]
+                    scout_reasoning[ct] = entry["reasoning"]
+        else:
+            scout_fruit = last_fruit
 
         await trace.record(
             ScoringCompletedEvent(
                 subquestion_scores=[SubquestionScoreItem(**s) for s in subq_scores],
                 claim_scores=[ClaimScoreItem(**s) for s in claim_scores],
                 per_type_fruit=[
-                    CallTypeFruitScoreItem(call_type=ct, fruit=f or 0, reasoning="")
+                    CallTypeFruitScoreItem(
+                        call_type=ct,
+                        fruit=f,
+                        reasoning=scout_reasoning.get(ct, ""),
+                    )
                     for ct, f in scout_fruit.items()
                 ],
             )
@@ -657,11 +689,14 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             scores_text += "\n".join(lines)
 
         if scout_fruit:
-            fruit_lines = ["## Per-Scout-Type Remaining Fruit (from latest calls)", ""]
+            fruit_lines = ["## Per-Scout-Type Remaining Fruit", ""]
             for ct, f in sorted(scout_fruit.items()):
-                fruit_lines.append(
-                    f"- **{ct}**: {f}/10" if f is not None else f"- **{ct}**: unknown"
-                )
+                fruit_value = f"{f}/10" if f is not None else "unknown"
+                reasoning = scout_reasoning.get(ct, "")
+                line = f"- **{ct}**: {fruit_value}"
+                if reasoning:
+                    line += f" — {reasoning}"
+                fruit_lines.append(line)
             fruit_lines.append("")
             scores_text += "\n".join(fruit_lines)
 

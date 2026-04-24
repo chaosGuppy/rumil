@@ -86,6 +86,46 @@ def prepare(
     )
 
 
+def current_prefix_hashes(cfg, essays_dir) -> dict[str, str]:
+    """Return ``{essay_id: prefix_config_hash}`` for every cached essay.
+
+    Loads each essay JSON in ``essays_dir`` (skipping ``.verdict.json``
+    companion files) and runs :func:`prepare` to compute the live hash
+    that's a function of essay content + prefix params + prompt version.
+    Used by judging scripts with ``--current-only`` to skip groups whose
+    prefix_hash is no longer current.
+    """
+    import json
+    import pathlib
+
+    out: dict[str, str] = {}
+    d = pathlib.Path(essays_dir)
+    if not d.exists():
+        return out
+    for path in sorted(d.glob("*.json")):
+        if path.name.endswith(".verdict.json"):
+            continue
+        data = json.loads(path.read_text())
+        essay = Essay(
+            id=data["id"],
+            url=data.get("url", ""),
+            title=data.get("title", ""),
+            author=data.get("author", ""),
+            pub_date=data.get("pub_date", ""),
+            blocks=[Block(**b) for b in data["blocks"]],
+            markdown=data.get("markdown", ""),
+            schema_version=data.get("schema_version", 0),
+        )
+        task = prepare(
+            essay,
+            n_paragraphs=cfg.prefix.n_paragraphs,
+            include_headers=cfg.prefix.include_headers,
+            length_tolerance=cfg.completion.length_tolerance,
+        )
+        out[essay.id] = task.prefix_config_hash
+    return out
+
+
 def split_paraphrase(
     paraphrase_markdown_blocks: list[Block],
     n_paragraphs: int,

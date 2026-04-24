@@ -66,6 +66,15 @@ def main() -> None:
         action="store_true",
         help="Only emit pairs where one side is 'human'.",
     )
+    ap.add_argument(
+        "--current-only",
+        action="store_true",
+        help=(
+            "Skip groups whose prefix_config_hash isn't the current one for "
+            "the essay (i.e. they reference older essay markdown). Without "
+            "this, completions tied to older imports also get judged."
+        ),
+    )
     ap.add_argument("--limit", type=int, default=None, help="Cap on number of judgments.")
     ap.add_argument("--dry-run", action="store_true", help="Print the plan and exit.")
     args = ap.parse_args()
@@ -81,6 +90,7 @@ def main() -> None:
         essay_ids=args.essay,
         contestants=contestants,
         vs_human=args.vs_human,
+        current_only=args.current_only,
         limit=args.limit,
         dry_run=args.dry_run,
     )

@@ -315,6 +315,7 @@ def run(
     essay_ids: list[str] | None = None,
     contestants: list[str] | None = None,
     vs_human: bool = False,
+    current_only: bool = False,
     limit: int | None = None,
     dry_run: bool = False,
 ) -> None:
@@ -326,7 +327,12 @@ def run(
     - ``essay_ids``    -- restrict to these essays
     - ``contestants``  -- only pairs where both source_ids are in this list
     - ``vs_human``     -- only pairs where one side is "human"
+    - ``current_only`` -- skip groups whose prefix_hash isn't the current
+      one for the essay (i.e. they reference older essay markdown). Avoids
+      spending on judgments that would immediately be marked stale.
     """
+    from versus import prepare
+
     groups, prefix_texts = load_sources_by_essay(cfg.storage.completions_log)
     existing = jsonl.keys(cfg.storage.judgments_log)
 
@@ -334,10 +340,15 @@ def run(
     effective_criteria = criteria if criteria is not None else cfg.judging.criteria
     essay_id_set = set(essay_ids) if essay_ids else None
     contestants_set = set(contestants) if contestants else None
+    current_hashes = (
+        prepare.current_prefix_hashes(cfg, cfg.essays.cache_dir) if current_only else None
+    )
 
     tasks_to_run: list = []
     for (essay_id, prefix_hash), sources in groups.items():
         if essay_id_set is not None and essay_id not in essay_id_set:
+            continue
+        if current_hashes is not None and current_hashes.get(essay_id) != prefix_hash:
             continue
         source_ids = list(sources.keys())
         if not cfg.judging.include_human_as_contestant:

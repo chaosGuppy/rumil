@@ -106,14 +106,22 @@ def _plan_tasks(
     essay_ids: Sequence[str] | None = None,
     contestants: Sequence[str] | None = None,
     vs_human: bool = False,
+    current_only: bool = False,
 ) -> list[tuple]:
+    from versus import prepare
+
     essay_id_set = set(essay_ids) if essay_ids else None
     contestants_set = set(contestants) if contestants else None
+    current_hashes = (
+        prepare.current_prefix_hashes(cfg, cfg.essays.cache_dir) if current_only else None
+    )
     groups, prefix_texts = judge.load_sources_by_essay(cfg.storage.completions_log)
     existing = jsonl.keys(cfg.storage.judgments_log)
     tasks: list[tuple] = []
     for (essay_id, prefix_hash), sources in groups.items():
         if essay_id_set is not None and essay_id not in essay_id_set:
+            continue
+        if current_hashes is not None and current_hashes.get(essay_id) != prefix_hash:
             continue
         source_ids = list(sources.keys())
         if not cfg.judging.include_human_as_contestant:
@@ -172,6 +180,7 @@ def run(
     essay_ids: Sequence[str] | None = None,
     contestants: Sequence[str] | None = None,
     vs_human: bool = False,
+    current_only: bool = False,
 ) -> None:
     if not models:
         print(
@@ -184,6 +193,7 @@ def run(
         models,
         essay_ids=essay_ids,
         contestants=contestants,
+        current_only=current_only,
         vs_human=vs_human,
     )
     if limit is not None:
@@ -254,6 +264,7 @@ def _plan_rumil_pairs(
     essay_ids: Sequence[str] | None = None,
     contestants: Sequence[str] | None = None,
     vs_human: bool = False,
+    current_only: bool = False,
 ) -> list[tuple[_PendingPair, str, bool, str]]:
     """Enumerate pending (pair, task_name, is_versus_criterion, judge_model) tuples.
 
@@ -265,14 +276,22 @@ def _plan_rumil_pairs(
     - ``essay_ids``: restrict to pairs from these essays
     - ``contestants``: restrict to pairs where both source_ids are in this list
     - ``vs_human``: restrict to pairs where one side is ``"human"``
+    - ``current_only``: skip groups whose prefix_hash isn't current
     """
+    from versus import prepare
+
     essay_id_set = set(essay_ids) if essay_ids else None
     contestants_set = set(contestants) if contestants else None
+    current_hashes = (
+        prepare.current_prefix_hashes(cfg, cfg.essays.cache_dir) if current_only else None
+    )
     groups, prefix_texts = judge.load_sources_by_essay(cfg.storage.completions_log)
     existing = jsonl.keys(cfg.storage.judgments_log)
     out: list[tuple[_PendingPair, str, bool, str]] = []
     for (essay_id, prefix_hash), sources in groups.items():
         if essay_id_set is not None and essay_id not in essay_id_set:
+            continue
+        if current_hashes is not None and current_hashes.get(essay_id) != prefix_hash:
             continue
         source_ids = list(sources.keys())
         if not cfg.judging.include_human_as_contestant:
@@ -403,6 +422,7 @@ async def run_ws(
     essay_ids: Sequence[str] | None = None,
     contestants: Sequence[str] | None = None,
     vs_human: bool = False,
+    current_only: bool = False,
     persist: bool = False,
 ) -> None:
     """Run the workspace-aware rumil judge against pending pairs.
@@ -451,6 +471,7 @@ async def run_ws(
         essay_ids=essay_ids,
         contestants=contestants,
         vs_human=vs_human,
+        current_only=current_only,
     )
     if limit is not None:
         tasks = tasks[:limit]
@@ -557,6 +578,7 @@ async def run_orch(
     contestants: Sequence[str] | None = None,
     vs_human: bool = False,
     persist: bool = False,
+    current_only: bool = False,
 ) -> None:
     """Run the orchestrator rumil judge against pending pairs.
 
@@ -603,6 +625,7 @@ async def run_orch(
         essay_ids=essay_ids,
         contestants=contestants,
         vs_human=vs_human,
+        current_only=current_only,
     )
     if limit is not None:
         tasks = tasks[:limit]
@@ -739,6 +762,7 @@ def run_rumil_text(
     essay_ids: Sequence[str] | None = None,
     contestants: Sequence[str] | None = None,
     vs_human: bool = False,
+    current_only: bool = False,
     concurrency: int | None = None,
 ) -> None:
     """Run the single-turn rumil-prompt judge against pending pairs.
@@ -783,6 +807,7 @@ def run_rumil_text(
         essay_ids=essay_ids,
         contestants=contestants,
         vs_human=vs_human,
+        current_only=current_only,
     )
     if limit is not None:
         tasks = tasks[:limit]

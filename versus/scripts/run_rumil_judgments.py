@@ -147,6 +147,15 @@ def main() -> None:
         help="Only emit pairs where one side is 'human'. ws/orch only.",
     )
     ap.add_argument(
+        "--current-only",
+        action="store_true",
+        help=(
+            "Skip groups whose prefix_config_hash isn't the current one for "
+            "the essay. Without this, pairs against older essay imports also "
+            "get judged."
+        ),
+    )
+    ap.add_argument(
         "--persist",
         action="store_true",
         help=(
@@ -179,6 +188,7 @@ def main() -> None:
             essay_ids=args.essay,
             contestants=contestants,
             vs_human=args.vs_human,
+            current_only=args.current_only,
         )
         return
 
@@ -202,6 +212,7 @@ def main() -> None:
             essay_ids=args.essay,
             contestants=contestants,
             vs_human=args.vs_human,
+            current_only=args.current_only,
             concurrency=args.concurrency,
         )
         return
@@ -225,6 +236,7 @@ def main() -> None:
                 essay_ids=args.essay,
                 contestants=contestants,
                 vs_human=args.vs_human,
+                current_only=args.current_only,
                 persist=args.persist,
             )
         )
@@ -242,6 +254,7 @@ def main() -> None:
                 essay_ids=args.essay,
                 contestants=contestants,
                 vs_human=args.vs_human,
+                current_only=args.current_only,
                 persist=args.persist,
             )
         )

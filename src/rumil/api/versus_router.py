@@ -1124,7 +1124,10 @@ def get_judgment_by_key(key: str) -> JudgmentDetail:
     contains `|` and `:` so callers must pass it as a query param.
     """
     cfg = _cfg_required()
-    for row in versus_jsonl.read(_resolve_path(cfg.storage.judgments_log)):
+    # read_dedup so the inspector shows the same (newest) row that the
+    # matrix and /rows tables see; plain read() would return the oldest
+    # duplicate when a --force resubmit produces two rows with the same key.
+    for row in versus_jsonl.read_dedup(_resolve_path(cfg.storage.judgments_log)):
         if row.get("key") != key:
             continue
         jm = str(row.get("judge_model", ""))

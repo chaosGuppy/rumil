@@ -16,6 +16,8 @@ from rumil.tracing.trace_events import (
     AffectedPagesIdentifiedEvent,
     AgentStartedEvent,
     AutocompactEvent,
+    CandidatesBuiltEvent,
+    CandidatesScreenedEvent,
     ClaimReassessedEvent,
     ContextBuiltEvent,
     DispatchesPlannedEvent,
@@ -199,6 +201,14 @@ class QuestionDedupeEventOut(QuestionDedupeEvent, _TraceEnvelopeMixin):
     pass
 
 
+class CandidatesBuiltEventOut(CandidatesBuiltEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class CandidatesScreenedEventOut(CandidatesScreenedEvent, _TraceEnvelopeMixin):
+    pass
+
+
 TraceEventOut = Annotated[
     ContextBuiltEventOut
     | MovesExecutedEventOut
@@ -231,7 +241,9 @@ TraceEventOut = Annotated[
     | PhaseSkippedEventOut
     | GlobalPhaseCompletedEventOut
     | UpdateViewPhaseCompletedEventOut
-    | QuestionDedupeEventOut,
+    | QuestionDedupeEventOut
+    | CandidatesBuiltEventOut
+    | CandidatesScreenedEventOut,
     Field(discriminator="event"),
 ]
 

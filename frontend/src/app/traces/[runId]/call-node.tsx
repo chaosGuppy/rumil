@@ -893,6 +893,54 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
         </div>
       )}
 
+      {event.event === "candidates_built" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">candidates</span>
+            <span className="trace-kv-value">{(event.candidates ?? []).length}</span>
+          </div>
+          {(event.candidates ?? []).map((c, i) => (
+            <div key={i} className="trace-score-row">
+              <span className="trace-score-headline">
+                {c.kind === "scout" ? c.ref : (c.label || c.ref.slice(0, 8))}
+              </span>
+              <span className="trace-kv-value">
+                {c.kind}
+                {c.provenance?.length ? ` · ${c.provenance.join(", ")}` : ""}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {event.event === "candidates_screened" && (
+        <div className="trace-event-body">
+          {(() => {
+            const kept = (event.decisions ?? []).filter((d) => d.investigate).length;
+            const total = (event.decisions ?? []).length;
+            return (
+              <div className="trace-kv">
+                <span className="trace-kv-key">kept</span>
+                <span className="trace-kv-value">{kept} / {total}</span>
+              </div>
+            );
+          })()}
+          {(event.decisions ?? []).map((d, i) => (
+            <div key={i} className="trace-score-row">
+              <span className="trace-score-headline">
+                {d.investigate ? "✓" : "·"} {d.ref.length > 16 ? d.ref.slice(0, 8) : d.ref}
+              </span>
+              <span className="trace-kv-value">
+                {d.suggested_call_type || ""}
+              </span>
+              {d.reason && (
+                <span className="trace-score-reasoning">{d.reason}</span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
       {event.event === "autocompact" && (
         <div className="trace-event-body trace-info-text">
           Context was automatically condensed mid-run (agent {event.agent_id.slice(0, 8)})

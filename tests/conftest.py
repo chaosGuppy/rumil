@@ -25,6 +25,11 @@ from rumil.models import (
     Workspace,
 )
 from rumil.orchestrators.base import BaseOrchestrator
+from rumil.orchestrators.screening import (
+    ScreenCandidateKind,
+    ScreenedCandidate,
+    build_candidate_pool,
+)
 from rumil.settings import override_settings
 
 
@@ -357,6 +362,38 @@ async def prio_harness(tmp_db, mocker):
     mocker.patch(
         "rumil.orchestrators.two_phase.score_items_sequentially",
         return_value=[],
+    )
+
+    async def _fake_screen(
+        question_id,
+        db,
+        scout_types,
+        *,
+        call_id,
+        trace,
+        parent_page,
+        parent_judgement,
+        view_render=None,
+    ):
+        pool = await build_candidate_pool(question_id, db, scout_types)
+        survivors: list[ScreenedCandidate] = []
+        for c in pool:
+            if c.kind == ScreenCandidateKind.SCOUT:
+                ct = CallType(c.ref)
+            else:
+                ct = CallType.FIND_CONSIDERATIONS
+            survivors.append(
+                ScreenedCandidate(
+                    candidate=c,
+                    suggested_call_type=ct,
+                    reason="harness-approved",
+                )
+            )
+        return survivors
+
+    mocker.patch(
+        "rumil.orchestrators.two_phase.screen_candidates",
+        side_effect=_fake_screen,
     )
     mocker.patch(
         "rumil.orchestrators.claim_investigation.score_items_sequentially",

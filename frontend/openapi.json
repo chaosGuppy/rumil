@@ -1258,6 +1258,12 @@
                       },
                       {
                         "$ref": "#/components/schemas/QuestionDedupeEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/CandidatesBuiltEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/CandidatesScreenedEventOut"
                       }
                     ],
                     "discriminator": {
@@ -1294,7 +1300,9 @@
                         "phase_skipped": "#/components/schemas/PhaseSkippedEventOut",
                         "global_phase_completed": "#/components/schemas/GlobalPhaseCompletedEventOut",
                         "update_view_phase_completed": "#/components/schemas/UpdateViewPhaseCompletedEventOut",
-                        "question_dedupe": "#/components/schemas/QuestionDedupeEventOut"
+                        "question_dedupe": "#/components/schemas/QuestionDedupeEventOut",
+                        "candidates_built": "#/components/schemas/CandidatesBuiltEventOut",
+                        "candidates_screened": "#/components/schemas/CandidatesScreenedEventOut"
                       }
                     }
                   },
@@ -2383,6 +2391,111 @@
           "judgements"
         ],
         "title": "CallsForQuestion"
+      },
+      "CandidateTraceItem": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "ref": {
+            "type": "string",
+            "title": "Ref"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "default": ""
+          },
+          "signals": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Signals",
+            "default": {}
+          },
+          "provenance": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Provenance",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "ref"
+        ],
+        "title": "CandidateTraceItem"
+      },
+      "CandidatesBuiltEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "candidates_built",
+            "title": "Event",
+            "default": "candidates_built"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/CandidateTraceItem"
+            },
+            "type": "array",
+            "title": "Candidates",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "candidates"
+        ],
+        "title": "CandidatesBuiltEventOut"
+      },
+      "CandidatesScreenedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "candidates_screened",
+            "title": "Event",
+            "default": "candidates_screened"
+          },
+          "decisions": {
+            "items": {
+              "$ref": "#/components/schemas/ScreenDecisionTraceItem"
+            },
+            "type": "array",
+            "title": "Decisions",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "decisions"
+        ],
+        "title": "CandidatesScreenedEventOut"
       },
       "ClaimReassessedEventOut": {
         "properties": {
@@ -4715,6 +4828,40 @@
           "dispatch_guidance"
         ],
         "title": "ScoringCompletedEventOut"
+      },
+      "ScreenDecisionTraceItem": {
+        "properties": {
+          "ref": {
+            "type": "string",
+            "title": "Ref"
+          },
+          "investigate": {
+            "type": "boolean",
+            "title": "Investigate"
+          },
+          "suggested_call_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggested Call Type"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "ref",
+          "investigate"
+        ],
+        "title": "ScreenDecisionTraceItem"
       },
       "SubagentCompletedEventOut": {
         "properties": {

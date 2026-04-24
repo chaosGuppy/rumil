@@ -436,6 +436,78 @@ export type CallsForQuestion = {
 };
 
 /**
+ * CandidateTraceItem
+ */
+export type CandidateTraceItem = {
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * Ref
+     */
+    ref: string;
+    /**
+     * Label
+     */
+    label?: string;
+    /**
+     * Signals
+     */
+    signals?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Provenance
+     */
+    provenance?: Array<string>;
+};
+
+/**
+ * CandidatesBuiltEventOut
+ */
+export type CandidatesBuiltEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'candidates_built';
+    /**
+     * Candidates
+     */
+    candidates: Array<CandidateTraceItem>;
+};
+
+/**
+ * CandidatesScreenedEventOut
+ */
+export type CandidatesScreenedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'candidates_screened';
+    /**
+     * Decisions
+     */
+    decisions: Array<ScreenDecisionTraceItem>;
+};
+
+/**
  * ClaimReassessedEventOut
  */
 export type ClaimReassessedEventOut = {
@@ -1832,6 +1904,28 @@ export type ScoringCompletedEventOut = {
 };
 
 /**
+ * ScreenDecisionTraceItem
+ */
+export type ScreenDecisionTraceItem = {
+    /**
+     * Ref
+     */
+    ref: string;
+    /**
+     * Investigate
+     */
+    investigate: boolean;
+    /**
+     * Suggested Call Type
+     */
+    suggested_call_type?: string | null;
+    /**
+     * Reason
+     */
+    reason?: string;
+};
+
+/**
  * SubagentCompletedEventOut
  */
 export type SubagentCompletedEventOut = {
@@ -3071,7 +3165,11 @@ export type GetCallEventsApiCallsCallIdEventsGetResponses = {
         event: 'update_view_phase_completed';
     } & UpdateViewPhaseCompletedEventOut) | ({
         event: 'question_dedupe';
-    } & QuestionDedupeEventOut)>;
+    } & QuestionDedupeEventOut) | ({
+        event: 'candidates_built';
+    } & CandidatesBuiltEventOut) | ({
+        event: 'candidates_screened';
+    } & CandidatesScreenedEventOut)>;
 };
 
 export type GetCallEventsApiCallsCallIdEventsGetResponse = GetCallEventsApiCallsCallIdEventsGetResponses[keyof GetCallEventsApiCallsCallIdEventsGetResponses];

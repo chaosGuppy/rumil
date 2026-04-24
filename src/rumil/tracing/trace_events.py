@@ -312,6 +312,31 @@ class QuestionDedupeEvent(BaseModel):
     decision_reasoning: str = ""
 
 
+class CandidateTraceItem(BaseModel):
+    kind: str
+    ref: str
+    label: str = ""
+    signals: dict[str, Any] = {}
+    provenance: list[str] = []
+
+
+class CandidatesBuiltEvent(BaseModel):
+    event: Literal["candidates_built"] = "candidates_built"
+    candidates: list[CandidateTraceItem] = []
+
+
+class ScreenDecisionTraceItem(BaseModel):
+    ref: str
+    investigate: bool
+    suggested_call_type: str | None = None
+    reason: str = ""
+
+
+class CandidatesScreenedEvent(BaseModel):
+    event: Literal["candidates_screened"] = "candidates_screened"
+    decisions: list[ScreenDecisionTraceItem] = []
+
+
 TraceEvent = Annotated[
     ContextBuiltEvent
     | MovesExecutedEvent
@@ -344,6 +369,8 @@ TraceEvent = Annotated[
     | PhaseSkippedEvent
     | GlobalPhaseCompletedEvent
     | UpdateViewPhaseCompletedEvent
-    | QuestionDedupeEvent,
+    | QuestionDedupeEvent
+    | CandidatesBuiltEvent
+    | CandidatesScreenedEvent,
     Field(discriminator="event"),
 ]

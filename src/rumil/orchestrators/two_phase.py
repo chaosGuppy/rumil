@@ -23,6 +23,8 @@ from rumil.models import (
     Call,
     CallType,
     Dispatch,
+    Page,
+    PageType,
     RecurseClaimDispatchPayload,
     RecurseDispatchPayload,
     Workspace,
@@ -34,6 +36,12 @@ from rumil.orchestrators.common import (
     SubquestionScore,
     compute_priority_score,
     score_items_sequentially,
+)
+from rumil.orchestrators.screening import (
+    ScreenCandidateKind,
+    ScreenedCandidate,
+    screen_candidates,
+    scout_types_from,
 )
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
@@ -486,7 +494,6 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         set_trace(trace)
         await trace.record(ContextBuiltEvent(budget=budget))
 
-        child_questions = await self.db.get_child_questions(question_id)
         parent_question = await self.db.get_page(question_id)
         if not parent_question:
             raise RuntimeError(
@@ -500,12 +507,73 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             max(parent_judgements, key=lambda j: j.created_at) if parent_judgements else None
         )
 
+        view = get_active_view()
+        preset_dispatch = list(
+            get_available_calls_preset().main_phase_prioritization_dispatch
+        )
+        screened: list[ScreenedCandidate] | None = None
+        approved_scouts: set[str] | None = None
+
+        if await view.exists(question_id, self.db):
+            screened = await screen_candidates(
+                question_id,
+                self.db,
+                scout_types=scout_types_from(preset_dispatch),
+                call_id=p_call.id,
+                trace=trace,
+                parent_page=parent_question,
+                parent_judgement=parent_judgement,
+                view_render=await view.render_for_parent_scoring(question_id, self.db),
+            )
+            if not screened:
+                await trace.record(
+                    PhaseSkippedEvent(
+                        phase="main_phase_prioritization",
+                        reason="Screen produced no candidates to score.",
+                    )
+                )
+                await mark_call_completed(
+                    p_call,
+                    self.db,
+                    "Main phase skipped — screen produced no candidates.",
+                )
+                self._call_id = p_call.id
+                return PrioritizationResult(dispatch_sequences=[], call_id=p_call.id)
+            approved_scouts = {
+                s.candidate.ref
+                for s in screened
+                if s.candidate.kind == ScreenCandidateKind.SCOUT
+            }
+            survivor_page_ids = [
+                s.candidate.ref
+                for s in screened
+                if s.candidate.kind == ScreenCandidateKind.PAGE
+            ]
+            pages_by_id = (
+                await self.db.get_pages_by_ids(survivor_page_ids)
+                if survivor_page_ids
+                else {}
+            )
+            child_questions: list[Page] = []
+            consideration_pages: list[Page] = []
+            for s in screened:
+                if s.candidate.kind != ScreenCandidateKind.PAGE:
+                    continue
+                page = pages_by_id.get(s.candidate.ref)
+                if page is None or not page.is_active():
+                    continue
+                if page.page_type == PageType.QUESTION:
+                    child_questions.append(page)
+                else:
+                    consideration_pages.append(page)
+        else:
+            child_questions = await self.db.get_child_questions(question_id)
+            consideration_pages = [
+                page
+                for page, _link in await self.db.get_considerations_for_question(question_id)
+            ]
+
         scoring_tasks: list = []
-
-        consideration_pages = [
-            page for page, _link in await self.db.get_considerations_for_question(question_id)
-        ]
-
         scoring_tasks.append(
             score_items_sequentially(
                 parent_page=parent_question,
@@ -528,13 +596,15 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                 db=self.db,
             )
         )
-
         scoring_tasks.append(self.db.get_latest_scout_fruit(question_id))
 
         scoring_results = await asyncio.gather(*scoring_tasks)
         subq_scores: list[dict] = scoring_results[0]
         claim_scores: list[dict] = scoring_results[1]
         scout_fruit: dict[str, int | None] = scoring_results[2]
+
+        if approved_scouts is not None:
+            scout_fruit = {k: scout_fruit.get(k) for k in approved_scouts}
 
         await trace.record(
             ScoringCompletedEvent(
@@ -664,15 +734,22 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             extra_defs.append(RECURSE_DISPATCH_DEF)
             extra_defs.append(RECURSE_CLAIM_DISPATCH_DEF)
 
+        if approved_scouts is not None:
+            effective_dispatch_types = [
+                ct
+                for ct in preset_dispatch
+                if not ct.value.startswith("scout_") or ct.value in approved_scouts
+            ]
+        else:
+            effective_dispatch_types = preset_dispatch
+
         result = await run_prioritization_call(
             task,
             context_text,
             p_call,
             self.db,
             short_id_map=short_id_map,
-            dispatch_types=list(
-                get_available_calls_preset().main_phase_prioritization_dispatch,
-            ),
+            dispatch_types=effective_dispatch_types,
             extra_dispatch_defs=extra_defs or None,
             system_prompt=build_system_prompt(
                 "two_phase_main_phase_prioritization",

@@ -3712,6 +3712,17 @@
               }
             ],
             "title": "Tool Uses"
+          },
+          "langfuse_trace_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Langfuse Trace Url"
           }
         },
         "type": "object",
@@ -3729,7 +3740,8 @@
           "duration_ms",
           "cost_usd",
           "has_thinking",
-          "tool_uses"
+          "tool_uses",
+          "langfuse_trace_url"
         ],
         "title": "LLMExchangeEventOut"
       },

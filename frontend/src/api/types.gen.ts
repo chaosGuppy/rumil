@@ -941,6 +941,10 @@ export type LlmExchangeEventOut = {
     tool_uses: Array<{
         [key: string]: unknown;
     }> | null;
+    /**
+     * Langfuse Trace Url
+     */
+    langfuse_trace_url: string | null;
 };
 
 /**

@@ -51,6 +51,7 @@ api:
   env:
     USE_PROD_DB: "1"
     SUPABASE_PROD_URL: https://aesjaehibxrzearctiqp.supabase.co
+    LANGFUSE_BASE_URL: https://us.cloud.langfuse.com
 
   httproute:
     enabled: true

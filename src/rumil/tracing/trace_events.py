@@ -88,6 +88,7 @@ class LLMExchangeEvent(BaseModel):
     cost_usd: float | None = None
     has_thinking: bool | None = None
     tool_uses: list[dict[str, Any]] | None = None
+    langfuse_trace_url: str | None = None
 
 
 class WarningEvent(BaseModel):

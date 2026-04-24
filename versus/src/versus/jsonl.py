@@ -15,8 +15,11 @@ silently corrupt later reads within the same process.
 from __future__ import annotations
 
 import json
+import logging
 import pathlib
 from collections.abc import Iterator
+
+log = logging.getLogger(__name__)
 
 
 # {abs_path_str: (mtime_ns, size, parsed_rows)}
@@ -35,10 +38,28 @@ def _cached_rows(path: pathlib.Path) -> list[dict]:
         return cached[2]
     rows: list[dict] = []
     with open(path) as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                rows.append(json.loads(line))
+        lines = f.readlines()
+    total = len(lines)
+    for i, line in enumerate(lines, start=1):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            rows.append(json.loads(stripped))
+        except json.JSONDecodeError as e:
+            # A topup / appender that crashed mid-write leaves the final
+            # line truncated. Tolerate exactly that case (last non-empty
+            # line only) and warn; anything else is corruption we don't
+            # want to paper over.
+            if i == total:
+                log.warning(
+                    "jsonl: ignoring truncated final line in %s (%s). "
+                    "Re-run the writer to append a fresh row.",
+                    path,
+                    e,
+                )
+                break
+            raise
     _READ_CACHE[key] = (mtime, size, rows)
     return rows
 

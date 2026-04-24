@@ -19,14 +19,16 @@ dedup keys.
   tool-list changes, inline user-message edits).
 
 Numeric values match their former per-module locations.
-``COMPLETION_PROMPT_VERSION = 3`` reflects the source-neutral prompt
-wording + namespaced essay ids introduced when forethought/redwood/
-carlsmith sources were unified.
+``COMPLETION_PROMPT_VERSION = 4`` drops the "continue in the same voice
+and style" constraint — the judge prompt evaluates continuations on
+overall writing and thinking quality, with voice/coherence as one
+sub-criterion, so asking generators to impersonate the author's voice
+over-constrains the task relative to what's being judged.
 """
 
 from __future__ import annotations
 
-COMPLETION_PROMPT_VERSION = 3
+COMPLETION_PROMPT_VERSION = 4
 PARAPHRASE_PROMPT_VERSION = 3
 JUDGE_PROMPT_VERSION = 2
 BLIND_JUDGE_VERSION = 3

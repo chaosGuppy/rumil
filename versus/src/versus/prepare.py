@@ -149,10 +149,11 @@ def render_prompt(task: PreparedTask, include_headers: bool, tolerance: float) -
     high = int(task.target_words * (1 + tolerance))
 
     parts = [
-        "You are continuing an essay. Below is the beginning; continue it in the same voice",
-        "and style. Do not restate or summarize the opening —",
-        f"write only the continuation. Aim for about {task.target_words} words",
-        f"(between {low} and {high} is fine). Use Markdown section headings if it helps structure.",
+        "You are continuing an essay. Below is the beginning; write the best",
+        "continuation you can — substantive, specific, engaged with the opening's",
+        "topic. Don't restate the opening, hedge performatively, or drift generic.",
+        f"Aim for about {task.target_words} words (between {low} and {high} is fine).",
+        "Use Markdown section headings if it helps structure.",
     ]
     if include_headers and task.remaining_headers:
         parts.append("")

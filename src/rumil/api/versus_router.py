@@ -25,6 +25,7 @@ from fastapi import APIRouter, HTTPException
 
 from versus import analyze as versus_analyze
 from versus import config as versus_config
+from versus import diagnostics as versus_diagnostics
 from versus import essay as versus_essay
 from versus import jsonl as versus_jsonl
 from versus import judge as versus_judge
@@ -1176,3 +1177,138 @@ def submit_judgment(body: JudgmentSubmit) -> JudgmentSubmitResult:
     }
     versus_jsonl.append(_resolve_path(cfg.storage.judgments_log), row)
     return JudgmentSubmitResult(key=k, winner_source=winner_source)
+
+
+class JudgeBiasRowOut(pydantic.BaseModel):
+    """Per-judge A-preference breakdown.
+
+    `all_*` covers every judged row; `cvc_*` covers only
+    completion-vs-completion pairs (neither side is human), which is the
+    pure-position-bias signal. `content_bias_pp` is the all - cvc gap in
+    percentage points; null when cvc n<20.
+    """
+
+    judge_base: str
+    n_total: int
+    all_a_pct: float
+    all_ci_lo_pct: float
+    all_ci_hi_pct: float
+    n_cvc: int
+    cvc_a_pct: float | None
+    cvc_ci_lo_pct: float | None
+    cvc_ci_hi_pct: float | None
+    content_bias_pp: float | None
+
+
+class SmallNCellOut(pydantic.BaseModel):
+    gen_model: str
+    judge_base: str
+    condition: str
+    criterion: str
+    n: int
+
+
+class EssayFlagOut(pydantic.BaseModel):
+    essay_id: str
+    title: str
+    n_judgments: int
+    tie_rate_pct: float
+    tie_flag: bool
+    sweep_source: str | None
+    sweep_n: int
+
+
+class DiagnosticsBundle(pydantic.BaseModel):
+    """Summary counts + three sections for the Diagnostics pane.
+
+    `biased_judge_count` uses a |A%-50| > 5pp threshold so the banner
+    line matches the default color thresholds in the UI.
+    """
+
+    judge_bias: list[JudgeBiasRowOut]
+    biased_judge_count: int
+    small_n_cells: list[SmallNCellOut]
+    essay_flags: list[EssayFlagOut]
+
+
+@router.get("/diagnostics", response_model=DiagnosticsBundle)
+def get_diagnostics(
+    criterion: str | None = None,
+    include_contaminated: bool = False,
+    include_stale: bool = True,
+) -> DiagnosticsBundle:
+    """Post-hoc bias / n-floor / per-essay sanity over the judgments log.
+
+    Filters mirror /results so the pane's numbers line up with the
+    matrix the operator is currently looking at.
+    """
+    cfg = _cfg_required()
+    judgments_log = _resolve_path(cfg.storage.judgments_log)
+
+    _, current_prefix_hashes = _build_essays_status(cfg)
+
+    titles: dict[str, str] = {}
+    for p in _iter_essay_paths():
+        with open(p) as f:
+            d = json.load(f)
+        titles[d["id"]] = d.get("title", d["id"])
+
+    filtered_rows: list[dict] = []
+    for row in versus_jsonl.read_dedup(judgments_log):
+        if row.get("verdict") is None:
+            continue
+        if not include_contaminated and row.get("contamination_note"):
+            continue
+        if not include_stale and versus_analyze._is_stale_row(row, current_prefix_hashes):
+            continue
+        if criterion is not None and row.get("criterion") != criterion:
+            continue
+        filtered_rows.append(row)
+
+    bias = versus_diagnostics.judge_bias_rows(filtered_rows)
+    small = versus_diagnostics.small_n_cells(filtered_rows)
+    flags = versus_diagnostics.essay_flags(filtered_rows)
+
+    bias_out = [
+        JudgeBiasRowOut(
+            judge_base=r.judge_base,
+            n_total=r.n_total,
+            all_a_pct=(r.all_a_rate or 0.0) * 100,
+            all_ci_lo_pct=(r.all_ci_lo or 0.0) * 100,
+            all_ci_hi_pct=(r.all_ci_hi or 0.0) * 100,
+            n_cvc=r.n_cvc,
+            cvc_a_pct=(r.cvc_a_rate * 100) if r.cvc_a_rate is not None else None,
+            cvc_ci_lo_pct=(r.cvc_ci_lo * 100) if r.cvc_ci_lo is not None else None,
+            cvc_ci_hi_pct=(r.cvc_ci_hi * 100) if r.cvc_ci_hi is not None else None,
+            content_bias_pp=(r.content_bias * 100) if r.content_bias is not None else None,
+        )
+        for r in bias
+    ]
+    small_out = [
+        SmallNCellOut(
+            gen_model=c.gen_model,
+            judge_base=c.judge_base,
+            condition=c.condition,
+            criterion=c.criterion,
+            n=c.n,
+        )
+        for c in small
+    ]
+    flags_out = [
+        EssayFlagOut(
+            essay_id=f.essay_id,
+            title=titles.get(f.essay_id, f.essay_id),
+            n_judgments=f.n_judgments,
+            tie_rate_pct=f.tie_rate * 100,
+            tie_flag=f.tie_flag,
+            sweep_source=f.sweep_source,
+            sweep_n=f.sweep_n,
+        )
+        for f in flags
+    ]
+    return DiagnosticsBundle(
+        judge_bias=bias_out,
+        biased_judge_count=versus_diagnostics.biased_judge_count(bias),
+        small_n_cells=small_out,
+        essay_flags=flags_out,
+    )

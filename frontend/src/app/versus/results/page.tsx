@@ -193,67 +193,71 @@ export default async function VersusResultsPage({
         {sources_summary.length > 0 && (
           <details className="collapsible">
             <summary>Source length sanity</summary>
-            <table className="log" style={{ maxWidth: 640, marginTop: 6 }}>
-              <thead>
-                <tr>
-                  <th>source</th>
-                  <th>n</th>
-                  <th>avg words</th>
-                  <th>Δ vs target</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sources_summary.map((s) => (
-                  <tr key={s.source_id}>
-                    <td className="versus-mono">{s.source_id}</td>
-                    <td>{s.n}</td>
-                    <td>{s.avg_words}</td>
-                    <td className={deltaClass(s.avg_delta_pct)}>
-                      {s.avg_delta_pct >= 0 ? "+" : ""}
-                      {s.avg_delta_pct.toFixed(1)}%
-                    </td>
+            <div>
+              <table className="log" style={{ maxWidth: 640, marginTop: 6 }}>
+                <thead>
+                  <tr>
+                    <th>source</th>
+                    <th>n</th>
+                    <th>avg words</th>
+                    <th>Δ vs target</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {sources_summary.map((s) => (
+                    <tr key={s.source_id}>
+                      <td className="versus-mono">{s.source_id}</td>
+                      <td>{s.n}</td>
+                      <td>{s.avg_words}</td>
+                      <td className={deltaClass(s.avg_delta_pct)}>
+                        {s.avg_delta_pct >= 0 ? "+" : ""}
+                        {s.avg_delta_pct.toFixed(1)}%
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </details>
         )}
 
         {essays_status.length > 0 && (
           <details className="collapsible" id="essays-status">
             <summary>Essays ({essays_status.length})</summary>
-            <table className="log" style={{ marginTop: 6 }}>
-              <thead>
-                <tr>
-                  <th>essay</th>
-                  <th>schema</th>
-                  <th>current prefix_hash</th>
-                  <th>validator</th>
-                  <th>issues</th>
-                  <th>model</th>
-                </tr>
-              </thead>
-              <tbody>
-                {essays_status.map((e) => (
-                  <tr key={e.essay_id}>
-                    <td className="versus-mono" title={e.title}>{e.essay_id}</td>
-                    <td>{e.schema_version}</td>
-                    <td className="versus-mono">{e.current_prefix_hash}</td>
-                    <td>
-                      {e.validator_clean === null ? (
-                        <span className="versus-muted">no verdict</span>
-                      ) : e.validator_clean ? (
-                        <span className="versus-pill clean">clean</span>
-                      ) : (
-                        <span className="versus-pill stale">issues</span>
-                      )}
-                    </td>
-                    <td>{e.validator_issues || ""}</td>
-                    <td className="versus-mono versus-muted">{e.validator_model ?? ""}</td>
+            <div>
+              <table className="log" style={{ marginTop: 6 }}>
+                <thead>
+                  <tr>
+                    <th>essay</th>
+                    <th>schema</th>
+                    <th>current prefix_hash</th>
+                    <th>validator</th>
+                    <th>issues</th>
+                    <th>model</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {essays_status.map((e) => (
+                    <tr key={e.essay_id}>
+                      <td className="versus-mono" title={e.title}>{e.essay_id}</td>
+                      <td>{e.schema_version}</td>
+                      <td className="versus-mono">{e.current_prefix_hash}</td>
+                      <td>
+                        {e.validator_clean === null ? (
+                          <span className="versus-muted">no verdict</span>
+                        ) : e.validator_clean ? (
+                          <span className="versus-pill clean">clean</span>
+                        ) : (
+                          <span className="versus-pill stale">issues</span>
+                        )}
+                      </td>
+                      <td>{e.validator_issues || ""}</td>
+                      <td className="versus-mono versus-muted">{e.validator_model ?? ""}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </details>
         )}
 

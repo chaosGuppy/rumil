@@ -14,6 +14,7 @@ import httpx
 
 from versus import config, jsonl, openrouter, prepare
 from versus import essay as versus_essay
+from versus.judge import REFUSAL_FINISH_REASONS, REFUSAL_NATIVE_REASONS
 
 HUMAN_SOURCE_ID = "human"
 
@@ -93,6 +94,12 @@ def ensure_paraphrase_rows(
             continue
         para_blocks = [versus_essay.Block(**b) for b in para_row["blocks"]]
         remainder_md = prepare.split_paraphrase(para_blocks, n_paragraphs)
+        # Carry the upstream paraphrase's refusal state onto the derived
+        # remainder row. Without this, a refused paraphrase would surface
+        # as a contestant (the derived row has raw_response=None, so
+        # is_refusal can't recover the state on its own) and feed garbage
+        # text to the judge.
+        parent_refused = _paraphrase_was_refused(para_row)
         row = {
             "key": k,
             "essay_id": task.essay_id,
@@ -109,9 +116,30 @@ def ensure_paraphrase_rows(
             "target_words": task.target_words,
             "ts": dt.datetime.utcnow().isoformat() + "Z",
             "raw_response": None,
+            "paraphrase_refusal": parent_refused,
         }
         jsonl.append(log_path, row)
         existing_keys.add(k)
+
+
+def _paraphrase_was_refused(para_row: dict) -> bool:
+    """Mirror of judge.is_refusal for paraphrase-log rows.
+
+    Paraphrase rows don't carry ``source_kind`` (they aren't contestants
+    themselves), so the completion-shaped is_refusal path skips the
+    empty-text check on them. Apply the same semantics explicitly here:
+    provider-flagged refusal OR an output too thin to be a usable
+    paraphrase.
+    """
+    rr = para_row.get("raw_response") or {}
+    for ch in rr.get("choices") or []:
+        fr = (ch or {}).get("finish_reason")
+        nfr = (ch or {}).get("native_finish_reason")
+        if fr in REFUSAL_FINISH_REASONS or nfr in REFUSAL_NATIVE_REASONS:
+            return True
+        break
+    text = (para_row.get("response_text") or "").strip()
+    return not text or len(text.split()) < 50
 
 
 def load_paraphrases_by_essay_model(paraphrases_log: pathlib.Path) -> dict[tuple[str, str], dict]:

@@ -268,17 +268,45 @@ def render_judge_prompt(
 REFUSAL_NATIVE_REASONS = {"refusal", "content_filter", "safety", "blocked"}
 REFUSAL_FINISH_REASONS = {"content_filter"}
 
+_MIN_RESPONSE_WORDS = 10
+
 
 def is_refusal(row: dict) -> bool:
-    """True if this completion row ended in a provider refusal / content filter."""
+    """True if this completion row ended in a refusal or is too empty to judge.
+
+    Human baseline and paraphrase-remainder rows set raw_response=None and
+    write response_text directly (the held-out remainder or the derived
+    paraphrase remainder). They're never refusals on their own account;
+    delegated-refusal state for paraphrase rows is carried explicitly on
+    a top-level ``paraphrase_refusal`` flag set by ``ensure_paraphrase_rows``
+    when the upstream paraphrase was itself refused.
+
+    For model-completion rows, we check:
+      - provider-signaled refusal (finish_reason / native_finish_reason), and
+      - empty / sub-threshold response text. A model that returned 200 OK with
+        two tokens didn't produce a judgable continuation; treating it as a
+        contestant would feed noise into the judge. Threshold is low enough
+        that legitimately short continuations pass; anything under it is
+        effectively non-response.
+    """
+    if row.get("paraphrase_refusal"):
+        return True
     rr = row.get("raw_response") or {}
     choices = rr.get("choices") or []
-    if not choices:
-        return False
-    ch = choices[0] or {}
-    fr = ch.get("finish_reason")
-    nfr = ch.get("native_finish_reason")
-    return fr in REFUSAL_FINISH_REASONS or nfr in REFUSAL_NATIVE_REASONS
+    if choices:
+        ch = choices[0] or {}
+        fr = ch.get("finish_reason")
+        nfr = ch.get("native_finish_reason")
+        if fr in REFUSAL_FINISH_REASONS or nfr in REFUSAL_NATIVE_REASONS:
+            return True
+    # Only flag empty responses for rows that actually came from a model
+    # (source_kind=completion). Human / paraphrase-remainder rows are
+    # derived text and don't carry provider state.
+    if row.get("source_kind") == "completion":
+        text = (row.get("response_text") or "").strip()
+        if not text or len(text.split()) < _MIN_RESPONSE_WORDS:
+            return True
+    return False
 
 
 def _prefix_text_from_completion_row(row: dict) -> str:

@@ -159,32 +159,36 @@ export default async function VersusResultsPage({
           </div>
         )}
 
-        <h3 className="results-section-head">Faceted by criterion × condition</h3>
-        <p className="versus-muted" style={{ fontSize: 12, margin: "-4px 0 8px" }}>
-          Rows: condition. Cols: criterion. Cell values follow the same semantic as the main matrix
-          above for that condition.
-        </p>
-        <div
-          className="facet-grid"
-          style={{ gridTemplateColumns: `auto repeat(${criteria.length}, 1fr)` }}
-        >
-          <div></div>
-          {criteria.map((c) => (
-            <div key={c} className="facet-col-head">
-              <span className="versus-pill">{c}</span>
+        {criteria.length > 1 && (
+          <>
+            <h3 className="results-section-head">Faceted by criterion × condition</h3>
+            <p className="versus-muted" style={{ fontSize: 12, margin: "-4px 0 8px" }}>
+              Rows: condition. Cols: criterion. Cell values follow the same semantic as the main
+              matrix above for that condition.
+            </p>
+            <div
+              className="facet-grid"
+              style={{ gridTemplateColumns: `auto repeat(${criteria.length}, 1fr)` }}
+            >
+              <div></div>
+              {criteria.map((c) => (
+                <div key={c} className="facet-col-head">
+                  <span className="versus-pill">{c}</span>
+                </div>
+              ))}
+              {small_grid.map((block) => (
+                <BlockRow
+                  key={block.condition}
+                  block={block}
+                  empty={empty}
+                  genModels={gen_models}
+                  judgeModels={judge_models}
+                  judgeLabels={judge_labels}
+                />
+              ))}
             </div>
-          ))}
-          {small_grid.map((block) => (
-            <BlockRow
-              key={block.condition}
-              block={block}
-              empty={empty}
-              genModels={gen_models}
-              judgeModels={judge_models}
-              judgeLabels={judge_labels}
-            />
-          ))}
-        </div>
+          </>
+        )}
 
         {sources_summary.length > 0 && (
           <details className="collapsible">

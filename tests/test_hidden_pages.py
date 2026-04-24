@@ -15,7 +15,7 @@ import pytest
 import pytest_asyncio
 
 from rumil.database import DB
-from rumil.embeddings import embed_and_store_page, search_pages_by_vector, embed_query
+from rumil.embeddings import embed_and_store_page, embed_query, search_pages_by_vector
 from rumil.models import (
     LinkType,
     Page,
@@ -127,9 +127,7 @@ async def test_get_root_questions_filters_hidden_by_default(tmp_db):
 
 async def test_get_child_questions_filters_hidden_by_default(tmp_db):
     parent = await _make_page(tmp_db, "parent q", page_type=PageType.QUESTION)
-    visible_child = await _make_page(
-        tmp_db, "visible child", page_type=PageType.QUESTION
-    )
+    visible_child = await _make_page(tmp_db, "visible child", page_type=PageType.QUESTION)
     hidden_child = await _make_page(
         tmp_db, "hidden child", page_type=PageType.QUESTION, hidden=True
     )
@@ -146,9 +144,7 @@ async def test_get_child_questions_filters_hidden_by_default(tmp_db):
     assert visible_child.id in default_ids
     assert hidden_child.id not in default_ids
 
-    all_ids = {
-        p.id for p in await tmp_db.get_child_questions(parent.id, include_hidden=True)
-    }
+    all_ids = {p.id for p in await tmp_db.get_child_questions(parent.id, include_hidden=True)}
     assert hidden_child.id in all_ids
 
 
@@ -167,26 +163,20 @@ async def test_get_considerations_filters_hidden_by_default(tmp_db):
             )
         )
 
-    default_ids = {
-        p.id for p, _ in await tmp_db.get_considerations_for_question(question.id)
-    }
+    default_ids = {p.id for p, _ in await tmp_db.get_considerations_for_question(question.id)}
     assert visible_claim.id in default_ids
     assert hidden_claim.id not in default_ids
 
     all_ids = {
         p.id
-        for p, _ in await tmp_db.get_considerations_for_question(
-            question.id, include_hidden=True
-        )
+        for p, _ in await tmp_db.get_considerations_for_question(question.id, include_hidden=True)
     }
     assert hidden_claim.id in all_ids
 
 
 async def test_get_judgements_filters_hidden_by_default(tmp_db):
     question = await _make_page(tmp_db, "q for judgements", page_type=PageType.QUESTION)
-    visible_j = await _make_page(
-        tmp_db, "visible judgement", page_type=PageType.JUDGEMENT
-    )
+    visible_j = await _make_page(tmp_db, "visible judgement", page_type=PageType.JUDGEMENT)
     hidden_j = await _make_page(
         tmp_db, "hidden judgement", page_type=PageType.JUDGEMENT, hidden=True
     )
@@ -204,10 +194,7 @@ async def test_get_judgements_filters_hidden_by_default(tmp_db):
     assert hidden_j.id not in default_ids
 
     all_ids = {
-        p.id
-        for p in await tmp_db.get_judgements_for_question(
-            question.id, include_hidden=True
-        )
+        p.id for p in await tmp_db.get_judgements_for_question(question.id, include_hidden=True)
     }
     assert hidden_j.id in all_ids
 
@@ -216,13 +203,9 @@ async def test_get_judgements_filters_hidden_by_default(tmp_db):
 async def staged_project():
     """Shared project for testing staged vs baseline hidden-page visibility."""
     setup_db = await DB.create(run_id=str(uuid.uuid4()))
-    project = await setup_db.get_or_create_project(
-        f"test-hidden-staged-{uuid.uuid4().hex[:8]}"
-    )
+    project = await setup_db.get_or_create_project(f"test-hidden-staged-{uuid.uuid4().hex[:8]}")
     yield project.id
-    await setup_db._execute(
-        setup_db.client.table("projects").delete().eq("id", project.id)
-    )
+    await setup_db._execute(setup_db.client.table("projects").delete().eq("id", project.id))
 
 
 async def test_hidden_filter_composes_with_staged_runs(staged_project):
@@ -236,22 +219,16 @@ async def test_hidden_filter_composes_with_staged_runs(staged_project):
     observer.project_id = staged_project
 
     try:
-        hidden = await _make_page(
-            staged, "staged hidden", page_type=PageType.QUESTION, hidden=True
-        )
+        hidden = await _make_page(staged, "staged hidden", page_type=PageType.QUESTION, hidden=True)
 
         observer_ids = {p.id for p in await observer.get_root_questions()}
         assert hidden.id not in observer_ids
-        observer_ids_all = {
-            p.id for p in await observer.get_root_questions(include_hidden=True)
-        }
+        observer_ids_all = {p.id for p in await observer.get_root_questions(include_hidden=True)}
         assert hidden.id not in observer_ids_all
 
         staged_default = {p.id for p in await staged.get_root_questions()}
         assert hidden.id not in staged_default
-        staged_all = {
-            p.id for p in await staged.get_root_questions(include_hidden=True)
-        }
+        staged_all = {p.id for p in await staged.get_root_questions(include_hidden=True)}
         assert hidden.id in staged_all
     finally:
         await staged.delete_run_data()
@@ -277,9 +254,7 @@ async def test_baseline_hidden_visible_to_staged_reader_with_flag(staged_project
         staged_default = {p.id for p in await staged_reader.get_root_questions()}
         assert hidden.id not in staged_default
 
-        staged_all = {
-            p.id for p in await staged_reader.get_root_questions(include_hidden=True)
-        }
+        staged_all = {p.id for p in await staged_reader.get_root_questions(include_hidden=True)}
         assert hidden.id in staged_all
     finally:
         await baseline.delete_run_data()

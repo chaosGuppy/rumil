@@ -30,6 +30,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from unittest.mock import MagicMock
@@ -469,6 +470,8 @@ async def _run_orch_closer(
     question_id: str,
     task_body: str,
     broadcaster: Broadcaster | None,
+    *,
+    render_fn: Callable[[DB, str], Awaitable[str]] | None = None,
 ) -> tuple[str, Call]:
     """Small closing call: read the orchestrator's research on ``question_id``
     and emit a 7-point preference label.
@@ -479,8 +482,19 @@ async def _run_orch_closer(
     those tools so we need to actually wire them. Budget is small
     because the closer's job is to synthesize what the orchestrator
     already produced, not to re-do the investigation.
+
+    ``render_fn`` is an optional injection point for testing alternate
+    closer contexts (e.g. expanded subtree rendering, view-only
+    stripping of considerations). Defaults to
+    :func:`_render_question_for_closer`. Production judge_pair_orch
+    callers leave this alone; scripts that probe "does richer/poorer
+    context change the verdict?" pass their own renderer and get
+    everything else (SDK agent setup, tools, trace, call persistence)
+    for free.
     """
-    rendered = await _render_question_for_closer(db, question_id)
+    if render_fn is None:
+        render_fn = _render_question_for_closer
+    rendered = await render_fn(db, question_id)
 
     call = await db.create_call(
         call_type=CallType.VERSUS_JUDGE,

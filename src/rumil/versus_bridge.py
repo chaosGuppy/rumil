@@ -203,6 +203,28 @@ def _format_pair_content(pair: PairContext) -> str:
     )
 
 
+def _build_ws_user_prompt(pair: PairContext, question_id: str) -> str:
+    """Compose the inline user message for the ws-aware agent call.
+
+    Extracted from ``_judge_pair_ws_aware_inner`` so structural tests can
+    verify it doesn't leak ``source_a_id`` / ``source_b_id`` (which can
+    literally be ``"human"``). The agent reads the pair content via
+    ``load_page`` on the scope question; this message is just the
+    instruction shell.
+    """
+    return (
+        "Compare Continuation A and Continuation B on the dimension "
+        f"**{pair.task_name}**.\n\n"
+        f"The scope question (`{question_id}`) contains the essay "
+        "prefix, continuation A, and continuation B. Read it with "
+        "`load_page` if you don't already have the content in "
+        "context. Use `search_workspace` and `explore_subgraph` if "
+        "relevant workspace material exists on the essay's topic.\n\n"
+        "End your response with one of the 7-point preference labels "
+        "on its own line."
+    )
+
+
 async def ensure_versus_question(db: DB, pair: PairContext) -> str:
     """Create a fresh Question page for this pair. Returns the page id.
 
@@ -282,17 +304,7 @@ async def _judge_pair_ws_aware_inner(
     ]
 
     system_prompt = build_system_prompt(task_body)
-    user_prompt = (
-        "Compare Continuation A and Continuation B on the dimension "
-        f"**{pair.task_name}**.\n\n"
-        f"The scope question (`{question_id}`) contains the essay "
-        "prefix, continuation A, and continuation B. Read it with "
-        "`load_page` if you don't already have the content in "
-        "context. Use `search_workspace` and `explore_subgraph` if "
-        "relevant workspace material exists on the essay's topic.\n\n"
-        "End your response with one of the 7-point preference labels "
-        "on its own line."
-    )
+    user_prompt = _build_ws_user_prompt(pair, question_id)
 
     allowed = [
         f"mcp__{_TOOL_SERVER_NAME}__{t.name}"

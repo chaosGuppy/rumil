@@ -823,11 +823,13 @@ def get_results(
         )
     )
 
-    # `total_judgments` counts raw rows (the on-disk count, including any
-    # duplicates), but `rows` is dedup-by-key so the rendered table and React
-    # keys behave -- matches matrix() / content_test_matrix() above.
+    # `total_judgments` is the deduped count of rows with a verdict -- this
+    # is what the "N judgments" header in the UI means and what every
+    # aggregate downstream (matrices, content-test, rows list) sees.
+    # Counting raw rows here would over-report by every dupe + every
+    # null-verdict placeholder and drift from the rendered totals.
     rows: list[JudgmentRow] = []
-    total_judgments = sum(1 for _ in versus_jsonl.read(judgments_log))
+    total_judgments = 0
     rows_total_before_filter = 0
     stale_count = 0
     current_count = 0
@@ -835,6 +837,7 @@ def get_results(
     for row in versus_jsonl.read_dedup(judgments_log):
         if row.get("verdict") is None:
             continue
+        total_judgments += 1
         if not include_contaminated and row.get("contamination_note"):
             continue
         is_stale = versus_analyze._is_stale_row(row, current_prefix_hashes)

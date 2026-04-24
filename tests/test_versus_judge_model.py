@@ -67,3 +67,19 @@ def test_parse_legacy_unhashed_judge_model() -> None:
     assert base == "openai/gpt-5.4"
     assert phash is None
     assert version is None
+
+
+@pytest.mark.parametrize(
+    ("judge_model", "expected_baseline"),
+    (
+        ("openai/gpt-5.4:p12345678:v2:s87654321", "paraphrase:openai/gpt-5.4"),
+        ("google/gemini-3-flash-preview:p12345678", "paraphrase:google/gemini-3-flash-preview"),
+        (
+            "anthropic:claude-sonnet-4-5:p12345678:v2:s87654321",
+            "paraphrase:anthropic/claude-sonnet-4-5",
+        ),
+        ("anthropic:claude-opus-4-7", "paraphrase:anthropic/claude-opus-4-7"),
+    ),
+)
+def test_content_test_baseline_normalizes_anthropic(judge_model: str, expected_baseline: str) -> None:
+    assert analyze._content_test_baseline(judge_model) == expected_baseline

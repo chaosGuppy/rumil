@@ -11,6 +11,21 @@ from versus import jsonl, judge
 HUMAN = "human"
 
 
+def _content_test_baseline(judge_model: str) -> str:
+    """Compose the paraphrase source_id that matches this judge's model.
+
+    Paraphrases are authored via OpenRouter and keyed as
+    ``paraphrase:<openrouter_model_id>`` (e.g. ``paraphrase:openai/gpt-5.4``,
+    slash). Anthropic-direct judges use the ``anthropic:<model>`` form (colon).
+    Normalize the latter so the baseline lookup hits a paraphrase row when the
+    same underlying model authored one.
+    """
+    base = judge.base_judge_model(judge_model)
+    if base.startswith("anthropic:"):
+        base = "anthropic/" + base.removeprefix("anthropic:")
+    return f"paraphrase:{base}"
+
+
 def model_sort_key(judge: str) -> tuple:
     """Order model ids (gen or judge) by family -> weak->strong -> variant.
 
@@ -247,10 +262,7 @@ def content_test_matrix(
         if not include_stale and _is_stale_row(row, current_prefix_hashes):
             continue
         j = row["judge_model"]
-        # Strip any :p<hash>:v<N> suffix so the paraphrase source id match
-        # works across prompt versions of the same OpenRouter model.
-        j_base = judge.base_judge_model(j)
-        baseline = f"paraphrase:{j_base}"
+        baseline = _content_test_baseline(j)
         a, b = row["source_a"], row["source_b"]
         if baseline not in (a, b):
             continue

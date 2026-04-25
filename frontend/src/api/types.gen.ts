@@ -393,7 +393,7 @@ export type CallSummary = {
 /**
  * CallType
  */
-export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'ab_eval' | 'ab_eval_comparison' | 'ab_eval_summary' | 'run_eval' | 'create_view' | 'global_prioritization' | 'update_view' | 'generate_spec' | 'generate_artefact' | 'critique_artefact' | 'refine_spec' | 'claude_code_direct';
+export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'ab_eval' | 'ab_eval_comparison' | 'ab_eval_summary' | 'run_eval' | 'create_view' | 'global_prioritization' | 'update_view' | 'generate_spec' | 'generate_artefact' | 'critique_artefact' | 'refine_spec' | 'claude_code_direct' | 'versus_judge';
 
 /**
  * CallTypeFruitScoreItem
@@ -447,6 +447,60 @@ export type CallsForQuestion = {
      * Judgements
      */
     judgements: number;
+};
+
+/**
+ * Cell
+ *
+ * One aggregated (gen, judge, condition[, criterion]) cell.
+ *
+ * ``pct`` treats ties as 0.5. ``wins`` / ``ties`` / ``losses`` are the raw
+ * counts that feed it (``n = wins + ties + losses``). ``tie_frac`` is the
+ * share of judgments that were explicit ties — so a 50% cell from all-ties
+ * visually contrasts with a 50/50 split. ``ci_lo`` / ``ci_hi`` is the
+ * Wilson 95% interval on ``pct`` (None when ``n == 0``).
+ */
+export type Cell = {
+    /**
+     * Pct
+     */
+    pct: number | null;
+    /**
+     * N
+     */
+    n: number;
+    /**
+     * Wins
+     */
+    wins: number;
+    /**
+     * Ties
+     */
+    ties: number;
+    /**
+     * Losses
+     */
+    losses: number;
+    /**
+     * Tie Frac
+     */
+    tie_frac: number | null;
+    /**
+     * Ci Lo
+     */
+    ci_lo: number | null;
+    /**
+     * Ci Hi
+     */
+    ci_hi: number | null;
+    /**
+     * Bg
+     */
+    bg: string;
+    /**
+     * Fg
+     */
+    fg: string;
 };
 
 /**
@@ -511,6 +565,28 @@ export type ClaimScoreItem = {
      * Reasoning
      */
     reasoning?: string;
+};
+
+/**
+ * ConditionMeta
+ */
+export type ConditionMeta = {
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Pair
+     */
+    pair: string;
+    /**
+     * Cell Meaning
+     */
+    cell_meaning: string;
+    /**
+     * Value Picks
+     */
+    value_picks: string;
 };
 
 /**
@@ -587,6 +663,55 @@ export type ContextBuiltEventOut = {
 };
 
 /**
+ * CriteriaResponse
+ *
+ * Dimensions the human-judging UI should offer.
+ *
+ * Sourced from ``cfg.judging.criteria`` so the landing page tracks the
+ * versus config instead of a frontend hard-coded list. Keeps the
+ * selectable criteria in sync with what run_judgments / run_rumil_judgments
+ * actually evaluate.
+ */
+export type CriteriaResponse = {
+    /**
+     * Criteria
+     */
+    criteria: Array<string>;
+};
+
+/**
+ * CriterionMatrix
+ */
+export type CriterionMatrix = {
+    /**
+     * Criterion
+     */
+    criterion: string;
+    /**
+     * Cells
+     */
+    cells: Array<GenJudgeCell>;
+};
+
+/**
+ * CriterionStats
+ */
+export type CriterionStats = {
+    /**
+     * Criterion
+     */
+    criterion: string;
+    /**
+     * Done
+     */
+    done: number;
+    /**
+     * Total
+     */
+    total: number;
+};
+
+/**
  * DedupeCandidateItem
  */
 export type DedupeCandidateItem = {
@@ -620,6 +745,33 @@ export type DegreeCell = {
      * Avg In
      */
     avg_in: number;
+};
+
+/**
+ * DiagnosticsBundle
+ *
+ * Summary counts + three sections for the Diagnostics pane.
+ *
+ * `biased_judge_count` uses a |A%-50| > 5pp threshold so the banner
+ * line matches the default color thresholds in the UI.
+ */
+export type DiagnosticsBundle = {
+    /**
+     * Judge Bias
+     */
+    judge_bias: Array<JudgeBiasRowOut>;
+    /**
+     * Biased Judge Count
+     */
+    biased_judge_count: number;
+    /**
+     * Small N Cells
+     */
+    small_n_cells: Array<SmallNCellOut>;
+    /**
+     * Essay Flags
+     */
+    essay_flags: Array<EssayFlagOut>;
 };
 
 /**
@@ -720,6 +872,192 @@ export type ErrorEventOut = {
 };
 
 /**
+ * EssayDetail
+ *
+ * Essay + the prompts shown to completion / judge / paraphrase models.
+ */
+export type EssayDetail = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Author
+     */
+    author: string;
+    /**
+     * Pub Date
+     */
+    pub_date: string;
+    /**
+     * Url
+     */
+    url: string;
+    /**
+     * Markdown
+     */
+    markdown: string;
+    /**
+     * Prefix Config Hash
+     */
+    prefix_config_hash: string;
+    /**
+     * Target Words
+     */
+    target_words: number;
+    /**
+     * Completion Prompt
+     */
+    completion_prompt: string;
+    /**
+     * Judge Prompt Template
+     */
+    judge_prompt_template: string;
+    /**
+     * Paraphrase Prompt Template
+     */
+    paraphrase_prompt_template: string;
+    /**
+     * Criteria
+     */
+    criteria: Array<string>;
+};
+
+/**
+ * EssayFlagOut
+ */
+export type EssayFlagOut = {
+    /**
+     * Essay Id
+     */
+    essay_id: string;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * N Judgments
+     */
+    n_judgments: number;
+    /**
+     * Tie Rate Pct
+     */
+    tie_rate_pct: number;
+    /**
+     * Tie Flag
+     */
+    tie_flag: boolean;
+    /**
+     * Sweep Source
+     */
+    sweep_source: string | null;
+    /**
+     * Sweep N
+     */
+    sweep_n: number;
+};
+
+/**
+ * EssayJudgmentsResponse
+ *
+ * Judgments for a single essay at the current prefix_config_hash.
+ *
+ * Stale judgments (rows whose prefix_hash no longer matches what the
+ * essay hashes to today) are filtered out of ``judgments`` so the UI
+ * doesn't aggregate verdicts that scored different text. ``stale_hidden``
+ * is the count of rows filtered this way, so the UI can surface
+ * "N stale judgments hidden" rather than silently dropping them.
+ *
+ * ``orphaned`` flags a judgment whose source_a / source_b is not
+ * present in the current completions.jsonl at the same prefix_hash --
+ * the judgment survived a prefix-hash check but its sources did not.
+ * Rare (requires manual jsonl edits or an aborted generation run), but
+ * when it happens the verdict is meaningless.
+ */
+export type EssayJudgmentsResponse = {
+    /**
+     * Judgments
+     */
+    judgments: Array<Judgment>;
+    /**
+     * Stale Hidden
+     */
+    stale_hidden: number;
+};
+
+/**
+ * EssayMeta
+ *
+ * Headline metadata for one cached essay.
+ */
+export type EssayMeta = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Author
+     */
+    author: string;
+    /**
+     * Pub Date
+     */
+    pub_date: string;
+    /**
+     * Url
+     */
+    url: string;
+};
+
+/**
+ * EssayStatus
+ *
+ * Per-essay state for the /results "essays" panel.
+ *
+ * Surfaces both validator output (clean? how many issues?) and the
+ * current ``prefix_config_hash`` so a reader can spot when essay text
+ * has drifted out from under cached judgments.
+ */
+export type EssayStatus = {
+    /**
+     * Essay Id
+     */
+    essay_id: string;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Schema Version
+     */
+    schema_version: number;
+    /**
+     * Current Prefix Hash
+     */
+    current_prefix_hash: string;
+    /**
+     * Validator Clean
+     */
+    validator_clean: boolean | null;
+    /**
+     * Validator Issues
+     */
+    validator_issues: number;
+    /**
+     * Validator Model
+     */
+    validator_model: string | null;
+};
+
+/**
  * EvaluationCompleteEventOut
  */
 export type EvaluationCompleteEventOut = {
@@ -816,6 +1154,23 @@ export type ExplorePageEventOut = {
 };
 
 /**
+ * GenJudgeCell
+ *
+ * One (gen_model, judge_model) cell with its rendered colors.
+ */
+export type GenJudgeCell = {
+    /**
+     * Gen Model
+     */
+    gen_model: string;
+    /**
+     * Judge Model
+     */
+    judge_model: string;
+    cell: Cell;
+};
+
+/**
  * GlobalPhaseCompletedEventOut
  */
 export type GlobalPhaseCompletedEventOut = {
@@ -877,6 +1232,466 @@ export type HttpValidationError = {
      * Detail
      */
     detail?: Array<ValidationError>;
+};
+
+/**
+ * JudgeBiasRowOut
+ *
+ * Per-judge A-preference breakdown.
+ *
+ * `all_*` covers every judged row; `cvc_*` covers only
+ * completion-vs-completion pairs (neither side is human), which is the
+ * pure-position-bias signal. `content_bias_pp` is the all - cvc gap in
+ * percentage points; null when cvc n<20.
+ */
+export type JudgeBiasRowOut = {
+    /**
+     * Judge Base
+     */
+    judge_base: string;
+    /**
+     * N Total
+     */
+    n_total: number;
+    /**
+     * All A Pct
+     */
+    all_a_pct: number;
+    /**
+     * All Ci Lo Pct
+     */
+    all_ci_lo_pct: number;
+    /**
+     * All Ci Hi Pct
+     */
+    all_ci_hi_pct: number;
+    /**
+     * N Cvc
+     */
+    n_cvc: number;
+    /**
+     * Cvc A Pct
+     */
+    cvc_a_pct: number | null;
+    /**
+     * Cvc Ci Lo Pct
+     */
+    cvc_ci_lo_pct: number | null;
+    /**
+     * Cvc Ci Hi Pct
+     */
+    cvc_ci_hi_pct: number | null;
+    /**
+     * Content Bias Pp
+     */
+    content_bias_pp: number | null;
+};
+
+/**
+ * JudgeLabel
+ *
+ * Stacked column-header parts for a judge model id.
+ */
+export type JudgeLabel = {
+    /**
+     * Variant
+     */
+    variant: string | null;
+    /**
+     * Model
+     */
+    model: string;
+    /**
+     * Task
+     */
+    task: string | null;
+    /**
+     * Phash
+     */
+    phash: string | null;
+};
+
+/**
+ * JudgingProgress
+ *
+ * Returned when there is no next pair; tells the UI to show 'done'.
+ */
+export type JudgingProgress = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Criterion
+     */
+    criterion: string;
+    /**
+     * Criteria
+     */
+    criteria: Array<string>;
+    /**
+     * Per Criterion
+     */
+    per_criterion: Array<CriterionStats>;
+};
+
+/**
+ * Judgment
+ *
+ * One pairwise judgment row, shaped for the inspect view.
+ */
+export type Judgment = {
+    /**
+     * Judge Model
+     */
+    judge_model: string;
+    /**
+     * Judge Model Base
+     */
+    judge_model_base: string;
+    /**
+     * Prompt Hash
+     */
+    prompt_hash: string | null;
+    /**
+     * Judge Version
+     */
+    judge_version: string | null;
+    /**
+     * Sampling
+     */
+    sampling: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Criterion
+     */
+    criterion: string;
+    /**
+     * Source A
+     */
+    source_a: string;
+    /**
+     * Source B
+     */
+    source_b: string;
+    /**
+     * Display First
+     */
+    display_first: string;
+    /**
+     * Display Second
+     */
+    display_second: string;
+    /**
+     * Verdict
+     */
+    verdict: string | null;
+    /**
+     * Winner Source
+     */
+    winner_source: string | null;
+    /**
+     * Preference Label
+     */
+    preference_label: string | null;
+    /**
+     * Reasoning Preview
+     */
+    reasoning_preview: string;
+    /**
+     * Is Rumil
+     */
+    is_rumil: boolean;
+    /**
+     * Rumil Trace Url
+     */
+    rumil_trace_url: string | null;
+    /**
+     * Rumil Question Id
+     */
+    rumil_question_id: string | null;
+    /**
+     * Rumil Call Id
+     */
+    rumil_call_id: string | null;
+    /**
+     * Rumil Run Id
+     */
+    rumil_run_id: string | null;
+    /**
+     * Rumil Cost Usd
+     */
+    rumil_cost_usd: number | null;
+    /**
+     * Contamination Note
+     */
+    contamination_note: string | null;
+    /**
+     * Orphaned
+     */
+    orphaned: boolean;
+};
+
+/**
+ * JudgmentDetail
+ *
+ * Full judgment row for the side-panel inspector on /versus/results.
+ *
+ * Includes the verbatim prompt + reasoning text + raw provider response,
+ * so a reader can audit what the judge actually saw and said. Most fields
+ * are optional because the shape varies across judge variants (OpenRouter
+ * vs anthropic vs rumil:text vs rumil:ws/orch vs human:*).
+ */
+export type JudgmentDetail = {
+    /**
+     * Key
+     */
+    key: string;
+    /**
+     * Essay Id
+     */
+    essay_id: string;
+    /**
+     * Prefix Config Hash
+     */
+    prefix_config_hash: string;
+    /**
+     * Source A
+     */
+    source_a: string;
+    /**
+     * Source B
+     */
+    source_b: string;
+    /**
+     * Display First
+     */
+    display_first: string;
+    /**
+     * Display Second
+     */
+    display_second: string;
+    /**
+     * Criterion
+     */
+    criterion: string;
+    /**
+     * Judge Model
+     */
+    judge_model: string;
+    /**
+     * Judge Model Base
+     */
+    judge_model_base: string;
+    /**
+     * Prompt Hash
+     */
+    prompt_hash: string | null;
+    /**
+     * Judge Version
+     */
+    judge_version: string | null;
+    /**
+     * Sampling
+     */
+    sampling: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Verdict
+     */
+    verdict: string | null;
+    /**
+     * Winner Source
+     */
+    winner_source: string | null;
+    /**
+     * Preference Label
+     */
+    preference_label: string | null;
+    /**
+     * Is Rumil
+     */
+    is_rumil: boolean;
+    /**
+     * Contamination Note
+     */
+    contamination_note: string | null;
+    /**
+     * Prompt
+     */
+    prompt: string | null;
+    /**
+     * Reasoning Text
+     */
+    reasoning_text: string | null;
+    /**
+     * Raw Response
+     */
+    raw_response: {
+        [key: string]: unknown;
+    } | Array<unknown> | null;
+    /**
+     * Rumil Trace Url
+     */
+    rumil_trace_url: string | null;
+    /**
+     * Rumil Question Id
+     */
+    rumil_question_id: string | null;
+    /**
+     * Rumil Call Id
+     */
+    rumil_call_id: string | null;
+    /**
+     * Rumil Run Id
+     */
+    rumil_run_id: string | null;
+    /**
+     * Rumil Cost Usd
+     */
+    rumil_cost_usd: number | null;
+    /**
+     * Ts
+     */
+    ts: string | null;
+    /**
+     * Duration S
+     */
+    duration_s: number | null;
+};
+
+/**
+ * JudgmentRow
+ *
+ * One row in the raw-judgments explorer at the bottom of /results.
+ */
+export type JudgmentRow = {
+    /**
+     * Key
+     */
+    key: string;
+    /**
+     * Essay Id
+     */
+    essay_id: string;
+    /**
+     * Source A
+     */
+    source_a: string;
+    /**
+     * Source B
+     */
+    source_b: string;
+    /**
+     * Criterion
+     */
+    criterion: string;
+    /**
+     * Judge Model
+     */
+    judge_model: string;
+    /**
+     * Verdict
+     */
+    verdict: string;
+    /**
+     * Winner
+     */
+    winner: string;
+    /**
+     * Preference Label
+     */
+    preference_label: string | null;
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Is Rumil
+     */
+    is_rumil: boolean;
+    /**
+     * Contamination Note
+     */
+    contamination_note: string | null;
+    /**
+     * Stale
+     */
+    stale: boolean;
+    /**
+     * Orphaned
+     */
+    orphaned: boolean;
+};
+
+/**
+ * JudgmentSubmit
+ */
+export type JudgmentSubmit = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Criterion
+     */
+    criterion: string;
+    /**
+     * Essay Id
+     */
+    essay_id: string;
+    /**
+     * Prefix Hash
+     */
+    prefix_hash: string;
+    /**
+     * A
+     */
+    a: string;
+    /**
+     * B
+     */
+    b: string;
+    /**
+     * First Source
+     */
+    first_source: string;
+    /**
+     * Second Source
+     */
+    second_source: string;
+    /**
+     * Verdict
+     */
+    verdict: string;
+    /**
+     * Note
+     */
+    note?: string;
+    /**
+     * Force
+     */
+    force?: boolean;
+};
+
+/**
+ * JudgmentSubmitResult
+ */
+export type JudgmentSubmitResult = {
+    /**
+     * Key
+     */
+    key: string;
+    /**
+     * Winner Source
+     */
+    winner_source: string;
+    /**
+     * Duplicate
+     */
+    duplicate?: boolean;
 };
 
 /**
@@ -1126,6 +1941,21 @@ export type LoadPageEventOut = {
 };
 
 /**
+ * Matrix
+ */
+export type Matrix = {
+    /**
+     * Condition
+     */
+    condition: string;
+    meta: ConditionMeta;
+    /**
+     * Cells
+     */
+    cells: Array<GenJudgeCell>;
+};
+
+/**
  * MoveTraceItem
  */
 export type MoveTraceItem = {
@@ -1164,6 +1994,78 @@ export type MovesExecutedEventOut = {
      * Moves
      */
     moves: Array<MoveTraceItem>;
+};
+
+/**
+ * NextPair
+ */
+export type NextPair = {
+    /**
+     * Essay Id
+     */
+    essay_id: string;
+    /**
+     * Prefix Hash
+     */
+    prefix_hash: string;
+    /**
+     * A
+     */
+    a: string;
+    /**
+     * B
+     */
+    b: string;
+    /**
+     * First Source
+     */
+    first_source: string;
+    /**
+     * Second Source
+     */
+    second_source: string;
+    /**
+     * First Text
+     */
+    first_text: string;
+    /**
+     * Second Text
+     */
+    second_text: string;
+    /**
+     * Prefix Text
+     */
+    prefix_text: string;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Criterion
+     */
+    criterion: string;
+    /**
+     * Criterion Desc
+     */
+    criterion_desc: string;
+    /**
+     * Done Count
+     */
+    done_count: number;
+    /**
+     * Total
+     */
+    total: number;
+};
+
+/**
+ * NextPairResponse
+ *
+ * Either a next pair to judge, or progress when nothing's left.
+ */
+export type NextPairResponse = {
+    pair: NextPair | null;
+    progress: JudgingProgress;
 };
 
 /**
@@ -1745,6 +2647,91 @@ export type RenderQuestionSubgraphEventOut = {
 };
 
 /**
+ * ResultsBundle
+ */
+export type ResultsBundle = {
+    /**
+     * Conditions
+     */
+    conditions: Array<string>;
+    /**
+     * Criteria
+     */
+    criteria: Array<string>;
+    /**
+     * Active Criterion
+     */
+    active_criterion: string | null;
+    /**
+     * Gen Models
+     */
+    gen_models: Array<string>;
+    /**
+     * Judge Models
+     */
+    judge_models: Array<string>;
+    /**
+     * Judge Labels
+     */
+    judge_labels: {
+        [key: string]: JudgeLabel;
+    };
+    /**
+     * Main Matrices
+     */
+    main_matrices: Array<Matrix>;
+    /**
+     * Completion Per Source
+     */
+    completion_per_source: Array<SourceMatrix>;
+    /**
+     * Small Grid
+     */
+    small_grid: Array<SmallGridRow>;
+    /**
+     * Rows
+     */
+    rows: Array<JudgmentRow>;
+    /**
+     * Total Judgments
+     */
+    total_judgments: number;
+    /**
+     * Total Completions
+     */
+    total_completions: number;
+    /**
+     * Sources Summary
+     */
+    sources_summary: Array<SourceSummary>;
+    /**
+     * Essays Status
+     */
+    essays_status: Array<EssayStatus>;
+    /**
+     * Stale Count
+     */
+    stale_count: number;
+    /**
+     * Current Count
+     */
+    current_count: number;
+    /**
+     * Include Stale
+     */
+    include_stale: boolean;
+    /**
+     * Include Contaminated
+     */
+    include_contaminated: boolean;
+    row_filter: RowFilter;
+    /**
+     * Rows Total Before Filter
+     */
+    rows_total_before_filter: number;
+};
+
+/**
  * ReviewCompleteEventOut
  */
 export type ReviewCompleteEventOut = {
@@ -1768,6 +2755,34 @@ export type ReviewCompleteEventOut = {
      * Confidence
      */
     confidence: number | null;
+};
+
+/**
+ * RowFilter
+ *
+ * Echoed back on ResultsBundle when the row list is filtered.
+ *
+ * Populated from ``?filter_gen=`` / ``?filter_judge=`` /
+ * ``?filter_condition=`` / ``?filter_criterion=`` — the cell-drill-in
+ * linkage from MatrixTable cells into the raw-judgments table below.
+ */
+export type RowFilter = {
+    /**
+     * Gen
+     */
+    gen: string | null;
+    /**
+     * Judge
+     */
+    judge: string | null;
+    /**
+     * Condition
+     */
+    condition: string | null;
+    /**
+     * Criterion
+     */
+    criterion: string | null;
 };
 
 /**
@@ -1889,6 +2904,112 @@ export type ScoringCompletedEventOut = {
      * Dispatch Guidance
      */
     dispatch_guidance: string;
+};
+
+/**
+ * SmallGridRow
+ */
+export type SmallGridRow = {
+    /**
+     * Condition
+     */
+    condition: string;
+    /**
+     * Per Crit
+     */
+    per_crit: Array<CriterionMatrix>;
+};
+
+/**
+ * SmallNCellOut
+ */
+export type SmallNCellOut = {
+    /**
+     * Gen Model
+     */
+    gen_model: string;
+    /**
+     * Judge Base
+     */
+    judge_base: string;
+    /**
+     * Condition
+     */
+    condition: string;
+    /**
+     * Criterion
+     */
+    criterion: string;
+    /**
+     * N
+     */
+    n: number;
+};
+
+/**
+ * Source
+ *
+ * One generated continuation (or the held-out human remainder).
+ */
+export type Source = {
+    /**
+     * Source Id
+     */
+    source_id: string;
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * Text
+     */
+    text: string;
+    /**
+     * Words
+     */
+    words: number;
+    /**
+     * Target
+     */
+    target: number;
+};
+
+/**
+ * SourceMatrix
+ *
+ * A main matrix restricted to one essay source (e.g. forethought / redwood / carlsmith).
+ *
+ * Wraps a regular :class:`Matrix` so the gen/judge axes match the all-source
+ * matrix above; ``source_id`` is the essay-source label rendered in the UI.
+ */
+export type SourceMatrix = {
+    /**
+     * Source Id
+     */
+    source_id: string;
+    matrix: Matrix;
+};
+
+/**
+ * SourceSummary
+ */
+export type SourceSummary = {
+    /**
+     * Source Id
+     */
+    source_id: string;
+    /**
+     * N
+     */
+    n: number;
+    /**
+     * Avg Words
+     */
+    avg_words: number;
+    /**
+     * Avg Delta Pct
+     */
+    avg_delta_pct: number;
 };
 
 /**
@@ -2309,6 +3430,313 @@ export type WebResearchCompleteEventOut = {
  * Workspace
  */
 export type Workspace = 'research' | 'prioritization';
+
+export type GetCriteriaApiVersusCriteriaGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/versus/criteria';
+};
+
+export type GetCriteriaApiVersusCriteriaGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: CriteriaResponse;
+};
+
+export type GetCriteriaApiVersusCriteriaGetResponse = GetCriteriaApiVersusCriteriaGetResponses[keyof GetCriteriaApiVersusCriteriaGetResponses];
+
+export type ListEssaysApiVersusEssaysGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/versus/essays';
+};
+
+export type ListEssaysApiVersusEssaysGetResponses = {
+    /**
+     * Response List Essays Api Versus Essays Get
+     *
+     * Successful Response
+     */
+    200: Array<EssayMeta>;
+};
+
+export type ListEssaysApiVersusEssaysGetResponse = ListEssaysApiVersusEssaysGetResponses[keyof ListEssaysApiVersusEssaysGetResponses];
+
+export type GetEssayApiVersusEssaysEssayIdGetData = {
+    body?: never;
+    path: {
+        /**
+         * Essay Id
+         */
+        essay_id: string;
+    };
+    query?: never;
+    url: '/api/versus/essays/{essay_id}';
+};
+
+export type GetEssayApiVersusEssaysEssayIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetEssayApiVersusEssaysEssayIdGetError = GetEssayApiVersusEssaysEssayIdGetErrors[keyof GetEssayApiVersusEssaysEssayIdGetErrors];
+
+export type GetEssayApiVersusEssaysEssayIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: EssayDetail;
+};
+
+export type GetEssayApiVersusEssaysEssayIdGetResponse = GetEssayApiVersusEssaysEssayIdGetResponses[keyof GetEssayApiVersusEssaysEssayIdGetResponses];
+
+export type GetEssaySourcesApiVersusEssaysEssayIdSourcesGetData = {
+    body?: never;
+    path: {
+        /**
+         * Essay Id
+         */
+        essay_id: string;
+    };
+    query?: never;
+    url: '/api/versus/essays/{essay_id}/sources';
+};
+
+export type GetEssaySourcesApiVersusEssaysEssayIdSourcesGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetEssaySourcesApiVersusEssaysEssayIdSourcesGetError = GetEssaySourcesApiVersusEssaysEssayIdSourcesGetErrors[keyof GetEssaySourcesApiVersusEssaysEssayIdSourcesGetErrors];
+
+export type GetEssaySourcesApiVersusEssaysEssayIdSourcesGetResponses = {
+    /**
+     * Response Get Essay Sources Api Versus Essays  Essay Id  Sources Get
+     *
+     * Successful Response
+     */
+    200: Array<Source>;
+};
+
+export type GetEssaySourcesApiVersusEssaysEssayIdSourcesGetResponse = GetEssaySourcesApiVersusEssaysEssayIdSourcesGetResponses[keyof GetEssaySourcesApiVersusEssaysEssayIdSourcesGetResponses];
+
+export type GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Essay Id
+         */
+        essay_id: string;
+    };
+    query?: never;
+    url: '/api/versus/essays/{essay_id}/judgments';
+};
+
+export type GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetError = GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetErrors[keyof GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetErrors];
+
+export type GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: EssayJudgmentsResponse;
+};
+
+export type GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetResponse = GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetResponses[keyof GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetResponses];
+
+export type GetResultsApiVersusResultsGetData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Criterion
+         */
+        criterion?: string | null;
+        /**
+         * Include Contaminated
+         */
+        include_contaminated?: boolean;
+        /**
+         * Include Stale
+         */
+        include_stale?: boolean;
+        /**
+         * Filter Gen
+         */
+        filter_gen?: string | null;
+        /**
+         * Filter Judge
+         */
+        filter_judge?: string | null;
+        /**
+         * Filter Condition
+         */
+        filter_condition?: string | null;
+        /**
+         * Filter Criterion
+         */
+        filter_criterion?: string | null;
+    };
+    url: '/api/versus/results';
+};
+
+export type GetResultsApiVersusResultsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetResultsApiVersusResultsGetError = GetResultsApiVersusResultsGetErrors[keyof GetResultsApiVersusResultsGetErrors];
+
+export type GetResultsApiVersusResultsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ResultsBundle;
+};
+
+export type GetResultsApiVersusResultsGetResponse = GetResultsApiVersusResultsGetResponses[keyof GetResultsApiVersusResultsGetResponses];
+
+export type GetNextPairApiVersusNextPairGetData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Name
+         */
+        name: string;
+        /**
+         * Criterion
+         */
+        criterion?: string | null;
+    };
+    url: '/api/versus/next-pair';
+};
+
+export type GetNextPairApiVersusNextPairGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetNextPairApiVersusNextPairGetError = GetNextPairApiVersusNextPairGetErrors[keyof GetNextPairApiVersusNextPairGetErrors];
+
+export type GetNextPairApiVersusNextPairGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: NextPairResponse;
+};
+
+export type GetNextPairApiVersusNextPairGetResponse = GetNextPairApiVersusNextPairGetResponses[keyof GetNextPairApiVersusNextPairGetResponses];
+
+export type GetJudgmentByKeyApiVersusJudgmentsByKeyGetData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Key
+         */
+        key: string;
+    };
+    url: '/api/versus/judgments/by-key';
+};
+
+export type GetJudgmentByKeyApiVersusJudgmentsByKeyGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetJudgmentByKeyApiVersusJudgmentsByKeyGetError = GetJudgmentByKeyApiVersusJudgmentsByKeyGetErrors[keyof GetJudgmentByKeyApiVersusJudgmentsByKeyGetErrors];
+
+export type GetJudgmentByKeyApiVersusJudgmentsByKeyGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: JudgmentDetail;
+};
+
+export type GetJudgmentByKeyApiVersusJudgmentsByKeyGetResponse = GetJudgmentByKeyApiVersusJudgmentsByKeyGetResponses[keyof GetJudgmentByKeyApiVersusJudgmentsByKeyGetResponses];
+
+export type SubmitJudgmentApiVersusJudgmentsPostData = {
+    body: JudgmentSubmit;
+    path?: never;
+    query?: never;
+    url: '/api/versus/judgments';
+};
+
+export type SubmitJudgmentApiVersusJudgmentsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SubmitJudgmentApiVersusJudgmentsPostError = SubmitJudgmentApiVersusJudgmentsPostErrors[keyof SubmitJudgmentApiVersusJudgmentsPostErrors];
+
+export type SubmitJudgmentApiVersusJudgmentsPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: JudgmentSubmitResult;
+};
+
+export type SubmitJudgmentApiVersusJudgmentsPostResponse = SubmitJudgmentApiVersusJudgmentsPostResponses[keyof SubmitJudgmentApiVersusJudgmentsPostResponses];
+
+export type GetDiagnosticsApiVersusDiagnosticsGetData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Criterion
+         */
+        criterion?: string | null;
+        /**
+         * Include Contaminated
+         */
+        include_contaminated?: boolean;
+        /**
+         * Include Stale
+         */
+        include_stale?: boolean;
+    };
+    url: '/api/versus/diagnostics';
+};
+
+export type GetDiagnosticsApiVersusDiagnosticsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetDiagnosticsApiVersusDiagnosticsGetError = GetDiagnosticsApiVersusDiagnosticsGetErrors[keyof GetDiagnosticsApiVersusDiagnosticsGetErrors];
+
+export type GetDiagnosticsApiVersusDiagnosticsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: DiagnosticsBundle;
+};
+
+export type GetDiagnosticsApiVersusDiagnosticsGetResponse = GetDiagnosticsApiVersusDiagnosticsGetResponses[keyof GetDiagnosticsApiVersusDiagnosticsGetResponses];
 
 export type HealthzHealthzGetData = {
     body?: never;

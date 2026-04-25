@@ -6,6 +6,527 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/api/versus/criteria": {
+      "get": {
+        "tags": [
+          "versus"
+        ],
+        "summary": "Get Criteria",
+        "operationId": "get_criteria_api_versus_criteria_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CriteriaResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/versus/essays": {
+      "get": {
+        "tags": [
+          "versus"
+        ],
+        "summary": "List Essays",
+        "operationId": "list_essays_api_versus_essays_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/EssayMeta"
+                  },
+                  "type": "array",
+                  "title": "Response List Essays Api Versus Essays Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/versus/essays/{essay_id}": {
+      "get": {
+        "tags": [
+          "versus"
+        ],
+        "summary": "Get Essay",
+        "operationId": "get_essay_api_versus_essays__essay_id__get",
+        "parameters": [
+          {
+            "name": "essay_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Essay Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EssayDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/versus/essays/{essay_id}/sources": {
+      "get": {
+        "tags": [
+          "versus"
+        ],
+        "summary": "Get Essay Sources",
+        "operationId": "get_essay_sources_api_versus_essays__essay_id__sources_get",
+        "parameters": [
+          {
+            "name": "essay_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Essay Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Source"
+                  },
+                  "title": "Response Get Essay Sources Api Versus Essays  Essay Id  Sources Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/versus/essays/{essay_id}/judgments": {
+      "get": {
+        "tags": [
+          "versus"
+        ],
+        "summary": "Get Essay Judgments",
+        "operationId": "get_essay_judgments_api_versus_essays__essay_id__judgments_get",
+        "parameters": [
+          {
+            "name": "essay_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Essay Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EssayJudgmentsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/versus/results": {
+      "get": {
+        "tags": [
+          "versus"
+        ],
+        "summary": "Get Results",
+        "operationId": "get_results_api_versus_results_get",
+        "parameters": [
+          {
+            "name": "criterion",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Criterion"
+            }
+          },
+          {
+            "name": "include_contaminated",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Contaminated"
+            }
+          },
+          {
+            "name": "include_stale",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Include Stale"
+            }
+          },
+          {
+            "name": "filter_gen",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filter Gen"
+            }
+          },
+          {
+            "name": "filter_judge",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filter Judge"
+            }
+          },
+          {
+            "name": "filter_condition",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filter Condition"
+            }
+          },
+          {
+            "name": "filter_criterion",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filter Criterion"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultsBundle"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/versus/next-pair": {
+      "get": {
+        "tags": [
+          "versus"
+        ],
+        "summary": "Get Next Pair",
+        "operationId": "get_next_pair_api_versus_next_pair_get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "criterion",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Criterion"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NextPairResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/versus/judgments/by-key": {
+      "get": {
+        "tags": [
+          "versus"
+        ],
+        "summary": "Get Judgment By Key",
+        "description": "Look up the verbatim row for a single judgment key.\n\nUsed by the side-panel inspector on /versus/results so a reader can see\nthe prompt + reasoning + raw response that produced a verdict. The key\ncontains `|` and `:` so callers must pass it as a query param.",
+        "operationId": "get_judgment_by_key_api_versus_judgments_by_key_get",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JudgmentDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/versus/judgments": {
+      "post": {
+        "tags": [
+          "versus"
+        ],
+        "summary": "Submit Judgment",
+        "operationId": "submit_judgment_api_versus_judgments_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JudgmentSubmit"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JudgmentSubmitResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/versus/diagnostics": {
+      "get": {
+        "tags": [
+          "versus"
+        ],
+        "summary": "Get Diagnostics",
+        "description": "Post-hoc bias / n-floor / per-essay sanity over the judgments log.\n\nFilters mirror /results so the pane's numbers line up with the\nmatrix the operator is currently looking at.",
+        "operationId": "get_diagnostics_api_versus_diagnostics_get",
+        "parameters": [
+          {
+            "name": "criterion",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Criterion"
+            }
+          },
+          {
+            "name": "include_contaminated",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Contaminated"
+            }
+          },
+          {
+            "name": "include_stale",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Include Stale"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiagnosticsBundle"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/healthz": {
       "get": {
         "summary": "Healthz",
@@ -2856,7 +3377,8 @@
           "generate_artefact",
           "critique_artefact",
           "refine_spec",
-          "claude_code_direct"
+          "claude_code_direct",
+          "versus_judge"
         ],
         "title": "CallType"
       },
@@ -2935,6 +3457,93 @@
           "judgements"
         ],
         "title": "CallsForQuestion"
+      },
+      "Cell": {
+        "properties": {
+          "pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pct"
+          },
+          "n": {
+            "type": "integer",
+            "title": "N"
+          },
+          "wins": {
+            "type": "integer",
+            "title": "Wins"
+          },
+          "ties": {
+            "type": "integer",
+            "title": "Ties"
+          },
+          "losses": {
+            "type": "integer",
+            "title": "Losses"
+          },
+          "tie_frac": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tie Frac"
+          },
+          "ci_lo": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ci Lo"
+          },
+          "ci_hi": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ci Hi"
+          },
+          "bg": {
+            "type": "string",
+            "title": "Bg"
+          },
+          "fg": {
+            "type": "string",
+            "title": "Fg"
+          }
+        },
+        "type": "object",
+        "required": [
+          "pct",
+          "n",
+          "wins",
+          "ties",
+          "losses",
+          "tie_frac",
+          "ci_lo",
+          "ci_hi",
+          "bg",
+          "fg"
+        ],
+        "title": "Cell",
+        "description": "One aggregated (gen, judge, condition[, criterion]) cell.\n\n``pct`` treats ties as 0.5. ``wins`` / ``ties`` / ``losses`` are the raw\ncounts that feed it (``n = wins + ties + losses``). ``tie_frac`` is the\nshare of judgments that were explicit ties \u2014 so a 50% cell from all-ties\nvisually contrasts with a 50/50 split. ``ci_lo`` / ``ci_hi`` is the\nWilson 95% interval on ``pct`` (None when ``n == 0``)."
       },
       "ClaimReassessedEventOut": {
         "properties": {
@@ -3025,6 +3634,34 @@
           "page_id"
         ],
         "title": "ClaimScoreItem"
+      },
+      "ConditionMeta": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "pair": {
+            "type": "string",
+            "title": "Pair"
+          },
+          "cell_meaning": {
+            "type": "string",
+            "title": "Cell Meaning"
+          },
+          "value_picks": {
+            "type": "string",
+            "title": "Value Picks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "pair",
+          "cell_meaning",
+          "value_picks"
+        ],
+        "title": "ConditionMeta"
       },
       "ConsiderationDirection": {
         "type": "string",
@@ -3168,6 +3805,67 @@
         ],
         "title": "ContextBuiltEventOut"
       },
+      "CriteriaResponse": {
+        "properties": {
+          "criteria": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Criteria"
+          }
+        },
+        "type": "object",
+        "required": [
+          "criteria"
+        ],
+        "title": "CriteriaResponse",
+        "description": "Dimensions the human-judging UI should offer.\n\nSourced from ``cfg.judging.criteria`` so the landing page tracks the\nversus config instead of a frontend hard-coded list. Keeps the\nselectable criteria in sync with what run_judgments / run_rumil_judgments\nactually evaluate."
+      },
+      "CriterionMatrix": {
+        "properties": {
+          "criterion": {
+            "type": "string",
+            "title": "Criterion"
+          },
+          "cells": {
+            "items": {
+              "$ref": "#/components/schemas/GenJudgeCell"
+            },
+            "type": "array",
+            "title": "Cells"
+          }
+        },
+        "type": "object",
+        "required": [
+          "criterion",
+          "cells"
+        ],
+        "title": "CriterionMatrix"
+      },
+      "CriterionStats": {
+        "properties": {
+          "criterion": {
+            "type": "string",
+            "title": "Criterion"
+          },
+          "done": {
+            "type": "integer",
+            "title": "Done"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "criterion",
+          "done",
+          "total"
+        ],
+        "title": "CriterionStats"
+      },
       "DedupeCandidateItem": {
         "properties": {
           "id": {
@@ -3213,6 +3911,44 @@
           "avg_in"
         ],
         "title": "DegreeCell"
+      },
+      "DiagnosticsBundle": {
+        "properties": {
+          "judge_bias": {
+            "items": {
+              "$ref": "#/components/schemas/JudgeBiasRowOut"
+            },
+            "type": "array",
+            "title": "Judge Bias"
+          },
+          "biased_judge_count": {
+            "type": "integer",
+            "title": "Biased Judge Count"
+          },
+          "small_n_cells": {
+            "items": {
+              "$ref": "#/components/schemas/SmallNCellOut"
+            },
+            "type": "array",
+            "title": "Small N Cells"
+          },
+          "essay_flags": {
+            "items": {
+              "$ref": "#/components/schemas/EssayFlagOut"
+            },
+            "type": "array",
+            "title": "Essay Flags"
+          }
+        },
+        "type": "object",
+        "required": [
+          "judge_bias",
+          "biased_judge_count",
+          "small_n_cells",
+          "essay_flags"
+        ],
+        "title": "DiagnosticsBundle",
+        "description": "Summary counts + three sections for the Diagnostics pane.\n\n`biased_judge_count` uses a |A%-50| > 5pp threshold so the banner\nline matches the default color thresholds in the UI."
       },
       "DispatchExecutedEventOut": {
         "properties": {
@@ -3356,6 +4092,242 @@
         ],
         "title": "ErrorEventOut"
       },
+      "EssayDetail": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "author": {
+            "type": "string",
+            "title": "Author"
+          },
+          "pub_date": {
+            "type": "string",
+            "title": "Pub Date"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "markdown": {
+            "type": "string",
+            "title": "Markdown"
+          },
+          "prefix_config_hash": {
+            "type": "string",
+            "title": "Prefix Config Hash"
+          },
+          "target_words": {
+            "type": "integer",
+            "title": "Target Words"
+          },
+          "completion_prompt": {
+            "type": "string",
+            "title": "Completion Prompt"
+          },
+          "judge_prompt_template": {
+            "type": "string",
+            "title": "Judge Prompt Template"
+          },
+          "paraphrase_prompt_template": {
+            "type": "string",
+            "title": "Paraphrase Prompt Template"
+          },
+          "criteria": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Criteria"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "author",
+          "pub_date",
+          "url",
+          "markdown",
+          "prefix_config_hash",
+          "target_words",
+          "completion_prompt",
+          "judge_prompt_template",
+          "paraphrase_prompt_template",
+          "criteria"
+        ],
+        "title": "EssayDetail",
+        "description": "Essay + the prompts shown to completion / judge / paraphrase models."
+      },
+      "EssayFlagOut": {
+        "properties": {
+          "essay_id": {
+            "type": "string",
+            "title": "Essay Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "n_judgments": {
+            "type": "integer",
+            "title": "N Judgments"
+          },
+          "tie_rate_pct": {
+            "type": "number",
+            "title": "Tie Rate Pct"
+          },
+          "tie_flag": {
+            "type": "boolean",
+            "title": "Tie Flag"
+          },
+          "sweep_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sweep Source"
+          },
+          "sweep_n": {
+            "type": "integer",
+            "title": "Sweep N"
+          }
+        },
+        "type": "object",
+        "required": [
+          "essay_id",
+          "title",
+          "n_judgments",
+          "tie_rate_pct",
+          "tie_flag",
+          "sweep_source",
+          "sweep_n"
+        ],
+        "title": "EssayFlagOut"
+      },
+      "EssayJudgmentsResponse": {
+        "properties": {
+          "judgments": {
+            "items": {
+              "$ref": "#/components/schemas/Judgment"
+            },
+            "type": "array",
+            "title": "Judgments"
+          },
+          "stale_hidden": {
+            "type": "integer",
+            "title": "Stale Hidden"
+          }
+        },
+        "type": "object",
+        "required": [
+          "judgments",
+          "stale_hidden"
+        ],
+        "title": "EssayJudgmentsResponse",
+        "description": "Judgments for a single essay at the current prefix_config_hash.\n\nStale judgments (rows whose prefix_hash no longer matches what the\nessay hashes to today) are filtered out of ``judgments`` so the UI\ndoesn't aggregate verdicts that scored different text. ``stale_hidden``\nis the count of rows filtered this way, so the UI can surface\n\"N stale judgments hidden\" rather than silently dropping them.\n\n``orphaned`` flags a judgment whose source_a / source_b is not\npresent in the current completions.jsonl at the same prefix_hash --\nthe judgment survived a prefix-hash check but its sources did not.\nRare (requires manual jsonl edits or an aborted generation run), but\nwhen it happens the verdict is meaningless."
+      },
+      "EssayMeta": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "author": {
+            "type": "string",
+            "title": "Author"
+          },
+          "pub_date": {
+            "type": "string",
+            "title": "Pub Date"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "author",
+          "pub_date",
+          "url"
+        ],
+        "title": "EssayMeta",
+        "description": "Headline metadata for one cached essay."
+      },
+      "EssayStatus": {
+        "properties": {
+          "essay_id": {
+            "type": "string",
+            "title": "Essay Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "schema_version": {
+            "type": "integer",
+            "title": "Schema Version"
+          },
+          "current_prefix_hash": {
+            "type": "string",
+            "title": "Current Prefix Hash"
+          },
+          "validator_clean": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validator Clean"
+          },
+          "validator_issues": {
+            "type": "integer",
+            "title": "Validator Issues"
+          },
+          "validator_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validator Model"
+          }
+        },
+        "type": "object",
+        "required": [
+          "essay_id",
+          "title",
+          "schema_version",
+          "current_prefix_hash",
+          "validator_clean",
+          "validator_issues",
+          "validator_model"
+        ],
+        "title": "EssayStatus",
+        "description": "Per-essay state for the /results \"essays\" panel.\n\nSurfaces both validator output (clean? how many issues?) and the\ncurrent ``prefix_config_hash`` so a reader can spot when essay text\nhas drifted out from under cached judgments."
+      },
       "EvaluationCompleteEventOut": {
         "properties": {
           "ts": {
@@ -3495,6 +4467,29 @@
         ],
         "title": "ExplorePageEventOut"
       },
+      "GenJudgeCell": {
+        "properties": {
+          "gen_model": {
+            "type": "string",
+            "title": "Gen Model"
+          },
+          "judge_model": {
+            "type": "string",
+            "title": "Judge Model"
+          },
+          "cell": {
+            "$ref": "#/components/schemas/Cell"
+          }
+        },
+        "type": "object",
+        "required": [
+          "gen_model",
+          "judge_model",
+          "cell"
+        ],
+        "title": "GenJudgeCell",
+        "description": "One (gen_model, judge_model) cell with its rendered colors."
+      },
       "GlobalPhaseCompletedEventOut": {
         "properties": {
           "ts": {
@@ -3585,6 +4580,835 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "JudgeBiasRowOut": {
+        "properties": {
+          "judge_base": {
+            "type": "string",
+            "title": "Judge Base"
+          },
+          "n_total": {
+            "type": "integer",
+            "title": "N Total"
+          },
+          "all_a_pct": {
+            "type": "number",
+            "title": "All A Pct"
+          },
+          "all_ci_lo_pct": {
+            "type": "number",
+            "title": "All Ci Lo Pct"
+          },
+          "all_ci_hi_pct": {
+            "type": "number",
+            "title": "All Ci Hi Pct"
+          },
+          "n_cvc": {
+            "type": "integer",
+            "title": "N Cvc"
+          },
+          "cvc_a_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cvc A Pct"
+          },
+          "cvc_ci_lo_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cvc Ci Lo Pct"
+          },
+          "cvc_ci_hi_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cvc Ci Hi Pct"
+          },
+          "content_bias_pp": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Bias Pp"
+          }
+        },
+        "type": "object",
+        "required": [
+          "judge_base",
+          "n_total",
+          "all_a_pct",
+          "all_ci_lo_pct",
+          "all_ci_hi_pct",
+          "n_cvc",
+          "cvc_a_pct",
+          "cvc_ci_lo_pct",
+          "cvc_ci_hi_pct",
+          "content_bias_pp"
+        ],
+        "title": "JudgeBiasRowOut",
+        "description": "Per-judge A-preference breakdown.\n\n`all_*` covers every judged row; `cvc_*` covers only\ncompletion-vs-completion pairs (neither side is human), which is the\npure-position-bias signal. `content_bias_pp` is the all - cvc gap in\npercentage points; null when cvc n<20."
+      },
+      "JudgeLabel": {
+        "properties": {
+          "variant": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Variant"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "task": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task"
+          },
+          "phash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phash"
+          }
+        },
+        "type": "object",
+        "required": [
+          "variant",
+          "model",
+          "task",
+          "phash"
+        ],
+        "title": "JudgeLabel",
+        "description": "Stacked column-header parts for a judge model id."
+      },
+      "JudgingProgress": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "criterion": {
+            "type": "string",
+            "title": "Criterion"
+          },
+          "criteria": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Criteria"
+          },
+          "per_criterion": {
+            "items": {
+              "$ref": "#/components/schemas/CriterionStats"
+            },
+            "type": "array",
+            "title": "Per Criterion"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "criterion",
+          "criteria",
+          "per_criterion"
+        ],
+        "title": "JudgingProgress",
+        "description": "Returned when there is no next pair; tells the UI to show 'done'."
+      },
+      "Judgment": {
+        "properties": {
+          "judge_model": {
+            "type": "string",
+            "title": "Judge Model"
+          },
+          "judge_model_base": {
+            "type": "string",
+            "title": "Judge Model Base"
+          },
+          "prompt_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Hash"
+          },
+          "judge_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Judge Version"
+          },
+          "sampling": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sampling"
+          },
+          "criterion": {
+            "type": "string",
+            "title": "Criterion"
+          },
+          "source_a": {
+            "type": "string",
+            "title": "Source A"
+          },
+          "source_b": {
+            "type": "string",
+            "title": "Source B"
+          },
+          "display_first": {
+            "type": "string",
+            "title": "Display First"
+          },
+          "display_second": {
+            "type": "string",
+            "title": "Display Second"
+          },
+          "verdict": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verdict"
+          },
+          "winner_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Winner Source"
+          },
+          "preference_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preference Label"
+          },
+          "reasoning_preview": {
+            "type": "string",
+            "title": "Reasoning Preview"
+          },
+          "is_rumil": {
+            "type": "boolean",
+            "title": "Is Rumil"
+          },
+          "rumil_trace_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rumil Trace Url"
+          },
+          "rumil_question_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rumil Question Id"
+          },
+          "rumil_call_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rumil Call Id"
+          },
+          "rumil_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rumil Run Id"
+          },
+          "rumil_cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rumil Cost Usd"
+          },
+          "contamination_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contamination Note"
+          },
+          "orphaned": {
+            "type": "boolean",
+            "title": "Orphaned"
+          }
+        },
+        "type": "object",
+        "required": [
+          "judge_model",
+          "judge_model_base",
+          "prompt_hash",
+          "judge_version",
+          "sampling",
+          "criterion",
+          "source_a",
+          "source_b",
+          "display_first",
+          "display_second",
+          "verdict",
+          "winner_source",
+          "preference_label",
+          "reasoning_preview",
+          "is_rumil",
+          "rumil_trace_url",
+          "rumil_question_id",
+          "rumil_call_id",
+          "rumil_run_id",
+          "rumil_cost_usd",
+          "contamination_note",
+          "orphaned"
+        ],
+        "title": "Judgment",
+        "description": "One pairwise judgment row, shaped for the inspect view."
+      },
+      "JudgmentDetail": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "essay_id": {
+            "type": "string",
+            "title": "Essay Id"
+          },
+          "prefix_config_hash": {
+            "type": "string",
+            "title": "Prefix Config Hash"
+          },
+          "source_a": {
+            "type": "string",
+            "title": "Source A"
+          },
+          "source_b": {
+            "type": "string",
+            "title": "Source B"
+          },
+          "display_first": {
+            "type": "string",
+            "title": "Display First"
+          },
+          "display_second": {
+            "type": "string",
+            "title": "Display Second"
+          },
+          "criterion": {
+            "type": "string",
+            "title": "Criterion"
+          },
+          "judge_model": {
+            "type": "string",
+            "title": "Judge Model"
+          },
+          "judge_model_base": {
+            "type": "string",
+            "title": "Judge Model Base"
+          },
+          "prompt_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Hash"
+          },
+          "judge_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Judge Version"
+          },
+          "sampling": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sampling"
+          },
+          "verdict": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verdict"
+          },
+          "winner_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Winner Source"
+          },
+          "preference_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preference Label"
+          },
+          "is_rumil": {
+            "type": "boolean",
+            "title": "Is Rumil"
+          },
+          "contamination_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contamination Note"
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt"
+          },
+          "reasoning_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning Text"
+          },
+          "raw_response": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Response"
+          },
+          "rumil_trace_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rumil Trace Url"
+          },
+          "rumil_question_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rumil Question Id"
+          },
+          "rumil_call_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rumil Call Id"
+          },
+          "rumil_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rumil Run Id"
+          },
+          "rumil_cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rumil Cost Usd"
+          },
+          "ts": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ts"
+          },
+          "duration_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration S"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "essay_id",
+          "prefix_config_hash",
+          "source_a",
+          "source_b",
+          "display_first",
+          "display_second",
+          "criterion",
+          "judge_model",
+          "judge_model_base",
+          "prompt_hash",
+          "judge_version",
+          "sampling",
+          "verdict",
+          "winner_source",
+          "preference_label",
+          "is_rumil",
+          "contamination_note",
+          "prompt",
+          "reasoning_text",
+          "raw_response",
+          "rumil_trace_url",
+          "rumil_question_id",
+          "rumil_call_id",
+          "rumil_run_id",
+          "rumil_cost_usd",
+          "ts",
+          "duration_s"
+        ],
+        "title": "JudgmentDetail",
+        "description": "Full judgment row for the side-panel inspector on /versus/results.\n\nIncludes the verbatim prompt + reasoning text + raw provider response,\nso a reader can audit what the judge actually saw and said. Most fields\nare optional because the shape varies across judge variants (OpenRouter\nvs anthropic vs rumil:text vs rumil:ws/orch vs human:*)."
+      },
+      "JudgmentRow": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "essay_id": {
+            "type": "string",
+            "title": "Essay Id"
+          },
+          "source_a": {
+            "type": "string",
+            "title": "Source A"
+          },
+          "source_b": {
+            "type": "string",
+            "title": "Source B"
+          },
+          "criterion": {
+            "type": "string",
+            "title": "Criterion"
+          },
+          "judge_model": {
+            "type": "string",
+            "title": "Judge Model"
+          },
+          "verdict": {
+            "type": "string",
+            "title": "Verdict"
+          },
+          "winner": {
+            "type": "string",
+            "title": "Winner"
+          },
+          "preference_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preference Label"
+          },
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "is_rumil": {
+            "type": "boolean",
+            "title": "Is Rumil"
+          },
+          "contamination_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contamination Note"
+          },
+          "stale": {
+            "type": "boolean",
+            "title": "Stale"
+          },
+          "orphaned": {
+            "type": "boolean",
+            "title": "Orphaned"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "essay_id",
+          "source_a",
+          "source_b",
+          "criterion",
+          "judge_model",
+          "verdict",
+          "winner",
+          "preference_label",
+          "ts",
+          "is_rumil",
+          "contamination_note",
+          "stale",
+          "orphaned"
+        ],
+        "title": "JudgmentRow",
+        "description": "One row in the raw-judgments explorer at the bottom of /results."
+      },
+      "JudgmentSubmit": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "criterion": {
+            "type": "string",
+            "title": "Criterion"
+          },
+          "essay_id": {
+            "type": "string",
+            "title": "Essay Id"
+          },
+          "prefix_hash": {
+            "type": "string",
+            "title": "Prefix Hash"
+          },
+          "a": {
+            "type": "string",
+            "title": "A"
+          },
+          "b": {
+            "type": "string",
+            "title": "B"
+          },
+          "first_source": {
+            "type": "string",
+            "title": "First Source"
+          },
+          "second_source": {
+            "type": "string",
+            "title": "Second Source"
+          },
+          "verdict": {
+            "type": "string",
+            "title": "Verdict"
+          },
+          "note": {
+            "type": "string",
+            "title": "Note",
+            "default": ""
+          },
+          "force": {
+            "type": "boolean",
+            "title": "Force",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "criterion",
+          "essay_id",
+          "prefix_hash",
+          "a",
+          "b",
+          "first_source",
+          "second_source",
+          "verdict"
+        ],
+        "title": "JudgmentSubmit"
+      },
+      "JudgmentSubmitResult": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "winner_source": {
+            "type": "string",
+            "title": "Winner Source"
+          },
+          "duplicate": {
+            "type": "boolean",
+            "title": "Duplicate",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "winner_source"
+        ],
+        "title": "JudgmentSubmitResult"
       },
       "LLMExchangeEventOut": {
         "properties": {
@@ -4106,6 +5930,31 @@
         ],
         "title": "LoadPageEventOut"
       },
+      "Matrix": {
+        "properties": {
+          "condition": {
+            "type": "string",
+            "title": "Condition"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ConditionMeta"
+          },
+          "cells": {
+            "items": {
+              "$ref": "#/components/schemas/GenJudgeCell"
+            },
+            "type": "array",
+            "title": "Cells"
+          }
+        },
+        "type": "object",
+        "required": [
+          "condition",
+          "meta",
+          "cells"
+        ],
+        "title": "Matrix"
+      },
       "MoveTraceItem": {
         "properties": {
           "type": {
@@ -4166,6 +6015,108 @@
           "moves"
         ],
         "title": "MovesExecutedEventOut"
+      },
+      "NextPair": {
+        "properties": {
+          "essay_id": {
+            "type": "string",
+            "title": "Essay Id"
+          },
+          "prefix_hash": {
+            "type": "string",
+            "title": "Prefix Hash"
+          },
+          "a": {
+            "type": "string",
+            "title": "A"
+          },
+          "b": {
+            "type": "string",
+            "title": "B"
+          },
+          "first_source": {
+            "type": "string",
+            "title": "First Source"
+          },
+          "second_source": {
+            "type": "string",
+            "title": "Second Source"
+          },
+          "first_text": {
+            "type": "string",
+            "title": "First Text"
+          },
+          "second_text": {
+            "type": "string",
+            "title": "Second Text"
+          },
+          "prefix_text": {
+            "type": "string",
+            "title": "Prefix Text"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "criterion": {
+            "type": "string",
+            "title": "Criterion"
+          },
+          "criterion_desc": {
+            "type": "string",
+            "title": "Criterion Desc"
+          },
+          "done_count": {
+            "type": "integer",
+            "title": "Done Count"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "essay_id",
+          "prefix_hash",
+          "a",
+          "b",
+          "first_source",
+          "second_source",
+          "first_text",
+          "second_text",
+          "prefix_text",
+          "title",
+          "criterion",
+          "criterion_desc",
+          "done_count",
+          "total"
+        ],
+        "title": "NextPair"
+      },
+      "NextPairResponse": {
+        "properties": {
+          "pair": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NextPair"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "progress": {
+            "$ref": "#/components/schemas/JudgingProgress"
+          }
+        },
+        "type": "object",
+        "required": [
+          "pair",
+          "progress"
+        ],
+        "title": "NextPairResponse",
+        "description": "Either a next pair to judge, or progress when nothing's left."
       },
       "Page": {
         "properties": {
@@ -5111,6 +7062,153 @@
         ],
         "title": "RenderQuestionSubgraphEventOut"
       },
+      "ResultsBundle": {
+        "properties": {
+          "conditions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Conditions"
+          },
+          "criteria": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Criteria"
+          },
+          "active_criterion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Criterion"
+          },
+          "gen_models": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Gen Models"
+          },
+          "judge_models": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Judge Models"
+          },
+          "judge_labels": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JudgeLabel"
+            },
+            "type": "object",
+            "title": "Judge Labels"
+          },
+          "main_matrices": {
+            "items": {
+              "$ref": "#/components/schemas/Matrix"
+            },
+            "type": "array",
+            "title": "Main Matrices"
+          },
+          "completion_per_source": {
+            "items": {
+              "$ref": "#/components/schemas/SourceMatrix"
+            },
+            "type": "array",
+            "title": "Completion Per Source"
+          },
+          "small_grid": {
+            "items": {
+              "$ref": "#/components/schemas/SmallGridRow"
+            },
+            "type": "array",
+            "title": "Small Grid"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/JudgmentRow"
+            },
+            "type": "array",
+            "title": "Rows"
+          },
+          "total_judgments": {
+            "type": "integer",
+            "title": "Total Judgments"
+          },
+          "total_completions": {
+            "type": "integer",
+            "title": "Total Completions"
+          },
+          "sources_summary": {
+            "items": {
+              "$ref": "#/components/schemas/SourceSummary"
+            },
+            "type": "array",
+            "title": "Sources Summary"
+          },
+          "essays_status": {
+            "items": {
+              "$ref": "#/components/schemas/EssayStatus"
+            },
+            "type": "array",
+            "title": "Essays Status"
+          },
+          "stale_count": {
+            "type": "integer",
+            "title": "Stale Count"
+          },
+          "current_count": {
+            "type": "integer",
+            "title": "Current Count"
+          },
+          "include_stale": {
+            "type": "boolean",
+            "title": "Include Stale"
+          },
+          "include_contaminated": {
+            "type": "boolean",
+            "title": "Include Contaminated"
+          },
+          "row_filter": {
+            "$ref": "#/components/schemas/RowFilter"
+          },
+          "rows_total_before_filter": {
+            "type": "integer",
+            "title": "Rows Total Before Filter"
+          }
+        },
+        "type": "object",
+        "required": [
+          "conditions",
+          "criteria",
+          "active_criterion",
+          "gen_models",
+          "judge_models",
+          "judge_labels",
+          "main_matrices",
+          "completion_per_source",
+          "small_grid",
+          "rows",
+          "total_judgments",
+          "total_completions",
+          "sources_summary",
+          "essays_status",
+          "stale_count",
+          "current_count",
+          "include_stale",
+          "include_contaminated",
+          "row_filter",
+          "rows_total_before_filter"
+        ],
+        "title": "ResultsBundle"
+      },
       "ReviewCompleteEventOut": {
         "properties": {
           "ts": {
@@ -5159,6 +7257,63 @@
           "confidence"
         ],
         "title": "ReviewCompleteEventOut"
+      },
+      "RowFilter": {
+        "properties": {
+          "gen": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gen"
+          },
+          "judge": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Judge"
+          },
+          "condition": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Condition"
+          },
+          "criterion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Criterion"
+          }
+        },
+        "type": "object",
+        "required": [
+          "gen",
+          "judge",
+          "condition",
+          "criterion"
+        ],
+        "title": "RowFilter",
+        "description": "Echoed back on ResultsBundle when the row list is filtered.\n\nPopulated from ``?filter_gen=`` / ``?filter_judge=`` /\n``?filter_condition=`` / ``?filter_criterion=`` \u2014 the cell-drill-in\nlinkage from MatrixTable cells into the raw-judgments table below."
       },
       "RunListItemOut": {
         "properties": {
@@ -5369,6 +7524,140 @@
           "dispatch_guidance"
         ],
         "title": "ScoringCompletedEventOut"
+      },
+      "SmallGridRow": {
+        "properties": {
+          "condition": {
+            "type": "string",
+            "title": "Condition"
+          },
+          "per_crit": {
+            "items": {
+              "$ref": "#/components/schemas/CriterionMatrix"
+            },
+            "type": "array",
+            "title": "Per Crit"
+          }
+        },
+        "type": "object",
+        "required": [
+          "condition",
+          "per_crit"
+        ],
+        "title": "SmallGridRow"
+      },
+      "SmallNCellOut": {
+        "properties": {
+          "gen_model": {
+            "type": "string",
+            "title": "Gen Model"
+          },
+          "judge_base": {
+            "type": "string",
+            "title": "Judge Base"
+          },
+          "condition": {
+            "type": "string",
+            "title": "Condition"
+          },
+          "criterion": {
+            "type": "string",
+            "title": "Criterion"
+          },
+          "n": {
+            "type": "integer",
+            "title": "N"
+          }
+        },
+        "type": "object",
+        "required": [
+          "gen_model",
+          "judge_base",
+          "condition",
+          "criterion",
+          "n"
+        ],
+        "title": "SmallNCellOut"
+      },
+      "Source": {
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "title": "Source Id"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "words": {
+            "type": "integer",
+            "title": "Words"
+          },
+          "target": {
+            "type": "integer",
+            "title": "Target"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_id",
+          "kind",
+          "text",
+          "words",
+          "target"
+        ],
+        "title": "Source",
+        "description": "One generated continuation (or the held-out human remainder)."
+      },
+      "SourceMatrix": {
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "title": "Source Id"
+          },
+          "matrix": {
+            "$ref": "#/components/schemas/Matrix"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_id",
+          "matrix"
+        ],
+        "title": "SourceMatrix",
+        "description": "A main matrix restricted to one essay source (e.g. forethought / redwood / carlsmith).\n\nWraps a regular :class:`Matrix` so the gen/judge axes match the all-source\nmatrix above; ``source_id`` is the essay-source label rendered in the UI."
+      },
+      "SourceSummary": {
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "title": "Source Id"
+          },
+          "n": {
+            "type": "integer",
+            "title": "N"
+          },
+          "avg_words": {
+            "type": "integer",
+            "title": "Avg Words"
+          },
+          "avg_delta_pct": {
+            "type": "number",
+            "title": "Avg Delta Pct"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_id",
+          "n",
+          "avg_words",
+          "avg_delta_pct"
+        ],
+        "title": "SourceSummary"
       },
       "SubagentCompletedEventOut": {
         "properties": {

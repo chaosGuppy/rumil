@@ -122,6 +122,23 @@ To add a new call type: subclass `CallRunner`. Set `call_type`, override `_make_
 
 **Frontend** (`frontend/`): Next.js TypeScript app with Tailwind. Uses pnpm. Run with `cd frontend && pnpm dev`. The frontend port mirrors the API port: if the API is on `localhost:800X`, the frontend will be on `localhost:300X` (Next.js auto-increments when the default port is taken). Use this to find and stop the frontend process. TypeScript types in `frontend/src/api/` are auto-generated from the API's OpenAPI schema — **never create or edit these files by hand**. When API schemas change, these need to be regenerated with `./scripts/generate-api-types.sh` (or `cd frontend && pnpm generate-api`). This is the only mechanism for sharing types between backend and frontend; do not manually duplicate type definitions. When `schemas.py` or `models.py` is edited, `./scripts/generate-api-types.sh` is automatically run via a hook.
 
+## Versus
+
+`versus/` is a pairwise LLM eval harness on longform web essays (forethought.org, redwoodresearch.substack.com, joecarlsmith.com — pluggable per-source fetchers under `versus/src/versus/sources/`) with a bridge into rumil's agent/orchestrator machinery. Full docs in **`versus/AGENT.md`** — read it before editing any of:
+
+- `versus/` (library, scripts, data)
+- `src/rumil/versus_bridge.py` (rumil ↔ versus bridge)
+- `src/rumil/api/versus_router.py` (API routes serving `/versus` UI)
+- `frontend/src/app/versus/` (UI pages)
+- `.claude/skills/rumil-versus-judge/` (CC invocation skill)
+- `prompts/versus-*.md` (judge prompt shell + essay-adapted rumil dimensions)
+
+Load-bearing invariants you shouldn't break in a passing edit:
+
+- **Blind judging**: no source_id (can literally be `"human"`) in any agent-visible surface — Question page headline/content, `page.extra`, inline user prompts.
+- **Dedup discipline**: all three stores (`completions.jsonl`, `paraphrases.jsonl`, `judgments.jsonl`) key on deterministic hashes. Editing a prompt template without bumping the corresponding `*_PROMPT_VERSION` constant (or `BLIND_JUDGE_VERSION` for bridge changes) silently orphans existing rows.
+- **Bridge model**: `judge_pair_ws_aware` / `judge_pair_orch` take `model` explicitly; don't reintroduce `settings.model` reads there.
+
 ## Key Conventions
 
 - **NEVER pass `--prod` when running `main.py` unless the user explicitly asks you to.** The production database contains real research data. Default to the local database for all testing, development, and exploratory runs.

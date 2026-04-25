@@ -95,6 +95,10 @@ class CallType(str, Enum):
     # (not a rumil-internal call with carefully scoped prompt). Never
     # dispatchable from prioritization — only created by .claude/ skills.
     CLAUDE_CODE_DIRECT = "claude_code_direct"
+    # Pairwise judgment between two essay continuations, driven by the
+    # external `versus` harness. Uses single-arm workspace-exploration
+    # tools; does not write to ab_eval_reports.
+    VERSUS_JUDGE = "versus_judge"
 
 
 # The subset of CallTypes that prioritization can dispatch.

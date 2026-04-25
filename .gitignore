@@ -5,6 +5,8 @@ db/
 frontend/package-lock.json
 .claude/settings.local.json
 .claude/state/
+.claude/worktrees/
+.claude/scheduled_tasks.lock
 CLAUDE.local.md
 .workmux.yaml
 .workmux-offset

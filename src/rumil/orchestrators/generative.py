@@ -204,11 +204,12 @@ class GenerativeOrchestrator:
         await runner.run()
 
     async def _one_off_regenerate(self, task_id: str, parent_call_id: str | None) -> None:
-        """Run a single generate + workspace critique + request-only critique as a fallback.
+        """Run a single generate + request-only critique + workspace critique as a fallback.
 
         Each sub-call costs 1 budget; this method consumes incrementally and
         stops at whatever boundary budget allows (the artefact alone is the
-        most important — critiques are a bonus signal here).
+        most important — critiques are a bonus signal here). Request-only
+        critique runs before workspace-aware so the latter can build on it.
         """
         gen_call = await self.db.create_call(
             CallType.GENERATE_ARTEFACT,
@@ -216,15 +217,6 @@ class GenerativeOrchestrator:
             parent_call_id=parent_call_id,
         )
         await GenerateArtefactCall(task_id, gen_call, self.db, broadcaster=self.broadcaster).run()
-
-        if not await self.db.consume_budget(1):
-            return
-        crit_call = await self.db.create_call(
-            CallType.CRITIQUE_ARTEFACT,
-            scope_page_id=task_id,
-            parent_call_id=parent_call_id,
-        )
-        await CritiqueArtefactCall(task_id, crit_call, self.db, broadcaster=self.broadcaster).run()
 
         if not await self.db.consume_budget(1):
             return
@@ -236,6 +228,15 @@ class GenerativeOrchestrator:
         await RequestOnlyCritiqueArtefactCall(
             task_id, ro_call, self.db, broadcaster=self.broadcaster
         ).run()
+
+        if not await self.db.consume_budget(1):
+            return
+        crit_call = await self.db.create_call(
+            CallType.CRITIQUE_ARTEFACT,
+            scope_page_id=task_id,
+            parent_call_id=parent_call_id,
+        )
+        await CritiqueArtefactCall(task_id, crit_call, self.db, broadcaster=self.broadcaster).run()
 
 
 async def run_generative_workflow(

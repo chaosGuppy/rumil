@@ -74,13 +74,9 @@ async def execute(payload: RegenerateAndCritiquePayload, call: Call, db: DB) -> 
     )
     await GenerateArtefactCall(artefact_task_id, gen_call, db, broadcaster=broadcaster).run()
 
-    crit_call = await db.create_call(
-        CallType.CRITIQUE_ARTEFACT,
-        scope_page_id=artefact_task_id,
-        parent_call_id=call.id,
-    )
-    await CritiqueArtefactCall(artefact_task_id, crit_call, db, broadcaster=broadcaster).run()
-
+    # Request-only critique runs FIRST. The workspace-aware critique then
+    # sees the request-only critique in its context and is asked to extend
+    # it (workspace-grounded issues only) rather than duplicate it.
     crit_ro_call = await db.create_call(
         CallType.CRITIQUE_ARTEFACT_REQUEST_ONLY,
         scope_page_id=artefact_task_id,
@@ -89,6 +85,13 @@ async def execute(payload: RegenerateAndCritiquePayload, call: Call, db: DB) -> 
     await RequestOnlyCritiqueArtefactCall(
         artefact_task_id, crit_ro_call, db, broadcaster=broadcaster
     ).run()
+
+    crit_call = await db.create_call(
+        CallType.CRITIQUE_ARTEFACT,
+        scope_page_id=artefact_task_id,
+        parent_call_id=call.id,
+    )
+    await CritiqueArtefactCall(artefact_task_id, crit_call, db, broadcaster=broadcaster).run()
 
     new_artefact = await db.latest_artefact_for_task(artefact_task_id)
     if new_artefact is None:

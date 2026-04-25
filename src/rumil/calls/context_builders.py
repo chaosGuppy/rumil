@@ -1097,10 +1097,16 @@ class CritiqueContext(ContextBuilder):
     """Context for critiquing the latest artefact on an artefact-task question.
 
     Includes the artefact-task question, the latest active Artefact produced
-    for it, and an embedding-based sweep over the broader workspace. Spec
+    for it, the prior request-only critique of that artefact (when one
+    exists), and an embedding-based sweep over the broader workspace. Spec
     items are deliberately EXCLUDED — the critic judges the artefact against
     the request and what the workspace knows, not against the spec. That is
     how spec-gaps get surfaced.
+
+    The request-only critique runs first; this critic sees its output and
+    is asked to add what the request-only critic couldn't see (workspace
+    grounding). That ordering keeps the two critiques complementary
+    rather than redundant.
     """
 
     async def build_context(self, infra: CallInfra) -> ContextResult:
@@ -1116,6 +1122,9 @@ class CritiqueContext(ContextBuilder):
                 f"CritiqueContext: no artefact found for task {infra.question_id}; "
                 "run generate_artefact first."
             )
+
+        prior = await _latest_request_only_critique(artefact.id, infra.db)
+        prior_section = _format_prior_request_only_critique(prior)
 
         query = task.headline or task.content[:200]
         embedding_result = await build_embedding_based_context(
@@ -1141,6 +1150,7 @@ class CritiqueContext(ContextBuilder):
             "",
             "---",
             "",
+            *prior_section,
             "# Broader workspace context",
             "",
             embedding_result.context_text,
@@ -1148,12 +1158,70 @@ class CritiqueContext(ContextBuilder):
         context_text = "\n".join(parts)
 
         working_page_ids = [task.id, artefact.id, *embedding_result.page_ids]
+        if prior is not None:
+            working_page_ids.append(prior.id)
         await _record_context_built(infra, working_page_ids, [])
         return ContextResult(
             context_text=context_text,
             working_page_ids=working_page_ids,
             preloaded_ids=[],
         )
+
+
+async def _latest_request_only_critique(artefact_id: str, db: DB) -> Page | None:
+    """Return the most recent active request-only critique of *artefact_id*."""
+    inbound = await db.get_links_to(artefact_id)
+    candidate_ids = [l.from_page_id for l in inbound if l.link_type == LinkType.CRITIQUE_OF]
+    if not candidate_ids:
+        return None
+    pages_by_id = await db.get_pages_by_ids(candidate_ids)
+    candidates = [
+        p
+        for p in pages_by_id.values()
+        if p.is_active()
+        and p.page_type == PageType.JUDGEMENT
+        and p.provenance_call_type == CallType.CRITIQUE_ARTEFACT_REQUEST_ONLY.value
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda p: (p.created_at, p.id))
+
+
+def _format_prior_request_only_critique(prior: Page | None) -> list[str]:
+    """Return the section that renders a prior request-only critique, or empty."""
+    if prior is None:
+        return []
+    grade = prior.extra.get("grade")
+    issues = prior.extra.get("issues") or []
+    overall = ""
+    # Best-effort: pull the "Overall" line out of the rendered content if present.
+    for line in prior.content.splitlines():
+        marker = "**Overall:**"
+        if line.startswith(marker):
+            overall = line[len(marker) :].strip()
+            break
+    parts = [
+        "# Prior request-only critique (your job is to extend it, not repeat it)",
+        "",
+        "A first reviewer has already evaluated this artefact using only the "
+        "task description and the artefact itself (no workspace context). Their "
+        "findings are below. Your job is to add what they could not see — issues "
+        "that depend on the broader workspace context — not to repeat or rephrase "
+        "their points. If the workspace simply confirms one of their findings, you "
+        "may briefly note that, but don't pad your output with redundant items.",
+        "",
+    ]
+    if grade is not None:
+        parts.append(f"**Grade (request-only):** {grade}/10")
+    if overall:
+        parts.append(f"**Overall:** {overall}")
+    if issues:
+        parts.append("")
+        parts.append("**Issues already raised by the request-only critic:**")
+        for issue in issues:
+            parts.append(f"- {issue}")
+    parts += ["", "---", ""]
+    return parts
 
 
 _CRITIQUE_KIND_LABELS = {

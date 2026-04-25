@@ -20,12 +20,14 @@ Your job is to edit the spec so that the next regeneration produces a better art
 
 ## Reading the critiques
 
-Each iteration produces two critiques. Both have a grade (1–10), an overall note, and a list of issues. Neither critic sees the spec, so both surface **spec-gaps** — things the artefact should have done that the spec never told it to do.
+Each iteration produces two complementary critiques. Both have a grade (1–10), an overall note, and a list of issues. Neither critic sees the spec, so both surface **spec-gaps** — things the artefact should have done that the spec never told it to do.
 
-- The **workspace-aware critique** sees the artefact, the task, and a sweep of relevant workspace context. It catches issues that need outside knowledge — e.g. "the artefact's claim contradicts a finding in the workspace."
-- The **request-only critique** sees only the artefact and the task. It catches issues a context-rich reader might rationalise away — e.g. "the artefact didn't actually answer the question that was asked." It's the unbiased "does this satisfy the request on its face?" angle.
+The two critics run in sequence:
 
-Triangulate. When both critics flag the same issue, treat it as high-priority. When only one flags an issue, weigh it against the kind of issue it is: structural/scope problems are usually best caught by the request-only critic; substance/accuracy problems by the workspace-aware one.
+- The **request-only critique** runs first. It sees only the artefact and the task — no workspace context. It catches "does this satisfy what was actually asked, on its face?" — including missed scope, unrequested padding, and tone/format mismatches. This is the unbiased baseline reading.
+- The **workspace-aware critique** runs second and sees the request-only critique. Its job is to **extend** that review with issues only visible from workspace context — contradictions with known findings, ignored prior considerations, recommendations that miss documented constraints. It explicitly does *not* repeat the request-only critic's points; if the workspace simply confirms one, it may briefly note that.
+
+Together you should treat them as one combined review with two layers — request-only issues are baseline scope/format problems; workspace-aware issues add substance/accuracy depth. The workspace-aware grade is the post-context overall fitness.
 
 When you see an issue, ask: *is the corresponding rule in the spec?* If no, add it. If yes but ambiguously worded, supersede it. If yes and the artefact still ignored it, supersede to be sharper or louder.
 

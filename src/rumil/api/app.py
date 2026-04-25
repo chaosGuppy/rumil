@@ -450,8 +450,12 @@ async def get_run_trace_tree(
             )
         )
     total_cost = sum(c.cost_usd or 0 for c in calls)
-    is_staged = bool(run_data[0].get("staged"))
-    run_config: dict = run_data[0].get("config") or {}  # type: ignore[assignment]
+    run_resp = await db.client.table("runs").select("staged, config").eq("id", run_id).execute()
+    run_data: list[dict[str, object]] = run_resp.data or []  # type: ignore[assignment]
+    is_staged = bool(run_data and run_data[0].get("staged"))
+    run_config: dict = {}
+    if run_data:
+        run_config = run_data[0].get("config") or {}  # type: ignore[assignment]
     return RunTraceTreeOut(
         run_id=run_id,
         question=question_page,

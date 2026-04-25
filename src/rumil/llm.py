@@ -957,6 +957,8 @@ async def structured_call(
     db: DB | None = None,
     cache: bool = False,
     model: str | None = None,
+    max_tokens: int | None = None,
+    disable_thinking: bool = False,
 ) -> StructuredCallResult[T]: ...
 
 
@@ -973,6 +975,8 @@ async def structured_call(
     db: DB | None = None,
     cache: bool = False,
     model: str | None = None,
+    max_tokens: int | None = None,
+    disable_thinking: bool = False,
 ) -> StructuredCallResult[T]: ...
 
 
@@ -989,6 +993,8 @@ async def structured_call(
     db: DB | None = None,
     cache: bool = False,
     model: str | None = None,
+    max_tokens: int | None = None,
+    disable_thinking: bool = False,
 ) -> StructuredCallResult[BaseModel]: ...
 
 

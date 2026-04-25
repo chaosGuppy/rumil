@@ -3,7 +3,6 @@
 import asyncio
 import logging
 from collections.abc import Sequence
-from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -43,13 +42,13 @@ from rumil.moves.remove_link import (
 from rumil.moves.remove_link import (
     execute as execute_remove_link,
 )
+from rumil.prompts import PROMPTS_DIR as _PROMPTS_DIR
 from rumil.settings import get_settings
 from rumil.tracing.trace_events import ClaimReassessedEvent, ReassessTriggeredEvent
 from rumil.tracing.tracer import CallTrace
 
 log = logging.getLogger(__name__)
 
-_PROMPTS_DIR = Path(__file__).resolve().parents[3] / "prompts"
 _UPDATE_SEMAPHORE = asyncio.Semaphore(15)
 
 

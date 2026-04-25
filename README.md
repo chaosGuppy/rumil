@@ -131,7 +131,13 @@ uv run python main.py --commit-run RUN_ID
 uv run python main.py "Your question here" --smoke-test
 
 # Any command can target the production database
-uv run python main.py --prod --list
+uv run python main.py --db prod --list
+
+# Run an orchestrator on Kubernetes (against the prod DB) instead of locally.
+# `--prod` is a shorthand for `--db prod --executor prod`; only orchestrator
+# runs (a question + budget) can be submitted as a Job. See "Run on Kubernetes"
+# below for prerequisites.
+uv run python main.py "Your question here" --budget 20 --prod
 
 # Select an available-moves preset (controls which tools are available per call type)
 uv run python main.py "Your question" --available-moves default --budget 10
@@ -245,6 +251,82 @@ Every run automatically captures its configuration (model, budget, call variants
 |------|-------------|
 | `--run-id-file PATH` | Write the run_id to a file after DB creation (for scripted capture) |
 | `--env-file PATH` | Load settings from this env file in addition to `.env` |
+
+### Run on Kubernetes
+
+Long or expensive prod runs can be submitted as Kubernetes Jobs in the GKE
+cluster instead of running on your laptop. The CLI POSTs to the rumil API,
+which creates the Job using its in-cluster ServiceAccount; logs stream back
+to your terminal until the run finishes.
+
+| Flag | Meaning |
+|------|---------|
+| `--db {prod,local}` | Which Supabase to target. Default: local. |
+| `--executor {prod,local}` | Where the orchestrator runs. Default: local. |
+| `--prod` | Shorthand for `--db prod --executor prod`. |
+
+Constraints:
+
+- `--executor prod` is only supported for orchestrator runs (a question with
+  `--budget`). For `--list`, `--summary`, `--continue`, etc., use
+  `--db prod` (or `--db prod --executor local`).
+- `--db local --executor prod` is rejected — the cluster cannot reach a
+  local Supabase.
+
+One-time setup on your laptop, in `.env` or `.env.local`:
+
+```bash
+# Where the rumil API lives. Defaults to https://api.rumil.ink and only
+# needs to be set if you're targeting a different deployment.
+RUMIL_API_URL=https://api.rumil.ink
+
+# Supabase HS256 secret used to mint short-lived CLI tokens. Same value as
+# the cluster's rumil-api-secrets — get it from the prod env you already
+# have, or ask in #infra.
+SUPABASE_JWT_SECRET=...
+
+# Optional: override the shared CLI service-account user (default lives in
+# Settings). Set to your own Supabase user_id to attribute jobs to yourself.
+# DEFAULT_CLI_USER_ID=...
+```
+
+Then:
+
+```bash
+# Submit a smoke-test orchestrator run against prod — cheapest end-to-end check
+uv run python main.py "is the sky blue" --budget 1 --smoke-test \
+  --workspace k8s-smoke --prod
+
+# Equivalent explicit form
+uv run python main.py "..." --budget 20 --workspace my-project \
+  --db prod --executor prod
+```
+
+#### Experiments (run uncommitted code in the cluster)
+
+`scripts/remote_run.sh` builds the current source tree into a one-off API
+image, pushes it to the rumil Artifact Registry under a unique tag (e.g.
+`exp-20260425-cafebabe-dirty`), then submits an orchestrator run pinned
+to that tag — without touching the deployed `rumil-api`. Use this to
+test changes against the prod database before they're merged or
+deployed.
+
+```bash
+# One-time docker auth
+gcloud auth configure-docker us-central1-docker.pkg.dev
+
+# Run an experiment
+./scripts/remote_run.sh "your question" --budget 5 --workspace exp-foo
+```
+
+The submitted Job's pod uses the experiment image while inheriting prod
+secrets and env from the live `rumil-api` Deployment, so it sees the
+same prod Supabase that any other `--prod` run would. Override the
+target Artifact Registry repository with `RUMIL_IMAGE_REPOSITORY` if
+you're running against a different project.
+
+You can also pass `--container-tag TAG` to `main.py` directly if you've
+already built and pushed the image yourself.
 
 ### Testing individual calls
 

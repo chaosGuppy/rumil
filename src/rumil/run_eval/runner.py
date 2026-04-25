@@ -12,6 +12,7 @@ from claude_agent_sdk import tool as sdk_tool
 from rumil.database import DB
 from rumil.llm import Tool, text_call
 from rumil.models import Call, CallStatus, CallType
+from rumil.prompts import PROMPTS_DIR as _PROMPTS_DIR
 from rumil.run_eval.agents import EVAL_AGENTS, EvalAgentSpec
 from rumil.run_eval.report import format_run_eval_report, save_run_eval_report
 from rumil.run_eval.seed import build_eval_seed_context
@@ -26,7 +27,6 @@ from rumil.workspace_exploration import (
 
 log = logging.getLogger(__name__)
 
-_PROMPTS_DIR = Path(__file__).resolve().parents[3] / "prompts"
 _TOOL_SERVER_NAME = "run-eval-tools"
 
 

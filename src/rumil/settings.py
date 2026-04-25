@@ -59,7 +59,11 @@ class Settings(BaseSettings):
     supabase_prod_key: str = ""
     supabase_jwt_secret: str = "super-secret-jwt-token-with-at-least-32-characters-long"
     auth_enabled: bool = True
-    default_cli_user_id: str = ""
+    # Shared CLI service-account user in Supabase Auth (cli-service@rumil.local).
+    # Created by scripts/create_cli_service_account.py. Override via the
+    # DEFAULT_CLI_USER_ID env var to attribute remote jobs to a specific user.
+    default_cli_user_id: str = "c4179ddb-bf61-4ba3-acfa-6b5408c19874"
+    rumil_api_url: str = "https://api.rumil.ink"
     voyage_ai_api_key: str = ""
     jina_api_key: str = ""
     langfuse_public_key: str = ""

@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import TypeAdapter, ValidationError
 
 from rumil.api.auth import AuthUser, get_current_user
+from rumil.api.jobs import router as jobs_router
 from rumil.api.schemas import (
     ABEvalDimensionOut,
     ABEvalDimensionSummaryOut,
@@ -68,6 +69,8 @@ app.add_middleware(
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
 )
+
+app.include_router(jobs_router)
 
 
 async def _assert_page_access(db: DB, page_id: str) -> Page:

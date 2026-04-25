@@ -1,0 +1,63 @@
+{{/*
+RBAC for the orchestrator-job feature:
+- rumil-api SA: bound to the API Deployment, granted permission to create
+  and read Jobs (and stream pod logs) in this namespace so the
+  /api/jobs/orchestrator-runs endpoint can spawn jobs.
+- rumil-orchestrator-job SA: used by the orchestrator pods themselves.
+  Intentionally has NO RBAC — orchestrator pods only talk to Supabase and
+  Anthropic, never to the k8s API. Distinct SA limits blast radius.
+
+Names are literal (not templated through rumil.fullname) because
+src/rumil/k8s/submit.py and deploy/k8s/orchestrator-job.yaml reference them
+by name. The chart is only deployed under release name "rumil".
+*/}}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: rumil-api
+  labels:
+    {{- include "rumil.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: rumil-orchestrator-job
+  labels:
+    {{- include "rumil.labels" . | nindent 4 }}
+    app.kubernetes.io/component: orchestrator-job
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: rumil-api-job-manager
+  labels:
+    {{- include "rumil.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "create", "watch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rumil-api-job-manager
+  labels:
+    {{- include "rumil.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: rumil-api-job-manager
+subjects:
+  - kind: ServiceAccount
+    name: rumil-api
+    namespace: {{ .Release.Namespace }}

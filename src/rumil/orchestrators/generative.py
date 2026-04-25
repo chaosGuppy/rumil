@@ -61,16 +61,11 @@ class GenerativeOrchestrator:
         *,
         refine_max_rounds: int = 10,
         broadcaster: Broadcaster | None = None,
-        spec_size_variant: str | None = None,
     ) -> None:
         self.db = db
         self.refine_max_rounds = refine_max_rounds
         self.broadcaster = broadcaster
         self._owns_broadcaster = False
-        # When set, selects alternate generate_spec / refine_spec prompts
-        # (e.g. "tight", "loose") for spec-size experiments. None preserves
-        # the default prompt files.
-        self.spec_size_variant = spec_size_variant
 
     async def run(self, request: str, *, headline: str | None = None) -> GenerativeResult:
         """Produce an artefact for *request*. Returns the result's IDs.
@@ -196,7 +191,6 @@ class GenerativeOrchestrator:
             call,
             self.db,
             broadcaster=self.broadcaster,
-            prompt_variant=self.spec_size_variant,
         )
         await runner.run()
 
@@ -214,7 +208,6 @@ class GenerativeOrchestrator:
             self.db,
             max_rounds=self.refine_max_rounds,
             broadcaster=self.broadcaster,
-            prompt_variant=self.spec_size_variant,
         )
         await runner.run()
 

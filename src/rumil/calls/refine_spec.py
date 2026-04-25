@@ -17,48 +17,16 @@ from rumil.calls.stages import (
     ContextBuilder,
     WorkspaceUpdater,
 )
-from rumil.database import DB
-from rumil.models import Call, CallStage, CallType
+from rumil.models import CallType
 
 
 class RefineSpecCall(CallRunner):
-    """Iterate the spec via an agent loop until the artefact converges or budget runs out.
-
-    *prompt_variant*, when set, selects an alternate prompt file
-    (``refine_spec_<variant>.md``) instead of the default
-    ``refine_spec.md``. Used by experimental settings such as the
-    ``--spec-size {tight,loose}`` toggle.
-    """
+    """Iterate the spec via an agent loop until the artefact converges or budget runs out."""
 
     context_builder_cls = RefinementContext
     workspace_updater_cls = SimpleAgentLoop
     closing_reviewer_cls = StandardClosingReview
     call_type = CallType.REFINE_SPEC
-
-    def __init__(
-        self,
-        question_id: str,
-        call: Call,
-        db: DB,
-        *,
-        broadcaster=None,
-        up_to_stage: CallStage | None = None,
-        max_rounds: int = 5,
-        fruit_threshold: int = 4,
-        pool_question_id: str | None = None,
-        prompt_variant: str | None = None,
-    ) -> None:
-        self._prompt_variant = prompt_variant
-        super().__init__(
-            question_id,
-            call,
-            db,
-            broadcaster=broadcaster,
-            up_to_stage=up_to_stage,
-            max_rounds=max_rounds,
-            fruit_threshold=fruit_threshold,
-            pool_question_id=pool_question_id,
-        )
 
     def _make_context_builder(self) -> ContextBuilder:
         return RefinementContext()
@@ -69,16 +37,10 @@ class RefineSpecCall(CallRunner):
             self.task_description(),
             available_moves=self._resolve_available_moves(),
             max_rounds=self._max_rounds,
-            prompt_name=self._resolved_prompt_name(),
         )
 
     def _make_closing_reviewer(self) -> ClosingReviewer:
         return StandardClosingReview(self.call_type)
-
-    def _resolved_prompt_name(self) -> str | None:
-        if self._prompt_variant:
-            return f"{self.call_type.value}_{self._prompt_variant}"
-        return None
 
     def task_description(self) -> str:
         return (

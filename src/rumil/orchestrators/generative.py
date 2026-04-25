@@ -25,6 +25,7 @@ from dataclasses import dataclass
 
 from rumil.calls.context_builders import active_spec_items_for_task
 from rumil.calls.critique_artefact import CritiqueArtefactCall
+from rumil.calls.critique_artefact_request_only import RequestOnlyCritiqueArtefactCall
 from rumil.calls.generate_artefact import GenerateArtefactCall
 from rumil.calls.generate_spec import GenerateSpecCall
 from rumil.calls.refine_spec import RefineSpecCall
@@ -203,7 +204,12 @@ class GenerativeOrchestrator:
         await runner.run()
 
     async def _one_off_regenerate(self, task_id: str, parent_call_id: str | None) -> None:
-        """Run a single generate_artefact + critique_artefact as a fallback."""
+        """Run a single generate + workspace critique + request-only critique as a fallback.
+
+        Each sub-call costs 1 budget; this method consumes incrementally and
+        stops at whatever boundary budget allows (the artefact alone is the
+        most important — critiques are a bonus signal here).
+        """
         gen_call = await self.db.create_call(
             CallType.GENERATE_ARTEFACT,
             scope_page_id=task_id,
@@ -219,6 +225,17 @@ class GenerativeOrchestrator:
             parent_call_id=parent_call_id,
         )
         await CritiqueArtefactCall(task_id, crit_call, self.db, broadcaster=self.broadcaster).run()
+
+        if not await self.db.consume_budget(1):
+            return
+        ro_call = await self.db.create_call(
+            CallType.CRITIQUE_ARTEFACT_REQUEST_ONLY,
+            scope_page_id=task_id,
+            parent_call_id=parent_call_id,
+        )
+        await RequestOnlyCritiqueArtefactCall(
+            task_id, ro_call, self.db, broadcaster=self.broadcaster
+        ).run()
 
 
 async def run_generative_workflow(

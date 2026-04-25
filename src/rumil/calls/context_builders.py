@@ -1156,6 +1156,29 @@ class CritiqueContext(ContextBuilder):
         )
 
 
+_CRITIQUE_KIND_LABELS = {
+    CallType.CRITIQUE_ARTEFACT.value: "Workspace-aware critique",
+    CallType.CRITIQUE_ARTEFACT_REQUEST_ONLY.value: "Request-only critique",
+}
+
+
+def _append_critique_section(parts: list[str], kind: str, critique: Page) -> None:
+    """Render one critique block in the RefinementContext output."""
+    label = _CRITIQUE_KIND_LABELS.get(kind, "Critique")
+    grade = critique.extra.get("grade")
+    issues = critique.extra.get("issues") or []
+    parts.append(f"### {label}")
+    parts.append("")
+    if grade is not None:
+        parts.append(f"**Grade:** {grade}/10")
+    if issues:
+        parts.append("")
+        parts.append("**Issues:**")
+        for issue in issues:
+            parts.append(f"- {issue}")
+    parts.append("")
+
+
 async def active_spec_items_for_task(task_id: str, db) -> list[Page]:
     """Return active SPEC_ITEM pages SPEC_OF-linked to *task_id*.
 
@@ -1173,6 +1196,57 @@ async def active_spec_items_for_task(task_id: str, db) -> list[Page]:
     ]
     active.sort(key=lambda p: (p.created_at, p.id))
     return active
+
+
+class RequestOnlyCritiqueContext(ContextBuilder):
+    """Critique context with no workspace exposure.
+
+    Sees the artefact-task question and the latest artefact and nothing else.
+    Used by the second-opinion request-only critic, which evaluates "does this
+    answer what was asked?" as a fresh outside reader — uncontaminated by
+    whatever the workspace happens to know about the topic. Pairs with the
+    workspace-aware CritiqueContext so the refiner sees two complementary
+    angles per iteration.
+    """
+
+    async def build_context(self, infra: CallInfra) -> ContextResult:
+        task = await infra.db.get_page(infra.question_id)
+        if task is None:
+            raise ValueError(
+                f"RequestOnlyCritiqueContext: artefact-task question {infra.question_id} not found"
+            )
+
+        artefact = await infra.db.latest_artefact_for_task(infra.question_id)
+        if artefact is None:
+            raise ValueError(
+                f"RequestOnlyCritiqueContext: no artefact found for task "
+                f"{infra.question_id}; run generate_artefact first."
+            )
+
+        parts: list[str] = [
+            "# Artefact task",
+            "",
+            task.headline,
+            "",
+            task.content or "(no further description)",
+            "",
+            "---",
+            "",
+            "# Artefact under review",
+            "",
+            f"**{artefact.headline}**",
+            "",
+            artefact.content,
+        ]
+        context_text = "\n".join(parts)
+
+        working_page_ids = [task.id, artefact.id]
+        await _record_context_built(infra, working_page_ids, [])
+        return ContextResult(
+            context_text=context_text,
+            working_page_ids=working_page_ids,
+            preloaded_ids=[],
+        )
 
 
 class RefinementContext(ContextBuilder):
@@ -1211,7 +1285,7 @@ class RefinementContext(ContextBuilder):
         artefacts.sort(key=lambda p: (p.created_at, p.id))
         recent = artefacts[-self._window :]
 
-        triples: list[tuple[Page, list[Page], Page | None]] = []
+        triples: list[tuple[Page, list[Page], dict[str, Page]]] = []
         for artefact in recent:
             snapshot_links = await infra.db.get_links_from(artefact.id)
             spec_ids = [
@@ -1230,14 +1304,16 @@ class RefinementContext(ContextBuilder):
             critique_pages_by_id = (
                 await infra.db.get_pages_by_ids(critique_link_ids) if critique_link_ids else {}
             )
-            critiques = [
-                p
-                for p in critique_pages_by_id.values()
-                if p.is_active() and p.page_type == PageType.JUDGEMENT
-            ]
-            latest_critique = max(critiques, key=lambda p: p.created_at) if critiques else None
+            critiques_by_kind: dict[str, Page] = {}
+            for p in critique_pages_by_id.values():
+                if not p.is_active() or p.page_type != PageType.JUDGEMENT:
+                    continue
+                kind = p.provenance_call_type or ""
+                existing = critiques_by_kind.get(kind)
+                if existing is None or p.created_at > existing.created_at:
+                    critiques_by_kind[kind] = p
 
-            triples.append((artefact, snapshot_specs, latest_critique))
+            triples.append((artefact, snapshot_specs, critiques_by_kind))
 
         parts: list[str] = [
             "# Artefact task",
@@ -1266,7 +1342,9 @@ class RefinementContext(ContextBuilder):
         if not triples:
             parts.append("(no iterations yet — call regenerate_and_critique to start)")
         else:
-            for iter_index, (artefact, snapshot_specs, critique) in enumerate(triples, start=1):
+            for iter_index, (artefact, snapshot_specs, critiques_by_kind) in enumerate(
+                triples, start=1
+            ):
                 parts += [f"## Iteration {iter_index} — artefact [{artefact.id[:8]}]", ""]
                 parts.append(f"### Spec used ({len(snapshot_specs)} items)")
                 parts.append("")
@@ -1276,19 +1354,27 @@ class RefinementContext(ContextBuilder):
                 else:
                     parts.append("(none captured)")
                 parts += ["", f"### Artefact: {artefact.headline}", "", artefact.content, ""]
-                if critique is not None:
-                    grade = critique.extra.get("grade")
-                    issues = critique.extra.get("issues") or []
-                    grade_label = f"**Grade:** {grade}/10" if grade is not None else ""
-                    parts += ["### Critique", "", grade_label]
-                    if issues:
-                        parts.append("")
-                        parts.append("**Issues:**")
-                        for issue in issues:
-                            parts.append(f"- {issue}")
-                    parts.append("")
+
+                if not critiques_by_kind:
+                    parts += ["### Critiques", "", "(no critiques recorded for this iteration)", ""]
                 else:
-                    parts += ["### Critique", "", "(no critique recorded for this iteration)", ""]
+                    # Render workspace-aware first, then request-only, then any others.
+                    ordered_kinds = [
+                        CallType.CRITIQUE_ARTEFACT.value,
+                        CallType.CRITIQUE_ARTEFACT_REQUEST_ONLY.value,
+                    ]
+                    seen: set[str] = set()
+                    for kind in ordered_kinds:
+                        critique = critiques_by_kind.get(kind)
+                        if critique is None:
+                            continue
+                        seen.add(kind)
+                        _append_critique_section(parts, kind, critique)
+                    for kind, critique in critiques_by_kind.items():
+                        if kind in seen:
+                            continue
+                        _append_critique_section(parts, kind, critique)
+
                 parts.append("---")
                 parts.append("")
 

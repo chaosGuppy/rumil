@@ -4,6 +4,7 @@ from rumil.calls.assess import AssessCall, BigAssessCall
 from rumil.calls.call_registry import ASSESS_CALL_CLASSES
 from rumil.calls.create_view import CreateViewCall
 from rumil.calls.critique_artefact import CritiqueArtefactCall
+from rumil.calls.critique_artefact_request_only import RequestOnlyCritiqueArtefactCall
 from rumil.calls.find_considerations import FindConsiderationsCall
 from rumil.calls.generate_artefact import GenerateArtefactCall
 from rumil.calls.generate_spec import GenerateSpecCall
@@ -42,6 +43,7 @@ __all__ = [
     "IngestCall",
     "LinkSubquestionsCall",
     "RefineSpecCall",
+    "RequestOnlyCritiqueArtefactCall",
     "ScoutAnalogiesCall",
     "ScoutCCruxesCall",
     "ScoutCHowFalseCall",

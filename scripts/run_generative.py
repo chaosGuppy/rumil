@@ -150,10 +150,10 @@ def main() -> None:
     parser.add_argument(
         "--budget",
         type=int,
-        default=25,
+        default=30,
         help="Total budget for the run. generate_spec ~1, refine_spec ~1, "
-        "each regenerate_and_critique ~2. 25 covers ~10 refinement rounds worth "
-        "of regenerations.",
+        "each regenerate_and_critique ~3 (one artefact + workspace-aware critique "
+        "+ request-only critique). 30 covers ~9 regenerations.",
     )
     parser.add_argument(
         "--refine-max-rounds",

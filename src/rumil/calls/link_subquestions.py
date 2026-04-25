@@ -29,7 +29,6 @@ from rumil.scope_subquestion_linker.tool import (
 from rumil.scope_subquestion_linker.validation import validate_proposals
 from rumil.settings import get_settings
 from rumil.tracing.trace_events import (
-    ContextBuiltEvent,
     LinkSubquestionsCompleteEvent,
     ProposedSubquestion,
     ReviewCompleteEvent,
@@ -87,8 +86,6 @@ class LinkerContextBuilder(ContextBuilder):
             "## Seed Subgraphs (most relevant top-level questions)\n\n"
             f"{seed_block or '(none)'}\n"
         )
-
-        await infra.trace.record(ContextBuiltEvent())
 
         return ContextResult(
             context_text=context_text,

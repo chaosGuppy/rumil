@@ -57,8 +57,14 @@ class Settings(BaseSettings):
     )
     supabase_prod_url: str = ""
     supabase_prod_key: str = ""
+    supabase_jwt_secret: str = "super-secret-jwt-token-with-at-least-32-characters-long"
+    auth_enabled: bool = True
+    default_cli_user_id: str = ""
     voyage_ai_api_key: str = ""
     jina_api_key: str = ""
+    langfuse_public_key: str = ""
+    langfuse_secret_key: str = ""
+    langfuse_base_url: str = "https://us.cloud.langfuse.com"
     frontend_url: str = "http://127.0.0.1:3000"
     db_max_concurrent_queries: int = 20
 
@@ -97,7 +103,7 @@ class Settings(BaseSettings):
     subquestion_linker_enabled: bool = _capture_field(default=True)
 
     max_db_retries: int = _capture_field(default=10)
-    max_api_retries: int = _capture_field(default=10)
+    max_api_retries: int = _capture_field(default=60)
     max_api_retries_429: int | None = _capture_field(default=None)
     max_api_retries_500: int | None = _capture_field(default=None)
     max_api_retries_529: int | None = _capture_field(default=None)
@@ -172,6 +178,10 @@ class Settings(BaseSettings):
                 "Set it before running the workspace."
             )
         return self.anthropic_api_key
+
+    @property
+    def langfuse_enabled(self) -> bool:
+        return bool(self.langfuse_public_key and self.langfuse_secret_key)
 
     @classmethod
     def from_env_files(cls, *env_files: str | Path) -> "Settings":

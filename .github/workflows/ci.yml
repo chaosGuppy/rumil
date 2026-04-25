@@ -7,7 +7,7 @@ on:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   backend-lint-type:
@@ -70,3 +70,79 @@ jobs:
         run: pnpm lint
       - name: TypeScript
         run: npx tsc --noEmit
+
+  deploy:
+    name: deploy to prod
+    needs: [backend-lint-type, backend-tests, frontend-lint-type]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: deploy-prod
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/1082891349463/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: rumil-ci@project-fe559f0f-d011-4af4-bf0.iam.gserviceaccount.com
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure docker for Artifact Registry
+        run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Run prod migrations
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          supabase link --project-ref aesjaehibxrzearctiqp
+          supabase db push
+
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: differential
+          location: us-central1
+
+      - name: Install sops
+        run: |
+          curl -fsSL https://github.com/getsops/sops/releases/download/v3.9.4/sops-v3.9.4.linux.amd64 \
+            -o /tmp/sops
+          sudo install -m 0755 /tmp/sops /usr/local/bin/sops
+
+      - name: Install helm-secrets plugin
+        run: helm plugin install https://github.com/jkroepke/helm-secrets
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install frontend deps
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Build, push, and deploy
+        env:
+          # Inlined into the client bundle by `next build` — see scripts/deploy.sh.
+          # Not a secret in the cryptographic sense (ships with every page), but
+          # kept in GitHub Secrets so the value is centrally managed.
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+        run: ./scripts/deploy.sh --all --tag "${GITHUB_SHA::7}"

@@ -34,6 +34,7 @@ from rumil.models import (
 )
 from rumil.moves.base import MoveState
 from rumil.settings import get_settings
+from rumil.tracing import observe
 from rumil.tracing.trace_events import (
     ErrorEvent,
     MovesExecutedEvent,
@@ -149,6 +150,7 @@ def prepare_tools(tools: Sequence[Tool]) -> tuple[list[dict], dict]:
     return tool_defs, tool_fns
 
 
+@observe(name="single_call")
 async def run_single_call(
     system_prompt: str,
     user_message: str = "",
@@ -253,6 +255,7 @@ async def run_single_call(
     )
 
 
+@observe(name="agent_loop")
 async def run_agent_loop(
     system_prompt: str,
     user_message: str = "",
@@ -597,6 +600,7 @@ async def mark_call_completed(call: Call, db: DB, summary: str) -> None:
     await db.save_call(call)
 
 
+@observe(name="closing_review")
 async def run_closing_review(
     call: Call,
     main_output: str,

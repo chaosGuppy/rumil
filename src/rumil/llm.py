@@ -41,6 +41,11 @@ from tenacity import (
 
 from rumil.pricing import compute_cost
 from rumil.settings import get_settings
+from rumil.tracing import (
+    get_langfuse,
+    langfuse_trace_url_for_current_observation,
+    observe,
+)
 from rumil.tracing.trace_events import ErrorEvent, LLMExchangeEvent
 from rumil.tracing.tracer import get_trace
 
@@ -431,10 +436,86 @@ async def _save_exchange(
                 cache_read_input_tokens=cache_read_input_tokens or None,
                 duration_ms=duration_ms,
                 cost_usd=cost_usd or None,
+                langfuse_trace_url=langfuse_trace_url_for_current_observation(),
             )
         )
 
 
+def _extract_model_parameters(api_kwargs: dict) -> dict:
+    """Pull Anthropic-API params into the flat shape Langfuse renders in the UI.
+
+    Skips `system`/`messages` (they go into `input`). Flattens nested config
+    dicts (`thinking`, `output_config`) into individual keys since
+    update_current_generation's model_parameters slot is shallow.
+    """
+    params: dict = {}
+    for key in ("model", "max_tokens", "temperature"):
+        if key in api_kwargs:
+            params[key] = api_kwargs[key]
+    if (tools := api_kwargs.get("tools")) is not None:
+        params["tool_count"] = len(tools)
+    if (thinking := api_kwargs.get("thinking")) is not None:
+        for k, v in thinking.items():
+            params[f"thinking_{k}"] = v
+    if (output_config := api_kwargs.get("output_config")) is not None:
+        for k, v in output_config.items():
+            params[k] = v
+    if (tool_choice := api_kwargs.get("tool_choice")) is not None:
+        params["tool_choice"] = str(tool_choice)
+    return params
+
+
+def _enrich_langfuse_generation(
+    *,
+    model: str,
+    messages: Sequence[dict],
+    response: anthropic.types.Message,
+    elapsed_ms: int,
+    api_kwargs: dict | None = None,
+) -> None:
+    """Populate the active Langfuse generation span with model, IO, and usage.
+
+    No-op when Langfuse is disabled or no observation is active.
+    """
+    client = get_langfuse()
+    if client is None:
+        return
+    try:
+        usage = response.usage
+        cache_creation = getattr(usage, "cache_creation_input_tokens", 0) or 0
+        cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
+        cost_usd = compute_cost(
+            model=model,
+            input_tokens=usage.input_tokens,
+            output_tokens=usage.output_tokens,
+            cache_creation_input_tokens=cache_creation,
+            cache_read_input_tokens=cache_read,
+        )
+        output_text = "".join(
+            block.text for block in response.content if isinstance(block, TextBlock)
+        )
+        client.update_current_generation(
+            model=model,
+            input=_serialize_messages(messages),
+            output=output_text or None,
+            model_parameters=_extract_model_parameters(api_kwargs or {}),
+            usage_details={
+                "input": usage.input_tokens,
+                "output": usage.output_tokens,
+                "cache_creation_input": cache_creation,
+                "cache_read_input": cache_read,
+            },
+            cost_details={"total": cost_usd} if cost_usd else None,
+            metadata={
+                "stop_reason": response.stop_reason,
+                "duration_ms": elapsed_ms,
+            },
+        )
+    except Exception as exc:
+        log.debug("Langfuse enrichment failed: %s", exc)
+
+
+@observe(as_type="generation", name="anthropic.messages.create")
 async def call_api(
     client: anthropic.AsyncAnthropic,
     model: str,
@@ -560,6 +641,13 @@ async def call_api(
                         phase=metadata.phase,
                     )
                 )
+    _enrich_langfuse_generation(
+        model=model,
+        messages=messages,
+        response=response,
+        elapsed_ms=elapsed_ms,
+        api_kwargs=kwargs,
+    )
     return APIResponse(message=response, duration_ms=elapsed_ms)
 
 
@@ -746,6 +834,7 @@ def _inject_into_last_user_message(
     return msgs
 
 
+@observe(as_type="generation", name="anthropic.messages.parse")
 async def _structured_call_parse(
     system_prompt: str,
     response_model: type[T] | None,
@@ -798,6 +887,13 @@ async def _structured_call_parse(
     for block in response.content:
         if isinstance(block, TextBlock):
             response_text += block.text
+    _enrich_langfuse_generation(
+        model=model,
+        messages=msg_list,
+        response=response,
+        elapsed_ms=elapsed_ms,
+        api_kwargs=parse_kwargs,
+    )
     if metadata and db:
         serialized: Sequence[dict] | None = None
         if metadata.user_message is None:

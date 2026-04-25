@@ -215,6 +215,16 @@ def _row_to_call(row: dict[str, Any]) -> Call:
     )
 
 
+def _row_to_project(row: dict[str, Any]) -> Project:
+    return Project(
+        id=row["id"],
+        name=row["name"],
+        created_at=datetime.fromisoformat(row["created_at"]),
+        hidden=row.get("hidden", False),
+        owner_user_id=row.get("owner_user_id"),
+    )
+
+
 def _row_to_call_sequence(row: dict[str, Any]) -> CallSequence:
     return CallSequence(
         id=row["id"],
@@ -459,40 +469,34 @@ class DB:
         )
         self._invalidate_mutation_cache()
 
-    async def get_or_create_project(self, name: str) -> Project:
+    async def get_or_create_project(
+        self,
+        name: str,
+        owner_user_id: str | None = None,
+    ) -> Project:
         rows = _rows(
             await self._execute(self.client.table("projects").select("*").eq("name", name))
         )
         if rows:
-            row = rows[0]
-            return Project(
-                id=row["id"],
-                name=row["name"],
-                created_at=datetime.fromisoformat(row["created_at"]),
-                hidden=row.get("hidden", False),
-            )
-        row = _rows(await self._execute(self.client.table("projects").insert({"name": name})))[0]
-        return Project(
-            id=row["id"],
-            name=row["name"],
-            created_at=datetime.fromisoformat(row["created_at"]),
-            hidden=row.get("hidden", False),
-        )
+            return _row_to_project(rows[0])
+        insert: dict[str, str] = {"name": name}
+        if owner_user_id:
+            insert["owner_user_id"] = owner_user_id
+        row = _rows(await self._execute(self.client.table("projects").insert(insert)))[0]
+        return _row_to_project(row)
 
-    async def list_projects(self, include_hidden: bool = False) -> list[Project]:
+    async def list_projects(
+        self,
+        include_hidden: bool = False,
+        owner_user_id: str | None = None,
+    ) -> list[Project]:
         query = self.client.table("projects").select("*").order("created_at")
         if not include_hidden:
             query = query.eq("hidden", False)
+        if owner_user_id:
+            query = query.eq("owner_user_id", owner_user_id)
         rows = _rows(await self._execute(query))
-        return [
-            Project(
-                id=r["id"],
-                name=r["name"],
-                created_at=datetime.fromisoformat(r["created_at"]),
-                hidden=r.get("hidden", False),
-            )
-            for r in rows
-        ]
+        return [_row_to_project(r) for r in rows]
 
     async def save_page(self, page: Page) -> None:
         log.debug(
@@ -619,6 +623,27 @@ class DB:
         if not pages:
             return None
         return pages[0]
+
+    async def get_page_staging_info(self, page_id: str) -> tuple[bool, str, str] | None:
+        """Return (staged, run_id, project_id) for a page, bypassing the staged
+        visibility filter. Returns None if the page doesn't exist.
+
+        Callers use this to discover whether a page is staged under another run
+        before deciding which run_id/staged combination to open a DB with.
+        """
+        rows = _rows(
+            await self._execute(
+                self.client.table("pages").select("staged, run_id, project_id").eq("id", page_id)
+            )
+        )
+        if not rows:
+            return None
+        row = rows[0]
+        return (
+            bool(row.get("staged")),
+            row.get("run_id") or "",
+            row.get("project_id") or "",
+        )
 
     async def get_pages_by_ids(self, page_ids: Sequence[str]) -> dict[str, Page]:
         """Bulk-fetch pages by ID. Returns {id: Page} for pages that exist."""
@@ -2897,19 +2922,42 @@ class DB:
         )
         return report_id
 
-    async def list_ab_eval_reports(self) -> list[dict[str, Any]]:
-        """List all AB evaluation reports for this project, newest first."""
+    async def list_ab_eval_reports(
+        self,
+        owner_user_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """List AB evaluation reports, newest first.
+
+        When `owner_user_id` is provided, the caller-controlled filter is
+        applied via the `projects.owner_user_id` FK so cross-user reports
+        never leak regardless of the request's scoping project.
+        """
         q = (
             self.client.table("ab_eval_reports")
             .select(
                 "id, run_id_a, run_id_b, question_id_a, question_id_b, "
-                "overall_assessment, dimension_reports, created_at"
+                "overall_assessment, dimension_reports, created_at, project_id"
             )
             .order("created_at", desc=True)
         )
         if self.project_id:
             q = q.eq("project_id", str(self.project_id))
-        return _rows(await self._execute(q))
+        rows = _rows(await self._execute(q))
+        if owner_user_id:
+            project_ids = {r.get("project_id") for r in rows if r.get("project_id")}
+            if not project_ids:
+                return []
+            owned = _rows(
+                await self._execute(
+                    self.client.table("projects")
+                    .select("id")
+                    .eq("owner_user_id", owner_user_id)
+                    .in_("id", list(project_ids))
+                )
+            )
+            owned_ids = {r["id"] for r in owned}
+            rows = [r for r in rows if r.get("project_id") in owned_ids]
+        return rows
 
     async def get_ab_eval_report(self, report_id: str) -> dict[str, Any] | None:
         """Get a single AB evaluation report by ID."""

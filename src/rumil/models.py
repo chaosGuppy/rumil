@@ -349,6 +349,7 @@ class Project(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     hidden: bool = False
+    owner_user_id: str | None = None
 
 
 class Page(BaseModel):

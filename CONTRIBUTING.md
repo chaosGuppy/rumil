@@ -26,6 +26,13 @@ uv run pre-commit install
 
 If `pre-commit install` errors with `Cowardly refusing to install hooks with core.hooksPath set`, your repo has a local `core.hooksPath` override. Either unset it (`git config --unset-all core.hooksPath`) or run hooks manually via `just precommit-all` / `uv run pre-commit run --all-files`.
 
+## Auth in local dev
+
+The deployed app has two gates: an invite password (`/welcome`) and Google OAuth via Supabase (`/sign-in`). For local dev you almost always want to skip both — the example env files do this by default.
+
+- Set `AUTH_ENABLED=0` in **both** `.env` (backend) and `frontend/.env.local` (frontend). The example files ship with this set. The middleware then skips the invite cookie and the Supabase session check, and the API skips JWT verification. The two sides must agree — if only the frontend has it, every `/api/*` call 401s.
+- To exercise the real flow locally, unset `AUTH_ENABLED` (or set to `1`) and fill in `INVITE_PASSWORD`, `INVITE_SECRET`, and the `NEXT_PUBLIC_SUPABASE_*` vars in `frontend/.env.local`. Local Google OAuth isn't wired up in `supabase/config.toml`, so the `/sign-in` button won't actually complete a flow against `supabase start` — you'd need to point at a real Supabase project.
+
 ## Common tasks
 
 A [justfile](./justfile) wraps the commands below — `brew bundle` installs `just` (or `brew install just` on its own). Run `just --list` to see recipes. Direct commands work too.

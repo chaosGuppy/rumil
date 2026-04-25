@@ -99,11 +99,11 @@ helm secrets upgrade --install "$RELEASE" "$CHART_DIR" \
 echo "==> Waiting for rollout..."
 if $deploy_api; then
     echo "  API:"
-    kubectl rollout status "deployment/${RELEASE}-api" -n "$NAMESPACE" --timeout=120s
+    kubectl rollout status "deployment/${RELEASE}-api" -n "$NAMESPACE" --timeout=300s
 fi
 if $deploy_frontend; then
     echo "  Frontend:"
-    kubectl rollout status "deployment/${RELEASE}-frontend" -n "$NAMESPACE" --timeout=120s
+    kubectl rollout status "deployment/${RELEASE}-frontend" -n "$NAMESPACE" --timeout=300s
 fi
 
 echo ""

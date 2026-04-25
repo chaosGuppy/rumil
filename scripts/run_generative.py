@@ -219,15 +219,17 @@ def main() -> None:
     )
     parser.add_argument(
         "--spec-size",
-        choices=("tight", "default", "loose"),
+        choices=("tight", "default", "loose", "extra_loose"),
         default="default",
         help=(
             "Spec-size experiment variant. 'default' uses the standard prompts "
             "(target ~10-20 items, warn at ~30). 'tight' targets 5-15 items and "
             "biases the refiner toward consolidation. 'loose' targets 20-35 "
             "items (up to ~50) and biases toward fresh adds rather than "
-            "consolidation. The flag selects alternate prompt files and applies "
-            "to both the initial generate_spec and every refine_spec round."
+            "consolidation. 'extra_loose' targets 40-70 items (up to ~100) "
+            "with a strong bias toward atomic adds and against consolidation. "
+            "The flag selects alternate prompt files and applies to both the "
+            "initial generate_spec and every refine_spec round."
         ),
     )
     parser.add_argument(

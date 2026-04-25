@@ -4,7 +4,7 @@
 
 You are performing a **Generate Spec** call — the first step of a generator-refiner workflow that will produce an artefact (a plan, document, design, or other long-form object) in response to the artefact-task question.
 
-Your job here is **not** to write the artefact. Your job is to write a **spec**: a set of atomic prescriptive rules the artefact will be held to. Downstream, a separate call will generate the artefact from this spec alone — seeing no workspace, no context, no broader conversation. Whatever the artefact should contain, avoid, emphasise, or structure: you must make it an explicit spec item here, or it will not appear.
+Your job here is **not** to write the artefact. Your job is to write a **spec**: a set of prescriptive rules the artefact will be held to. Downstream, a separate call will generate the artefact from this spec alone — seeing no workspace, no context, no broader conversation. Whatever the artefact should contain, avoid, emphasise, or structure: you must make it an explicit spec item here, or it will not appear.
 
 ## What to Produce
 
@@ -28,7 +28,7 @@ Most spec items convey *content* — specific positions, findings, claims, or fr
 
 ## What Makes a Good Spec
 
-- **Atomic.** One rule per spec item. If you find yourself writing "and", consider whether you have two items.
+- **Usually one rule per item — but don't be precious about it.** Default to one rule per item; that keeps things easy to revise and supersede later. But if a rule is genuinely about a single coherent point that takes a few sentences to explain (with motivation, an example, or a nuance the generator needs to honour), one richer item beats two anaemic ones. If you find yourself writing a connecting "and" between unrelated points, that's two items.
 - **Prescriptive, not descriptive.** A spec item tells the artefact what to do — whether that's asserting something specific ("the artefact should state X"), committing to a position, structuring itself a particular way, or avoiding a failure mode. It is not a bare description of the world on its own; the artefact is where those descriptions land.
 - **Actionable by a generator with no context.** If a generator saw only your spec, would it know what shape the artefact takes? What specific things it should say? What style? What depth? What to leave out?
 - **Grounded in the workspace.** You have full workspace context. Use it to surface rules that a generator could not infer from the artefact-task headline alone — specific findings the artefact must carry, positions already reached, known pitfalls, project-specific conventions, constraints the user has previously voiced.
@@ -45,6 +45,8 @@ Aim for a spec rich enough that, handed the spec alone, a capable generator coul
 - **Known pitfalls** — failure modes the workspace suggests are worth explicitly guarding against.
 
 Err on the side of more spec items in cases where there's content in the workspace that you think should make it into the artefact (but it's okay if some content doesn't make it in!). The instance writing the artefact will not have access to the workspace.
+
+That said, keep the spec to a manageable size. **Aim for tens of items, not hundreds.** A spec with 100+ items is usually a sign of either over-decomposing one rule into many narrow ones, or speculating about content the workspace doesn't really push for. If you're approaching that range, prefer combining related items into single richer ones, and drop items that aren't load-bearing.
 
 ## Not Your Job
 

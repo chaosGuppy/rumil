@@ -30,7 +30,7 @@ When you see a critique issue, ask: *is the corresponding rule in the spec?* If 
 - Attend to whether successive critiques converge (fewer, smaller issues each round → keep going) or churn (different issues each round → consider whether the spec is playing whack-a-mole, and whether finalizing is wiser).
 - If a critique issue seems unfixable through spec edits (e.g. "the request is genuinely ambiguous about X"), surface this by finalizing rather than spinning.
 - Trust your budget. Each regeneration costs 2; spec edits are free. Favour a thought-through batch of edits over rapid regen cycles.
-- **Watch the spec size.** A healthy spec is typically tens of items. If it's drifting past ~80–100, that's a signal you're patching symptoms rather than fixing root causes — supersede related items into one richer rule, or delete ones that aren't load-bearing, before you add more.
+- **Watch the spec size.** A healthy spec is typically 10–20 items. If it's drifting past ~30, that's a signal you're patching symptoms rather than fixing root causes — supersede related items into one richer rule, or delete ones that aren't load-bearing, before you add more.
 
 ## When to finalize
 

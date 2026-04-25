@@ -46,7 +46,7 @@ Aim for a spec rich enough that, handed the spec alone, a capable generator coul
 
 Err on the side of more spec items in cases where there's content in the workspace that you think should make it into the artefact (but it's okay if some content doesn't make it in!). The instance writing the artefact will not have access to the workspace.
 
-That said, keep the spec to a manageable size. **Aim for tens of items, not hundreds.** A spec with 100+ items is usually a sign of either over-decomposing one rule into many narrow ones, or speculating about content the workspace doesn't really push for. If you're approaching that range, prefer combining related items into single richer ones, and drop items that aren't load-bearing.
+That said, keep the spec to a manageable size. **Aim for roughly 10–20 items.** A spec with 30+ items may be a problem — usually a sign of either over-decomposing one rule into many narrow ones, or speculating about content the workspace doesn't really push for. If you're heading past that, prefer combining related items into single richer ones, and drop items that aren't load-bearing.
 
 ## Not Your Job
 

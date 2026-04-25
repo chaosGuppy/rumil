@@ -30,14 +30,12 @@ from typing import Any, cast
 
 import yaml
 from kubernetes import client, config
-from kubernetes.client.exceptions import ApiException
 
 from rumil.k8s.types import OrchestratorRunRequest
 from rumil.settings import get_settings
 
 NAMESPACE = "rumil"
 API_DEPLOYMENT_NAME = "rumil-api"
-ORCH_SA_NAME = "rumil-orchestrator-job"
 JOB_LABEL_RUN_KIND = "rumil.ink/run-kind"
 JOB_LABEL_OWNER = "rumil.ink/owner-user-id"
 JOB_LABEL_RUN_KIND_VALUE = "orchestrator"
@@ -62,9 +60,9 @@ def _load_kube_config() -> None:
         _kube_loaded = True
 
 
-def _kube_clients() -> tuple[client.BatchV1Api, client.CoreV1Api, client.AppsV1Api]:
+def _kube_clients() -> tuple[client.BatchV1Api, client.AppsV1Api]:
     _load_kube_config()
-    return client.BatchV1Api(), client.CoreV1Api(), client.AppsV1Api()
+    return client.BatchV1Api(), client.AppsV1Api()
 
 
 def _load_manifest() -> dict[str, Any]:
@@ -214,7 +212,7 @@ def _env_from_to_dict(e: client.V1EnvFromSource) -> dict[str, Any]:
 
 def submit_orchestrator_job(spec: OrchestratorRunRequest, *, owner_user_id: str) -> str:
     """Create the Job and return its name. Raises on k8s API errors."""
-    batch, _, apps = _kube_clients()
+    batch, apps = _kube_clients()
     image, env, env_from = _read_api_runtime(apps)
     if spec.container_tag:
         image = _override_image_tag(image, spec.container_tag)
@@ -230,22 +228,6 @@ def submit_orchestrator_job(spec: OrchestratorRunRequest, *, owner_user_id: str)
         image,
     )
     return name
-
-
-def get_orchestrator_job(name: str) -> client.V1Job | None:
-    """Fetch a Job, returning None if it doesn't exist or isn't an orchestrator run."""
-    batch, _, _ = _kube_clients()
-    try:
-        job = cast(client.V1Job, batch.read_namespaced_job(name=name, namespace=NAMESPACE))
-    except ApiException as exc:
-        if exc.status == 404:
-            return None
-        raise
-    metadata = job.metadata
-    labels = (metadata.labels or {}) if metadata is not None else {}
-    if labels.get(JOB_LABEL_RUN_KIND) != JOB_LABEL_RUN_KIND_VALUE:
-        return None
-    return job
 
 
 def build_logs_url(job_name: str) -> str:

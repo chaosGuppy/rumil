@@ -213,9 +213,7 @@ def test_build_job_uses_container_tag_when_set(mocker):
     fake_batch = mocker.MagicMock()
     fake_apps = mocker.MagicMock()
     fake_apps.read_namespaced_deployment.return_value = _fake_deployment()
-    mocker.patch.object(
-        submit_mod, "_kube_clients", return_value=(fake_batch, mocker.MagicMock(), fake_apps)
-    )
+    mocker.patch.object(submit_mod, "_kube_clients", return_value=(fake_batch, fake_apps))
 
     spec = _spec(container_tag="exp-deadbeef")
     submit_mod.submit_orchestrator_job(spec, owner_user_id="u")
@@ -233,9 +231,7 @@ def test_build_job_uses_live_tag_when_container_tag_unset(mocker):
     fake_batch = mocker.MagicMock()
     fake_apps = mocker.MagicMock()
     fake_apps.read_namespaced_deployment.return_value = _fake_deployment()
-    mocker.patch.object(
-        submit_mod, "_kube_clients", return_value=(fake_batch, mocker.MagicMock(), fake_apps)
-    )
+    mocker.patch.object(submit_mod, "_kube_clients", return_value=(fake_batch, fake_apps))
 
     submit_mod.submit_orchestrator_job(_spec(), owner_user_id="u")
     body = fake_batch.create_namespaced_job.call_args.kwargs["body"]

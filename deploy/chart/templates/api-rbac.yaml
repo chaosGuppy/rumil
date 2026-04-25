@@ -34,18 +34,14 @@ metadata:
   labels:
     {{- include "rumil.labels" . | nindent 4 }}
 rules:
+  # Submit orchestrator-run Jobs from POST /api/jobs/orchestrator-runs.
   - apiGroups: ["batch"]
     resources: ["jobs"]
-    verbs: ["get", "list", "create", "watch", "delete"]
-  - apiGroups: [""]
-    resources: ["pods"]
-    verbs: ["get", "list", "watch"]
-  - apiGroups: [""]
-    resources: ["pods/log"]
-    verbs: ["get"]
+    verbs: ["create"]
+  # Read the running rumil-api Deployment to copy image + env onto each Job.
   - apiGroups: ["apps"]
     resources: ["deployments"]
-    verbs: ["get", "list"]
+    verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

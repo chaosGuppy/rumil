@@ -123,16 +123,31 @@ def _is_orphaned(row: dict, sources: dict[tuple[str, str], set[str]]) -> bool:
     return row.get("source_a") not in present or row.get("source_b") not in present
 
 
+def _resolve_prefix_label(cfg: versus_config.Config, label: str | None) -> versus_config.PrefixCfg:
+    """Look up a prefix variant by id; HTTP 400 on unknown."""
+    try:
+        return versus_prepare.resolve_prefix_cfg(cfg, label)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
 def _build_essays_status(
     cfg: versus_config.Config,
+    *,
+    prefix_cfg: versus_config.PrefixCfg | None = None,
 ) -> tuple[list[EssayStatus], dict[str, str]]:
     """Compute the per-essay status panel and the {essay_id -> current
     prefix_config_hash} map used to flag stale judgment/completion rows.
+
+    ``prefix_cfg`` defaults to ``cfg.prefix``. Pass a sibling from
+    ``cfg.prefix_variants`` to compute the map under that variant — this
+    is how the UI scopes staleness to a selected variant.
 
     Reads cached essay JSONs + their adjacent ``.verdict.json`` files. If
     no essays are cached, returns empty containers (matrix filtering is a
     no-op when ``current_prefix_hashes`` is empty).
     """
+    pcfg = prefix_cfg if prefix_cfg is not None else cfg.prefix
     statuses: list[EssayStatus] = []
     current: dict[str, str] = {}
     exclude = set(cfg.essays.exclude_ids)
@@ -159,8 +174,8 @@ def _build_essays_status(
         )
         task = versus_prepare.prepare(
             essay,
-            n_paragraphs=cfg.prefix.n_paragraphs,
-            include_headers=cfg.prefix.include_headers,
+            n_paragraphs=pcfg.n_paragraphs,
+            include_headers=pcfg.include_headers,
             length_tolerance=cfg.completion.length_tolerance,
         )
         current[essay.id] = task.prefix_config_hash
@@ -204,6 +219,11 @@ class EssayDetail(pydantic.BaseModel):
     judge_prompt_template: str
     paraphrase_prompt_template: str
     criteria: list[str]
+    # Available prefix variants and the one this response was rendered
+    # for. Used by the /versus/inspect dropdown so users can flip the
+    # prompt + completions + judgments view between variants.
+    prefix_variants: list[PrefixVariantInfo]
+    active_prefix_label: str
 
 
 class Source(pydantic.BaseModel):
@@ -415,6 +435,20 @@ class RowFilter(pydantic.BaseModel):
     criterion: str | None
 
 
+class PrefixVariantInfo(pydantic.BaseModel):
+    """One prefix variant available in the active config.
+
+    Surfaced on ResultsBundle so the /versus/results UI can render a
+    variant selector. ``id`` matches the yaml ``prefix.id`` /
+    ``prefix_variants[].id`` and is the value the UI passes back as
+    ``?prefix_label=<id>``.
+    """
+
+    id: str
+    n_paragraphs: int
+    include_headers: bool
+
+
 class ResultsBundle(pydantic.BaseModel):
     conditions: list[str]
     criteria: list[str]
@@ -436,6 +470,8 @@ class ResultsBundle(pydantic.BaseModel):
     include_contaminated: bool
     row_filter: RowFilter
     rows_total_before_filter: int
+    prefix_variants: list[PrefixVariantInfo]
+    active_prefix_label: str
 
 
 class NextPair(pydantic.BaseModel):
@@ -569,20 +605,21 @@ def list_essays() -> list[EssayMeta]:
 
 
 @router.get("/essays/{essay_id}", response_model=EssayDetail)
-def get_essay(essay_id: str) -> EssayDetail:
+def get_essay(essay_id: str, prefix_label: str | None = None) -> EssayDetail:
     cfg = _cfg_required()
     essay = _load_essay(essay_id)
     if not essay:
         raise HTTPException(404, f"essay {essay_id} not found")
+    active_prefix_cfg = _resolve_prefix_label(cfg, prefix_label)
     task = versus_prepare.prepare(
         essay,
-        n_paragraphs=cfg.prefix.n_paragraphs,
-        include_headers=cfg.prefix.include_headers,
+        n_paragraphs=active_prefix_cfg.n_paragraphs,
+        include_headers=active_prefix_cfg.include_headers,
         length_tolerance=cfg.completion.length_tolerance,
     )
     completion_prompt = versus_prepare.render_prompt(
         task,
-        include_headers=cfg.prefix.include_headers,
+        include_headers=active_prefix_cfg.include_headers,
         tolerance=cfg.completion.length_tolerance,
     )
     judge_system, judge_user = versus_judge.render_judge_prompt(
@@ -610,19 +647,29 @@ def get_essay(essay_id: str) -> EssayDetail:
         judge_prompt_template=judge_prompt_template,
         paraphrase_prompt_template=paraphrase_prompt_template,
         criteria=list(cfg.judging.criteria),
+        prefix_variants=[
+            PrefixVariantInfo(
+                id=p.id,
+                n_paragraphs=p.n_paragraphs,
+                include_headers=p.include_headers,
+            )
+            for p in versus_prepare.active_prefix_configs(cfg)
+        ],
+        active_prefix_label=active_prefix_cfg.id,
     )
 
 
 @router.get("/essays/{essay_id}/sources", response_model=list[Source])
-def get_essay_sources(essay_id: str) -> list[Source]:
+def get_essay_sources(essay_id: str, prefix_label: str | None = None) -> list[Source]:
     cfg = _cfg_required()
     essay = _load_essay(essay_id)
     if not essay:
         raise HTTPException(404, f"essay {essay_id} not found")
+    active_prefix_cfg = _resolve_prefix_label(cfg, prefix_label)
     task = versus_prepare.prepare(
         essay,
-        n_paragraphs=cfg.prefix.n_paragraphs,
-        include_headers=cfg.prefix.include_headers,
+        n_paragraphs=active_prefix_cfg.n_paragraphs,
+        include_headers=active_prefix_cfg.include_headers,
         length_tolerance=cfg.completion.length_tolerance,
     )
     # Multiple completion rows can share the same source_id (different
@@ -643,46 +690,66 @@ def get_essay_sources(essay_id: str) -> list[Source]:
 
 
 class EssayJudgmentsResponse(pydantic.BaseModel):
-    """Judgments for a single essay at the current prefix_config_hash.
+    """Judgments for a single essay at one prefix variant.
 
-    Stale judgments (rows whose prefix_hash no longer matches what the
-    essay hashes to today) are filtered out of ``judgments`` so the UI
-    doesn't aggregate verdicts that scored different text. ``stale_hidden``
-    is the count of rows filtered this way, so the UI can surface
-    "N stale judgments hidden" rather than silently dropping them.
+    Rows whose ``prefix_config_hash`` doesn't match the selected variant
+    are filtered out of ``judgments``. They split into two buckets:
+
+    - ``other_variant_hidden``: hash matches a *different* active prefix
+      variant for this essay (e.g. you're viewing ``no_headers`` and 227
+      rows belong to ``default``). Not stale — just a different cohort.
+    - ``stale_hidden``: hash matches no current variant. Genuinely stale
+      from essay re-import drift or a prefix-config bump.
 
     ``orphaned`` flags a judgment whose source_a / source_b is not
     present in the current completions.jsonl at the same prefix_hash --
-    the judgment survived a prefix-hash check but its sources did not.
-    Rare (requires manual jsonl edits or an aborted generation run), but
-    when it happens the verdict is meaningless.
+    the judgment survived the variant check but its sources did not.
     """
 
     judgments: list[Judgment]
     stale_hidden: int
+    other_variant_hidden: int
 
 
 @router.get("/essays/{essay_id}/judgments", response_model=EssayJudgmentsResponse)
-def get_essay_judgments(essay_id: str) -> EssayJudgmentsResponse:
+def get_essay_judgments(essay_id: str, prefix_label: str | None = None) -> EssayJudgmentsResponse:
     cfg = _cfg_required()
     essay = _load_essay(essay_id)
     if not essay:
         raise HTTPException(404, f"essay {essay_id} not found")
+    active_prefix_cfg = _resolve_prefix_label(cfg, prefix_label)
     task = versus_prepare.prepare(
         essay,
-        n_paragraphs=cfg.prefix.n_paragraphs,
-        include_headers=cfg.prefix.include_headers,
+        n_paragraphs=active_prefix_cfg.n_paragraphs,
+        include_headers=active_prefix_cfg.include_headers,
         length_tolerance=cfg.completion.length_tolerance,
     )
+    # Hashes for *all* current variants, so we can tell "belongs to
+    # another live variant" apart from "no longer matches any variant"
+    # (genuine essay-drift staleness).
+    other_variant_hashes = {
+        versus_prepare.prepare(
+            essay,
+            n_paragraphs=p.n_paragraphs,
+            include_headers=p.include_headers,
+            length_tolerance=cfg.completion.length_tolerance,
+        ).prefix_config_hash
+        for p in versus_prepare.active_prefix_configs(cfg)
+        if p.id != active_prefix_cfg.id
+    }
     source_index = _build_completion_source_index(cfg)
     judgments: list[Judgment] = []
     stale_hidden = 0
+    other_variant_hidden = 0
     for row in versus_jsonl.read_dedup(_resolve_path(cfg.storage.judgments_log)):
         if row.get("essay_id") != essay.id:
             continue
         if row.get("prefix_config_hash") != task.prefix_config_hash:
             if row.get("verdict") is not None:
-                stale_hidden += 1
+                if row.get("prefix_config_hash") in other_variant_hashes:
+                    other_variant_hidden += 1
+                else:
+                    stale_hidden += 1
             continue
         jm = str(row.get("judge_model", ""))
         base, phash, version = versus_judge.parse_judge_model_suffix(jm)
@@ -713,7 +780,11 @@ def get_essay_judgments(essay_id: str) -> EssayJudgmentsResponse:
             )
         )
     judgments.sort(key=lambda j: (j.judge_model, j.criterion, j.source_a, j.source_b))
-    return EssayJudgmentsResponse(judgments=judgments, stale_hidden=stale_hidden)
+    return EssayJudgmentsResponse(
+        judgments=judgments,
+        stale_hidden=stale_hidden,
+        other_variant_hidden=other_variant_hidden,
+    )
 
 
 def _cond_meta(cond: str) -> ConditionMeta:
@@ -813,12 +884,14 @@ def get_results(
     filter_judge: str | None = None,
     filter_condition: str | None = None,
     filter_criterion: str | None = None,
+    prefix_label: str | None = None,
 ) -> ResultsBundle:
     cfg = _cfg_required()
     judgments_log = _resolve_path(cfg.storage.judgments_log)
     completions_log = _resolve_path(cfg.storage.completions_log)
 
-    essays_status, current_prefix_hashes = _build_essays_status(cfg)
+    active_prefix_cfg = _resolve_prefix_label(cfg, prefix_label)
+    essays_status, current_prefix_hashes = _build_essays_status(cfg, prefix_cfg=active_prefix_cfg)
 
     data = versus_analyze.matrix(
         judgments_log,
@@ -1046,6 +1119,15 @@ def get_results(
             criterion=filter_criterion,
         ),
         rows_total_before_filter=rows_total_before_filter,
+        prefix_variants=[
+            PrefixVariantInfo(
+                id=p.id,
+                n_paragraphs=p.n_paragraphs,
+                include_headers=p.include_headers,
+            )
+            for p in versus_prepare.active_prefix_configs(cfg)
+        ],
+        active_prefix_label=active_prefix_cfg.id,
     )
 
 
@@ -1314,6 +1396,7 @@ def get_diagnostics(
     criterion: str | None = None,
     include_contaminated: bool = False,
     include_stale: bool = True,
+    prefix_label: str | None = None,
 ) -> DiagnosticsBundle:
     """Post-hoc bias / n-floor / per-essay sanity over the judgments log.
 
@@ -1323,7 +1406,8 @@ def get_diagnostics(
     cfg = _cfg_required()
     judgments_log = _resolve_path(cfg.storage.judgments_log)
 
-    _, current_prefix_hashes = _build_essays_status(cfg)
+    active_prefix_cfg = _resolve_prefix_label(cfg, prefix_label)
+    _, current_prefix_hashes = _build_essays_status(cfg, prefix_cfg=active_prefix_cfg)
 
     titles: dict[str, str] = {}
     for p in _iter_essay_paths():

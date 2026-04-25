@@ -68,6 +68,22 @@
               "type": "string",
               "title": "Essay Id"
             }
+          },
+          {
+            "name": "prefix_label",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Prefix Label"
+            }
           }
         ],
         "responses": {
@@ -109,6 +125,22 @@
             "schema": {
               "type": "string",
               "title": "Essay Id"
+            }
+          },
+          {
+            "name": "prefix_label",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Prefix Label"
             }
           }
         ],
@@ -155,6 +187,22 @@
             "schema": {
               "type": "string",
               "title": "Essay Id"
+            }
+          },
+          {
+            "name": "prefix_label",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Prefix Label"
             }
           }
         ],
@@ -288,6 +336,22 @@
                 }
               ],
               "title": "Filter Criterion"
+            }
+          },
+          {
+            "name": "prefix_label",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Prefix Label"
             }
           }
         ],
@@ -500,6 +564,22 @@
               "type": "boolean",
               "default": true,
               "title": "Include Stale"
+            }
+          },
+          {
+            "name": "prefix_label",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Prefix Label"
             }
           }
         ],
@@ -4144,6 +4224,17 @@
             },
             "type": "array",
             "title": "Criteria"
+          },
+          "prefix_variants": {
+            "items": {
+              "$ref": "#/components/schemas/PrefixVariantInfo"
+            },
+            "type": "array",
+            "title": "Prefix Variants"
+          },
+          "active_prefix_label": {
+            "type": "string",
+            "title": "Active Prefix Label"
           }
         },
         "type": "object",
@@ -4159,7 +4250,9 @@
           "completion_prompt",
           "judge_prompt_template",
           "paraphrase_prompt_template",
-          "criteria"
+          "criteria",
+          "prefix_variants",
+          "active_prefix_label"
         ],
         "title": "EssayDetail",
         "description": "Essay + the prompts shown to completion / judge / paraphrase models."
@@ -4226,15 +4319,20 @@
           "stale_hidden": {
             "type": "integer",
             "title": "Stale Hidden"
+          },
+          "other_variant_hidden": {
+            "type": "integer",
+            "title": "Other Variant Hidden"
           }
         },
         "type": "object",
         "required": [
           "judgments",
-          "stale_hidden"
+          "stale_hidden",
+          "other_variant_hidden"
         ],
         "title": "EssayJudgmentsResponse",
-        "description": "Judgments for a single essay at the current prefix_config_hash.\n\nStale judgments (rows whose prefix_hash no longer matches what the\nessay hashes to today) are filtered out of ``judgments`` so the UI\ndoesn't aggregate verdicts that scored different text. ``stale_hidden``\nis the count of rows filtered this way, so the UI can surface\n\"N stale judgments hidden\" rather than silently dropping them.\n\n``orphaned`` flags a judgment whose source_a / source_b is not\npresent in the current completions.jsonl at the same prefix_hash --\nthe judgment survived a prefix-hash check but its sources did not.\nRare (requires manual jsonl edits or an aborted generation run), but\nwhen it happens the verdict is meaningless."
+        "description": "Judgments for a single essay at one prefix variant.\n\nRows whose ``prefix_config_hash`` doesn't match the selected variant\nare filtered out of ``judgments``. They split into two buckets:\n\n- ``other_variant_hidden``: hash matches a *different* active prefix\n  variant for this essay (e.g. you're viewing ``no_headers`` and 227\n  rows belong to ``default``). Not stale \u2014 just a different cohort.\n- ``stale_hidden``: hash matches no current variant. Genuinely stale\n  from essay re-import drift or a prefix-config bump.\n\n``orphaned`` flags a judgment whose source_a / source_b is not\npresent in the current completions.jsonl at the same prefix_hash --\nthe judgment survived the variant check but its sources did not."
       },
       "EssayMeta": {
         "properties": {
@@ -6656,6 +6754,30 @@
         ],
         "title": "PhaseSkippedEventOut"
       },
+      "PrefixVariantInfo": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "n_paragraphs": {
+            "type": "integer",
+            "title": "N Paragraphs"
+          },
+          "include_headers": {
+            "type": "boolean",
+            "title": "Include Headers"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "n_paragraphs",
+          "include_headers"
+        ],
+        "title": "PrefixVariantInfo",
+        "description": "One prefix variant available in the active config.\n\nSurfaced on ResultsBundle so the /versus/results UI can render a\nvariant selector. ``id`` matches the yaml ``prefix.id`` /\n``prefix_variants[].id`` and is the value the UI passes back as\n``?prefix_label=<id>``."
+      },
       "Project": {
         "properties": {
           "name": {
@@ -7182,6 +7304,17 @@
           "rows_total_before_filter": {
             "type": "integer",
             "title": "Rows Total Before Filter"
+          },
+          "prefix_variants": {
+            "items": {
+              "$ref": "#/components/schemas/PrefixVariantInfo"
+            },
+            "type": "array",
+            "title": "Prefix Variants"
+          },
+          "active_prefix_label": {
+            "type": "string",
+            "title": "Active Prefix Label"
           }
         },
         "type": "object",
@@ -7205,7 +7338,9 @@
           "include_stale",
           "include_contaminated",
           "row_filter",
-          "rows_total_before_filter"
+          "rows_total_before_filter",
+          "prefix_variants",
+          "active_prefix_label"
         ],
         "title": "ResultsBundle"
       },

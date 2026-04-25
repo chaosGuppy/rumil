@@ -925,6 +925,14 @@ export type EssayDetail = {
      * Criteria
      */
     criteria: Array<string>;
+    /**
+     * Prefix Variants
+     */
+    prefix_variants: Array<PrefixVariantInfo>;
+    /**
+     * Active Prefix Label
+     */
+    active_prefix_label: string;
 };
 
 /**
@@ -964,19 +972,20 @@ export type EssayFlagOut = {
 /**
  * EssayJudgmentsResponse
  *
- * Judgments for a single essay at the current prefix_config_hash.
+ * Judgments for a single essay at one prefix variant.
  *
- * Stale judgments (rows whose prefix_hash no longer matches what the
- * essay hashes to today) are filtered out of ``judgments`` so the UI
- * doesn't aggregate verdicts that scored different text. ``stale_hidden``
- * is the count of rows filtered this way, so the UI can surface
- * "N stale judgments hidden" rather than silently dropping them.
+ * Rows whose ``prefix_config_hash`` doesn't match the selected variant
+ * are filtered out of ``judgments``. They split into two buckets:
+ *
+ * - ``other_variant_hidden``: hash matches a *different* active prefix
+ * variant for this essay (e.g. you're viewing ``no_headers`` and 227
+ * rows belong to ``default``). Not stale — just a different cohort.
+ * - ``stale_hidden``: hash matches no current variant. Genuinely stale
+ * from essay re-import drift or a prefix-config bump.
  *
  * ``orphaned`` flags a judgment whose source_a / source_b is not
  * present in the current completions.jsonl at the same prefix_hash --
- * the judgment survived a prefix-hash check but its sources did not.
- * Rare (requires manual jsonl edits or an aborted generation run), but
- * when it happens the verdict is meaningless.
+ * the judgment survived the variant check but its sources did not.
  */
 export type EssayJudgmentsResponse = {
     /**
@@ -987,6 +996,10 @@ export type EssayJudgmentsResponse = {
      * Stale Hidden
      */
     stale_hidden: number;
+    /**
+     * Other Variant Hidden
+     */
+    other_variant_hidden: number;
 };
 
 /**
@@ -2370,6 +2383,31 @@ export type PhaseSkippedEventOut = {
 };
 
 /**
+ * PrefixVariantInfo
+ *
+ * One prefix variant available in the active config.
+ *
+ * Surfaced on ResultsBundle so the /versus/results UI can render a
+ * variant selector. ``id`` matches the yaml ``prefix.id`` /
+ * ``prefix_variants[].id`` and is the value the UI passes back as
+ * ``?prefix_label=<id>``.
+ */
+export type PrefixVariantInfo = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * N Paragraphs
+     */
+    n_paragraphs: number;
+    /**
+     * Include Headers
+     */
+    include_headers: boolean;
+};
+
+/**
  * Project
  */
 export type Project = {
@@ -2729,6 +2767,14 @@ export type ResultsBundle = {
      * Rows Total Before Filter
      */
     rows_total_before_filter: number;
+    /**
+     * Prefix Variants
+     */
+    prefix_variants: Array<PrefixVariantInfo>;
+    /**
+     * Active Prefix Label
+     */
+    active_prefix_label: string;
 };
 
 /**
@@ -3473,7 +3519,12 @@ export type GetEssayApiVersusEssaysEssayIdGetData = {
          */
         essay_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Prefix Label
+         */
+        prefix_label?: string | null;
+    };
     url: '/api/versus/essays/{essay_id}';
 };
 
@@ -3503,7 +3554,12 @@ export type GetEssaySourcesApiVersusEssaysEssayIdSourcesGetData = {
          */
         essay_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Prefix Label
+         */
+        prefix_label?: string | null;
+    };
     url: '/api/versus/essays/{essay_id}/sources';
 };
 
@@ -3535,7 +3591,12 @@ export type GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetData = {
          */
         essay_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Prefix Label
+         */
+        prefix_label?: string | null;
+    };
     url: '/api/versus/essays/{essay_id}/judgments';
 };
 
@@ -3589,6 +3650,10 @@ export type GetResultsApiVersusResultsGetData = {
          * Filter Criterion
          */
         filter_criterion?: string | null;
+        /**
+         * Prefix Label
+         */
+        prefix_label?: string | null;
     };
     url: '/api/versus/results';
 };
@@ -3716,6 +3781,10 @@ export type GetDiagnosticsApiVersusDiagnosticsGetData = {
          * Include Stale
          */
         include_stale?: boolean;
+        /**
+         * Prefix Label
+         */
+        prefix_label?: string | null;
     };
     url: '/api/versus/diagnostics';
 };

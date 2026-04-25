@@ -159,9 +159,7 @@ def _render_page(
         frontmatter_fields.append(f"robustness: {page.robustness}")
     if page.fruit_remaining is not None:
         frontmatter_fields.append(f"fruit_remaining: {page.fruit_remaining}")
-    frontmatter_fields.append(
-        f"created: {page.created_at.strftime('%Y-%m-%dT%H:%M:%S')}"
-    )
+    frontmatter_fields.append(f"created: {page.created_at.strftime('%Y-%m-%dT%H:%M:%S')}")
     if page.provenance_call_type:
         frontmatter_fields.append(f"provenance: {page.provenance_call_type}")
 
@@ -284,8 +282,7 @@ async def export_obsidian(
     if summary_text:
         summary_path = out / "executive-summary.md"
         summary_path.write_text(
-            "---\ntype: executive-summary\n---\n\n"
-            f"# Executive Summary\n\n{summary_text}\n",
+            f"---\ntype: executive-summary\n---\n\n# Executive Summary\n\n{summary_text}\n",
             encoding="utf-8",
         )
         written += 1

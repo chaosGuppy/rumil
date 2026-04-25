@@ -14,6 +14,10 @@ Usage:
     # Resume an interrupted run. Give it the task id printed by the earlier run.
     uv run python scripts/run_generative.py --resume <task-id> --budget 15
 
+    # Spec-size experiment variants (default ~10-20, tight 5-15, loose 20-35).
+    uv run python scripts/run_generative.py "..." --spec-size tight --workspace expt-tight --budget 30
+    uv run python scripts/run_generative.py "..." --spec-size loose --workspace expt-loose --budget 30
+
     # Run against production (be careful)
     uv run python scripts/run_generative.py "..." --prod --workspace my-project --budget 25
 
@@ -129,10 +133,14 @@ async def run(args: argparse.Namespace) -> int:
         print(f"Workspace: {args.workspace}  (project_id={db.project_id})")
     print(f"Budget added: {args.budget}\n" if args.resume else f"Budget: {args.budget}\n")
 
+    spec_size_variant = args.spec_size if args.spec_size != "default" else None
     orchestrator = GenerativeOrchestrator(
         db,
         refine_max_rounds=args.refine_max_rounds,
+        spec_size_variant=spec_size_variant,
     )
+    if spec_size_variant:
+        print(f"Spec-size variant: {spec_size_variant}\n")
     if args.resume:
         result = await orchestrator.resume(args.resume)
     else:
@@ -208,6 +216,19 @@ def main() -> None:
         type=int,
         default=10,
         help="Max agent-loop rounds for the refiner (default: 10).",
+    )
+    parser.add_argument(
+        "--spec-size",
+        choices=("tight", "default", "loose"),
+        default="default",
+        help=(
+            "Spec-size experiment variant. 'default' uses the standard prompts "
+            "(target ~10-20 items, warn at ~30). 'tight' targets 5-15 items and "
+            "biases the refiner toward consolidation. 'loose' targets 20-35 "
+            "items (up to ~50) and biases toward fresh adds rather than "
+            "consolidation. The flag selects alternate prompt files and applies "
+            "to both the initial generate_spec and every refine_spec round."
+        ),
     )
     parser.add_argument(
         "--prod",

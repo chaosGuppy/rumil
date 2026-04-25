@@ -9,7 +9,8 @@ from rumil.calls.stages import (
     ContextBuilder,
     WorkspaceUpdater,
 )
-from rumil.models import CallType
+from rumil.database import DB
+from rumil.models import Call, CallStage, CallType
 
 
 class GenerateSpecCall(CallRunner):
@@ -19,12 +20,42 @@ class GenerateSpecCall(CallRunner):
     full workspace context via embedding search and emits spec items via the
     ADD_SPEC_ITEM move. Each spec item is a hidden SPEC_ITEM page linked to
     the artefact-task question via SPEC_OF.
+
+    *prompt_variant*, when set, selects an alternate prompt file
+    (``generate_spec_<variant>.md``) instead of the default
+    ``generate_spec.md``. Used by experimental settings such as the
+    ``--spec-size {tight,loose}`` toggle on the generative workflow.
     """
 
     context_builder_cls = EmbeddingContext
     workspace_updater_cls = SimpleAgentLoop
     closing_reviewer_cls = StandardClosingReview
     call_type = CallType.GENERATE_SPEC
+
+    def __init__(
+        self,
+        question_id: str,
+        call: Call,
+        db: DB,
+        *,
+        broadcaster=None,
+        up_to_stage: CallStage | None = None,
+        max_rounds: int = 5,
+        fruit_threshold: int = 4,
+        pool_question_id: str | None = None,
+        prompt_variant: str | None = None,
+    ) -> None:
+        self._prompt_variant = prompt_variant
+        super().__init__(
+            question_id,
+            call,
+            db,
+            broadcaster=broadcaster,
+            up_to_stage=up_to_stage,
+            max_rounds=max_rounds,
+            fruit_threshold=fruit_threshold,
+            pool_question_id=pool_question_id,
+        )
 
     def _make_context_builder(self) -> ContextBuilder:
         return EmbeddingContext(self.call_type)
@@ -34,10 +65,16 @@ class GenerateSpecCall(CallRunner):
             self.call_type,
             self.task_description(),
             available_moves=self._resolve_available_moves(),
+            prompt_name=self._resolved_prompt_name(),
         )
 
     def _make_closing_reviewer(self) -> ClosingReviewer:
         return StandardClosingReview(self.call_type)
+
+    def _resolved_prompt_name(self) -> str | None:
+        if self._prompt_variant:
+            return f"{self.call_type.value}_{self._prompt_variant}"
+        return None
 
     def task_description(self) -> str:
         return (

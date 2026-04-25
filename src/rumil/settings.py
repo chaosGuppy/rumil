@@ -64,6 +64,11 @@ class Settings(BaseSettings):
     # DEFAULT_CLI_USER_ID env var to attribute remote jobs to a specific user.
     default_cli_user_id: str = "c4179ddb-bf61-4ba3-acfa-6b5408c19874"
     rumil_api_url: str = "https://api.rumil.ink"
+    # GKE cluster identity, used to build a Cloud Logging URL for the
+    # orchestrator-run pod. Only the API container needs these set; the laptop
+    # CLI just prints whatever URL the API returns.
+    gcp_project_id: str = ""
+    gcp_cluster_name: str = "differential"
     voyage_ai_api_key: str = ""
     jina_api_key: str = ""
     langfuse_public_key: str = ""

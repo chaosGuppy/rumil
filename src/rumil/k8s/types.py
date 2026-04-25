@@ -29,7 +29,6 @@ class OrchestratorRunRequest(BaseModel):
     workspace: str = Field(min_length=1)
 
     smoke_test: bool = False
-    no_summary: bool = False
     quiet: bool = False
     debug: bool = False
     force_twophase_recurse: bool = False
@@ -50,3 +49,6 @@ class OrchestratorRunRequest(BaseModel):
 
 class OrchestratorRunResponse(BaseModel):
     job_name: str
+    # Pre-built Cloud Logging URL filtered to this job's pod logs. Empty when
+    # the API can't determine the GCP project (e.g. local dev).
+    logs_url: str = ""

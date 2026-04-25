@@ -2,16 +2,15 @@
 
 Used by `main.py` when `--executor prod` is set. Mints a short-lived
 Supabase HS256 JWT locally (using the same `SUPABASE_JWT_SECRET` already
-present in prod secrets), POSTs the run spec to the rumil API, then
-streams pod logs back to stdout until the marker line tells us the job
-finished. The CLI's exit code mirrors the in-pod exit code.
+present in prod secrets), POSTs the run spec to the rumil API, prints
+the job name and a Cloud Logging URL, then exits. Pod logs are followed
+via that URL rather than streamed back over HTTP.
 """
 
 from __future__ import annotations
 
 import argparse
 import logging
-import re
 import sys
 import time
 from pathlib import Path
@@ -24,7 +23,6 @@ from rumil.settings import get_settings
 
 log = logging.getLogger(__name__)
 
-_TERMINAL_MARKER = re.compile(rb"\[rumil-job\] phase=(\S+) exit_code=(\S+)")
 _DEFAULT_JWT_TTL_S = 600
 
 
@@ -70,7 +68,6 @@ def _request_from_args(args: argparse.Namespace) -> OrchestratorRunRequest:
         budget=args.budget,
         workspace=args.workspace_name,
         smoke_test=bool(getattr(args, "smoke_test", False)),
-        no_summary=bool(getattr(args, "no_summary", False)),
         quiet=bool(getattr(args, "quiet", False)),
         debug=bool(getattr(args, "debug", False)),
         force_twophase_recurse=bool(getattr(args, "force_twophase_recurse", False)),
@@ -84,19 +81,8 @@ def _request_from_args(args: argparse.Namespace) -> OrchestratorRunRequest:
     )
 
 
-def _parse_exit_code(buf: bytes) -> int:
-    m = _TERMINAL_MARKER.search(buf)
-    if not m:
-        return 1
-    code_raw = m.group(2).decode("utf-8", errors="replace")
-    try:
-        return int(code_raw)
-    except ValueError:
-        return 1
-
-
 def submit_remote_orchestrator_run(args: argparse.Namespace) -> int:
-    """POST the run, stream logs to stdout, return the in-pod exit code."""
+    """POST the run, print the Cloud Logging URL, return 0 on success."""
     settings = get_settings()
     spec = _request_from_args(args)
     token = mint_cli_jwt(user_id=settings.default_cli_user_id, secret=settings.supabase_jwt_secret)
@@ -113,29 +99,13 @@ def submit_remote_orchestrator_run(args: argparse.Namespace) -> int:
             )
             return 1
         parsed = OrchestratorRunResponse.model_validate(resp.json())
-        job_name = parsed.job_name
-    print(f"submitted job {job_name}", file=sys.stderr)
 
-    logs_url = f"{base_url}/api/jobs/orchestrator-runs/{job_name}/logs"
-    tail = bytearray()
-    # No top-level read timeout: orchestrator runs can be hours.
-    with (
-        httpx.Client(timeout=httpx.Timeout(30.0, read=None)) as http,
-        http.stream("GET", logs_url, headers=headers) as resp,
-    ):
-        if resp.status_code >= 400:
-            print(
-                f"failed to stream logs: {resp.status_code} {resp.read().decode(errors='replace')}",
-                file=sys.stderr,
-            )
-            return 1
-        for chunk in resp.iter_bytes():
-            if not chunk:
-                continue
-            sys.stdout.buffer.write(chunk)
-            sys.stdout.buffer.flush()
-            tail.extend(chunk)
-            if len(tail) > 4096:
-                del tail[:-4096]
-
-    return _parse_exit_code(bytes(tail))
+    print(f"submitted job: {parsed.job_name}")
+    if parsed.logs_url:
+        print(f"follow logs:   {parsed.logs_url}")
+    else:
+        print(
+            "follow logs:   (no GCP_PROJECT_ID configured on the API; "
+            f"use `kubectl -n rumil logs -f -l job-name={parsed.job_name}`)"
+        )
+    return 0

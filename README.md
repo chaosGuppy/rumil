@@ -274,8 +274,10 @@ Every run automatically captures its configuration (model, budget, call variants
 
 Long or expensive prod runs can be submitted as Kubernetes Jobs in the GKE
 cluster instead of running on your laptop. The CLI POSTs to the rumil API,
-which creates the Job using its in-cluster ServiceAccount; logs stream back
-to your terminal until the run finishes.
+which creates the Job using its in-cluster ServiceAccount and returns a
+Cloud Logging URL you can open to follow the pod's stdout. The CLI itself
+exits as soon as the Job is created — orchestrator runs are
+fire-and-forget from the laptop's perspective.
 
 | Flag | Meaning |
 |------|---------|

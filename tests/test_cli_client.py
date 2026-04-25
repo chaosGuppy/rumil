@@ -1,4 +1,4 @@
-"""Laptop-side CLI client: JWT minting, exit-code parsing, end-to-end submit flow."""
+"""Laptop-side CLI client: JWT minting and end-to-end submit flow."""
 
 from __future__ import annotations
 
@@ -10,7 +10,6 @@ import jwt
 import pytest
 
 from rumil.cli_client import (
-    _parse_exit_code,
     _request_from_args,
     mint_cli_jwt,
     submit_remote_orchestrator_run,
@@ -40,33 +39,12 @@ def test_mint_cli_jwt_rejects_missing_secret():
         mint_cli_jwt(user_id="u", secret="")
 
 
-def test_parse_exit_code_finds_marker_in_tail():
-    tail = b"some logs\n[rumil-job] phase=Succeeded exit_code=0\n"
-    assert _parse_exit_code(tail) == 0
-
-
-def test_parse_exit_code_handles_failure():
-    tail = b"[rumil-job] phase=Failed exit_code=2\n"
-    assert _parse_exit_code(tail) == 2
-
-
-def test_parse_exit_code_returns_one_when_marker_missing():
-    tail = b"truncated stream..."
-    assert _parse_exit_code(tail) == 1
-
-
-def test_parse_exit_code_returns_one_when_marker_garbled():
-    tail = b"[rumil-job] phase=X exit_code=oops\n"
-    assert _parse_exit_code(tail) == 1
-
-
 def _args_namespace(**overrides) -> argparse.Namespace:
     base: dict = {
         "question": "is the sky blue?",
         "budget": 1,
         "workspace_name": "ws",
         "smoke_test": False,
-        "no_summary": False,
         "quiet": False,
         "debug": False,
         "force_twophase_recurse": False,
@@ -116,54 +94,78 @@ def test_request_from_args_rejects_json_question():
         os.unlink(path)
 
 
-def test_submit_round_trip_streams_logs_and_returns_exit_code(mocker, capsys):
-    captured: dict = {}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.method == "POST" and request.url.path.endswith("/orchestrator-runs"):
-            captured["body"] = request.content
-            captured["auth"] = request.headers.get("authorization")
-            return httpx.Response(201, json={"job_name": "rumil-orch-ws-deadbeef"})
-        if request.method == "GET" and "/logs" in request.url.path:
-            body = b"hello from the pod\n[rumil-job] phase=Succeeded exit_code=0\n"
-            return httpx.Response(200, content=body)
-        return httpx.Response(404)
-
-    transport = httpx.MockTransport(handler)
+def _patched_httpx_client_factory(transport: httpx.MockTransport):
+    """httpx.Client wrapped so it always uses our mock transport."""
     real_client_cls = httpx.Client
 
-    def _patched_client(*args, **kwargs):
+    def factory(*args, **kwargs):
         kwargs["transport"] = transport
         return real_client_cls(*args, **kwargs)
 
-    mocker.patch("rumil.cli_client.httpx.Client", side_effect=_patched_client)
+    return factory
 
-    args = _args_namespace()
+
+def test_submit_prints_logs_url_when_present(mocker, capsys):
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["auth"] = request.headers.get("authorization")
+        captured["body"] = request.content
+        return httpx.Response(
+            201,
+            json={
+                "job_name": "rumil-orch-ws-deadbeef",
+                "logs_url": "https://console.cloud.google.com/logs/query;query=foo?project=p",
+            },
+        )
+
+    mocker.patch(
+        "rumil.cli_client.httpx.Client",
+        side_effect=_patched_httpx_client_factory(httpx.MockTransport(handler)),
+    )
     with override_settings(
         rumil_api_url="http://api.test",
         default_cli_user_id="u-1",
         supabase_jwt_secret="s" * 40,
     ):
-        rc = submit_remote_orchestrator_run(args)
+        rc = submit_remote_orchestrator_run(_args_namespace())
 
     assert rc == 0
     assert captured["auth"].startswith("Bearer ")
-    captured_out = capsys.readouterr()
-    assert "hello from the pod" in captured_out.out
+    out = capsys.readouterr().out
+    assert "rumil-orch-ws-deadbeef" in out
+    assert "console.cloud.google.com/logs/query" in out
+
+
+def test_submit_prints_kubectl_fallback_when_logs_url_empty(mocker, capsys):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(201, json={"job_name": "rumil-orch-ws-cafe", "logs_url": ""})
+
+    mocker.patch(
+        "rumil.cli_client.httpx.Client",
+        side_effect=_patched_httpx_client_factory(httpx.MockTransport(handler)),
+    )
+    with override_settings(
+        rumil_api_url="http://api.test",
+        default_cli_user_id="u-1",
+        supabase_jwt_secret="s" * 40,
+    ):
+        rc = submit_remote_orchestrator_run(_args_namespace())
+
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "kubectl -n rumil logs" in out
+    assert "job-name=rumil-orch-ws-cafe" in out
 
 
 def test_submit_returns_nonzero_on_post_failure(mocker, capsys):
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(500, text="boom")
 
-    transport = httpx.MockTransport(handler)
-    real_client_cls = httpx.Client
-
-    def _patched_client(*args, **kwargs):
-        kwargs["transport"] = transport
-        return real_client_cls(*args, **kwargs)
-
-    mocker.patch("rumil.cli_client.httpx.Client", side_effect=_patched_client)
+    mocker.patch(
+        "rumil.cli_client.httpx.Client",
+        side_effect=_patched_httpx_client_factory(httpx.MockTransport(handler)),
+    )
 
     with override_settings(
         rumil_api_url="http://api.test",

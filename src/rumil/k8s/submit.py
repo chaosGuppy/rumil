@@ -2,7 +2,7 @@
 
 Lives inside the API container and is invoked by `rumil.api.jobs`.
 Uses the in-cluster ServiceAccount (`rumil-api`) for k8s API access; the
-RBAC needed (jobs/pods/pods.log/deployments) lives in
+RBAC needed (jobs and deployments) lives in
 `deploy/chart/templates/api-rbac.yaml`.
 
 Design:
@@ -12,18 +12,19 @@ Design:
 - The orchestrator pod is launched with a separate, RBAC-less SA
   (`rumil-orchestrator-job`) to limit blast radius if the orchestrator
   container is ever exploited.
-- Logs are streamed back to the API caller via an async generator that
-  bridges the kubernetes client's blocking iterator into asyncio.
+- Pod logs are surfaced via a pre-built Cloud Logging URL returned in
+  the API response, not streamed back over HTTP. This avoids
+  long-lived chunked responses being killed by the GKE Gateway timeout.
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
 import secrets
 import threading
-from collections.abc import AsyncIterator, Iterator, Sequence
+import urllib.parse
+from collections.abc import Sequence
 from importlib import resources
 from typing import Any, cast
 
@@ -32,6 +33,7 @@ from kubernetes import client, config
 from kubernetes.client.exceptions import ApiException
 
 from rumil.k8s.types import OrchestratorRunRequest
+from rumil.settings import get_settings
 
 NAMESPACE = "rumil"
 API_DEPLOYMENT_NAME = "rumil-api"
@@ -145,8 +147,6 @@ def _build_container_command(spec: OrchestratorRunRequest) -> list[str]:
     ]
     if spec.smoke_test:
         args.append("--smoke-test")
-    if spec.no_summary:
-        args.append("--no-summary")
     if spec.quiet:
         args.append("--quiet")
     if spec.debug:
@@ -155,16 +155,16 @@ def _build_container_command(spec: OrchestratorRunRequest) -> list[str]:
         args.append("--force-twophase-recurse")
     if spec.no_trace:
         args.append("--no-trace")
-    if spec.available_moves is not None:
+    if spec.available_moves:
         args += ["--available-moves", spec.available_moves]
-    if spec.available_calls is not None:
+    if spec.available_calls:
         args += ["--available-calls", spec.available_calls]
-    if spec.view_variant is not None:
+    if spec.view_variant:
         args += ["--view-variant", spec.view_variant]
     if spec.ingest_num_claims is not None:
         args += ["--ingest-num-claims", str(spec.ingest_num_claims)]
-    if spec.run_name is not None:
-        args += ["--run-name", spec.run_name]
+    if spec.run_name:
+        args += ["--name", spec.run_name]
     return args
 
 
@@ -248,123 +248,24 @@ def get_orchestrator_job(name: str) -> client.V1Job | None:
     return job
 
 
-def _find_pod_for_job(core: client.CoreV1Api, job_name: str) -> client.V1Pod | None:
-    pod_list = cast(
-        client.V1PodList,
-        core.list_namespaced_pod(namespace=NAMESPACE, label_selector=f"job-name={job_name}"),
-    )
-    pods: list[client.V1Pod] = list(pod_list.items or [])
-    if not pods:
-        pod_list = cast(
-            client.V1PodList,
-            core.list_namespaced_pod(
-                namespace=NAMESPACE,
-                label_selector=f"batch.kubernetes.io/job-name={job_name}",
-            ),
-        )
-        pods = list(pod_list.items or [])
-    if not pods:
-        return None
+def build_logs_url(job_name: str) -> str:
+    """Cloud Logging URL filtered to this job's pod stdout/stderr.
 
-    def _created_at(p: client.V1Pod) -> str:
-        ts = p.metadata.creation_timestamp if p.metadata is not None else None
-        return str(ts) if ts is not None else ""
-
-    pods.sort(key=_created_at)
-    return pods[-1]
-
-
-def _pod_terminal_phase(pod: client.V1Pod) -> tuple[str, int | None]:
-    """Return (phase, exit_code) once the pod has terminated, else ('', None)."""
-    status = pod.status
-    statuses = (status.container_statuses if status is not None else None) or []
-    for s in statuses:
-        if s.state and s.state.terminated is not None:
-            phase = (status.phase if status is not None else None) or "Unknown"
-            return phase, int(s.state.terminated.exit_code or 0)
-    if status is not None and status.phase in {"Succeeded", "Failed"}:
-        return status.phase, None
-    return "", None
-
-
-async def _wait_for_pod_ready(
-    core: client.CoreV1Api, job_name: str, *, timeout_s: float = 120.0
-) -> client.V1Pod:
-    deadline = asyncio.get_running_loop().time() + timeout_s
-    while True:
-        pod = await asyncio.to_thread(_find_pod_for_job, core, job_name)
-        if pod is not None and pod.status is not None and pod.status.container_statuses:
-            state = pod.status.container_statuses[0].state
-            if state and (state.running or state.terminated):
-                return pod
-        if asyncio.get_running_loop().time() > deadline:
-            raise TimeoutError(
-                f"pod for job {job_name} did not become ready within {timeout_s:.0f}s"
-            )
-        await asyncio.sleep(1.0)
-
-
-def _iter_pod_log_lines(core: client.CoreV1Api, pod_name: str) -> Iterator[bytes]:
-    """Blocking iterator over log bytes from a pod (follow=True)."""
-    response = core.read_namespaced_pod_log(
-        name=pod_name,
-        namespace=NAMESPACE,
-        follow=True,
-        _preload_content=False,
-    )
-    raw_iter = response.stream(decode_content=False)  # type: ignore[union-attr]
-    try:
-        for raw in raw_iter:
-            if raw:
-                yield cast(bytes, raw)
-    finally:
-        response.close()  # type: ignore[union-attr]
-
-
-async def stream_job_logs(job_name: str) -> AsyncIterator[bytes]:
-    """Yield raw log bytes from the orchestrator pod, then a trailing marker.
-
-    Marker format: `\\n[rumil-job] phase=<phase> exit_code=<code>\\n`
+    Returns an empty string when GCP_PROJECT_ID is not configured (e.g. local
+    dev) so callers can present a friendly fallback.
     """
-    _, core, _ = _kube_clients()
-    try:
-        pod = await _wait_for_pod_ready(core, job_name)
-    except TimeoutError as exc:
-        yield f"\n[rumil-job] phase=PodPending exit_code=-1 error={exc}\n".encode()
-        return
-
-    if pod.metadata is None or not pod.metadata.name:
-        yield b"\n[rumil-job] phase=Unknown exit_code=-1 error=pod has no name\n"
-        return
-    pod_name = pod.metadata.name
-
-    queue: asyncio.Queue[bytes | None] = asyncio.Queue()
-    loop = asyncio.get_running_loop()
-
-    def _producer() -> None:
-        try:
-            for chunk in _iter_pod_log_lines(core, pod_name):
-                loop.call_soon_threadsafe(queue.put_nowait, chunk)
-        except Exception as exc:
-            msg = f"\n[rumil-job] log-stream error: {exc}\n".encode()
-            loop.call_soon_threadsafe(queue.put_nowait, msg)
-        finally:
-            loop.call_soon_threadsafe(queue.put_nowait, None)
-
-    threading.Thread(target=_producer, daemon=True, name=f"k8s-logs-{pod_name}").start()
-
-    while True:
-        chunk = await queue.get()
-        if chunk is None:
-            break
-        yield chunk
-
-    final_pod = cast(
-        client.V1Pod,
-        await asyncio.to_thread(core.read_namespaced_pod, pod_name, NAMESPACE),
-    )
-    phase, exit_code = _pod_terminal_phase(final_pod)
-    if not phase:
-        phase = "Unknown"
-    code_str = str(exit_code) if exit_code is not None else "unknown"
-    yield f"\n[rumil-job] phase={phase} exit_code={code_str}\n".encode()
+    settings = get_settings()
+    project = settings.gcp_project_id
+    if not project:
+        return ""
+    cluster = settings.gcp_cluster_name or ""
+    query_lines = [
+        'resource.type="k8s_container"',
+        f'resource.labels.namespace_name="{NAMESPACE}"',
+        f'labels."k8s-pod/job-name"="{job_name}"',
+    ]
+    if cluster:
+        query_lines.append(f'resource.labels.cluster_name="{cluster}"')
+    query = "\n".join(query_lines)
+    encoded = urllib.parse.quote(query, safe="")
+    return f"https://console.cloud.google.com/logs/query;query={encoded}?project={project}"

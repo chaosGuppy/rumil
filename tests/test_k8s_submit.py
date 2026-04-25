@@ -23,8 +23,10 @@ from rumil.k8s.submit import (
     _override_image_tag,
     _read_api_runtime,
     _slug,
+    build_logs_url,
 )
 from rumil.k8s.types import OrchestratorRunRequest
+from rumil.settings import override_settings
 
 
 def _spec(**overrides) -> OrchestratorRunRequest:
@@ -67,14 +69,14 @@ def test_container_command_omits_unset_optional_flags():
     cmd = _build_container_command(_spec())
     assert "--smoke-test" not in cmd
     assert "--available-moves" not in cmd
-    assert "--run-name" not in cmd
+    assert "--name" not in cmd
 
 
 def test_container_command_forwards_value_flags():
     spec = _spec(available_moves="extra", run_name="my-run", ingest_num_claims=8)
     cmd = _build_container_command(spec)
     assert cmd[cmd.index("--available-moves") + 1] == "extra"
-    assert cmd[cmd.index("--run-name") + 1] == "my-run"
+    assert cmd[cmd.index("--name") + 1] == "my-run"
     assert cmd[cmd.index("--ingest-num-claims") + 1] == "8"
 
 
@@ -254,3 +256,21 @@ def test_request_rejects_unsafe_container_tags(bad_tag):
 def test_request_accepts_normal_container_tags(good_tag):
     spec = OrchestratorRunRequest(question="q", budget=1, workspace="ws", container_tag=good_tag)
     assert spec.container_tag == good_tag
+
+
+def test_build_logs_url_returns_empty_when_project_unset():
+    with override_settings(gcp_project_id=""):
+        assert build_logs_url("rumil-orch-ws-aaaa") == ""
+
+
+def test_build_logs_url_includes_namespace_job_and_cluster():
+    import urllib.parse
+
+    with override_settings(gcp_project_id="my-proj", gcp_cluster_name="my-cluster"):
+        url = build_logs_url("rumil-orch-ws-aaaa")
+    assert url.startswith("https://console.cloud.google.com/logs/query;query=")
+    assert url.endswith("?project=my-proj")
+    decoded = urllib.parse.unquote(url)
+    assert f'resource.labels.namespace_name="{NAMESPACE}"' in decoded
+    assert 'labels."k8s-pod/job-name"="rumil-orch-ws-aaaa"' in decoded
+    assert 'resource.labels.cluster_name="my-cluster"' in decoded

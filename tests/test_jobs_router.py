@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
-from collections.abc import AsyncIterator
-
 import pytest
 from httpx import ASGITransport, AsyncClient
 
@@ -26,19 +23,39 @@ def auth_overridden_client():
 
 
 @pytest.mark.asyncio
-async def test_post_orchestrator_run_returns_job_name(mocker, auth_overridden_client):
+async def test_post_orchestrator_run_returns_job_name_and_logs_url(mocker, auth_overridden_client):
     fake_submit = mocker.patch(
         "rumil.api.jobs.submit_orchestrator_job",
         return_value="rumil-orch-ws-cafebabe",
     )
+    mocker.patch(
+        "rumil.api.jobs.build_logs_url",
+        return_value="https://console.cloud.google.com/logs/query;query=foo?project=p",
+    )
     body = {"question": "is the sky blue?", "budget": 1, "workspace": "ws"}
     resp = await auth_overridden_client.post("/api/jobs/orchestrator-runs", json=body)
     assert resp.status_code == 201
-    assert resp.json() == {"job_name": "rumil-orch-ws-cafebabe"}
+    payload = resp.json()
+    assert payload["job_name"] == "rumil-orch-ws-cafebabe"
+    assert payload["logs_url"].startswith("https://console.cloud.google.com/logs/query")
 
     fake_submit.assert_called_once()
     _, kwargs = fake_submit.call_args
     assert kwargs["owner_user_id"] == "user-123"
+
+
+@pytest.mark.asyncio
+async def test_post_orchestrator_run_returns_empty_logs_url_when_no_project(
+    mocker, auth_overridden_client
+):
+    mocker.patch("rumil.api.jobs.submit_orchestrator_job", return_value="rumil-orch-ws-1")
+    mocker.patch("rumil.api.jobs.build_logs_url", return_value="")
+    resp = await auth_overridden_client.post(
+        "/api/jobs/orchestrator-runs",
+        json={"question": "q", "budget": 1, "workspace": "ws"},
+    )
+    assert resp.status_code == 201
+    assert resp.json() == {"job_name": "rumil-orch-ws-1", "logs_url": ""}
 
 
 @pytest.mark.asyncio
@@ -79,28 +96,3 @@ async def test_post_orchestrator_run_unauthorized_without_token():
             json={"question": "q", "budget": 1, "workspace": "ws"},
         )
     assert resp.status_code == 401
-
-
-@pytest.mark.asyncio
-async def test_logs_endpoint_returns_404_for_unknown_job(mocker, auth_overridden_client):
-    mocker.patch("rumil.api.jobs.get_orchestrator_job", return_value=None)
-    resp = await auth_overridden_client.get("/api/jobs/orchestrator-runs/no-such-job/logs")
-    assert resp.status_code == 404
-
-
-@pytest.mark.asyncio
-async def test_logs_endpoint_streams_chunks_for_known_job(mocker, auth_overridden_client):
-    mocker.patch("rumil.api.jobs.get_orchestrator_job", return_value=object())
-
-    async def fake_stream(name: str) -> AsyncIterator[bytes]:
-        yield b"line one\n"
-        await asyncio.sleep(0)
-        yield b"line two\n"
-        yield b"\n[rumil-job] phase=Succeeded exit_code=0\n"
-
-    mocker.patch("rumil.api.jobs.stream_job_logs", side_effect=fake_stream)
-    resp = await auth_overridden_client.get("/api/jobs/orchestrator-runs/some-job/logs")
-    assert resp.status_code == 200
-    assert b"line one" in resp.content
-    assert b"line two" in resp.content
-    assert b"phase=Succeeded exit_code=0" in resp.content

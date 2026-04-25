@@ -52,6 +52,8 @@ api:
     USE_PROD_DB: "1"
     SUPABASE_PROD_URL: https://aesjaehibxrzearctiqp.supabase.co
     LANGFUSE_BASE_URL: https://us.cloud.langfuse.com
+    GCP_PROJECT_ID: project-fe559f0f-d011-4af4-bf0
+    GCP_CLUSTER_NAME: differential
 
   httproute:
     enabled: true

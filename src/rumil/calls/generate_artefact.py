@@ -37,11 +37,12 @@ from rumil.settings import get_settings
 log = logging.getLogger(__name__)
 
 # Artefacts are inherently long-form (multi-page plans, retrospectives,
-# designs). Default structured-call budget is 20k which is too tight once
-# thinking tokens and JSON escaping overhead are factored in — truncation
-# manifests as a pydantic ValidationError on a mid-string EOF. 60k leaves
-# thinking budget and covers a ~20-30k-token artefact.
-_ARTEFACT_MAX_TOKENS = 60_000
+# designs). The Anthropic SDK refuses non-streaming requests above ~21,333
+# max_tokens (its heuristic for "this might take >10 minutes"); we sit just
+# below at 20k. That covers an artefact of ~12-15k content tokens plus
+# thinking budget, while keeping the request non-streaming. To produce
+# longer artefacts we'd need to switch to messages.stream().
+_ARTEFACT_MAX_TOKENS = 20_000
 
 
 class ArtefactOutput(BaseModel):

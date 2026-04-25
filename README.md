@@ -118,6 +118,15 @@ uv run python main.py --summary QUESTION_ID --max-depth 6 --summarize-after-dept
 # Batch mode: investigate multiple questions concurrently
 uv run python main.py --batch questions.json
 
+# Export workspace as an Obsidian vault
+uv run python main.py --obsidian ./vault --workspace my-project
+
+# Export a single question's subtree as an Obsidian vault
+uv run python main.py --obsidian ./vault QUESTION_ID
+
+# Investigate and export to Obsidian in one command
+uv run python main.py "Your question here" --budget 20 --obsidian ./vault
+
 # Use a named workspace to isolate investigations
 uv run python main.py "Your question here" --workspace my-project --budget 10
 

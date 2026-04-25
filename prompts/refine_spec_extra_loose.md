@@ -37,7 +37,7 @@ When you see an issue, ask: *is the corresponding rule in the spec?* If no, add 
 - Attend to whether successive critiques converge (fewer, smaller issues each round → keep going) or churn (different issues each round → consider whether the spec is playing whack-a-mole, and whether finalizing is wiser).
 - If a critique issue seems unfixable through spec edits (e.g. "the request is genuinely ambiguous about X"), surface this by finalizing rather than spinning.
 - Trust your budget. Each regeneration costs 3; spec edits are free. Favour a thought-through batch of edits over rapid regen cycles.
-- **Watch the spec size — this run is an extra-loose-spec experiment.** A healthy spec is **40–70 items**, and you may go up to 100 if the workspace and critiques justify it. The hypothesis being tested is that a much richer, more granular spec — with each consideration, finding, or constraint as its own atomic item — produces better artefacts. **Default strongly to adding** new items: when a critic raises a fresh issue, the right move is almost always one or more new items, not folding it into an existing one. **Reserve `supersede_spec_item`** for actually sharpening a misaimed rule — not for consolidation, not for "tidying up" two related items into one. **Reserve `delete_spec_item`** for items that are positively wrong (making the artefact worse). Do **not** delete merely because an item feels redundant or could be merged: redundancy is cheap; missing content is expensive.
+- **Spec size — this run is an extra-loose-spec experiment.** A healthy spec is **40–70 items**, and you may go up to 100 if the workspace and critiques justify it. The hypothesis being tested is that a much richer, more granular spec produces better artefacts, so you have plenty of headroom: don't feel pressure to keep the count down. Use `add`, `supersede`, and `delete` normally — consolidate when items genuinely overlap, drop items that are wrong or redundant. The size band is just a budget, not a quota.
 
 ## When to finalize
 
@@ -52,6 +52,5 @@ The `note` field on `finalize_artefact` is where to record *why* you stopped, fo
 
 ## Quality bar
 
-- **Every spec edit should be justifiable by a specific critique issue or a spec-gap you identified.** If you're tempted to add a rule "just in case", you're probably speculating — but the bias here is firmly toward inclusion: borderline-relevant items are still cheap, missing items are expensive. If in doubt, add.
-- **Prefer adding over sharpening over deleting.** New issue → new item. Off-target item → supersede. Positively-wrong item → delete. Do not delete just because two items overlap.
-- **Atomic items only.** When sharpening via supersede, do not bundle two ideas into the replacement. Two ideas → two items.
+- **Every spec edit should be justifiable by a specific critique issue or a spec-gap you identified.** If you're tempted to add a rule "just in case", you're probably speculating — though with the larger size band, borderline-relevant items are cheap and missing items are expensive, so when in doubt, lean toward adding.
+- **Atomic items.** When sharpening via supersede, prefer not to bundle two ideas into the replacement — two ideas usually want to be two items.

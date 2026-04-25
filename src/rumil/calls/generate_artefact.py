@@ -39,9 +39,12 @@ log = logging.getLogger(__name__)
 # Artefacts are inherently long-form (multi-page plans, retrospectives,
 # designs). The Anthropic SDK refuses non-streaming requests above ~21,333
 # max_tokens (its heuristic for "this might take >10 minutes"); we sit just
-# below at 20k. That covers an artefact of ~12-15k content tokens plus
-# thinking budget, while keeping the request non-streaming. To produce
-# longer artefacts we'd need to switch to messages.stream().
+# below at 20k. We also disable extended thinking for this call: writing
+# prose from a complete spec doesn't benefit from reasoning, and the default
+# adaptive-thinking + xhigh-effort config on Opus 4.7 can eat 10k+ tokens
+# of the budget on thinking alone — leaving the artefact JSON truncated.
+# Together these give the full ~20k to artefact content. Going higher
+# would require switching to messages.stream().
 _ARTEFACT_MAX_TOKENS = 20_000
 
 
@@ -91,6 +94,7 @@ class ArtefactWriter(WorkspaceUpdater):
                 ),
                 db=infra.db,
                 max_tokens=_ARTEFACT_MAX_TOKENS,
+                disable_thinking=True,
             )
         except ValidationError as exc:
             # messages.parse raises ValidationError when the model's JSON is

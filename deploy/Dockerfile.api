@@ -5,6 +5,8 @@ WORKDIR /app
 
 COPY pyproject.toml uv.lock README.md ./
 COPY src/rumil ./src/rumil
+COPY versus/pyproject.toml ./versus/
+COPY versus/src ./versus/src
 RUN uv sync --frozen --no-dev --no-editable
 
 FROM python:3.13-slim

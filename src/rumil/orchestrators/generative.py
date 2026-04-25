@@ -23,7 +23,9 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
+from rumil.calls.context_builders import active_spec_items_for_task
 from rumil.calls.critique_artefact import CritiqueArtefactCall
+from rumil.calls.critique_artefact_request_only import RequestOnlyCritiqueArtefactCall
 from rumil.calls.generate_artefact import GenerateArtefactCall
 from rumil.calls.generate_spec import GenerateSpecCall
 from rumil.calls.refine_spec import RefineSpecCall
@@ -35,6 +37,8 @@ from rumil.models import (
     PageType,
     Workspace,
 )
+from rumil.orchestrators.common import _create_broadcaster
+from rumil.tracing.broadcast import Broadcaster
 
 log = logging.getLogger(__name__)
 
@@ -56,9 +60,12 @@ class GenerativeOrchestrator:
         db: DB,
         *,
         refine_max_rounds: int = 10,
+        broadcaster: Broadcaster | None = None,
     ) -> None:
         self.db = db
         self.refine_max_rounds = refine_max_rounds
+        self.broadcaster = broadcaster
+        self._owns_broadcaster = False
 
     async def run(self, request: str, *, headline: str | None = None) -> GenerativeResult:
         """Produce an artefact for *request*. Returns the result's IDs.
@@ -67,14 +74,53 @@ class GenerativeOrchestrator:
         drives generate_spec + refine_spec to completion (or budget
         exhaustion), and ensures an artefact exists and is visible.
         """
-        task = await self._create_task(request, headline=headline)
-        log.info(
-            "Generative orchestrator: task=%s, headline=%s",
-            task.id[:8],
-            task.headline[:70],
-        )
+        async with self._broadcaster_scope():
+            task = await self._create_task(request, headline=headline)
+            log.info(
+                "Generative orchestrator: new run, task=%s, headline=%s",
+                task.id[:8],
+                task.headline[:70],
+            )
+            return await self._drive(task, skip_generate_spec=False)
 
-        await self._run_generate_spec(task.id)
+    async def resume(self, task_id: str) -> GenerativeResult:
+        """Resume work on an existing artefact task.
+
+        Intended for recovering from an interrupted run: skips task creation
+        (and skips generate_spec if spec items already exist), runs
+        refine_spec with the current budget, and force-finalizes the latest
+        artefact at the end. The refiner picks up prior iterations from the
+        DB via RefinementContext — it sees the full history (current spec +
+        last-N triples) and just has fresh agent-loop state.
+        """
+        async with self._broadcaster_scope():
+            resolved_id = await self.db.resolve_page_id(task_id) if len(task_id) < 36 else task_id
+            if not resolved_id:
+                raise ValueError(f"resume: task {task_id} not found (could not resolve)")
+            task = await self.db.get_page(resolved_id)
+            if task is None:
+                raise ValueError(f"resume: task {resolved_id} not found")
+            if task.page_type != PageType.QUESTION:
+                raise ValueError(
+                    f"resume: task {resolved_id} is a {task.page_type.value}, expected question"
+                )
+            # Match the original project so new call rows land in the
+            # right project_id scope. Task's project_id is canonical.
+            if task.project_id and self.db.project_id != task.project_id:
+                self.db.project_id = task.project_id
+
+            existing_spec = await active_spec_items_for_task(task.id, self.db)
+            log.info(
+                "Generative orchestrator: resuming task=%s (existing spec items: %d)",
+                task.id[:8],
+                len(existing_spec),
+            )
+            return await self._drive(task, skip_generate_spec=bool(existing_spec))
+
+    async def _drive(self, task: Page, *, skip_generate_spec: bool) -> GenerativeResult:
+        """Shared inner loop used by both run() and resume()."""
+        if not skip_generate_spec:
+            await self._run_generate_spec(task.id)
 
         await self._run_refine_spec(task.id)
 
@@ -101,6 +147,25 @@ class GenerativeOrchestrator:
             finalized=finalized,
         )
 
+    class _BroadcasterScope:
+        """Context manager that lazily creates (and closes) a broadcaster."""
+
+        def __init__(self, orchestrator: GenerativeOrchestrator) -> None:
+            self._orch = orchestrator
+
+        async def __aenter__(self) -> GenerativeOrchestrator._BroadcasterScope:
+            if self._orch.broadcaster is None:
+                self._orch.broadcaster = _create_broadcaster(self._orch.db)
+                self._orch._owns_broadcaster = self._orch.broadcaster is not None
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            if self._orch._owns_broadcaster and self._orch.broadcaster is not None:
+                await self._orch.broadcaster.close()
+
+    def _broadcaster_scope(self) -> GenerativeOrchestrator._BroadcasterScope:
+        return GenerativeOrchestrator._BroadcasterScope(self)
+
     async def _create_task(self, request: str, *, headline: str | None) -> Page:
         task = Page(
             page_type=PageType.QUESTION,
@@ -121,7 +186,12 @@ class GenerativeOrchestrator:
             CallType.GENERATE_SPEC,
             scope_page_id=task_id,
         )
-        runner = GenerateSpecCall(task_id, call, self.db)
+        runner = GenerateSpecCall(
+            task_id,
+            call,
+            self.db,
+            broadcaster=self.broadcaster,
+        )
         await runner.run()
 
     async def _run_refine_spec(self, task_id: str) -> None:
@@ -132,17 +202,40 @@ class GenerativeOrchestrator:
             CallType.REFINE_SPEC,
             scope_page_id=task_id,
         )
-        runner = RefineSpecCall(task_id, call, self.db, max_rounds=self.refine_max_rounds)
+        runner = RefineSpecCall(
+            task_id,
+            call,
+            self.db,
+            max_rounds=self.refine_max_rounds,
+            broadcaster=self.broadcaster,
+        )
         await runner.run()
 
     async def _one_off_regenerate(self, task_id: str, parent_call_id: str | None) -> None:
-        """Run a single generate_artefact + critique_artefact as a fallback."""
+        """Run a single generate + request-only critique + workspace critique as a fallback.
+
+        Each sub-call costs 1 budget; this method consumes incrementally and
+        stops at whatever boundary budget allows (the artefact alone is the
+        most important — critiques are a bonus signal here). Request-only
+        critique runs before workspace-aware so the latter can build on it.
+        """
         gen_call = await self.db.create_call(
             CallType.GENERATE_ARTEFACT,
             scope_page_id=task_id,
             parent_call_id=parent_call_id,
         )
-        await GenerateArtefactCall(task_id, gen_call, self.db).run()
+        await GenerateArtefactCall(task_id, gen_call, self.db, broadcaster=self.broadcaster).run()
+
+        if not await self.db.consume_budget(1):
+            return
+        ro_call = await self.db.create_call(
+            CallType.CRITIQUE_ARTEFACT_REQUEST_ONLY,
+            scope_page_id=task_id,
+            parent_call_id=parent_call_id,
+        )
+        await RequestOnlyCritiqueArtefactCall(
+            task_id, ro_call, self.db, broadcaster=self.broadcaster
+        ).run()
 
         if not await self.db.consume_budget(1):
             return
@@ -151,7 +244,7 @@ class GenerativeOrchestrator:
             scope_page_id=task_id,
             parent_call_id=parent_call_id,
         )
-        await CritiqueArtefactCall(task_id, crit_call, self.db).run()
+        await CritiqueArtefactCall(task_id, crit_call, self.db, broadcaster=self.broadcaster).run()
 
 
 async def run_generative_workflow(

@@ -4,7 +4,6 @@ import logging
 import re
 import uuid
 from collections.abc import Sequence
-from pathlib import Path
 from typing import Literal
 
 import pydantic
@@ -41,6 +40,7 @@ from rumil.models import (
 )
 from rumil.moves.base import extract_and_link_citations
 from rumil.orchestrators.common import _split_into_batches
+from rumil.prompts import PROMPTS_DIR
 from rumil.settings import get_settings
 from rumil.tracing.trace_events import (
     PhaseSkippedEvent,
@@ -49,8 +49,6 @@ from rumil.tracing.trace_events import (
 )
 
 log = logging.getLogger(__name__)
-
-PROMPTS_DIR = Path(__file__).parent.parent.parent.parent / "prompts"
 
 PHASE_MARKER_RE = re.compile(r"<!--\s*PHASE:(\w+)\b[^>]*-->")
 

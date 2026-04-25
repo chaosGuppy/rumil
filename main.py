@@ -40,6 +40,7 @@ from rumil.orchestrators import Orchestrator, create_root_question
 from rumil.report import generate_report, save_report
 from rumil.run_eval import run_run_eval
 from rumil.run_eval.agents import EVAL_AGENTS, EvalAgentSpec
+from rumil.self_improve import run_self_improvement, save_self_improvement
 from rumil.settings import Settings, _settings_var, get_settings
 from rumil.sources import create_source_page, run_ingest_calls
 from rumil.summary import generate_summary, save_summary
@@ -521,7 +522,7 @@ async def cmd_summary(
     db: DB,
     max_depth: int = 4,
     summary_cutoff: int | None = None,
-) -> None:
+) -> str:
     question = await db.get_page(question_id)
     if not question:
         print(f"Error: question '{question_id}' not found. Run --list to see existing questions.")
@@ -537,6 +538,35 @@ async def cmd_summary(
 
     print(summary_text)
     print(f"\n---\nSummary saved to: {path}")
+    return summary_text
+
+
+async def cmd_self_improve(question_id: str, db: DB) -> None:
+    question = await db.get_page(question_id)
+    if not question:
+        resolved = await db.resolve_page_id(question_id)
+        if resolved:
+            question = await db.get_page(resolved)
+    if not question:
+        print(f"Error: question '{question_id}' not found. Run --list to see existing questions.")
+        sys.exit(1)
+
+    if question.project_id and question.project_id != db.project_id:
+        db.project_id = question.project_id
+
+    print(f"\nSelf-improvement analysis for: {question.headline[:80]}")
+    print(
+        "(Uses one or more LLM calls with read-only tools, "
+        "does not count against research budget)\n"
+    )
+
+    text = await run_self_improvement(question.id, db)
+    if not text.strip():
+        print("No analysis produced.")
+        return
+    path = save_self_improvement(text, question.headline)
+    print(text)
+    print(f"\n---\nSelf-improvement analysis saved to: {path}")
 
 
 async def cmd_report(
@@ -917,6 +947,20 @@ async def async_main():
         help="Generate a multi-section research report for a question",
     )
     parser.add_argument(
+        "--self-improve",
+        dest="self_improve_id",
+        metavar="QUESTION_ID",
+        nargs="?",
+        const="__auto__",
+        help=(
+            "Analyse how a completed investigation went and suggest "
+            "rumil code/prompt improvements. Read-only. Pass a "
+            "QUESTION_ID to analyse an existing investigation, or "
+            "combine with a new question to auto-analyse after "
+            "investigation completes."
+        ),
+    )
+    parser.add_argument(
         "--max-depth",
         type=int,
         default=4,
@@ -929,6 +973,17 @@ async def async_main():
         help=(
             "Depth at which --summary switches from full content to page "
             "summaries only (default: max-depth // 2)"
+        ),
+    )
+    parser.add_argument(
+        "--obsidian",
+        dest="obsidian_dir",
+        metavar="OUTPUT_DIR",
+        help=(
+            "Export pages as an Obsidian vault to OUTPUT_DIR. "
+            "Pass a question ID as the positional arg to scope to that "
+            "question's subtree. Combined with a new question text: "
+            "auto-exports the question's subtree after investigation."
         ),
     )
     parser.add_argument(
@@ -1293,6 +1348,21 @@ async def async_main():
         )
         return
 
+    if args.obsidian_dir and not args.question:
+        from rumil.obsidian_export import export_obsidian
+
+        out = await export_obsidian(db, args.obsidian_dir)
+        print(f"Exported to: {out}")
+        return
+
+    if args.obsidian_dir and args.question:
+        resolved = await db.resolve_page_id(args.question)
+        if resolved:
+            from rumil.obsidian_export import export_obsidian
+
+            out = await export_obsidian(db, args.obsidian_dir, question_id=resolved)
+            print(f"Exported to: {out}")
+            return
     run_ids: list[str] = []
 
     if args.list:
@@ -1345,6 +1415,8 @@ async def async_main():
             db,
             max_depth=args.max_depth,
         )
+    elif args.self_improve_id and args.self_improve_id != "__auto__":
+        await cmd_self_improve(args.self_improve_id, db)
     elif args.continue_id:
         await cmd_continue(
             args.continue_id,
@@ -1362,6 +1434,7 @@ async def async_main():
     elif args.question:
         q = parse_question_input(args.question)
         do_summary = args.summary_id == "__auto__"
+        do_self_improve = args.self_improve_id == "__auto__"
         question_id = await cmd_new(
             q,
             args.budget,
@@ -1370,14 +1443,27 @@ async def async_main():
             name=args.run_name,
             auto_summary=do_summary,
         )
+        summary_text = ""
         run_ids.append(db.run_id)
         if do_summary:
-            await cmd_summary(
+            summary_text = await cmd_summary(
                 question_id,
                 db,
                 max_depth=args.max_depth,
                 summary_cutoff=args.summarize_after_depth,
             )
+        if args.obsidian_dir:
+            from rumil.obsidian_export import export_obsidian
+
+            out = await export_obsidian(
+                db,
+                args.obsidian_dir,
+                question_id=question_id,
+                summary_text=summary_text or None,
+            )
+            print(f"\nObsidian vault exported to: {out}")
+        if do_self_improve:
+            await cmd_self_improve(question_id, db)
     else:
         parser.print_help()
 

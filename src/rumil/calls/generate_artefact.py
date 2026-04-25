@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from rumil.calls.closing_reviewers import StandardClosingReview
 from rumil.calls.context_builders import SpecOnlyContext, active_spec_items_for_task
@@ -35,6 +35,17 @@ from rumil.models import (
 from rumil.settings import get_settings
 
 log = logging.getLogger(__name__)
+
+# Artefacts are inherently long-form (multi-page plans, retrospectives,
+# designs). The Anthropic SDK refuses non-streaming requests above ~21,333
+# max_tokens (its heuristic for "this might take >10 minutes"); we sit just
+# below at 20k. We also disable extended thinking for this call: writing
+# prose from a complete spec doesn't benefit from reasoning, and the default
+# adaptive-thinking + xhigh-effort config on Opus 4.7 can eat 10k+ tokens
+# of the budget on thinking alone — leaving the artefact JSON truncated.
+# Together these give the full ~20k to artefact content. Going higher
+# would require switching to messages.stream().
+_ARTEFACT_MAX_TOKENS = 20_000
 
 
 class ArtefactOutput(BaseModel):
@@ -72,16 +83,30 @@ class ArtefactWriter(WorkspaceUpdater):
             CallType.GENERATE_ARTEFACT.value,
             include_preamble=False,
         )
-        result = await structured_call(
-            system_prompt=system_prompt,
-            user_message=context.context_text,
-            response_model=ArtefactOutput,
-            metadata=LLMExchangeMetadata(
-                call_id=infra.call.id,
-                phase="generate_artefact",
-            ),
-            db=infra.db,
-        )
+        try:
+            result = await structured_call(
+                system_prompt=system_prompt,
+                user_message=context.context_text,
+                response_model=ArtefactOutput,
+                metadata=LLMExchangeMetadata(
+                    call_id=infra.call.id,
+                    phase="generate_artefact",
+                ),
+                db=infra.db,
+                max_tokens=_ARTEFACT_MAX_TOKENS,
+                disable_thinking=True,
+            )
+        except ValidationError as exc:
+            # messages.parse raises ValidationError when the model's JSON is
+            # truncated mid-string (usually a max_tokens hit). Don't crash the
+            # call — the refine loop will see this as a tool error via the
+            # regenerate_and_critique message and can retry or finalize.
+            raise RuntimeError(
+                f"generate_artefact: model output was truncated or malformed "
+                f"({exc.error_count()} pydantic error(s)). The artefact may "
+                "be too long for the current max_tokens; try a smaller request "
+                "or split the task."
+            ) from exc
         parsed = result.parsed
         if parsed is None:
             raise RuntimeError(

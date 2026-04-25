@@ -196,10 +196,10 @@ async def test_refinement_context_respects_window(tmp_db, refinement_task):
     assert "v2" not in ctx.context_text
 
 
-async def test_regenerate_and_critique_errors_when_budget_is_one(tmp_db, refinement_task):
-    """Budget guard must be atomic — budget=1 means no sub-calls fire and no
-    partial artefact is produced. Exercised without the LLM by setting a
-    tight budget before calling."""
+async def test_regenerate_and_critique_errors_when_budget_below_three(tmp_db, refinement_task):
+    """Budget guard must be atomic — fewer than 3 units means no sub-calls fire
+    and no partial artefact is produced. Exercised without the LLM by setting
+    a tight budget before calling."""
     await _seed_spec(tmp_db, refinement_task, ["Rule A"])
 
     parent = Call(
@@ -211,7 +211,7 @@ async def test_regenerate_and_critique_errors_when_budget_is_one(tmp_db, refinem
     await tmp_db.save_call(parent)
 
     total, used = await tmp_db.get_budget()
-    await tmp_db.consume_budget(total - used - 1)  # leave exactly 1 unit
+    await tmp_db.consume_budget(total - used - 2)  # leave exactly 2 units
 
     result = await regenerate_and_critique(
         RegenerateAndCritiquePayload(reason="should be rejected"),
@@ -226,9 +226,10 @@ async def test_regenerate_and_critique_errors_when_budget_is_one(tmp_db, refinem
 
 
 @pytest.mark.integration
-async def test_regenerate_and_critique_produces_artefact_and_critique(tmp_db, refinement_task):
-    """Happy path: the move fires both sub-calls and links them up."""
-    await tmp_db.init_budget(6)
+async def test_regenerate_and_critique_produces_artefact_and_two_critiques(tmp_db, refinement_task):
+    """Happy path: the move fires the artefact + both critique sub-calls and
+    links them up. Verifies budget consumption and CRITIQUE_OF cardinality."""
+    await tmp_db.init_budget(8)
     await _seed_spec(
         tmp_db,
         refinement_task,
@@ -254,7 +255,7 @@ async def test_regenerate_and_critique_produces_artefact_and_critique(tmp_db, re
         tmp_db,
     )
     _total, used_after = await tmp_db.get_budget()
-    assert used_after - used_before == 2
+    assert used_after - used_before == 3
 
     assert "Regenerated artefact" in result.message
 
@@ -264,20 +265,52 @@ async def test_regenerate_and_critique_produces_artefact_and_critique(tmp_db, re
 
     inbound = await tmp_db.get_links_to(artefact.id)
     critique_links = [l for l in inbound if l.link_type == LinkType.CRITIQUE_OF]
-    assert len(critique_links) == 1
+    assert len(critique_links) == 2
 
     critiques = await tmp_db.get_pages_by_ids([l.from_page_id for l in critique_links])
-    (crit,) = list(critiques.values())
-    assert crit.page_type == PageType.JUDGEMENT
-    assert "grade" in crit.extra
+    kinds = {p.provenance_call_type for p in critiques.values()}
+    assert kinds == {
+        CallType.CRITIQUE_ARTEFACT.value,
+        CallType.CRITIQUE_ARTEFACT_REQUEST_ONLY.value,
+    }
+    for crit in critiques.values():
+        assert crit.page_type == PageType.JUDGEMENT
+        assert "grade" in crit.extra
+
+
+async def test_resume_errors_on_unknown_task(tmp_db):
+    """resume() must raise when the given task_id doesn't exist."""
+    orchestrator = GenerativeOrchestrator(tmp_db)
+    import uuid as _uuid
+
+    fake_id = str(_uuid.uuid4())
+    with pytest.raises(ValueError, match="not found"):
+        await orchestrator.resume(fake_id)
+
+
+async def test_resume_errors_when_target_is_not_a_question(tmp_db):
+    """resume() rejects non-question scopes — refuses to operate on, say, a claim."""
+    claim = Page(
+        page_type=PageType.CLAIM,
+        layer=PageLayer.SQUIDGY,
+        workspace=Workspace.RESEARCH,
+        content="unrelated claim",
+        headline="unrelated",
+    )
+    await tmp_db.save_page(claim)
+
+    orchestrator = GenerativeOrchestrator(tmp_db)
+    with pytest.raises(ValueError, match="expected question"):
+        await orchestrator.resume(claim.id)
 
 
 @pytest.mark.integration
 async def test_generative_orchestrator_produces_visible_artefact(tmp_db):
     """Tight request → visible ARTEFACT at the end, even if the refiner runs
     out of moves. Uses a concrete request small enough for Haiku to handle
-    reliably within a modest budget."""
-    await tmp_db.init_budget(15)
+    reliably within a modest budget. Each regeneration costs 3 (artefact +
+    two critiques), so 18 covers a few iterations plus setup."""
+    await tmp_db.init_budget(18)
 
     orchestrator = GenerativeOrchestrator(tmp_db, refine_max_rounds=4)
     result = await orchestrator.run(

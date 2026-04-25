@@ -10,7 +10,7 @@ import logging
 from pydantic import BaseModel, Field
 
 from rumil.database import DB
-from rumil.models import Call, CallType, LinkType, MoveType, PageType
+from rumil.models import Call, CallType, LinkType, MoveType, Page, PageType
 from rumil.moves.base import MoveDef, MoveResult
 
 log = logging.getLogger(__name__)
@@ -31,7 +31,12 @@ async def execute(payload: RegenerateAndCritiquePayload, call: Call, db: DB) -> 
     # which transitively pulls in closing_reviewers → moves.registry. Keeping
     # the CallRunner imports inside execute() breaks the cycle.
     from rumil.calls.critique_artefact import CritiqueArtefactCall
+    from rumil.calls.critique_artefact_request_only import RequestOnlyCritiqueArtefactCall
     from rumil.calls.generate_artefact import GenerateArtefactCall
+    from rumil.tracing.tracer import get_trace
+
+    parent_trace = get_trace()
+    broadcaster = parent_trace.broadcaster if parent_trace is not None else None
 
     artefact_task_id = call.scope_page_id
     if not artefact_task_id:
@@ -50,12 +55,14 @@ async def execute(payload: RegenerateAndCritiquePayload, call: Call, db: DB) -> 
             created_page_id=None,
         )
 
-    if not await db.consume_budget(2):
+    if not await db.consume_budget(3):
         return MoveResult(
             message=(
-                "ERROR: regenerate_and_critique needs 2 units of budget and "
-                "fewer are available. No sub-calls fired. Consider calling "
-                "finalize_artefact to ship the latest artefact instead."
+                "ERROR: regenerate_and_critique needs 3 units of budget (one "
+                "for the artefact, two for the workspace-aware and "
+                "request-only critiques) and fewer are available. No sub-calls "
+                "fired. Consider calling finalize_artefact to ship the latest "
+                "artefact instead."
             ),
             created_page_id=None,
         )
@@ -65,16 +72,26 @@ async def execute(payload: RegenerateAndCritiquePayload, call: Call, db: DB) -> 
         scope_page_id=artefact_task_id,
         parent_call_id=call.id,
     )
-    gen_runner = GenerateArtefactCall(artefact_task_id, gen_call, db)
-    await gen_runner.run()
+    await GenerateArtefactCall(artefact_task_id, gen_call, db, broadcaster=broadcaster).run()
+
+    # Request-only critique runs FIRST. The workspace-aware critique then
+    # sees the request-only critique in its context and is asked to extend
+    # it (workspace-grounded issues only) rather than duplicate it.
+    crit_ro_call = await db.create_call(
+        CallType.CRITIQUE_ARTEFACT_REQUEST_ONLY,
+        scope_page_id=artefact_task_id,
+        parent_call_id=call.id,
+    )
+    await RequestOnlyCritiqueArtefactCall(
+        artefact_task_id, crit_ro_call, db, broadcaster=broadcaster
+    ).run()
 
     crit_call = await db.create_call(
         CallType.CRITIQUE_ARTEFACT,
         scope_page_id=artefact_task_id,
         parent_call_id=call.id,
     )
-    crit_runner = CritiqueArtefactCall(artefact_task_id, crit_call, db)
-    await crit_runner.run()
+    await CritiqueArtefactCall(artefact_task_id, crit_call, db, broadcaster=broadcaster).run()
 
     new_artefact = await db.latest_artefact_for_task(artefact_task_id)
     if new_artefact is None:
@@ -83,60 +100,74 @@ async def execute(payload: RegenerateAndCritiquePayload, call: Call, db: DB) -> 
             created_page_id=None,
         )
 
-    critique_links = await db.get_links_to(new_artefact.id)
-    critique_pages_by_id: dict = {}
-    critique_link_ids = [
-        l.from_page_id for l in critique_links if l.link_type == LinkType.CRITIQUE_OF
-    ]
-    if critique_link_ids:
-        critique_pages_by_id = await db.get_pages_by_ids(critique_link_ids)
-    critiques = [
-        p
-        for p in critique_pages_by_id.values()
-        if p.is_active() and p.page_type == PageType.JUDGEMENT
-    ]
-    latest_critique = max(critiques, key=lambda p: p.created_at) if critiques else None
-
-    grade = latest_critique.extra.get("grade") if latest_critique else None
-    issues = latest_critique.extra.get("issues") if latest_critique else []
-    issue_lines = "\n".join(f"- {issue}" for issue in (issues or []))
-
+    critiques = await _critiques_for_artefact(new_artefact.id, db)
     summary_parts = [
         f"Regenerated artefact [{new_artefact.id[:8]}]: {new_artefact.headline}",
     ]
-    if grade is not None:
-        summary_parts.append(f"Critique grade: {grade}/10")
-    if issue_lines:
-        summary_parts.append("Issues surfaced:")
-        summary_parts.append(issue_lines)
+    grades: dict[str, int] = {}
+    for kind, page in critiques.items():
+        grade = page.extra.get("grade") if page else None
+        issues = page.extra.get("issues") if page else []
+        if grade is not None:
+            grades[kind] = grade
+        label = (
+            "Workspace-aware critique"
+            if kind == CallType.CRITIQUE_ARTEFACT.value
+            else "Request-only critique"
+        )
+        if grade is not None:
+            summary_parts.append(f"{label} grade: {grade}/10")
+        if issues:
+            summary_parts.append(f"{label} issues:")
+            summary_parts.append("\n".join(f"- {issue}" for issue in issues))
     summary = "\n\n".join(summary_parts)
 
     log.info(
-        "regenerate_and_critique complete: artefact=%s, grade=%s, issue_count=%d",
+        "regenerate_and_critique complete: artefact=%s, grades=%s",
         new_artefact.id[:8],
-        grade,
-        len(issues or []),
+        grades,
     )
     return MoveResult(
         message=summary,
         created_page_id=None,
         trace_extra={
             "artefact_id": new_artefact.id,
-            "critique_id": latest_critique.id if latest_critique else None,
-            "grade": grade,
+            "grades": grades,
         },
     )
+
+
+async def _critiques_for_artefact(artefact_id: str, db: DB) -> dict[str, Page]:
+    """Return the latest workspace-aware and request-only critique for an artefact.
+
+    Keyed by call-type value so callers can render them side by side.
+    """
+    inbound = await db.get_links_to(artefact_id)
+    critique_link_ids = [l.from_page_id for l in inbound if l.link_type == LinkType.CRITIQUE_OF]
+    if not critique_link_ids:
+        return {}
+    pages_by_id = await db.get_pages_by_ids(critique_link_ids)
+    by_kind: dict[str, Page] = {}
+    for p in pages_by_id.values():
+        if not p.is_active() or p.page_type != PageType.JUDGEMENT:
+            continue
+        kind = p.provenance_call_type or ""
+        existing = by_kind.get(kind)
+        if existing is None or p.created_at > existing.created_at:
+            by_kind[kind] = p
+    return by_kind
 
 
 MOVE = MoveDef(
     move_type=MoveType.REGENERATE_AND_CRITIQUE,
     name="regenerate_and_critique",
     description=(
-        "Regenerate the artefact from the current spec and produce a fresh, "
-        "independent critique of it. Fires both sub-calls atomically so the "
-        "critique you see always matches the latest artefact. Use after a "
+        "Regenerate the artefact from the current spec and produce two fresh, "
+        "independent critiques of it: one with workspace context and one based "
+        "purely on the request text. Fires all three sub-calls atomically so "
+        "the critiques you see always match the latest artefact. Use after a "
         "batch of spec edits when you want to see how the artefact has moved. "
-        "Each invocation consumes 2 units of budget (one per sub-call)."
+        "Each invocation consumes 3 units of budget (artefact + two critiques)."
     ),
     schema=RegenerateAndCritiquePayload,
     execute=execute,

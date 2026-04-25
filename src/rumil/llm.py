@@ -21,7 +21,6 @@ import time
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import date
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic, TypeVar, overload
 
 import anthropic
@@ -40,6 +39,7 @@ from tenacity import (
 )
 
 from rumil.pricing import compute_cost
+from rumil.prompts import PROMPTS_DIR
 from rumil.settings import get_settings
 from rumil.tracing import (
     get_langfuse,
@@ -85,8 +85,6 @@ def _effort_level(model: str) -> str | None:
         return "high"
     return None
 
-
-PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts"
 
 log = logging.getLogger(__name__)
 
@@ -845,6 +843,8 @@ async def _structured_call_parse(
     metadata: LLMExchangeMetadata | None = None,
     db: DB | None = None,
     model: str | None = None,
+    max_tokens: int | None = None,
+    disable_thinking: bool = False,
 ) -> StructuredCallResult[T]:
     """Structured output via messages.parse (no cache sharing with create)."""
     settings = get_settings()
@@ -854,16 +854,17 @@ async def _structured_call_parse(
 
     parse_kwargs: dict = {
         "model": model,
-        "max_tokens": DEFAULT_MAX_TOKENS,
+        "max_tokens": max_tokens if max_tokens is not None else DEFAULT_MAX_TOKENS,
         "system": system_prompt,
         "messages": msg_list,
     }
     if _supports_sampling_params(model):
         parse_kwargs["temperature"] = DEFAULT_TEMPERATURE
-    if (thinking := _thinking_config(model)) is not None:
-        parse_kwargs["thinking"] = thinking
-    if (effort := _effort_level(model)) is not None:
-        parse_kwargs["output_config"] = {"effort": effort}
+    if not disable_thinking:
+        if (thinking := _thinking_config(model)) is not None:
+            parse_kwargs["thinking"] = thinking
+        if (effort := _effort_level(model)) is not None:
+            parse_kwargs["output_config"] = {"effort": effort}
     if response_model is not None:
         parse_kwargs["output_format"] = response_model
     if tools is not None:
@@ -954,6 +955,8 @@ async def structured_call(
     db: DB | None = None,
     cache: bool = False,
     model: str | None = None,
+    max_tokens: int | None = None,
+    disable_thinking: bool = False,
 ) -> StructuredCallResult[T]: ...
 
 
@@ -970,6 +973,8 @@ async def structured_call(
     db: DB | None = None,
     cache: bool = False,
     model: str | None = None,
+    max_tokens: int | None = None,
+    disable_thinking: bool = False,
 ) -> StructuredCallResult[T]: ...
 
 
@@ -986,6 +991,8 @@ async def structured_call(
     db: DB | None = None,
     cache: bool = False,
     model: str | None = None,
+    max_tokens: int | None = None,
+    disable_thinking: bool = False,
 ) -> StructuredCallResult[BaseModel]: ...
 
 
@@ -1001,6 +1008,8 @@ async def structured_call(
     db: DB | None = None,
     cache: bool = False,
     model: str | None = None,
+    max_tokens: int | None = None,
+    disable_thinking: bool = False,
 ) -> StructuredCallResult[T] | StructuredCallResult[BaseModel]:
     """Run an LLM call that returns structured output matching response_model.
 
@@ -1010,6 +1019,16 @@ async def structured_call(
 
     Pass `messages` for multi-turn conversations, or `user_message` for single-turn.
     Pass `tools` to share cache prefix with agent calls.
+
+    Pass ``max_tokens`` to override the default output budget. Long-form
+    artefact generation in particular can outgrow the default; bump this
+    when the expected output is known to be large.
+
+    Pass ``disable_thinking=True`` to skip the model's extended-thinking
+    config for tasks that don't benefit from reasoning. For mostly-mechanical
+    text generation (like writing prose from a complete spec) thinking just
+    eats the max_tokens budget without improving quality. Only takes effect
+    on the cache=False path.
     """
     if bool(metadata) != bool(db):
         raise ValueError("metadata and db must be provided together")
@@ -1025,6 +1044,15 @@ async def structured_call(
     )
 
     if cache and response_model is not None:
+        if max_tokens is not None:
+            raise ValueError(
+                "max_tokens is not supported on the cached (cache=True) path yet; "
+                "plumb it through call_api if you need it."
+            )
+        if disable_thinking:
+            raise ValueError(
+                "disable_thinking is not supported on the cached (cache=True) path yet."
+            )
         return await _structured_call_cached(
             system_prompt,
             response_model,
@@ -1043,4 +1071,6 @@ async def structured_call(
         metadata=metadata,
         db=db,
         model=model,
+        max_tokens=max_tokens,
+        disable_thinking=disable_thinking,
     )

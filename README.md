@@ -86,6 +86,15 @@ uv run python main.py "Your question here" --budget 20 --summary
 # Generate a multi-section research report
 uv run python main.py --report QUESTION_ID
 
+# Self-improvement: analyse how an investigation went and get rumil
+# code/prompt improvement suggestions. Read-only; inspects the run plus
+# rumil's own source via LLM tools, then writes a markdown analysis to
+# pages/self-improvement/.
+uv run python main.py --self-improve QUESTION_ID
+
+# Investigate and self-improve in one command (analyses the just-finished run)
+uv run python main.py "Your question here" --budget 20 --self-improve
+
 # Evaluate the judgement quality for a question
 uv run python main.py --evaluate QUESTION_ID
 
@@ -108,6 +117,15 @@ uv run python main.py --summary QUESTION_ID --max-depth 6 --summarize-after-dept
 
 # Batch mode: investigate multiple questions concurrently
 uv run python main.py --batch questions.json
+
+# Export workspace as an Obsidian vault
+uv run python main.py --obsidian ./vault --workspace my-project
+
+# Export a single question's subtree as an Obsidian vault
+uv run python main.py --obsidian ./vault QUESTION_ID
+
+# Investigate and export to Obsidian in one command
+uv run python main.py "Your question here" --budget 20 --obsidian ./vault
 
 # Use a named workspace to isolate investigations
 uv run python main.py "Your question here" --workspace my-project --budget 10

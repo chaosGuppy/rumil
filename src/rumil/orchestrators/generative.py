@@ -94,12 +94,15 @@ class GenerativeOrchestrator:
         last-N triples) and just has fresh agent-loop state.
         """
         async with self._broadcaster_scope():
-            task = await self.db.get_page(task_id)
+            resolved_id = await self.db.resolve_page_id(task_id) if len(task_id) < 36 else task_id
+            if not resolved_id:
+                raise ValueError(f"resume: task {task_id} not found (could not resolve)")
+            task = await self.db.get_page(resolved_id)
             if task is None:
-                raise ValueError(f"resume: task {task_id} not found")
+                raise ValueError(f"resume: task {resolved_id} not found")
             if task.page_type != PageType.QUESTION:
                 raise ValueError(
-                    f"resume: task {task_id} is a {task.page_type.value}, expected question"
+                    f"resume: task {resolved_id} is a {task.page_type.value}, expected question"
                 )
             # Match the original project so new call rows land in the
             # right project_id scope. Task's project_id is canonical.

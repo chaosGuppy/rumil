@@ -40,6 +40,36 @@ from rumil.orchestrators.generative import GenerativeOrchestrator
 from rumil.settings import get_settings
 
 
+async def _lookup_original_run(db: DB, task_id: str) -> tuple[str, str | None, bool] | None:
+    """Find the run that originally created (or operated on) *task_id*.
+
+    Returns (run_id, project_id, staged) of the earliest call scoped to the
+    task, or None if no such call exists. Used by --resume so we can rejoin
+    the original run rather than spawning a fresh one (which would not see
+    a staged task and would also lose trace continuity).
+
+    *task_id* may be a short (8-char) prefix; we use a LIKE match so the
+    user can copy the short ID from CLI output rather than digging up a
+    full UUID.
+    """
+    short = len(task_id) < 36
+    query = db.client.table("calls").select("run_id, project_id, created_at, scope_page_id")
+    if short:
+        query = query.like("scope_page_id", f"{task_id}%")
+    else:
+        query = query.eq("scope_page_id", task_id)
+    call_rows = (await db._execute(query.order("created_at").limit(1))).data or []
+    if not call_rows:
+        return None
+    run_id = call_rows[0]["run_id"]
+    project_id = call_rows[0].get("project_id")
+    run_rows = (
+        await db._execute(db.client.table("runs").select("staged").eq("id", run_id))
+    ).data or []
+    staged = bool(run_rows[0].get("staged")) if run_rows else False
+    return run_id, project_id, staged
+
+
 async def run(args: argparse.Namespace) -> int:
     logging.basicConfig(
         level=logging.INFO,
@@ -52,34 +82,52 @@ async def run(args: argparse.Namespace) -> int:
     if args.smoke_test:
         settings.rumil_smoke_test = "1"
 
-    db = await DB.create(
-        run_id=str(uuid.uuid4()),
-        prod=args.prod,
-        staged=not args.no_stage,
-    )
-
     if args.resume:
-        # Project is inherited from the existing task inside resume().
-        run_name = f"resume {args.resume[:8]}"
+        # Reuse the original run's identity so we (a) inherit its staged-run
+        # visibility and can actually see the existing task page, and (b)
+        # land all new calls under the same trace tree the user already has.
+        bootstrap = await DB.create(run_id=str(uuid.uuid4()), prod=args.prod)
+        original = await _lookup_original_run(bootstrap, args.resume)
+        await bootstrap.close()
+        if original is None:
+            print(
+                f"ERROR: no calls found for task {args.resume}. "
+                "Either the ID is wrong or the original run wasn't local.",
+                file=sys.stderr,
+            )
+            return 1
+        original_run_id, project_id, staged = original
+        db = await DB.create(
+            run_id=original_run_id,
+            prod=args.prod,
+            staged=staged,
+        )
+        if project_id:
+            db.project_id = project_id
+        await db.add_budget(args.budget)
     else:
+        db = await DB.create(
+            run_id=str(uuid.uuid4()),
+            prod=args.prod,
+            staged=not args.no_stage,
+        )
         project = await db.get_or_create_project(args.workspace)
         db.project_id = project.id
-        run_name = args.headline or args.request[:120]
-
-    await db.init_budget(args.budget)
-    await db.create_run(
-        name=run_name,
-        question_id=None,
-        config=settings.capture_config(),
-    )
+        await db.init_budget(args.budget)
+        await db.create_run(
+            name=args.headline or args.request[:120],
+            question_id=None,
+            config=settings.capture_config(),
+        )
 
     frontend = settings.frontend_url
     print(f"Trace: {frontend}/traces/{db.run_id}\n")
     if args.resume:
         print(f"Resuming task: {args.resume}")
+        print(f"Reusing run:   {db.run_id}  (staged={db.staged})")
     else:
         print(f"Workspace: {args.workspace}  (project_id={db.project_id})")
-    print(f"Budget:    {args.budget}\n")
+    print(f"Budget added: {args.budget}\n" if args.resume else f"Budget: {args.budget}\n")
 
     orchestrator = GenerativeOrchestrator(
         db,

@@ -34,8 +34,11 @@ class SupersedeSpecItemPayload(BaseModel):
     )
     content: str = Field(
         description=(
-            "The revised spec item: one precise prescriptive statement about "
-            "the artefact, in the same atomic style as add_spec_item."
+            "The revised spec item: a prescriptive statement about the artefact, "
+            "in the same style as add_spec_item — default to a single rule, but "
+            "a richer multi-sentence item is fine when motivation or nuance is "
+            "essential. Often the right move is to roll a couple of related "
+            "smaller items into a single richer one here."
         ),
     )
 

@@ -11,7 +11,11 @@
 import pytest
 import pytest_asyncio
 
-from rumil.calls.context_builders import CritiqueContext, SpecOnlyContext
+from rumil.calls.context_builders import (
+    CritiqueContext,
+    RequestOnlyCritiqueContext,
+    SpecOnlyContext,
+)
 from rumil.calls.critique_artefact import CritiqueArtefactCall
 from rumil.calls.generate_artefact import GenerateArtefactCall
 from rumil.calls.stages import CallInfra
@@ -173,6 +177,88 @@ async def test_critique_context_errors_when_no_artefact(tmp_db, artefact_task):
     )
     with pytest.raises(ValueError, match="no artefact"):
         await CritiqueContext().build_context(infra)
+
+
+async def test_request_only_critique_context_renders_only_task_and_artefact(tmp_db, artefact_task):
+    """RequestOnlyCritiqueContext rendering contains the task + the artefact
+    and nothing else (no embedding sweep, no spec items)."""
+    spec_marker = "DO_NOT_LEAK_SPEC_ABCDEF"
+    spec = Page(
+        page_type=PageType.SPEC_ITEM,
+        layer=PageLayer.SQUIDGY,
+        workspace=Workspace.RESEARCH,
+        content=spec_marker,
+        headline="leaky spec",
+        hidden=True,
+    )
+    await tmp_db.save_page(spec)
+    await tmp_db.save_link(
+        PageLink(
+            from_page_id=spec.id,
+            to_page_id=artefact_task.id,
+            link_type=LinkType.SPEC_OF,
+        )
+    )
+
+    artefact_marker = "ARTEFACT_BODY_TEXT_GHIJKL"
+    artefact = Page(
+        page_type=PageType.ARTEFACT,
+        layer=PageLayer.SQUIDGY,
+        workspace=Workspace.RESEARCH,
+        content=artefact_marker,
+        headline="The artefact",
+        hidden=True,
+    )
+    await tmp_db.save_page(artefact)
+    await tmp_db.save_link(
+        PageLink(
+            from_page_id=artefact.id,
+            to_page_id=artefact_task.id,
+            link_type=LinkType.ARTEFACT_OF,
+        )
+    )
+
+    call = Call(
+        call_type=CallType.CRITIQUE_ARTEFACT_REQUEST_ONLY,
+        workspace=Workspace.RESEARCH,
+        scope_page_id=artefact_task.id,
+        status=CallStatus.PENDING,
+    )
+    await tmp_db.save_call(call)
+    infra = CallInfra(
+        question_id=artefact_task.id,
+        call=call,
+        db=tmp_db,
+        trace=CallTrace(call.id, tmp_db),
+        state=MoveState(call, tmp_db),
+    )
+
+    ctx = await RequestOnlyCritiqueContext().build_context(infra)
+
+    assert artefact_marker in ctx.context_text
+    assert "Artefact under review" in ctx.context_text
+    assert spec_marker not in ctx.context_text
+    assert ctx.working_page_ids == [artefact_task.id, artefact.id]
+
+
+async def test_request_only_critique_context_errors_when_no_artefact(tmp_db, artefact_task):
+    """RequestOnlyCritiqueContext requires an artefact; surface a clear error otherwise."""
+    call = Call(
+        call_type=CallType.CRITIQUE_ARTEFACT_REQUEST_ONLY,
+        workspace=Workspace.RESEARCH,
+        scope_page_id=artefact_task.id,
+        status=CallStatus.PENDING,
+    )
+    await tmp_db.save_call(call)
+    infra = CallInfra(
+        question_id=artefact_task.id,
+        call=call,
+        db=tmp_db,
+        trace=CallTrace(call.id, tmp_db),
+        state=MoveState(call, tmp_db),
+    )
+    with pytest.raises(ValueError, match="no artefact"):
+        await RequestOnlyCritiqueContext().build_context(infra)
 
 
 async def test_latest_artefact_for_task_returns_most_recent(tmp_db, artefact_task):

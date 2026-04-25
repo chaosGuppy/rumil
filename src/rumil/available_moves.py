@@ -153,6 +153,7 @@ PRESETS: dict[str, AvailableMoves] = {
         ],
         CallType.GENERATE_ARTEFACT: [],
         CallType.CRITIQUE_ARTEFACT: [],
+        CallType.CRITIQUE_ARTEFACT_REQUEST_ONLY: [],
         CallType.REFINE_SPEC: [
             MoveType.ADD_SPEC_ITEM,
             MoveType.SUPERSEDE_SPEC_ITEM,
@@ -306,6 +307,7 @@ PRESETS: dict[str, AvailableMoves] = {
         ],
         CallType.GENERATE_ARTEFACT: [],
         CallType.CRITIQUE_ARTEFACT: [],
+        CallType.CRITIQUE_ARTEFACT_REQUEST_ONLY: [],
         CallType.REFINE_SPEC: [
             MoveType.ADD_SPEC_ITEM,
             MoveType.SUPERSEDE_SPEC_ITEM,

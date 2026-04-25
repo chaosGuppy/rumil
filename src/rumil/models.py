@@ -89,6 +89,7 @@ class CallType(str, Enum):
     GENERATE_SPEC = "generate_spec"
     GENERATE_ARTEFACT = "generate_artefact"
     CRITIQUE_ARTEFACT = "critique_artefact"
+    CRITIQUE_ARTEFACT_REQUEST_ONLY = "critique_artefact_request_only"
     REFINE_SPEC = "refine_spec"
     # Envelope call for mutations made from Claude Code's broader context
     # (not a rumil-internal call with carefully scoped prompt). Never

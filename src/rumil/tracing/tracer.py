@@ -54,6 +54,11 @@ class CallTrace:
         self.total_cost_usd: float = 0.0
         self._page_loads: list[dict] = []
 
+    @property
+    def broadcaster(self) -> Broadcaster | None:
+        """Public accessor for the broadcaster (used by moves that spawn sub-calls)."""
+        return self._broadcaster
+
     def record_page_load(self, page_id: str, detail: str, tags: dict[str, str]) -> None:
         """Accumulate a page-load event (flushed to DB at end of call)."""
         self._page_loads.append(

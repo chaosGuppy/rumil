@@ -30,10 +30,12 @@ class AddSpecItemPayload(BaseModel):
     )
     content: str = Field(
         description=(
-            "The spec item itself: one precise prescriptive statement about the "
-            "artefact. Prefer atomic rules over bundles — if you're saying two "
-            "independent things, make two spec items. Write in terms of what the "
-            "artefact should or should not do, include, or look like."
+            "The spec item itself: a prescriptive statement about the artefact. "
+            "Default to one rule per item, but a richer item that takes a few "
+            "sentences to motivate or qualify a single coherent point is fine — "
+            "two anaemic items are worse than one substantive one. Only split "
+            "when the rules are independent. Write in terms of what the artefact "
+            "should or should not do, include, or look like."
         ),
     )
 
@@ -94,12 +96,14 @@ MOVE = MoveDef(
     move_type=MoveType.ADD_SPEC_ITEM,
     name="add_spec_item",
     description=(
-        "Add one atomic prescriptive spec item for the artefact the generative "
+        "Add one prescriptive spec item for the artefact the generative "
         "workflow will produce. A spec item says what the artefact should or "
         "should not do, include, or look like — a rule the generator will be "
-        "held to. Prefer sharp, individually-falsifiable rules over broad "
-        "bundles. The spec item is linked to the artefact-task question "
-        "automatically; you do not need to reference it in the payload."
+        "held to. Default to one rule per item but a richer multi-sentence "
+        "item is fine when motivation or nuance is essential to the rule. "
+        "Avoid bundling unrelated rules into a single item. The spec item is "
+        "linked to the artefact-task question automatically; you do not need "
+        "to reference it in the payload."
     ),
     schema=AddSpecItemPayload,
     execute=execute,
